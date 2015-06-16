@@ -1,0 +1,72 @@
+name:          kyllini
+version:       0.1
+cabal-version: >= 1.10
+license:       BSD3
+license-file:  LICENSE
+copyright:     (c) 2014-2015 Drexel University
+author:        Geoffrey Mainland <mainland@cs.drexel.edu>
+maintainer:    Geoffrey Mainland <mainland@cs.drexel.edu>
+stability:     alpha
+homepage:      http://www.cs.drexel.edu/~mainland/
+category:      Language
+synopsis:      Kyllini compiler.
+tested-with:   GHC==7.8.3
+
+description:
+  kzc is an alternative compiler for the Ziria language language.
+
+build-type: Simple
+
+executable kzc
+  main-is:
+    Main.hs
+
+  default-language:
+    Haskell98
+
+  other-modules:
+    KZC.Name
+    Language.Core.Syntax
+    Language.Ziria.Parser
+    Language.Ziria.Parser.Alex
+    Language.Ziria.Parser.Exceptions
+    Language.Ziria.Parser.Lexer
+    Language.Ziria.Parser.Monad
+    Language.Ziria.Parser.Parser
+    Language.Ziria.Parser.Tokens
+    Language.Ziria.Smart
+    Language.Ziria.Syntax
+    Opts
+
+  build-depends:
+    array                  >= 0.2   && < 0.6,
+    base                   >= 4     && < 5,
+    binary                 >= 0.6   && < 0.8,
+    bytestring             >= 0.9   && < 0.11,
+    containers             >= 0.4   && < 0.6,
+    directory              >= 1.2   && < 1.3,
+    exception-mtl          >= 0.3   && < 0.5,
+    exception-transformers >= 0.3   && < 0.5,
+    filepath               >= 1.3   && < 1.4,
+    mainland-pretty        >= 0.2.5 && < 0.4,
+    mtl                    >= 2.0   && < 3,
+    ref-fd                 >= 0.3   && < 0.5,
+    srcloc                 >= 0.5   && < 0.6,
+    syb                    >= 0.3   && < 0.5,
+    symbol                 >= 0.2.4 && < 0.3,
+    text                   >= 1.1   && < 1.3,
+    transformers           >= 0.2   && < 0.5
+
+  build-tools:
+    alex >=3,
+    happy
+
+  ghc-options:
+    -Wall
+
+  hs-source-dirs:
+    src
+
+source-repository head
+  type:     git
+  location: git://github.com/mainland/kyllini.git
