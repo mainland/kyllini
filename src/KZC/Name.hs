@@ -22,3 +22,12 @@ instance Located Name where
 
 instance Pretty Name where
     ppr (Name sym _) = text (unintern sym)
+
+class Named a where
+    namedString :: a -> String
+
+instance Named Name where
+    namedString (Name s _) = unintern s
+
+mkName :: String -> SrcLoc -> Name
+mkName s l = Name (intern s) l

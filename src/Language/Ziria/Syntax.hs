@@ -1,10 +1,12 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Language.Ziria.Syntax (
-    Var,
-    Struct,
-    Field,
+    Var(..),
+    Struct(..),
+    Field(..),
     W(..),
     Const(..),
     Exp(..),
@@ -24,25 +26,35 @@ module Language.Ziria.Syntax (
 
     StructDef(..),
     Type(..),
-    Ind(..)
+    Ind(..),
+
+    mkVar,
+    mkStruct,
+    mkField,
+
+    imField,
+    reField
   ) where
 
 import Data.Loc
+import Data.Monoid
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
 import KZC.Pretty
+import KZC.Summary
+import KZC.Util.SetLike
+import KZC.Vars
 
-type Var = Name
+newtype Var = Var Name
+  deriving (Eq, Ord, Read, Show)
 
-type Struct = Name
+newtype Struct = Struct Name
+  deriving (Eq, Ord, Read, Show)
 
-type Field = Name
-
-imField, reField :: Field
-imField = Name (intern "im") noLoc
-reField = Name (intern "re") noLoc
+newtype Field = Field Name
+  deriving (Eq, Ord, Read, Show)
 
 data W = W8
        | W16
@@ -194,6 +206,121 @@ data Ind = ConstI Integer
          | NoneI
   deriving (Eq, Ord, Read, Show)
 
+{------------------------------------------------------------------------------
+ -
+ - Smart constructors
+ -
+ ------------------------------------------------------------------------------}
+
+mkVar :: Name -> Var
+mkVar n = Var n
+
+mkStruct :: Name -> Struct
+mkStruct n = Struct n
+
+mkField :: Name -> Field
+mkField n = Field n
+
+imField, reField :: Field
+imField = Field $ Name (intern "im") noLoc
+reField = Field $ Name (intern "re") noLoc
+
+{------------------------------------------------------------------------------
+ -
+ - Free variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Fvs Exp Var where
+    fvs (ConstE {})             = mempty
+    fvs (VarE v _)              = singleton v
+    fvs (UnopE _ e _)           = fvs e
+    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE v _ e1 e2 _)      = delete v (fvs e1 <> fvs e2)
+    fvs (CallE v es _)          = singleton v <> fvs es
+    fvs (LetRefE v _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
+    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (UntilE e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (TimesE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ArrayE es _)           = fvs es
+    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
+    fvs (StructE _ flds _)      = fvs (map snd flds)
+    fvs (ProjE e _ _)           = fvs e
+    fvs (PrintE _ es _)         = fvs es
+    fvs (ErrorE {})             = mempty
+    fvs (ReturnE _ e _)         = fvs e
+    fvs (TakeE {})              = mempty
+    fvs (TakesE {})             = mempty
+    fvs (EmitE e _)             = fvs e
+    fvs (EmitsE e _)            = fvs e
+    fvs (RepeatE _ e _)         = fvs e
+    fvs (ArrE _ e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (ReadE {})              = mempty
+    fvs (WriteE {})             = mempty
+    fvs (StandaloneE e _)       = fvs e
+    fvs (MapE _ v _ _)          = singleton v
+    fvs (FilterE v _ _)         = singleton v
+    fvs (CompLetE cl e _)       = fvs cl <> (fvs e <\\> binders cl)
+
+    fvs (StmE stms _) = go stms
+      where
+        go []                       = mempty
+        go (LetS v _ e _    : stms) = delete v (fvs e <> go stms)
+        go (LetRefS v _ e _ : stms) = delete v (fvs e <> go stms)
+        go (ExpS e _        : stms) = fvs e <> go stms
+
+    fvs (CmdE cmds _) = go cmds
+      where
+        go []                     = mempty
+        go (LetC cl _     : stms) = fvs cl <> (go stms <\\> binders cl)
+        go (BindC v _ e _ : stms) = delete v (fvs e <> go stms)
+        go (ExpC e _      : stms) = fvs e <> go stms
+
+instance Fvs CompLet Var where
+    fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
+    fvs cl@(LetRefCL _ _ e _)         = fvs e <\\> binders cl
+    fvs cl@(LetFunCL _ _ _ e _)       = fvs e <\\> binders cl
+    fvs (LetFunExternalCL {})         = mempty
+    fvs (LetStructCL {})              = mempty
+    fvs cl@(LetCompCL _ _ _ e _)      = fvs e <\\> binders cl
+    fvs cl@(LetFunCompCL _ _ _ _ e _) = fvs e <\\> binders cl
+
+instance Binders CompLet Var where
+    binders (LetCL v _ _ _)             = singleton v
+    binders (LetRefCL v _ _ _)          = singleton v
+    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [v | (v,_,_) <- ps]
+    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [v | (v,_,_) <- ps]
+    binders (LetStructCL {})            = mempty
+    binders (LetCompCL v _ _ _ _)       = singleton v
+    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [v | (v,_,_) <- ps]
+
+{------------------------------------------------------------------------------
+ -
+ - Summaries
+ -
+ ------------------------------------------------------------------------------}
+
+instance Summary Exp where
+    summary e = text "expression" <+> ppr e
+
+{------------------------------------------------------------------------------
+ -
+ - Pretty printing
+ -
+ ------------------------------------------------------------------------------}
+
+instance Pretty Field where
+    ppr (Field n) = ppr n
+
+instance Pretty Struct where
+    ppr (Struct n) = ppr n
+
+instance Pretty Var where
+    ppr (Var n) = ppr n
+
 instance Pretty W where
     ppr W8  = text "8"
     ppr W16 = text "16"
@@ -242,8 +369,8 @@ instance Pretty Exp where
 
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "var" <+> ppr v <+> colon <+> ppr tau <?+>
-        pprInitializer e1 <?+/>
+        text "var" <+> ppr v <+> colon <+> ppr tau <+>
+        pprInitializer e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
 
     pprPrec _ (AssignE v e _) =
@@ -256,10 +383,10 @@ instance Pretty Exp where
         text "until" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
 
     pprPrec _ (TimesE ann e1 e2 _) =
-        ppr ann <?+> text "times" <+> ppr e1 <+> ppr e2
+        ppr ann <+> text "times" <+> ppr e1 <+> ppr e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
-        ppr ann <?+> text "for" <+> pprSig v tau <+> text "in" <+>
+        ppr ann <+> text "for" <+> pprSig v tau <+> text "in" <+>
         brackets (commasep [ppr e1, ppr e2]) <+>
         ppr e3
 
@@ -291,7 +418,7 @@ instance Pretty Exp where
         text "do" <+> ppr e
 
     pprPrec _ (ReturnE ann e _) =
-        ppr ann <?+> text "return" <+> ppr e
+        ppr ann <+> text "return" <+> ppr e
 
     pprPrec _ (TakeE _) =
         text "take"
@@ -306,7 +433,7 @@ instance Pretty Exp where
         text "emits" <+> ppr e
 
     pprPrec _ (RepeatE ann e _) =
-        ppr ann <?+> text "repeat" <+> ppr e
+        ppr ann <+> text "repeat" <+> ppr e
 
     pprPrec p (ArrE Pipeline e1 e2 _) =
         parensIf (p > arrPrec) $
@@ -326,7 +453,7 @@ instance Pretty Exp where
         text "standalone" <+> ppr e
 
     pprPrec _ (MapE ann v tau _) =
-        text "map" <?+> ppr ann <?+> pprSig v tau
+        text "map" <+> ppr ann <+> pprSig v tau
 
     pprPrec _ (FilterE v tau _) =
         text "filter" <+> pprSig v tau
@@ -390,7 +517,7 @@ instance Pretty CompLet where
         text "let" <+> pprSig v tau <+> text "=" <+> ppr e
 
     ppr (LetRefCL v tau e _) =
-        text "var" <+> ppr v <+> colon <+> ppr tau <?+> pprInitializer e
+        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
     ppr (LetFunCL f tau ps e _) =
         text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+> ppr e
@@ -402,11 +529,11 @@ instance Pretty CompLet where
         ppr def
 
     ppr (LetCompCL v tau range e _) =
-        text "let" <+> text "comp" <?+> pprRange range <?+>
+        text "let" <+> text "comp" <+> pprRange range <+>
         pprSig v tau <+> text "=" <+> ppr e
 
     ppr (LetFunCompCL f tau range ps e _) =
-        text "fun" <+> text "comp" <?+> pprRange range <?+>
+        text "fun" <+> text "comp" <+> pprRange range <+>
         pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+> ppr e
 
 instance Pretty Stm where
@@ -414,7 +541,7 @@ instance Pretty Stm where
         text "let" <+> pprSig v tau <+> text "=" <+> ppr e
 
     ppr (LetRefS v tau e _) =
-        text "var" <+> ppr v <+> colon <+> ppr tau <?+> pprInitializer e
+        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
     ppr (ExpS e _) =
         ppr e
@@ -557,4 +684,4 @@ instance HasFixity Unop where
     fixity Len      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
-#include "Language/Ziria/Syntax.hs-instances"
+#include "Language/Ziria/Syntax-instances.hs"

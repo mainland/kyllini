@@ -100,31 +100,36 @@ deriveLocated _ =
     stack (map locDef constrs)
   where
     (typeName, _) = splitTyConApp (typeOf (undefined::a))
-    allLetters = [char c | c <- ['a'..'z']]
 
-    constrs :: [(String, Int)]
+    constrs :: [(String, [String], Int)]
     constrs = map gen $ dataTypeConstrs (dataTypeOf (undefined::a))
       where
-        gen :: Constr -> (String, Int)
+        gen :: Constr -> (String, [String], Int)
         gen con =
             ( showConstr con
+            , gmapQ (showConstr . toConstr) (fromConstrB empty' con :: a)
             , gmapQl (+) 0 (const 1) (fromConstrB empty' con :: a)
             )
 
-    locDef :: (String, Int) -> Doc
-    locDef (name, ps) =
+    locDef :: (String, [String], Int) -> Doc
+    locDef (name, ks, ps) =
         nest 2 $
-        text "locOf" <+> wrap pattern <+> text "=" <+/>
-        case take ps allLetters of
-          [] -> error $ "Cannot drive Located: " ++ name
-          _  -> text "locOf" <+> char 'l'
+        text "locOf" <+> wrap pattern <+> text "=" <+/> text rhs
       where
         wrap | ps /= 0   = parens
              | otherwise = id
 
-        wilds = replicate (ps - 1) (char '_')
+        (pats, rhs) = go ks
+          where
+            go :: [String] -> ([String], String)
+            go []               = ([], "noLoc")
+            go ("Name"   : ks') = ("l" : replicate (length ks') "_", "locOf l")
+            go ("SrcLoc" : ks') = ("l" : replicate (length ks') "_", "locOf l")
+            go (_ : ks')        = ("_" : pats, rhs)
+              where
+                (pats, rhs) = go ks'
 
-        pattern = spread (text name : wilds ++ [char 'l'])
+        pattern = spread (text name : map text pats)
 
 empty' :: forall a. Data a => a
 empty' = Data.Generics.empty

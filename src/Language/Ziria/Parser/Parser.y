@@ -193,11 +193,11 @@ import KZC.Name
 
 identifier :: { Var }
 identifier :
-    ID       { Name (getID $1) (srclocOf $1) }
-  | STRUCTID { Name (getSTRUCTID $1) (srclocOf $1) }
-  | 'arr'    { Name (intern "arr") (srclocOf $1) }
-  | 'fun'    { Name (intern" fun") (srclocOf $1) }
-  | 'length' { Name (intern "length") (srclocOf $1) }
+    ID       { mkVar $ Name (getID $1) (srclocOf $1) }
+  | STRUCTID { mkVar $ Name (getSTRUCTID $1) (srclocOf $1) }
+  | 'arr'    { mkVar $ Name (intern "arr") (srclocOf $1) }
+  | 'fun'    { mkVar $ Name (intern" fun") (srclocOf $1) }
+  | 'length' { mkVar $ Name (intern "length") (srclocOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -286,9 +286,9 @@ const_exp :
 pexp :: { Exp }
 pexp :
     ID
-      { varE (varid $1) }
+      { varE (mkVar (varid $1)) }
   | pexp '.' ID
-      { ProjE $1 (fieldid $3) ($1 `srcspan` $3) }
+      { ProjE $1 (mkField (fieldid $3)) ($1 `srcspan` $3) }
   | pexp '[' exp ':' const_int_exp ']'
       {% do { from      <- constIntExp $3
             ; let to    =  unLoc $5
@@ -366,9 +366,9 @@ aexp :
       { StructE $1 $3 ($1 `srcspan` $4) }
 
   | ID '(' exp_list ')'
-      { CallE (varid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (structid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
@@ -397,7 +397,7 @@ bexp :
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (varid $2) $4 $5 $7 ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) $4 $5 $7 ($1 `srcspan` $7) }
 
 bexp_or_stms :: { Exp }
 bexp_or_stms :
@@ -447,12 +447,12 @@ exp_rlist1 :
 -- Struct initializers
 structid :: { Struct }
 structid :
-    STRUCTID    { Name (getSTRUCTID $1) (srclocOf $1) }
-  | 'complex'   { Name (intern "complex") (srclocOf $1) }
-  | 'complex8'  { Name (intern "complex8") (srclocOf $1) }
-  | 'complex16' { Name (intern "complex16") (srclocOf $1) }
-  | 'complex32' { Name (intern "complex32") (srclocOf $1) }
-  | 'complex64' { Name (intern "complex64") (srclocOf $1) }
+    STRUCTID    { mkStruct $ Name (getSTRUCTID $1) (srclocOf $1) }
+  | 'complex'   { mkStruct $ Name (intern "complex") (srclocOf $1) }
+  | 'complex8'  { mkStruct $ Name (intern "complex8") (srclocOf $1) }
+  | 'complex16' { mkStruct $ Name (intern "complex16") (srclocOf $1) }
+  | 'complex32' { mkStruct $ Name (intern "complex32") (srclocOf $1) }
+  | 'complex64' { mkStruct $ Name (intern "complex64") (srclocOf $1) }
 
 struct_init_list1 :: { [(Field, Exp)] }
 struct_init_list1 :
@@ -465,7 +465,7 @@ struct_init1_rlist :
 
 struct_init :: { (Field, Exp) }
 struct_init :
-    ID '=' exp { (fieldid $1, $3) }
+    ID '=' exp { (mkField (fieldid $1), $3) }
 
 gen_interval :: { L (Exp, Exp) }
 gen_interval :
@@ -526,7 +526,7 @@ cast_type :
 arr_length :: { (Ind, Type) }
 arr_length :
     '[' 'length' '(' ID ')' ']' base_type
-      { (ArrI (varid $4), $7) }
+      { (ArrI (mkVar (varid $4)), $7) }
   | '[' const_int_exp ']' base_type
       { (ConstI (unLoc $2), $4) }
   | base_type
@@ -573,7 +573,7 @@ stm :
           LetS v tau $4 ($1 `srcspan` $4)
       }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefS (varid $2) $4 $5 ($1 `srcspan` $5) }
+      { LetRefS (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
   | stm_exp { ExpS $1 (srclocOf $1) }
 
 stm_exp :: { Exp }
@@ -601,9 +601,9 @@ stm_exp :
       { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
 
   | ID '(' exp_list ')'
-      { CallE (varid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (structid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
 
   | pexp ':=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }
@@ -626,7 +626,7 @@ stm_exp :
           LetE v tau $4 (stmsE $6) ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' stm_block
-      { LetRefE (varid $2) $4 $5 (stmsE $7) ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) $4 $5 (stmsE $7) ($1 `srcspan` $7) }
 
 unroll_info :: { L UnrollAnn }
 unroll_info :
@@ -666,11 +666,11 @@ comp_let_decl :
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefCL (varid $2) $4 $5 ($1 `srcspan` $5) }
+      { LetRefCL (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
   | struct
       { LetStructCL $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type
-      { LetFunExternalCL (varid $3) $4 $6 ($1 `srcspan` $6) }
+      { LetFunExternalCL (mkVar (varid $3)) $4 $6 ($1 `srcspan` $6) }
   | 'fun' 'comp' maybe_comp_range comp_var_bind comp_params '{' commands '}'
       { let { (v, tau) = $4 }
         in
@@ -739,11 +739,11 @@ acomp :
       { cmdsE $2 }
 
   | ID
-      { varE (varid $1) }
+      { varE (mkVar (varid $1)) }
   | ID '(' exp_list ')'
-      { CallE (varid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (structid $1) $3 ($1 `srcspan` $4) }
+      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
 
   | '(' comp ')'
       { $2 }
@@ -840,7 +840,7 @@ struct :: { StructDef }
 struct :
     'struct' ID '=' '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (structid $2) $5 ($1 `srcspan` $6)
+            ; return $ StructDef (mkStruct (structid $2)) $5 ($1 `srcspan` $6)
             }
       }
 
@@ -856,7 +856,7 @@ field_rlist :
 
 field :: { (Field, Type) }
 field :
-    ID ':' base_type { (fieldid $1, $3) }
+    ID ':' base_type { (mkField (fieldid $1), $3) }
 
 -- Parameters to a (non-comp) function
 params :: { [(Var, Bool, Type)] }
@@ -872,7 +872,7 @@ param_rlist :
 param :: { (Var, Bool, Type)  }
 param :
     'var' ID ':' base_type
-      { (varid $2, True, $4) }
+      { (mkVar (varid $2), True, $4) }
   | identifier ':' base_type
       { ($1, False, $3) }
 
@@ -890,13 +890,13 @@ comp_param_rlist :
 comp_param :: { (Var, Bool, Type) }
 comp_param :
     'var' ID ':' base_type
-      { (varid $2, True, $4) }
+      { (mkVar (varid $2), True, $4) }
   | 'var' ID ':' comp_base_type
       {% fail "Computation parameter cannot be mutable" }
   | ID ':' base_type
-      { (varid $1, False, $3) }
+      { (mkVar (varid $1), False, $3) }
   | ID ':' comp_base_type
-      { (varid $1, False, $3) }
+      { (mkVar (varid $1), False, $3) }
   | ID ':' error
       {% expected ["'ST' or base type"] Nothing }
 
@@ -950,13 +950,13 @@ lexer cont = do
 locate :: Loc -> (SrcLoc -> a) -> L a
 locate loc f = L loc (f (SrcLoc loc))
 
-varid :: L T.Token -> Var
+varid :: L T.Token -> Name
 varid t = Name (getID t) (srclocOf t)
 
-structid :: L T.Token -> Var
+structid :: L T.Token -> Name
 structid t = Name (getSTRUCTID t) (srclocOf t)
 
-fieldid :: L T.Token -> Var
+fieldid :: L T.Token -> Name
 fieldid t = Name (getID t) (srclocOf t)
 
 constIntExp :: Exp -> P Integer

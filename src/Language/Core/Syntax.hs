@@ -152,6 +152,12 @@ data Ind = ConstI Integer
          | VarI Var
   deriving (Eq, Ord, Read, Show)
 
+instance Pretty W where
+    ppr W8  = text "8"
+    ppr W16 = text "16"
+    ppr W32 = text "32"
+    ppr W64 = text "64"
+
 instance Pretty Const where
     ppr UnitC            = text "()"
     ppr (BoolC True)     = text "true"
@@ -309,12 +315,6 @@ instance Pretty Binop where
     ppr Rem  = text "%"
     ppr Pow  = text "**"
 
-instance Pretty W where
-    ppr W8  = text "8"
-    ppr W16 = text "16"
-    ppr W32 = text "32"
-    ppr W64 = text "64"
-
 instance Pretty Type where
     pprPrec _ (UnitT _) =
         text "()"
@@ -430,4 +430,4 @@ instance HasFixity Unop where
     fixity Neg      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
-#include "Language/Core/Syntax.hs-instances"
+#include "Language/Core/Syntax-instances.hs"

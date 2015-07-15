@@ -36,7 +36,6 @@ executable kzc
     Language.Ziria.Parser.Tokens
     Language.Ziria.Smart
     Language.Ziria.Syntax
-    Opts
 
   build-depends:
     array                  >= 0.2   && < 0.6,
@@ -48,7 +47,7 @@ executable kzc
     exception-mtl          >= 0.3   && < 0.5,
     exception-transformers >= 0.3   && < 0.5,
     filepath               >= 1.3   && < 1.4,
-    mainland-pretty        >= 0.2.5 && < 0.4,
+    mainland-pretty        >= 0.4   && < 0.5,
     mtl                    >= 2.0   && < 3,
     ref-fd                 >= 0.3   && < 0.5,
     srcloc                 >= 0.5   && < 0.6,

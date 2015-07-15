@@ -6,6 +6,8 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Pretty (
+    quote,
+
     commaEmbrace,
     embrace,
 
@@ -20,6 +22,9 @@ module KZC.Pretty (
   ) where
 
 import Text.PrettyPrint.Mainland
+
+quote :: Pretty a => a -> Doc
+quote x = char '`' <> ppr x <> char '\''
 
 commaEmbrace :: [Doc] -> Doc
 commaEmbrace = embrace commasep

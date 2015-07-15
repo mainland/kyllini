@@ -83,16 +83,36 @@ GHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 
 SOURCE = \
-	Main.hs \
+	KZC/Check/Monad.hs \
+	KZC/Check/State.hs \
+	KZC/Check/Types.hs \
+	KZC/Derive.hs \
+	KZC/Error.hs \
+	KZC/Flags.hs \
+	KZC/Monad.hs \
 	KZC/Name.hs \
+	KZC/Pretty.hs \
+	KZC/Summary.hs \
+	KZC/Uniq.hs \
+	KZC/Util/SetLike.hs \
+	KZC/Vars.hs \
 	Language/Core/Syntax.hs \
-	Language/Ziria/Syntax.hs
+	Language/Ziria/Parser/Alex.hs \
+	Language/Ziria/Parser/Exceptions.hs \
+	Language/Ziria/Parser/Lexer.hs \
+	Language/Ziria/Parser/Monad.hs \
+	Language/Ziria/Parser/Tokens.hs \
+	Language/Ziria/Parser.hs \
+	Language/Ziria/Smart.hs \
+	Language/Ziria/Syntax.hs \
+	Main.hs
 
 GENERATED = \
-	Language/Core/Syntax.hs-instances \
+	KZC/Check/Types-instances.hs \
+	Language/Core/Syntax-instances.hs \
 	Language/Ziria/Parser/Lexer.hs \
 	Language/Ziria/Parser/Parser.hs \
-	Language/Ziria/Syntax.hs-instances
+	Language/Ziria/Syntax-instances.hs
 
 SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 
@@ -103,7 +123,10 @@ all : kzc
 clean :
 	rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED))
 
-$(SRCDIR)Language/Core/Syntax.hs-instances : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Core/Syntax.hs
+$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
+	runhaskell $(RUNGHCFLAGS) $< > $@
+
+$(SRCDIR)Language/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Core/Syntax.hs
 	runhaskell $(RUNGHCFLAGS) $< > $@
 
 $(SRCDIR)Language/Ziria/Parser/Parser.hs : $(SRCDIR)Language/Ziria/Parser/Parser.y
@@ -112,7 +135,7 @@ $(SRCDIR)Language/Ziria/Parser/Parser.hs : $(SRCDIR)Language/Ziria/Parser/Parser
 $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
 	$(ALEX) $(ALEX_ARGS) -o $@ $<
 
-$(SRCDIR)Language/Ziria/Syntax.hs-instances : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
 	runhaskell $(RUNGHCFLAGS) $< > $@
 
 kzc : $(SRC)

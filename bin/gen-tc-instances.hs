@@ -9,42 +9,24 @@ import Data.Generics
 
 import KZC.Derive
 import KZC.Name
-import Language.Ziria.Syntax
+import KZC.Check.Types
+import KZC.Uniq
 
 #define DERIVE(a) \
 deriving instance Typeable a; \
 deriving instance Data a
 
+DERIVE(Uniq)
 DERIVE(Name)
-DERIVE(Var)
+DERIVE(IVar)
 DERIVE(Struct)
-DERIVE(Field)
+DERIVE(TyVar)
 DERIVE(W)
-DERIVE(Const)
-DERIVE(Exp)
-DERIVE(UnrollAnn)
-DERIVE(InlineAnn)
-DERIVE(PipelineAnn)
-DERIVE(VectAnn)
-DERIVE(Unop)
-DERIVE(Binop)
-DERIVE(CompLet)
-DERIVE(Stm)
-DERIVE(Cmd)
-DERIVE(StructDef)
 DERIVE(Type)
-DERIVE(Ind)
+DERIVE(MetaTv)
 
 main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
-    DERIVE(Var)
-    DERIVE(Struct)
-    DERIVE(Field)
-    DERIVE(Exp)
-    DERIVE(CompLet)
-    DERIVE(Stm)
-    DERIVE(Cmd)
-    DERIVE(StructDef)
     DERIVE(Type)
