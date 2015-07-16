@@ -32,7 +32,10 @@ main :: IO ()
 main = do
     args <- getArgs
     (flags, files) <- compilerOpts args
-    evalKZC flags (mapM_ runPipeline files) `catch` printFailure
+    if mode flags == Help
+      then do usage >>= hPutStrLn stderr
+              return ()
+      else evalKZC flags (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure
@@ -40,14 +43,14 @@ main = do
 runPipeline :: FilePath -> KZC ()
 runPipeline path0 = do
     decls <- liftIO $ parseProgramFromFile path0
-    whenFlag checkF $
+    whenDynFlag Check $
       void $ pipeline decls
   where
     pipeline :: [Z.CompLet] -> KZC C.Exp
     pipeline = checkPipeline
 
     checkPipeline :: [Z.CompLet] -> KZC C.Exp
-    checkPipeline = check >=> dumpPass dumpTcF "core" "tc" >=> lintCore
+    checkPipeline = check >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
     check :: [Z.CompLet] -> KZC C.Exp
     check decls = withTc $ checkProgram decls
@@ -60,11 +63,6 @@ runPipeline path0 = do
 -}
         return e
 
-    whenFlag :: (Flags -> Bool) -> KZC () -> KZC ()
-    whenFlag f m = do
-        dopass <- asks (f . flags)
-        if dopass then m else return ()
-
 {-
     flagPass :: (Flags -> Bool) -> (a -> KZC a) -> a -> KZC a
     flagPass f k a = do
@@ -73,7 +71,7 @@ runPipeline path0 = do
 -}
 
     dumpPass :: Pretty a
-             => (Flags -> Bool)
+             => DumpFlag
              -> String
              -> String
              -> a
@@ -82,13 +80,13 @@ runPipeline path0 = do
         dump f path0 ext suffix (ppr x)
         return x
 
-    dump :: (Flags -> Bool)
+    dump :: DumpFlag
          -> FilePath
          -> String
          -> String
          -> Doc
          -> KZC ()
-    dump f sourcePath ext suffix doc = whenFlag f $ do
+    dump f sourcePath ext suffix doc = whenDumpFlag f $ do
         let path = replaceExtension sourcePath ext'
         liftIO $ createDirectoryIfMissing True (takeDirectory path)
         h <- liftIO $ openFile path WriteMode

@@ -132,3 +132,7 @@ instance MonadUnique KZC where
             let u' = u + 1
             in
               u' `seq` (Uniq u', Uniq u)
+
+instance MonadFlags KZC where
+    askFlags = asks flags
+    localFlags fs = local (\env -> env { flags = fs })

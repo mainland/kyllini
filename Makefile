@@ -105,7 +105,8 @@ SOURCE = \
 	Language/Ziria/Parser.hs \
 	Language/Ziria/Smart.hs \
 	Language/Ziria/Syntax.hs \
-	Main.hs
+	Main.hs \
+	Opts.hs
 
 GENERATED = \
 	KZC/Check/Types-instances.hs \

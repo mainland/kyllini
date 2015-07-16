@@ -6,46 +6,108 @@ import Data.Monoid
 
 import KZC.Flags
 
-options :: [OptDescr Flags]
+options :: [OptDescr (Flags -> Flags)]
 options =
-    [ Option ['p'] ["pprint"]         (NoArg pprintArg)        "pretty-print file"
-    , Option []    ["check"]          (NoArg checkArg)        "type-check file"
-    , Option []    ["lint-core"]      (NoArg lintArg)         "lint core"
-    , Option []    ["Werror"]         (NoArg warnErrorArg)    "make warnings errors"
-    , Option []    ["trace-tc"]       (NoArg traceTcArg)      "trace the type checker"
-    , Option []    ["trace-lint"]     (NoArg traceLintArg)    "trace the linter"
-    , Option []    ["dump-tc"]        (NoArg dumpTcArg)       "dump output of the type checker"
-    , Option ['o'] ["output"]         (OptArg outArg "FILE")  "output FILE"
-    ]
+    map mkModeFlag modeFlagOpts ++
+    otherOpts ++
+    concatMap (mkSetOptFlag "W" "" setWarnFlag unsetWarnFlag) wWarnFlagOpts ++
+    map (mkOptFlag "f" "" setDynFlag) fDynFlagOpts ++
+    map (mkOptFlag "d" "" setDynFlag) dDynFlagOpts ++
+    map (mkOptFlag "d" "dump-" setDumpFlag) dDumpFlagOpts ++
+    map (mkOptFlag "d" "trace-" setTraceFlag) dTraceFlagOpts
   where
-    pprintArg :: Flags
-    pprintArg = mempty { pprintF = True }
+    otherOpts :: [OptDescr (Flags -> Flags)]
+    otherOpts =
+        [ Option ['I'] []         (ReqArg includePathOpt "DIR")     "include DIR"
+        , Option ['D'] []         (ReqArg defineOpt "macro[=defn]") "define macro"
+        , Option ['o'] ["output"] (OptArg outOpt "FILE")            "output FILE"
+        ]
 
-    checkArg :: Flags
-    checkArg = mempty { checkF = True }
+    outOpt :: Maybe String -> Flags -> Flags
+    outOpt path fs = fs { output = path }
 
-    lintArg :: Flags
-    lintArg = mempty { lintF = True }
+    includePathOpt :: String -> Flags -> Flags
+    includePathOpt path fs = fs { includePaths = includePaths fs ++ [path] }
 
-    warnErrorArg :: Flags
-    warnErrorArg = mempty { warnErrorF = True }
+    defineOpt :: String -> Flags -> Flags
+    defineOpt def fs = fs { defines = defines fs ++ [split (/= '=') def] }
 
-    traceTcArg :: Flags
-    traceTcArg = mempty { traceTcF = True }
+    split :: (a -> Bool) -> [a] -> ([a], [a])
+    split p s = case split p s of
+                  (xs, []) -> (xs, [])
+                  (xs, ys) -> (xs, drop 1 ys)
 
-    traceLintArg :: Flags
-    traceLintArg = mempty { traceLintF = True }
+mkModeFlag :: (ModeFlag, [Char], [String], String)
+           -> OptDescr (Flags -> Flags)
+mkModeFlag (f, so, lo, desc) =
+    Option so lo (NoArg set) desc
+  where
+    set fs = fs { mode = f }
 
-    dumpTcArg :: Flags
-    dumpTcArg = mempty { dumpTcF = True }
+mkOptFlag :: String
+          -> String
+          -> (f -> Flags -> Flags)
+          -> (f, String, String)
+          -> OptDescr (Flags -> Flags)
+mkOptFlag pfx mfx set (f, str, desc) =
+    Option  [] [pfx ++ mfx ++ str] (NoArg (set f)) desc
 
-    outArg :: Maybe String -> Flags
-    outArg f = mempty { outputF = f }
+mkSetOptFlag :: String
+             -> String
+             -> (f -> Flags -> Flags)
+             -> (f -> Flags -> Flags)
+             -> (f, String, String)
+             -> [OptDescr (Flags -> Flags)]
+mkSetOptFlag pfx mfx set unset (f, str, desc) =
+    [  Option  [] [pfx ++          mfx ++ str] (NoArg (set f)) desc
+    ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (unset f)) desc
+    ,  Option  [] [pfx ++ "no-" ++ mfx ++ str] (NoArg (unset f)) desc
+    ]
+
+modeFlagOpts :: [(ModeFlag, [Char], [String], String)]
+modeFlagOpts =
+  [ (Help,    ['h', '?'], ["--help"], "show help")
+  , (Compile, ['c'],      [],         "compile")
+  ]
+
+fDynFlagOpts :: [(DynFlag, String, String)]
+fDynFlagOpts =
+  [ (PrettyPrint, "pprint", "pretty-print file")
+  ]
+
+dDynFlagOpts :: [(DynFlag, String, String)]
+dDynFlagOpts =
+  [ (Lint,  "lint", "lint core")
+  ]
+
+dDumpFlagOpts :: [(DumpFlag, String, String)]
+dDumpFlagOpts =
+  [ (DumpCPP,  "cpp",  "dump CPP output")
+  , (DumpCore, "core", "dump core")
+  ]
+
+dTraceFlagOpts :: [(TraceFlag, String, String)]
+dTraceFlagOpts =
+  [ (TraceLexer,  "lex",   "trace lexer")
+  , (TraceParser, "parse", "trace parser")
+  , (TraceTc,     "tc",    "trace type checker")
+  , (TraceLint,   "lint",  "trace linter")
+  ]
+
+wWarnFlagOpts :: [(WarnFlag, String, String)]
+wWarnFlagOpts =
+  [ (WarnError, "error", "make warnings errors")
+  ]
 
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
-    progname <- getProgName
-    let header = "Usage: " ++ progname ++ " [OPTION...] files..."
     case getOpt Permute options argv of
-      (fs,n,[] ) -> return (mconcat fs, n)
-      (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+      (fs,n,[] ) -> return (foldr ($) mempty fs, n)
+      (_,_,errs) -> do usageDesc <- usage
+                       ioError (userError (concat errs ++ usageDesc))
+
+usage :: IO String
+usage = do
+    progname   <- getProgName
+    let header =  "Usage: " ++ progname ++ " [OPTION...] files..."
+    return $ usageInfo header options

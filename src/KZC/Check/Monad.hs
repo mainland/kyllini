@@ -141,7 +141,7 @@ instance MonadErr Tc where
         local (\env -> env { errctx = ctx : errctx env }) m
 
     {-# INLINE warnIsError #-}
-    warnIsError = liftKZC $ asks $ warnErrorF . flags
+    warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
 
     warn e = do
         werror <- warnIsError
@@ -235,7 +235,7 @@ traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
 
 traceTc :: Doc -> Tc ()
 traceTc doc = do
-    doTrace <- liftKZC $ asks $ traceTcF . flags
+    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceTc)
     when doTrace $ do
         d <- asks nestdepth
         liftIO $ hPutDoc stderr $ indent d $ doc <> line
