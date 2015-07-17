@@ -3,10 +3,7 @@ cabal.sandbox.config
 kzc
 lib/
 obj/
-src/KZC/Check/Types-instances.hs
-src/Language/Core/Syntax-instances.hs
 src/Language/Ziria/Parser/Lexer.hs
 src/Language/Ziria/Parser/Lexer.info
 src/Language/Ziria/Parser/Parser.hs
 src/Language/Ziria/Parser/Parser.info
-src/Language/Ziria/Syntax-instances.hs

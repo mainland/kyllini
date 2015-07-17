@@ -4,8 +4,8 @@ cabal-version: >= 1.10
 license:       BSD3
 license-file:  LICENSE
 copyright:     (c) 2014-2015 Drexel University
-author:        Geoffrey Mainland <mainland@cs.drexel.edu>
-maintainer:    Geoffrey Mainland <mainland@cs.drexel.edu>
+author:        Geoffrey Mainland <mainland@drexel.edu>
+maintainer:    Geoffrey Mainland <mainland@drexel.edu>
 stability:     alpha
 homepage:      http://www.cs.drexel.edu/~mainland/
 category:      Language
@@ -13,7 +13,7 @@ synopsis:      Kyllini compiler.
 tested-with:   GHC==7.8.3
 
 description:
-  kzc is an alternative compiler for the Ziria language language.
+  kzc is an alternative compiler for the Ziria language
 
 build-type: Simple
 
@@ -25,17 +25,8 @@ executable kzc
     Haskell98
 
   other-modules:
-    KZC.Name
-    Language.Core.Syntax
-    Language.Ziria.Parser
-    Language.Ziria.Parser.Alex
-    Language.Ziria.Parser.Exceptions
     Language.Ziria.Parser.Lexer
-    Language.Ziria.Parser.Monad
     Language.Ziria.Parser.Parser
-    Language.Ziria.Parser.Tokens
-    Language.Ziria.Smart
-    Language.Ziria.Syntax
 
   build-depends:
     array                  >= 0.2   && < 0.6,
@@ -64,6 +55,9 @@ executable kzc
     -Wall
 
   hs-source-dirs:
+    src
+
+  include-dirs:
     src
 
 source-repository head
