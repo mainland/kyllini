@@ -1,0 +1,5 @@
+executable: kzc
+include-dirs:  
+extra-lib-dirs:  
+extra-libraries:
+frameworks:

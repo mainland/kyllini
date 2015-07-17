@@ -15,7 +15,7 @@ tested-with:   GHC==7.8.3
 description:
   kzc is an alternative compiler for the Ziria language
 
-build-type: Simple
+build-type: Configure
 
 executable kzc
   main-is:
@@ -58,6 +58,7 @@ executable kzc
     src
 
   include-dirs:
+    include
     src
 
 source-repository head

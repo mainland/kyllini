@@ -1,0 +1,2 @@
+#define CC  "@CC@"
+#define CPP "@CPP@"

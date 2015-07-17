@@ -51,12 +51,14 @@ RUNGHCFLAGS += \
 	-package-db --ghc-arg=$(wildcard .cabal-sandbox/*-packages.conf.d)
 endif
 
-GHCFLAGS_OPT = -O2 -funbox-strict-fields
+#
+# Support Cabal's MIN_VERSION
+#
+GHCFLAGS += -optP-include -optPdist/build/autogen/cabal_macros.h
 
-ifeq ($(OPT), 1)
-GHCFLAGS += $(GHCFLAGS_OPT)
-endif
-
+#
+# GHC flags
+#
 GHCFLAGS += \
 	-hide-all-packages \
 	-package array \
@@ -77,6 +79,15 @@ GHCFLAGS += \
 	-package text \
 	-package transformers
 
+GHCFLAGS_OPT = -O2 -funbox-strict-fields
+
+ifeq ($(OPT), 1)
+GHCFLAGS += $(GHCFLAGS_OPT)
+endif
+
+#
+# Source locations
+#
 SRCDIR = src/
 
 GHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
@@ -117,6 +128,9 @@ GENERATED = \
 
 SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 
+#
+# all, clean, and distclean targets
+#
 .PHONY : all
 all : kzc
 
@@ -124,26 +138,45 @@ all : kzc
 clean :
 	rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED))
 
+.PHONY : distclean
+distclean : clean
+	rm -rf \
+	    dist \
+	    autom4te.cache configure config.log config.status \
+	    include/KzcConfig.h include/KzcSysTools.h Makefile kzc.buildinfo
+
+#
+# kzc compiler
+#
+kzc : $(SRC) dist/build/autogen/cabal_macros.h
+	@mkdir -p obj
+	$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
+		-o $@
+
+#
+# Generated instances
+#
 $(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
 	runhaskell $(RUNGHCFLAGS) $< > $@
 
 $(SRCDIR)Language/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Core/Syntax.hs
 	runhaskell $(RUNGHCFLAGS) $< > $@
 
+$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+	runhaskell $(RUNGHCFLAGS) $< > $@
+
+#
+# Lexer and parser generation
+#
 $(SRCDIR)Language/Ziria/Parser/Parser.hs : $(SRCDIR)Language/Ziria/Parser/Parser.y
 	$(HAPPY) $(HAPPY_ARGS) -o $@ $<
 
 $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
 	$(ALEX) $(ALEX_ARGS) -o $@ $<
 
-$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
-	runhaskell $(RUNGHCFLAGS) $< > $@
-
-kzc : $(SRC)
-	@mkdir -p obj
-	$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
-		-o $@
-
+#
+# Tests
+#
 TESTS = \
 	$(shell find tests -name '*.wpl') \
 	$(wildcard code/WiFi/tests/*.blk) \
@@ -162,6 +195,27 @@ test-parser : kzc $(TESTSEXPANDED)
 		./kzc $$TEST; \
 	done
 
+#
+# autotools stuff
+#
+include/KzcConfig.h.in : configure.ac aclocal.m4
+	autoheader
+
+Makefile : Makefile.in
+	./config.status
+
+%.h : %.h.in
+	./config.status
+
+%.buildinfo : %.buildinfo.in
+	./config.status
+
+dist/build/autogen/cabal_macros.h :
+	cabal build
+
+#
+# Print Makefile variables
+#
 print-%: ; @echo $*=$($*)
 
 #
