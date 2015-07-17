@@ -1,14 +1,19 @@
 module Main where
 
+import Control.Applicative
 import Control.Monad.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import qualified Data.ByteString.Lazy as B
+import Data.Loc
+import qualified Data.Text.Lazy.IO as TIO
 import qualified Data.Text.Lazy.Encoding as E
 import System.Directory (createDirectoryIfMissing)
 import System.Environment
 import System.Exit (exitFailure)
-import System.FilePath (replaceExtension,
+import System.FilePath (addExtension,
+                        replaceExtension,
+                        splitExtension,
                         takeDirectory)
 import System.IO (IOMode(..),
                   hClose,
@@ -25,6 +30,7 @@ import KZC.Check
 import KZC.Check.Monad
 import KZC.Flags
 import KZC.Monad
+import KZC.SysTools
 
 import Opts
 
@@ -41,11 +47,20 @@ main = do
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure
 
 runPipeline :: FilePath -> KZC ()
-runPipeline path0 = do
-    decls <- liftIO $ parseProgramFromFile path0
+runPipeline filepath = do
+    text  <- liftIO (E.decodeUtf8 <$> B.readFile filepath)
+    text' <- runCpp filepath text
+    whenDumpFlag DumpCPP $ do
+        liftIO $ TIO.writeFile (addExtension root (".pp" ++ ext)) text'
+    decls <- liftIO $ parseProgram text' start
     whenDynFlag Check $
       void $ pipeline decls
   where
+    (root, ext) = splitExtension filepath
+
+    start :: Pos
+    start = startPos filepath
+
     pipeline :: [Z.CompLet] -> KZC C.Exp
     pipeline = checkPipeline
 
@@ -77,7 +92,7 @@ runPipeline path0 = do
              -> a
              -> KZC a
     dumpPass f ext suffix x = do
-        dump f path0 ext suffix (ppr x)
+        dump f filepath ext suffix (ppr x)
         return x
 
     dump :: DumpFlag
@@ -87,9 +102,9 @@ runPipeline path0 = do
          -> Doc
          -> KZC ()
     dump f sourcePath ext suffix doc = whenDumpFlag f $ do
-        let path = replaceExtension sourcePath ext'
-        liftIO $ createDirectoryIfMissing True (takeDirectory path)
-        h <- liftIO $ openFile path WriteMode
+        let destpath = replaceExtension sourcePath ext'
+        liftIO $ createDirectoryIfMissing True (takeDirectory destpath)
+        h <- liftIO $ openFile destpath WriteMode
         liftIO $ B.hPut h $ E.encodeUtf8 (prettyLazyText 80 doc)
         liftIO $ hClose h
       where

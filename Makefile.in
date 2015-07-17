@@ -72,6 +72,7 @@ GHCFLAGS += \
 	-package filepath \
 	-package mainland-pretty \
 	-package mtl \
+	-package process \
 	-package ref-fd \
 	-package srcloc \
 	-package syb \
@@ -93,10 +94,13 @@ SRCDIR = src/
 GHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 
+GHCFLAGS+=-Iinclude
+
 SOURCE = \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
+	KZC/SysTools.hs \
 	KZC/Derive.hs \
 	KZC/Error.hs \
 	KZC/Flags.hs \
@@ -189,10 +193,10 @@ TESTSEXPANDED = $(patsubst %,%.expanded,$(TESTS))
 	gcc -I lib -I tests/WiFi -I tests/WiFi/perf/blocks -w -x c -E $< >$@
 
 .PHONY : test-parser
-test-parser : kzc $(TESTSEXPANDED)
+test-parser : kzc
 	set -e; \
-	for TEST in $(TESTSEXPANDED); do \
-		./kzc $$TEST; \
+	for TEST in $(TESTS); do \
+		./kzc -Ilib $$TEST; \
 	done
 
 #

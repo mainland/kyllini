@@ -24,6 +24,11 @@ AC_ARG_WITH([compiler],
             [AC_PATH_PROG(HC, ghc)])
 
 #
+# Find the C preprocessor
+#
+AC_PROG_CPP()
+
+#
 # Finish up
 #
 

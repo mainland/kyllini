@@ -43,8 +43,8 @@ parseFromFile p path = do
 
 parseProgram :: T.Text
              -> Pos
-             -> Either SomeException [CompLet]
-parseProgram = parse P.parseProgram
+             -> IO [CompLet]
+parseProgram buf pos = liftException $ parse P.parseProgram buf pos
 
 parseProgramFromFile :: FilePath -> IO [CompLet]
 parseProgramFromFile = parseFromFile P.parseProgram
