@@ -265,19 +265,19 @@ instance Fvs Exp Var where
     fvs (FilterE v _ _)         = singleton v
     fvs (CompLetE cl e _)       = fvs cl <> (fvs e <\\> binders cl)
 
-    fvs (StmE stms _) = go stms
+    fvs (StmE stms0 _) = go stms0
       where
         go []                       = mempty
         go (LetS v _ e _    : stms) = delete v (fvs e <> go stms)
         go (LetRefS v _ e _ : stms) = delete v (fvs e <> go stms)
         go (ExpS e _        : stms) = fvs e <> go stms
 
-    fvs (CmdE cmds _) = go cmds
+    fvs (CmdE cmds0 _) = go cmds0
       where
         go []                     = mempty
-        go (LetC cl _     : stms) = fvs cl <> (go stms <\\> binders cl)
-        go (BindC v _ e _ : stms) = delete v (fvs e <> go stms)
-        go (ExpC e _      : stms) = fvs e <> go stms
+        go (LetC cl _     : cmds) = fvs cl <> (go cmds <\\> binders cl)
+        go (BindC v _ e _ : cmds) = delete v (fvs e <> go cmds)
+        go (ExpC e _      : cmds) = fvs e <> go cmds
 
 instance Fvs CompLet Var where
     fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
@@ -291,11 +291,11 @@ instance Fvs CompLet Var where
 instance Binders CompLet Var where
     binders (LetCL v _ _ _)             = singleton v
     binders (LetRefCL v _ _ _)          = singleton v
-    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [v | (v,_,_) <- ps]
-    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [v | (v,_,_) <- ps]
+    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [pv | (pv,_,_) <- ps]
+    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [pv | (pv,_,_) <- ps]
     binders (LetStructCL {})            = mempty
     binders (LetCompCL v _ _ _ _)       = singleton v
-    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [v | (v,_,_) <- ps]
+    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [pv | (pv,_,_) <- ps]
 
 {------------------------------------------------------------------------------
  -

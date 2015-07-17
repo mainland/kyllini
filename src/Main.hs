@@ -31,11 +31,11 @@ import Opts
 main :: IO ()
 main = do
     args <- getArgs
-    (flags, files) <- compilerOpts args
-    if mode flags == Help
+    (fs, files) <- compilerOpts args
+    if mode fs == Help
       then do usage >>= hPutStrLn stderr
               return ()
-      else evalKZC flags (mapM_ runPipeline files) `catch` printFailure
+      else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure

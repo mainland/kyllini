@@ -1,5 +1,5 @@
 GHC=ghc
-GHCFLAGS=-W -Werror
+GHCFLAGS=-Wall -Werror
 
 RUNGHC=runghc
 RUNGHCFLAGS=-W -Werror
