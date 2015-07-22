@@ -12,7 +12,10 @@
 
 module KZC.Check.State (
     TcEnv(..),
-    defaultTcEnv
+    defaultTcEnv,
+
+    TcState(..),
+    defaultTcState
   ) where
 
 import Data.Map (Map)
@@ -47,3 +50,8 @@ defaultTcEnv = TcEnv
     , tyVarInsts = Map.empty
     , envMtvs    = Set.empty
     }
+
+data TcState = TcState
+
+defaultTcState :: TcState
+defaultTcState = TcState

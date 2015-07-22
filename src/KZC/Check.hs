@@ -11,5 +11,5 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Monad
 
-checkProgram :: [Z.CompLet] -> Tc C.Exp
+checkProgram :: [Z.CompLet] -> Tc b C.Exp
 checkProgram _ = fail "Oh no!"

@@ -33,9 +33,10 @@ import KZC.Uniq
 import qualified KZC.Check.State as Check
 
 data KZCEnv = KZCEnv
-    { uniq     :: !(IORef Uniq)
-    , flags    :: !Flags
-    , tcenvref :: !(IORef Check.TcEnv)
+    { uniq       :: !(IORef Uniq)
+    , flags      :: !Flags
+    , tcenvref   :: !(IORef Check.TcEnv)
+    , tcstateref :: !(IORef Check.TcState)
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
@@ -44,9 +45,11 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
     tceref <- newRef Check.defaultTcEnv
-    return KZCEnv { uniq      = u
-                  , flags    = fs
-                  , tcenvref = tceref
+    tcsref <- newRef Check.defaultTcState
+    return KZCEnv { uniq       = u
+                  , flags      = fs
+                  , tcenvref   = tceref
+                  , tcstateref = tcsref
                   }
 
 newtype KZC a = KZC { runKZC :: KZCEnv -> IO a }
