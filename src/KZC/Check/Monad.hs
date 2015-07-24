@@ -399,25 +399,22 @@ instance Compress Type where
     compress tau@(StructT {}) =
         pure tau
 
+    compress (ST tau1 tau2 tau3 l) =
+        ST <$> compress tau1 <*> compress tau2 <*> compress tau3 <*> pure l
+
+    compress (FunT taus tau l) =
+        FunT <$> compress taus <*> compress tau <*> pure l
+
+    compress tau@(NatI {}) =
+        pure tau
+
     compress (C tau l) =
         C <$> compress tau <*> pure l
 
     compress tau@(T {}) =
         pure tau
 
-    compress (ST tau1 tau2 tau3 l) =
-        ST <$> compress tau1 <*> compress tau2 <*> compress tau3 <*> pure l
-
-    compress (FunT iotas taus tau l) =
-        FunT <$> compress iotas <*> compress taus <*> compress tau <*> pure l
-
-    compress tau@(NatI {}) =
-        pure tau
-
     compress tau@(ConstI {}) =
-        pure tau
-
-    compress tau@(VarI {}) =
         pure tau
 
     compress tau@(TyVarT {}) =

@@ -18,7 +18,6 @@ deriving instance Data a
 
 DERIVE(Uniq)
 DERIVE(Name)
-DERIVE(IVar)
 DERIVE(Struct)
 DERIVE(TyVar)
 DERIVE(W)

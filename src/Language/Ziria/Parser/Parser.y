@@ -526,11 +526,11 @@ cast_type :
 arr_length :: { (Ind, Type) }
 arr_length :
     '[' 'length' '(' ID ')' ']' base_type
-      { (ArrI (mkVar (varid $4)), $7) }
+      { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
-      { (ConstI (unLoc $2), $4) }
+      { (ConstI (unLoc $2) (srclocOf $2), $4) }
   | base_type
-      { (NoneI, $1) }
+      { (NoneI (srclocOf $1), $1) }
 
 comp_base_type :: { Type }
 comp_base_type :

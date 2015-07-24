@@ -3,10 +3,17 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- |
+-- Module      : Language.Ziria.Syntax
+-- Copyright   : (c) 2015 Drexel University
+-- License     : BSD-style
+-- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
+-- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
+
 module Language.Ziria.Syntax (
     Var(..),
-    Struct(..),
     Field(..),
+    Struct(..),
     W(..),
     Const(..),
     Exp(..),
@@ -50,10 +57,10 @@ import KZC.Vars
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)
 
-newtype Struct = Struct Name
+newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
-newtype Field = Field Name
+newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
 
 data W = W8
@@ -201,9 +208,9 @@ data Type = UnitT !SrcLoc
           | ST Type Type Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Integer
-         | ArrI Var
-         | NoneI
+data Ind = ConstI Integer !SrcLoc
+         | ArrI Var !SrcLoc
+         | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 {------------------------------------------------------------------------------
@@ -312,14 +319,14 @@ instance Summary Exp where
  -
  ------------------------------------------------------------------------------}
 
+instance Pretty Var where
+    ppr (Var n) = ppr n
+
 instance Pretty Field where
     ppr (Field n) = ppr n
 
 instance Pretty Struct where
     ppr (Struct n) = ppr n
-
-instance Pretty Var where
-    ppr (Var n) = ppr n
 
 instance Pretty W where
     ppr W8  = text "8"
@@ -605,9 +612,9 @@ instance Pretty Type where
         text "ST" <+> ppr w <+> ppr tau1 <+> ppr tau2
 
 instance Pretty Ind where
-    ppr (ConstI i) = ppr i
-    ppr (ArrI v)   = ppr v
-    ppr NoneI      = empty
+    ppr (ConstI i _) = ppr i
+    ppr (ArrI v _)   = ppr v
+    ppr (NoneI _)    = empty
 
 pprStruct :: forall a b . (Pretty a, Pretty b) => [(a, b)] -> Doc
 pprStruct flds =

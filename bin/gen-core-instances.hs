@@ -16,6 +16,10 @@ deriving instance Typeable a; \
 deriving instance Data a
 
 DERIVE(Name)
+DERIVE(Var)
+DERIVE(Field)
+DERIVE(Struct)
+DERIVE(IVar)
 DERIVE(W)
 DERIVE(Const)
 DERIVE(Exp)

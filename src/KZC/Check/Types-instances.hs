@@ -9,12 +9,11 @@ instance Located Type where
   locOf (RefT _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
   locOf (StructT _ l) = locOf l
+  locOf (ST _ _ _ l) = locOf l
+  locOf (FunT _ _ l) = locOf l
+  locOf (NatI l) = locOf l
   locOf (C _ l) = locOf l
   locOf (T l) = locOf l
-  locOf (ST _ _ _ l) = locOf l
-  locOf (FunT _ _ _ l) = locOf l
-  locOf (NatI l) = locOf l
   locOf (ConstI _ l) = locOf l
-  locOf (VarI _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
   locOf (MetaT _ l) = locOf l

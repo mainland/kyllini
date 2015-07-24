@@ -8,10 +8,10 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module Language.Core.Syntax (
-    IVar,
-    Var,
-    Struct,
-    Field,
+    Var(..),
+    Field(..),
+    Struct(..),
+    IVar(..),
     W(..),
     Const(..),
     Exp(..),
@@ -32,13 +32,17 @@ import Text.PrettyPrint.Mainland
 import KZC.Name
 import KZC.Pretty
 
-type IVar = Name
+newtype Var = Var Name
+  deriving (Eq, Ord, Read, Show)
 
-type Var = Name
+newtype Field = Field Name
+  deriving (Eq, Ord, Read, Show)
 
-type Struct = Name
+newtype Struct = Struct Name
+  deriving (Eq, Ord, Read, Show)
 
-type Field = Name
+newtype IVar = IVar Name
+  deriving (Eq, Ord, Read, Show)
 
 data W = W8
        | W16
@@ -61,12 +65,12 @@ data Exp = ConstE Const !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
-         | LetE Var Exp Exp !SrcLoc
+         | LetE Var Type Exp Exp !SrcLoc
          -- Functions
-         | LetFunE Var [IVarBind] [VarBind] Exp Exp !SrcLoc
-         | CallE Var [IVar] [Var] !SrcLoc
+         | LetFunE Var [IVarBind] [VarBind] Type Exp Exp !SrcLoc
+         | CallE Var [Exp] [Exp] !SrcLoc
          -- References
-         | LetRefE Var Exp Exp !SrcLoc
+         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | DerefE Var !SrcLoc
          | AssignE Var Exp !SrcLoc
          -- Loops
@@ -148,9 +152,21 @@ data Omega = C Type
 data Iota = NatI
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Integer
-         | VarI Var
+data Ind = ConstI Integer !SrcLoc
+         | VarI Var !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+instance Pretty Var where
+    ppr (Var n) = ppr n
+
+instance Pretty Field where
+    ppr (Field n) = ppr n
+
+instance Pretty Struct where
+    ppr (Struct n) = ppr n
+
+instance Pretty IVar where
+    ppr (IVar n) = ppr n
 
 instance Pretty W where
     ppr W8  = text "8"
@@ -198,24 +214,25 @@ instance Pretty Exp where
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
-    pprPrec p (LetE v e1 e2 _) =
+    pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+>
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+>
         text "="   <+> pprPrec appPrec1 e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
 
-    pprPrec p (LetFunE f ibs vbs e1 e2 _) =
+    pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
         parensIf (p >= appPrec) $
         text "letfun" <+> ppr f <> parens (commasep (map ppr ibs ++ map ppr vbs)) <+>
+        text ":"      <+> ppr tau <+>
         text "="      <+> pprPrec appPrec1 e1 <+/>
         text "in"     <+> pprPrec appPrec1 e2
 
-    pprPrec _ (CallE f ivs vs _) =
-        ppr f <> parens (commasep (map ppr ivs ++ map ppr vs))
+    pprPrec _ (CallE f ies es _) =
+        ppr f <> parens (commasep (map ppr ies ++ map ppr es))
 
-    pprPrec p (LetRefE v e1 e2 _) =
+    pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+>
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+>
         text "="   <+> pprPrec appPrec1 e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
 
@@ -368,9 +385,8 @@ instance Pretty Iota where
     ppr NatI = text "nat"
 
 instance Pretty Ind where
-    ppr (ConstI i) = ppr i
-    ppr (VarI v)   = ppr v
-
+    ppr (ConstI i _) = ppr i
+    ppr (VarI v _)   = ppr v
 
 -- %left '&&' '||'
 -- %left '==' '!='

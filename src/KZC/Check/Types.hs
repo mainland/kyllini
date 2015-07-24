@@ -25,9 +25,6 @@ import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
-newtype IVar = IVar Name
-  deriving (Eq, Ord, Show)
-
 newtype Struct = Struct Name
   deriving (Eq, Ord, Show)
 
@@ -50,13 +47,16 @@ data Type = UnitT !SrcLoc
           | RefT Type !SrcLoc
           | ArrT Type Type !SrcLoc
           | StructT Struct !SrcLoc
+          | ST Type Type Type !SrcLoc
+          | FunT [Type] Type !SrcLoc
+          -- nat kind
+          | NatI !SrcLoc
+          -- omega
           | C Type !SrcLoc
           | T !SrcLoc
-          | ST Type Type Type !SrcLoc
-          | FunT [Type] [Type] Type !SrcLoc
-          | NatI !SrcLoc
+          -- array type indices
           | ConstI Integer !SrcLoc
-          | VarI IVar !SrcLoc
+
           | TyVarT TyVar !SrcLoc
           | MetaT MetaTv !SrcLoc
   deriving (Eq, Ord, Show)
@@ -94,88 +94,84 @@ tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
  ------------------------------------------------------------------------------}
 
 instance Fvs Type TyVar where
-    fvs (UnitT {})              = mempty
-    fvs (BoolT {})              = mempty
-    fvs (BitT {})               = mempty
-    fvs (IntT {})               = mempty
-    fvs (FloatT {})             = mempty
-    fvs (ComplexT {})           = mempty
-    fvs (StringT {})            = mempty
-    fvs (RefT tau _)            = fvs tau
-    fvs (ArrT tau1 tau2 _)      = fvs tau1 <> fvs tau2
-    fvs (StructT _ _)           = mempty
-    fvs (C tau _)               = fvs tau
-    fvs (T _)                   = mempty
-    fvs (ST omega tau1 tau2 _)  = fvs omega <> fvs tau1 <> fvs tau2
-    fvs (FunT iotas taus tau _) = fvs iotas <> fvs taus <> fvs tau
-    fvs (NatI _)                = mempty
-    fvs (ConstI _ _)            = mempty
-    fvs (VarI _ _)              = mempty
-    fvs (TyVarT tv _)           = singleton tv
-    fvs (MetaT _ _)             = mempty
+    fvs (UnitT {})             = mempty
+    fvs (BoolT {})             = mempty
+    fvs (BitT {})              = mempty
+    fvs (IntT {})              = mempty
+    fvs (FloatT {})            = mempty
+    fvs (ComplexT {})          = mempty
+    fvs (StringT {})           = mempty
+    fvs (RefT tau _)           = fvs tau
+    fvs (ArrT tau1 tau2 _)     = fvs tau1 <> fvs tau2
+    fvs (StructT _ _)          = mempty
+    fvs (ST omega tau1 tau2 _) = fvs omega <> fvs tau1 <> fvs tau2
+    fvs (FunT taus tau _)      = fvs taus <> fvs tau
+    fvs (NatI _)               = mempty
+    fvs (C tau _)              = fvs tau
+    fvs (T _)                  = mempty
+    fvs (ConstI _ _)           = mempty
+    fvs (TyVarT tv _)          = singleton tv
+    fvs (MetaT _ _)            = mempty
 
 instance Fvs Type MetaTv where
-    fvs (UnitT {})              = mempty
-    fvs (BoolT {})              = mempty
-    fvs (BitT {})               = mempty
-    fvs (IntT {})               = mempty
-    fvs (FloatT {})             = mempty
-    fvs (ComplexT {})           = mempty
-    fvs (StringT {})            = mempty
-    fvs (RefT tau _)            = fvs tau
-    fvs (ArrT tau1 tau2 _)      = fvs tau1 <> fvs tau2
-    fvs (StructT _ _)           = mempty
-    fvs (C tau _)               = fvs tau
-    fvs (T _)                   = mempty
-    fvs (ST omega tau1 tau2 _)  = fvs omega <> fvs tau1 <> fvs tau2
-    fvs (FunT iotas taus tau _) = fvs iotas <> fvs taus <> fvs tau
-    fvs (NatI _)                = mempty
-    fvs (ConstI _ _)            = mempty
-    fvs (VarI _ _)              = mempty
-    fvs (TyVarT _ _)            = mempty
-    fvs (MetaT mtv _)           = singleton mtv
+    fvs (UnitT {})             = mempty
+    fvs (BoolT {})             = mempty
+    fvs (BitT {})              = mempty
+    fvs (IntT {})              = mempty
+    fvs (FloatT {})            = mempty
+    fvs (ComplexT {})          = mempty
+    fvs (StringT {})           = mempty
+    fvs (RefT tau _)           = fvs tau
+    fvs (ArrT tau1 tau2 _)     = fvs tau1 <> fvs tau2
+    fvs (StructT _ _)          = mempty
+    fvs (ST omega tau1 tau2 _) = fvs omega <> fvs tau1 <> fvs tau2
+    fvs (FunT taus tau _)      = fvs taus <> fvs tau
+    fvs (NatI _)               = mempty
+    fvs (C tau _)              = fvs tau
+    fvs (T _)                  = mempty
+    fvs (ConstI _ _)           = mempty
+    fvs (TyVarT _ _)           = mempty
+    fvs (MetaT mtv _)          = singleton mtv
 
 instance HasVars Type TyVar where
-    allVars (UnitT {})              = mempty
-    allVars (BoolT {})              = mempty
-    allVars (BitT {})               = mempty
-    allVars (IntT {})               = mempty
-    allVars (FloatT {})             = mempty
-    allVars (ComplexT {})           = mempty
-    allVars (StringT {})            = mempty
-    allVars (RefT tau _)            = allVars tau
-    allVars (ArrT tau1 tau2 _)      = allVars tau1 <> allVars tau2
-    allVars (StructT _ _)           = mempty
-    allVars (C tau _)               = allVars tau
-    allVars (T _)                   = mempty
-    allVars (ST omega tau1 tau2 _)  = allVars omega <> allVars tau1 <> allVars tau2
-    allVars (FunT iotas taus tau _) = allVars iotas <> allVars taus <> allVars tau
-    allVars (NatI _)                = mempty
-    allVars (ConstI _ _)            = mempty
-    allVars (VarI _ _)              = mempty
-    allVars (TyVarT tv _)           = singleton tv
-    allVars (MetaT _ _)             = mempty
+    allVars (UnitT {})             = mempty
+    allVars (BoolT {})             = mempty
+    allVars (BitT {})              = mempty
+    allVars (IntT {})              = mempty
+    allVars (FloatT {})            = mempty
+    allVars (ComplexT {})          = mempty
+    allVars (StringT {})           = mempty
+    allVars (RefT tau _)           = allVars tau
+    allVars (ArrT tau1 tau2 _)     = allVars tau1 <> allVars tau2
+    allVars (StructT _ _)          = mempty
+    allVars (ST omega tau1 tau2 _) = allVars omega <> allVars tau1 <> allVars tau2
+    allVars (FunT taus tau _)      = allVars taus <> allVars tau
+    allVars (NatI _)               = mempty
+    allVars (C tau _)              = allVars tau
+    allVars (T _)                  = mempty
+    allVars (ConstI _ _)           = mempty
+    allVars (TyVarT tv _)          = singleton tv
+    allVars (MetaT _ _)            = mempty
 
 instance HasVars Type MetaTv where
-    allVars (UnitT {})              = mempty
-    allVars (BoolT {})              = mempty
-    allVars (BitT {})               = mempty
-    allVars (IntT {})               = mempty
-    allVars (FloatT {})             = mempty
-    allVars (ComplexT {})           = mempty
-    allVars (StringT {})            = mempty
-    allVars (RefT tau _)            = allVars tau
-    allVars (ArrT tau1 tau2 _)      = allVars tau1 <> allVars tau2
-    allVars (StructT _ _)           = mempty
-    allVars (C tau _)               = allVars tau
-    allVars (T _)                   = mempty
-    allVars (ST omega tau1 tau2 _)  = allVars omega <> allVars tau1 <> allVars tau2
-    allVars (FunT iotas taus tau _) = allVars iotas <> allVars taus <> allVars tau
-    allVars (NatI _)                = mempty
-    allVars (ConstI _ _)            = mempty
-    allVars (VarI _ _)              = mempty
-    allVars (TyVarT _ _)            = mempty
-    allVars (MetaT mtv _)           = singleton mtv
+    allVars (UnitT {})             = mempty
+    allVars (BoolT {})             = mempty
+    allVars (BitT {})              = mempty
+    allVars (IntT {})              = mempty
+    allVars (FloatT {})            = mempty
+    allVars (ComplexT {})          = mempty
+    allVars (StringT {})           = mempty
+    allVars (RefT tau _)           = allVars tau
+    allVars (ArrT tau1 tau2 _)     = allVars tau1 <> allVars tau2
+    allVars (StructT _ _)          = mempty
+    allVars (ST omega tau1 tau2 _) = allVars omega <> allVars tau1 <> allVars tau2
+    allVars (FunT taus tau _)      = allVars taus <> allVars tau
+    allVars (NatI _)               = mempty
+    allVars (C tau _)              = allVars tau
+    allVars (T _)                  = mempty
+    allVars (ConstI _ _)           = mempty
+    allVars (TyVarT _ _)           = mempty
+    allVars (MetaT mtv _)          = singleton mtv
 
 instance Subst Type MetaTv Type where
     subst _ _ tau@(UnitT {}) =
@@ -208,25 +204,22 @@ instance Subst Type MetaTv Type where
     subst _ _ tau@(StructT {}) =
         tau
 
+    subst theta phi (ST tau1 tau2 tau3 l) =
+        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
+
+    subst theta phi (FunT taus tau l) =
+        FunT (subst theta phi taus) (subst theta phi tau) l
+
+    subst _ _ tau@(NatI {}) =
+        tau
+
     subst theta phi (C tau l) =
         C (subst theta phi tau) l
 
     subst _ _ tau@(T {}) =
         tau
 
-    subst theta phi (ST tau1 tau2 tau3 l) =
-        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
-
-    subst theta phi (FunT iotas taus tau l) =
-        FunT (subst theta phi iotas) (subst theta phi taus) (subst theta phi tau) l
-
-    subst _ _ tau@(NatI {}) =
-        tau
-
     subst _ _ tau@(ConstI {}) =
-        tau
-
-    subst _ _ tau@(VarI {}) =
         tau
 
     subst _ _ tau@(TyVarT {}) =
@@ -277,9 +270,6 @@ tyappPrec = 1
 tyappPrec1 :: Int
 tyappPrec1 = tyappPrec + 1
 
-instance Pretty IVar where
-    ppr (IVar n) = ppr n
-
 instance Pretty Struct where
     ppr (Struct n) = ppr n
 
@@ -324,6 +314,19 @@ instance Pretty Type where
     pprPrec _ (StructT s _) =
         text "struct" <+> ppr s
 
+    pprPrec p (ST w tau1 tau2 _) =
+        parensIf (p > tyappPrec) $
+        text "ST" <+> ppr w <+> pprPrec tyappPrec1 tau1 <+> pprPrec tyappPrec1 tau2
+
+    pprPrec p (FunT taus tau _) =
+        parensIf (p > arrowPrec) $
+        parens (commasep (map ppr taus)) <+>
+        text "->" <+>
+        pprPrec arrowPrec1 tau
+
+    pprPrec _ (NatI _) =
+        text "nat"
+
     pprPrec p (C tau _) =
         parensIf (p > tyappPrec) $
         text "C" <+> ppr tau
@@ -331,24 +334,8 @@ instance Pretty Type where
     pprPrec _ (T _) =
         text "T"
 
-    pprPrec p (ST w tau1 tau2 _) =
-        parensIf (p > tyappPrec) $
-        text "ST" <+> ppr w <+> pprPrec tyappPrec1 tau1 <+> pprPrec tyappPrec1 tau2
-
-    pprPrec p (FunT iotas taus tau _) =
-        parensIf (p > arrowPrec) $
-        parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus)) <+>
-        text "->" <+>
-        pprPrec arrowPrec1 tau
-
-    pprPrec _ (NatI _) =
-        text "nat"
-
     pprPrec _ (ConstI i _) =
         ppr i
-
-    pprPrec _ (VarI v _) =
-        ppr v
 
     pprPrec _ (MetaT mtv _) =
         (text . show) mtv
