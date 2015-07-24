@@ -313,6 +313,18 @@ instance Binders CompLet Var where
 instance Summary Exp where
     summary e = text "expression" <+> ppr e
 
+instance Summary StructDef where
+    summary (StructDef s _ _) = text "struct" <+> ppr s
+
+instance Summary CompLet where
+    summary (LetCL v _ _ _)            = text "definition of" <+> ppr v
+    summary (LetRefCL v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunCL v _ _ _ _)       = text "definition of" <+> ppr v
+    summary (LetFunExternalCL v _ _ _) = text "definition of" <+> ppr v
+    summary (LetStructCL s _)          = text "definition of" <+> summary s
+    summary (LetCompCL v _ _ _ _)      = text "definition of" <+> ppr v
+    summary (LetFunCompCL v _ _ _ _ _) = text "definition of" <+> ppr v
+
 {------------------------------------------------------------------------------
  -
  - Pretty printing
