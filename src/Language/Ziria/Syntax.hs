@@ -447,7 +447,7 @@ instance Pretty Exp where
         text "read" <> pprTypeAnn tau
 
     pprPrec _ (WriteE tau _) =
-        text "read" <> pprTypeAnn tau
+        text "write" <> pprTypeAnn tau
 
     pprPrec _ (StandaloneE e _) =
         text "standalone" <+> ppr e
