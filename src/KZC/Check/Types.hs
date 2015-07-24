@@ -76,7 +76,7 @@ instance Ord MetaTv where
 type TyRef = IORef (Maybe Type)
 
 instance Named TyVar where
-    namedString (TyVar n) = namedString n
+    namedSymbol (TyVar n) = namedSymbol n
 
 {------------------------------------------------------------------------------
  -

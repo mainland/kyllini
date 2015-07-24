@@ -45,7 +45,6 @@ module Language.Ziria.Syntax (
 
 import Data.Loc
 import Data.Monoid
-import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
@@ -229,8 +228,8 @@ mkField :: Name -> Field
 mkField n = Field n
 
 imField, reField :: Field
-imField = Field $ Name (intern "im") noLoc
-reField = Field $ Name (intern "re") noLoc
+imField = Field $ mkName "im" noLoc
+reField = Field $ mkName "re"  noLoc
 
 {------------------------------------------------------------------------------
  -

@@ -193,11 +193,11 @@ import KZC.Name
 
 identifier :: { Var }
 identifier :
-    ID       { mkVar $ Name (getID $1) (srclocOf $1) }
-  | STRUCTID { mkVar $ Name (getSTRUCTID $1) (srclocOf $1) }
-  | 'arr'    { mkVar $ Name (intern "arr") (srclocOf $1) }
-  | 'fun'    { mkVar $ Name (intern" fun") (srclocOf $1) }
-  | 'length' { mkVar $ Name (intern "length") (srclocOf $1) }
+    ID       { mkVar $ mkSymName (getID $1) (locOf $1) }
+  | STRUCTID { mkVar $ mkSymName (getSTRUCTID $1) (locOf $1) }
+  | 'arr'    { mkVar $ mkName "arr" (locOf $1) }
+  | 'fun'    { mkVar $ mkName "fun" (locOf $1) }
+  | 'length' { mkVar $ mkName "length" (locOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -447,12 +447,12 @@ exp_rlist1 :
 -- Struct initializers
 structid :: { Struct }
 structid :
-    STRUCTID    { mkStruct $ Name (getSTRUCTID $1) (srclocOf $1) }
-  | 'complex'   { mkStruct $ Name (intern "complex") (srclocOf $1) }
-  | 'complex8'  { mkStruct $ Name (intern "complex8") (srclocOf $1) }
-  | 'complex16' { mkStruct $ Name (intern "complex16") (srclocOf $1) }
-  | 'complex32' { mkStruct $ Name (intern "complex32") (srclocOf $1) }
-  | 'complex64' { mkStruct $ Name (intern "complex64") (srclocOf $1) }
+    STRUCTID    { mkStruct $ mkSymName (getSTRUCTID $1) (locOf $1) }
+  | 'complex'   { mkStruct $ mkName "complex" (locOf $1) }
+  | 'complex8'  { mkStruct $ mkName "complex8" (locOf $1) }
+  | 'complex16' { mkStruct $ mkName "complex16" (locOf $1) }
+  | 'complex32' { mkStruct $ mkName "complex32" (locOf $1) }
+  | 'complex64' { mkStruct $ mkName "complex64" (locOf $1) }
 
 struct_init_list1 :: { [(Field, Exp)] }
 struct_init_list1 :
@@ -951,13 +951,13 @@ locate :: Loc -> (SrcLoc -> a) -> L a
 locate loc f = L loc (f (SrcLoc loc))
 
 varid :: L T.Token -> Name
-varid t = Name (getID t) (srclocOf t)
+varid t = mkSymName (getID t) (locOf t)
 
 structid :: L T.Token -> Name
-structid t = Name (getSTRUCTID t) (srclocOf t)
+structid t = mkSymName (getSTRUCTID t) (locOf t)
 
 fieldid :: L T.Token -> Name
-fieldid t = Name (getID t) (srclocOf t)
+fieldid t = mkSymName (getID t) (locOf t)
 
 constIntExp :: Exp -> P Integer
 constIntExp e = go e
