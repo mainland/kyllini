@@ -9,13 +9,16 @@ import Data.Generics
 
 import KZC.Derive
 import KZC.Name
+import KZC.Uniq
 import Language.Core.Syntax
 
 #define DERIVE(a) \
 deriving instance Typeable a; \
 deriving instance Data a
 
+DERIVE(Uniq)
 DERIVE(Name)
+DERIVE(NameSort)
 DERIVE(Var)
 DERIVE(Field)
 DERIVE(Struct)
