@@ -68,6 +68,7 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
 import KZC.Error
