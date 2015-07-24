@@ -161,13 +161,13 @@ kzc : $(SRC) dist/build/autogen/cabal_macros.h
 # Generated instances
 #
 $(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
-	runhaskell $(RUNGHCFLAGS) $< > $@
+	runhaskell $(RUNGHCFLAGS) $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Core/Syntax.hs
-	runhaskell $(RUNGHCFLAGS) $< > $@
+	runhaskell $(RUNGHCFLAGS) $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
-	runhaskell $(RUNGHCFLAGS) $< > $@
+	runhaskell $(RUNGHCFLAGS) $< > $@ || rm -f $@
 
 #
 # Lexer and parser generation
