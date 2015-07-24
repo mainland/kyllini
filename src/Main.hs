@@ -53,6 +53,8 @@ runPipeline filepath = do
     whenDumpFlag DumpCPP $ do
         liftIO $ TIO.writeFile (addExtension root (".pp" ++ ext)) text'
     decls <- liftIO $ parseProgram text' start
+    whenDynFlag PrettyPrint $
+      liftIO $ putDocLn $ ppr decls
     whenDynFlag Check $
       void $ pipeline decls
   where
