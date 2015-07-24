@@ -536,6 +536,8 @@ instance Pretty CompLet where
         text "fun" <+> text "comp" <+> pprRange range <+>
         pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+> ppr e
 
+    pprList cls = stack (map ppr cls)
+
 instance Pretty Stm where
     ppr (LetS v tau e _) =
         text "let" <+> pprSig v tau <+> text "=" <+> ppr e
