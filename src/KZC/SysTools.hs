@@ -52,12 +52,15 @@ runCpp filepath txt = do
     let args'     =   args ++ ["-undef", "-", "-o", "-"] ++
                       ["-I"++path | path <- takeDirectory filepath : includePaths] ++
                       ["-D"++d++"="++def | (d, def) <- defines ++ globalDefines]
-    (ex, out, err) <- liftIO $ readProcessWithExitCode prog args' txt
+    (ex, out, err) <- liftIO $ readProcessWithExitCode prog args' (prefix <> txt)
     when (ex /= ExitSuccess) $ do
        faildoc $  text "Cannot invoke cpp:" <+>
                   (text . show) ex <+> (string . T.unpack) err
     return out
   where
+    prefix :: T.Text
+    prefix = T.pack ("# 1 \"" ++ filepath ++ "\"\n")
+
     prog :: String
     args :: [String]
     prog:args = words CPP
