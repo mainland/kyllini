@@ -129,8 +129,7 @@ instance Monad (Tc b) where
     m1 >> m2 = Tc $ \r s k -> unTc m1 r s $ \_ r' s' -> unTc m2    r' s' $ \y r'' s'' ->
                k y r'' s''
 
-    fail err = Tc $ \_ _ -> fail err
-
+    fail msg = throw (FailException (string msg))
 
 instance MonadReader TcEnv (Tc b) where
     ask = Tc $ \r s k -> k r r s
