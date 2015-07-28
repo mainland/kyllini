@@ -732,7 +732,7 @@ acomp :
       }
 
   | 'do' stm_block
-      { ReturnE AutoInline (stmsE $2) ($1 `srcspan` $2) }
+      { stmsE $2 }
   | 'seq' '{' commands '}'
       { cmdsE $3 }
   | '{' commands '}'

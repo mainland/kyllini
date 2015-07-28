@@ -37,6 +37,9 @@ data W = W8
        | W64
   deriving (Eq, Ord, Read, Show)
 
+dEFAULT_INT_WIDTH :: W
+dEFAULT_INT_WIDTH = W32
+
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
@@ -282,6 +285,9 @@ instance Pretty Type where
 
     pprPrec _ (BitT _) =
         text "bit"
+
+    pprPrec _ (IntT w _) | w == dEFAULT_INT_WIDTH =
+        text "int"
 
     pprPrec _ (IntT w _) =
         text "int" <> ppr w

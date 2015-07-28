@@ -68,6 +68,9 @@ data W = W8
        | W64
   deriving (Eq, Ord, Read, Show)
 
+dEFAULT_INT_WIDTH :: W
+dEFAULT_INT_WIDTH = W32
+
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
@@ -313,7 +316,7 @@ instance Binders CompLet Var where
  ------------------------------------------------------------------------------}
 
 instance Summary Exp where
-    summary e = text "expression" <+> ppr e
+    summary e = text "expression:" <+> align (ppr e)
 
 instance Summary StructDef where
     summary (StructDef s _ _) = text "struct" <+> ppr s
@@ -331,6 +334,11 @@ instance Summary Stm where
     summary (LetS v _ _ _)    = text "definition of" <+> ppr v
     summary (LetRefS v _ _ _) = text "definition of" <+> ppr v
     summary (ExpS e _)        = summary e
+
+instance Summary Cmd where
+    summary (LetC cl _)     = summary cl
+    summary (BindC v _ _ _) = text "definition of" <+> ppr v
+    summary (ExpC e _)      = summary e
 
 {------------------------------------------------------------------------------
  -
@@ -440,9 +448,6 @@ instance Pretty Exp where
     pprPrec _ (ErrorE s _) =
         text "error" <+> ppr s
 
-    pprPrec _ (ReturnE AutoInline e@(StmE {}) _) =
-        text "do" <+> ppr e
-
     pprPrec _ (ReturnE ann e _) =
         ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
@@ -484,11 +489,11 @@ instance Pretty Exp where
     pprPrec _ (FilterE v tau _) =
         text "filter" <+> pprSig v tau
 
-    pprPrec _ (CompLetE l e _) =
-        ppr l <+/> nest 2 (text "in" <+/> ppr e)
+    pprPrec _ (CompLetE cl e _) =
+        nest 2 $ ppr cl <+/> text "in" <+/> ppr e
 
     pprPrec _ (StmE stms _) =
-        ppr stms
+        text "do" <+> ppr stms
 
     pprPrec _ (CmdE cmds _) =
         ppr cmds
@@ -612,6 +617,9 @@ instance Pretty Type where
 
     pprPrec _ (BitT _) =
         text "bit"
+
+    pprPrec _ (IntT w _) | w == dEFAULT_INT_WIDTH =
+        text "int"
 
     pprPrec _ (IntT w _) =
         text "int" <> ppr w

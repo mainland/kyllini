@@ -14,6 +14,9 @@ import Data.Loc
 
 import KZC.Check.Types
 
+unitT :: Type
+unitT = UnitT noLoc
+
 intT :: Type
 intT = IntT W32 noLoc
 

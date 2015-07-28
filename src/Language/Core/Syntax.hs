@@ -70,8 +70,8 @@ data Exp = ConstE Const !SrcLoc
          | LetFunE Var [IVarBind] [VarBind] Type Exp Exp !SrcLoc
          | CallE Var [Exp] [Exp] !SrcLoc
          -- References
-         | DerefE Var !SrcLoc
-         | AssignE Var Exp !SrcLoc
+         | DerefE Exp !SrcLoc
+         | AssignE Exp Exp !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | UntilE Exp Exp !SrcLoc

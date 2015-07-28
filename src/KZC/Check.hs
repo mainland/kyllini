@@ -23,6 +23,8 @@ module KZC.Check (
 import Control.Applicative hiding ((<|>))
 import Control.Monad (filterM,
                       when,
+                      replicateM,
+                      zipWithM,
                       zipWithM_)
 import Control.Monad.Ref
 import Data.IORef
@@ -44,6 +46,7 @@ import KZC.Vars
 
 data Expected a = Infer (IORef a)
                 | Check a
+  deriving (Show)
 
 readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
@@ -70,16 +73,26 @@ checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
             -> Tc b (Type, Tc c (Maybe C.Exp))
 checkLetRef v ztau e_init = do
     tau <- fromZ ztau
-    extendVars [(v, tau)] $ do
+    extendVars [(v, refT tau)] $ do
     mce1 <- case e_init of
               Nothing -> return $ return Nothing
               Just e  -> do mce <- checkExp e tau
                             return $ Just <$> mce
-    return (tau, mce1)
+    return (refT tau, mce1)
+
+checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp
+            -> Tc b (Type, [(Z.Var, Type)], Tc c C.Exp)
+checkLetFun f ztau ps e = do
+    tau   <- fromZ ztau
+    ptaus <- mapM fromZ ps
+    extendVars ((f,tau) : ptaus) $ do
+    (tau_ret, mce1) <- inferExp e
+    unifyTypes (funT (map snd ptaus) tau_ret) tau
+    return (tau, ptaus, mce1)
 
 checkCompLet :: Z.CompLet
-             -> Tc C.Exp (Tc b C.Exp)
-             -> Tc C.Exp (Tc b C.Exp)
+             -> Tc b (Tc c C.Exp)
+             -> Tc b (Tc c C.Exp)
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
     (tau, mce1) <- withSummaryContext cl $ do
                    checkLet v ztau e
@@ -103,15 +116,10 @@ checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
                 return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
-    (tau, ptaus, mce1) <- withSummaryContext cl $ do
-                          tau   <- fromZ ztau
-                          ptaus <- mapM fromZ ps
-                          extendVars ((f,tau) : ptaus) $ do
-                          (tau_ret, mce1) <- inferExp e
-                          unifyTypes (funT (map snd ptaus) tau_ret) tau
-                          return (tau, ptaus, mce1)
-    mce2 <- extendVars ((f,tau) : ptaus) $
-            k
+    (tau, ptaus, mce1) <- withSummaryContext cl $
+                          checkLetFun f ztau ps e
+    mce2               <- extendVars ((f,tau) : ptaus) $
+                          k
     return $ do cf     <- trans f
                 cptaus <- mapM trans ptaus
                 ctau   <- trans tau
@@ -120,17 +128,26 @@ checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
                 return $ C.LetFunE cf [] cptaus ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
-    (tau, mce1) <- withSummaryContext cl $ do
-                   tau <- fromZ ztau
-                   extendVars [(v, tau)] $ do
-                   mce1 <- checkExp e tau
-                   return (tau, mce1)
-    mce2  <- extendVars [(v, tau)] $ k
+    (tau, mce1) <- withSummaryContext cl $
+                   checkLet v ztau e
+    mce2        <- extendVars [(v, tau)] $ k
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- mce1
                 ce2  <- mce2
                 return $ C.LetE cv ctau (Just ce1) ce2 l
+
+checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
+    (tau, ptaus, mce1) <- withSummaryContext cl $
+                          checkLetFun f ztau ps e
+    mce2               <- extendVars ((f,tau) : ptaus) $
+                          k
+    return $ do cf     <- trans f
+                cptaus <- mapM trans ptaus
+                ctau   <- trans tau
+                ce1    <- mce1
+                ce2    <- mce2
+                return $ C.LetFunE cf [] cptaus ctau ce1 ce2 l
 
 checkCompLet e _ = faildoc $ text "checkCompLet: can't type check:" <+> ppr e
 
@@ -208,6 +225,61 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
     binop op _ _ =
         faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
 
+tcExp (Z.CallE v es l) exp_ty = do
+    (taus, tau) <- lookupVar v >>= checkFunType (length es)
+    mces        <- zipWithM checkExp es taus
+    instType tau exp_ty
+    return $ do cv  <- trans v
+                ces <- sequence mces
+                return $ C.CallE cv [] ces l
+
+tcExp (Z.AssignE e1 e2 l) exp_ty = do
+    (gamma, mce1) <- withSummaryContext e1 $ do
+                     (tau, mce1) <- inferExp e1
+                     gamma       <- checkRefType tau
+                     return (gamma, mce1)
+    mce2  <- withSummaryContext e2 $
+             checkExp e2 gamma
+    alpha <- newMetaTvT l
+    beta  <- newMetaTvT l
+    instType (ST (C (UnitT l) l) alpha beta l) exp_ty
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.AssignE ce1 ce2 l
+
+tcExp (Z.IdxE e1 e2 len l) exp_ty = do
+    (tau, mce1) <- withSummaryContext e1 $
+                   inferExp e1
+    tau'        <- compress tau
+    mce2        <- withSummaryContext e2 $
+                   checkInd tau'
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.IdxE ce1 ce2 len l
+  where
+    checkInd :: Type -> Tc b (Tc c C.Exp)
+    checkInd (RefT (ArrT _ tau _) _) = do
+        (tau2, mce2) <- inferExp e2
+        checkIntType tau2
+        instType (RefT (mkArrSlice tau len) l) exp_ty
+        return mce2
+
+    checkInd (ArrT _ tau _) = do
+        (tau2, mce2) <- inferExp e2
+        checkIntType tau2
+        instType (mkArrSlice tau len) exp_ty
+        return mce2
+
+    checkInd tau = do
+        i     <- newMetaTvT l
+        alpha <- newMetaTvT l
+        unifyTypes tau (ArrT i alpha l)
+        compress tau >>= checkInd
+
+    mkArrSlice :: Type -> Maybe Integer -> Type
+    mkArrSlice tau Nothing  = tau
+    mkArrSlice tau (Just i) =  ArrT (ConstI i l) tau l
+
 tcExp (Z.ReturnE _ e l) exp_ty = do
     (nu, mce) <- inferExp e
     alpha     <- newMetaTvT l
@@ -216,13 +288,47 @@ tcExp (Z.ReturnE _ e l) exp_ty = do
     return $ do ce <- mce
                 return $ C.ReturnE ce l
 
+tcExp (Z.TakeE l) exp_ty = do
+    alpha <- newMetaTvT l
+    beta  <- newMetaTvT l
+    instType (ST (C alpha l) alpha beta l) exp_ty
+    return $ return $ C.TakeE l
+
+tcExp (Z.TakesE i l) exp_ty = do
+    alpha <- newMetaTvT l
+    beta  <- newMetaTvT l
+    instType (ST (C (ArrT (ConstI i l) alpha l) l) alpha beta l) exp_ty
+    return $ return $ C.TakesE (fromIntegral i) l
+
+tcExp (Z.EmitE e l) exp_ty = do
+    alpha       <- newMetaTvT l
+    (beta, mce) <- inferExp e
+    instType (ST (C (UnitT l) l) alpha beta l) exp_ty
+    return $ do ce <- mce
+                return $ C.EmitE ce l
+
+tcExp (Z.RepeatE _ e l) exp_ty = do
+    (alpha, beta, mce) <- withSummaryContext e $ do
+                          (tau, mce)    <- inferExp e
+                          (alpha, beta) <- checkSTCUnitType tau
+                          return (alpha, beta, mce)
+    instType (ST (T l) alpha beta l) exp_ty
+    return $ do ce <- mce
+                return $ C.RepeatE ce l
+
 tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
-    (tau_e1, mce1)        <- inferExp e1
-    (omega1, alpha, beta) <- checkSTType tau_e1
-    omega2                <- newMetaTvT e2
-    mce2                  <- checkExp e2 (stT omega2 alpha beta)
-    common_refs           <- filterM isRefVar (Set.toList common_fvs)
-    omega                 <- joinOmega omega1 omega2
+    (omega1, alpha, beta, mce1) <-
+        withSummaryContext e1 $ do
+        (tau_e1, mce1)        <- inferExp e1
+        (omega1, alpha, beta) <- checkSTType tau_e1
+        return (omega1, alpha, beta, mce1)
+    (omega2, mce2) <-
+        withSummaryContext e2 $ do
+        omega2 <- newMetaTvT e2
+        mce2   <- checkExp e2 (stT omega2 alpha beta)
+        return (omega2, mce2)
+    omega       <- joinOmega omega1 omega2
+    common_refs <- filterM isRefVar (Set.toList common_fvs)
     when (not (null common_refs)) $
         faildoc $ text "Branches of arrow expression share mutable state:" <+>
                   commasep (map ppr common_refs)
@@ -268,19 +374,30 @@ tcExp (Z.MapE _ v ztau l) exp_tau = do
                          C.emitE (C.callE cv [C.varE cx])
   where
     checkFunType :: Type -> Tc b (Type, Type)
-    checkFunType (FunT [alpha] (ST (C beta _) alpha' beta' _) _) = do
-        unifyTypes alpha' alpha
-        unifyTypes beta'  beta
-        return (alpha, beta)
+    checkFunType tau =
+        compress tau >>= go
+      where
+        go :: Type -> Tc b (Type, Type)
+        go (FunT [alpha] (ST (C beta _) alpha' beta' _) _) = do
+            unifyTypes alpha' alpha
+            unifyTypes beta'  beta
+            return (alpha, beta)
 
-    checkFunType tau = do
-        alpha <- newMetaTvT tau
-        beta  <- newMetaTvT tau
-        unifyTypes tau (FunT [alpha] (ST (C beta l) alpha beta l) l)
-        return (alpha, beta)
+        go tau = do
+            alpha <- newMetaTvT tau
+            beta  <- newMetaTvT tau
+            unifyTypes tau (FunT [alpha] (ST (C beta l) alpha beta l) l)
+            return (alpha, beta)
+
+tcExp (Z.CompLetE cl e _) exp_tau =
+    checkCompLet cl $
+    tcExp e exp_tau
 
 tcExp (Z.StmE stms _) exp_tau =
     tcStms stms exp_tau
+
+tcExp (Z.CmdE cmds _) exp_tau =
+    tcCmds cmds exp_tau
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
 
@@ -346,6 +463,53 @@ tcStms (stm@(Z.ExpS e _) : stms) exp_ty =
 tcStms [] _ =
     panicdoc $ text "Empty statement sequence!"
 
+tcCmds :: [Z.Cmd] -> Expected Type -> Tc b (Tc c C.Exp)
+tcCmds (cmd@(Z.LetC {}) : []) _ =
+    withSummaryContext cmd $
+    faildoc $ text "Last command in command sequence must be an expression"
+
+tcCmds (Z.LetC cl _ : cmds) exp_tau =
+    checkCompLet cl $ tcCmds cmds exp_tau
+
+tcCmds (cmd@(Z.BindC {}) : []) _ =
+    withSummaryContext cmd $
+    faildoc $ text "Last command in command sequence must be an expression"
+
+tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_tau = do
+    (nu, mce1) <- withSummaryContext cmd $ do
+                  (tau, mce1)       <- checkLet v ztau e
+                  (nu, alpha, beta) <- checkSTCType tau
+                  omega             <- newMetaTvT l
+                  instType (ST omega alpha beta l) exp_tau
+                  return (nu, mce1)
+    mce2       <- extendVars [(v, nu)] $
+                  tcCmds cmds exp_tau
+    return $ do cv  <- trans v
+                ce1 <- mce1
+                ce2 <- mce2
+                return $ C.BindE (C.BindV cv) ce1 ce2 l
+
+tcCmds (cmd@(Z.ExpC e _) : []) exp_ty =
+    withSummaryContext cmd $ do
+    ce <- tcExp e exp_ty
+    _  <- readExpected exp_ty >>= checkSTType
+    return ce
+
+tcCmds (cmd@(Z.ExpC e _) : cmds) exp_ty =
+    withSummaryContext cmd $ do
+    (tau1, mce1)     <- inferExp e
+    (_, alpha, beta) <- checkSTCType tau1
+    omega            <- newMetaTvT e
+    let tau          =  stT omega alpha beta
+    instType tau exp_ty
+    mce2 <- tcCmds cmds exp_ty
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.seqE ce1 ce2
+
+tcCmds [] _ =
+    panicdoc $ text "Empty command sequence!"
+
 -- | Return 'True' if @v@ has a reference type, 'False' otherwise
 isRefVar :: Z.Var -> Tc b Bool
 isRefVar v = do
@@ -361,6 +525,38 @@ checkArrInd (ArrT ind _ _) =
 
 checkArrInd tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
+
+-- | Check that a type is an @ref \alpha@ type, returning @\alpha@.
+checkRefType :: Type -> Tc b Type
+checkRefType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Tc b Type
+    go (RefT alpha _) =
+        return alpha
+
+    go tau = do
+        alpha <- newMetaTvT tau
+        unifyTypes tau (refT alpha)
+        return alpha
+
+checkFunType :: Int -> Type -> Tc b ([Type], Type)
+checkFunType nargs tau =
+    compress tau >>= go
+  where
+    go :: Type -> Tc b ([Type], Type)
+    go (FunT taus tau _) = do
+        when (length taus /= nargs) $
+            faildoc $
+              text "Expected" <+> ppr nargs <+>
+              text "arguments but got" <+> ppr (length taus)
+        return (taus, tau)
+
+    go tau_f = do
+        taus <- replicateM nargs (newMetaTvT tau)
+        tau  <- newMetaTvT tau
+        unifyTypes tau_f (funT taus tau)
+        return (taus, tau)
 
 -- | Check that a type is an @ST \omega \alpha \beta@ type, returning the three type indices
 checkSTType :: Type -> Tc b (Type, Type, Type)
@@ -393,6 +589,30 @@ checkSTCType tau =
         beta  <- newMetaTvT tau
         unifyTypes tau (stT (cT nu) alpha beta)
         return (nu, alpha, beta)
+
+-- | Check that a type is an @ST (C ()) \alpha \beta@ type, returning the two type indices
+checkSTCUnitType :: Type -> Tc b (Type, Type)
+checkSTCUnitType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Tc b (Type, Type)
+    go (ST (C (UnitT _) _) alpha beta _) =
+        return (alpha, beta)
+
+    go tau = do
+        alpha <- newMetaTvT tau
+        beta  <- newMetaTvT tau
+        unifyTypes tau (stT (cT unitT) alpha beta)
+        return (alpha, beta)
+
+-- | Check that a type is an integral type
+checkIntType :: Type -> Tc b ()
+checkIntType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Tc b ()
+    go (IntT _ _) = return ()
+    go tau        = unifyTypes tau intT
 
 -- | Check that a type is a numerical type
 checkNumType :: Type -> Tc b ()
@@ -481,9 +701,11 @@ unifyTypes tau1 tau2 = do
     unify (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
         return ()
 
-    unify tau1 tau2 =
-        faildoc $ text "Expected type:" <+> ppr tau2 </>
-                  text "but got:      " <+> ppr tau1
+    unify tau1 tau2 = do
+        [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
+        faildoc $
+          text "Expected type:" <+> ppr tau2' </>
+          text "but got:      " <+> ppr tau1'
 
     updateMetaTv :: MetaTv -> Type -> Type -> Tc b ()
     updateMetaTv mtv tau1 tau2 = do
