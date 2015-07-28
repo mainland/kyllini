@@ -17,7 +17,7 @@ module Language.Ziria.Syntax (
     W(..),
     Const(..),
     Exp(..),
-    VarBind,
+    VarBind(..),
 
     UnrollAnn(..),
     InlineAnn(..),
@@ -123,7 +123,8 @@ data Exp = ConstE Const !SrcLoc
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
 -- false otherwise.
-type VarBind = (Var, Bool, Type)
+data VarBind = VarBind Var Bool Type
+  deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
                | NoUnroll   -- ^ Never unroll
@@ -299,11 +300,11 @@ instance Fvs CompLet Var where
 instance Binders CompLet Var where
     binders (LetCL v _ _ _)             = singleton v
     binders (LetRefCL v _ _ _)          = singleton v
-    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [pv | (pv,_,_) <- ps]
-    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [pv | (pv,_,_) <- ps]
+    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetStructCL {})            = mempty
     binders (LetCompCL v _ _ _ _)       = singleton v
-    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [pv | (pv,_,_) <- ps]
+    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -491,6 +492,15 @@ instance Pretty Exp where
 
     pprPrec _ (CmdE cmds _) =
         ppr cmds
+
+instance Pretty VarBind where
+    pprPrec p (VarBind v True tau) =
+        parensIf (p > appPrec) $
+        text "var" <+> ppr v <+> colon <+> ppr tau
+
+    pprPrec p (VarBind v False tau) =
+        parensIf (p > appPrec) $
+        ppr v <+> colon <+> ppr tau
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"

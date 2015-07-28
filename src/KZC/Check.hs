@@ -534,11 +534,11 @@ instance FromZ Z.Struct Struct where
     fromZ (Z.Struct n) = pure $ Struct n
 
 instance FromZ Z.VarBind (Z.Var, Type) where
-    fromZ (v, False, ztau) = do
+    fromZ (Z.VarBind v False ztau) = do
           tau <- fromZ ztau
           return (v, tau)
 
-    fromZ (v, True, ztau) = do
+    fromZ (Z.VarBind v True ztau) = do
           tau <- refT <$> fromZ ztau
           return (v, tau)
 

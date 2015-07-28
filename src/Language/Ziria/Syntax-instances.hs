@@ -39,6 +39,8 @@ instance Located Exp where
   locOf (CompLetE _ _ l) = locOf l
   locOf (StmE _ l) = locOf l
   locOf (CmdE _ l) = locOf l
+instance Located VarBind where
+  locOf (VarBind _ _ _) = noLoc
 instance Located CompLet where
   locOf (LetCL _ _ _ l) = locOf l
   locOf (LetRefCL _ _ _ l) = locOf l

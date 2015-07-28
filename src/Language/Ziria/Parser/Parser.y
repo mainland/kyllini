@@ -859,44 +859,44 @@ field :
     ID ':' base_type { (mkField (fieldid $1), $3) }
 
 -- Parameters to a (non-comp) function
-params :: { [(Var, Bool, Type)] }
+params :: { [VarBind] }
 params :
     '(' param_rlist ')' { rev $2 }
 
-param_rlist :: { RevList (Var, Bool, Type) }
+param_rlist :: { RevList VarBind }
 param_rlist :
     {- empty -}           { rnil }
   | param                 { rsingleton $1 }
   | param_rlist ',' param { rcons $3 $1 }
 
-param :: { (Var, Bool, Type)  }
+param :: { VarBind  }
 param :
     'var' ID ':' base_type
-      { (mkVar (varid $2), True, $4) }
+      { VarBind (mkVar (varid $2)) True $4 }
   | identifier ':' base_type
-      { ($1, False, $3) }
+      { VarBind $1 False $3 }
 
 -- Parameters to a comp function
-comp_params :: { [(Var, Bool, Type)] }
+comp_params :: { [VarBind] }
 comp_params :
     '(' comp_param_rlist ')' { rev $2 }
 
-comp_param_rlist :: { RevList (Var, Bool, Type) }
+comp_param_rlist :: { RevList VarBind }
 comp_param_rlist :
     {- empty -}                     { rnil }
   | comp_param                      { rsingleton $1 }
   | comp_param_rlist ',' comp_param { rcons $3 $1 }
 
-comp_param :: { (Var, Bool, Type) }
+comp_param :: { VarBind }
 comp_param :
     'var' ID ':' base_type
-      { (mkVar (varid $2), True, $4) }
+      { VarBind (mkVar (varid $2)) True $4 }
   | 'var' ID ':' comp_base_type
       {% fail "Computation parameter cannot be mutable" }
   | ID ':' base_type
-      { (mkVar (varid $1), False, $3) }
+      { VarBind (mkVar (varid $1)) False $3 }
   | ID ':' comp_base_type
-      { (mkVar (varid $1), False, $3) }
+      { VarBind (mkVar (varid $1)) False $3 }
   | ID ':' error
       {% expected ["'ST' or base type"] Nothing }
 
