@@ -549,7 +549,7 @@ instance Pretty Binop where
 
 instance Pretty CompLet where
     ppr (LetCL v tau e _) =
-        text "let" <+> pprSig v tau <+> text "=" <+> ppr e
+        text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
 
     ppr (LetRefCL v tau e _) =
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
@@ -565,11 +565,11 @@ instance Pretty CompLet where
 
     ppr (LetCompCL v tau range e _) =
         text "let" <+> text "comp" <+> pprRange range <+>
-        pprSig v tau <+> text "=" <+> ppr e
+        pprSig v tau <+> text "=" <+/> ppr e
 
     ppr (LetFunCompCL f tau range ps e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
-        pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+> ppr e
+        pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
 
     pprList cls = stack (map ppr cls)
 
@@ -658,7 +658,7 @@ pprSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
 
 pprInitializer :: Maybe Exp -> Doc
 pprInitializer Nothing  = empty
-pprInitializer (Just e) = text ":=" <+> ppr e
+pprInitializer (Just e) = text ":=" <+/> ppr e
 
 pprTypeAnn :: Maybe Type -> Doc
 pprTypeAnn Nothing    = empty
