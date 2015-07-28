@@ -240,8 +240,8 @@ instance FreshVars TyVar where
 instance Show a => Show (IORef a) where
     showsPrec d ref =
         showParen (d > appPrec) $
-        showString "(unsafePerformIO . newRef)" .
-        showsPrec (appPrec+1) ((unsafePerformIO . readRef) ref)
+        showString "(unsafePerformIO . newRef) " .
+        showsPrec (appPrec1) ((unsafePerformIO . readRef) ref)
 
 appPrec :: Int
 appPrec = 10
