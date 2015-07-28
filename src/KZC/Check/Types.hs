@@ -296,7 +296,7 @@ instance Pretty Type where
         text "string"
 
     pprPrec p (RefT tau _) =
-        parensIf (p > tyappPrec) $
+        parensIf (p > appPrec) $
         text "ref" <+> ppr tau
 
     pprPrec _ (ArrT ind tau _) =
@@ -306,8 +306,8 @@ instance Pretty Type where
         text "struct" <+> ppr s
 
     pprPrec p (ST w tau1 tau2 _) =
-        parensIf (p > tyappPrec) $
-        text "ST" <+> ppr w <+> pprPrec tyappPrec1 tau1 <+> pprPrec tyappPrec1 tau2
+        parensIf (p > appPrec) $
+        text "ST" <+> align (pprPrec appPrec1 w <+/> pprPrec appPrec1 tau1 <+/> pprPrec appPrec1 tau2)
 
     pprPrec p (FunT taus tau _) =
         parensIf (p > arrowPrec) $
@@ -319,8 +319,8 @@ instance Pretty Type where
         text "nat"
 
     pprPrec p (C tau _) =
-        parensIf (p > tyappPrec) $
-        text "C" <+> ppr tau
+        parensIf (p > appPrec) $
+        text "C" <+> pprPrec appPrec1 tau
 
     pprPrec _ (T _) =
         text "T"
@@ -328,8 +328,8 @@ instance Pretty Type where
     pprPrec _ (ConstI i _) =
         ppr i
 
-    pprPrec _ (MetaT mtv _) =
-        (text . show) mtv
+    pprPrec p (MetaT mtv _) =
+        text (showsPrec p mtv "")
 
     pprPrec _ (TyVarT tv _) =
         ppr tv

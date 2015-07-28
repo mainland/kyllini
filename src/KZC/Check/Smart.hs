@@ -14,6 +14,9 @@ import Data.Loc
 
 import KZC.Check.Types
 
+intT :: Type
+intT = IntT W32 noLoc
+
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
 
@@ -21,4 +24,11 @@ refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
 
 stT :: Type -> Type -> Type -> Type
-stT omega alpha beta = ST omega alpha beta (omega `srcspan` alpha `srcspan` beta)
+stT omega alpha beta =
+    ST omega alpha beta (omega `srcspan` alpha `srcspan` beta)
+
+cT :: Type -> Type
+cT nu = C nu (srclocOf nu)
+
+funT :: [Type] -> Type -> Type
+funT taus tau = FunT taus tau (taus `srcspan` tau)

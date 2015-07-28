@@ -65,12 +65,11 @@ data Exp = ConstE Const !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
-         | LetE Var Type Exp Exp !SrcLoc
+         | LetE Var Type (Maybe Exp) Exp !SrcLoc
          -- Functions
          | LetFunE Var [IVarBind] [VarBind] Type Exp Exp !SrcLoc
          | CallE Var [Exp] [Exp] !SrcLoc
          -- References
-         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | DerefE Var !SrcLoc
          | AssignE Var Exp !SrcLoc
          -- Loops
@@ -214,27 +213,26 @@ instance Pretty Exp where
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
+    pprPrec p (LetE v tau Nothing e2 _) =
+        parensIf (p >= appPrec) $
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+/>
+        text "in"  </> ppr e2
+
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+> text ":" <+> ppr tau <+>
-        text "="   <+> pprPrec appPrec1 e1 <+/>
-        text "in"  <+> pprPrec appPrec1 e2
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+/>
+        text "="   <>
+        (nest 2 (line <> ppr e1) </> text "in" <> nest 2 (line <> ppr e2) <|>
+         space <> ppr e1 <+> text "in" </> ppr e2)
 
     pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
         parensIf (p >= appPrec) $
         text "letfun" <+> ppr f <> parens (commasep (map ppr ibs ++ map ppr vbs)) <+>
-        text ":"      <+> ppr tau <+>
-        text "="      <+> pprPrec appPrec1 e1 <+/>
-        text "in"     <+> pprPrec appPrec1 e2
+        text ":"      <+> ppr tau <+/>
+        text "="      </> nest 2 (ppr e1 </> text "in" </> ppr e2)
 
     pprPrec _ (CallE f ies es _) =
         ppr f <> parens (commasep (map ppr ies ++ map ppr es))
-
-    pprPrec p (LetRefE v tau e1 e2 _) =
-        parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+> text ":" <+> ppr tau <+>
-        text "="   <+> pprPrec appPrec1 e1 <+/>
-        text "in"  <+> pprPrec appPrec1 e2
 
     pprPrec p (DerefE v _) =
         parensIf (p >= appPrec) $
@@ -267,26 +265,32 @@ instance Pretty Exp where
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
 
-    pprPrec _ (ReturnE e _) =
+    pprPrec p (ReturnE e _) =
+        parensIf (p > appPrec) $
         text "return" <+> ppr e
 
-    pprPrec _ (BindE v e1 e2 _) =
+    pprPrec p (BindE v e1 e2 _) =
+        parensIf (p > appPrec) $
         ppr v <+> text "<-" <+> ppr e1 <> text ";" <+/> ppr e2
 
     pprPrec _ (TakeE _) =
         text "take"
 
-    pprPrec _ (TakesE i _) =
-        text "takes" <+> ppr i
+    pprPrec p (TakesE i _) =
+        parensIf (p > appPrec) $
+        text "takes" <+> pprPrec appPrec1 i
 
-    pprPrec _ (EmitE e _) =
-        text "emit" <+> ppr e
+    pprPrec p (EmitE e _) =
+        parensIf (p > appPrec) $
+        text "emit" <+> pprPrec appPrec1 e
 
-    pprPrec _ (EmitsE e _) =
-        text "emits" <+> ppr e
+    pprPrec p (EmitsE e _) =
+        parensIf (p > appPrec) $
+        text "emits" <+> pprPrec appPrec1 e
 
-    pprPrec _ (RepeatE e _) =
-        text "repeat" <+> ppr e
+    pprPrec p (RepeatE e _) =
+        parensIf (p > appPrec) $
+        text "repeat" <+> pprPrec appPrec1 e
 
     pprPrec p (ArrE e1 e2 _) =
         parensIf (p > arrPrec) $
@@ -365,7 +369,10 @@ instance Pretty Type where
 
     pprPrec p (ST w tau1 tau2 _) =
         parensIf (p > tyappPrec) $
-        text "ST" <+> ppr w <+> ppr tau1 <+> ppr tau2
+        text "ST" <+>
+        pprPrec tyappPrec1 w <+>
+        pprPrec tyappPrec1 tau1 <+>
+        pprPrec tyappPrec1 tau2
 
     pprPrec p (FunT iotas taus tau _) =
         parensIf (p > arrowPrec) $
@@ -417,6 +424,9 @@ arrowPrec1 = 1
 
 tyappPrec :: Int
 tyappPrec = 1
+
+tyappPrec1 :: Int
+tyappPrec1 = tyappPrec + 1
 
 instance HasFixity Binop where
     fixity Lt   = infixl_ 6

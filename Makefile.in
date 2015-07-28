@@ -97,6 +97,7 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	KZC/Check.hs \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
@@ -111,6 +112,7 @@ SOURCE = \
 	KZC/Uniq.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \
+	Language/Core/Smart.hs \
 	Language/Core/Syntax.hs \
 	Language/Ziria/Parser/Alex.hs \
 	Language/Ziria/Parser/Exceptions.hs \

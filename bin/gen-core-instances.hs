@@ -40,5 +40,9 @@ main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
+    DERIVE(Var)
+    DERIVE(Field)
+    DERIVE(Struct)
+    DERIVE(IVar)
     DERIVE(Exp)
     DERIVE(Type)

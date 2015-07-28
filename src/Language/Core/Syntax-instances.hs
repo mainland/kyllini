@@ -1,3 +1,11 @@
+instance Located Var where
+  locOf (Var l) = locOf l
+instance Located Field where
+  locOf (Field l) = locOf l
+instance Located Struct where
+  locOf (Struct l) = locOf l
+instance Located IVar where
+  locOf (IVar l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l
@@ -7,7 +15,6 @@ instance Located Exp where
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetFunE _ _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
-  locOf (LetRefE _ _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l

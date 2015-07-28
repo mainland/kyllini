@@ -443,7 +443,7 @@ instance Pretty Exp where
         text "do" <+> ppr e
 
     pprPrec _ (ReturnE ann e _) =
-        ppr ann <+> text "return" <+> ppr e
+        ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
     pprPrec _ (TakeE _) =
         text "take"
@@ -545,7 +545,7 @@ instance Pretty CompLet where
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
     ppr (LetFunCL f tau ps e _) =
-        text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+> ppr e
+        text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+/> ppr e
 
     ppr (LetFunExternalCL f ps tau _) =
         text "fun" <+> text "external" <+> ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
