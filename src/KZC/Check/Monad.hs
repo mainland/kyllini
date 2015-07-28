@@ -277,7 +277,7 @@ traceTc doc = do
     doTrace <- liftKZC $ asksFlags (testTraceFlag TraceTc)
     when doTrace $ do
         d <- asks nestdepth
-        liftIO $ hPutDoc stderr $ indent d $ doc <> line
+        liftIO $ hPutDocLn stderr $ text "traceTc:" <+> indent d (align doc)
 
 withExpContext :: Z.Exp -> Tc b a -> Tc b a
 withExpContext e m =
