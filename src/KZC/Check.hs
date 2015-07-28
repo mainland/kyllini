@@ -58,34 +58,44 @@ checkProgram cls = do
     go []       = return $ return $ C.varE (C.mkVar "main")
     go (cl:cls) = checkCompLet cl $ go cls
 
+checkLet :: Z.Var -> Maybe Z.Type -> Z.Exp
+         -> Tc b (Type, Tc c C.Exp)
+checkLet v ztau e = do
+    tau <- fromZ ztau
+    extendVars [(v, tau)] $ do
+    mce1 <- checkExp e tau
+    return (tau, mce1)
+
+checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
+            -> Tc b (Type, Tc c (Maybe C.Exp))
+checkLetRef v ztau e_init = do
+    tau <- fromZ ztau
+    extendVars [(v, tau)] $ do
+    mce1 <- case e_init of
+              Nothing -> return $ return Nothing
+              Just e  -> do mce <- checkExp e tau
+                            return $ Just <$> mce
+    return (tau, mce1)
+
 checkCompLet :: Z.CompLet
              -> Tc C.Exp (Tc b C.Exp)
              -> Tc C.Exp (Tc b C.Exp)
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
     (tau, mce1) <- withSummaryContext cl $ do
-                   tau <- fromZ ztau
-                   extendVars [(v, tau)] $ do
-                   mce1 <- checkExp e tau
-                   return (tau, mce1)
-    mce2 <- extendVars [(v, tau)] $
-            k
+                   checkLet v ztau e
+    mce2        <- extendVars [(v, tau)] $
+                   k
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- mce1
                 ce2  <- mce2
                 return $ C.LetE cv ctau (Just ce1) ce2 l
 
-checkCompLet cl@(Z.LetRefCL v ztau init l) k = do
-    (tau, mce1) <- withSummaryContext cl $ do
-                   tau <- fromZ ztau
-                   extendVars [(v, tau)] $ do
-                   mce1 <- case init of
-                             Nothing -> return $ return Nothing
-                             Just e  -> do mce <- checkExp e tau
-                                           return $ Just <$> mce
-                   return (tau, mce1)
-    mce2  <- extendVars [(v, tau)] $
-             k
+checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
+    (tau, mce1) <- withSummaryContext cl $
+                   checkLetRef v ztau e_init
+    mce2        <- extendVars [(v, tau)] $
+                   k
     return $ do cv   <- trans v
                 ctau <- trans (refT tau)
                 ce1  <- mce1
@@ -290,13 +300,10 @@ tcStms (stm@(Z.LetS {}) : []) _ =
     faildoc $ text "Last statement in statement sequence must be an expression"
 
 tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
-    (tau, mce1) <- withSummaryContext stm $ do
-                   tau <- fromZ ztau
-                   extendVars [(v, tau)] $ do
-                   mce1 <- checkExp e tau
-                   return (tau, mce1)
-    mce2 <- extendVars [(v, tau)] $
-            tcStms stms exp_ty
+    (tau, mce1) <- withSummaryContext stm $
+                   checkLet v ztau e
+    mce2        <- extendVars [(v, tau)] $
+                   tcStms stms exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- mce1
@@ -307,17 +314,11 @@ tcStms (stm@(Z.LetRefS {}) : []) _ =
     withSummaryContext stm $
     faildoc $ text "Last statement in statement sequence must be an expression"
 
-tcStms (stm@(Z.LetRefS v ztau init l) : stms) exp_ty = do
-    (tau, mce1) <- withSummaryContext stm $ do
-                   tau <- fromZ ztau
-                   extendVars [(v, tau)] $ do
-                   mce1 <- case init of
-                             Nothing -> return $ return Nothing
-                             Just e  -> do mce <- checkExp e tau
-                                           return $ Just <$> mce
-                   return (tau, mce1)
-    mce2  <- extendVars [(v, tau)] $
-             tcStms stms exp_ty
+tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
+    (tau, mce1) <- withSummaryContext stm $
+                   checkLetRef v ztau e_init
+    mce2        <- extendVars [(v, tau)] $
+                   tcStms stms exp_ty
     return $ do cv   <- trans v
                 ctau <- trans (refT tau)
                 ce1  <- mce1
