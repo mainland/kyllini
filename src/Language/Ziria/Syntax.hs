@@ -324,6 +324,11 @@ instance Summary CompLet where
     summary (LetCompCL v _ _ _ _)      = text "definition of" <+> ppr v
     summary (LetFunCompCL v _ _ _ _ _) = text "definition of" <+> ppr v
 
+instance Summary Stm where
+    summary (LetS v _ _ _)    = text "definition of" <+> ppr v
+    summary (LetRefS v _ _ _) = text "definition of" <+> ppr v
+    summary (ExpS e _)        = summary e
+
 {------------------------------------------------------------------------------
  -
  - Pretty printing
