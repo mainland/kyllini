@@ -121,6 +121,8 @@ data Exp = ConstE Const !SrcLoc
          | CmdE [Cmd] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
+-- | A variable binding. The boolean is @True@ if the variable is a reference,
+-- false otherwise.
 type VarBind = (Var, Bool, Type)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
