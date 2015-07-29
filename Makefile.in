@@ -189,11 +189,28 @@ TESTS = \
 	$(wildcard code/WiFi/transmitter/tests/*.blk) \
 	$(wildcard code/WiFi/receiver/tests/*.blk)
 
+TCTESTS = \
+	tests/parser/t1.wpl \
+	tests/parser/t2.wpl \
+	tests/parser/t3.wpl \
+	tests/parser/t4.wpl \
+	tests/parser/t5.wpl \
+	tests/parser/t6.wpl \
+	tests/parser/t7.wpl \
+	tests/parser/t9.wpl
+
 .PHONY : test-parser
 test-parser : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
 		./kzc -Ilib $$TEST; \
+	done
+
+.PHONY : test-tc
+test-tc : kzc
+	set -e; \
+	for TEST in $(TCTESTS); do \
+		./kzc -Ilib --check $$TEST; \
 	done
 
 #
