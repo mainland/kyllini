@@ -189,11 +189,6 @@ TESTS = \
 	$(wildcard code/WiFi/transmitter/tests/*.blk) \
 	$(wildcard code/WiFi/receiver/tests/*.blk)
 
-TESTSEXPANDED = $(patsubst %,%.expanded,$(TESTS))
-
-%.expanded : %
-	gcc -I lib -I tests/WiFi -I tests/WiFi/perf/blocks -w -x c -E $< >$@
-
 .PHONY : test-parser
 test-parser : kzc
 	set -e; \
