@@ -23,6 +23,9 @@ intT = IntT W32 noLoc
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
 
+arrT :: Type -> Type -> Type
+arrT iota tau = ArrT iota tau (iota `srcspan` tau)
+
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
 

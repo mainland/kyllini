@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Check
@@ -89,6 +90,15 @@ checkLetFun f ztau ps e = do
     (tau_ret, mce1) <- inferExp e
     unifyTypes (funT (map snd ptaus) tau_ret) tau
     return (tau, ptaus, mce1)
+
+derefRvalueE :: C.Exp -> Tc b C.Exp
+derefRvalueE ce1 = do
+    cx <- C.mkUniqVar "x" l
+    modifyRvalCtx $ \ce2 -> C.bindE cx (C.derefE ce1) ce2
+    return $ C.VarE cx l
+  where
+    l :: SrcLoc
+    l = srclocOf ce1
 
 checkCompLet :: Z.CompLet
              -> Tc b (Tc c C.Exp)
@@ -192,10 +202,22 @@ tcExp (Z.ConstE zc l) exp_ty = do
         return $ C.StringC s
 
 tcExp (Z.VarE v l) exp_ty = do
-    tau <- lookupVar v
-    instType tau exp_ty
-    return $ do cv <- trans v
-                return $ C.VarE cv l
+    isRval <- isRvalCtx
+    tau    <- lookupVar v >>= compress
+    checkVarE isRval tau
+  where
+    checkVarE :: Bool -> Type -> Tc b (Tc c C.Exp)
+    -- If we are in an r-value context, we need to generate code that
+    -- dereferences the variable and return the dereferenced value.
+    checkVarE True (RefT tau _) = do
+        instType tau exp_ty
+        return $ do cv <- trans v
+                    derefRvalueE $ C.VarE cv l
+
+    checkVarE _ tau = do
+        instType tau exp_ty
+        return $ do cv <- trans v
+                    return $ C.VarE cv l
 
 tcExp (Z.UnopE op e1 l) exp_ty = do
     (tau1, mce1) <- inferExp e1
@@ -205,6 +227,10 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
                 return $ C.UnopE cop ce1 l
   where
     unop :: Z.Unop -> Type -> Tc b (Type, C.Unop)
+    unop Z.Len tau = do
+        _ <- checkArrType tau
+        return (intT, C.Len)
+
     unop op _ = faildoc $ text "tcExp: cannot type check unary operator" <+> ppr op
 
 tcExp (Z.BinopE op e1 e2 l) exp_ty = do
@@ -225,13 +251,51 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
     binop op _ _ =
         faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
 
+tcExp (Z.IfE e1 e2 e3 l) exp_ty = do
+    mce1 <- checkExp e1 (BoolT l)
+    mce2 <- tcExp e2 exp_ty
+    mce3 <- tcExp e3 exp_ty
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                ce3 <- mce3
+                return $ C.IfE ce1 ce2 ce3 l
+
+tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
+    (tau, mce1) <- checkLet v ztau e1
+    mce2        <- extendVars [(v, tau)] $
+                   tcExp e2 exp_ty
+    return $ do cv   <- trans v
+                ctau <- trans tau
+                ce1  <- mce1
+                ce2  <- mce2
+                return $ C.LetE cv ctau (Just ce1) ce2 l
+
 tcExp (Z.CallE v es l) exp_ty = do
     (taus, tau) <- lookupVar v >>= checkFunType (length es)
-    mces        <- zipWithM checkExp es taus
+    mces        <- zipWithM checkArg es taus
     instType tau exp_ty
-    return $ do cv  <- trans v
-                ces <- sequence mces
-                return $ C.CallE cv [] ces l
+    return $ collectRvalCtx $ do
+             cv  <- trans v
+             ces <- sequence mces
+             return $ C.CallE cv [] ces l
+  where
+    checkArg :: Z.Exp -> Type -> Tc b (Tc c C.Exp)
+    checkArg e tau =
+        compress tau >>= go
+      where
+        go :: Type -> Tc b (Tc c C.Exp)
+        go (RefT {}) = checkExp e tau
+        go _         = inRvalCtx $ checkExp e tau
+
+tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
+    (tau, mce1) <- checkLetRef v ztau e1
+    mce2        <- extendVars [(v, tau)] $
+                   tcExp e2 exp_ty
+    return $ do cv   <- trans v
+                ctau <- trans tau
+                ce1  <- mce1
+                ce2  <- mce2
+                return $ C.LetE cv ctau ce1 ce2 l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
     (gamma, mce1) <- withSummaryContext e1 $ do
@@ -239,46 +303,131 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
                      gamma       <- checkRefType tau
                      return (gamma, mce1)
     mce2  <- withSummaryContext e2 $
+             inRvalCtx $
              checkExp e2 gamma
     alpha <- newMetaTvT l
     beta  <- newMetaTvT l
     instType (ST (C (UnitT l) l) alpha beta l) exp_ty
     return $ do ce1 <- mce1
-                ce2 <- mce2
+                ce2 <- collectRvalCtx mce2
                 return $ C.AssignE ce1 ce2 l
 
-tcExp (Z.IdxE e1 e2 len l) exp_ty = do
-    (tau, mce1) <- withSummaryContext e1 $
-                   inferExp e1
-    tau'        <- compress tau
-    mce2        <- withSummaryContext e2 $
-                   checkInd tau'
+tcExp (Z.WhileE e1 e2 l) exp_ty = do
+    mce1        <- checkExp e1 (BoolT l)
+    (tau, mce2) <- inferExp e2
+    _           <- checkSTCUnitType tau
+    instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2
-                return $ C.IdxE ce1 ce2 len l
+                return $ C.WhileE ce1 ce2 l
+
+tcExp (Z.UntilE e1 e2 l) exp_ty = do
+    mce1        <- checkExp e1 (BoolT l)
+    (tau, mce2) <- inferExp e2
+    _           <- checkSTCUnitType tau
+    instType tau exp_ty
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.UntilE ce1 ce2 l
+
+tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
+    (tau1, mce1) <- inferExp e1
+    checkIntType tau1
+    (tau, mce2) <- inferExp e2
+    _           <- checkSTCUnitType tau
+    instType tau exp_ty
+    return $ do cx  <- C.mkUniqVar "x" l
+                ce1 <- mce1
+                ce2 <- mce2
+                return $ C.ForE cx (C.intE 1) ce1 ce2 l
+
+tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
+    tau_i <- fromZ ztau_i
+    checkIntType tau_i
+    mce1 <- checkExp e1 tau_i
+    mce2 <- checkExp e2 tau_i
+    (tau, mce3) <- inferExp e3
+    _           <- checkSTCUnitType tau
+    instType tau exp_ty
+    return $ do ci  <- trans i
+                ce1 <- mce1
+                ce2 <- mce2
+                ce3 <- mce3
+                return $ C.ForE ci ce1 ce2 ce3 l
+
+tcExp (Z.ArrayE es l) exp_ty = do
+    tau  <- newMetaTvT l
+    mces <- mapM (\e -> checkExp e tau) es
+    instType (ArrT (ConstI (length es) l) tau l) exp_ty
+    return $ do ces <- sequence mces
+                return $ C.ArrayE ces l
+
+tcExp (Z.IdxE e1 e2 len l) exp_ty = do
+    isRval      <- isRvalCtx
+    (tau, mce1) <- withSummaryContext e1 $
+                   notInRvalCtx $
+                   inferExp e1
+    mce2        <- withSummaryContext e2 $ do
+                   (tau2, mce2) <- inferExp e2
+                   checkIntType tau2
+                   return mce2
+    checkIdxE isRval tau mce1 mce2
   where
-    checkInd :: Type -> Tc b (Tc c C.Exp)
-    checkInd (RefT (ArrT _ tau _) _) = do
-        (tau2, mce2) <- inferExp e2
-        checkIntType tau2
-        instType (RefT (mkArrSlice tau len) l) exp_ty
-        return mce2
+    checkIdxE :: forall b c . Bool
+              -> Type
+              -> Tc c C.Exp
+              -> Tc c C.Exp
+              -> Tc b (Tc c C.Exp)
+    checkIdxE isRval tau mce1 mce2 = do
+        compress tau >>= go isRval
+      where
+        go :: Bool -> Type -> Tc b (Tc c C.Exp)
+        -- If we are in an r-value context and e1 is a reference to an array, we
+        -- need to generate code that will index into the array
+        go True (RefT (ArrT _ tau _) _) = do
+            instType (mkArrSlice tau len) exp_ty
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        derefRvalueE $ C.IdxE ce1 ce2 len l
 
-    checkInd (ArrT _ tau _) = do
-        (tau2, mce2) <- inferExp e2
-        checkIntType tau2
-        instType (mkArrSlice tau len) exp_ty
-        return mce2
+        -- If we are not in an r-value context, then indexing into a reference
+        -- to an array returns a reference to an element of the array.
+        go False (RefT (ArrT _ tau _) _) = do
+            instType (RefT (mkArrSlice tau len) l) exp_ty
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        return $ C.IdxE ce1 ce2 len l
 
-    checkInd tau = do
-        i     <- newMetaTvT l
-        alpha <- newMetaTvT l
-        unifyTypes tau (ArrT i alpha l)
-        compress tau >>= checkInd
+        -- A plain old array gets indexed as one would expect.
+        go _ (ArrT _ tau _) = do
+            instType (mkArrSlice tau len) exp_ty
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        return $ C.IdxE ce1 ce2 len l
 
-    mkArrSlice :: Type -> Maybe Integer -> Type
+        -- Otherwise we assert that the type of @e1@ should be an array type.
+        go isRval tau = do
+            i     <- newMetaTvT l
+            alpha <- newMetaTvT l
+            unifyTypes tau (ArrT i alpha l)
+            compress tau >>= go isRval
+
+    mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) =  ArrT (ConstI i l) tau l
+
+tcExp (Z.PrintE newline es l) exp_ty = do
+    mces  <- mapM checkArg es
+    alpha <- newMetaTvT l
+    beta  <- newMetaTvT l
+    instType (ST (C (UnitT l) l) alpha beta l) exp_ty
+    return $ do ces <- sequence mces
+                return $ C.PrintE newline ces l
+  where
+    checkArg :: Z.Exp -> Tc b (Tc c C.Exp)
+    checkArg e = do
+        (_, mce) <- inferExp e
+        return mce
 
 tcExp (Z.ReturnE _ e l) exp_ty = do
     (nu, mce) <- inferExp e
@@ -539,6 +688,22 @@ checkRefType tau =
         alpha <- newMetaTvT tau
         unifyTypes tau (refT alpha)
         return alpha
+
+-- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
+-- @\alpha@.
+checkArrType :: Type -> Tc b (Type, Type)
+checkArrType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Tc b (Type, Type)
+    go (ArrT iota alpha _) =
+        return (iota, alpha)
+
+    go tau = do
+        iota  <- newMetaTvT tau
+        alpha <- newMetaTvT tau
+        unifyTypes tau (arrT iota alpha)
+        return (iota, alpha)
 
 checkFunType :: Int -> Type -> Tc b ([Type], Type)
 checkFunType nargs tau =

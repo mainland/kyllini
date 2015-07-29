@@ -58,7 +58,7 @@ data Type = UnitT !SrcLoc
           | C Type !SrcLoc
           | T !SrcLoc
           -- array type indices
-          | ConstI Integer !SrcLoc
+          | ConstI Int !SrcLoc
 
           | TyVarT TyVar !SrcLoc
           | MetaT MetaTv !SrcLoc

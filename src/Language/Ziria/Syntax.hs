@@ -98,7 +98,7 @@ data Exp = ConstE Const !SrcLoc
          | ForE UnrollAnn Var (Maybe Type) Exp Exp Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Integer) !SrcLoc
+         | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
          | StructE Struct [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -108,7 +108,7 @@ data Exp = ConstE Const !SrcLoc
          -- Computations
          | ReturnE InlineAnn Exp !SrcLoc
          | TakeE !SrcLoc
-         | TakesE Integer !SrcLoc
+         | TakesE Int !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
@@ -213,7 +213,7 @@ data Type = UnitT !SrcLoc
           | ST Type Type Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Integer !SrcLoc
+data Ind = ConstI Int !SrcLoc
          | ArrI Var !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)

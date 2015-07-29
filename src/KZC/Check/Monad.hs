@@ -22,6 +22,12 @@ module KZC.Check.Monad (
     localExp,
     askCurrentExp,
 
+    isRvalCtx,
+    inRvalCtx,
+    notInRvalCtx,
+    collectRvalCtx,
+    modifyRvalCtx,
+
     extendVars,
     lookupVar,
 
@@ -55,6 +61,7 @@ import Control.Applicative
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
+import Control.Monad.State
 import Data.IORef
 import Data.List (foldl')
 import Data.Loc
@@ -66,6 +73,7 @@ import Data.Traversable (Traversable, traverse)
 import System.IO (hPutStrLn, stderr)
 import Text.PrettyPrint.Mainland
 
+import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Smart
@@ -135,6 +143,10 @@ instance MonadReader TcEnv (Tc b) where
     ask = Tc $ \r s k -> k r r s
 
     local f m =Tc $ \r s k -> unTc m (f r) s $ \x _ s' -> k x r s'
+
+instance MonadState TcState (Tc b) where
+    get   = Tc $ \r s k -> k s r s
+    put s = Tc $ \r _ k -> k () r s
 
 instance MonadRef IORef (Tc b) where
     newRef x     = liftIO $ newRef x
@@ -218,6 +230,29 @@ localExp e = local (\env -> env { curexp = Just e })
 
 askCurrentExp :: Tc b (Maybe Z.Exp)
 askCurrentExp = asks curexp
+
+isRvalCtx :: Tc b Bool
+isRvalCtx = asks isrvalctx
+
+inRvalCtx :: Tc b a -> Tc b a
+inRvalCtx k =
+    local (\env -> env { isrvalctx = True }) k
+
+notInRvalCtx :: Tc b a -> Tc b a
+notInRvalCtx k =
+    local (\env -> env { isrvalctx = False }) k
+
+collectRvalCtx :: Tc b C.Exp -> Tc b C.Exp
+collectRvalCtx k = do
+    old_rvalctx <- gets rvalctx
+    modify $ \s -> s { rvalctx = id }
+    ce <- inRvalCtx k
+    f  <- gets rvalctx
+    modify $ \s -> s { rvalctx = old_rvalctx }
+    return $ f ce
+
+modifyRvalCtx :: (C.Exp -> C.Exp) -> Tc b ()
+modifyRvalCtx f = modify $ \s -> s { rvalctx = rvalctx s . f }
 
 extendVars :: [(Z.Var, Type)] -> Tc b a -> Tc b a
 extendVars vtaus m = do

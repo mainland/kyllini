@@ -23,6 +23,7 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
+import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Types
@@ -32,6 +33,7 @@ data TcEnv = TcEnv
     { errctx     :: ![ErrorContext]
     , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Z.Exp
+    , isrvalctx  :: {-# UNPACK #-} !Bool
     , structs    :: !(Map Z.Struct Struct)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
@@ -44,6 +46,7 @@ defaultTcEnv = TcEnv
     { errctx     = []
     , nestdepth  = 0
     , curexp     = Nothing
+    , isrvalctx  = False
     , structs    = Map.empty
     , varTypes   = Map.empty
     , tyVars     = Map.empty
@@ -52,6 +55,8 @@ defaultTcEnv = TcEnv
     }
 
 data TcState = TcState
+    { rvalctx :: C.Exp -> C.Exp }
 
 defaultTcState :: TcState
 defaultTcState = TcState
+    { rvalctx = id }

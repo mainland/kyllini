@@ -21,11 +21,17 @@ mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
 
+intE :: Integer -> Exp
+intE i = ConstE (IntC dEFAULT_INT_WIDTH i) noLoc
+
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
 callE :: Var -> [Exp] -> Exp
 callE v es = CallE v [] es (v `srcspan` es)
+
+derefE :: Exp -> Exp
+derefE e = DerefE e (srclocOf e)
 
 returnE :: Exp -> Exp
 returnE e = ReturnE e (srclocOf e)
@@ -60,5 +66,5 @@ boolT = BoolT noLoc
 bitT :: Type
 bitT = BitT noLoc
 
-intT :: W -> Type
-intT w = IntT w noLoc
+intT :: Type
+intT = IntT dEFAULT_INT_WIDTH noLoc

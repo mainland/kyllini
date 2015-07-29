@@ -13,6 +13,7 @@ module Language.Core.Syntax (
     Struct(..),
     IVar(..),
     W(..),
+    dEFAULT_INT_WIDTH,
     Const(..),
     Exp(..),
     IVarBind(..),
@@ -50,6 +51,9 @@ data W = W8
        | W64
   deriving (Eq, Ord, Read, Show)
 
+dEFAULT_INT_WIDTH :: W
+dEFAULT_INT_WIDTH = W32
+
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
@@ -77,10 +81,14 @@ data Exp = ConstE Const !SrcLoc
          | UntilE Exp Exp !SrcLoc
          | ForE Var Exp Exp Exp !SrcLoc
          -- Arrays
-         | IdxE Exp Exp (Maybe Integer) !SrcLoc
+         | ArrayE [Exp] !SrcLoc
+         | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
          | LetStruct Struct [(Field, Type)] !SrcLoc
          | ProjE Exp Field !SrcLoc
+         -- Print
+         | PrintE Bool [Exp] !SrcLoc
+         | ErrorE String !SrcLoc
          -- Computations
          | ReturnE Exp !SrcLoc
          | BindE BindVar Exp Exp !SrcLoc
@@ -106,6 +114,7 @@ data Unop = Lnot
           | Bnot
           | Neg
           | Cast Type
+          | Len
   deriving (Eq, Ord, Read, Show)
 
 data Binop = Lt
@@ -151,7 +160,7 @@ data Omega = C Type
 data Iota = NatI
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Integer !SrcLoc
+data Ind = ConstI Int !SrcLoc
          | VarI Var !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -252,6 +261,9 @@ instance Pretty Exp where
         brackets (commasep [ppr e1, ppr e2]) <+>
         ppr e3
 
+    pprPrec _ (ArrayE es _) =
+        text "arr" <+> embrace commasep (map ppr es)
+
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
@@ -264,6 +276,15 @@ instance Pretty Exp where
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
+
+    pprPrec _ (PrintE True es _) =
+        text "println" <+> commasep (map ppr es)
+
+    pprPrec _ (PrintE False es _) =
+        text "print" <+> commasep (map ppr es)
+
+    pprPrec _ (ErrorE s _) =
+        text "error" <+> ppr s
 
     pprPrec p (ReturnE e _) =
         parensIf (p > appPrec) $
@@ -312,6 +333,7 @@ instance Pretty Unop where
     ppr Lnot       = text "!"
     ppr Bnot       = text "~"
     ppr Neg        = text "-"
+    ppr Len        = text "length" <> space
     ppr (Cast tau) = parens (ppr tau)
 
 instance Pretty Binop where
@@ -454,6 +476,7 @@ instance HasFixity Unop where
     fixity Lnot     = infixr_ 10
     fixity Bnot     = infixr_ 10
     fixity Neg      = infixr_ 10
+    fixity Len      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
 #include "Language/Core/Syntax-instances.hs"
