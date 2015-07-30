@@ -37,4 +37,4 @@ cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
 
 funT :: [Type] -> Type -> Type
-funT taus tau = FunT taus tau (taus `srcspan` tau)
+funT taus tau = FunT [] taus tau (taus `srcspan` tau)

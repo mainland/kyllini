@@ -16,15 +16,13 @@ module Language.Core.Syntax (
     dEFAULT_INT_WIDTH,
     Const(..),
     Exp(..),
-    IVarBind(..),
     VarBind(..),
     BindVar(..),
     Unop(..),
     Binop(..),
     Type(..),
     Omega(..),
-    Iota(..),
-    Ind(..)
+    Iota(..)
   ) where
 
 import Data.Loc
@@ -71,7 +69,7 @@ data Exp = ConstE Const !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
          | LetE Var Type (Maybe Exp) Exp !SrcLoc
          -- Functions
-         | LetFunE Var [IVarBind] [VarBind] Type Exp Exp !SrcLoc
+         | LetFunE Var [IVar] [VarBind] Type Exp Exp !SrcLoc
          | CallE Var [Exp] [Exp] !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
@@ -98,9 +96,6 @@ data Exp = ConstE Const !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE Exp !SrcLoc
          | ArrE Exp Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-data IVarBind = IVarBind IVar Iota
   deriving (Eq, Ord, Read, Show)
 
 data VarBind = VarBind Var Type
@@ -146,22 +141,19 @@ data Type = UnitT !SrcLoc
           | FloatT W !SrcLoc
           | ComplexT W !SrcLoc
           | StringT !SrcLoc
-          | RefT Type !SrcLoc
-          | ArrT Ind Type !SrcLoc
+          | ArrT Iota Type !SrcLoc
           | StructT Struct !SrcLoc
           | ST Omega Type Type !SrcLoc
-          | FunT [Iota] [Type] Type !SrcLoc
+          | RefT Type !SrcLoc
+          | FunT [IVar] [Type] Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Omega = C Type
            | T
   deriving (Eq, Ord, Read, Show)
 
-data Iota = NatI
-  deriving (Eq, Ord, Read, Show)
-
-data Ind = ConstI Int !SrcLoc
-         | VarI Var !SrcLoc
+data Iota = ConstI Int !SrcLoc
+          | VarI IVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 instance Pretty Var where
@@ -317,10 +309,6 @@ instance Pretty Exp where
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
 
-instance Pretty IVarBind where
-    ppr (IVarBind iv iota) =
-        ppr iv <+> text ":" <+> ppr iota
-
 instance Pretty VarBind where
     ppr (VarBind v tau) =
         ppr v <+> text ":" <+> ppr tau
@@ -411,9 +399,6 @@ instance Pretty Omega where
         text "T"
 
 instance Pretty Iota where
-    ppr NatI = text "nat"
-
-instance Pretty Ind where
     ppr (ConstI i _) = ppr i
     ppr (VarI v _)   = ppr v
 
