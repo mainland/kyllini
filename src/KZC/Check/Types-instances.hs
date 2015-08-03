@@ -1,3 +1,7 @@
+instance Located TyVar where
+  locOf (TyVar l) = locOf l
+instance Located IVar where
+  locOf (IVar l) = locOf l
 instance Located Type where
   locOf (UnitT l) = locOf l
   locOf (BoolT l) = locOf l
@@ -12,7 +16,7 @@ instance Located Type where
   locOf (T l) = locOf l
   locOf (ST _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
-  locOf (FunT _ _ _ l) = locOf l
+  locOf (FunT _ _ _ _ l) = locOf l
   locOf (ConstI _ l) = locOf l
   locOf (VarI _ l) = locOf l
   locOf (TyVarT _ l) = locOf l

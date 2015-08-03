@@ -17,6 +17,8 @@ import Data.List ((\\))
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
+import qualified Data.Set as Set
+import Data.Symbol
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
 
@@ -65,7 +67,7 @@ data Type -- Base Types
           | RefT Type !SrcLoc
 
           -- phi types
-          | FunT [Type] [Type] Type !SrcLoc
+          | FunT [TyVar] [IVar] [Type] Type !SrcLoc
 
           -- iota types
           | ConstI Int !SrcLoc
@@ -98,158 +100,8 @@ type TyRef = IORef (Maybe Type)
 instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n
 
-{------------------------------------------------------------------------------
- -
- - Free variables
- -
- ------------------------------------------------------------------------------}
-
-instance Fvs Type TyVar where
-    fvs (UnitT {})              = mempty
-    fvs (BoolT {})              = mempty
-    fvs (BitT {})               = mempty
-    fvs (IntT {})               = mempty
-    fvs (FloatT {})             = mempty
-    fvs (ComplexT {})           = mempty
-    fvs (StringT {})            = mempty
-    fvs (StructT _ _)           = mempty
-    fvs (ArrT tau1 tau2 _)      = fvs tau1 <> fvs tau2
-    fvs (C tau _)               = fvs tau
-    fvs (T _)                   = mempty
-    fvs (ST omega tau1 tau2 _)  = fvs omega <> fvs tau1 <> fvs tau2
-    fvs (RefT tau _)            = fvs tau
-    fvs (FunT iotas taus tau _) = fvs iotas <> fvs taus <> fvs tau
-    fvs (ConstI _ _)            = mempty
-    fvs (VarI _ _)              = mempty
-    fvs (TyVarT tv _)           = singleton tv
-    fvs (MetaT _ _)             = mempty
-
-instance Fvs Type MetaTv where
-    fvs (UnitT {})              = mempty
-    fvs (BoolT {})              = mempty
-    fvs (BitT {})               = mempty
-    fvs (IntT {})               = mempty
-    fvs (FloatT {})             = mempty
-    fvs (ComplexT {})           = mempty
-    fvs (StringT {})            = mempty
-    fvs (StructT _ _)           = mempty
-    fvs (ArrT tau1 tau2 _)      = fvs tau1 <> fvs tau2
-    fvs (C tau _)               = fvs tau
-    fvs (T _)                   = mempty
-    fvs (ST omega tau1 tau2 _)  = fvs omega <> fvs tau1 <> fvs tau2
-    fvs (RefT tau _)            = fvs tau
-    fvs (FunT iotas taus tau _) = fvs iotas <> fvs taus <> fvs tau
-    fvs (ConstI _ _)            = mempty
-    fvs (VarI _ _)              = mempty
-    fvs (TyVarT _ _)            = mempty
-    fvs (MetaT mtv _)           = singleton mtv
-
-instance HasVars Type TyVar where
-    allVars (UnitT {})              = mempty
-    allVars (BoolT {})              = mempty
-    allVars (BitT {})               = mempty
-    allVars (IntT {})               = mempty
-    allVars (FloatT {})             = mempty
-    allVars (ComplexT {})           = mempty
-    allVars (StringT {})            = mempty
-    allVars (StructT _ _)           = mempty
-    allVars (ArrT tau1 tau2 _)      = allVars tau1 <> allVars tau2
-    allVars (C tau _)               = allVars tau
-    allVars (T _)                   = mempty
-    allVars (ST omega tau1 tau2 _)  = allVars omega <> allVars tau1 <> allVars tau2
-    allVars (RefT tau _)            = allVars tau
-    allVars (FunT iotas taus tau _) = allVars iotas <> allVars taus <> allVars tau
-    allVars (ConstI _ _)            = mempty
-    allVars (VarI _ _)              = mempty
-    allVars (TyVarT tv _)           = singleton tv
-    allVars (MetaT _ _)             = mempty
-
-instance HasVars Type MetaTv where
-    allVars (UnitT {})              = mempty
-    allVars (BoolT {})              = mempty
-    allVars (BitT {})               = mempty
-    allVars (IntT {})               = mempty
-    allVars (FloatT {})             = mempty
-    allVars (ComplexT {})           = mempty
-    allVars (StringT {})            = mempty
-    allVars (StructT _ _)           = mempty
-    allVars (ArrT tau1 tau2 _)      = allVars tau1 <> allVars tau2
-    allVars (C tau _)               = allVars tau
-    allVars (T _)                   = mempty
-    allVars (ST omega tau1 tau2 _)  = allVars omega <> allVars tau1 <> allVars tau2
-    allVars (RefT tau _)            = allVars tau
-    allVars (FunT iotas taus tau _) = allVars iotas <> allVars taus <> allVars tau
-    allVars (ConstI _ _)            = mempty
-    allVars (VarI _ _)              = mempty
-    allVars (TyVarT _ _)            = mempty
-    allVars (MetaT mtv _)           = singleton mtv
-
-instance Subst Type MetaTv Type where
-    subst _ _ tau@(UnitT {}) =
-        tau
-
-    subst _ _ tau@(BoolT {}) =
-        tau
-
-    subst _ _ tau@(BitT {}) =
-        tau
-
-    subst _ _ tau@(IntT {}) =
-        tau
-
-    subst _ _ tau@(FloatT {}) =
-        tau
-
-    subst _ _ tau@(ComplexT {}) =
-        tau
-
-    subst _ _ tau@(StringT {}) =
-        tau
-
-    subst _ _ tau@(StructT {}) =
-        tau
-
-    subst theta phi (ArrT tau1 tau2 l) =
-        ArrT (subst theta phi tau1) (subst theta phi tau2) l
-
-    subst theta phi (C tau l) =
-        C (subst theta phi tau) l
-
-    subst _ _ tau@(T {}) =
-        tau
-
-    subst theta phi (ST tau1 tau2 tau3 l) =
-        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
-
-    subst theta phi (RefT tau l) =
-        RefT (subst theta phi tau) l
-
-    subst theta phi (FunT iotas taus tau l) =
-        FunT (subst theta phi iotas) (subst theta phi taus) (subst theta phi tau) l
-
-    subst _ _ tau@(ConstI {}) =
-        tau
-
-    subst _ _ tau@(VarI {}) =
-        tau
-
-    subst _ _ tau@(TyVarT {}) =
-        tau
-
-    subst theta _ tau@(MetaT mtv _) =
-        fromMaybe tau (Map.lookup mtv theta)
-
-instance FreshVars TyVar where
-    freshVars n used =
-        return $ map (\a -> TyVar (mkName a noLoc)) freshTvs
-      where
-        freshTvs :: [String]
-        freshTvs = take n (allTvs \\ map namedString used)
-
-        allTvs :: [String]
-        allTvs =  [[x] | x <- ['a'..'z']] ++
-                  [x : show i |  i <- [1 :: Integer ..],
-                                 x <- ['a'..'z']]
+instance Named IVar where
+    namedSymbol (IVar n) = namedSymbol n
 
 {------------------------------------------------------------------------------
  -
@@ -342,11 +194,26 @@ instance Pretty Type where
         parensIf (p > appPrec) $
         text "ref" <+> ppr tau
 
-    pprPrec p (FunT iotas taus tau _) =
+    pprPrec p (FunT alphas iotas taus tau _) =
         parensIf (p > arrowPrec) $
-        parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus)) <+>
+        pprForall alphas <+>
+        pprArgs iotas taus <+>
         text "->" <+>
         pprPrec arrowPrec1 tau
+      where
+        pprForall :: [TyVar] -> Doc
+        pprForall []     = empty
+        pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
+
+        pprArgs :: [IVar] -> [Type] -> Doc
+        pprArgs [] [tau1] =
+            ppr tau1
+
+        pprArgs [] taus =
+            parens (commasep (map ppr taus))
+
+        pprArgs iotas taus =
+            parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus))
 
     pprPrec _ (ConstI i _) =
         ppr i
@@ -360,4 +227,384 @@ instance Pretty Type where
     pprPrec _ (TyVarT tv _) =
         ppr tv
 
+instance Pretty Kind where
+    ppr TauK   = text "tau"
+    ppr OmegaK = text "omega"
+    ppr MuK    = text "mu"
+    ppr RhoK   = text "rho"
+    ppr PhiK   = text "phi"
+    ppr IotaK  = text "iota"
+
+#if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Free variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Fvs Type TyVar where
+    fvs (UnitT {})              = mempty
+    fvs (BoolT {})              = mempty
+    fvs (BitT {})               = mempty
+    fvs (IntT {})               = mempty
+    fvs (FloatT {})             = mempty
+    fvs (ComplexT {})           = mempty
+    fvs (StringT {})            = mempty
+    fvs (StructT _ _)           = mempty
+    fvs (ArrT tau1 tau2 _)      = fvs tau1 <> fvs tau2
+    fvs (C tau _)               = fvs tau
+    fvs (T _)                   = mempty
+    fvs (ST omega tau1 tau2 _)  = fvs omega <> fvs tau1 <> fvs tau2
+    fvs (RefT tau _)            = fvs tau
+    fvs (FunT tvs _ taus tau _) = (fvs taus <> fvs tau) <\\> fromList tvs
+    fvs (ConstI _ _)            = mempty
+    fvs (VarI _ _)              = mempty
+    fvs (TyVarT tv _)           = singleton tv
+    fvs (MetaT _ _)             = mempty
+
+instance Fvs Type IVar where
+    fvs (UnitT {})                = mempty
+    fvs (BoolT {})                = mempty
+    fvs (BitT {})                 = mempty
+    fvs (IntT {})                 = mempty
+    fvs (FloatT {})               = mempty
+    fvs (ComplexT {})             = mempty
+    fvs (StringT {})              = mempty
+    fvs (StructT _ _)             = mempty
+    fvs (ArrT tau1 tau2 _)        = fvs tau1 <> fvs tau2
+    fvs (C tau _)                 = fvs tau
+    fvs (T _)                     = mempty
+    fvs (ST omega tau1 tau2 _)    = fvs omega <> fvs tau1 <> fvs tau2
+    fvs (RefT tau _)              = fvs tau
+    fvs (FunT _ iotas taus tau _) = (fvs taus <> fvs tau) <\\> fromList iotas
+    fvs (ConstI _ _)              = mempty
+    fvs (VarI iv _)               = singleton iv
+    fvs (TyVarT _ _)              = mempty
+    fvs (MetaT _ _)               = mempty
+
+instance Fvs Type MetaTv where
+    fvs (UnitT {})             = mempty
+    fvs (BoolT {})             = mempty
+    fvs (BitT {})              = mempty
+    fvs (IntT {})              = mempty
+    fvs (FloatT {})            = mempty
+    fvs (ComplexT {})          = mempty
+    fvs (StringT {})           = mempty
+    fvs (StructT _ _)          = mempty
+    fvs (ArrT tau1 tau2 _)     = fvs tau1 <> fvs tau2
+    fvs (C tau _)              = fvs tau
+    fvs (T _)                  = mempty
+    fvs (ST omega tau1 tau2 _) = fvs omega <> fvs tau1 <> fvs tau2
+    fvs (RefT tau _)           = fvs tau
+    fvs (FunT _ _ taus tau _)  = fvs taus <> fvs tau
+    fvs (ConstI _ _)           = mempty
+    fvs (VarI _ _)             = mempty
+    fvs (TyVarT _ _)           = mempty
+    fvs (MetaT mtv _)          = singleton mtv
+
+instance HasVars Type TyVar where
+    allVars (UnitT {})              = mempty
+    allVars (BoolT {})              = mempty
+    allVars (BitT {})               = mempty
+    allVars (IntT {})               = mempty
+    allVars (FloatT {})             = mempty
+    allVars (ComplexT {})           = mempty
+    allVars (StringT {})            = mempty
+    allVars (StructT _ _)           = mempty
+    allVars (ArrT tau1 tau2 _)      = allVars tau1 <> allVars tau2
+    allVars (C tau _)               = allVars tau
+    allVars (T _)                   = mempty
+    allVars (ST omega tau1 tau2 _)  = allVars omega <> allVars tau1 <> allVars tau2
+    allVars (RefT tau _)            = allVars tau
+    allVars (FunT tvs _ taus tau _) = fromList tvs <> allVars taus <> allVars tau
+    allVars (ConstI _ _)            = mempty
+    allVars (VarI _ _)              = mempty
+    allVars (TyVarT tv _)           = singleton tv
+    allVars (MetaT _ _)             = mempty
+
+instance HasVars Type IVar where
+    allVars (UnitT {})                = mempty
+    allVars (BoolT {})                = mempty
+    allVars (BitT {})                 = mempty
+    allVars (IntT {})                 = mempty
+    allVars (FloatT {})               = mempty
+    allVars (ComplexT {})             = mempty
+    allVars (StringT {})              = mempty
+    allVars (StructT _ _)             = mempty
+    allVars (ArrT tau1 tau2 _)        = allVars tau1 <> allVars tau2
+    allVars (C tau _)                 = allVars tau
+    allVars (T _)                     = mempty
+    allVars (ST omega tau1 tau2 _)    = allVars omega <> allVars tau1 <> allVars tau2
+    allVars (RefT tau _)              = allVars tau
+    allVars (FunT _ iotas taus tau _) = fromList iotas <> allVars taus <> allVars tau
+    allVars (ConstI _ _)              = mempty
+    allVars (VarI iv _)               = singleton iv
+    allVars (TyVarT _ _)              = mempty
+    allVars (MetaT _ _)               = mempty
+
+instance HasVars Type MetaTv where
+    allVars (UnitT {})             = mempty
+    allVars (BoolT {})             = mempty
+    allVars (BitT {})              = mempty
+    allVars (IntT {})              = mempty
+    allVars (FloatT {})            = mempty
+    allVars (ComplexT {})          = mempty
+    allVars (StringT {})           = mempty
+    allVars (StructT _ _)          = mempty
+    allVars (ArrT tau1 tau2 _)     = allVars tau1 <> allVars tau2
+    allVars (C tau _)              = allVars tau
+    allVars (T _)                  = mempty
+    allVars (ST omega tau1 tau2 _) = allVars omega <> allVars tau1 <> allVars tau2
+    allVars (RefT tau _)           = allVars tau
+    allVars (FunT _ _ taus tau _)  = allVars taus <> allVars tau
+    allVars (ConstI _ _)           = mempty
+    allVars (VarI _ _)             = mempty
+    allVars (TyVarT _ _)           = mempty
+    allVars (MetaT mtv _)          = singleton mtv
+
+instance Subst Type MetaTv Type where
+    subst _ _ tau@(UnitT {}) =
+        tau
+
+    subst _ _ tau@(BoolT {}) =
+        tau
+
+    subst _ _ tau@(BitT {}) =
+        tau
+
+    subst _ _ tau@(IntT {}) =
+        tau
+
+    subst _ _ tau@(FloatT {}) =
+        tau
+
+    subst _ _ tau@(ComplexT {}) =
+        tau
+
+    subst _ _ tau@(StringT {}) =
+        tau
+
+    subst _ _ tau@(StructT {}) =
+        tau
+
+    subst theta phi (ArrT tau1 tau2 l) =
+        ArrT (subst theta phi tau1) (subst theta phi tau2) l
+
+    subst theta phi (C tau l) =
+        C (subst theta phi tau) l
+
+    subst _ _ tau@(T {}) =
+        tau
+
+    subst theta phi (ST tau1 tau2 tau3 l) =
+        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
+
+    subst theta phi (RefT tau l) =
+        RefT (subst theta phi tau) l
+
+    subst theta phi (FunT alphas iotas taus tau l) =
+        FunT alphas iotas (subst theta phi taus) (subst theta phi tau) l
+
+    subst _ _ tau@(ConstI {}) =
+        tau
+
+    subst _ _ tau@(VarI {}) =
+        tau
+
+    subst _ _ tau@(TyVarT {}) =
+        tau
+
+    subst theta _ tau@(MetaT mtv _) =
+        fromMaybe tau (Map.lookup mtv theta)
+
+instance Subst Type IVar Type where
+    subst _ _ tau@(UnitT {}) =
+        tau
+
+    subst _ _ tau@(BoolT {}) =
+        tau
+
+    subst _ _ tau@(BitT {}) =
+        tau
+
+    subst _ _ tau@(IntT {}) =
+        tau
+
+    subst _ _ tau@(FloatT {}) =
+        tau
+
+    subst _ _ tau@(ComplexT {}) =
+        tau
+
+    subst _ _ tau@(StringT {}) =
+        tau
+
+    subst _ _ tau@(StructT {}) =
+        tau
+
+    subst theta phi (ArrT tau1 tau2 l) =
+        ArrT (subst theta phi tau1) (subst theta phi tau2) l
+
+    subst theta phi (C tau l) =
+        C (subst theta phi tau) l
+
+    subst _ _ tau@(T {}) =
+        tau
+
+    subst theta phi (ST tau1 tau2 tau3 l) =
+        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
+
+    subst theta phi (RefT tau l) =
+        RefT (subst theta phi tau) l
+
+    subst theta phi (FunT alphas iotas taus tau l) =
+        FunT alphas iotas' (subst theta' phi' taus) (subst theta' phi' tau) l
+      where
+        (iotas', theta', phi') = freshen iotas theta phi
+
+    subst _ _ tau@(ConstI {}) =
+        tau
+
+    subst theta _ tau@(VarI v _) =
+        fromMaybe tau (Map.lookup v theta)
+
+    subst _ _ tau@(TyVarT {}) =
+        tau
+
+    subst _ _ tau@(MetaT {}) =
+        tau
+
+instance Subst Type TyVar Type where
+    subst _ _ tau@(UnitT {}) =
+        tau
+
+    subst _ _ tau@(BoolT {}) =
+        tau
+
+    subst _ _ tau@(BitT {}) =
+        tau
+
+    subst _ _ tau@(IntT {}) =
+        tau
+
+    subst _ _ tau@(FloatT {}) =
+        tau
+
+    subst _ _ tau@(ComplexT {}) =
+        tau
+
+    subst _ _ tau@(StringT {}) =
+        tau
+
+    subst _ _ tau@(StructT {}) =
+        tau
+
+    subst theta phi (ArrT tau1 tau2 l) =
+        ArrT (subst theta phi tau1) (subst theta phi tau2) l
+
+    subst theta phi (C tau l) =
+        C (subst theta phi tau) l
+
+    subst _ _ tau@(T {}) =
+        tau
+
+    subst theta phi (ST tau1 tau2 tau3 l) =
+        ST (subst theta phi tau1) (subst theta phi tau2) (subst theta phi tau3) l
+
+    subst theta phi (RefT tau l) =
+        RefT (subst theta phi tau) l
+
+    subst theta phi (FunT alphas iotas taus tau l) =
+        FunT alphas' iotas (subst theta' phi' taus) (subst theta' phi' tau) l
+      where
+        (alphas', theta', phi') = freshen alphas theta phi
+
+    subst _ _ tau@(ConstI {}) =
+        tau
+
+    subst _ _ tau@(VarI {}) =
+        tau
+
+    subst theta _ tau@(TyVarT alpha _) =
+        fromMaybe tau (Map.lookup alpha theta)
+
+    subst _ _ tau@(MetaT {}) =
+        tau
+
+instance FreshVars TyVar where
+    freshVars n used =
+        return $ map (\a -> TyVar (mkName a noLoc)) freshTvs
+      where
+        freshTvs :: [String]
+        freshTvs = take n (allTvs \\ map namedString used)
+
+        allTvs :: [String]
+        allTvs =  [[x] | x <- simpleTvs] ++
+                  [x : show i |  i <- [1 :: Integer ..],
+                                 x <- simpleTvs]
+
+        simpleTvs :: [Char]
+        simpleTvs = ['a'..'z']
+
+instance FreshVars IVar where
+    freshVars n used =
+        return $ map (\a -> IVar (mkName a noLoc)) freshTvs
+      where
+        freshTvs :: [String]
+        freshTvs = take n (allTvs \\ map namedString used)
+
+        allTvs :: [String]
+        allTvs =  [[x] | x <- simpleTvs] ++
+                  [x : show i |  i <- [1 :: Integer ..],
+                                 x <- simpleTvs]
+
+        simpleTvs :: [Char]
+        simpleTvs = reverse ['l'..'n']
+
+instance Freshen TyVar TyVar Type where
+    freshen alpha@(TyVar n) theta phi | alpha `Set.member` phi =
+        (alpha', theta', phi')
+      where
+        phi'    = Set.insert alpha' phi
+        theta'  = Map.insert alpha (tyVarT alpha') theta
+        alpha'  = head [alpha  | i <- [show i | i <- [1..]]
+                               , let alpha' = TyVar n { nameSym = intern (s ++ i) }
+                               , alpha' `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        tyVarT :: TyVar -> Type
+        tyVarT tv = TyVarT tv (srclocOf tv)
+
+    freshen alpha theta phi =
+        (alpha, theta', phi')
+      where
+        phi'    = Set.insert alpha phi
+        theta'  = Map.delete alpha theta
+
+instance Freshen IVar IVar Type where
+    freshen alpha@(IVar n) theta phi | alpha `Set.member` phi =
+        (alpha', theta', phi')
+      where
+        phi'    = Set.insert alpha' phi
+        theta'  = Map.insert alpha (ivarT alpha') theta
+        alpha'  = head [alpha  | i <- [show i | i <- [1..] :: [Int]]
+                               , let alpha' = IVar n { nameSym = intern (s ++ i) }
+                               , alpha' `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        ivarT :: IVar -> Type
+        ivarT v = VarI v (srclocOf v)
+
+    freshen alpha theta phi =
+        (alpha, theta', phi')
+      where
+        phi'    = Set.insert alpha phi
+        theta'  = Map.delete alpha theta
+
 #include "KZC/Check/Types-instances.hs"
+
+#endif /*!defined(ONLY_TYPEDEFS) */

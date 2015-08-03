@@ -4,6 +4,8 @@ instance Located Field where
   locOf (Field l) = locOf l
 instance Located Struct where
   locOf (Struct l) = locOf l
+instance Located TyVar where
+  locOf (TyVar l) = locOf l
 instance Located IVar where
   locOf (IVar l) = locOf l
 instance Located Exp where
@@ -13,7 +15,7 @@ instance Located Exp where
   locOf (BinopE _ _ _ l) = locOf l
   locOf (IfE _ _ _ l) = locOf l
   locOf (LetE _ _ _ _ l) = locOf l
-  locOf (LetFunE _ _ _ _ _ _ l) = locOf l
+  locOf (LetFunE _ _ _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
@@ -46,4 +48,5 @@ instance Located Type where
   locOf (StructT _ l) = locOf l
   locOf (ST _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
-  locOf (FunT _ _ _ l) = locOf l
+  locOf (FunT _ _ _ _ l) = locOf l
+  locOf (TyVarT _ l) = locOf l

@@ -39,6 +39,9 @@ module KZC.Check.Monad (
     lookupTyVarInst,
     lookupTyVarInsts,
 
+    extendIVars,
+    lookupIVar,
+
     traceNest,
     traceTc,
 
@@ -303,6 +306,16 @@ lookupTyVarInst tv =
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
+extendIVars :: [(IVar, Kind)] -> Tc b a -> Tc b a
+extendIVars ivks m =
+    extend iVars (\env x -> env { iVars = x }) ivks m
+
+lookupIVar :: IVar -> Tc b Kind
+lookupIVar iv =
+    lookupBy iVars onerr iv
+  where
+    onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
+
 traceNest :: Int -> Tc b a -> Tc b a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
 
@@ -443,8 +456,8 @@ instance Compress Type where
     compress (RefT tau l) =
         RefT <$> compress tau <*> pure l
 
-    compress (FunT iotas taus tau l) =
-        FunT <$> compress iotas <*> compress taus <*> compress tau <*> pure l
+    compress (FunT alphas iotas taus tau l) =
+        FunT <$> pure alphas <*> pure iotas <*> compress taus <*> compress tau <*> pure l
 
     compress tau@(ConstI {}) =
         pure tau

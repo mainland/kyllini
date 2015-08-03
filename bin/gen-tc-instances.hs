@@ -31,4 +31,6 @@ main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
+    DERIVE(TyVar)
+    DERIVE(IVar)
     DERIVE(Type)

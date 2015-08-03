@@ -38,6 +38,7 @@ data TcEnv = TcEnv
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , tyVarInsts :: !(Map TyVar Type)
+    , iVars      :: !(Map IVar Kind)
     , envMtvs    :: !(Set MetaTv)
     }
 
@@ -51,6 +52,7 @@ defaultTcEnv = TcEnv
     , varTypes   = Map.empty
     , tyVars     = Map.empty
     , tyVarInsts = Map.empty
+    , iVars      = Map.empty
     , envMtvs    = Set.empty
     }
 

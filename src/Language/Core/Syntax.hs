@@ -11,6 +11,7 @@ module Language.Core.Syntax (
     Var(..),
     Field(..),
     Struct(..),
+    TyVar(..),
     IVar(..),
     W(..),
     dEFAULT_INT_WIDTH,
@@ -38,6 +39,9 @@ newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
 newtype Struct = Struct Name
+  deriving (Eq, Ord, Read, Show)
+
+newtype TyVar = TyVar Name
   deriving (Eq, Ord, Read, Show)
 
 newtype IVar = IVar Name
@@ -69,7 +73,7 @@ data Exp = ConstE Const !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
          | LetE Var Type (Maybe Exp) Exp !SrcLoc
          -- Functions
-         | LetFunE Var [IVar] [VarBind] Type Exp Exp !SrcLoc
+         | LetFunE Var [TyVar] [IVar] [VarBind] Type Exp Exp !SrcLoc
          | CallE Var [Exp] [Exp] !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
@@ -145,7 +149,8 @@ data Type = UnitT !SrcLoc
           | StructT Struct !SrcLoc
           | ST Omega Type Type !SrcLoc
           | RefT Type !SrcLoc
-          | FunT [IVar] [Type] Type !SrcLoc
+          | FunT [TyVar] [IVar] [Type] Type !SrcLoc
+          | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Omega = C Type
@@ -164,6 +169,9 @@ instance Pretty Field where
 
 instance Pretty Struct where
     ppr (Struct n) = ppr n
+
+instance Pretty TyVar where
+    ppr (TyVar n) = ppr n
 
 instance Pretty IVar where
     ppr (IVar n) = ppr n
@@ -194,6 +202,10 @@ pprStruct flds =
     pprField :: (Doc, Doc) -> Doc
     pprField (f, v) = f <+> text "=" <+> v
 
+bracesIf :: Bool -> Doc -> Doc
+bracesIf True doc  = braces doc
+bracesIf False doc = doc
+
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
         ppr c
@@ -216,31 +228,40 @@ instance Pretty Exp where
 
     pprPrec p (LetE v tau Nothing e2 _) =
         parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+> text ":" <+> ppr tau <+/>
-        text "in"  </> ppr e2
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "in" </> ppr e2
 
-    pprPrec p (LetE v tau e1 e2 _) =
+    pprPrec p (LetE v tau (Just e1) e2 _) =
         parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+> text ":" <+> ppr tau <+/>
-        text "="   <>
-        (nest 2 (line <> ppr e1) </> text "in" <> nest 2 (line <> ppr e2) <|>
-         space <> ppr e1 <+> text "in" </> ppr e2)
+        (lhs <+> text "=" <+> flatten (ppr e1) <|> nest 2 (lhs <+> text "=" </> ppr e1)) </>
+        nest 2 (text "in" </> ppr e2)
+      where
+        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
 
-    pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
+    pprPrec p (LetFunE f _ ibs vbs tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "letfun" <+> ppr f <> parens (commasep (map ppr ibs ++ map ppr vbs)) <+>
-        text ":"      <+> ppr tau <+/>
-        text "="      </> nest 2 (ppr e1 </> text "in" </> ppr e2)
+        text "letfun" <+> ppr f <+> pprArgs ibs vbs <+>
+        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
+        nest 2 (text "=" </> ppr e1) </>
+        text "in" </> ppr e2
+      where
+        pprArgs :: [IVar] -> [VarBind] -> Doc
+        pprArgs [] [vb] =
+            ppr vb
+
+        pprArgs [] vbs =
+            parens (commasep (map ppr vbs))
+
+        pprArgs iotas vbs =
+            parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr vbs))
 
     pprPrec _ (CallE f ies es _) =
         ppr f <> parens (commasep (map ppr ies ++ map ppr es))
 
-    pprPrec p (DerefE v _) =
-        parensIf (p >= appPrec) $
-        text "!" <> ppr v
+    pprPrec _ (DerefE v _) =
+        text "!" <> pprPrec appPrec1 v
 
     pprPrec _ (AssignE v e _) =
-        ppr v <+> text ":=" <+> ppr e
+        ppr v <+> text ":=" <+> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
@@ -251,7 +272,7 @@ instance Pretty Exp where
     pprPrec _ (ForE v e1 e2 e3 _) =
         text "for" <+> ppr v <+> text "in" <+>
         brackets (commasep [ppr e1, ppr e2]) <+>
-        ppr e3
+        pprPrec appPrec1 e3
 
     pprPrec _ (ArrayE es _) =
         text "arr" <+> embrace commasep (map ppr es)
@@ -270,10 +291,10 @@ instance Pretty Exp where
         pprPrec appPrec1 e <> text "." <> ppr f
 
     pprPrec _ (PrintE True es _) =
-        text "println" <+> commasep (map ppr es)
+        text "println" <> parens (commasep (map (pprPrec appPrec1) es))
 
     pprPrec _ (PrintE False es _) =
-        text "print" <+> commasep (map ppr es)
+        text "print" <> parens (commasep (map (pprPrec appPrec1) es))
 
     pprPrec _ (ErrorE s _) =
         text "error" <+> ppr s
@@ -283,8 +304,8 @@ instance Pretty Exp where
         text "return" <+> ppr e
 
     pprPrec p (BindE v e1 e2 _) =
-        parensIf (p > appPrec) $
-        ppr v <+> text "<-" <+> ppr e1 <> text ";" <+/> ppr e2
+        bracesIf (p > appPrec) $
+        ppr v <+> text "<-" <+> pprPrec appPrec1 e1 <> text ";" <+/> ppr e2
 
     pprPrec _ (TakeE _) =
         text "take"
@@ -384,11 +405,29 @@ instance Pretty Type where
         pprPrec tyappPrec1 tau1 <+>
         pprPrec tyappPrec1 tau2
 
-    pprPrec p (FunT iotas taus tau _) =
+    pprPrec p (FunT alphas iotas taus tau _) =
         parensIf (p > arrowPrec) $
-        parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus)) <+>
+        pprForall alphas <+>
+        pprArgs iotas taus <+>
         text "->" <+>
         pprPrec arrowPrec1 tau
+      where
+        pprForall :: [TyVar] -> Doc
+        pprForall []     = empty
+        pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
+
+        pprArgs :: [IVar] -> [Type] -> Doc
+        pprArgs [] [tau1] =
+            ppr tau1
+
+        pprArgs [] taus =
+            parens (commasep (map ppr taus))
+
+        pprArgs iotas taus =
+            parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus))
+
+    pprPrec _ (TyVarT tv _) =
+        ppr tv
 
 instance Pretty Omega where
     pprPrec p (C tau) =
