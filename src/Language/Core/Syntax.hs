@@ -73,7 +73,7 @@ data Exp = ConstE Const !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
          | LetE Var Type (Maybe Exp) Exp !SrcLoc
          -- Functions
-         | LetFunE Var [TyVar] [IVar] [VarBind] Type Exp Exp !SrcLoc
+         | LetFunE Var [IVar] [VarBind] Type Exp Exp !SrcLoc
          | CallE Var [Exp] [Exp] !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
@@ -147,9 +147,9 @@ data Type = UnitT !SrcLoc
           | StringT !SrcLoc
           | ArrT Iota Type !SrcLoc
           | StructT Struct !SrcLoc
-          | ST Omega Type Type !SrcLoc
+          | ST [TyVar] Omega Type Type !SrcLoc
           | RefT Type !SrcLoc
-          | FunT [TyVar] [IVar] [Type] Type !SrcLoc
+          | FunT [IVar] [Type] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -237,7 +237,7 @@ instance Pretty Exp where
       where
         lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
 
-    pprPrec p (LetFunE f _ ibs vbs tau e1 e2 _) =
+    pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
         parensIf (p >= appPrec) $
         text "letfun" <+> ppr f <+> pprArgs ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
@@ -398,24 +398,24 @@ instance Pretty Type where
     pprPrec _ (StructT s _) =
         text "struct" <+> ppr s
 
-    pprPrec p (ST w tau1 tau2 _) =
+    pprPrec p (ST alphas omega tau1 tau2 _) =
         parensIf (p > tyappPrec) $
-        text "ST" <+>
-        pprPrec tyappPrec1 w <+>
-        pprPrec tyappPrec1 tau1 <+>
-        pprPrec tyappPrec1 tau2
-
-    pprPrec p (FunT alphas iotas taus tau _) =
-        parensIf (p > arrowPrec) $
         pprForall alphas <+>
-        pprArgs iotas taus <+>
-        text "->" <+>
-        pprPrec arrowPrec1 tau
+        text "ST" <+>
+        align (pprPrec tyappPrec1 omega <+/>
+               pprPrec tyappPrec1 tau1 <+/>
+               pprPrec tyappPrec1 tau2)
       where
         pprForall :: [TyVar] -> Doc
         pprForall []     = empty
         pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
 
+    pprPrec p (FunT iotas taus tau _) =
+        parensIf (p > arrowPrec) $
+        pprArgs iotas taus <+>
+        text "->" <+>
+        pprPrec arrowPrec1 tau
+      where
         pprArgs :: [IVar] -> [Type] -> Doc
         pprArgs [] [tau1] =
             ppr tau1

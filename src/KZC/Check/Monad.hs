@@ -450,14 +450,14 @@ instance Compress Type where
     compress tau@(T {}) =
         pure tau
 
-    compress (ST tau1 tau2 tau3 l) =
-        ST <$> compress tau1 <*> compress tau2 <*> compress tau3 <*> pure l
+    compress (ST alphas omega tau1 tau2 l) =
+        ST <$> pure alphas <*> compress omega <*> compress tau1 <*> compress tau2 <*> pure l
 
     compress (RefT tau l) =
         RefT <$> compress tau <*> pure l
 
-    compress (FunT alphas iotas taus tau l) =
-        FunT <$> pure alphas <*> pure iotas <*> compress taus <*> compress tau <*> pure l
+    compress (FunT iotas taus tau l) =
+        FunT <$> pure iotas <*> compress taus <*> compress tau <*> pure l
 
     compress tau@(ConstI {}) =
         pure tau

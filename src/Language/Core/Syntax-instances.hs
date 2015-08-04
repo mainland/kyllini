@@ -15,7 +15,7 @@ instance Located Exp where
   locOf (BinopE _ _ _ l) = locOf l
   locOf (IfE _ _ _ l) = locOf l
   locOf (LetE _ _ _ _ l) = locOf l
-  locOf (LetFunE _ _ _ _ _ _ _ l) = locOf l
+  locOf (LetFunE _ _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
@@ -46,7 +46,7 @@ instance Located Type where
   locOf (StringT l) = locOf l
   locOf (ArrT _ _ l) = locOf l
   locOf (StructT _ l) = locOf l
-  locOf (ST _ _ _ l) = locOf l
+  locOf (ST _ _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
-  locOf (FunT _ _ _ _ l) = locOf l
+  locOf (FunT _ _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l

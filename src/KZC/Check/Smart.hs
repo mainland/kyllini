@@ -31,10 +31,10 @@ refT tau = RefT tau (srclocOf tau)
 
 stT :: Type -> Type -> Type -> Type
 stT omega alpha beta =
-    ST omega alpha beta (omega `srcspan` alpha `srcspan` beta)
+    ST [] omega alpha beta (omega `srcspan` alpha `srcspan` beta)
 
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
 
 funT :: [Type] -> Type -> Type
-funT taus tau = FunT [] [] taus tau (taus `srcspan` tau)
+funT taus tau = FunT [] taus tau (taus `srcspan` tau)
