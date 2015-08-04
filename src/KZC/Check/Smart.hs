@@ -29,9 +29,9 @@ arrT iota tau = ArrT iota tau (iota `srcspan` tau)
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
 
-stT :: Type -> Type -> Type -> Type
-stT omega alpha beta =
-    ST [] omega alpha beta (omega `srcspan` alpha `srcspan` beta)
+stT :: Type -> Type -> Type -> Type -> Type
+stT omega sigma alpha beta =
+    ST [] omega sigma alpha beta (omega `srcspan` sigma `srcspan` alpha `srcspan` beta)
 
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)

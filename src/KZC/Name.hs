@@ -15,6 +15,7 @@ module KZC.Name (
   ) where
 
 import Data.Loc
+import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
@@ -42,6 +43,9 @@ instance Located Name where
 
 instance Pretty Name where
     ppr (Name _ sym _) = text (unintern sym)
+
+instance IsString Name where
+    fromString s = Name Orig (intern s) noLoc
 
 data NameSort = Orig
               | Internal {-# UNPACK #-} !Uniq

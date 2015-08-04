@@ -14,7 +14,7 @@ instance Located Type where
   locOf (ArrT _ _ l) = locOf l
   locOf (C _ l) = locOf l
   locOf (T l) = locOf l
-  locOf (ST _ _ _ _ l) = locOf l
+  locOf (ST _ _ _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
   locOf (FunT _ _ _ l) = locOf l
   locOf (ConstI _ l) = locOf l

@@ -147,7 +147,7 @@ data Type = UnitT !SrcLoc
           | StringT !SrcLoc
           | ArrT Iota Type !SrcLoc
           | StructT Struct !SrcLoc
-          | ST [TyVar] Omega Type Type !SrcLoc
+          | ST [TyVar] Omega Type Type Type !SrcLoc
           | RefT Type !SrcLoc
           | FunT [IVar] [Type] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
@@ -398,13 +398,14 @@ instance Pretty Type where
     pprPrec _ (StructT s _) =
         text "struct" <+> ppr s
 
-    pprPrec p (ST alphas omega tau1 tau2 _) =
+    pprPrec p (ST alphas omega tau1 tau2 tau3 _) =
         parensIf (p > tyappPrec) $
         pprForall alphas <+>
         text "ST" <+>
-        align (pprPrec tyappPrec1 omega <+/>
-               pprPrec tyappPrec1 tau1 <+/>
-               pprPrec tyappPrec1 tau2)
+        align (sep [pprPrec tyappPrec1 omega
+                   ,pprPrec tyappPrec1 tau1
+                   ,pprPrec tyappPrec1 tau2
+                   ,pprPrec tyappPrec1 tau3])
       where
         pprForall :: [TyVar] -> Doc
         pprForall []     = empty
