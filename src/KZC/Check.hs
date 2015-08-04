@@ -30,6 +30,7 @@ import Control.Monad (filterM,
 import Control.Monad.Ref
 import Data.IORef
 import Data.Loc
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -209,25 +210,21 @@ tcExp (Z.ConstE zc l) exp_ty = do
 
 tcExp (Z.VarE v l) exp_ty = do
     isRval <- isRvalCtx
-    tau    <- lookupVar v
-    instantiate isRval tau
+    tau    <- lookupVar v >>= instantiate
+    go isRval tau
   where
-    instantiate :: Bool -> Type -> Tc b (Tc c C.Exp)
-    instantiate isRval tau =
-        compress tau >>= go isRval
-      where
-        go :: Bool -> Type -> Tc b (Tc c C.Exp)
-        -- If we are in an r-value context, we need to generate code that
-        -- dereferences the variable and return the dereferenced value.
-        go True (RefT tau _) = do
-            instType tau exp_ty
-            return $ do cv <- trans v
-                        derefRvalueE $ C.VarE cv l
+    go :: Bool -> Type -> Tc b (Tc c C.Exp)
+    -- If we are in an r-value context, we need to generate code that
+    -- dereferences the variable and returns the dereferenced value.
+    go True (RefT tau _) = do
+        instType tau exp_ty
+        return $ do cv <- trans v
+                    derefRvalueE $ C.VarE cv l
 
-        go _ tau = do
-            instType tau exp_ty
-            return $ do cv <- trans v
-                        return $ C.VarE cv l
+    go _ tau = do
+        instType tau exp_ty
+        return $ do cv <- trans v
+                    return $ C.VarE cv l
 
 tcExp (Z.UnopE op e1 l) exp_ty = do
     (tau1, mce1) <- inferExp e1
@@ -282,13 +279,14 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
                 return $ C.LetE cv ctau (Just ce1) ce2 l
 
 tcExp (Z.CallE f es l) exp_ty = do
-    (taus, tau) <- lookupVar f >>= checkFunType f nargs
+    (taus, tau_ret) <- lookupVar f >>= checkFunType f nargs
     when (length taus /= nargs) $
         faildoc $
           text "Expected" <+> ppr nargs <+>
           text "arguments but got" <+> ppr (length taus)
-    mces <- zipWithM checkArg es taus
-    instType tau exp_ty
+    mces     <- zipWithM checkArg es taus
+    tau_ret' <- instantiate tau_ret
+    instType tau_ret' exp_ty
     return $ collectRvalCtx $ do
              cf  <- trans f
              ces <- sequence mces
@@ -297,6 +295,9 @@ tcExp (Z.CallE f es l) exp_ty = do
     nargs :: Int
     nargs = length es
 
+    -- If an argument is a ref type, then we do not want to implicitly
+    -- dereference it, since it should be passed by reference. Otherwise, we
+    -- assume we are in an r-value context.
     checkArg :: Z.Exp -> Type -> Tc b (Tc c C.Exp)
     checkArg e tau =
         compress tau >>= go
@@ -836,50 +837,24 @@ instantiate tau =
     compress tau >>= go
   where
     go :: Type -> Tc b Type
-    go tau@(UnitT {})    = pure tau
-    go tau@(BoolT {})    = pure tau
-    go tau@(BitT {})     = pure tau
-    go tau@(IntT {})     = pure tau
-    go tau@(FloatT {})   = pure tau
-    go tau@(ComplexT {}) = pure tau
-    go tau@(StringT {})  = pure tau
-    go tau@(StructT {})  = pure tau
+    go (ST alphas omega tau1 tau2 l) = do
+        (theta, phi) <- instVars alphas TauK
+        return $ ST [] omega (subst theta phi tau1) (subst theta phi tau2) l
 
-    go (ArrT tau1 tau2 l) =
-        ArrT <$> go tau1 <*> go tau2 <*> pure l
+    go (FunT iotas taus tau_ret l) = do
+        (theta, phi) <- instVars iotas IotaK
+        return $ FunT [] (subst theta phi taus) (subst theta phi tau_ret) l
 
-    go (C tau l) =
-        C <$> go tau <*> pure l
-
-    go tau@(T {}) =
+    go tau =
         pure tau
 
-    go tau@(ST alphas omega tau1 tau2 l) = do
-        mtvs      <- mapM (newMetaTvT TauK) alphas
-        let theta =  Map.fromList (alphas `zip` mtvs)
-        let phi   =  fvs tau <\\> fromList alphas
-        ST <$> pure [] <*> go omega <*> go (subst theta phi tau1) <*> go (subst theta phi tau2) <*> pure l
-
-    go (RefT tau l) =
-        RefT <$> go tau <*> pure l
-
-    go tau@(FunT iotas taus tau_ret l) = do
-        mtvs      <- mapM (newMetaTvT IotaK) iotas
-        let theta =  Map.fromList (iotas `zip` mtvs)
-        let phi   =  fvs tau <\\> fromList iotas
-        FunT <$> pure [] <*> mapM go (subst theta phi taus) <*> go (subst theta phi tau_ret) <*> pure l
-
-    go tau@(ConstI {}) =
-        pure tau
-
-    go tau@(VarI {}) =
-        pure tau
-
-    go tau@(TyVarT {}) =
-        pure tau
-
-    go tau@(MetaT {}) =
-        pure tau
+    instVars :: (Located tv, Subst Type tv Type)
+             => [tv] -> Kind -> Tc b (Map tv Type, Set tv)
+    instVars tvs kappa = do
+        mtvs      <- mapM (newMetaTvT kappa) tvs
+        let theta =  Map.fromList (tvs `zip` mtvs)
+        let phi   =  fvs tau <\\> fromList tvs
+        return (theta, phi)
 
 -- | Update a type meta-variable with a type while checking that the type's kind
 -- matches the meta-variable's kind.
@@ -911,20 +886,27 @@ checkFunType _ nargs tau =
         return (taus, tau_ret)
 
 checkMapFunType :: Z.Var -> Type -> Tc b (Type, Type)
-checkMapFunType _ tau =
-    instantiate tau >>= go
+checkMapFunType _ tau = do
+    tau_f <- instantiate tau
+    (alpha, tau_ret) <- case tau_f of
+                          FunT [] [alpha] tau_ret@(ST {}) _ -> return (alpha, tau_ret)
+                          _ -> err
+    tau_ret' <- instantiate tau_ret
+    beta <- case tau_ret' of
+              ST [] (C beta _) _ _ _ -> return beta
+              _ -> err
+    return (alpha, beta)
   where
-    go :: Type -> Tc b (Type, Type)
-    go (FunT [] [alpha] (ST [] (C beta _) _ _ _) _) =
-        return (alpha, beta)
-
-    go tau_f = do
+    err :: Tc b a
+    err = do
         alpha <- newMetaTvT TauK tau
         beta  <- newMetaTvT TauK tau
         gamma <- newMetaTvT TauK tau
         delta <- newMetaTvT TauK tau
-        unifyTypes tau_f (funT [alpha] (ST [] (C beta l) gamma delta l))
-        return (alpha, beta)
+        [tau1, tau2] <- sanitizeTypes [tau, funT [alpha] (ST [] (C beta l) gamma delta l)]
+        faildoc $
+          text "Expected type:" <+> ppr tau2 </>
+          text "but got:      " <+> ppr tau1
 
     l :: SrcLoc
     l = srclocOf tau
