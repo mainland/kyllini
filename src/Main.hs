@@ -70,7 +70,7 @@ runPipeline filepath = do
     checkPipeline = check >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
     check :: [Z.CompLet] -> KZC C.Exp
-    check decls = withTc $ checkProgram decls
+    check decls = withTi $ checkProgram decls
 
     lintCore :: C.Exp -> KZC C.Exp
     lintCore e = do

@@ -11,10 +11,10 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Check.Monad (
-    Tc(..),
-    runTc,
-    liftTc,
-    withTc,
+    Ti(..),
+    runTi,
+    liftTi,
+    withTi,
 
     shift,
     reset,
@@ -90,91 +90,91 @@ import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
-newtype Tc b a = Tc { unTc :: TcEnv -> TcState -> (a -> TcEnv -> TcState -> KZC (b, TcState)) -> KZC (b, TcState) }
+newtype Ti b a = Ti { unTi :: TiEnv -> TiState -> (a -> TiEnv -> TiState -> KZC (b, TiState)) -> KZC (b, TiState) }
 
-runTc :: Tc a a -> TcEnv -> TcState -> KZC (a, TcState)
-runTc m r s = unTc m r s $ \x _ s' -> return (x, s')
+runTi :: Ti a a -> TiEnv -> TiState -> KZC (a, TiState)
+runTi m r s = unTi m r s $ \x _ s' -> return (x, s')
 
--- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
-liftTc :: Tc a a -> KZC a
-liftTc m = do
+-- | Run a @Ti@ computation in the @KZC@ monad and update the @Ti@ environment.
+liftTi :: Ti a a -> KZC a
+liftTi m = do
     eref  <- asks tcenvref
     sref  <- asks tcstateref
     env   <- readRef eref
     state <- readRef sref
-    (a, _) <- unTc m env state $ \a env' state' -> do
+    (a, _) <- unTi m env state $ \a env' state' -> do
               writeRef eref env'
               writeRef sref state'
               return (a, state')
     return a
 
--- | Run a @Tc@ computation in the @KZC@ monad without updating the
--- @Tc@ environment.
-withTc :: Tc a a -> KZC a
-withTc m = do
+-- | Run a @Ti@ computation in the @KZC@ monad without updating the
+-- @Ti@ environment.
+withTi :: Ti a a -> KZC a
+withTi m = do
     eref  <- asks tcenvref
     sref  <- asks tcstateref
     env   <- readRef eref
     state <- readRef sref
-    (a, _) <- unTc m env state $ \a _ state' -> do
+    (a, _) <- unTi m env state $ \a _ state' -> do
               writeRef sref state'
               return (a, state')
     return a
 
-instance Functor (Tc b) where
+instance Functor (Ti b) where
     fmap f x = x >>= return . f
 
-instance Applicative (Tc b) where
+instance Applicative (Ti b) where
     pure  = return
     (<*>) = ap
 
-instance Monad (Tc b) where
+instance Monad (Ti b) where
     {-# INLINE return #-}
-    return a = Tc $ \r s k -> k a r s
+    return a = Ti $ \r s k -> k a r s
 
     {-# INLINE (>>=) #-}
-    m >>= f  = Tc $ \r s k -> unTc m  r s $ \x r' s' -> unTc (f x) r' s' $ \y r'' s'' ->
+    m >>= f  = Ti $ \r s k -> unTi m  r s $ \x r' s' -> unTi (f x) r' s' $ \y r'' s'' ->
                k y r'' s''
 
     {-# INLINE (>>) #-}
-    m1 >> m2 = Tc $ \r s k -> unTc m1 r s $ \_ r' s' -> unTc m2    r' s' $ \y r'' s'' ->
+    m1 >> m2 = Ti $ \r s k -> unTi m1 r s $ \_ r' s' -> unTi m2    r' s' $ \y r'' s'' ->
                k y r'' s''
 
     fail msg = throw (FailException (string msg))
 
-instance MonadReader TcEnv (Tc b) where
-    ask = Tc $ \r s k -> k r r s
+instance MonadReader TiEnv (Ti b) where
+    ask = Ti $ \r s k -> k r r s
 
-    local f m =Tc $ \r s k -> unTc m (f r) s $ \x _ s' -> k x r s'
+    local f m =Ti $ \r s k -> unTi m (f r) s $ \x _ s' -> k x r s'
 
-instance MonadState TcState (Tc b) where
-    get   = Tc $ \r s k -> k s r s
-    put s = Tc $ \r _ k -> k () r s
+instance MonadState TiState (Ti b) where
+    get   = Ti $ \r s k -> k s r s
+    put s = Ti $ \r _ k -> k () r s
 
-instance MonadRef IORef (Tc b) where
+instance MonadRef IORef (Ti b) where
     newRef x     = liftIO $ newRef x
     readRef r    = liftIO $ readRef r
     writeRef r x = liftIO $ writeRef r x
 
-instance MonadIO (Tc b) where
+instance MonadIO (Ti b) where
     liftIO = liftKZC . liftIO
 
-instance MonadUnique (Tc b) where
+instance MonadUnique (Ti b) where
     newUnique = liftKZC newUnique
 
-instance MonadKZC (Tc b) where
-    liftKZC m = Tc $ \r s k -> do
+instance MonadKZC (Ti b) where
+    liftKZC m = Ti $ \r s k -> do
                 a <- m
                 k a r s
 
-instance MonadException (Tc b) where
+instance MonadException (Ti b) where
     throw e =
         throwContextException (liftKZC . throw) e
 
-    m `catch` h = Tc $ \r s k ->
-      unTc m r s k `catchContextException` \e -> unTc (h e) r s k
+    m `catch` h = Ti $ \r s k ->
+      unTi m r s k `catchContextException` \e -> unTi (h e) r s k
 
-instance MonadErr (Tc b) where
+instance MonadErr (Ti b) where
     {-# INLINE askErrCtx #-}
     askErrCtx = asks errctx
 
@@ -192,23 +192,23 @@ instance MonadErr (Tc b) where
            else do  ctx <- take <$> getMaxContext <*> askErrCtx
                     liftIO $ hPutStrLn stderr $ pretty 80 (ppr (toContextException ctx e))
 
-reset :: Tc a a -> Tc b a
-reset m = Tc $ \r s k -> do (x, s') <- runTc m r s
+reset :: Ti a a -> Ti b a
+reset m = Ti $ \r s k -> do (x, s') <- runTi m r s
                             k x r s'
 
-shift :: ((a -> Tc b b) -> Tc b b) -> Tc b a
-shift f = Tc $ \r s k ->
-    let c = \x -> Tc $ \r' s k' -> do (y, s') <- k x r' s
+shift :: ((a -> Ti b b) -> Ti b b) -> Ti b a
+shift f = Ti $ \r s k ->
+    let c = \x -> Ti $ \r' s k' -> do (y, s') <- k x r' s
                                       k' y r' s'
     in
-      runTc (f c) r s
+      runTi (f c) r s
 
 extend :: forall k v a b . Ord k
-       => (TcEnv -> Map k v)
-       -> (TcEnv -> Map k v -> TcEnv)
+       => (TiEnv -> Map k v)
+       -> (TiEnv -> Map k v -> TiEnv)
        -> [(k, v)]
-       -> Tc b a
-       -> Tc b a
+       -> Ti b a
+       -> Ti b a
 extend _ _ [] m = m
 
 extend proj upd kvs m = do
@@ -218,34 +218,34 @@ extend proj upd kvs m = do
     insert mp (k, v) = Map.insert k v mp
 
 lookupBy :: Ord k
-         => (TcEnv -> Map k v)
-         -> Tc b v
+         => (TiEnv -> Map k v)
+         -> Ti b v
          -> k
-         -> Tc b v
+         -> Ti b v
 lookupBy proj onerr k = do
     maybe_v <- asks (Map.lookup k . proj)
     case maybe_v of
       Nothing  -> onerr
       Just v   -> return v
 
-localExp :: Z.Exp -> Tc b a -> Tc b a
+localExp :: Z.Exp -> Ti b a -> Ti b a
 localExp e = local (\env -> env { curexp = Just e })
 
-askCurrentExp :: Tc b (Maybe Z.Exp)
+askCurrentExp :: Ti b (Maybe Z.Exp)
 askCurrentExp = asks curexp
 
-isRvalCtx :: Tc b Bool
+isRvalCtx :: Ti b Bool
 isRvalCtx = asks isrvalctx
 
-inRvalCtx :: Tc b a -> Tc b a
+inRvalCtx :: Ti b a -> Ti b a
 inRvalCtx k =
     local (\env -> env { isrvalctx = True }) k
 
-notInRvalCtx :: Tc b a -> Tc b a
+notInRvalCtx :: Ti b a -> Ti b a
 notInRvalCtx k =
     local (\env -> env { isrvalctx = False }) k
 
-collectRvalCtx :: Tc b C.Exp -> Tc b C.Exp
+collectRvalCtx :: Ti b C.Exp -> Ti b C.Exp
 collectRvalCtx k = do
     old_rvalctx <- gets rvalctx
     modify $ \s -> s { rvalctx = id }
@@ -254,79 +254,79 @@ collectRvalCtx k = do
     modify $ \s -> s { rvalctx = old_rvalctx }
     return $ f ce
 
-modifyRvalCtx :: (C.Exp -> C.Exp) -> Tc b ()
+modifyRvalCtx :: (C.Exp -> C.Exp) -> Ti b ()
 modifyRvalCtx f = modify $ \s -> s { rvalctx = rvalctx s . f }
 
-extendVars :: [(Z.Var, Type)] -> Tc b a -> Tc b a
+extendVars :: [(Z.Var, Type)] -> Ti b a -> Ti b a
 extendVars vtaus m = do
     mtvs <- fvs <$> compress (map snd vtaus)
     local (\env -> env { envMtvs = mtvs `Set.union` envMtvs env }) $ do
     extend varTypes (\env x -> env { varTypes = x }) vtaus m
 
-lookupVar :: Z.Var -> Tc b Type
+lookupVar :: Z.Var -> Ti b Type
 lookupVar v =
     lookupBy varTypes onerr v
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
-askEnvMtvs :: Tc b [MetaTv]
+askEnvMtvs :: Ti b [MetaTv]
 askEnvMtvs =
     asks (Set.toList . envMtvs) >>= mapM simplify >>= return . concat
   where
-    simplify :: MetaTv -> Tc b [MetaTv]
+    simplify :: MetaTv -> Ti b [MetaTv]
     simplify mtv = do
         maybe_tau <- readTv mtv
         case maybe_tau of
           Just tau  -> (Set.toList . fvs) <$> compress tau
           Nothing   -> return [mtv]
 
-extendTyVars :: [(TyVar, Kind)] -> Tc b a -> Tc b a
+extendTyVars :: [(TyVar, Kind)] -> Ti b a -> Ti b a
 extendTyVars tvks m =
     extend tyVars (\env x -> env { tyVars = x }) tvks m
 
-lookupTyVar :: TyVar -> Tc b Kind
+lookupTyVar :: TyVar -> Ti b Kind
 lookupTyVar tv =
     lookupBy tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendTyVarInsts :: [(TyVar, Type)] -> Tc b a -> Tc b a
+extendTyVarInsts :: [(TyVar, Type)] -> Ti b a -> Ti b a
 extendTyVarInsts tvks m =
     local (\env -> env { tyVarInsts = foldl' insert (tyVarInsts env) tvks }) m
   where
     insert mp (k, v) = Map.insert k v mp
 
-lookupTyVarInsts :: Tc b (Map TyVar Type)
+lookupTyVarInsts :: Ti b (Map TyVar Type)
 lookupTyVarInsts =
     asks tyVarInsts
 
-lookupTyVarInst :: TyVar -> Tc b Type
+lookupTyVarInst :: TyVar -> Ti b Type
 lookupTyVarInst tv =
     lookupBy tyVarInsts onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendIVars :: [(IVar, Kind)] -> Tc b a -> Tc b a
+extendIVars :: [(IVar, Kind)] -> Ti b a -> Ti b a
 extendIVars ivks m =
     extend iVars (\env x -> env { iVars = x }) ivks m
 
-lookupIVar :: IVar -> Tc b Kind
+lookupIVar :: IVar -> Ti b Kind
 lookupIVar iv =
     lookupBy iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
 
-traceNest :: Int -> Tc b a -> Tc b a
+traceNest :: Int -> Ti b a -> Ti b a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
 
-traceTc :: Doc -> Tc b ()
+traceTc :: Doc -> Ti b ()
 traceTc doc = do
     doTrace <- liftKZC $ asksFlags (testTraceFlag TraceTc)
     when doTrace $ do
         d <- asks nestdepth
         liftIO $ hPutDocLn stderr $ text "traceTc:" <+> indent d (align doc)
 
-withExpContext :: Z.Exp -> Tc b a -> Tc b a
+withExpContext :: Z.Exp -> Ti b a -> Ti b a
 withExpContext e m =
     localExp e $
     withSummaryContext e m
@@ -337,13 +337,13 @@ readTv (MetaTv _ _ ref) = readRef ref
 writeTv :: MonadRef IORef m => MetaTv -> Type -> m ()
 writeTv (MetaTv _ _ ref) tau = writeRef ref (Just tau)
 
-newMetaTv :: Kind -> Tc b MetaTv
+newMetaTv :: Kind -> Ti b MetaTv
 newMetaTv k = do
     u     <- newUnique
     tref  <- newRef Nothing
     return $ MetaTv u k tref
 
-newMetaTvT :: Located a => Kind -> a -> Tc b Type
+newMetaTvT :: Located a => Kind -> a -> Ti b Type
 newMetaTvT k x = MetaT <$> newMetaTv k <*> pure (srclocOf x)
 
 {------------------------------------------------------------------------------
@@ -352,12 +352,12 @@ newMetaTvT k x = MetaT <$> newMetaTv k <*> pure (srclocOf x)
  -
  ------------------------------------------------------------------------------}
 
-relevantBindings :: Tc b Doc
+relevantBindings :: Ti b Doc
 relevantBindings = do
     maybe_e <- askCurrentExp
     go maybe_e
   where
-    go :: Maybe Z.Exp -> Tc b Doc
+    go :: Maybe Z.Exp -> Ti b Doc
     go Nothing =
         return Text.PrettyPrint.Mainland.empty
 
@@ -377,7 +377,7 @@ sanitizeTypes :: ( Pretty a, Compress a
                  , HasVars a MetaTv
                  , Subst Type MetaTv a)
               =>  a
-              ->  Tc b a
+              ->  Ti b a
 sanitizeTypes x = do
     x'        <- compress x
     mtvs      <- metaTvs x'
@@ -394,7 +394,7 @@ sanitizeTypes x = do
 -- The @metasM@ and @metas@ functions returns a list of all meta variables in
 -- /order of occurrence/.
 
-metaTvs :: (Compress a, HasVars a MetaTv) => a -> Tc b [MetaTv]
+metaTvs :: (Compress a, HasVars a MetaTv) => a -> Ti b [MetaTv]
 metaTvs x = do
   x' <- compress x
   let mtvs :: OrderedSet MetaTv = allVars x'

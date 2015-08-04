@@ -11,11 +11,11 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Check.State (
-    TcEnv(..),
-    defaultTcEnv,
+    TiEnv(..),
+    defaultTiEnv,
 
-    TcState(..),
-    defaultTcState
+    TiState(..),
+    defaultTiState
   ) where
 
 import Data.Map (Map)
@@ -29,7 +29,7 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Check.Types
 import KZC.Error
 
-data TcEnv = TcEnv
+data TiEnv = TiEnv
     { errctx     :: ![ErrorContext]
     , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Z.Exp
@@ -42,8 +42,8 @@ data TcEnv = TcEnv
     , envMtvs    :: !(Set MetaTv)
     }
 
-defaultTcEnv :: TcEnv
-defaultTcEnv = TcEnv
+defaultTiEnv :: TiEnv
+defaultTiEnv = TiEnv
     { errctx     = []
     , nestdepth  = 0
     , curexp     = Nothing
@@ -56,9 +56,9 @@ defaultTcEnv = TcEnv
     , envMtvs    = Set.empty
     }
 
-data TcState = TcState
+data TiState = TiState
     { rvalctx :: C.Exp -> C.Exp }
 
-defaultTcState :: TcState
-defaultTcState = TcState
+defaultTiState :: TiState
+defaultTiState = TiState
     { rvalctx = id }
