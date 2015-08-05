@@ -27,8 +27,8 @@ import qualified Language.Ziria.Syntax as Z
 import Text.PrettyPrint.Mainland
 
 import KZC.Check
-import KZC.Check.Monad
 import KZC.Flags
+import qualified KZC.Lint as Lint
 import KZC.Monad
 import KZC.SysTools
 
@@ -74,10 +74,8 @@ runPipeline filepath = do
 
     lintCore :: C.Exp -> KZC C.Exp
     lintCore e = do
-{-
-        whenFlag lintf $
-            liftLintCont $ lintDecls cdecls
--}
+        whenDynFlag Lint $
+            Lint.withTc $ void $ Lint.checkExp e
         return e
 
 {-

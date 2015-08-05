@@ -27,16 +27,19 @@ import Control.Monad.Ref
 import Data.IORef
 import Text.PrettyPrint.Mainland
 
+import KZC.Check.State
 import KZC.Error
 import KZC.Flags
+import KZC.Lint.State
 import KZC.Uniq
-import qualified KZC.Check.State as Check
 
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
     , flags      :: !Flags
-    , tcenvref   :: !(IORef Check.TiEnv)
-    , tcstateref :: !(IORef Check.TiState)
+    , tienvref   :: !(IORef TiEnv)
+    , tistateref :: !(IORef TiState)
+    , tcenvref   :: !(IORef TcEnv)
+    , tcstateref :: !(IORef TcState)
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
@@ -44,10 +47,14 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
               -> m KZCEnv
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
-    tceref <- newRef Check.defaultTiEnv
-    tcsref <- newRef Check.defaultTiState
+    tieref <- newRef defaultTiEnv
+    tisref <- newRef defaultTiState
+    tceref <- newRef defaultTcEnv
+    tcsref <- newRef defaultTcState
     return KZCEnv { uniq       = u
                   , flags      = fs
+                  , tienvref   = tieref
+                  , tistateref = tisref
                   , tcenvref   = tceref
                   , tcstateref = tcsref
                   }

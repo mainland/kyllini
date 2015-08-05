@@ -17,6 +17,9 @@ instance Located Exp where
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetFunE _ _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
+  locOf (TyAbsE _ _ l) = locOf l
+  locOf (TyAppE _ _ l) = locOf l
+  locOf (LetRefE _ _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
@@ -30,8 +33,8 @@ instance Located Exp where
   locOf (ErrorE _ l) = locOf l
   locOf (ReturnE _ l) = locOf l
   locOf (BindE _ _ _ l) = locOf l
-  locOf (TakeE l) = locOf l
-  locOf (TakesE _ l) = locOf l
+  locOf (TakeE _ l) = locOf l
+  locOf (TakesE _ _ l) = locOf l
   locOf (EmitE _ l) = locOf l
   locOf (EmitsE _ l) = locOf l
   locOf (RepeatE _ l) = locOf l
@@ -44,9 +47,15 @@ instance Located Type where
   locOf (FloatT _ l) = locOf l
   locOf (ComplexT _ l) = locOf l
   locOf (StringT l) = locOf l
-  locOf (ArrT _ _ l) = locOf l
   locOf (StructT _ l) = locOf l
+  locOf (ArrT _ _ l) = locOf l
   locOf (ST _ _ _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
   locOf (FunT _ _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
+instance Located Omega where
+  locOf (C _) = noLoc
+  locOf T = noLoc
+instance Located Iota where
+  locOf (ConstI _ l) = locOf l
+  locOf (VarI _ l) = locOf l

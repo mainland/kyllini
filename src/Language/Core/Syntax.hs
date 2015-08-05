@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
 -- Module      : Language.Core.Syntax
@@ -17,20 +18,29 @@ module Language.Core.Syntax (
     dEFAULT_INT_WIDTH,
     Const(..),
     Exp(..),
-    VarBind(..),
     BindVar(..),
     Unop(..),
     Binop(..),
     Type(..),
     Omega(..),
-    Iota(..)
+    Iota(..),
+    Kind(..)
   ) where
 
 import Data.Loc
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
+import Data.Monoid
+import qualified Data.Set as Set
+import Data.String
+import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
 import KZC.Pretty
+import KZC.Summary
+import KZC.Util.SetLike
+import KZC.Vars
 
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)
@@ -71,11 +81,15 @@ data Exp = ConstE Const !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
-         | LetE Var Type (Maybe Exp) Exp !SrcLoc
+         | LetE Var Type Exp Exp !SrcLoc
          -- Functions
-         | LetFunE Var [IVar] [VarBind] Type Exp Exp !SrcLoc
-         | CallE Var [Exp] [Exp] !SrcLoc
+         | LetFunE Var [IVar] [(Var, Type)] Type Exp Exp !SrcLoc
+         | CallE Exp [Iota] [Exp] !SrcLoc
+         -- Type abstraction and application
+         | TyAbsE [TyVar] Exp !SrcLoc
+         | TyAppE Exp [Type] !SrcLoc
          -- References
+         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
@@ -94,15 +108,12 @@ data Exp = ConstE Const !SrcLoc
          -- Computations
          | ReturnE Exp !SrcLoc
          | BindE BindVar Exp Exp !SrcLoc
-         | TakeE !SrcLoc
-         | TakesE Int !SrcLoc
+         | TakeE Type !SrcLoc
+         | TakesE Int Type !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE Exp !SrcLoc
          | ArrE Exp Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-data VarBind = VarBind Var Type
   deriving (Eq, Ord, Read, Show)
 
 data BindVar = BindV Var
@@ -138,6 +149,9 @@ data Binop = Lt
            | Pow
   deriving (Eq, Ord, Read, Show)
 
+data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
@@ -145,8 +159,8 @@ data Type = UnitT !SrcLoc
           | FloatT W !SrcLoc
           | ComplexT W !SrcLoc
           | StringT !SrcLoc
-          | ArrT Iota Type !SrcLoc
           | StructT Struct !SrcLoc
+          | ArrT Iota Type !SrcLoc
           | ST [TyVar] Omega Type Type Type !SrcLoc
           | RefT Type !SrcLoc
           | FunT [IVar] [Type] Type !SrcLoc
@@ -160,6 +174,35 @@ data Omega = C Type
 data Iota = ConstI Int !SrcLoc
           | VarI IVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+data Kind = TauK   -- ^ Base types, including arrays of base types
+          | OmegaK -- ^ @C tau@ or @T@
+          | MuK    -- ^ @ST omega tau tau@ types
+          | RhoK   -- ^ Reference types
+          | PhiK   -- ^ Function types
+          | IotaK  -- ^ Array index types
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString TyVar where
+    fromString s = TyVar (fromString s)
+
+{------------------------------------------------------------------------------
+ -
+ - Summaries
+ -
+ ------------------------------------------------------------------------------}
+
+instance Summary Exp where
+    summary e = text "expression:" <+> align (ppr e)
+
+instance Summary StructDef where
+    summary (StructDef s _ _) = text "struct" <+> ppr s
+
+{------------------------------------------------------------------------------
+ -
+ - Pretty printing
+ -
+ ------------------------------------------------------------------------------}
 
 instance Pretty Var where
     ppr (Var n) = ppr n
@@ -202,10 +245,6 @@ pprStruct flds =
     pprField :: (Doc, Doc) -> Doc
     pprField (f, v) = f <+> text "=" <+> v
 
-bracesIf :: Bool -> Doc -> Doc
-bracesIf True doc  = braces doc
-bracesIf False doc = doc
-
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
         ppr c
@@ -226,41 +265,67 @@ instance Pretty Exp where
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
-    pprPrec p (LetE v tau Nothing e2 _) =
-        parensIf (p >= appPrec) $
-        text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "in" </> ppr e2
-
-    pprPrec p (LetE v tau (Just e1) e2 _) =
-        parensIf (p >= appPrec) $
-        (lhs <+> text "=" <+> flatten (ppr e1) <|> nest 2 (lhs <+> text "=" </> ppr e1)) </>
-        nest 2 (text "in" </> ppr e2)
+    pprPrec p (LetE v tau e1 e2 _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr e1)) </>
+        nest 2 (text "in" </> pprPrec doPrec1 e2)
       where
         lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
-        parensIf (p >= appPrec) $
+        parensIf (p > appPrec) $
         text "letfun" <+> ppr f <+> pprArgs ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
         nest 2 (text "=" </> ppr e1) </>
-        text "in" </> ppr e2
+        text "in" </> pprPrec doPrec1 e2
       where
-        pprArgs :: [IVar] -> [VarBind] -> Doc
+        pprArgs :: [IVar] -> [(Var, Type)] -> Doc
+        pprArgs [] [] =
+            empty
+
         pprArgs [] [vb] =
-            ppr vb
+            pprArg vb
 
         pprArgs [] vbs =
-            parens (commasep (map ppr vbs))
+            sep (map pprArg vbs)
 
         pprArgs iotas vbs =
-            parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr vbs))
+            sep (map ppr iotas ++ map pprArg vbs)
 
-    pprPrec _ (CallE f ies es _) =
-        ppr f <> parens (commasep (map ppr ies ++ map ppr es))
+        pprArg :: (Var, Type) -> Doc
+        pprArg (v, tau) =
+            parens $ ppr v <+> text ":" <+> ppr tau
+
+    pprPrec _ (CallE f is es _) =
+        ppr f <> parens (commasep (map ppr is ++ map ppr es))
+
+    pprPrec p (TyAbsE alphas e _) =
+        parensIf (p > appPrec) $
+        text "/\\" <+> sep (map ppr alphas) <+> dot <+> ppr e
+
+    pprPrec p (TyAppE e taus _) =
+        parensIf (p > appPrec) $
+        ppr e <+> sep (map pprTyApp taus)
+      where
+        pprTyApp :: Type -> Doc
+        pprTyApp tau = text "@" <> pprPrec appPrec1 tau
+
+    pprPrec p (LetRefE v tau Nothing e2 _) =
+        parensIf (p > appPrec) $
+        text "letref" <+> ppr v <+> text ":" <+> ppr tau <+> text "in" </> pprPrec doPrec1 e2
+
+    pprPrec p (LetRefE v tau (Just e1) e2 _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr e1)) </>
+        nest 2 (text "in" </> pprPrec doPrec1 e2)
+      where
+        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec _ (DerefE v _) =
         text "!" <> pprPrec appPrec1 v
 
-    pprPrec _ (AssignE v e _) =
+    pprPrec p (AssignE v e _) =
+        parensIf (p > appPrec) $
         ppr v <+> text ":=" <+> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
@@ -301,18 +366,18 @@ instance Pretty Exp where
 
     pprPrec p (ReturnE e _) =
         parensIf (p > appPrec) $
-        text "return" <+> ppr e
+        text "return" <+> pprPrec appPrec1 e
 
-    pprPrec p (BindE v e1 e2 _) =
-        bracesIf (p > appPrec) $
-        ppr v <+> text "<-" <+> pprPrec appPrec1 e1 <> text ";" <+/> ppr e2
+    pprPrec _ (BindE v e1 e2 _) =
+        braces $
+        ppr v <+> text "<-" <+> pprPrec doPrec1 e1 <> text ";" <+/> ppr e2
 
-    pprPrec _ (TakeE _) =
-        text "take"
+    pprPrec _ (TakeE tau _) =
+        text "take" <+> text "@" <> pprPrec tyappPrec1 tau
 
-    pprPrec p (TakesE i _) =
+    pprPrec p (TakesE i tau _) =
         parensIf (p > appPrec) $
-        text "takes" <+> pprPrec appPrec1 i
+        text "takes" <+> pprPrec appPrec1 i <+> text "@" <> pprPrec appPrec1 tau
 
     pprPrec p (EmitE e _) =
         parensIf (p > appPrec) $
@@ -329,10 +394,6 @@ instance Pretty Exp where
     pprPrec p (ArrE e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
-
-instance Pretty VarBind where
-    ppr (VarBind v tau) =
-        ppr v <+> text ":" <+> ppr tau
 
 instance Pretty BindVar where
     ppr (BindV v) = ppr v
@@ -377,6 +438,9 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
+    pprPrec _ (IntT w _) | w == dEFAULT_INT_WIDTH =
+        text "int"
+
     pprPrec _ (IntT w _) =
         text "int" <> ppr w
 
@@ -391,12 +455,13 @@ instance Pretty Type where
 
     pprPrec p (RefT tau _) =
         parensIf (p > tyappPrec) $
-        text "ref" <+> ppr tau
+        text "ref" <+> pprPrec tyappPrec1 tau
+
+    pprPrec _ (StructT s _) =
+        text "struct" <+> ppr s
 
     pprPrec _ (ArrT ind tau _) =
         ppr tau <> brackets (ppr ind)
-    pprPrec _ (StructT s _) =
-        text "struct" <+> ppr s
 
     pprPrec p (ST alphas omega tau1 tau2 tau3 _) =
         parensIf (p > tyappPrec) $
@@ -409,7 +474,7 @@ instance Pretty Type where
       where
         pprForall :: [TyVar] -> Doc
         pprForall []     = empty
-        pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
+        pprForall alphas = text "forall" <+> sep (map ppr alphas) <+> dot
 
     pprPrec p (FunT iotas taus tau _) =
         parensIf (p > arrowPrec) $
@@ -442,6 +507,14 @@ instance Pretty Iota where
     ppr (ConstI i _) = ppr i
     ppr (VarI v _)   = ppr v
 
+instance Pretty Kind where
+    ppr TauK   = text "tau"
+    ppr OmegaK = text "omega"
+    ppr MuK    = text "mu"
+    ppr RhoK   = text "rho"
+    ppr PhiK   = text "phi"
+    ppr IotaK  = text "iota"
+
 -- %left '&&' '||'
 -- %left '==' '!='
 -- %left '|'
@@ -457,17 +530,23 @@ instance Pretty Iota where
 arrPrec :: Int
 arrPrec = 11
 
+doPrec :: Int
+doPrec = 12
+
+doPrec1 :: Int
+doPrec1 = doPrec + 1
+
 appPrec :: Int
-appPrec = 12
+appPrec = 13
 
 appPrec1 :: Int
-appPrec1 = 13
+appPrec1 = appPrec + 1
 
 arrowPrec :: Int
 arrowPrec = 0
 
 arrowPrec1 :: Int
-arrowPrec1 = 1
+arrowPrec1 = arrowPrec + 1
 
 tyappPrec :: Int
 tyappPrec = 1
@@ -504,4 +583,241 @@ instance HasFixity Unop where
     fixity Len      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
+#if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Free variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Fvs Type TyVar where
+    fvs (UnitT {})                         = mempty
+    fvs (BoolT {})                         = mempty
+    fvs (BitT {})                          = mempty
+    fvs (IntT {})                          = mempty
+    fvs (FloatT {})                        = mempty
+    fvs (ComplexT {})                      = mempty
+    fvs (StringT {})                       = mempty
+    fvs (StructT _ _)                      = mempty
+    fvs (ArrT _ tau _)                     = fvs tau
+    fvs (ST alphas omega tau1 tau2 tau3 _) = fvs omega <>
+                                             (fvs tau1 <> fvs tau2 <> fvs tau3)
+                                             <\\> fromList alphas
+    fvs (RefT tau _)                       = fvs tau
+    fvs (FunT _ taus tau _)                = fvs taus <> fvs tau
+    fvs (TyVarT tv _)                      = singleton tv
+
+instance Fvs Omega TyVar where
+    fvs (C tau) = fvs tau
+    fvs T       = mempty
+
+instance Fvs Type IVar where
+    fvs (UnitT {})                    = mempty
+    fvs (BoolT {})                    = mempty
+    fvs (BitT {})                     = mempty
+    fvs (IntT {})                     = mempty
+    fvs (FloatT {})                   = mempty
+    fvs (ComplexT {})                 = mempty
+    fvs (StringT {})                  = mempty
+    fvs (StructT _ _)                 = mempty
+    fvs (ArrT iota tau _)             = fvs iota <> fvs tau
+    fvs (ST _ omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
+    fvs (RefT tau _)                  = fvs tau
+    fvs (FunT ivs taus tau _)         = (fvs taus <> fvs tau) <\\> fromList ivs
+    fvs (TyVarT {})                   = mempty
+
+instance Fvs Omega IVar where
+    fvs (C tau) = fvs tau
+    fvs T       = mempty
+
+instance Fvs Iota IVar where
+    fvs (ConstI {}) = mempty
+    fvs (VarI iv _) = singleton iv
+
+instance Fvs Exp Var where
+    fvs (ConstE {})               = mempty
+    fvs (VarE v _)                = singleton v
+    fvs (UnopE _ e _)             = fvs e
+    fvs (BinopE _ e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)          = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE v _ e1 e2 _)        = delete v (fvs e1 <> fvs e2)
+    fvs (LetFunE v _ _ _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (CallE e _ es _)          = fvs e <> fvs es
+    fvs (TyAbsE _ e _)            = fvs e
+    fvs (TyAppE e _ _)            = fvs e
+    fvs (LetRefE v _ e1 e2 _)     = delete v (fvs e1 <> fvs e2)
+    fvs (DerefE e _)              = fvs e
+    fvs (AssignE e1 e2 _)         = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (UntilE e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (ForE v e1 e2 e3 _)       = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ArrayE es _)             = fvs es
+    fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
+    fvs (LetStruct {})            = mempty
+    fvs (ProjE e _ _)             = fvs e
+    fvs (PrintE _ es _)           = fvs es
+    fvs (ErrorE {})               = mempty
+    fvs (ReturnE e _)             = fvs e
+    fvs (BindE (BindV v) e1 e2 _) = fvs e1 <> delete v (fvs e2)
+    fvs (BindE WildV e1 e2 _)     = fvs e1 <> fvs e2
+    fvs (TakeE {})                = mempty
+    fvs (TakesE {})               = mempty
+    fvs (EmitE e _)               = fvs e
+    fvs (EmitsE e _)              = fvs e
+    fvs (RepeatE e _)             = fvs e
+    fvs (ArrE e1 e2 _)            = fvs e1 <> fvs e2
+
+instance Subst Type TyVar Type where
+    subst _ _ tau@(UnitT {}) =
+        tau
+
+    subst _ _ tau@(BoolT {}) =
+        tau
+
+    subst _ _ tau@(BitT {}) =
+        tau
+
+    subst _ _ tau@(IntT {}) =
+        tau
+
+    subst _ _ tau@(FloatT {}) =
+        tau
+
+    subst _ _ tau@(ComplexT {}) =
+        tau
+
+    subst _ _ tau@(StringT {}) =
+        tau
+
+    subst _ _ tau@(StructT {}) =
+        tau
+
+    subst theta phi (ArrT iota tau l) =
+        ArrT iota (subst theta phi tau) l
+
+    subst theta phi (ST alphas omega tau1 tau2 tau3 l) =
+        ST alphas' (subst theta phi omega) (subst theta' phi' tau1)
+               (subst theta' phi' tau2)  (subst theta' phi' tau3) l
+      where
+        (alphas', theta', phi') = freshen alphas theta phi
+
+    subst theta phi (RefT tau l) =
+        RefT (subst theta phi tau) l
+
+    subst theta phi (FunT iotas taus tau l) =
+        FunT iotas (subst theta phi taus) (subst theta phi tau) l
+
+    subst theta _ tau@(TyVarT alpha _) =
+        fromMaybe tau (Map.lookup alpha theta)
+
+instance Subst Type TyVar Omega where
+    subst theta phi (C tau) =
+        C (subst theta phi tau)
+
+    subst _ _ T =
+        T
+
+instance Subst Iota IVar Type where
+    subst _ _ tau@(UnitT {}) =
+        tau
+
+    subst _ _ tau@(BoolT {}) =
+        tau
+
+    subst _ _ tau@(BitT {}) =
+        tau
+
+    subst _ _ tau@(IntT {}) =
+        tau
+
+    subst _ _ tau@(FloatT {}) =
+        tau
+
+    subst _ _ tau@(ComplexT {}) =
+        tau
+
+    subst _ _ tau@(StringT {}) =
+        tau
+
+    subst _ _ tau@(StructT {}) =
+        tau
+
+    subst theta phi (ArrT iota tau l) =
+        ArrT (subst theta phi iota) (subst theta phi tau) l
+
+    subst theta phi (ST alphas omega tau1 tau2 tau3 l) =
+        ST alphas (subst theta phi omega) (subst theta phi tau1)
+               (subst theta phi tau2)  (subst theta phi tau3) l
+
+    subst theta phi (RefT tau l) =
+        RefT (subst theta phi tau) l
+
+    subst theta phi (FunT iotas taus tau l) =
+        FunT iotas' (subst theta' phi' taus) (subst theta' phi' tau) l
+      where
+        (iotas', theta', phi') = freshen iotas theta phi
+
+    subst _ _ tau@(TyVarT {}) =
+        tau
+
+instance Subst Iota IVar Omega where
+    subst theta phi (C tau) =
+        C (subst theta phi tau)
+
+    subst _ _ T =
+        T
+
+instance Subst Iota IVar Iota where
+    subst _ _ iota@(ConstI {}) =
+        iota
+
+    subst theta _ iota@(VarI iv _) =
+        fromMaybe iota (Map.lookup iv theta)
+
+instance Freshen TyVar TyVar Type where
+    freshen alpha@(TyVar n) theta phi | alpha `Set.member` phi =
+        (alpha', theta', phi')
+      where
+        phi'    = Set.insert alpha' phi
+        theta'  = Map.insert alpha (tyVarT alpha') theta
+        alpha'  = head [alpha  | i <- [show i | i <- [1..]]
+                               , let alpha' = TyVar n { nameSym = intern (s ++ i) }
+                               , alpha' `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        tyVarT :: TyVar -> Type
+        tyVarT tv = TyVarT tv (srclocOf tv)
+
+    freshen alpha theta phi =
+        (alpha, theta', phi')
+      where
+        phi'    = Set.insert alpha phi
+        theta'  = Map.delete alpha theta
+
+instance Freshen IVar IVar Iota where
+    freshen alpha@(IVar n) theta phi | alpha `Set.member` phi =
+        (alpha', theta', phi')
+      where
+        phi'    = Set.insert alpha' phi
+        theta'  = Map.insert alpha (ivarT alpha') theta
+        alpha'  = head [alpha  | i <- [show i | i <- [1..] :: [Int]]
+                               , let alpha' = IVar n { nameSym = intern (s ++ i) }
+                               , alpha' `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        ivarT :: IVar -> Iota
+        ivarT v = VarI v (srclocOf v)
+
+    freshen alpha theta phi =
+        (alpha, theta', phi')
+      where
+        phi'    = Set.insert alpha phi
+        theta'  = Map.delete alpha theta
+
 #include "Language/Core/Syntax-instances.hs"
+
+#endif /*!defined(ONLY_TYPEDEFS) */

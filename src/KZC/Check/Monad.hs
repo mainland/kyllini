@@ -22,11 +22,9 @@ module KZC.Check.Monad (
     localExp,
     askCurrentExp,
 
-    isRvalCtx,
-    inRvalCtx,
-    notInRvalCtx,
-    collectRvalCtx,
-    modifyRvalCtx,
+    askValCtxType,
+    collectValCtx,
+    tellValCtx,
 
     extendVars,
     lookupVar,
@@ -98,8 +96,8 @@ runTi m r s = unTi m r s $ \x _ s' -> return (x, s')
 -- | Run a @Ti@ computation in the @KZC@ monad and update the @Ti@ environment.
 liftTi :: Ti a a -> KZC a
 liftTi m = do
-    eref  <- asks tcenvref
-    sref  <- asks tcstateref
+    eref  <- asks tienvref
+    sref  <- asks tistateref
     env   <- readRef eref
     state <- readRef sref
     (a, _) <- unTi m env state $ \a env' state' -> do
@@ -112,8 +110,8 @@ liftTi m = do
 -- @Ti@ environment.
 withTi :: Ti a a -> KZC a
 withTi m = do
-    eref  <- asks tcenvref
-    sref  <- asks tcstateref
+    eref  <- asks tienvref
+    sref  <- asks tistateref
     env   <- readRef eref
     state <- readRef sref
     (a, _) <- unTi m env state $ \a _ state' -> do
@@ -234,28 +232,21 @@ localExp e = local (\env -> env { curexp = Just e })
 askCurrentExp :: Ti b (Maybe Z.Exp)
 askCurrentExp = asks curexp
 
-isRvalCtx :: Ti b Bool
-isRvalCtx = asks isrvalctx
+askValCtxType :: Ti b Type
+askValCtxType = asks valCtxType
 
-inRvalCtx :: Ti b a -> Ti b a
-inRvalCtx k =
-    local (\env -> env { isrvalctx = True }) k
+collectValCtx :: Type -> Ti b (Ti c C.Exp) -> Ti b (Ti c C.Exp)
+collectValCtx tau k = do
+    mce <- local (\env -> env { valCtxType = tau }) k
+    return $ do old_valctx <- gets valctx
+                modify $ \s -> s { valctx = id }
+                ce <- mce
+                f  <- gets valctx
+                modify $ \s -> s { valctx = old_valctx }
+                return $ f ce
 
-notInRvalCtx :: Ti b a -> Ti b a
-notInRvalCtx k =
-    local (\env -> env { isrvalctx = False }) k
-
-collectRvalCtx :: Ti b C.Exp -> Ti b C.Exp
-collectRvalCtx k = do
-    old_rvalctx <- gets rvalctx
-    modify $ \s -> s { rvalctx = id }
-    ce <- inRvalCtx k
-    f  <- gets rvalctx
-    modify $ \s -> s { rvalctx = old_rvalctx }
-    return $ f ce
-
-modifyRvalCtx :: (C.Exp -> C.Exp) -> Ti b ()
-modifyRvalCtx f = modify $ \s -> s { rvalctx = rvalctx s . f }
+tellValCtx :: (C.Exp -> C.Exp) -> Ti b ()
+tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
 
 extendVars :: [(Z.Var, Type)] -> Ti b a -> Ti b a
 extendVars vtaus m = do

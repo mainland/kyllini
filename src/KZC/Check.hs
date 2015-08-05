@@ -12,6 +12,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Check (
+    withTi,
+
     Expected,
     readExpected,
 
@@ -49,6 +51,8 @@ import KZC.Error
 import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
+
+type Co b = Ti b C.Exp -> Ti b C.Exp
 
 data Expected a = Infer (IORef a)
                 | Check a
@@ -91,31 +95,22 @@ checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
 checkLetFun f ztau ps e l = do
     tau   <- fromZ (ztau, PhiK)
     ptaus <- mapM fromZ ps
-    mce1  <- extendVars ((f,tau) : ptaus) $ do
-             (tau_ret, mce1) <- inferExp e
-             unifyTypes (funT (map snd ptaus) tau_ret) tau
-             return mce1
-    tau_gen@(FunT iotas _ _ _) <- generalize tau
+    (tau_ret, mce1) <-
+        extendVars ((f,tau) : ptaus) $ do
+        (tau_ret, mce1)   <- inferExp e
+        (tau_ret_gen, co) <- generalize tau_ret
+        unifyTypes (funT (map snd ptaus) tau_ret_gen) tau
+        return (tau_ret_gen, co mce1)
+    (tau_gen, co) <- generalize tau
     traceVar f tau_gen
-    let mkLetFun mce2 = do
-        extendIVars (iotas `zip` repeat IotaK) $ do
-        cf      <- trans f
-        ciotas  <- mapM trans iotas
-        cptaus  <- mapM trans ptaus
-        ctau    <- trans tau_gen
-        ce1     <- mce1
-        ce2     <- mce2
-        return $ C.LetFunE cf ciotas cptaus ctau ce1 ce2 l
+    let mkLetFun mce2 = co $ do
+        cf       <- trans f
+        cptaus   <- mapM trans ptaus
+        ctau_ret <- trans tau_ret
+        ce1      <- withSummaryContext e $ mce1
+        ce2      <- mce2
+        return $ C.LetFunE cf [] cptaus ctau_ret ce1 ce2 l
     return (tau_gen, ptaus, mkLetFun)
-
-derefRvalueE :: C.Exp -> Ti b C.Exp
-derefRvalueE ce1 = do
-    cx <- C.mkUniqVar "x" l
-    modifyRvalCtx $ \ce2 -> C.bindE cx (C.derefE ce1) ce2
-    return $ C.VarE cx l
-  where
-    l :: SrcLoc
-    l = srclocOf ce1
 
 checkCompLet :: Z.CompLet
              -> Ti b (Ti c C.Exp)
@@ -127,9 +122,9 @@ checkCompLet cl@(Z.LetCL v ztau e l) k = do
                    k
     return $ do cv   <- trans v
                 ctau <- trans tau
-                ce1  <- mce1
+                ce1  <- withSummaryContext cl $ mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau (Just ce1) ce2 l
+                return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
     (tau, mce1) <- withSummaryContext cl $
@@ -137,10 +132,10 @@ checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
     mce2        <- extendVars [(v, tau)] $
                    k
     return $ do cv   <- trans v
-                ctau <- trans (refT tau)
-                ce1  <- mce1
+                ctau <- trans tau
+                ce1  <- withSummaryContext cl $ mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau ce1 ce2 l
+                return $ C.LetRefE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
     (tau, ptaus, mkLetFun) <- withSummaryContext cl $
@@ -155,9 +150,9 @@ checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
     mce2        <- extendVars [(v, tau)] $ k
     return $ do cv   <- trans v
                 ctau <- trans tau
-                ce1  <- mce1
+                ce1  <- withSummaryContext cl $ mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau (Just ce1) ce2 l
+                return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
     (tau, ptaus, mkLetFun) <- withSummaryContext cl $
@@ -208,26 +203,13 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (StringT l) exp_ty
         return $ C.StringC s
 
-tcExp (Z.VarE v l) exp_ty = do
-    isRval <- isRvalCtx
-    tau    <- lookupVar v >>= instantiate
-    go isRval tau
-  where
-    go :: Bool -> Type -> Ti b (Ti c C.Exp)
-    -- If we are in an r-value context, we need to generate code that
-    -- dereferences the variable and returns the dereferenced value.
-    go True (RefT tau _) = do
-        instType tau exp_ty
-        return $ do cv <- trans v
-                    derefRvalueE $ C.VarE cv l
-
-    go _ tau = do
-        instType tau exp_ty
-        return $ do cv <- trans v
-                    return $ C.VarE cv l
+tcExp (Z.VarE v _) exp_ty = do
+    (tau, co) <- lookupVar v >>= instantiate
+    instType tau exp_ty
+    return $ co $ C.varE <$> trans v
 
 tcExp (Z.UnopE op e1 l) exp_ty = do
-    (tau1, mce1) <- inferExp e1
+    (tau1, mce1) <- inferVal e1
     (tau, cop)   <- unop op tau1
     instType tau exp_ty
     return $ do ce1 <- mce1
@@ -241,8 +223,8 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
     unop op _ = faildoc $ text "tcExp: cannot type check unary operator" <+> ppr op
 
 tcExp (Z.BinopE op e1 e2 l) exp_ty = do
-    (tau1, mce1) <- inferExp e1
-    (tau2, mce2) <- inferExp e2
+    (tau1, mce1) <- inferVal e1
+    (tau2, mce2) <- inferVal e2
     (tau, cop)   <- binop op tau1 tau2
     instType tau exp_ty
     return $ do ce1 <- mce1
@@ -276,21 +258,22 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
                 ctau <- trans tau
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau (Just ce1) ce2 l
+                return $ C.LetE cv ctau ce1 ce2 l
 
 tcExp (Z.CallE f es l) exp_ty = do
-    (taus, tau_ret) <- lookupVar f >>= checkFunType f nargs
+    (taus, tau_ret, co1) <- lookupVar f >>= checkFunType f nargs
     when (length taus /= nargs) $
         faildoc $
           text "Expected" <+> ppr nargs <+>
           text "arguments but got" <+> ppr (length taus)
-    mces     <- zipWithM checkArg es taus
-    tau_ret' <- instantiate tau_ret
+    (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
-    return $ collectRvalCtx $ do
-             cf  <- trans f
-             ces <- sequence mces
-             return $ C.CallE cf [] ces l
+    collectValCtx tau_ret' $ do
+    mces <- zipWithM checkArg es taus
+    return $ co2 $ co1 $ do
+        cf  <- C.varE <$> trans f
+        ces <- sequence mces
+        return $ C.CallE cf [] ces l
   where
     nargs :: Int
     nargs = length es
@@ -304,7 +287,7 @@ tcExp (Z.CallE f es l) exp_ty = do
       where
         go :: Type -> Ti b (Ti c C.Exp)
         go (RefT {}) = checkExp e tau
-        go _         = inRvalCtx $ checkExp e tau
+        go _         = checkVal e tau
 
 tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
     (tau, mce1) <- checkLetRef v ztau e1
@@ -314,21 +297,23 @@ tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
                 ctau <- trans tau
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau ce1 ce2 l
+                return $ C.LetRefE cv ctau ce1 ce2 l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
-    (gamma, mce1) <- withSummaryContext e1 $ do
-                     (tau, mce1) <- inferExp e1
-                     gamma       <- checkRefType tau
-                     return (gamma, mce1)
-    mce2  <- withSummaryContext e2 $
-             inRvalCtx $
-             checkExp e2 gamma
-    tau   <- mkStCT (UnitT l)
+    (gamma, mce1) <-
+        withSummaryContext e1 $ do
+        (tau, mce1) <- inferExp e1
+        gamma       <- checkRefType tau
+        return (gamma, mce1)
+    (tau, co) <- mkSTC (UnitT l)
     instType tau exp_ty
-    return $ do ce1 <- mce1
-                ce2 <- collectRvalCtx mce2
-                return $ C.AssignE ce1 ce2 l
+    collectValCtx tau $ do
+    mce2  <- withSummaryContext e2 $
+             checkVal e2 gamma
+    return $ co $ do
+        ce1   <- mce1
+        ce2   <- mce2
+        return $ C.AssignE ce1 ce2 l
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
     mce1        <- checkExp e1 (BoolT l)
@@ -381,128 +366,110 @@ tcExp (Z.ArrayE es l) exp_ty = do
                 return $ C.ArrayE ces l
 
 tcExp (Z.IdxE e1 e2 len l) exp_ty = do
-    isRval      <- isRvalCtx
     (tau, mce1) <- withSummaryContext e1 $
-                   notInRvalCtx $
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferExp e2
                    checkIntType tau2
                    return mce2
-    checkIdxE isRval tau mce1 mce2
+    checkIdxE tau mce1 mce2
   where
-    checkIdxE :: forall b c . Bool
-              -> Type
+    checkIdxE :: forall b c . Type
               -> Ti c C.Exp
               -> Ti c C.Exp
               -> Ti b (Ti c C.Exp)
-    checkIdxE isRval tau mce1 mce2 = do
-        compress tau >>= go isRval
+    checkIdxE tau mce1 mce2 = do
+        compress tau >>= go
       where
-        go :: Bool -> Type -> Ti b (Ti c C.Exp)
-        -- If we are in an r-value context and e1 is a reference to an array, we
-        -- need to generate code that will index into the array
-        go True (RefT (ArrT _ tau _) _) = do
-            instType (mkArrSlice tau len) exp_ty
-            return $ do ce1 <- mce1
-                        ce2 <- mce2
-                        derefRvalueE $ C.IdxE ce1 ce2 len l
-
-        -- If we are not in an r-value context, then indexing into a reference
-        -- to an array returns a reference to an element of the array.
-        go False (RefT (ArrT _ tau _) _) = do
+        go :: Type -> Ti b (Ti c C.Exp)
+        -- Indexing into a reference to an array returns a reference to an
+        -- element of the array.
+        go (RefT (ArrT _ tau _) _) = do
             instType (RefT (mkArrSlice tau len) l) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
                         return $ C.IdxE ce1 ce2 len l
 
         -- A plain old array gets indexed as one would expect.
-        go _ (ArrT _ tau _) = do
+        go (ArrT _ tau _) = do
             instType (mkArrSlice tau len) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
                         return $ C.IdxE ce1 ce2 len l
 
         -- Otherwise we assert that the type of @e1@ should be an array type.
-        go isRval tau = do
+        go tau = do
             i     <- newMetaTvT IotaK l
             alpha <- newMetaTvT TauK l
             unifyTypes tau (ArrT i alpha l)
-            compress tau >>= go isRval
+            compress tau >>= go
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) =  ArrT (ConstI i l) tau l
+    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
 
 tcExp (Z.PrintE newline es l) exp_ty = do
-    mces  <- mapM checkArg es
-    tau   <- mkStCT (UnitT l)
+    (tau, co) <- mkSTC (UnitT l)
     instType tau exp_ty
-    return $ do ces <- sequence mces
-                return $ C.PrintE newline ces l
+    collectValCtx tau $ do
+    mces <- mapM checkArg es
+    return $ co $ do
+        ces <- sequence mces
+        return $ C.PrintE newline ces l
   where
     checkArg :: Z.Exp -> Ti b (Ti c C.Exp)
     checkArg e = do
-        (_, mce) <- inferExp e
+        (tau, mce) <- inferVal e
+        checkKind tau TauK
         return mce
 
 tcExp (Z.ReturnE _ e l) exp_ty = do
-    (tau, mce) <- inRvalCtx $ inferExp e
-    kappa      <- inferKind tau
-    go tau kappa mce
-  where
-    go :: Type -> Kind -> Ti c C.Exp -> Ti b (Ti c C.Exp)
-    go tau TauK mce = do
-        tau_ret <- mkStCT tau
-        instType tau_ret exp_ty
-        return $ do ce <- collectRvalCtx mce
-                    return $ C.ReturnE ce l
-
-    go (RefT tau _) RhoK mce = do
-        tau_ret <- mkStCT tau
-        instType tau_ret exp_ty
-        return $ do ce <- collectRvalCtx mce
-                    return $ C.ReturnE ce l
-
-    go tau MuK mce = do
-        instType tau exp_ty
-        return $ do ce <- mce
-                    return $ C.ReturnE ce l
-
-    go tau _ _ = do
-        checkKind tau TauK
-        panicdoc $ text "Cannot reach this point"
+    tau           <- newMetaTvT TauK l
+    (tau_ret, co) <- mkSTC tau
+    instType tau_ret exp_ty
+    collectValCtx tau_ret $ do
+    (tau', mce) <- inferVal e
+    unifyTypes tau' tau
+    return $ co $ do
+        ce <- mce
+        return $ C.ReturnE ce l
 
 tcExp (Z.TakeE l) exp_ty = do
-    alpha <- newMetaTvT TauK l
-    beta  <- newMetaTvT TauK l
-    instType (stT (C alpha l) alpha alpha beta) exp_ty
-    return $ return $ C.TakeE l
+    a <- newMetaTvT TauK l
+    b <- newMetaTvT TauK l
+    instType (stT (C a l) a a b) exp_ty
+    return $ do [ca,cb] <- mapM trans [a,b]
+                return $ C.tyAppE (C.takeE ca) [ca,cb]
 
 tcExp (Z.TakesE i l) exp_ty = do
-    alpha <- newMetaTvT TauK l
-    beta  <- newMetaTvT TauK l
-    instType (stT (C (ArrT (ConstI i l) alpha l) l) alpha alpha beta) exp_ty
-    return $ return $ C.TakesE (fromIntegral i) l
+    a <- newMetaTvT TauK l
+    b <- newMetaTvT TauK l
+    instType (stT (C (ArrT (ConstI i l) a l) l) a a b) exp_ty
+    return $ do [ca,cb] <- mapM trans [a,b]
+                return $ C.tyAppE (C.takesE (fromIntegral i) ca) [ca,cb]
 
 tcExp (Z.EmitE e l) exp_ty = do
-    (tau, mce) <- inferExp e
-    go tau mce
+    s       <- newMetaTvT TauK l
+    a       <- newMetaTvT TauK l
+    b       <- newMetaTvT TauK l
+    let tau =  stT (C (UnitT l) l) s a b
+    instType tau exp_ty
+    collectValCtx tau $ do
+    (b', mce) <- inferVal e
+    go s a b b' mce
   where
-    go :: Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
-    go (ArrT _ beta _) mce = do
-        sigma <- newMetaTvT TauK l
-        alpha <- newMetaTvT TauK l
-        instType (stT (C (UnitT l) l) sigma alpha beta) exp_ty
-        return $ do ce <- mce
-                    return $ C.EmitsE ce l
+    go :: Type -> Type -> Type -> Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
+    go s a b (ArrT _ b' _) mce = do
+        unifyTypes b' b
+        return $ do ce      <- mce
+                    [cs,ca] <- mapM trans [s,a]
+                    return $ C.tyAppE (C.EmitsE ce l) [cs,ca]
 
-    go beta mce = do
-        sigma <- newMetaTvT TauK l
-        alpha <- newMetaTvT TauK l
-        instType (stT (C (UnitT l) l) sigma alpha beta) exp_ty
-        return $ do ce <- mce
-                    return $ C.EmitE ce l
+    go s a b b' mce = do
+        unifyTypes b' b
+        return $ do ce      <- mce
+                    [cs,ca] <- mapM trans [s,a]
+                    return $ C.tyAppE (C.EmitE ce l) [cs,ca]
 
 tcExp (Z.RepeatE _ e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
@@ -542,24 +509,11 @@ tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
         common_fvs :: Set Z.Var
         common_fvs = fvs e1 `Set.intersection` fvs e2
 
-tcExp (Z.ReadE ztau l) exp_ty = do
-    alpha <- fromZ (ztau, TauK)
-    beta  <- newMetaTvT TauK ztau
-    instType (stT (T l) alpha alpha beta) exp_ty
-    return $ do cx <- C.mkUniqVar "x" l
-                return $ C.repeatE $
-                         C.bindE cx C.takeE $
-                         C.emitE (C.varE cx)
+tcExp (Z.ReadE ztau l) exp_ty =
+    mkEcho ztau l exp_ty
 
-tcExp (Z.WriteE ztau l) exp_ty = do
-    sigma <- newMetaTvT TauK ztau
-    alpha <- newMetaTvT TauK ztau
-    beta  <- fromZ (ztau, TauK)
-    instType (stT (T l) sigma alpha beta) exp_ty
-    return $ do cx <- C.mkUniqVar "x" l
-                return $ C.repeatE $
-                         C.bindE cx C.takeE $
-                         C.emitE (C.varE cx)
+tcExp (Z.WriteE ztau l) exp_ty =
+    mkEcho ztau l exp_ty
 
 tcExp (Z.StandaloneE e _) exp_ty =
     tcExp e exp_ty
@@ -568,16 +522,16 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
     tau  <- fromZ (ztau, PhiK)
     tau' <- lookupVar f
     unifyTypes tau' tau
-    (gamma, delta, sigma, alpha, beta) <- checkMapFunType f tau
-    unifyTypes sigma gamma
-    unifyTypes alpha gamma
-    unifyTypes beta  delta
-    instType (stT (T l) sigma alpha beta) exp_ty
-    return $ do cf <- trans f
-                cx <- C.mkUniqVar "x" l
+    (a, b, co) <- checkMapFunType f tau
+    instType (stT (T l) a a b) exp_ty
+    return $ do cx      <- C.mkUniqVar "x" l
+                cy      <- C.mkUniqVar "y" l
+                ccalle  <- co $ return $ C.varE cx
+                [ca,cb] <- mapM trans [a,b]
                 return $ C.repeatE $
-                         C.bindE cx C.takeE $
-                         C.emitE (C.callE cf [C.varE cx])
+                         C.bindE cx (C.tyAppE (C.takeE ca) [ca,cb]) $
+                         C.bindE cy ccalle $
+                         C.tyAppE (C.emitE (C.varE cy)) [ca,ca]
 
 tcExp (Z.CompLetE cl e _) exp_ty =
     checkCompLet cl $
@@ -590,6 +544,16 @@ tcExp (Z.CmdE cmds _) exp_ty =
     tcCmds cmds exp_ty
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
+
+mkEcho :: Maybe Z.Type -> SrcLoc -> Expected Type -> Ti b (Ti c C.Exp)
+mkEcho ztau l exp_ty = do
+    tau <- fromZ (ztau, TauK)
+    instType (stT (T l) tau tau tau) exp_ty
+    return $ do ctau <- trans tau
+                cx   <- C.mkUniqVar "x" l
+                return $ C.repeatE $
+                         C.bindE cx (C.tyAppE (C.takeE ctau) [ctau,ctau]) $
+                         C.tyAppE (C.emitE (C.varE cx)) [ctau,ctau]
 
 checkExp :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
 checkExp e tau = tcExp e (Check tau)
@@ -613,9 +577,9 @@ tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
                    tcStms stms exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
-                ce1  <- mce1
+                ce1  <- withSummaryContext stm $ mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau (Just ce1) ce2 l
+                return $ C.LetE cv ctau ce1 ce2 l
 
 tcStms (stm@(Z.LetRefS {}) : []) _ =
     withSummaryContext stm $
@@ -628,14 +592,14 @@ tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
                    tcStms stms exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
-                ce1  <- mce1
+                ce1  <- withSummaryContext stm $ mce1
                 ce2  <- mce2
-                return $ C.LetE cv ctau ce1 ce2 l
+                return $ C.LetRefE cv ctau ce1 ce2 l
 
 tcStms (stm@(Z.ExpS e _) : []) exp_ty =
     withSummaryContext stm $ do
     ce <- tcExp e exp_ty
-    _  <- readExpected exp_ty >>= checkSTType
+    readExpected exp_ty >>= checkSTType
     return ce
 
 tcStms (stm@(Z.ExpS e _) : stms) exp_ty =
@@ -646,7 +610,7 @@ tcStms (stm@(Z.ExpS e _) : stms) exp_ty =
     let tau                 =  stT omega sigma alpha beta
     instType tau exp_ty
     mce2 <- checkStms stms tau
-    return $ do ce1 <- mce1
+    return $ do ce1 <- withSummaryContext stm $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
 
@@ -684,7 +648,7 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
     mce2 <- extendVars [(v, nu)] $
             checkCmds cmds tau
     return $ do cv  <- trans v
-                ce1 <- mce1
+                ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
                 return $ C.BindE (C.BindV cv) ce1 ce2 l
 
@@ -702,7 +666,7 @@ tcCmds (cmd@(Z.ExpC e _) : cmds) exp_ty =
     let tau                 =  stT omega sigma alpha beta
     instType tau exp_ty
     mce2 <- tcCmds cmds exp_ty
-    return $ do ce1 <- mce1
+    return $ do ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
 
@@ -711,6 +675,52 @@ tcCmds [] _ =
 
 checkCmds :: [Z.Cmd] -> Type -> Ti b (Ti c C.Exp)
 checkCmds cmds tau = tcCmds cmds (Check tau)
+
+-- | Type check an expression in a context where a value is needed. This will
+-- generate extra code to dereference any references and run any actions of type
+-- @forall s a b . ST tau s a b@.
+tcVal :: Z.Exp -> Expected Type -> Ti b (Ti c C.Exp)
+tcVal e exp_ty = do
+    (tau, mce) <- inferExp e
+    go tau mce
+  where
+    go :: Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
+    go (RefT tau _) mce = do
+        ST [] _ s a b _ <- askValCtxType
+        let mce' = do
+            ce1   <- mce
+            cx    <- C.mkUniqVar "x" ce1
+            ctaus <- mapM trans [s,a,b]
+            tellValCtx $ \ce2 -> C.bindE cx (C.tyAppE (C.derefE ce1) ctaus) ce2
+            return $ C.varE cx
+        instType tau exp_ty
+        return mce'
+
+    go (ST [] (C tau _) s a b _) mce = do
+        ST [] _ s' a' b' _ <- askValCtxType
+        unifyTypes s s'
+        unifyTypes a a'
+        unifyTypes b b'
+        instType tau exp_ty
+        return $ do
+            ce1   <- mce
+            cx    <- C.mkUniqVar "x" ce1
+            tellValCtx $ \ce2 -> C.bindE cx ce1 ce2
+            return $ C.varE cx
+
+    go tau mce = do
+        instType tau exp_ty
+        return mce
+
+checkVal :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
+checkVal e tau = tcVal e (Check tau)
+
+inferVal :: Z.Exp -> Ti b (Type, Ti c C.Exp)
+inferVal e = do
+    ref <- newRef (error "inferVal: empty result")
+    mce <- tcVal e (Infer ref)
+    tau <- readRef ref
+    return (tau, mce)
 
 kcType :: Type -> Expected Kind -> Ti b ()
 kcType tau@(UnitT {})    kappa_exp = instKind tau TauK kappa_exp
@@ -790,81 +800,109 @@ instKind tau kappa1 (Check kappa2) = do
 checkKind :: Type -> Kind -> Ti b ()
 checkKind tau kappa = kcType tau (Check kappa)
 
+{-
 inferKind :: Type -> Ti b Kind
 inferKind tau = do
     ref <- newRef (error "inferKind: empty result")
     kcType tau (Infer ref)
     readRef ref
+-}
 
-generalize :: Type -> Ti b Type
+generalize :: Type -> Ti b (Type, Co c)
 generalize tau0 =
     compress tau0 >>= go
   where
-    go :: Type -> Ti b Type
+    go :: Type -> Ti b (Type, Co c)
     go tau@(ST [] omega sigma tau1 tau2 l) = do
         mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
         let alphaMtvs =  filter (isKind TauK) mtvs
         alphas        <- freshVars (length alphaMtvs) ((Set.toList . fvs) tau)
-        extendTyVars (alphas `zip` repeat TauK) $ do
-        zipWithM_ kcWriteTv alphaMtvs [TyVarT alpha noLoc | alpha <- alphas]
-        return $ ST alphas omega sigma tau1 tau2 l
+        extendTyVars (alphas `zip` repeat TauK) $
+            zipWithM_ kcWriteTv alphaMtvs [TyVarT alpha noLoc | alpha <- alphas]
+        let tau    = ST alphas omega sigma tau1 tau2 l
+        let co mce = do
+            extendTyVars (alphas `zip` repeat TauK) $ do
+            calphas <- mapM trans alphas
+            ce      <- mce
+            return $ C.tyAbsE calphas ce
+        return (tau, co)
 
     go tau@(ST {}) =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
-
-    go tau@(FunT [] taus (ST [] omega sigma tau1 tau2 l2) l) = do
-        mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
-        let iotaMtvs  =  filter (isKind IotaK) mtvs
-        iotas         <- freshVars (length iotaMtvs) ((Set.toList . fvs) tau)
-        extendIVars (iotas `zip` repeat IotaK) $ do
-        zipWithM_ kcWriteTv iotaMtvs [VarI iota noLoc | iota <- iotas]
-        let alphaMtvs =  filter (isKind TauK) mtvs
-        alphas        <- freshVars (length alphaMtvs) ((Set.toList . fvs) tau)
-        extendTyVars (alphas `zip` repeat TauK) $ do
-        zipWithM_ kcWriteTv alphaMtvs [TyVarT alpha noLoc | alpha <- alphas]
-        return $ FunT iotas taus (ST alphas omega sigma tau1 tau2 l2) l
 
     go tau@(FunT [] taus tau_ret l) = do
         mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
         let iotaMtvs  =  filter (isKind IotaK) mtvs
         iotas         <- freshVars (length iotaMtvs) ((Set.toList . fvs) tau)
-        extendIVars (iotas `zip` repeat IotaK) $ do
-        zipWithM_ kcWriteTv iotaMtvs [VarI iota noLoc | iota <- iotas]
-        return $ FunT iotas taus tau_ret l
+        extendIVars (iotas `zip` repeat IotaK) $
+            zipWithM_ kcWriteTv iotaMtvs [VarI iota noLoc | iota <- iotas]
+        let tau    = FunT iotas taus tau_ret l
+        let co mce = do
+            extendIVars (iotas `zip` repeat IotaK) $ do
+            ciotas                          <- mapM trans iotas
+            (cf, cvtaus, ctau, ce1, ce2, l) <- mce >>= checkLetFunE
+            return $ C.LetFunE cf ciotas cvtaus ctau ce1 ce2 l
+        return (tau, co)
+      where
+        checkLetFunE :: C.Exp -> Ti b (C.Var, [(C.Var, C.Type)], C.Type, C.Exp, C.Exp, SrcLoc)
+        checkLetFunE (C.LetFunE cf [] cvtaus ctau ce1 ce2 l) =
+            return (cf, cvtaus, ctau, ce1, ce2, l)
+
+        checkLetFunE ce =
+            panicdoc $
+            text "generalize: expected to coerce a letfun, but got:" <+> ppr ce
 
     go tau@(FunT {}) =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
 
     go tau =
-        pure tau
+        return (tau, id)
 
     isKind :: Kind -> MetaTv -> Bool
     isKind kappa1 (MetaTv _ kappa2 _) = kappa2 == kappa1
 
-instantiate :: Type -> Ti b Type
+instantiate :: Type -> Ti b (Type, Co c)
 instantiate tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b Type
+    go :: Type -> Ti b (Type, Co c)
     go (ST alphas omega sigma tau1 tau2 l) = do
-        (theta, phi) <- instVars alphas TauK
-        return $ ST [] omega (subst theta phi sigma)
-                   (subst theta phi tau1) (subst theta phi tau2) l
+        (mtvs, theta, phi) <- instVars alphas TauK
+        let tau  = ST [] omega (subst theta phi sigma)
+                      (subst theta phi tau1) (subst theta phi tau2) l
+        let co mce = do
+                ce    <- mce
+                ctaus <- compress mtvs >>= mapM trans
+                return $ C.tyAppE ce ctaus
+        return (tau, co)
 
     go (FunT iotas taus tau_ret l) = do
-        (theta, phi) <- instVars iotas IotaK
-        return $ FunT [] (subst theta phi taus) (subst theta phi tau_ret) l
+        (mtvs, theta, phi) <- instVars iotas IotaK
+        let tau  = FunT [] (subst theta phi taus) (subst theta phi tau_ret) l
+        let co mce = do
+                (cf, ces, l) <- mce >>= checkFunE
+                ciotas       <- compress mtvs >>= mapM trans
+                return $ C.CallE cf ciotas ces l
+        return (tau, co)
+      where
+        checkFunE :: C.Exp -> Ti b (C.Exp, [C.Exp], SrcLoc)
+        checkFunE (C.CallE cf [] ces l) =
+            return (cf, ces, l)
+
+        checkFunE ce =
+            panicdoc $
+            text "instantiate: expected to coerce a call, but got:" <+> ppr ce
 
     go tau =
-        pure tau
+        return (tau, id)
 
     instVars :: (Located tv, Subst Type tv Type)
-             => [tv] -> Kind -> Ti b (Map tv Type, Set tv)
+             => [tv] -> Kind -> Ti b ([Type], Map tv Type, Set tv)
     instVars tvs kappa = do
         mtvs      <- mapM (newMetaTvT kappa) tvs
         let theta =  Map.fromList (tvs `zip` mtvs)
         let phi   =  fvs tau <\\> fromList tvs
-        return (theta, phi)
+        return (mtvs, theta, phi)
 
 -- | Update a type meta-variable with a type while checking that the type's kind
 -- matches the meta-variable's kind.
@@ -881,44 +919,53 @@ isRefVar v = do
       RefT {} -> return True
       _       -> return False
 
-checkFunType :: Z.Var -> Int -> Type -> Ti b ([Type], Type)
+checkFunType :: Z.Var -> Int -> Type
+             -> Ti b ([Type], Type, Co c)
 checkFunType _ nargs tau =
     instantiate tau >>= go
   where
-    go :: Type -> Ti b ([Type], Type)
-    go (FunT [] taus tau_ret _) =
-        return (taus, tau_ret)
+    go :: (Type, Co c) -> Ti b ([Type], Type, Co c)
+    go (FunT [] taus tau_ret _, co) =
+        return (taus, tau_ret, co)
 
-    go tau_f = do
+    go (tau_f, co) = do
         taus    <- replicateM nargs (newMetaTvT TauK tau)
         tau_ret <- newMetaTvT TauK tau
         unifyTypes tau_f (funT taus tau_ret)
-        return (taus, tau_ret)
+        return (taus, tau_ret, co)
 
 -- | Check that a function type is appropriate for a @map@. The function result
 -- must have type @forall s a b . ST (C c) s a b@. This guarantees that although
 -- it may read and write references, it neither consumes nor produces values
 -- from the stream.
-checkMapFunType :: Z.Var -> Type -> Ti b (Type, Type, Type, Type, Type)
-checkMapFunType _ tau = do
+checkMapFunType :: Z.Var -> Type
+                -> Ti b (Type, Type, Co c)
+checkMapFunType f tau = do
     -- Instantiate the function type's outer forall, which quantifies over array
     -- index variables.
-    tau_f <- instantiate tau
-    (gamma, tau_ret) <-
+    (tau_f, co1) <- instantiate tau
+    (c, tau_ret) <-
         case tau_f of
-          FunT [] [gamma] tau_ret@(ST {}) _ -> return (gamma, tau_ret)
+          FunT [] [c] tau_ret@(ST {}) _ -> return (c, tau_ret)
           _ -> err
     -- Check that the return type of the function we are mapping is
     -- @forall s a b . ST tau s a b@.
     checkMapReturnType tau_ret
     -- XXX Instantiate over the return type, which must be an ST type. We should
     -- handle pure functions here too!
-    tau_ret' <- instantiate tau_ret
-    (delta, sigma, alpha, beta) <-
+    (tau_ret', co2) <- instantiate tau_ret
+    (d, s, a, b) <-
         case tau_ret' of
-          ST [] (C delta _) sigma alpha beta _ -> return (delta, sigma, alpha, beta)
+          ST [] (C d _) s a b _ -> return (d, s, a, b)
           _ -> err
-    return (gamma, delta, sigma, alpha, beta)
+    unifyTypes c a
+    unifyTypes s a
+    unifyTypes d b
+    let co mce = co2 $ co1 $ do
+        ce <- mce
+        cf <- C.varE <$> trans f
+        return $ C.callE cf [ce]
+    return (a, b, co)
   where
     checkMapReturnType :: Type -> Ti b ()
     checkMapReturnType (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _)
@@ -1065,12 +1112,16 @@ checkNumType tau =
     go (ComplexT _ _) = return ()
     go tau            = unifyTypes tau intT
 
-mkStCT :: Type -> Ti b Type
-mkStCT tau = do
-    sigma <- newMetaTvT TauK l
-    alpha <- newMetaTvT TauK l
-    beta  <- newMetaTvT TauK l
-    return $ ST [] (C tau l) sigma alpha beta l
+mkSTC :: Type -> Ti b (Type, Co c)
+mkSTC tau = do
+    s <- newMetaTvT TauK l
+    a <- newMetaTvT TauK l
+    b <- newMetaTvT TauK l
+    let co mce = do
+        ctaus <- mapM trans [s,a,b]
+        ce    <- mce
+        return $ C.tyAppE ce ctaus
+    return (ST [] (C tau l) s a b l, co)
   where
     l :: SrcLoc
     l = srclocOf tau
@@ -1109,70 +1160,88 @@ unifyTypes :: Type -> Type -> Ti b ()
 unifyTypes tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
-    unify tau1' tau2'
+    unify Map.empty Map.empty tau1' tau2'
   where
-    unify :: Type -> Type -> Ti b ()
-    unify tau1 tau2 = do
+    unify :: Map TyVar TyVar
+          -> Map IVar IVar
+          -> Type
+          -> Type
+          -> Ti b ()
+    unify theta phi tau1 tau2 = do
         tau1' <- compress tau1
         tau2' <- compress tau2
-        go tau1' tau2'
+        go theta phi tau1' tau2'
 
-    go :: Type -> Type -> Ti b ()
-    go (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
+    go :: Map TyVar TyVar
+       -> Map IVar IVar
+       -> Type
+       -> Type
+       -> Ti b ()
+    go _ _ (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
         return ()
 
-    go tau1@(MetaT mtv _) tau2 =
+    go _ _ tau1@(MetaT mtv _) tau2 =
         updateMetaTv mtv tau1 tau2
 
-    go tau1 tau2@(MetaT mtv _) =
+    go _ _ tau1 tau2@(MetaT mtv _) =
         updateMetaTv mtv tau2 tau1
 
-    go (UnitT {})      (UnitT {})                 = return ()
-    go (BoolT {})      (BoolT {})                 = return ()
-    go (BitT {})       (BitT {})                  = return ()
-    go (IntT w1 _)     (IntT w2 _)     | w1 == w2 = return ()
-    go (FloatT w1 _)   (FloatT w2 _)   | w1 == w2 = return ()
-    go (ComplexT w1 _) (ComplexT w2 _) | w1 == w2 = return ()
-    go (StringT {})    (StringT {})               = return ()
+    go _ _ (UnitT {})      (UnitT {})                 = return ()
+    go _ _ (BoolT {})      (BoolT {})                 = return ()
+    go _ _ (BitT {})       (BitT {})                  = return ()
+    go _ _ (IntT w1 _)     (IntT w2 _)     | w1 == w2 = return ()
+    go _ _ (FloatT w1 _)   (FloatT w2 _)   | w1 == w2 = return ()
+    go _ _ (ComplexT w1 _) (ComplexT w2 _) | w1 == w2 = return ()
+    go _ _ (StringT {})    (StringT {})               = return ()
 
-    go (StructT s1 _) (StructT s2 _) | s1 == s2 =
+    go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
         return ()
 
-    go (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
-        unify tau1a tau1b
-        unify tau2a tau2b
+    go theta phi (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
+        unify theta phi tau1a tau1b
+        unify theta phi tau2a tau2b
 
-    go (C tau1 _) (C tau2 _) =
-        unify tau1 tau2
+    go theta phi (C tau1 _) (C tau2 _) =
+        unify theta phi tau1 tau2
 
-    go (T {}) (T {}) =
-        unify tau1 tau2
-
-    go (ST alphas_a omega_a tau_1a tau_2a tau_3a _)
-       (ST alphas_b omega_b tau_1b tau_2b tau_3b _) | alphas_a == alphas_b = do
-        unify omega_a omega_b
-        unify tau_1a tau_1b
-        unify tau_2a tau_2b
-        unify tau_3a tau_3b
-
-    go (RefT tau1 _) (RefT tau2 _) =
-        unify tau1 tau2
-
-    go (FunT iotas1 taus1 tau1 _) (FunT iotas2 taus2 tau2 _)
-        | length taus1 == length taus2 && iotas1 == iotas2 = do
-        zipWithM_ unify taus1 taus2
-        unify tau1 tau2
-
-    go (ConstI i1 _) (ConstI i2 _)  | i1 == i2 =
+    go _ _ (T {}) (T {}) =
         return ()
 
-    go (VarI v1 _) (VarI v2 _)  | v1 == v2 =
+    go theta phi (ST alphas_a omega_a tau_1a tau_2a tau_3a _)
+                 (ST alphas_b omega_b tau_1b tau_2b tau_3b _)
+        | length alphas_a == length alphas_b =
+          extendTyVars (alphas_b `zip` repeat TauK) $ do
+          unify theta' phi omega_a omega_b
+          unify theta' phi tau_1a tau_1b
+          unify theta' phi tau_2a tau_2b
+          unify theta' phi tau_3a tau_3b
+      where
+        theta' :: Map TyVar TyVar
+        theta' = Map.fromList (alphas_a `zip` alphas_b) `Map.union` theta
+
+    go theta phi (RefT tau1 _) (RefT tau2 _) =
+        unify theta phi tau1 tau2
+
+    go theta phi (FunT iotas_a taus_a tau_a _)
+                 (FunT iotas_b taus_b tau_b _)
+        | length iotas_a == length iotas_b && length taus_a == length taus_b =
+          extendIVars (iotas_b `zip` repeat IotaK) $ do
+          zipWithM_ (unify theta phi') taus_a taus_b
+          unify theta phi' tau_a tau_b
+      where
+        phi' :: Map IVar IVar
+        phi' = Map.fromList (iotas_a `zip` iotas_b) `Map.union` phi
+
+    go _ _ (ConstI i1 _) (ConstI i2 _)  | i1 == i2 =
         return ()
 
-    go (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
+    go _ _ (VarI v1 _) (VarI v2 _)  | v1 == v2 =
         return ()
 
-    go tau1 tau2 =
+    go _ _ (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
+        return ()
+
+    go _ _ tau1 tau2 =
         expectedTypeErr tau1 tau2
 
     updateMetaTv :: MetaTv -> Type -> Type -> Ti b ()
@@ -1274,6 +1343,7 @@ instance Trans Type C.Type where
         go (ArrT i tau l) = C.ArrT <$> trans i <*> go tau <*> pure l
 
         go (ST alphas omega tau1 tau2 tau3 l) =
+            extendTyVars (alphas `zip` repeat TauK) $
             C.ST <$> mapM trans alphas <*>  trans omega <*>
              go tau1 <*> go tau2 <*> go tau3 <*> pure l
 
@@ -1296,5 +1366,5 @@ instance Trans Type C.Iota where
     trans (VarI (IVar n) l) = pure $ C.VarI (C.IVar n) l
     trans tau               = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core iota"
 
-instance Trans (Z.Var, Type) C.VarBind where
-    trans (v, tau) = C.VarBind <$> trans v <*> trans tau
+instance Trans (Z.Var, Type) (C.Var, C.Type) where
+    trans (v, tau) = (,) <$> trans v <*> trans tau

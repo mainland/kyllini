@@ -27,8 +27,16 @@ intE i = ConstE (IntC dEFAULT_INT_WIDTH i) noLoc
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
-callE :: Var -> [Exp] -> Exp
-callE v es = CallE v [] es (v `srcspan` es)
+callE :: Exp -> [Exp] -> Exp
+callE f es = CallE f [] es (f `srcspan` es)
+
+tyAbsE :: [TyVar] -> Exp -> Exp
+tyAbsE []     e = e
+tyAbsE alphas e = TyAbsE alphas e (alphas `srcspan` e)
+
+tyAppE :: Exp -> [Type] -> Exp
+tyAppE e []   = e
+tyAppE e taus = TyAppE e taus (e `srcspan` taus)
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
@@ -42,11 +50,11 @@ bindE v e1 e2 = BindE (BindV v) e1 e2 (v `srcspan` e1 `srcspan` e2)
 seqE :: Exp -> Exp -> Exp
 seqE e1 e2 = BindE WildV e1 e2 (e1 `srcspan` e2)
 
-takeE :: Exp
-takeE = TakeE noLoc
+takeE :: Type -> Exp
+takeE tau = TakeE tau (srclocOf tau)
 
-takesE :: Int -> Exp
-takesE n = TakesE n noLoc
+takesE :: Int -> Type -> Exp
+takesE n tau = TakesE n tau (srclocOf tau)
 
 emitE :: Exp -> Exp
 emitE e = EmitE e (srclocOf e)
@@ -68,3 +76,18 @@ bitT = BitT noLoc
 
 intT :: Type
 intT = IntT dEFAULT_INT_WIDTH noLoc
+
+refT :: Type -> Type
+refT tau = RefT tau noLoc
+
+arrKnownT :: Int -> Type -> Type
+arrKnownT i tau = ArrT (ConstI i l) tau l
+  where
+    l :: SrcLoc
+    l = srclocOf tau
+
+stT :: Omega -> Type -> Type -> Type -> Type
+stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+
+tyVarT :: TyVar -> Type
+tyVarT alpha = TyVarT alpha noLoc

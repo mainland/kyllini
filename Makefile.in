@@ -101,14 +101,17 @@ SOURCE = \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
-	KZC/SysTools.hs \
 	KZC/Derive.hs \
 	KZC/Error.hs \
 	KZC/Flags.hs \
 	KZC/Monad.hs \
+	KZC/Lint.hs \
+	KZC/Lint/Monad.hs \
+	KZC/Lint/State.hs \
 	KZC/Name.hs \
 	KZC/Pretty.hs \
 	KZC/Summary.hs \
+	KZC/SysTools.hs \
 	KZC/Uniq.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \
@@ -211,7 +214,7 @@ test-parser : kzc
 test-tc : kzc
 	set -e; \
 	for TEST in $(TCTESTS); do \
-		./kzc -Ilib --check $$TEST; \
+		./kzc -Ilib --check --dlint $$TEST; \
 	done
 
 #

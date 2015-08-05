@@ -33,13 +33,13 @@ data TiEnv = TiEnv
     { errctx     :: ![ErrorContext]
     , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Z.Exp
-    , isrvalctx  :: {-# UNPACK #-} !Bool
     , structs    :: !(Map Z.Struct Struct)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , tyVarInsts :: !(Map TyVar Type)
     , iVars      :: !(Map IVar Kind)
     , envMtvs    :: !(Set MetaTv)
+    , valCtxType :: Type
     }
 
 defaultTiEnv :: TiEnv
@@ -47,18 +47,18 @@ defaultTiEnv = TiEnv
     { errctx     = []
     , nestdepth  = 0
     , curexp     = Nothing
-    , isrvalctx  = False
     , structs    = Map.empty
     , varTypes   = Map.empty
     , tyVars     = Map.empty
     , tyVarInsts = Map.empty
     , iVars      = Map.empty
     , envMtvs    = Set.empty
+    , valCtxType = error "valCtxType: not yet defined"
     }
 
 data TiState = TiState
-    { rvalctx :: C.Exp -> C.Exp }
+    { valctx :: C.Exp -> C.Exp }
 
 defaultTiState :: TiState
 defaultTiState = TiState
-    { rvalctx = id }
+    { valctx = error "valctx: not yet defined" }
