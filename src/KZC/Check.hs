@@ -455,21 +455,10 @@ tcExp (Z.EmitE e l) exp_ty = do
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
     collectValCtx tau $ do
-    (b', mce) <- inferVal e
-    go s a b b' mce
-  where
-    go :: Type -> Type -> Type -> Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
-    go s a b (ArrT _ b' _) mce = do
-        unifyTypes b' b
-        return $ do ce      <- mce
-                    [cs,ca] <- mapM trans [s,a]
-                    return $ C.tyAppE (C.EmitsE ce l) [cs,ca]
-
-    go s a b b' mce = do
-        unifyTypes b' b
-        return $ do ce      <- mce
-                    [cs,ca] <- mapM trans [s,a]
-                    return $ C.tyAppE (C.EmitE ce l) [cs,ca]
+    mce <- checkVal e b
+    return $ do ce      <- mce
+                [cs,ca] <- mapM trans [s,a]
+                return $ C.tyAppE (C.EmitE ce l) [cs,ca]
 
 tcExp (Z.RepeatE _ e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
@@ -480,6 +469,37 @@ tcExp (Z.RepeatE _ e l) exp_ty = do
     instType (stT (T l) sigma alpha beta) exp_ty
     return $ do ce <- mce
                 return $ C.RepeatE ce l
+
+tcExp e@(Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
+    withSummaryContext e $
+        warndoc $
+        text "Pipeline composed of read follow by write. That's odd!"
+    tau  <- fromZ (zalpha, TauK)
+    tau' <- fromZ (zbeta, TauK)
+    unifyTypes tau' tau
+    instType (stT (T l) tau tau tau) exp_ty
+    return $ do ctau <-trans tau
+                cx   <- C.mkUniqVar "x" l
+                return $ C.repeatE $
+                         C.bindE cx (C.tyAppE (C.takeE ctau) [ctau,ctau]) $
+                         C.tyAppE (C.emitE (C.varE cx)) [ctau,ctau]
+
+tcExp (Z.ArrE _ (Z.ReadE ztau l) e _) tau_exp = do
+    omega   <- newMetaTvT OmegaK l
+    a       <- fromZ (ztau, TauK)
+    b       <- newMetaTvT TauK l
+    let tau =  ST [] omega a a b l
+    instType tau tau_exp
+    checkExp e tau
+
+tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
+    omega   <- newMetaTvT OmegaK l
+    s       <- newMetaTvT TauK l
+    a       <- newMetaTvT TauK l
+    b       <- fromZ (ztau, TauK)
+    let tau =  ST [] omega s a b l
+    instType tau tau_exp
+    checkExp e tau
 
 tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
     (omega1, sigma, alpha, beta, mce1) <-
@@ -509,11 +529,15 @@ tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
         common_fvs :: Set Z.Var
         common_fvs = fvs e1 `Set.intersection` fvs e2
 
-tcExp (Z.ReadE ztau l) exp_ty =
-    mkEcho ztau l exp_ty
+tcExp e@(Z.ReadE {}) _ =
+    withSummaryContext e $
+        faildoc $
+        text "Naked read. That's odd!"
 
-tcExp (Z.WriteE ztau l) exp_ty =
-    mkEcho ztau l exp_ty
+tcExp e@(Z.WriteE {}) _ =
+    withSummaryContext e $
+        faildoc $
+        text "Naked write. That's odd!"
 
 tcExp (Z.StandaloneE e _) exp_ty =
     tcExp e exp_ty
@@ -544,16 +568,6 @@ tcExp (Z.CmdE cmds _) exp_ty =
     tcCmds cmds exp_ty
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
-
-mkEcho :: Maybe Z.Type -> SrcLoc -> Expected Type -> Ti b (Ti c C.Exp)
-mkEcho ztau l exp_ty = do
-    tau <- fromZ (ztau, TauK)
-    instType (stT (T l) tau tau tau) exp_ty
-    return $ do ctau <- trans tau
-                cx   <- C.mkUniqVar "x" l
-                return $ C.repeatE $
-                         C.bindE cx (C.tyAppE (C.takeE ctau) [ctau,ctau]) $
-                         C.tyAppE (C.emitE (C.varE cx)) [ctau,ctau]
 
 checkExp :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
 checkExp e tau = tcExp e (Check tau)

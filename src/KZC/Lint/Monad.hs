@@ -162,8 +162,9 @@ instance MonadErr (Tc b) where
         werror <- warnIsError
         if werror
            then err e
-           else do  ctx <- take <$> getMaxContext <*> askErrCtx
-                    liftIO $ hPutStrLn stderr $ pretty 80 (ppr (toContextException ctx e))
+           else do ctx <- take <$> getMaxContext <*> askErrCtx
+                   liftIO $ hPutStrLn stderr $
+                     pretty 80 (text "Warning:" <+> ppr (toContextException ctx e))
 
 reset :: Tc a a -> Tc b a
 reset m = Tc $ \r s k -> do (x, s') <- runTc m r s
