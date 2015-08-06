@@ -45,6 +45,7 @@ module Language.Ziria.Syntax (
 
 import Data.Loc
 import Data.Monoid
+import Data.String
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
@@ -56,11 +57,20 @@ import KZC.Vars
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)
 
+instance IsString Var where
+    fromString s = Var $ fromString s
+
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
+instance IsString Field where
+    fromString s = Field $ fromString s
+
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
+
+instance IsString Struct where
+    fromString s = Struct $ fromString s
 
 data W = W8
        | W16
