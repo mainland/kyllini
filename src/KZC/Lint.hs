@@ -143,14 +143,13 @@ inferExp (CallE f ies es _) = do
              text "arguments but got" <+> ppr n
 
 inferExp (LetRefE v tau Nothing e2 _) = do
-    void $ inferKind tau
-    extendVars [(v, tau)] $ inferExp e2
+    checkKind tau TauK
+    extendVars [(v, refT tau)] $ inferExp e2
 
 inferExp (LetRefE v tau (Just e1) e2 _) = do
-    void $ inferKind tau
-    tau' <- inferExp e1
-    checkTypeEquality (refT tau') tau
-    extendVars [(v, tau)] $ inferExp e2
+    checkKind tau TauK
+    checkExp e1 tau
+    extendVars [(v, refT tau)] $ inferExp e2
 
 inferExp (DerefE e l) = do
     tau <- inferExp e >>= checkRefT

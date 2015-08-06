@@ -88,7 +88,7 @@ checkLetRef v ztau e_init = do
               Nothing -> return $ return Nothing
               Just e  -> do mce <- checkExp e tau
                             return $ Just <$> mce
-    return (refT tau, mce1)
+    return (tau, mce1)
 
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
             -> Ti b (Type, [(Z.Var, Type)], Ti c C.Exp -> Ti c C.Exp)
@@ -129,7 +129,7 @@ checkCompLet cl@(Z.LetCL v ztau e l) k = do
 checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
     (tau, mce1) <- withSummaryContext cl $
                    checkLetRef v ztau e_init
-    mce2        <- extendVars [(v, tau)] $
+    mce2        <- extendVars [(v, refT tau)] $
                    k
     return $ do cv   <- trans v
                 ctau <- trans tau
@@ -291,7 +291,7 @@ tcExp (Z.CallE f es l) exp_ty = do
 
 tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
     (tau, mce1) <- checkLetRef v ztau e1
-    mce2        <- extendVars [(v, tau)] $
+    mce2        <- extendVars [(v, refT tau)] $
                    tcExp e2 exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
@@ -601,7 +601,7 @@ tcStms (stm@(Z.LetRefS {}) : []) _ =
 tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
     (tau, mce1) <- withSummaryContext stm $
                    checkLetRef v ztau e_init
-    mce2        <- extendVars [(v, tau)] $
+    mce2        <- extendVars [(v, refT tau)] $
                    tcStms stms exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
