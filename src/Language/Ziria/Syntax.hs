@@ -33,14 +33,7 @@ module Language.Ziria.Syntax (
 
     StructDef(..),
     Type(..),
-    Ind(..),
-
-    mkVar,
-    mkStruct,
-    mkField,
-
-    imField,
-    reField
+    Ind(..)
   ) where
 
 import Data.Loc
@@ -225,25 +218,6 @@ data Ind = ConstI Int !SrcLoc
          | ArrI Var !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
-
-{------------------------------------------------------------------------------
- -
- - Smart constructors
- -
- ------------------------------------------------------------------------------}
-
-mkVar :: Name -> Var
-mkVar n = Var n
-
-mkStruct :: Name -> Struct
-mkStruct n = Struct n
-
-mkField :: Name -> Field
-mkField n = Field n
-
-imField, reField :: Field
-imField = Field $ mkName "im" noLoc
-reField = Field $ mkName "re"  noLoc
 
 {------------------------------------------------------------------------------
  -

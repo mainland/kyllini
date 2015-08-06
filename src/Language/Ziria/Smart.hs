@@ -6,6 +6,10 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module Language.Ziria.Smart (
+    mkVar,
+    mkField,
+    mkStruct,
+
     varE,
     stmsE,
     cmdsE,
@@ -15,6 +19,17 @@ module Language.Ziria.Smart (
 import Data.Loc
 
 import Language.Ziria.Syntax
+
+import KZC.Name
+
+mkVar :: Name -> Var
+mkVar n = Var n
+
+mkField :: Name -> Field
+mkField n = Field n
+
+mkStruct :: Name -> Struct
+mkStruct n = Struct n
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
