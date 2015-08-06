@@ -24,7 +24,10 @@ module Language.Core.Syntax (
     Type(..),
     Omega(..),
     Iota(..),
-    Kind(..)
+    Kind(..),
+    Stm(..),
+    expToStms,
+    stmsToExp
   ) where
 
 import Data.Loc
@@ -188,6 +191,85 @@ instance IsString TyVar where
 
 {------------------------------------------------------------------------------
  -
+ - Statements
+ -
+ ------------------------------------------------------------------------------}
+
+data Stm = ReturnS Exp !SrcLoc
+         | BindS BindVar Exp !SrcLoc
+         | ExpS Exp !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+instance Pretty Stm where
+    pprPrec p (ReturnS e _) =
+        parensIf (p > appPrec) $
+        text "return" <+> ppr e
+
+    pprPrec _ (BindS (BindV v) e _) =
+        ppr v <+> text "<-" <+> align (ppr e)
+
+    pprPrec _ (BindS WildV e _) =
+        ppr e
+
+    pprPrec p (ExpS e _) =
+        pprPrec p e
+
+    pprList stms =
+        semiEmbrace (map ppr stms)
+
+pprBody :: Exp -> Doc
+pprBody e =
+    case expToStms e of
+      [_]  -> line <> align (ppr e)
+      stms -> space <> semiEmbraceWrap (map ppr stms)
+
+#if defined(ONLY_TYPEDEFS)
+expToStms :: Exp -> [Stm]
+expToStms = undefined
+
+stmsToExp :: [Stm] -> Exp
+stmsToExp = undefined
+#else /* !defined(ONLY_TYPEDEFS) */
+expToStms :: Exp -> [Stm]
+expToStms (ReturnE e l)      = [ReturnS e l]
+expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
+expToStms e                  = [ExpS e (srclocOf e)]
+
+stmsToExp :: [Stm] -> Exp
+stmsToExp [] =
+    error "Null statement list"
+
+stmsToExp [ReturnS e l] =
+    ReturnE e l
+
+stmsToExp [BindS {}] =
+    error "Last statement must be an expression"
+
+stmsToExp [ExpS e _] =
+    e
+
+stmsToExp (ReturnS e1 _ : stms) =
+    BindE WildV e1 e2 (e1 `srcspan` e2)
+  where
+    e2 :: Exp
+    e2 = stmsToExp stms
+
+stmsToExp (BindS bv e1 _ : stms) =
+    BindE bv e1 e2 (e1 `srcspan` e2)
+  where
+    e2 :: Exp
+    e2 = stmsToExp stms
+
+stmsToExp (ExpS e1 _ : stms) =
+    BindE WildV e1 e2 (e1 `srcspan` e2)
+  where
+    e2 :: Exp
+    e2 = stmsToExp stms
+
+#endif /* !defined(ONLY_TYPEDEFS) */
+
+{------------------------------------------------------------------------------
+ -
  - Summaries
  -
  ------------------------------------------------------------------------------}
@@ -329,15 +411,15 @@ instance Pretty Exp where
         ppr v <+> text ":=" <+> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
-        text "while" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
+        text "while" <+> pprPrec appPrec1 e1 <+> pprBody e2
 
     pprPrec _ (UntilE e1 e2 _) =
-        text "until" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
+        text "until" <+> pprPrec appPrec1 e1 <+> pprBody e2
 
     pprPrec _ (ForE v e1 e2 e3 _) =
         text "for" <+> ppr v <+> text "in" <+>
-        brackets (commasep [ppr e1, ppr e2]) <+>
-        pprPrec appPrec1 e3
+        brackets (commasep [ppr e1, ppr e2]) <>
+        pprBody e3
 
     pprPrec _ (ArrayE es _) =
         text "arr" <+> embrace commasep (map ppr es)
@@ -368,9 +450,8 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         text "return" <+> pprPrec appPrec1 e
 
-    pprPrec _ (BindE v e1 e2 _) =
-        braces $
-        ppr v <+> text "<-" <+> pprPrec doPrec1 e1 <> text ";" <+/> ppr e2
+    pprPrec _ e@(BindE {}) =
+        ppr (expToStms e)
 
     pprPrec _ (TakeE tau _) =
         text "take" <+> text "@" <> pprPrec tyappPrec1 tau

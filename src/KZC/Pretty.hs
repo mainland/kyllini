@@ -9,6 +9,8 @@ module KZC.Pretty (
     quote,
 
     commaEmbrace,
+    semiEmbrace,
+    semiEmbraceWrap,
     embrace,
 
     Fixity(..),
@@ -35,6 +37,24 @@ embrace combine ds =
       []   -> lbrace <> rbrace
       [d]  -> lbrace <+> d <+> rbrace
       _    -> align $ lbrace <+> combine ds <+> rbrace
+
+-- | Print a block of code surrounded by braces and separate by semicolons and
+-- newlines.
+semiEmbrace :: [Doc] -> Doc
+semiEmbrace ds =
+    case ds of
+      []   -> lbrace <> rbrace
+      [d]  -> lbrace <+> d <+> rbrace
+      _    -> lbrace <+> (align . folddoc (</>) . punctuate semi) ds </> rbrace
+
+-- | Print a block of code surrounded by braces and separate by semicolons and
+-- newlines. The opening braces appears on its own line.
+semiEmbraceWrap :: [Doc] -> Doc
+semiEmbraceWrap ds =
+    case ds of
+      []   -> lbrace <> rbrace
+      [d]  -> lbrace </> d </> rbrace
+      _    -> nest 2 (lbrace </> (align . folddoc (</>) . punctuate semi) ds) </> rbrace
 
 data Fixity = Fixity Assoc Int
   deriving (Eq, Ord)

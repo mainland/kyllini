@@ -59,3 +59,7 @@ instance Located Omega where
 instance Located Iota where
   locOf (ConstI _ l) = locOf l
   locOf (VarI _ l) = locOf l
+instance Located Stm where
+  locOf (ReturnS _ l) = locOf l
+  locOf (BindS _ _ l) = locOf l
+  locOf (ExpS _ l) = locOf l
