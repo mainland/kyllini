@@ -75,12 +75,10 @@ inferExp (BinopE op e1 e2 _) = do
         faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
 
 inferExp (IfE e1 e2 e3 _) = do
-    tau1 <- inferExp e1
-    checkTypeEquality tau1 boolT
-    tau2 <- inferExp e2
-    tau3 <- inferExp e3
-    checkTypeEquality tau3 tau2
-    return tau2
+    checkExp e1 boolT
+    tau <- inferExp e2
+    checkExp e3 tau
+    return tau
 
 inferExp (LetE v tau e1 e2 _) = do
     tau' <- withExpContext e1 $
@@ -121,9 +119,8 @@ inferExp (CallE f ies es _) = do
 
     checkArg :: Exp -> Type -> Tc b ()
     checkArg e tau =
-        withExpContext e $ do
-        tau' <- inferExp e
-        checkTypeEquality tau' tau
+        withExpContext e $
+        checkExp e tau
 
     checkNumIotas :: Int -> Int -> Tc b ()
     checkNumIotas n nexp =
@@ -170,29 +167,29 @@ inferExp (AssignE e1 e2 l) = do
     b = "b"
 
 inferExp (WhileE e1 e2 _) = do
-    tau_e1 <- withExpContext e1 $ inferExp e1
-    checkTypeEquality tau_e1 boolT
-    tau_e2 <- withExpContext e2 $ inferExp e2
-    void $ checkSTCUnit tau_e2
-    return tau_e2
+    withExpContext e1 $
+        checkExp e1 boolT
+    tau <- withExpContext e2 $ inferExp e2
+    void $ checkSTCUnit tau
+    return tau
 
 inferExp (UntilE e1 e2 _) = do
-    tau_e1 <- withExpContext e1 $ inferExp e1
-    checkTypeEquality tau_e1 boolT
-    tau_e2 <- withExpContext e2 $ inferExp e2
-    void $ checkSTCUnit tau_e2
-    return tau_e2
+    withExpContext e1 $
+        checkExp e1 boolT
+    tau <- withExpContext e2 $ inferExp e2
+    void $ checkSTCUnit tau
+    return tau
 
 inferExp (ForE v e1 e2 e3 _) = do
-    tau_e1 <- withExpContext e1 $ inferExp e1
-    checkTypeEquality tau_e1 intT
-    tau_e2 <- withExpContext e2 $ inferExp e2
-    checkTypeEquality tau_e2 intT
-    tau_e3 <- extendVars [(v, intT)] $
-              withExpContext e3 $
-              inferExp e3
-    void $ checkSTCUnit tau_e3
-    return tau_e3
+    withExpContext e1 $
+        checkExp e1 intT
+    withExpContext e2 $
+        checkExp e2 intT
+    tau <- extendVars [(v, intT)] $
+           withExpContext e3 $
+           inferExp e3
+    void $ checkSTCUnit tau
+    return tau
 
 inferExp (ArrayE es l) = do
     taus <- mapM inferExp es
@@ -307,6 +304,11 @@ inferExp (ArrE e1 e2 l) = do
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
 inferExp e = faildoc $ nest 2 $ text "inferExp: cannot type check:" </> ppr e
+
+checkExp :: Exp -> Type -> Tc b ()
+checkExp e tau = do
+    tau' <- inferExp e
+    checkTypeEquality tau' tau
 
 checkTypeEquality :: Type -> Type -> Tc b ()
 checkTypeEquality tau1 tau2 =
