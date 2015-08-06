@@ -35,13 +35,12 @@ inferExp (ConstE c l) =
     checkConst c
   where
     checkConst :: Const -> Tc b Type
-    checkConst UnitC           = return (UnitT l)
-    checkConst(BoolC {})       = return (BoolT l)
-    checkConst(BitC {})        = return (BitT l)
-    checkConst(IntC w _)       = return (IntT w l)
-    checkConst(FloatC w _)     = return (FloatT w l)
-    checkConst(ComplexC w _ _) = return (ComplexT w l)
-    checkConst(StringC _)      = return (StringT l)
+    checkConst UnitC       = return (UnitT l)
+    checkConst(BoolC {})   = return (BoolT l)
+    checkConst(BitC {})    = return (BitT l)
+    checkConst(IntC w _)   = return (IntT w l)
+    checkConst(FloatC w _) = return (FloatT w l)
+    checkConst(StringC _)  = return (StringT l)
 
     checkConst(ArrayC cs) = do
         taus <- mapM checkConst cs

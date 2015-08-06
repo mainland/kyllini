@@ -74,7 +74,6 @@ data Const = UnitC
            | BitC Bool
            | IntC W Integer
            | FloatC W Rational
-           | ComplexC W Integer Integer
            | StringC String
            | ArrayC [Const]
   deriving (Eq, Ord, Read, Show)
@@ -305,16 +304,15 @@ instance Pretty W where
     ppr W64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC            = text "()"
-    ppr (BoolC False)    = text "false"
-    ppr (BoolC True)     = text "true"
-    ppr (BitC False)     = text "'0"
-    ppr (BitC True)      = text "'1"
-    ppr (IntC _ i)       = ppr i
-    ppr (FloatC _ f)     = ppr (fromRational f :: Double)
-    ppr (ComplexC w r i) = text "complex" <> ppr w <+> pprStruct [(text "re", ppr r), (text "im", ppr i)]
-    ppr (StringC s)      = text (show s)
-    ppr (ArrayC cs)      = braces $ commasep $ map ppr cs
+    ppr UnitC         = text "()"
+    ppr (BoolC False) = text "false"
+    ppr (BoolC True)  = text "true"
+    ppr (BitC False)  = text "'0"
+    ppr (BitC True)   = text "'1"
+    ppr (IntC _ i)    = ppr i
+    ppr (FloatC _ f)  = ppr (fromRational f :: Double)
+    ppr (StringC s)   = text (show s)
+    ppr (ArrayC cs)   = braces $ commasep $ map ppr cs
 
 pprStruct :: [(Doc, Doc)] -> Doc
 pprStruct flds =
