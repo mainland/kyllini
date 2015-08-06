@@ -9,7 +9,11 @@
 module KZC.Lint (
     withTc,
 
-    inferExp
+    inferExp,
+    checkExp,
+
+    inferKind,
+    checkKind
   ) where
 
 import Control.Monad (when,
@@ -81,6 +85,7 @@ inferExp (IfE e1 e2 e3 _) = do
     return tau
 
 inferExp (LetE v tau e1 e2 _) = do
+    void $ inferKind tau
     tau' <- withExpContext e1 $
             absSTScope tau $
             inferExp e1
@@ -90,6 +95,7 @@ inferExp (LetE v tau e1 e2 _) = do
 
 inferExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
     let tau = FunT iotas (map snd vbs) tau_ret l
+    checkKind tau PhiK
     extendVars [(f, tau)] $ do
     extendIVars (iotas `zip` repeat IotaK) $ do
     extendVars vbs $ do
@@ -136,15 +142,15 @@ inferExp (CallE f ies es _) = do
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
 
-inferExp (LetRefE v tau Nothing e2 _) =
-    extendVars [(v, tau)] $
-    inferExp e2
+inferExp (LetRefE v tau Nothing e2 _) = do
+    void $ inferKind tau
+    extendVars [(v, tau)] $ inferExp e2
 
 inferExp (LetRefE v tau (Just e1) e2 _) = do
+    void $ inferKind tau
     tau' <- inferExp e1
     checkTypeEquality (refT tau') tau
-    extendVars [(v, tau)] $ do
-    inferExp e2
+    extendVars [(v, tau)] $ inferExp e2
 
 inferExp (DerefE e l) = do
     tau <- inferExp e >>= checkRefT
@@ -252,14 +258,16 @@ inferExp (BindE bv e1 e2 _) = do
     extendBindVars bvtaus m =
         extendVars [(v, tau) | (BindV v, tau) <- bvtaus] m
 
-inferExp (TakeE tau l) =
+inferExp (TakeE tau l) = do
+    checkKind tau TauK
     appSTScope $ ST [a,b] (C tau) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
     a = "a"
     b = "b"
 
-inferExp (TakesE i tau l) =
+inferExp (TakesE i tau l) = do
+    checkKind tau TauK
     appSTScope $ ST [a,b] (C (arrKnownT i tau)) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
@@ -399,6 +407,85 @@ checkTypeEquality tau1 tau2 =
       faildoc $ align $
           text "Expected type:" <+> ppr tau2 </>
           text "but got:      " <+> ppr tau1
+
+inferKind :: Type -> Tc b Kind
+inferKind tau =
+    inferType tau
+  where
+    inferType :: Type -> Tc b Kind
+    inferType (UnitT {})    = return TauK
+    inferType (BoolT {})    = return TauK
+    inferType (BitT {})     = return TauK
+    inferType (IntT {})     = return TauK
+    inferType (FloatT {})   = return TauK
+    inferType (ComplexT {}) = return TauK
+    inferType (StringT {})  = return TauK
+    inferType (StructT {})  = return TauK
+
+    inferType (ArrT iota tau _) = do
+        inferIota iota
+        kappa <- inferType tau
+        checkKindEquality kappa TauK
+        return TauK
+
+    inferType (ST alphas omega tau1 tau2 tau3 _) =
+        extendTyVars (alphas `zip` repeat TauK) $ do
+        inferOmega omega
+        checkKind tau1 TauK
+        checkKind tau2 TauK
+        checkKind tau3 TauK
+        return MuK
+
+    inferType (RefT tau _) = do
+        checkKind tau TauK
+        return RhoK
+
+    inferType (FunT ivs taus tau _) =
+        extendIVars (ivs `zip` repeat IotaK) $ do
+        mapM_ inferArgType taus
+        kappa <- inferType tau
+        case kappa of
+          TauK -> return ()
+          MuK  -> return ()
+          _    -> checkKindEquality kappa MuK
+        return PhiK
+      where
+        inferArgType :: Type -> Tc b ()
+        inferArgType tau = do
+            kappa <- inferType tau
+            case kappa of
+              TauK -> return ()
+              RhoK -> return ()
+              _    -> checkKindEquality kappa TauK
+
+    inferType (TyVarT alpha _) =
+        lookupTyVar alpha
+
+    inferIota :: Iota -> Tc b Kind
+    inferIota (ConstI {}) = return IotaK
+    inferIota (VarI iv _) = lookupIVar iv
+
+    inferOmega :: Omega -> Tc b Kind
+    inferOmega (C tau) = do
+        checkKind tau TauK
+        return OmegaK
+
+    inferOmega T =
+        return OmegaK
+
+checkKind :: Type -> Kind -> Tc b ()
+checkKind tau kappa = do
+    kappa' <- inferKind tau
+    checkKindEquality kappa' kappa
+
+checkKindEquality :: Kind -> Kind -> Tc b ()
+checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
+    return ()
+
+checkKindEquality kappa1 kappa2 =
+    faildoc $ align $
+    text "Expected kind:" <+> ppr kappa2 </>
+    text "but got:      " <+> ppr kappa1
 
 absSTScope :: Type -> Tc b Type -> Tc b Type
 absSTScope tau m =
