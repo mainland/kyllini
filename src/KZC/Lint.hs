@@ -9,7 +9,7 @@
 module KZC.Lint (
     withTc,
 
-    checkExp
+    inferExp
   ) where
 
 import Control.Monad (when,
@@ -26,8 +26,8 @@ import Language.Core.Syntax
 import KZC.Lint.Monad
 import KZC.Vars
 
-checkExp :: Exp -> Tc b Type
-checkExp (ConstE c l) =
+inferExp :: Exp -> Tc b Type
+inferExp (ConstE c l) =
     checkConst c
   where
     checkConst :: Const -> Tc b Type
@@ -46,11 +46,11 @@ checkExp (ConstE c l) =
           tau:taus | all (== tau) taus -> return tau
                    | otherwise -> faildoc $ text "Constant array elements do not all have the same type"
 
-checkExp (VarE v _) =
+inferExp (VarE v _) =
     lookupVar v
 
-checkExp (UnopE op e1 _) = do
-    tau1 <- checkExp e1
+inferExp (UnopE op e1 _) = do
+    tau1 <- inferExp e1
     unop op tau1
   where
     unop :: Unop -> Type -> Tc b Type
@@ -60,49 +60,49 @@ checkExp (UnopE op e1 _) = do
 
     unop op _ = faildoc $ text "tcExp: cannot type check unary operator" <+> ppr op
 
-checkExp (BinopE op e1 e2 _) = do
-    tau1 <- checkExp e1
-    tau2 <- checkExp e2
+inferExp (BinopE op e1 e2 _) = do
+    tau1 <- inferExp e1
+    tau2 <- inferExp e2
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> Tc b Type
     binop Add tau1 tau2 = do
         checkNumT tau1
-        checkTypesEqual tau2 tau1
+        checkTypeEquality tau2 tau1
         return tau1
 
     binop op _ _ =
         faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
 
-checkExp (IfE e1 e2 e3 _) = do
-    tau1 <- checkExp e1
-    checkTypesEqual tau1 boolT
-    tau2 <- checkExp e2
-    tau3 <- checkExp e3
-    checkTypesEqual tau3 tau2
+inferExp (IfE e1 e2 e3 _) = do
+    tau1 <- inferExp e1
+    checkTypeEquality tau1 boolT
+    tau2 <- inferExp e2
+    tau3 <- inferExp e3
+    checkTypeEquality tau3 tau2
     return tau2
 
-checkExp (LetE v tau e1 e2 _) = do
+inferExp (LetE v tau e1 e2 _) = do
     tau' <- withExpContext e1 $
             absSTScope tau $
-            checkExp e1
-    checkTypesEqual tau' tau
+            inferExp e1
+    checkTypeEquality tau' tau
     extendVars [(v, tau)] $ do
-    checkExp e2
+    inferExp e2
 
-checkExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
+inferExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
     let tau = FunT iotas (map snd vbs) tau_ret l
     extendVars [(f, tau)] $ do
     extendIVars (iotas `zip` repeat IotaK) $ do
     extendVars vbs $ do
     tau_ret' <- withExpContext e1 $
                 absSTScope tau_ret $
-                checkExp e1
-    checkTypesEqual tau_ret' tau_ret
-    checkExp e2
+                inferExp e1
+    checkTypeEquality tau_ret' tau_ret
+    inferExp e2
 
-checkExp (CallE f ies es _) = do
-    (ivs, taus, tau_ret) <- checkExp f >>= checkFunT
+inferExp (CallE f ies es _) = do
+    (ivs, taus, tau_ret) <- inferExp f >>= checkFunT
     checkNumIotas (length ies) (length ivs)
     checkNumArgs  (length es)  (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do
@@ -122,8 +122,8 @@ checkExp (CallE f ies es _) = do
     checkArg :: Exp -> Type -> Tc b ()
     checkArg e tau =
         withExpContext e $ do
-        tau' <- checkExp e
-        checkTypesEqual tau' tau
+        tau' <- inferExp e
+        checkTypeEquality tau' tau
 
     checkNumIotas :: Int -> Int -> Tc b ()
     checkNumIotas n nexp =
@@ -139,18 +139,18 @@ checkExp (CallE f ies es _) = do
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
 
-checkExp (LetRefE v tau Nothing e2 _) =
+inferExp (LetRefE v tau Nothing e2 _) =
     extendVars [(v, tau)] $
-    checkExp e2
+    inferExp e2
 
-checkExp (LetRefE v tau (Just e1) e2 _) = do
-    tau' <- checkExp e1
-    checkTypesEqual (refT tau') tau
+inferExp (LetRefE v tau (Just e1) e2 _) = do
+    tau' <- inferExp e1
+    checkTypeEquality (refT tau') tau
     extendVars [(v, tau)] $ do
-    checkExp e2
+    inferExp e2
 
-checkExp (DerefE e l) = do
-    tau <- checkExp e >>= checkRefT
+inferExp (DerefE e l) = do
+    tau <- inferExp e >>= checkRefT
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -158,10 +158,10 @@ checkExp (DerefE e l) = do
     a = "a"
     b = "b"
 
-checkExp (AssignE e1 e2 l) = do
-    tau  <- checkExp e1 >>= checkRefT
-    tau' <- checkExp e2
-    withExpContext e2 $ checkTypesEqual tau' tau
+inferExp (AssignE e1 e2 l) = do
+    tau  <- inferExp e1 >>= checkRefT
+    tau' <- inferExp e2
+    withExpContext e2 $ checkTypeEquality tau' tau
     appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -169,41 +169,41 @@ checkExp (AssignE e1 e2 l) = do
     a = "a"
     b = "b"
 
-checkExp (WhileE e1 e2 _) = do
-    tau_e1 <- withExpContext e1 $ checkExp e1
-    checkTypesEqual tau_e1 boolT
-    tau_e2 <- withExpContext e2 $ checkExp e2
+inferExp (WhileE e1 e2 _) = do
+    tau_e1 <- withExpContext e1 $ inferExp e1
+    checkTypeEquality tau_e1 boolT
+    tau_e2 <- withExpContext e2 $ inferExp e2
     void $ checkSTCUnit tau_e2
     return tau_e2
 
-checkExp (UntilE e1 e2 _) = do
-    tau_e1 <- withExpContext e1 $ checkExp e1
-    checkTypesEqual tau_e1 boolT
-    tau_e2 <- withExpContext e2 $ checkExp e2
+inferExp (UntilE e1 e2 _) = do
+    tau_e1 <- withExpContext e1 $ inferExp e1
+    checkTypeEquality tau_e1 boolT
+    tau_e2 <- withExpContext e2 $ inferExp e2
     void $ checkSTCUnit tau_e2
     return tau_e2
 
-checkExp (ForE v e1 e2 e3 _) = do
-    tau_e1 <- withExpContext e1 $ checkExp e1
-    checkTypesEqual tau_e1 intT
-    tau_e2 <- withExpContext e2 $ checkExp e2
-    checkTypesEqual tau_e2 intT
+inferExp (ForE v e1 e2 e3 _) = do
+    tau_e1 <- withExpContext e1 $ inferExp e1
+    checkTypeEquality tau_e1 intT
+    tau_e2 <- withExpContext e2 $ inferExp e2
+    checkTypeEquality tau_e2 intT
     tau_e3 <- extendVars [(v, intT)] $
               withExpContext e3 $
-              checkExp e3
+              inferExp e3
     void $ checkSTCUnit tau_e3
     return tau_e3
 
-checkExp (ArrayE es l) = do
-    taus <- mapM checkExp es
+inferExp (ArrayE es l) = do
+    taus <- mapM inferExp es
     case taus of
       [] -> faildoc $ text "Empty array expression"
-      tau:taus -> do mapM_ (checkTypesEqual tau) taus
+      tau:taus -> do mapM_ (checkTypeEquality tau) taus
                      return $ ArrT (ConstI (length es) l) tau l
 
-checkExp (IdxE e1 e2 len l) = do
-    tau <- withExpContext e1 $ checkExp e1
-    withExpContext e2 $ checkExp e2 >>= checkIntT
+inferExp (IdxE e1 e2 len l) = do
+    tau <- withExpContext e1 $ inferExp e1
+    withExpContext e2 $ inferExp e2 >>= checkIntT
     go tau
   where
     go :: Type -> Tc b Type
@@ -221,8 +221,8 @@ checkExp (IdxE e1 e2 len l) = do
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
 
-checkExp (PrintE _ es l) = do
-    mapM_ checkExp es
+inferExp (PrintE _ es l) = do
+    mapM_ inferExp es
     appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -230,8 +230,8 @@ checkExp (PrintE _ es l) = do
     a = "a"
     b = "b"
 
-checkExp (ReturnE e l) = do
-    tau <- checkExp e
+inferExp (ReturnE e l) = do
+    tau <- inferExp e
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -239,62 +239,62 @@ checkExp (ReturnE e l) = do
     a = "a"
     b = "b"
 
-checkExp (BindE bv e1 e2 _) = do
+inferExp (BindE bv e1 e2 _) = do
     (tau_bv, s,  a,  b)  <- withExpContext e1 $ do
-                            checkExp e1 >>= checkSTC
+                            inferExp e1 >>= checkSTC
     (omega,  s', a', b') <- withExpContext e2 $
                             extendBindVars [(bv, tau_bv)] $
-                            checkExp e2 >>= checkST
+                            inferExp e2 >>= checkST
     withExpContext e2 $ do
-    checkTypesEqual s' s
-    checkTypesEqual a' a
-    checkTypesEqual b' b
+    checkTypeEquality s' s
+    checkTypeEquality a' a
+    checkTypeEquality b' b
     return $ stT omega s a b
   where
     extendBindVars :: [(BindVar, Type)] -> Tc b a -> Tc b a
     extendBindVars bvtaus m =
         extendVars [(v, tau) | (BindV v, tau) <- bvtaus] m
 
-checkExp (TakeE tau l) =
+inferExp (TakeE tau l) =
     appSTScope $ ST [a,b] (C tau) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
     a = "a"
     b = "b"
 
-checkExp (TakesE i tau l) =
+inferExp (TakesE i tau l) =
     appSTScope $ ST [a,b] (C (arrKnownT i tau)) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
     a = "a"
     b = "b"
 
-checkExp (EmitE e l) = do
-    tau <- withExpContext e $ checkExp e
+inferExp (EmitE e l) = do
+    tau <- withExpContext e $ inferExp e
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
     s = "s"
     a = "a"
 
-checkExp (EmitsE e l) = do
-    (_, tau) <- withExpContext e $ checkExp e >>= checkArrKnownT
+inferExp (EmitsE e l) = do
+    (_, tau) <- withExpContext e $ inferExp e >>= checkArrKnownT
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
     s = "s"
     a = "a"
 
-checkExp (RepeatE e l) = do
-    (s, a, b) <- withExpContext e $ checkExp e >>= checkSTCUnit
+inferExp (RepeatE e l) = do
+    (s, a, b) <- withExpContext e $ inferExp e >>= checkSTCUnit
     return $ ST [] T s a b l
 
-checkExp (ArrE e1 e2 l) = do
-    (omega1, s,  a,  b)  <- withExpContext e1 $ checkExp e1 >>= checkST
-    (omega2, s', a', b') <- withExpContext e2 $ checkExp e2 >>= checkST
-    checkTypesEqual s' s
-    checkTypesEqual a' a
-    checkTypesEqual b' b
+inferExp (ArrE e1 e2 l) = do
+    (omega1, s,  a,  b)  <- withExpContext e1 $ inferExp e1 >>= checkST
+    (omega2, s', a', b') <- withExpContext e2 $ inferExp e2 >>= checkST
+    checkTypeEquality s' s
+    checkTypeEquality a' a
+    checkTypeEquality b' b
     omega <- joinOmega omega1 omega2
     return $ ST [] omega s a b l
   where
@@ -306,10 +306,10 @@ checkExp (ArrE e1 e2 l) = do
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
-checkExp e = faildoc $ nest 2 $ text "checkExp: cannot type check:" </> ppr e
+inferExp e = faildoc $ nest 2 $ text "inferExp: cannot type check:" </> ppr e
 
-checkTypesEqual :: Type -> Type -> Tc b ()
-checkTypesEqual tau1 tau2 =
+checkTypeEquality :: Type -> Type -> Tc b ()
+checkTypeEquality tau1 tau2 =
     checkT Map.empty Map.empty tau1 tau2
   where
     checkT :: Map TyVar TyVar
