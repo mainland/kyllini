@@ -88,9 +88,6 @@ data Exp = ConstE Const !SrcLoc
          -- Functions
          | LetFunE Var [IVar] [(Var, Type)] Type Exp Exp !SrcLoc
          | CallE Exp [Iota] [Exp] !SrcLoc
-         -- Type abstraction and application
-         | TyAbsE [TyVar] Exp !SrcLoc
-         | TyAppE Exp [Type] !SrcLoc
          -- References
          | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | DerefE Exp !SrcLoc
@@ -381,17 +378,6 @@ instance Pretty Exp where
     pprPrec _ (CallE f is es _) =
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
 
-    pprPrec p (TyAbsE alphas e _) =
-        parensIf (p > appPrec) $
-        text "/\\" <+> sep (map ppr alphas) <+> dot <+> ppr e
-
-    pprPrec p (TyAppE e taus _) =
-        parensIf (p > appPrec) $
-        ppr e <+> sep (map pprTyApp taus)
-      where
-        pprTyApp :: Type -> Doc
-        pprTyApp tau = text "@" <> pprPrec appPrec1 tau
-
     pprPrec p (LetRefE v tau Nothing e2 _) =
         parensIf (p > appPrec) $
         text "letref" <+> ppr v <+> text ":" <+> ppr tau <+> text "in" </> pprPrec doPrec1 e2
@@ -470,7 +456,7 @@ instance Pretty Exp where
 
     pprPrec p (RepeatE e _) =
         parensIf (p > appPrec) $
-        text "repeat" <+> pprPrec appPrec1 e
+        text "repeat" <> pprBody e
 
     pprPrec p (ArrE e1 e2 _) =
         parensIf (p > arrPrec) $
@@ -724,8 +710,6 @@ instance Fvs Exp Var where
     fvs (LetE v _ e1 e2 _)        = delete v (fvs e1 <> fvs e2)
     fvs (LetFunE v _ _ _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
     fvs (CallE e _ es _)          = fvs e <> fvs es
-    fvs (TyAbsE _ e _)            = fvs e
-    fvs (TyAppE e _ _)            = fvs e
     fvs (LetRefE v _ e1 e2 _)     = delete v (fvs e1 <> fvs e2)
     fvs (DerefE e _)              = fvs e
     fvs (AssignE e1 e2 _)         = fvs e1 <> fvs e2

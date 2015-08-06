@@ -31,6 +31,9 @@ module KZC.Lint.Monad (
     extendIVars,
     lookupIVar,
 
+    localSTIndTypes,
+    askSTIndTypes,
+
     traceNest,
     traceLint,
 
@@ -237,6 +240,23 @@ lookupIVar iv =
     lookupBy iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
+
+localSTIndTypes :: Maybe (Type, Type, Type) -> Tc b a -> Tc b a
+localSTIndTypes taus m =
+    extendTyVars (alphas `zip` repeat TauK) $
+    local (\env -> env { stIndTys = taus }) m
+  where
+    alphas :: [TyVar]
+    alphas = case taus of
+               Nothing      -> []
+               Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
+
+askSTIndTypes :: Tc b (Type, Type, Type)
+askSTIndTypes = do
+    maybe_taus <- asks stIndTys
+    case maybe_taus of
+      Just taus -> return taus
+      Nothing   -> faildoc $ text "Not in scope of an ST computation"
 
 traceNest :: Int -> Tc b a -> Tc b a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })

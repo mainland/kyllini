@@ -438,15 +438,15 @@ tcExp (Z.TakeE l) exp_ty = do
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
     instType (stT (C a l) a a b) exp_ty
-    return $ do [ca,cb] <- mapM trans [a,b]
-                return $ C.tyAppE (C.takeE ca) [ca,cb]
+    return $ do ca <- trans a
+                return $ C.takeE ca
 
 tcExp (Z.TakesE i l) exp_ty = do
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
     instType (stT (C (ArrT (ConstI i l) a l) l) a a b) exp_ty
-    return $ do [ca,cb] <- mapM trans [a,b]
-                return $ C.tyAppE (C.takesE (fromIntegral i) ca) [ca,cb]
+    return $ do ca <- trans a
+                return $ C.takesE (fromIntegral i) ca
 
 tcExp (Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT TauK l
@@ -456,9 +456,8 @@ tcExp (Z.EmitE e l) exp_ty = do
     instType tau exp_ty
     collectValCtx tau $ do
     mce <- checkVal e b
-    return $ do ce      <- mce
-                [cs,ca] <- mapM trans [s,a]
-                return $ C.tyAppE (C.EmitE ce l) [cs,ca]
+    return $ do ce <- mce
+                return $ C.EmitE ce l
 
 tcExp (Z.RepeatE _ e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
@@ -481,8 +480,8 @@ tcExp e@(Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     return $ do ctau <-trans tau
                 cx   <- C.mkUniqVar "x" l
                 return $ C.repeatE $
-                         C.bindE cx (C.tyAppE (C.takeE ctau) [ctau,ctau]) $
-                         C.tyAppE (C.emitE (C.varE cx)) [ctau,ctau]
+                         C.bindE cx (C.takeE ctau) $
+                         C.emitE (C.varE cx)
 
 tcExp (Z.ArrE _ (Z.ReadE ztau l) e _) tau_exp = do
     omega   <- newMetaTvT OmegaK l
@@ -548,14 +547,14 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
     unifyTypes tau' tau
     (a, b, co) <- checkMapFunType f tau
     instType (stT (T l) a a b) exp_ty
-    return $ do cx      <- C.mkUniqVar "x" l
-                cy      <- C.mkUniqVar "y" l
-                ccalle  <- co $ return $ C.varE cx
-                [ca,cb] <- mapM trans [a,b]
+    return $ do cx     <- C.mkUniqVar "x" l
+                cy     <- C.mkUniqVar "y" l
+                ccalle <- co $ return $ C.varE cx
+                ca     <- trans a
                 return $ C.repeatE $
-                         C.bindE cx (C.tyAppE (C.takeE ca) [ca,cb]) $
+                         C.bindE cx (C.takeE ca) $
                          C.bindE cy ccalle $
-                         C.tyAppE (C.emitE (C.varE cy)) [ca,ca]
+                         C.emitE (C.varE cy)
 
 tcExp (Z.CompLetE cl e _) exp_ty =
     checkCompLet cl $
@@ -700,12 +699,10 @@ tcVal e exp_ty = do
   where
     go :: Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
     go (RefT tau _) mce = do
-        ST [] _ s a b _ <- askValCtxType
         let mce' = do
-            ce1   <- mce
-            cx    <- C.mkUniqVar "x" ce1
-            ctaus <- mapM trans [s,a,b]
-            tellValCtx $ \ce2 -> C.bindE cx (C.tyAppE (C.derefE ce1) ctaus) ce2
+            ce1 <- mce
+            cx  <- C.mkUniqVar "x" ce1
+            tellValCtx $ \ce2 -> C.bindE cx (C.derefE ce1) ce2
             return $ C.varE cx
         instType tau exp_ty
         return mce'
@@ -836,9 +833,7 @@ generalize tau0 =
         let tau    = ST alphas omega sigma tau1 tau2 l
         let co mce = do
             extendTyVars (alphas `zip` repeat TauK) $ do
-            calphas <- mapM trans alphas
-            ce      <- mce
-            return $ C.tyAbsE calphas ce
+            mce
         return (tau, co)
 
     go tau@(ST {}) =
@@ -881,14 +876,10 @@ instantiate tau =
   where
     go :: Type -> Ti b (Type, Co c)
     go (ST alphas omega sigma tau1 tau2 l) = do
-        (mtvs, theta, phi) <- instVars alphas TauK
-        let tau  = ST [] omega (subst theta phi sigma)
-                      (subst theta phi tau1) (subst theta phi tau2) l
-        let co mce = do
-                ce    <- mce
-                ctaus <- compress mtvs >>= mapM trans
-                return $ C.tyAppE ce ctaus
-        return (tau, co)
+        (_, theta, phi) <- instVars alphas TauK
+        let tau = ST [] omega (subst theta phi sigma)
+                     (subst theta phi tau1) (subst theta phi tau2) l
+        return (tau, id)
 
     go (FunT iotas taus tau_ret l) = do
         (mtvs, theta, phi) <- instVars iotas IotaK
@@ -1131,11 +1122,7 @@ mkSTC tau = do
     s <- newMetaTvT TauK l
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
-    let co mce = do
-        ctaus <- mapM trans [s,a,b]
-        ce    <- mce
-        return $ C.tyAppE ce ctaus
-    return (ST [] (C tau l) s a b l, co)
+    return (ST [] (C tau l) s a b l, id)
   where
     l :: SrcLoc
     l = srclocOf tau

@@ -83,7 +83,9 @@ checkExp (IfE e1 e2 e3 _) = do
     return tau2
 
 checkExp (LetE v tau e1 e2 _) = do
-    tau' <- checkExp e1
+    tau' <- withExpContext e1 $
+            absSTScope tau $
+            checkExp e1
     checkTypesEqual tau' tau
     extendVars [(v, tau)] $ do
     checkExp e2
@@ -93,7 +95,9 @@ checkExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
     extendVars [(f, tau)] $ do
     extendIVars (iotas `zip` repeat IotaK) $ do
     extendVars vbs $ do
-    tau_ret' <- withExpContext e1 $ checkExp e1
+    tau_ret' <- withExpContext e1 $
+                absSTScope tau_ret $
+                checkExp e1
     checkTypesEqual tau_ret' tau_ret
     checkExp e2
 
@@ -106,7 +110,7 @@ checkExp (CallE f ies es _) = do
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
     zipWithM_ checkArg es (subst theta phi taus)
-    return tau_ret
+    appSTScope tau_ret
   where
     checkIotaArg :: Iota -> Tc b ()
     checkIotaArg (ConstI {}) =
@@ -135,33 +139,6 @@ checkExp (CallE f ies es _) = do
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
 
-checkExp (TyAbsE alphas e l) =
-    extendTyVars (alphas `zip` repeat TauK) $ do
-    (omega, s, a, b) <- checkExp e >>= checkST
-    return $ ST alphas omega s a b l
-
-checkExp (TyAppE e taus l) =
-    checkExp e >>= go
-  where
-    go :: Type -> Tc b Type
-    go tau@(ST alphas omega tau1 tau2 tau3 _) = do
-        when (length alphas /= length taus) $
-             faildoc $
-               text "Expected" <+> ppr (length alphas) <+>
-               text "type arguments but got" <+> ppr (length taus)
-        let theta = Map.fromList (alphas `zip` taus)
-        let phi   = fvs tau
-        return $ ST []
-                    omega
-                    (subst theta phi tau1)
-                    (subst theta phi tau2)
-                    (subst theta phi tau3)
-                    l
-
-    go tau =
-        faildoc $
-        text "Expected type of the form 'forall s a b . ST omega s a b' but got:" <+/> ppr tau
-
 checkExp (LetRefE v tau Nothing e2 _) =
     extendVars [(v, tau)] $
     checkExp e2
@@ -174,7 +151,7 @@ checkExp (LetRefE v tau (Just e1) e2 _) = do
 
 checkExp (DerefE e l) = do
     tau <- checkExp e >>= checkRefT
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -185,7 +162,7 @@ checkExp (AssignE e1 e2 l) = do
     tau  <- checkExp e1 >>= checkRefT
     tau' <- checkExp e2
     withExpContext e2 $ checkTypesEqual tau' tau
-    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -246,7 +223,7 @@ checkExp (IdxE e1 e2 len l) = do
 
 checkExp (PrintE _ es l) = do
     mapM_ checkExp es
-    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -255,7 +232,7 @@ checkExp (PrintE _ es l) = do
 
 checkExp (ReturnE e l) = do
     tau <- checkExp e
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -263,7 +240,7 @@ checkExp (ReturnE e l) = do
     b = "b"
 
 checkExp (BindE bv e1 e2 _) = do
-    (tau_bv, s,  a,  b)  <- withExpContext e1 $
+    (tau_bv, s,  a,  b)  <- withExpContext e1 $ do
                             checkExp e1 >>= checkSTC
     (omega,  s', a', b') <- withExpContext e2 $
                             extendBindVars [(bv, tau_bv)] $
@@ -279,14 +256,14 @@ checkExp (BindE bv e1 e2 _) = do
         extendVars [(v, tau) | (BindV v, tau) <- bvtaus] m
 
 checkExp (TakeE tau l) =
-    return $ ST [a,b] (C tau) (tyVarT a) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [a,b] (C tau) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
     a = "a"
     b = "b"
 
 checkExp (TakesE i tau l) =
-    return $ ST [a,b] (C (arrKnownT i tau)) (tyVarT a) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [a,b] (C (arrKnownT i tau)) (tyVarT a) (tyVarT a) (tyVarT b) l
   where
     a, b :: TyVar
     a = "a"
@@ -294,7 +271,7 @@ checkExp (TakesE i tau l) =
 
 checkExp (EmitE e l) = do
     tau <- withExpContext e $ checkExp e
-    return $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
     s = "s"
@@ -302,7 +279,7 @@ checkExp (EmitE e l) = do
 
 checkExp (EmitsE e l) = do
     (_, tau) <- withExpContext e $ checkExp e >>= checkArrKnownT
-    return $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
     s = "s"
@@ -421,6 +398,42 @@ checkTypesEqual tau1 tau2 =
           text "Expected type:" <+> ppr tau2 </>
           text "but got:      " <+> ppr tau1
 
+absSTScope :: Type -> Tc b Type -> Tc b Type
+absSTScope tau m =
+    scopeOver tau $
+    m >>= absScope
+  where
+    scopeOver :: Type -> Tc b a -> Tc b a
+    scopeOver (ST _ _ s a b _) m =
+        localSTIndTypes (Just (s, a, b)) m
+
+    scopeOver _ m =
+        localSTIndTypes Nothing m
+
+    absScope :: Type -> Tc b Type
+    absScope (ST [] omega s a b l) = do
+        (s',a',b') <- askSTIndTypes
+        let alphas =  [alpha | TyVarT alpha _ <- [s',a',b']]
+        return $ ST alphas omega s a b l
+
+    absScope tau =
+        return tau
+
+appSTScope :: Type -> Tc b Type
+appSTScope tau@(ST alphas omega s a b l) = do
+    (s',a',b') <- askSTIndTypes
+    let theta = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
+                                           , alpha `elem` alphas]
+    let phi   = fvs tau
+    return $ ST [] omega
+                (subst theta phi s)
+                (subst theta phi a)
+                (subst theta phi b)
+                l
+
+appSTScope tau =
+    return tau
+
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
 checkArrT :: Type -> Tc b (Iota, Type)
@@ -453,7 +466,7 @@ checkSTC (ST [] (C tau) s a b _) =
 
 checkSTC tau =
     faildoc $ nest 2 $ group $
-    text "Expected type of the form 'ST (C ()) s a b' but got:" </> ppr tau
+    text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
 
 checkSTCUnit :: Type -> Tc b (Type, Type, Type)
 checkSTCUnit (ST _ (C (UnitT _)) s a b _) =

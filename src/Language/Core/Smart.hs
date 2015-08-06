@@ -30,14 +30,6 @@ varE v = VarE v (srclocOf v)
 callE :: Exp -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
-tyAbsE :: [TyVar] -> Exp -> Exp
-tyAbsE []     e = e
-tyAbsE alphas e = TyAbsE alphas e (alphas `srcspan` e)
-
-tyAppE :: Exp -> [Type] -> Exp
-tyAppE e []   = e
-tyAppE e taus = TyAppE e taus (e `srcspan` taus)
-
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 

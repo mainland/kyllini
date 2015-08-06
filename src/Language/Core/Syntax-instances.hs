@@ -17,8 +17,6 @@ instance Located Exp where
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetFunE _ _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
-  locOf (TyAbsE _ _ l) = locOf l
-  locOf (TyAppE _ _ l) = locOf l
   locOf (LetRefE _ _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l

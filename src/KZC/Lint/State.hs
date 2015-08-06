@@ -33,6 +33,7 @@ data TcEnv = TcEnv
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
+    , stIndTys   :: !(Maybe (Type, Type, Type))
     }
 
 defaultTcEnv :: TcEnv
@@ -44,6 +45,7 @@ defaultTcEnv = TcEnv
     , varTypes   = Map.empty
     , tyVars     = Map.empty
     , iVars      = Map.empty
+    , stIndTys   = Nothing
     }
 
 data TcState = TcState ()
