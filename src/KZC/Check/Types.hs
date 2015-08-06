@@ -51,7 +51,6 @@ data Type -- Base Types
           | BitT !SrcLoc
           | IntT W !SrcLoc
           | FloatT W !SrcLoc
-          | ComplexT W !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
           | ArrT Type Type !SrcLoc
@@ -167,9 +166,6 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec _ (ComplexT w _) =
-        text "complex" <> ppr w
-
     pprPrec _ (StringT _) =
         text "string"
 
@@ -252,7 +248,6 @@ instance Fvs Type TyVar where
     fvs (BitT {})                          = mempty
     fvs (IntT {})                          = mempty
     fvs (FloatT {})                        = mempty
-    fvs (ComplexT {})                      = mempty
     fvs (StringT {})                       = mempty
     fvs (StructT _ _)                      = mempty
     fvs (ArrT tau1 tau2 _)                 = fvs tau1 <> fvs tau2
@@ -274,7 +269,6 @@ instance Fvs Type IVar where
     fvs (BitT {})                     = mempty
     fvs (IntT {})                     = mempty
     fvs (FloatT {})                   = mempty
-    fvs (ComplexT {})                 = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT tau1 tau2 _)            = fvs tau1 <> fvs tau2
@@ -296,7 +290,6 @@ instance Fvs Type MetaTv where
     fvs (BitT {})                     = mempty
     fvs (IntT {})                     = mempty
     fvs (FloatT {})                   = mempty
-    fvs (ComplexT {})                 = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT tau1 tau2 _)            = fvs tau1 <> fvs tau2
@@ -317,7 +310,6 @@ instance HasVars Type TyVar where
     allVars (BitT {})                          = mempty
     allVars (IntT {})                          = mempty
     allVars (FloatT {})                        = mempty
-    allVars (ComplexT {})                      = mempty
     allVars (StringT {})                       = mempty
     allVars (StructT _ _)                      = mempty
     allVars (ArrT tau1 tau2 _)                 = allVars tau1 <> allVars tau2
@@ -341,7 +333,6 @@ instance HasVars Type IVar where
     allVars (BitT {})                     = mempty
     allVars (IntT {})                     = mempty
     allVars (FloatT {})                   = mempty
-    allVars (ComplexT {})                 = mempty
     allVars (StringT {})                  = mempty
     allVars (StructT _ _)                 = mempty
     allVars (ArrT tau1 tau2 _)            = allVars tau1 <> allVars tau2
@@ -363,7 +354,6 @@ instance HasVars Type MetaTv where
     allVars (BitT {})                     = mempty
     allVars (IntT {})                     = mempty
     allVars (FloatT {})                   = mempty
-    allVars (ComplexT {})                 = mempty
     allVars (StringT {})                  = mempty
     allVars (StructT _ _)                 = mempty
     allVars (ArrT tau1 tau2 _)            = allVars tau1 <> allVars tau2
@@ -393,9 +383,6 @@ instance Subst Type MetaTv Type where
         tau
 
     subst _ _ tau@(FloatT {}) =
-        tau
-
-    subst _ _ tau@(ComplexT {}) =
         tau
 
     subst _ _ tau@(StringT {}) =
@@ -451,9 +438,6 @@ instance Subst Type IVar Type where
     subst _ _ tau@(FloatT {}) =
         tau
 
-    subst _ _ tau@(ComplexT {}) =
-        tau
-
     subst _ _ tau@(StringT {}) =
         tau
 
@@ -507,9 +491,6 @@ instance Subst Type TyVar Type where
         tau
 
     subst _ _ tau@(FloatT {}) =
-        tau
-
-    subst _ _ tau@(ComplexT {}) =
         tau
 
     subst _ _ tau@(StringT {}) =

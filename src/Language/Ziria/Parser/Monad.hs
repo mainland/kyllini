@@ -8,6 +8,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Language.Ziria.Parser.Monad (
     P,
@@ -72,7 +73,7 @@ emptyPState buf pos = PState
     { input             = alexInput buf pos
     , curToken          = error "no token"
     , lexState          = [0]
-    , structIdentifiers = Set.empty
+    , structIdentifiers = Set.fromList ["complex", "complex8", "complex16", "complex32", "complex64"]
     }
 
 newtype P a = P { runP :: PState -> Either SomeException (a, PState) }

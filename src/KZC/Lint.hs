@@ -329,9 +329,8 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
     checkT _ _ (BitT {})  (BitT {})  = return ()
 
-    checkT _ _ (IntT w1 _)     (IntT w2 _)     | w1 == w2 = return ()
-    checkT _ _ (FloatT w1 _)   (FloatT w2 _)   | w1 == w2 = return ()
-    checkT _ _ (ComplexT w1 _) (ComplexT w2 _) | w1 == w2 = return ()
+    checkT _ _ (IntT w1 _)   (IntT w2 _)     | w1 == w2 = return ()
+    checkT _ _ (FloatT w1 _) (FloatT w2 _)   | w1 == w2 = return ()
 
     checkT _ _ (StringT {}) (StringT {})  = return ()
 
@@ -411,14 +410,13 @@ inferKind tau =
     inferType tau
   where
     inferType :: Type -> Tc b Kind
-    inferType (UnitT {})    = return TauK
-    inferType (BoolT {})    = return TauK
-    inferType (BitT {})     = return TauK
-    inferType (IntT {})     = return TauK
-    inferType (FloatT {})   = return TauK
-    inferType (ComplexT {}) = return TauK
-    inferType (StringT {})  = return TauK
-    inferType (StructT {})  = return TauK
+    inferType (UnitT {})   = return TauK
+    inferType (BoolT {})   = return TauK
+    inferType (BitT {})    = return TauK
+    inferType (IntT {})    = return TauK
+    inferType (FloatT {})  = return TauK
+    inferType (StringT {}) = return TauK
+    inferType (StructT {}) = return TauK
 
     inferType (ArrT iota tau _) = do
         inferIota iota
@@ -588,9 +586,8 @@ checkIntT tau =
 
 -- | Check that a type is a numerical type.
 checkNumT :: Type -> Tc b ()
-checkNumT (IntT _ _)     = return ()
-checkNumT (FloatT _ _)   = return ()
-checkNumT (ComplexT _ _) = return ()
+checkNumT (IntT _ _)   = return ()
+checkNumT (FloatT _ _) = return ()
 checkNumT tau =
     faildoc $ nest 2 $ group $
     text "Expected numerical type but got:" <+/> ppr tau

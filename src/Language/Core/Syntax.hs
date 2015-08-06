@@ -156,7 +156,6 @@ data Type = UnitT !SrcLoc
           | BitT !SrcLoc
           | IntT W !SrcLoc
           | FloatT W !SrcLoc
-          | ComplexT W !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
           | ArrT Iota Type !SrcLoc
@@ -512,9 +511,6 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec _ (ComplexT w _) =
-        text "complex" <> ppr w
-
     pprPrec _ (StringT _) =
         text "string"
 
@@ -661,7 +657,6 @@ instance Fvs Type TyVar where
     fvs (BitT {})                          = mempty
     fvs (IntT {})                          = mempty
     fvs (FloatT {})                        = mempty
-    fvs (ComplexT {})                      = mempty
     fvs (StringT {})                       = mempty
     fvs (StructT _ _)                      = mempty
     fvs (ArrT _ tau _)                     = fvs tau
@@ -682,7 +677,6 @@ instance Fvs Type IVar where
     fvs (BitT {})                     = mempty
     fvs (IntT {})                     = mempty
     fvs (FloatT {})                   = mempty
-    fvs (ComplexT {})                 = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT iota tau _)             = fvs iota <> fvs tau
@@ -746,9 +740,6 @@ instance Subst Type TyVar Type where
     subst _ _ tau@(FloatT {}) =
         tau
 
-    subst _ _ tau@(ComplexT {}) =
-        tau
-
     subst _ _ tau@(StringT {}) =
         tau
 
@@ -794,9 +785,6 @@ instance Subst Iota IVar Type where
         tau
 
     subst _ _ tau@(FloatT {}) =
-        tau
-
-    subst _ _ tau@(ComplexT {}) =
         tau
 
     subst _ _ tau@(StringT {}) =

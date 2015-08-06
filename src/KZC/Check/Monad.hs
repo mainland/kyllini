@@ -424,9 +424,6 @@ instance Compress Type where
     compress tau@(FloatT {}) =
         pure tau
 
-    compress tau@(ComplexT {}) =
-        pure tau
-
     compress tau@(StringT {}) =
         pure tau
 

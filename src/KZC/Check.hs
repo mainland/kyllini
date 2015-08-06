@@ -733,7 +733,6 @@ kcType tau@(BoolT {})    kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(BitT {})     kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(IntT {})     kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(FloatT {})   kappa_exp = instKind tau TauK kappa_exp
-kcType tau@(ComplexT {}) kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(StringT {})  kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(StructT {})  kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(ArrT {})     kappa_exp = instKind tau TauK kappa_exp
@@ -1106,10 +1105,9 @@ checkNumType tau =
     compress tau >>= go
   where
     go :: Type -> Ti b ()
-    go (IntT _ _)     = return ()
-    go (FloatT _ _)   = return ()
-    go (ComplexT _ _) = return ()
-    go tau            = unifyTypes tau intT
+    go (IntT _ _)   = return ()
+    go (FloatT _ _) = return ()
+    go tau          = unifyTypes tau intT
 
 mkSTC :: Type -> Ti b (Type, Co c)
 mkSTC tau = do
@@ -1181,13 +1179,12 @@ unifyTypes tau1 tau2 = do
     go _ _ tau1 tau2@(MetaT mtv _) =
         updateMetaTv mtv tau2 tau1
 
-    go _ _ (UnitT {})      (UnitT {})                 = return ()
-    go _ _ (BoolT {})      (BoolT {})                 = return ()
-    go _ _ (BitT {})       (BitT {})                  = return ()
-    go _ _ (IntT w1 _)     (IntT w2 _)     | w1 == w2 = return ()
-    go _ _ (FloatT w1 _)   (FloatT w2 _)   | w1 == w2 = return ()
-    go _ _ (ComplexT w1 _) (ComplexT w2 _) | w1 == w2 = return ()
-    go _ _ (StringT {})    (StringT {})               = return ()
+    go _ _ (UnitT {})    (UnitT {})                 = return ()
+    go _ _ (BoolT {})    (BoolT {})                 = return ()
+    go _ _ (BitT {})     (BitT {})                  = return ()
+    go _ _ (IntT w1 _)   (IntT w2 _)     | w1 == w2 = return ()
+    go _ _ (FloatT w1 _) (FloatT w2 _)   | w1 == w2 = return ()
+    go _ _ (StringT {})  (StringT {})               = return ()
 
     go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
         return ()
@@ -1269,7 +1266,6 @@ instance FromZ Z.Type Type where
     fromZ (Z.BitT l)       = pure $ BitT l
     fromZ (Z.IntT w l)     = IntT <$> fromZ w <*> pure l
     fromZ (Z.FloatT w l)   = FloatT <$> fromZ w <*> pure l
-    fromZ (Z.ComplexT w l) = ComplexT <$> fromZ w <*> pure l
     fromZ (Z.ArrT i tau l) = ArrT <$> fromZ i <*> fromZ tau <*> pure l
     fromZ (Z.StructT s l)  = StructT <$> fromZ s <*> pure l
     fromZ (Z.C tau l)      = C <$> fromZ tau <*> pure l
@@ -1311,6 +1307,9 @@ class Trans a b | b -> a where
 instance Trans Z.Var C.Var where
     trans (Z.Var n) = pure $ C.Var n
 
+instance Trans Struct C.Struct where
+    trans (Struct n) = pure $ C.Struct n
+
 instance Trans TyVar C.TyVar where
     trans (TyVar n) = pure $ C.TyVar n
 
@@ -1332,8 +1331,8 @@ instance Trans Type C.Type where
         go (BitT l)       = C.BitT <$> pure l
         go (IntT w l)     = C.IntT <$> trans w <*> pure l
         go (FloatT w l)   = C.FloatT <$> trans w <*> pure l
-        go (ComplexT w l) = C.ComplexT <$> trans w <*> pure l
         go (StringT l)    = pure $ C.StringT l
+        go (StructT s l)  = C.StructT <$> trans s <*> pure l
         go (RefT tau l)   = C.RefT <$> go tau <*> pure l
         go (ArrT i tau l) = C.ArrT <$> trans i <*> go tau <*> pure l
 

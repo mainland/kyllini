@@ -204,7 +204,6 @@ data Type = UnitT !SrcLoc
           | BitT !SrcLoc
           | IntT W !SrcLoc
           | FloatT W !SrcLoc
-          | ComplexT W !SrcLoc
           | ArrT Ind Type !SrcLoc
           | StructT Struct !SrcLoc
           | C Type !SrcLoc
@@ -624,9 +623,6 @@ instance Pretty Type where
 
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
-
-    pprPrec _ (ComplexT w _) =
-        text "complex" <> ppr w
 
     pprPrec _ (ArrT ind tau _) =
         ppr tau <> brackets (ppr ind)

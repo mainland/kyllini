@@ -30,11 +30,6 @@ data Token = Teof
            | Tbit
            | Tbool
            | Tcomp
-           | Tcomplex
-           | Tcomplex8
-           | Tcomplex16
-           | Tcomplex32
-           | Tcomplex64
            | Tdo
            | Tdouble
            | Telse
@@ -143,11 +138,6 @@ instance Pretty Token where
     ppr Tbit         = text "bit"
     ppr Tbool        = text "bool"
     ppr Tcomp        = text "comp"
-    ppr Tcomplex     = text "complex"
-    ppr Tcomplex8    = text "complex8"
-    ppr Tcomplex16   = text "complex16"
-    ppr Tcomplex32   = text "complex32"
-    ppr Tcomplex64   = text "complex64"
     ppr Tdo          = text "do"
     ppr Tdouble      = text "double"
     ppr Telse        = text "else"

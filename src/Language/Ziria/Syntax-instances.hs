@@ -65,7 +65,6 @@ instance Located Type where
   locOf (BitT l) = locOf l
   locOf (IntT _ l) = locOf l
   locOf (FloatT _ l) = locOf l
-  locOf (ComplexT _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
   locOf (StructT _ l) = locOf l
   locOf (C _ l) = locOf l

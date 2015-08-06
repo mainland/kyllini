@@ -54,11 +54,6 @@ import KZC.Name
   'bit'         { L _ T.Tbit }
   'bool'        { L _ T.Tbool }
   'comp'        { L _ T.Tcomp }
-  'complex'     { L _ T.Tcomplex }
-  'complex8'    { L _ T.Tcomplex8 }
-  'complex16'   { L _ T.Tcomplex16 }
-  'complex32'   { L _ T.Tcomplex32 }
-  'complex64'   { L _ T.Tcomplex64 }
   'do'          { L _ T.Tdo }
   'double'      { L _ T.Tdouble }
   'else'        { L _ T.Telse }
@@ -447,12 +442,7 @@ exp_rlist1 :
 -- Struct initializers
 structid :: { Struct }
 structid :
-    STRUCTID    { mkStruct $ mkSymName (getSTRUCTID $1) (locOf $1) }
-  | 'complex'   { mkStruct $ mkName "complex" (locOf $1) }
-  | 'complex8'  { mkStruct $ mkName "complex8" (locOf $1) }
-  | 'complex16' { mkStruct $ mkName "complex16" (locOf $1) }
-  | 'complex32' { mkStruct $ mkName "complex32" (locOf $1) }
-  | 'complex64' { mkStruct $ mkName "complex64" (locOf $1) }
+    STRUCTID { mkStruct $ mkSymName (getSTRUCTID $1) (locOf $1) }
 
 struct_init_list1 :: { [(Field, Exp)] }
 struct_init_list1 :
@@ -496,15 +486,11 @@ base_type :
   | 'int32'           { IntT W32 (srclocOf $1) }
   | 'int64'           { IntT W64 (srclocOf $1) }
   | 'double'          { FloatT W64 (srclocOf $1) }
-  | 'complex'         { ComplexT W32 (srclocOf $1) }
-  | 'complex8'        { ComplexT W8 (srclocOf $1) }
-  | 'complex16'       { ComplexT W16 (srclocOf $1) }
-  | 'complex32'       { ComplexT W32 (srclocOf $1) }
-  | 'complex64'       { ComplexT W64 (srclocOf $1) }
   | 'arr' arr_length  { let { (ind, tau) = $2 }
                         in
                           ArrT ind tau ($1 `srcspan` tau)
                       }
+  | structid          { StructT $1 (srclocOf $1) }
   | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
   | '(' base_type ')' { $2 }
 
@@ -517,11 +503,6 @@ cast_type :
   | 'int32'            { IntT W32 (srclocOf $1) }
   | 'int64'            { IntT W64 (srclocOf $1) }
   | 'double'           { FloatT W64 (srclocOf $1) }
-  | 'complex'          { ComplexT W32 (srclocOf $1) }
-  | 'complex8'         { ComplexT W8 (srclocOf $1) }
-  | 'complex16'        { ComplexT W16 (srclocOf $1) }
-  | 'complex32'        { ComplexT W32 (srclocOf $1) }
-  | 'complex64'        { ComplexT W64 (srclocOf $1) }
 
 arr_length :: { (Ind, Type) }
 arr_length :
