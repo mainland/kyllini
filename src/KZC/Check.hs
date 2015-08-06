@@ -86,7 +86,7 @@ checkLetRef v ztau e_init = do
     extendVars [(v, refT tau)] $ do
     mce1 <- case e_init of
               Nothing -> return $ return Nothing
-              Just e  -> do mce <- checkExp e tau
+              Just e  -> do mce <- castExp tau e
                             return $ Just <$> mce
     return (tau, mce1)
 
@@ -1118,6 +1118,38 @@ mkSTC tau = do
   where
     l :: SrcLoc
     l = srclocOf tau
+
+-- | @castExp tau e@ type checks @e@ and, if possible, generates an appropriate
+-- cast to the type @tau@.
+castExp :: Type -> Z.Exp -> Ti b (Ti c C.Exp)
+castExp tau2 e = do
+    (tau1, mce) <- inferExp e
+    tau1'       <- compress tau1
+    tau2'       <- compress tau2
+    co          <- go tau1' tau2'
+    return $ co mce
+  where
+    go :: Type -> Type -> Ti b (Co c)
+    go tau1 tau2 | tau1 == tau2 =
+        return id
+
+    go tau1@(IntT {}) tau2@(IntT {}) =
+        return $ mkCast tau1 tau2
+
+    go tau1 tau2 =
+        faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
+
+    mkCast :: Type -> Type -> Co b
+    mkCast tau1 tau2 mce | tau1 == tau2 =
+        mce
+
+    mkCast _ tau2 mce = do
+        ctau <- trans tau2
+        ce   <- mce
+        return $ C.UnopE (C.Cast ctau) ce l
+
+    l :: SrcLoc
+    l = srclocOf e
 
 -- | Implement the join operation for types of kind omega
 joinOmega :: Type -> Type -> Ti b Type
