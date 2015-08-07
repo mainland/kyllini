@@ -612,4 +612,4 @@ instance Freshen IVar IVar Type where
 
 #include "KZC/Check/Types-instances.hs"
 
-#endif /*!defined(ONLY_TYPEDEFS) */
+#endif /* !defined(ONLY_TYPEDEFS) */

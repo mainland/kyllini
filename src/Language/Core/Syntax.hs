@@ -883,4 +883,4 @@ instance Freshen IVar IVar Iota where
 
 #include "Language/Core/Syntax-instances.hs"
 
-#endif /*!defined(ONLY_TYPEDEFS) */
+#endif /* !defined(ONLY_TYPEDEFS) */

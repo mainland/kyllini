@@ -707,4 +707,8 @@ instance HasFixity Unop where
     fixity Len      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
+#if !defined(ONLY_TYPEDEFS)
+
 #include "Language/Ziria/Syntax-instances.hs"
+
+#endif /* !defined(ONLY_TYPEDEFS) */
