@@ -202,7 +202,8 @@ TCTESTS = \
 	tests/parser/t7.wpl \
 	tests/parser/t9.wpl \
 	tests/parser/t10.wpl \
-	tests/parser/t11.wpl
+	tests/parser/t11.wpl \
+	tests/parser/t12.wpl
 
 .PHONY : test-parser
 test-parser : kzc

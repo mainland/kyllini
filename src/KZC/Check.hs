@@ -769,11 +769,10 @@ tcVal e exp_ty = do
         instType tau exp_ty
         return mce'
 
-    go (ST [] (C tau _) s a b _) mce = do
-        ST [] _ s' a' b' _ <- askValCtxType
-        unifyTypes s s'
-        unifyTypes a a'
-        unifyTypes b b'
+    go (ST [] (C tau _) s a b l) mce = do
+        mu    <- askValCtxType
+        omega <- newMetaTvT OmegaK l
+        unifyTypes (ST [] omega s a b l) mu
         instType tau exp_ty
         return $ do
             ce1   <- mce
