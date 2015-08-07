@@ -525,10 +525,7 @@ tcExp (Z.RepeatE _ e l) exp_ty = do
     return $ do ce <- mce
                 return $ C.RepeatE ce l
 
-tcExp e@(Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
-    withSummaryContext e $
-        warndoc $
-        text "Pipeline composed of read follow by write. That's odd!"
+tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     tau  <- fromZ (zalpha, TauK)
     tau' <- fromZ (zbeta, TauK)
     unifyTypes tau' tau
