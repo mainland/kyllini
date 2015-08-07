@@ -211,6 +211,12 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
                 return $ C.UnopE cop ce1 l
   where
     unop :: Z.Unop -> Type -> Ti b (Type, C.Unop)
+    unop Z.Neg tau | isSignedType tau =
+        return (tau, C.Neg)
+
+    unop Z.Neg tau =
+        faildoc $ text "Cannot negate values of type" <+> ppr tau
+
     unop Z.Len tau = do
         _ <- checkArrType tau
         return (intT, C.Len)
@@ -1100,15 +1106,33 @@ checkIntType tau =
     go (IntT _ _) = return ()
     go tau        = unifyTypes tau intT
 
+-- | Returns @True@ if type is signed, @False@ otherwise.
+isSignedType :: Type -> Bool
+isSignedType (IntT {})     = True
+isSignedType (FloatT {})   = True
+isSignedType (StructT s _)
+    | isComplexStruct s    = True
+isSignedType _             = False
+
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
+
 -- | Check that a type is a numerical type
 checkNumType :: Type -> Ti b ()
 checkNumType tau =
     compress tau >>= go
   where
     go :: Type -> Ti b ()
-    go (IntT _ _)   = return ()
-    go (FloatT _ _) = return ()
-    go tau          = unifyTypes tau intT
+    go (IntT {})            = return ()
+    go (FloatT {})          = return ()
+    go (StructT s _)
+        | isComplexStruct s = return ()
+    go tau                  = unifyTypes tau intT
 
 mkSTC :: Type -> Ti b (Type, Co c)
 mkSTC tau = do

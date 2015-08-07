@@ -18,6 +18,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
 import qualified Data.Set as Set
+import Data.String
 import Data.Symbol
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
@@ -95,6 +96,9 @@ instance Ord MetaTv where
     compare (MetaTv u1 _ _) (MetaTv u2 _ _) = compare u1 u2
 
 type TyRef = IORef (Maybe Type)
+
+instance IsString Struct where
+    fromString s = Struct (fromString s)
 
 instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n

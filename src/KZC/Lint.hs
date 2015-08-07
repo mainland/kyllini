@@ -57,6 +57,12 @@ inferExp (UnopE op e1 _) = do
     unop op tau1
   where
     unop :: Unop -> Type -> Tc b Type
+    unop Neg tau | isSignedT tau =
+        return tau
+
+    unop Neg tau =
+        faildoc $ text "Cannot negate values of type" <+> ppr tau
+
     unop Len tau = do
         _ <- checkArrT tau
         return intT
@@ -576,6 +582,22 @@ checkFunT (FunT iotas taus tau_ret _) =
 checkFunT tau =
     faildoc $ nest 2 $ group $
     text "Expected function type but got:" <+/> ppr tau
+
+-- | Returns @True@ if type is signed, @False@ otherwise.
+isSignedT :: Type -> Bool
+isSignedT (IntT {})     = True
+isSignedT (FloatT {})   = True
+isSignedT (StructT s _)
+    | isComplexStruct s = True
+isSignedT _             = False
+
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
 
 -- | Check that a type is an integer type.
 checkIntT :: Type -> Tc b ()
