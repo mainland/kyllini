@@ -63,6 +63,10 @@ inferExp (UnopE op e1 _) = do
     unop Neg tau =
         faildoc $ text "Cannot negate values of type" <+> ppr tau
 
+    unop (Cast tau2) tau1 = do
+        checkCast tau1 tau2
+        return tau2
+
     unop Len tau = do
         _ <- checkArrT tau
         return intT
@@ -321,6 +325,16 @@ checkExp :: Exp -> Type -> Tc b ()
 checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
+
+checkCast :: Type -> Type -> Tc b ()
+checkCast tau1 tau2 | tau1 == tau2 =
+    return ()
+
+checkCast (IntT {}) (IntT {}) =
+    return ()
+
+checkCast tau1 tau2 =
+    faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
 checkTypeEquality :: Type -> Type -> Tc b ()
 checkTypeEquality tau1 tau2 =
