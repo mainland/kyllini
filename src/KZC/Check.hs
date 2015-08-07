@@ -74,15 +74,17 @@ checkProgram cls = do
 
 checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp
          -> Ti b (Type, Ti c C.Exp)
-checkLet v ztau kappa e = do
+checkLet v ztau kappa e =
+    withExpContext e $ do
     tau <- fromZ (ztau, kappa)
     extendVars [(v, tau)] $ do
-    mce1 <- checkExp e tau
+    mce1 <- castVal tau e
     return (tau, mce1)
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
             -> Ti b (Type, Ti c (Maybe C.Exp))
-checkLetRef v ztau e_init = do
+checkLetRef v ztau e_init =
+    withMaybeExpContext e_init $ do
     tau <- fromZ ztau
     extendVars [(v, refT tau)] $ do
     mce1 <- case e_init of
@@ -90,6 +92,10 @@ checkLetRef v ztau e_init = do
               Just e  -> do mce <- castVal tau e
                             return $ Just <$> mce
     return (tau, mce1)
+  where
+    withMaybeExpContext :: Maybe Z.Exp -> Ti b a -> Ti b a
+    withMaybeExpContext Nothing  m = m
+    withMaybeExpContext (Just e) m = withExpContext e m
 
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
             -> Ti b (Type, [(Z.Var, Type)], Ti c C.Exp -> Ti c C.Exp)
@@ -98,7 +104,9 @@ checkLetFun f ztau ps e l = do
     ptaus <- mapM fromZ ps
     (tau_ret, mce1) <-
         extendVars ((f,tau) : ptaus) $ do
-        (tau_ret, mce1)   <- inferExp e
+        tau_ret           <- newMetaTvT MuK l
+        mce1              <- collectValCtx tau_ret $
+                             checkExp e tau_ret
         (tau_ret_gen, co) <- generalize tau_ret
         unifyTypes (funT (map snd ptaus) tau_ret_gen) tau
         return (tau_ret_gen, co mce1)
@@ -253,8 +261,11 @@ tcExp (Z.IfE e1 e2 e3 l) exp_ty = do
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
     (tau, mce1) <- checkLet v ztau TauK e1
-    mce2        <- extendVars [(v, tau)] $
-                   tcExp e2 exp_ty
+    mce2        <- extendVars [(v, tau)] $ do
+                   tau_ret <- newMetaTvT MuK l
+                   instType tau exp_ty
+                   collectValCtx tau_ret $ do
+                   checkExp e2 tau_ret
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- mce1
@@ -601,9 +612,12 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
                          C.bindE cy ccalle $
                          C.emitE (C.varE cy)
 
-tcExp (Z.CompLetE cl e _) exp_ty =
-    checkCompLet cl $
-    tcExp e exp_ty
+tcExp (Z.CompLetE cl e l) exp_ty =
+    checkCompLet cl $ do
+    tau <- newMetaTvT MuK l
+    instType tau exp_ty
+    collectValCtx tau $ do
+    checkExp e tau
 
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
@@ -631,8 +645,11 @@ tcStms (stm@(Z.LetS {}) : []) _ =
 tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
     (tau, mce1) <- withSummaryContext stm $
                    checkLet v ztau TauK e
-    mce2        <- extendVars [(v, tau)] $
-                   tcStms stms exp_ty
+    mce2        <- extendVars [(v, tau)] $ do
+                   tau2 <- newMetaTvT MuK l
+                   instType tau2 exp_ty
+                   collectValCtx tau2 $ do
+                   checkStms stms tau2
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- withSummaryContext stm $ mce1
