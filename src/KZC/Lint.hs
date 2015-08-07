@@ -19,6 +19,7 @@ module KZC.Lint (
 import Control.Monad (when,
                       zipWithM_,
                       void)
+import Data.List (nub)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -560,7 +561,7 @@ absSTScope tau m =
     absScope :: Type -> Tc b Type
     absScope (ST [] omega s a b l) = do
         (s',a',b') <- askSTIndTypes
-        let alphas =  [alpha | TyVarT alpha _ <- [s',a',b']]
+        let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
         return $ ST alphas omega s a b l
 
     absScope tau =
