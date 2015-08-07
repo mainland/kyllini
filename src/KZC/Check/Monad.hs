@@ -33,9 +33,6 @@ module KZC.Check.Monad (
 
     extendTyVars,
     lookupTyVar,
-    extendTyVarInsts,
-    lookupTyVarInst,
-    lookupTyVarInsts,
 
     extendIVars,
     lookupIVar,
@@ -279,22 +276,6 @@ extendTyVars tvks m =
 lookupTyVar :: TyVar -> Ti b Kind
 lookupTyVar tv =
     lookupBy tyVars onerr tv
-  where
-    onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
-
-extendTyVarInsts :: [(TyVar, Type)] -> Ti b a -> Ti b a
-extendTyVarInsts tvks m =
-    local (\env -> env { tyVarInsts = foldl' insert (tyVarInsts env) tvks }) m
-  where
-    insert mp (k, v) = Map.insert k v mp
-
-lookupTyVarInsts :: Ti b (Map TyVar Type)
-lookupTyVarInsts =
-    asks tyVarInsts
-
-lookupTyVarInst :: TyVar -> Ti b Type
-lookupTyVarInst tv =
-    lookupBy tyVarInsts onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
