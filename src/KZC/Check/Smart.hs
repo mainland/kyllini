@@ -12,6 +12,8 @@ module KZC.Check.Smart where
 
 import Data.Loc
 
+import qualified Language.Ziria.Syntax as Z
+
 import KZC.Check.Types
 
 unitT :: Type
@@ -19,6 +21,18 @@ unitT = UnitT noLoc
 
 intT :: Type
 intT = IntT W32 noLoc
+
+int8T :: Type
+int8T = IntT W8 noLoc
+
+int16T :: Type
+int16T = IntT W16 noLoc
+
+int32T :: Type
+int32T = IntT W32 noLoc
+
+int64T :: Type
+int64T = IntT W64 noLoc
 
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
@@ -38,3 +52,6 @@ cT nu = C nu (srclocOf nu)
 
 funT :: [Type] -> Type -> Type
 funT taus tau = FunT [] taus tau (taus `srcspan` tau)
+
+structName :: StructDef -> Z.Struct
+structName (StructDef s _ _) = s

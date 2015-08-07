@@ -20,3 +20,5 @@ instance Located Type where
   locOf (VarI _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
   locOf (MetaT _ l) = locOf l
+instance Located StructDef where
+  locOf (StructDef _ _ l) = locOf l

@@ -20,13 +20,16 @@ import Control.Monad (when,
                       zipWithM_,
                       void)
 import Data.Map (Map)
-import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import Language.Core.Smart
 import Language.Core.Syntax
 
+import KZC.Error
 import KZC.Lint.Monad
 import KZC.Vars
 
@@ -231,6 +234,45 @@ inferExp (IdxE e1 e2 len l) = do
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+
+inferExp e0@(StructE s flds l) =
+    withExpContext e0 $ do
+    StructDef _ fldDefs _ <- lookupStruct s
+    checkMissingFields flds fldDefs
+    checkExtraFields flds fldDefs
+    mapM_ (checkField fldDefs) flds
+    return $ StructT s l
+  where
+    checkField :: [(Field, Type)] -> (Field, Exp) -> Tc b ()
+    checkField fldDefs (f, e) = do
+      tau <- case lookup f fldDefs of
+               Nothing  -> panicdoc $ "checkField: missing field!"
+               Just tau -> return tau
+      checkExp e tau
+
+    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc b ()
+    checkMissingFields flds fldDefs =
+        when (not (Set.null missing)) $
+          faildoc $
+            text "Struct definition has missing fields:" <+>
+            (commasep . map ppr . Set.toList) missing
+      where
+        fs, fs', missing :: Set Field
+        fs  = Set.fromList [f | (f,_) <- flds]
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        missing = fs Set.\\ fs'
+
+    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc b ()
+    checkExtraFields flds fldDefs =
+        when (not (Set.null extra)) $
+          faildoc $
+            text "Struct definition has extra fields:" <+>
+            (commasep . map ppr . Set.toList) extra
+      where
+        fs, fs', extra :: Set Field
+        fs  = Set.fromList [f | (f,_) <- flds]
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        extra = fs' Set.\\ fs
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es

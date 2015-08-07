@@ -26,6 +26,9 @@ module KZC.Check.Monad (
     collectValCtx,
     tellValCtx,
 
+    extendStructs,
+    lookupStruct,
+
     extendVars,
     lookupVar,
 
@@ -245,6 +248,16 @@ collectValCtx tau k = do
 
 tellValCtx :: (C.Exp -> C.Exp) -> Ti b ()
 tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
+
+extendStructs :: [StructDef] -> Ti b a -> Ti b a
+extendStructs ss m =
+    extend structs (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+
+lookupStruct :: Z.Struct -> Ti b StructDef
+lookupStruct s =
+    lookupBy structs onerr s
+  where
+    onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
 
 extendVars :: [(Z.Var, Type)] -> Ti b a -> Ti b a
 extendVars vtaus m = do

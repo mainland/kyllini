@@ -409,6 +409,50 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
 
+tcExp e0@(Z.StructE s flds l) exp_ty =
+    withSummaryContext e0 $ do
+    StructDef _ fldDefs _ <- lookupStruct s
+    checkMissingFields flds fldDefs
+    checkExtraFields flds fldDefs
+    (fs, mces) <- unzip <$> mapM (checkField fldDefs) flds
+    instType (StructT s l) exp_ty
+    return $ do cs  <- trans s
+                cfs <- mapM trans fs
+                ces <- sequence mces
+                return $ C.StructE cs (cfs `zip` ces) l
+  where
+    checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti b (Z.Field, Ti c C.Exp)
+    checkField fldDefs (f, e) = do
+      tau <- case lookup f fldDefs of
+               Nothing  -> panicdoc $ "checkField: missing field!"
+               Just tau -> return tau
+      mce <- castVal tau e
+      return (f, mce)
+
+    checkMissingFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti b ()
+    checkMissingFields flds fldDefs =
+        when (not (Set.null missing)) $
+          faildoc $
+            text "Struct definition has missing fields:" <+>
+            (commasep . map ppr . Set.toList) missing
+      where
+        fs, fs', missing :: Set Z.Field
+        fs  = Set.fromList [f | (f,_) <- flds]
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        missing = fs Set.\\ fs'
+
+    checkExtraFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti b ()
+    checkExtraFields flds fldDefs =
+        when (not (Set.null extra)) $
+          faildoc $
+            text "Struct definition has extra fields:" <+>
+            (commasep . map ppr . Set.toList) extra
+      where
+        fs, fs', extra :: Set Z.Field
+        fs  = Set.fromList [f | (f,_) <- flds]
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        extra = fs' Set.\\ fs
+
 tcExp (Z.PrintE newline es l) exp_ty = do
     (tau, co) <- mkSTC (UnitT l)
     instType tau exp_ty
@@ -1114,7 +1158,7 @@ isSignedType (StructT s _)
     | isComplexStruct s    = True
 isSignedType _             = False
 
-isComplexStruct :: Struct -> Bool
+isComplexStruct :: Z.Struct -> Bool
 isComplexStruct "complex"   = True
 isComplexStruct "complex8"  = True
 isComplexStruct "complex16" = True
@@ -1336,7 +1380,7 @@ instance FromZ Z.Type Type where
     fromZ (Z.IntT w l)     = IntT <$> fromZ w <*> pure l
     fromZ (Z.FloatT w l)   = FloatT <$> fromZ w <*> pure l
     fromZ (Z.ArrT i tau l) = ArrT <$> fromZ i <*> fromZ tau <*> pure l
-    fromZ (Z.StructT s l)  = StructT <$> fromZ s <*> pure l
+    fromZ (Z.StructT s l)  = pure $ StructT s l
     fromZ (Z.C tau l)      = C <$> fromZ tau <*> pure l
     fromZ (Z.T l)          = T <$> pure l
 
@@ -1358,9 +1402,6 @@ instance FromZ Z.Ind Type where
     fromZ (Z.NoneI l) =
         newMetaTvT IotaK l
 
-instance FromZ Z.Struct Struct where
-    fromZ (Z.Struct n) = pure $ Struct n
-
 instance FromZ Z.VarBind (Z.Var, Type) where
     fromZ (Z.VarBind v False ztau) = do
           tau <- fromZ ztau
@@ -1376,8 +1417,11 @@ class Trans a b | b -> a where
 instance Trans Z.Var C.Var where
     trans (Z.Var n) = pure $ C.Var n
 
-instance Trans Struct C.Struct where
-    trans (Struct n) = pure $ C.Struct n
+instance Trans Z.Field C.Field where
+    trans (Z.Field n) = pure $ C.Field n
+
+instance Trans Z.Struct C.Struct where
+    trans (Z.Struct n) = pure $ C.Struct n
 
 instance Trans TyVar C.TyVar where
     trans (TyVar n) = pure $ C.TyVar n

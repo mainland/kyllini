@@ -26,6 +26,7 @@ instance Located Exp where
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
   locOf (LetStruct _ _ l) = locOf l
+  locOf (StructE _ _ l) = locOf l
   locOf (ProjE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ l) = locOf l
@@ -37,6 +38,8 @@ instance Located Exp where
   locOf (EmitsE _ l) = locOf l
   locOf (RepeatE _ l) = locOf l
   locOf (ArrE _ _ l) = locOf l
+instance Located StructDef where
+  locOf (StructDef _ _ l) = locOf l
 instance Located Type where
   locOf (UnitT l) = locOf l
   locOf (BoolT l) = locOf l

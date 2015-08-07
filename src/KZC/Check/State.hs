@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -18,6 +19,7 @@ module KZC.Check.State (
     defaultTiState
   ) where
 
+import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -26,6 +28,7 @@ import qualified Data.Set as Set
 import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Check.Smart
 import KZC.Check.Types
 import KZC.Error
 
@@ -33,7 +36,7 @@ data TiEnv = TiEnv
     { errctx     :: ![ErrorContext]
     , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Z.Exp
-    , structs    :: !(Map Z.Struct Struct)
+    , structs    :: !(Map Z.Struct StructDef)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
@@ -46,7 +49,7 @@ defaultTiEnv = TiEnv
     { errctx     = []
     , nestdepth  = 0
     , curexp     = Nothing
-    , structs    = Map.empty
+    , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , varTypes   = Map.empty
     , tyVars     = Map.empty
     , iVars      = Map.empty
@@ -60,3 +63,15 @@ data TiState = TiState
 defaultTiState :: TiState
 defaultTiState = TiState
     { valctx = error "valctx: not yet defined" }
+
+builtinStructs :: [StructDef]
+builtinStructs =
+    [ complexStruct "complex"   intT
+    , complexStruct "complex8"  int8T
+    , complexStruct "complex16" int16T
+    , complexStruct "complex32" int32T
+    , complexStruct "complex64" int64T ]
+  where
+    complexStruct :: Z.Struct -> Type -> StructDef
+    complexStruct s tau =
+        StructDef s [("im", tau), ("re", tau)] noLoc

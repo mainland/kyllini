@@ -69,6 +69,18 @@ bitT = BitT noLoc
 intT :: Type
 intT = IntT dEFAULT_INT_WIDTH noLoc
 
+int8T :: Type
+int8T = IntT W8 noLoc
+
+int16T :: Type
+int16T = IntT W16 noLoc
+
+int32T :: Type
+int32T = IntT W32 noLoc
+
+int64T :: Type
+int64T = IntT W64 noLoc
+
 refT :: Type -> Type
 refT tau = RefT tau noLoc
 
@@ -83,3 +95,6 @@ stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
 
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
+
+structName :: StructDef -> Struct
+structName (StructDef s _ _) = s

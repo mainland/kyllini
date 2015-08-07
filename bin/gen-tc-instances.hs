@@ -7,6 +7,8 @@ module Main where
 
 import Data.Generics
 
+import qualified Language.Ziria.Syntax as Z
+
 import KZC.Derive
 import KZC.Name
 import KZC.Check.Types
@@ -16,16 +18,18 @@ import KZC.Uniq
 deriving instance Typeable a; \
 deriving instance Data a
 
+DERIVE(Z.Field)
+DERIVE(Z.Struct)
 DERIVE(Uniq)
 DERIVE(Name)
 DERIVE(NameSort)
-DERIVE(Struct)
 DERIVE(TyVar)
 DERIVE(IVar)
 DERIVE(W)
 DERIVE(Type)
 DERIVE(Kind)
 DERIVE(MetaTv)
+DERIVE(StructDef)
 
 main :: IO ()
 main = do
@@ -34,3 +38,4 @@ main = do
     DERIVE(TyVar)
     DERIVE(IVar)
     DERIVE(Type)
+    DERIVE(StructDef)

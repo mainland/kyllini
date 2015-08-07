@@ -21,6 +21,7 @@ module Language.Core.Syntax (
     BindVar(..),
     Unop(..),
     Binop(..),
+    StructDef(..),
     Type(..),
     Omega(..),
     Iota(..),
@@ -115,6 +116,7 @@ data Exp = ConstE Const !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
          | LetStruct Struct [(Field, Type)] !SrcLoc
+         | StructE Struct [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -325,14 +327,6 @@ instance Pretty Const where
     ppr (StringC s)   = text (show s)
     ppr (ArrayC cs)   = braces $ commasep $ map ppr cs
 
-pprStruct :: [(Doc, Doc)] -> Doc
-pprStruct flds =
-    commaEmbrace $
-    map pprField flds
-  where
-    pprField :: (Doc, Doc) -> Doc
-    pprField (f, v) = f <+> text "=" <+> v
-
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
         ppr c
@@ -427,7 +421,10 @@ instance Pretty Exp where
 
     pprPrec _ (LetStruct s flds _) =
         text "struct" <+> ppr s <+> text "=" <+>
-        pprStruct [(ppr fld, ppr tau) | (fld, tau) <- flds]
+        pprStruct flds
+
+    pprPrec _ (StructE s fields _) =
+        ppr s <+> pprStruct fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -723,6 +720,7 @@ instance Fvs Exp Var where
     fvs (ArrayE es _)             = fvs es
     fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
     fvs (LetStruct {})            = mempty
+    fvs (StructE _ flds _)        = fvs (map snd flds)
     fvs (ProjE e _ _)             = fvs e
     fvs (PrintE _ es _)           = fvs es
     fvs (ErrorE {})               = mempty

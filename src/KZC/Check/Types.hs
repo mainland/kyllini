@@ -23,13 +23,13 @@ import Data.Symbol
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
 
+import qualified Language.Ziria.Syntax as Z
+
 import KZC.Name
+import KZC.Pretty
 import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
-
-newtype Struct = Struct Name
-  deriving (Eq, Ord, Show)
 
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Show)
@@ -46,6 +46,9 @@ data W = W8
 dEFAULT_INT_WIDTH :: W
 dEFAULT_INT_WIDTH = W32
 
+data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
+  deriving (Eq, Ord, Show)
+
 data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
@@ -53,7 +56,7 @@ data Type -- Base Types
           | IntT W !SrcLoc
           | FloatT W !SrcLoc
           | StringT !SrcLoc
-          | StructT Struct !SrcLoc
+          | StructT Z.Struct !SrcLoc
           | ArrT Type Type !SrcLoc
 
           -- omega types
@@ -97,8 +100,17 @@ instance Ord MetaTv where
 
 type TyRef = IORef (Maybe Type)
 
-instance IsString Struct where
-    fromString s = Struct (fromString s)
+{------------------------------------------------------------------------------
+ -
+ - IsString and Named instances
+ -
+ ------------------------------------------------------------------------------}
+
+instance IsString IVar where
+    fromString s = IVar $ fromString s
+
+instance IsString TyVar where
+    fromString s = TyVar $ fromString s
 
 instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n
@@ -136,9 +148,6 @@ tyappPrec = 1
 tyappPrec1 :: Int
 tyappPrec1 = tyappPrec + 1
 
-instance Pretty Struct where
-    ppr (Struct n) = ppr n
-
 instance Pretty TyVar where
     ppr (TyVar n) = ppr n
 
@@ -150,6 +159,10 @@ instance Pretty W where
     ppr W16 = text "16"
     ppr W32 = text "32"
     ppr W64 = text "64"
+
+instance Pretty StructDef where
+    ppr (StructDef s fields _) =
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =

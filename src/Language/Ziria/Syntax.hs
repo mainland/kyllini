@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      : Language.Ziria.Syntax
@@ -629,14 +628,6 @@ instance Pretty Ind where
     ppr (ConstI i _) = ppr i
     ppr (ArrI v _)   = ppr v
     ppr (NoneI _)    = empty
-
-pprStruct :: forall a b . (Pretty a, Pretty b) => [(a, b)] -> Doc
-pprStruct flds =
-    embrace commasep $
-    map pprField flds
-  where
-    pprField :: (a, b) -> Doc
-    pprField (f, v) = ppr f <+> text "=" <+> ppr v
 
 pprSig :: Var -> Maybe Type -> Doc
 pprSig v Nothing    = ppr v

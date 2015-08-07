@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Module      : KZC.Pretty
 -- Copyright   : (c) 2015 Drexel University
@@ -12,6 +14,8 @@ module KZC.Pretty (
     semiEmbrace,
     semiEmbraceWrap,
     embrace,
+
+    pprStruct,
 
     Fixity(..),
     Assoc(..),
@@ -55,6 +59,14 @@ semiEmbraceWrap ds =
       []   -> lbrace <> rbrace
       [d]  -> lbrace </> d </> rbrace
       _    -> nest 2 (lbrace </> (align . folddoc (</>) . punctuate semi) ds) </> rbrace
+
+pprStruct :: forall a b . (Pretty a, Pretty b) => [(a, b)] -> Doc
+pprStruct flds =
+    embrace commasep $
+    map pprField flds
+  where
+    pprField :: (a, b) -> Doc
+    pprField (f, v) = ppr f <+> text "=" <+> ppr v
 
 data Fixity = Fixity Assoc Int
   deriving (Eq, Ord)

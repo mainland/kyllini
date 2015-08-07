@@ -22,6 +22,9 @@ module KZC.Lint.Monad (
     localExp,
     askCurrentExp,
 
+    extendStructs,
+    lookupStruct,
+
     extendVars,
     lookupVar,
 
@@ -56,6 +59,7 @@ import qualified Data.Set as Set
 import System.IO (hPutStrLn, stderr)
 import Text.PrettyPrint.Mainland
 
+import Language.Core.Smart
 import Language.Core.Syntax
 
 import KZC.Lint.State
@@ -210,6 +214,16 @@ localExp e = local (\env -> env { curexp = Just e })
 
 askCurrentExp :: Tc b (Maybe Exp)
 askCurrentExp = asks curexp
+
+extendStructs :: [StructDef] -> Tc b a -> Tc b a
+extendStructs ss m =
+    extend structs (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+
+lookupStruct :: Struct -> Tc b StructDef
+lookupStruct s =
+    lookupBy structs onerr s
+  where
+    onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
 
 extendVars :: [(Var, Type)] -> Tc b a -> Tc b a
 extendVars vtaus m =
