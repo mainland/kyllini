@@ -1063,14 +1063,6 @@ checkMapFunType f tau = do
     l :: SrcLoc
     l = srclocOf tau
 
--- | Check that a type is an array type, returning the array's size.
-checkArrInd :: Type -> Ti b Type
-checkArrInd (ArrT ind _ _) =
-    return ind
-
-checkArrInd tau =
-    faildoc $ text "Expected array type, but got:" <+> ppr tau
-
 -- | Check that a type is an @ref \alpha@ type, returning @\alpha@.
 checkRefType :: Type -> Ti b Type
 checkRefType tau =
@@ -1409,8 +1401,9 @@ instance FromZ Z.Ind Type where
     fromZ (Z.ConstI i l) =
         pure $ ConstI i l
 
-    fromZ (Z.ArrI v _) =
-        lookupVar v >>= checkArrInd
+    fromZ (Z.ArrI v _) = do
+        (ind, _) <- lookupVar v >>= checkArrType
+        return ind
 
     fromZ (Z.NoneI l) =
         newMetaTvT IotaK l
