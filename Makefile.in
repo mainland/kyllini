@@ -2,7 +2,7 @@ GHC=ghc
 GHCFLAGS=-W -Werror
 
 RUNGHC=runghc
-RUNGHCFLAGS=-W
+RUNGHCFLAGS=-W -fno-warn-unused-imports
 
 HAPPY=happy 
 HAPPY_ARGS=-agci
