@@ -219,11 +219,9 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
                 return $ C.UnopE cop ce1 l
   where
     unop :: Z.Unop -> Type -> Ti b (Type, C.Unop)
-    unop Z.Neg tau | isSignedType tau =
+    unop Z.Neg tau = do
+        checkSignedNumType tau
         return (tau, C.Neg)
-
-    unop Z.Neg tau =
-        faildoc $ text "Cannot negate values of type" <+> ppr tau
 
     unop Z.Len tau = do
         _ <- checkArrType tau
@@ -981,87 +979,59 @@ isRefVar v = do
       RefT {} -> return True
       _       -> return False
 
-checkFunType :: Z.Var -> Int -> Type
-             -> Ti b ([Type], Type, Co c)
-checkFunType _ nargs tau =
-    instantiate tau >>= go
+-- | Check that a type is an integral type
+checkIntType :: Type -> Ti b ()
+checkIntType tau =
+    compress tau >>= go
   where
-    go :: (Type, Co c) -> Ti b ([Type], Type, Co c)
-    go (FunT [] taus tau_ret _, co) =
-        return (taus, tau_ret, co)
+    go :: Type -> Ti b ()
+    go (IntT _ _) = return ()
+    go tau        = unifyTypes tau intT
 
-    go (tau_f, co) = do
-        taus    <- replicateM nargs (newMetaTvT TauK tau)
-        tau_ret <- newMetaTvT TauK tau
-        unifyTypes tau_f (funT taus tau_ret)
-        return (taus, tau_ret, co)
+-- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
+isComplexStruct :: Z.Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
 
--- | Check that a function type is appropriate for a @map@. The function result
--- must have type @forall s a b . ST (C c) s a b@. This guarantees that although
--- it may read and write references, it neither consumes nor produces values
--- from the stream.
-checkMapFunType :: Z.Var -> Type
-                -> Ti b (Type, Type, Co c)
-checkMapFunType f tau = do
-    -- Instantiate the function type's outer forall, which quantifies over array
-    -- index variables.
-    (tau_f, co1) <- instantiate tau
-    (c, tau_ret) <-
-        case tau_f of
-          FunT [] [c] tau_ret@(ST {}) _ -> return (c, tau_ret)
-          _ -> err
-    -- Check that the return type of the function we are mapping is
-    -- @forall s a b . ST tau s a b@.
-    checkMapReturnType tau_ret
-    -- XXX Instantiate over the return type, which must be an ST type. We should
-    -- handle pure functions here too!
-    (tau_ret', co2) <- instantiate tau_ret
-    (d, s, a, b) <-
-        case tau_ret' of
-          ST [] (C d _) s a b _ -> return (d, s, a, b)
-          _ -> err
-    unifyTypes c a
-    unifyTypes s a
-    unifyTypes d b
-    let co mce = co2 $ co1 $ do
-        ce <- mce
-        cf <- C.varE <$> trans f
-        return $ C.callE cf [ce]
-    return (a, b, co)
+-- | Check that a type is a numerical type.
+checkNumType :: Type -> Ti b ()
+checkNumType tau =
+    compress tau >>= go
   where
-    checkMapReturnType :: Type -> Ti b ()
-    checkMapReturnType (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _)
-        | sort [s',a',b'] == sort [s,a,b] =
-        return ()
-
-    checkMapReturnType _ =
-        err
+    go :: Type -> Ti b ()
+    go (IntT {})            = return ()
+    go (FloatT {})          = return ()
+    go (StructT s _)
+        | isComplexStruct s = return ()
+    go tau                  = unifyTypes tau intT `catch`
+                                  \(_ :: SomeException) -> err
 
     err :: Ti b a
-    err =
-        expectedTypeErr tau tau2
-      where
-        alpha, beta, gamma, delta, sigma :: TyVar
-        alpha = TyVar "a"
-        beta  = TyVar "b"
-        gamma = TyVar "c"
-        delta = TyVar "d"
-        sigma = TyVar "s"
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected integral type, but got:" <+> ppr tau'
 
-        tau2 :: Type
-        tau2 =
-            FunT []
-                 [tyVarT gamma]
-                 (ST [sigma, alpha, beta]
-                     (C (tyVarT delta) l)
-                     (tyVarT sigma)
-                     (tyVarT alpha)
-                     (tyVarT beta)
-                     l)
-                 l
+-- | Check that a type is a /signed/ numerical type.
+checkSignedNumType :: Type -> Ti b ()
+checkSignedNumType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti b ()
+    go (IntT {})            = return ()
+    go (FloatT {})          = return ()
+    go (StructT s _)
+        | isComplexStruct s = return ()
+    go tau                  = unifyTypes tau intT `catch`
+                                  \(_ :: SomeException) -> err
 
-    l :: SrcLoc
-    l = srclocOf tau
+    err :: Ti b a
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected signed integral type, but got:" <+> ppr tau'
 
 -- | Check that a type is an @ref \alpha@ type, returning @\alpha@.
 checkRefType :: Type -> Ti b Type
@@ -1146,42 +1116,87 @@ checkSTCUnitType tau =
         unifyTypes tau (stT (cT unitT) sigma alpha beta)
         return (sigma, alpha, beta)
 
--- | Check that a type is an integral type
-checkIntType :: Type -> Ti b ()
-checkIntType tau =
-    compress tau >>= go
+checkFunType :: Z.Var -> Int -> Type
+             -> Ti b ([Type], Type, Co c)
+checkFunType _ nargs tau =
+    instantiate tau >>= go
   where
-    go :: Type -> Ti b ()
-    go (IntT _ _) = return ()
-    go tau        = unifyTypes tau intT
+    go :: (Type, Co c) -> Ti b ([Type], Type, Co c)
+    go (FunT [] taus tau_ret _, co) =
+        return (taus, tau_ret, co)
 
--- | Returns @True@ if type is signed, @False@ otherwise.
-isSignedType :: Type -> Bool
-isSignedType (IntT {})     = True
-isSignedType (FloatT {})   = True
-isSignedType (StructT s _)
-    | isComplexStruct s    = True
-isSignedType _             = False
+    go (tau_f, co) = do
+        taus    <- replicateM nargs (newMetaTvT TauK tau)
+        tau_ret <- newMetaTvT TauK tau
+        unifyTypes tau_f (funT taus tau_ret)
+        return (taus, tau_ret, co)
 
-isComplexStruct :: Z.Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
-
--- | Check that a type is a numerical type
-checkNumType :: Type -> Ti b ()
-checkNumType tau =
-    compress tau >>= go
+-- | Check that a function type is appropriate for a @map@. The function result
+-- must have type @forall s a b . ST (C c) s a b@. This guarantees that although
+-- it may read and write references, it neither consumes nor produces values
+-- from the stream.
+checkMapFunType :: Z.Var -> Type
+                -> Ti b (Type, Type, Co c)
+checkMapFunType f tau = do
+    -- Instantiate the function type's outer forall, which quantifies over array
+    -- index variables.
+    (tau_f, co1) <- instantiate tau
+    (c, tau_ret) <-
+        case tau_f of
+          FunT [] [c] tau_ret@(ST {}) _ -> return (c, tau_ret)
+          _ -> err
+    -- Check that the return type of the function we are mapping is
+    -- @forall s a b . ST tau s a b@.
+    checkMapReturnType tau_ret
+    -- XXX Instantiate over the return type, which must be an ST type. We should
+    -- handle pure functions here too!
+    (tau_ret', co2) <- instantiate tau_ret
+    (d, s, a, b) <-
+        case tau_ret' of
+          ST [] (C d _) s a b _ -> return (d, s, a, b)
+          _ -> err
+    unifyTypes c a
+    unifyTypes s a
+    unifyTypes d b
+    let co mce = co2 $ co1 $ do
+        ce <- mce
+        cf <- C.varE <$> trans f
+        return $ C.callE cf [ce]
+    return (a, b, co)
   where
-    go :: Type -> Ti b ()
-    go (IntT {})            = return ()
-    go (FloatT {})          = return ()
-    go (StructT s _)
-        | isComplexStruct s = return ()
-    go tau                  = unifyTypes tau intT
+    checkMapReturnType :: Type -> Ti b ()
+    checkMapReturnType (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _)
+        | sort [s',a',b'] == sort [s,a,b] =
+        return ()
+
+    checkMapReturnType _ =
+        err
+
+    err :: Ti b a
+    err =
+        expectedTypeErr tau tau2
+      where
+        alpha, beta, gamma, delta, sigma :: TyVar
+        alpha = TyVar "a"
+        beta  = TyVar "b"
+        gamma = TyVar "c"
+        delta = TyVar "d"
+        sigma = TyVar "s"
+
+        tau2 :: Type
+        tau2 =
+            FunT []
+                 [tyVarT gamma]
+                 (ST [sigma, alpha, beta]
+                     (C (tyVarT delta) l)
+                     (tyVarT sigma)
+                     (tyVarT alpha)
+                     (tyVarT beta)
+                     l)
+                 l
+
+    l :: SrcLoc
+    l = srclocOf tau
 
 mkSTC :: Type -> Ti b (Type, Co c)
 mkSTC tau = do
