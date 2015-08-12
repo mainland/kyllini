@@ -21,6 +21,9 @@ mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
 
+unitE :: Exp
+unitE = ConstE UnitC noLoc
+
 intE :: Integer -> Exp
 intE i = ConstE (IntC dEFAULT_INT_WIDTH i) noLoc
 

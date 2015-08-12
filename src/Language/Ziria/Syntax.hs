@@ -85,7 +85,7 @@ data Exp = ConstE Const !SrcLoc
          | VarE Var !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
-         | IfE Exp Exp Exp !SrcLoc
+         | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
          -- Functions
          | CallE Var [Exp] !SrcLoc
@@ -366,11 +366,13 @@ instance Pretty Exp where
     pprPrec p (BinopE op e1 e2 _) =
         infixop p op e1 e2
 
-    pprPrec p (IfE e1 e2 e3 _) =
+    pprPrec p (IfE e1 e2 maybe_e3 _) =
         parensIf (p >= appPrec) $
         text "if"   <+> pprPrec appPrec1 e1 <+/>
         text "then" <+> pprPrec appPrec1 e2 <+/>
-        text "else" <+> pprPrec appPrec1 e3
+        case maybe_e3 of
+          Nothing -> empty
+          Just e3 -> text "else" <+> pprPrec appPrec1 e3
 
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $

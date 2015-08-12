@@ -376,7 +376,7 @@ bexp :
       { $1 }
 
   | 'if' bexp 'then' bexp 'else' bexp
-      { IfE $2 $4 $6 ($1 `srcspan` $6) }
+      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
   | 'if' bexp 'then' bexp 'else' error
       {% expected ["expression"] Nothing }
   | 'if' bexp 'then' bexp error
@@ -590,13 +590,13 @@ stm_exp :
       { AssignE $1 $3 ($1 `srcspan` $3) }
 
   | 'if' exp 'then' stm_block 'else' stm_block
-      { IfE $2 (stmsE $4) (stmsE $6) ($1 `srcspan` $6) }
+      { IfE $2 (stmsE $4) (Just (stmsE $6)) ($1 `srcspan` $6) }
   | 'if' exp 'then' stm_block 'else' error
       {% expected ["statement block"] Nothing }
   | 'if' exp 'then' stm_block %prec IF
       { let { loc = ($1 `srcspan` $4) }
         in
-          IfE $2 (stmsE $4) (ConstE UnitC loc) loc
+          IfE $2 (stmsE $4) Nothing loc
       }
   | 'if' exp error
       {% expected ["then clause"] Nothing }
@@ -743,9 +743,9 @@ ifcomp :
     opcomp
       { $1 }
   | 'if' exp 'then' ifcomp %prec IF
-      { IfE $2 $4 (ConstE UnitC (srclocOf $4)) ($1 `srcspan` $4) }
+      { IfE $2 $4 Nothing ($1 `srcspan` $4) }
   | 'if' exp 'then' ifcomp 'else' ifcomp
-      { IfE $2 $4 $6 ($1 `srcspan` $6) }
+      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
   | 'if' exp 'then' error
       {% expected ["command"] Nothing }
   | 'if' exp error

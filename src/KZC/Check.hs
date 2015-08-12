@@ -348,7 +348,16 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
         checkBitType tau1
         unifyTypes tau2 tau1
 
-tcExp (Z.IfE e1 e2 e3 l) exp_ty = do
+tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
+    mce1 <- checkExp e1 (BoolT l)
+    (tau, mce2) <- inferExp e2
+    checkSTCUnitType tau
+    instType tau exp_ty
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.IfE ce1 ce2 (C.returnE C.unitE) l
+
+tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
     mce1 <- checkExp e1 (BoolT l)
     (tau, mce2) <- inferExp e2
     mce3        <- checkExp e3 tau
