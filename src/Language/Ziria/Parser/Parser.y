@@ -362,8 +362,6 @@ aexp :
 
   | ID '(' exp_list ')'
       { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
-  | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
@@ -496,13 +494,14 @@ base_type :
 
 cast_type :: { Type }
 cast_type :
-    'bit'              { BitT (srclocOf $1) }
-  | 'int'              { IntT W32 (srclocOf $1) }
-  | 'int8'             { IntT W8 (srclocOf $1) }
-  | 'int16'            { IntT W16 (srclocOf $1) }
-  | 'int32'            { IntT W32 (srclocOf $1) }
-  | 'int64'            { IntT W64 (srclocOf $1) }
-  | 'double'           { FloatT W64 (srclocOf $1) }
+    'bit'    { BitT (srclocOf $1) }
+  | 'int'    { IntT W32 (srclocOf $1) }
+  | 'int8'   { IntT W8 (srclocOf $1) }
+  | 'int16'  { IntT W16 (srclocOf $1) }
+  | 'int32'  { IntT W32 (srclocOf $1) }
+  | 'int64'  { IntT W64 (srclocOf $1) }
+  | 'double' { FloatT W64 (srclocOf $1) }
+  | structid { StructT $1 (srclocOf $1) }
 
 arr_length :: { (Ind, Type) }
 arr_length :
