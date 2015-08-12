@@ -359,6 +359,10 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
+    pprPrec p (UnopE op@(Cast {}) e _) =
+        parensIf (p > precOf op) $
+        ppr op <+> pprPrec (precOf op) e
+
     pprPrec p (UnopE op e _) =
         parensIf (p > precOf op) $
         ppr op <> pprPrec (precOf op) e
