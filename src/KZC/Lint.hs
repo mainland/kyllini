@@ -276,15 +276,17 @@ inferExp (AssignE e1 e2 l) = do
     b = "b"
 
 inferExp (WhileE e1 e2 _) = do
-    withExpContext e1 $
-        checkExp e1 boolT
+    withExpContext e1 $ do
+        (tau, _, _, _) <- inferExp e1 >>= checkSTC
+        checkTypeEquality tau boolT
     tau <- withExpContext e2 $ inferExp e2
     void $ checkSTCUnit tau
     return tau
 
 inferExp (UntilE e1 e2 _) = do
-    withExpContext e1 $
-        checkExp e1 boolT
+    withExpContext e1 $ do
+        (tau, _, _, _) <- inferExp e1 >>= checkSTC
+        checkTypeEquality tau boolT
     tau <- withExpContext e2 $ inferExp e2
     void $ checkSTCUnit tau
     return tau

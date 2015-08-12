@@ -427,22 +427,26 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
         return $ C.AssignE ce1 ce2 l
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
-    mce1        <- checkExp e1 (BoolT l)
-    (tau, mce2) <- inferExp e2
-    _           <- checkSTCUnitType tau
+    (tau, co) <- mkSTC (UnitT l)
+    mce1      <- collectValCtx tau $ do
+                 checkBoolVal e1
+    mce2      <- collectValCtx tau $
+                 checkExp e2 tau
     instType tau exp_ty
-    return $ do ce1 <- mce1
-                ce2 <- mce2
-                return $ C.WhileE ce1 ce2 l
+    return $ co $ do ce1 <- mce1
+                     ce2 <- mce2
+                     return $ C.WhileE ce1 ce2 l
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
-    mce1        <- checkExp e1 (BoolT l)
-    (tau, mce2) <- inferExp e2
-    _           <- checkSTCUnitType tau
+    (tau, co) <- mkSTC (UnitT l)
+    mce1      <- collectValCtx tau $ do
+                 checkBoolVal e1
+    mce2      <- collectValCtx tau $
+                 checkExp e2 tau
     instType tau exp_ty
-    return $ do ce1 <- mce1
-                ce2 <- mce2
-                return $ C.UntilE ce1 ce2 l
+    return $ co $ do ce1 <- mce1
+                     ce2 <- mce2
+                     return $ C.UntilE ce1 ce2 l
 
 tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferExp e1
@@ -889,6 +893,15 @@ inferVal e = do
     mce <- tcVal e (Infer ref)
     tau <- readRef ref
     return (tau, mce)
+
+checkBoolVal :: Z.Exp -> Ti b (Ti c C.Exp)
+checkBoolVal e = do
+    mce <- checkExp e (BoolT l)
+    return $ do ce <- mce
+                return $ C.returnE ce
+  where
+    l :: SrcLoc
+    l = srclocOf e
 
 kcType :: Type -> Expected Kind -> Ti b ()
 kcType tau@(UnitT {})    kappa_exp = instKind tau TauK kappa_exp

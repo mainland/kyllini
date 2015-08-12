@@ -37,6 +37,8 @@ module KZC.Lint.Monad (
     localSTIndTypes,
     askSTIndTypes,
 
+    inScopeTyVars,
+
     traceNest,
     traceLint,
 
@@ -55,6 +57,7 @@ import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.Set (Set)
 import qualified Data.Set as Set
 import System.IO (hPutStrLn, stderr)
 import Text.PrettyPrint.Mainland
@@ -271,6 +274,13 @@ askSTIndTypes = do
     case maybe_taus of
       Just taus -> return taus
       Nothing   -> faildoc $ text "Not in scope of an ST computation"
+
+inScopeTyVars :: Tc b (Set TyVar)
+inScopeTyVars = do
+    maybe_idxs <- asks stIndTys
+    case maybe_idxs of
+      Nothing         -> return mempty
+      Just (s',a',b') -> return $ fvs [s',a',b']
 
 traceNest :: Int -> Tc b a -> Tc b a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
