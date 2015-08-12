@@ -19,6 +19,12 @@ import KZC.Check.Types
 unitT :: Type
 unitT = UnitT noLoc
 
+boolT :: Type
+boolT = BoolT noLoc
+
+bitT :: Type
+bitT = BitT noLoc
+
 intT :: Type
 intT = IntT W32 noLoc
 

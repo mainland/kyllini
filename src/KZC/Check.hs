@@ -213,21 +213,35 @@ tcExp (Z.VarE v _) exp_ty = do
 
 tcExp (Z.UnopE op e1 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
-    (tau, cop)   <- unop op tau1
+    (tau, mcop)  <- unop op tau1
     instType tau exp_ty
     return $ do ce1 <- mce1
+                cop <- mcop
                 return $ C.UnopE cop ce1 l
   where
-    unop :: Z.Unop -> Type -> Ti b (Type, C.Unop)
+    unop :: Z.Unop -> Type -> Ti b (Type, Ti c C.Unop)
+    unop Z.Lnot tau = do
+        checkBoolType tau
+        return (tau, return C.Lnot)
+
+    unop Z.Bnot tau = do
+        checkBitType tau
+        return (tau, return C.Bnot)
+
     unop Z.Neg tau = do
         checkSignedNumType tau
-        return (tau, C.Neg)
+        return (tau, return C.Neg)
+
+    unop (Z.Cast ztau2) tau1 = do
+        tau2 <- fromZ ztau2
+        checkCast tau1 tau2
+        let mcop = do ctau2 <- trans tau2
+                      return $ C.Cast ctau2
+        return (tau2, mcop)
 
     unop Z.Len tau = do
         _ <- checkArrType tau
-        return (intT, C.Len)
-
-    unop op _ = faildoc $ text "tcExp: cannot type check unary operator" <+> ppr op
+        return (intT, return C.Len)
 
 tcExp (Z.BinopE op e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
@@ -239,13 +253,100 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
                 return $ C.BinopE cop ce1 ce2 l
   where
     binop :: Z.Binop -> Type -> Type -> Ti b (Type, C.Binop)
+    binop Z.Lt tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Lt)
+
+    binop Z.Le tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Le)
+
+    binop Z.Eq tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Eq)
+
+    binop Z.Ge tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Ge)
+
+    binop Z.Gt tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Gt)
+
+    binop Z.Ne tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (boolT, C.Ne)
+
+    binop Z.Land tau1 tau2 = do
+        checkBoolBinop tau1 tau2
+        return (boolT, C.Land)
+
+    binop Z.Lor tau1 tau2 = do
+        checkBoolBinop tau1 tau2
+        return (boolT, C.Lor)
+
+    binop Z.Band tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.Band)
+
+    binop Z.Bor tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.Bor)
+
+    binop Z.Bxor tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.Bxor)
+
+    binop Z.LshL tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.LshL)
+
+    binop Z.LshR tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.LshR)
+
+    binop Z.AshR tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return (boolT, C.AshR)
+
     binop Z.Add tau1 tau2 = do
-        checkNumType tau1
-        unifyTypes tau2 tau1
+        checkNumBinop tau1 tau2
         return (tau1, C.Add)
 
-    binop op _ _ =
-        faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
+    binop Z.Sub tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (tau1, C.Sub)
+
+    binop Z.Mul tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (tau1, C.Mul)
+
+    binop Z.Div tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (tau1, C.Mul)
+
+    binop Z.Rem tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (tau1, C.Rem)
+
+    binop Z.Pow tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return (tau1, C.Pow)
+
+    checkBoolBinop :: Type -> Type -> Ti b ()
+    checkBoolBinop tau1 tau2 = do
+        checkBoolType tau1
+        unifyTypes tau2 tau1
+
+    checkNumBinop :: Type -> Type -> Ti b ()
+    checkNumBinop tau1 tau2 = do
+        checkNumType tau1
+        unifyTypes tau2 tau1
+
+    checkBitBinop :: Type -> Type -> Ti b ()
+    checkBitBinop tau1 tau2 = do
+        checkBitType tau1
+        unifyTypes tau2 tau1
 
 tcExp (Z.IfE e1 e2 e3 l) exp_ty = do
     mce1 <- checkExp e1 (BoolT l)
@@ -978,6 +1079,39 @@ isRefVar v = do
     case tau of
       RefT {} -> return True
       _       -> return False
+
+-- | Check that a type is a type on which we can perform Boolean operations.
+checkBoolType :: Type -> Ti b ()
+checkBoolType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti b ()
+    go (BitT {})  = return ()
+    go (BoolT {}) = return ()
+    go (IntT {})  = return ()
+    go tau        = unifyTypes tau intT `catch`
+                        \(_ :: SomeException) -> err
+
+    err :: Ti b a
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+> ppr tau'
+
+-- | Check that a type is a type on which we can perform bitwise operations.
+checkBitType :: Type -> Ti b ()
+checkBitType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti b ()
+    go (BitT {}) = return ()
+    go (IntT {}) = return ()
+    go tau       = unifyTypes tau intT `catch`
+                       \(_ :: SomeException) -> err
+
+    err :: Ti b a
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected a bit type, e.g., bit or int, but got:" <+> ppr tau'
 
 -- | Check that a type is an integral type
 checkIntType :: Type -> Ti b ()

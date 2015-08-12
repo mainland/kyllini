@@ -61,11 +61,17 @@ inferExp (UnopE op e1 _) = do
     unop op tau1
   where
     unop :: Unop -> Type -> Tc b Type
-    unop Neg tau | isSignedT tau =
+    unop Lnot tau = do
+        checkBoolT tau
         return tau
 
-    unop Neg tau =
-        faildoc $ text "Cannot negate values of type" <+> ppr tau
+    unop Bnot tau = do
+        checkBitT tau
+        return tau
+
+    unop Neg tau = do
+        checkSignedNumT tau
+        return tau
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
@@ -75,21 +81,106 @@ inferExp (UnopE op e1 _) = do
         _ <- checkArrT tau
         return intT
 
-    unop op _ = faildoc $ text "tcExp: cannot type check unary operator" <+> ppr op
-
 inferExp (BinopE op e1 e2 _) = do
     tau1 <- inferExp e1
     tau2 <- inferExp e2
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> Tc b Type
+    binop Lt tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Le tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Eq tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Ge tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Gt tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Ne tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return boolT
+
+    binop Land tau1 tau2 = do
+        checkBoolBinop tau1 tau2
+        return boolT
+
+    binop Lor tau1 tau2 = do
+        checkBoolBinop tau1 tau2
+        return boolT
+
+    binop Band tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
+    binop Bor tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
+    binop Bxor tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
+    binop LshL tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
+    binop LshR tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
+    binop AshR tau1 tau2 = do
+        checkBitBinop tau1 tau2
+        return boolT
+
     binop Add tau1 tau2 = do
-        checkNumT tau1
-        checkTypeEquality tau2 tau1
+        checkNumBinop tau1 tau2
         return tau1
 
-    binop op _ _ =
-        faildoc $ text "tcExp: cannot type check binary operator" <+> ppr op
+    binop Sub tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return tau1
+
+    binop Mul tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return tau1
+
+    binop Div tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return tau1
+
+    binop Rem tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return tau1
+
+    binop Pow tau1 tau2 = do
+        checkNumBinop tau1 tau2
+        return tau1
+
+    checkBoolBinop :: Type -> Type -> Tc b ()
+    checkBoolBinop tau1 tau2 = do
+        checkBoolT tau1
+        checkTypeEquality tau2 tau1
+
+    checkNumBinop :: Type -> Type -> Tc b ()
+    checkNumBinop tau1 tau2 = do
+        checkNumT tau1
+        checkTypeEquality tau2 tau1
+
+    checkBitBinop :: Type -> Type -> Tc b ()
+    checkBitBinop tau1 tau2 = do
+        checkBitT tau1
+        checkTypeEquality tau2 tau1
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
@@ -582,6 +673,57 @@ appSTScope tau@(ST alphas omega s a b l) = do
 appSTScope tau =
     return tau
 
+-- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
+
+-- | Check that a type is a type on which we can perform Boolean operations.
+checkBoolT :: Type -> Tc b ()
+checkBoolT (BitT {})  = return ()
+checkBoolT (BoolT {}) = return ()
+checkBoolT (IntT {})  = return ()
+checkBoolT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+/> ppr tau
+
+-- | Check that a type is a type on which we can perform bitwise operations.
+checkBitT :: Type -> Tc b ()
+checkBitT (BitT {})  = return ()
+checkBitT (BoolT {}) = return ()
+checkBitT (IntT {})  = return ()
+checkBitT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected a bit type, e.g., bit or int, but got:" <+/> ppr tau
+
+-- | Check that a type is an integer type.
+checkIntT :: Type -> Tc b ()
+checkIntT (IntT _ _)  = return ()
+checkIntT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected integer type but got:" <+/> ppr tau
+
+-- | Check that a type is a numerical type.
+checkNumT :: Type -> Tc b ()
+checkNumT (IntT _ _)                        = return ()
+checkNumT (FloatT _ _)                      = return ()
+checkNumT (StructT s _) | isComplexStruct s = return ()
+checkNumT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected numerical type but got:" <+/> ppr tau
+
+-- | Check that a type is a /signed/ numerical type.
+checkSignedNumT (IntT _ _)                        = return ()
+checkSignedNumT (FloatT _ _)                      = return ()
+checkSignedNumT (StructT s _) | isComplexStruct s = return ()
+checkSignedNumT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected numerical type but got:" <+/> ppr tau
+
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
 checkArrT :: Type -> Tc b (Iota, Type)
@@ -639,34 +781,3 @@ checkFunT (FunT iotas taus tau_ret _) =
 checkFunT tau =
     faildoc $ nest 2 $ group $
     text "Expected function type but got:" <+/> ppr tau
-
--- | Returns @True@ if type is signed, @False@ otherwise.
-isSignedT :: Type -> Bool
-isSignedT (IntT {})     = True
-isSignedT (FloatT {})   = True
-isSignedT (StructT s _)
-    | isComplexStruct s = True
-isSignedT _             = False
-
-isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
-
--- | Check that a type is an integer type.
-checkIntT :: Type -> Tc b ()
-checkIntT (IntT _ _)     = return ()
-checkIntT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected integer type but got:" <+/> ppr tau
-
--- | Check that a type is a numerical type.
-checkNumT :: Type -> Tc b ()
-checkNumT (IntT _ _)   = return ()
-checkNumT (FloatT _ _) = return ()
-checkNumT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected numerical type but got:" <+/> ppr tau
