@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- |
 -- Module      : Language.Ziria.Syntax
@@ -32,7 +33,10 @@ module Language.Ziria.Syntax (
 
     StructDef(..),
     Type(..),
-    Ind(..)
+    Ind(..),
+
+    dEFAULT_INT_WIDTH,
+    isComplexStruct
   ) where
 
 import Data.Loc
@@ -69,9 +73,6 @@ data W = W8
        | W32
        | W64
   deriving (Eq, Ord, Read, Show)
-
-dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W32
 
 data Const = UnitC
            | BoolC Bool
@@ -217,6 +218,18 @@ data Ind = ConstI Int !SrcLoc
          | ArrI Var !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+dEFAULT_INT_WIDTH :: W
+dEFAULT_INT_WIDTH = W32
+
+-- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
 
 {------------------------------------------------------------------------------
  -

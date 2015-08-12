@@ -1172,27 +1172,18 @@ checkIntType tau =
     go (IntT _ _) = return ()
     go tau        = unifyTypes tau intT
 
--- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
-isComplexStruct :: Z.Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
-
 -- | Check that a type is a numerical type.
 checkNumType :: Type -> Ti b ()
 checkNumType tau =
     compress tau >>= go
   where
     go :: Type -> Ti b ()
-    go (IntT {})            = return ()
-    go (FloatT {})          = return ()
+    go (IntT {})              = return ()
+    go (FloatT {})            = return ()
     go (StructT s _)
-        | isComplexStruct s = return ()
-    go tau                  = unifyTypes tau intT `catch`
-                                  \(_ :: SomeException) -> err
+        | Z.isComplexStruct s = return ()
+    go tau                    = unifyTypes tau intT `catch`
+                                    \(_ :: SomeException) -> err
 
     err :: Ti b a
     err = do
@@ -1205,12 +1196,12 @@ checkSignedNumType tau =
     compress tau >>= go
   where
     go :: Type -> Ti b ()
-    go (IntT {})            = return ()
-    go (FloatT {})          = return ()
+    go (IntT {})              = return ()
+    go (FloatT {})            = return ()
     go (StructT s _)
-        | isComplexStruct s = return ()
-    go tau                  = unifyTypes tau intT `catch`
-                                  \(_ :: SomeException) -> err
+        | Z.isComplexStruct s = return ()
+    go tau                    = unifyTypes tau intT `catch`
+                                    \(_ :: SomeException) -> err
 
     err :: Ti b a
     err = do
@@ -1418,6 +1409,8 @@ castVal tau2 e = do
     l :: SrcLoc
     l = srclocOf e
 
+-- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
+-- value of type @tau2@.
 checkCast :: Type -> Type -> Ti b ()
 checkCast tau1 tau2 =
     unifyTypes tau1 tau2
@@ -1431,6 +1424,12 @@ checkCast tau1 tau2 =
         return ()
 
     go (IntT {}) (IntT {}) =
+        return ()
+
+    go (FloatT {}) (FloatT {}) =
+        return ()
+
+    go (StructT s1 _) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2=
         return ()
 
     go tau1 tau2 =

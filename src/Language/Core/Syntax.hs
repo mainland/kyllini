@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- |
 -- Module      : Language.Core.Syntax
@@ -15,7 +16,6 @@ module Language.Core.Syntax (
     TyVar(..),
     IVar(..),
     W(..),
-    dEFAULT_INT_WIDTH,
     Const(..),
     Exp(..),
     BindVar(..),
@@ -26,6 +26,10 @@ module Language.Core.Syntax (
     Omega(..),
     Iota(..),
     Kind(..),
+
+    dEFAULT_INT_WIDTH,
+    isComplexStruct,
+
     Stm(..),
     expToStms,
     stmsToExp
@@ -81,9 +85,6 @@ data W = W8
        | W32
        | W64
   deriving (Eq, Ord, Read, Show)
-
-dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W32
 
 data Const = UnitC
            | BoolC Bool
@@ -197,6 +198,18 @@ data Kind = TauK   -- ^ Base types, including arrays of base types
           | PhiK   -- ^ Function types
           | IotaK  -- ^ Array index types
   deriving (Eq, Ord, Read, Show)
+
+dEFAULT_INT_WIDTH :: W
+dEFAULT_INT_WIDTH = W32
+
+-- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
 
 {------------------------------------------------------------------------------
  -

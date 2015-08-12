@@ -481,11 +481,19 @@ checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
 
+-- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
+-- value of type @tau2@.
 checkCast :: Type -> Type -> Tc b ()
 checkCast tau1 tau2 | tau1 == tau2 =
     return ()
 
 checkCast (IntT {}) (IntT {}) =
+    return ()
+
+checkCast (FloatT {}) (FloatT {}) =
+    return ()
+
+checkCast (StructT s1 _) (StructT s2 _) | isComplexStruct s1 && isComplexStruct s2=
     return ()
 
 checkCast tau1 tau2 =
@@ -693,15 +701,6 @@ appSTScope tau@(ST alphas omega s a b l) = do
 
 appSTScope tau =
     return tau
-
--- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
-isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
 
 -- | Check that a type is a type on which we can perform Boolean operations.
 checkBoolT :: Type -> Tc b ()
