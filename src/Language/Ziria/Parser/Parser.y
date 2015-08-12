@@ -821,7 +821,7 @@ struct :: { StructDef }
 struct :
     'struct' ID '=' '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (structid $2)) $5 ($1 `srcspan` $6)
+            ; return $ StructDef (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
             }
       }
 
