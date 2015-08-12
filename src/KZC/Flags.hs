@@ -44,6 +44,7 @@ data DynFlag = Quiet
              | Check
              | PrettyPrint
              | Lint
+             | PrintUniques
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError

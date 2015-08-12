@@ -19,6 +19,7 @@ import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
+import KZC.Globals
 import KZC.Uniq
 
 data Name = Name
@@ -42,7 +43,13 @@ instance Located Name where
     locOf (Name _ _ loc) = locOf loc
 
 instance Pretty Name where
-    ppr (Name _ sym _) = text (unintern sym)
+    ppr (Name sort sym _)
+        | printUniques = text (unintern sym) <> pprSort sort
+        | otherwise    = text (unintern sym)
+      where
+        pprSort :: NameSort -> Doc
+        pprSort Orig         = empty
+        pprSort (Internal u) = braces (ppr u)
 
 instance IsString Name where
     fromString s = Name Orig (intern s) noLoc

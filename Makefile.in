@@ -104,6 +104,7 @@ SOURCE = \
 	KZC/Derive.hs \
 	KZC/Error.hs \
 	KZC/Flags.hs \
+	KZC/Globals.hs \
 	KZC/Monad.hs \
 	KZC/Lint.hs \
 	KZC/Lint/Monad.hs \

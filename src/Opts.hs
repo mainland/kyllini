@@ -1,10 +1,15 @@
-module Opts where
+module Opts (
+    compilerOpts,
+    usage
+  ) where
 
+import Control.Monad (when)
 import System.Console.GetOpt
 import System.Environment (getProgName)
 import Data.Monoid
 
 import KZC.Flags
+import KZC.Globals
 
 options :: [OptDescr (Flags -> Flags)]
 options =
@@ -89,7 +94,10 @@ fDynFlagOpts =
 
 dDynFlagOpts :: [(DynFlag, String, String)]
 dDynFlagOpts =
-  [ (Lint,  "lint", "lint core")
+  [ (Lint,         "lint",
+                   "lint core")
+  , (PrintUniques, "print-uniques",
+                   "show uniques when pretty-printing")
   ]
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
@@ -114,7 +122,10 @@ wWarnFlagOpts =
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
     case getOpt Permute options argv of
-      (fs,n,[] ) -> return (foldr ($) mempty fs, n)
+      (fs,n,[] ) -> do let fs' = foldr ($) mempty fs
+                       when (testDynFlag PrintUniques fs') $
+                           setPrintUniques True
+                       return (fs', n)
       (_,_,errs) -> do usageDesc <- usage
                        ioError (userError (concat errs ++ usageDesc))
 
