@@ -193,23 +193,7 @@ TESTS = \
 	$(wildcard code/WiFi/transmitter/tests/*.blk) \
 	$(wildcard code/WiFi/receiver/tests/*.blk)
 
-TCTESTS = \
-	tests/parser/t1.wpl \
-	tests/parser/t2.wpl \
-	tests/parser/t3.wpl \
-	tests/parser/t4.wpl \
-	tests/parser/t5.wpl \
-	tests/parser/t6.wpl \
-	tests/parser/t7.wpl \
-	tests/parser/t9.wpl \
-	tests/parser/t10.wpl \
-	tests/parser/t11.wpl \
-	tests/parser/t12.wpl \
-	tests/parser/t13.wpl \
-	tests/parser/t14.wpl \
-	tests/parser/t15.wpl \
-	tests/parser/t16.wpl \
-	tests/parser/t17.wpl
+TCTESTS = $(shell ls tests/parser/*.wpl | sort)
 
 .PHONY : test-parser
 test-parser : kzc
@@ -222,6 +206,7 @@ test-parser : kzc
 test-tc : kzc
 	set -e; \
 	for TEST in $(TCTESTS); do \
+		echo $$TEST; \
 		./kzc -Ilib --check --dlint $$TEST; \
 	done
 
