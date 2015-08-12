@@ -25,7 +25,7 @@ instance Located Exp where
   locOf (ForE _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
-  locOf (LetStruct _ _ l) = locOf l
+  locOf (LetStruct _ _ _ l) = locOf l
   locOf (StructE _ _ l) = locOf l
   locOf (ProjE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l

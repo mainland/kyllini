@@ -20,6 +20,7 @@ import Control.Monad (when,
                       zipWithM_,
                       void)
 import Data.List (nub)
+import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -328,6 +329,24 @@ inferExp (IdxE e1 e2 len l) = do
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+
+inferExp e0@(LetStruct s flds e l) = do
+    withExpContext e0 $ do
+        checkStructNotRedefined s
+        checkDuplicates "field names" fnames
+        mapM_ (\tau -> checkKind tau TauK) taus
+    extendStructs [StructDef s flds l] $
+        inferExp e
+  where
+    (fnames, taus) = unzip flds
+
+    checkStructNotRedefined :: Struct -> Tc b ()
+    checkStructNotRedefined s = do
+      maybe_sdef <- maybeLookupStruct s
+      case maybe_sdef of
+        Nothing   -> return ()
+        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 inferExp e0@(StructE s flds l) =
     withExpContext e0 $ do

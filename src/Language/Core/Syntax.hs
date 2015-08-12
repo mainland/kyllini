@@ -115,7 +115,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | LetStruct Struct [(Field, Type)] !SrcLoc
+         | LetStruct Struct [(Field, Type)] Exp !SrcLoc
          | StructE Struct [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
@@ -423,9 +423,12 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (LetStruct s flds _) =
-        text "struct" <+> ppr s <+> text "=" <+>
-        pprStruct flds
+    pprPrec p (LetStruct s flds e _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> pprStruct flds)) </>
+        nest 2 (text "in" </> pprPrec doPrec1 e)
+      where
+        lhs = text "struct" <+> ppr s
 
     pprPrec _ (StructE s fields _) =
         ppr s <+> pprStruct fields
@@ -723,7 +726,7 @@ instance Fvs Exp Var where
     fvs (ForE v e1 e2 e3 _)       = fvs e1 <> fvs e2 <> delete v (fvs e3)
     fvs (ArrayE es _)             = fvs es
     fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
-    fvs (LetStruct {})            = mempty
+    fvs (LetStruct _ _ e _)       = fvs e
     fvs (StructE _ flds _)        = fvs (map snd flds)
     fvs (ProjE e _ _)             = fvs e
     fvs (PrintE _ es _)           = fvs es

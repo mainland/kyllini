@@ -24,6 +24,7 @@ module KZC.Lint.Monad (
 
     extendStructs,
     lookupStruct,
+    maybeLookupStruct,
 
     extendVars,
     lookupVar,
@@ -227,6 +228,10 @@ lookupStruct s =
     lookupBy structs onerr s
   where
     onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
+
+maybeLookupStruct :: Struct -> Tc b (Maybe StructDef)
+maybeLookupStruct s =
+    asks (Map.lookup s . structs)
 
 extendVars :: [(Var, Type)] -> Tc b a -> Tc b a
 extendVars vtaus m =

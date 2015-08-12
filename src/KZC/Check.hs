@@ -153,6 +153,34 @@ checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
                               k
     return $ mkLetFun mce2
 
+checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
+    (taus, mkLetStruct) <-
+        withSummaryContext cl $ do
+        checkStructNotRedefined zs
+        checkDuplicates "field names" zfnames
+        taus <- mapM fromZ ztaus
+        mapM_ (\tau -> checkKind tau TauK) taus
+        let mkLetStruct ce = do
+            cs      <- trans zs
+            cfnames <- mapM trans zfnames
+            ctaus   <- mapM trans taus
+            return $ C.LetStruct cs (cfnames `zip` ctaus) ce l2
+        return (taus, mkLetStruct)
+    mce <- extendStructs [StructDef zs (zfnames `zip` taus) l1] $
+           k
+    return $ do ce <- mce
+                mkLetStruct ce
+  where
+    (zfnames, ztaus) = unzip zflds
+
+    checkStructNotRedefined :: Z.Struct -> Ti b ()
+    checkStructNotRedefined s = do
+      maybe_sdef <- maybeLookupStruct zs
+      case maybe_sdef of
+        Nothing   -> return ()
+        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf sdef))
+
 checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
     (tau, mce1) <- withSummaryContext cl $
                    checkLet v ztau MuK e
