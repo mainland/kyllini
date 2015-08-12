@@ -126,7 +126,7 @@ data Exp = ConstE Const !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
--- false otherwise.
+-- @False@ otherwise.
 data VarBind = VarBind Var Bool Type
   deriving (Eq, Ord, Read, Show)
 
@@ -150,33 +150,33 @@ data VectAnn = AutoVect
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
-data Unop = Lnot
-          | Bnot
-          | Neg
-          | Cast Type
-          | Len
+data Unop = Lnot      -- ^ Logical not
+          | Bnot      -- ^ Bitwise not
+          | Neg       -- ^ Negation
+          | Cast Type -- ^ Type case
+          | Len       -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 
-data Binop = Lt
-           | Le
-           | Eq
-           | Ge
-           | Gt
-           | Ne
-           | Land
-           | Lor
-           | Band
-           | Bor
-           | Bxor
-           | LshL
-           | LshR
-           | AshR
-           | Add
-           | Sub
-           | Mul
-           | Div
-           | Rem
-           | Pow
+data Binop = Lt   -- ^ Less-than
+           | Le   -- ^ Less-than-or-equal
+           | Eq   -- ^ Equal
+           | Ge   -- ^ Greater-than-or-equal
+           | Gt   -- ^ Greater-than
+           | Ne   -- ^ Not-equal
+           | Land -- ^ Logical and
+           | Lor  -- ^ Logical or
+           | Band -- ^ Bitwise and
+           | Bor  -- ^ Bitwise or
+           | Bxor -- ^ Bitwise xor
+           | LshL -- ^ Logical shift left
+           | LshR -- ^ Logical shift right
+           | AshR -- ^ Arithmetic shift right
+           | Add  -- ^ Addition
+           | Sub  -- ^ Subtraction
+           | Mul  -- ^ Multiplication
+           | Div  -- ^ Division
+           | Rem  -- ^ Remainder
+           | Pow  -- ^ Power
   deriving (Eq, Ord, Read, Show)
 
 data CompLet = LetCL Var (Maybe Type) Exp !SrcLoc
