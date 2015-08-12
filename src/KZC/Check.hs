@@ -504,7 +504,8 @@ tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
     checkIntType tau_i
     mce1 <- checkExp e1 tau_i
     mce2 <- checkExp e2 tau_i
-    (tau, mce3) <- inferExp e3
+    (tau, mce3) <- extendVars [(i, tau_i)] $
+                   inferExp e3
     _           <- checkSTCUnitType tau
     instType tau exp_ty
     return $ do ci  <- trans i
