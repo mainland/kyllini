@@ -426,15 +426,18 @@ tcExp (Z.CallE f es l) exp_ty = do
     nargs :: Int
     nargs = length es
 
-    -- If an argument is a ref type, then we do not want to implicitly
-    -- dereference it, since it should be passed by reference. Otherwise, we
-    -- assume we are in an r-value context.
+    -- If a parameter is a ref type, then we do not want to implicitly
+    -- dereference the corresponding argument, since it should be passed by
+    -- reference. Similarly, if a parameter is an ST type, we do not want to
+    -- implicitly run the corresponding argument. Otherwise, we assume we are in
+    -- an r-value context.
     checkArg :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
     checkArg e tau =
         compress tau >>= go
       where
         go :: Type -> Ti b (Ti c C.Exp)
         go (RefT {}) = checkExp e tau
+        go (ST {})   = checkExp e tau
         go _         = checkVal e tau
 
 tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
