@@ -619,22 +619,27 @@ inferKind tau =
         checkKind tau TauK
         return RhoK
 
-    inferType (FunT ivs taus tau _) =
+    inferType (FunT ivs taus tau_ret _) =
         extendIVars (ivs `zip` repeat IotaK) $ do
-        mapM_ inferArgType taus
-        kappa <- inferType tau
-        case kappa of
-          TauK -> return ()
-          MuK  -> return ()
-          _    -> checkKindEquality kappa MuK
+        mapM_ checkArgKind taus
+        checkRetKind tau_ret
         return PhiK
       where
-        inferArgType :: Type -> Tc b ()
-        inferArgType tau = do
+        checkArgKind :: Type -> Tc b ()
+        checkArgKind tau = do
             kappa <- inferType tau
             case kappa of
               TauK -> return ()
               RhoK -> return ()
+              MuK  -> return ()
+              _    -> checkKindEquality kappa TauK
+
+        checkRetKind :: Type -> Tc b ()
+        checkRetKind tau = do
+            kappa <- inferType tau
+            case kappa of
+              TauK -> return ()
+              MuK  -> return ()
               _    -> checkKindEquality kappa TauK
 
     inferType (TyVarT alpha _) =

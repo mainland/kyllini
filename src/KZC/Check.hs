@@ -986,9 +986,26 @@ kcType tau0@(RefT tau _) kappa_exp = do
 
 kcType tau0@(FunT ivs taus tau_ret _) kappa_exp =
     extendIVars  (ivs `zip` repeat IotaK) $ do
-    mapM_ (\tau -> checkKind tau RhoK) taus
-    checkKind tau_ret MuK
+    mapM_ checkArgKind taus
+    checkRetKind tau_ret
     instKind tau0 PhiK kappa_exp
+  where
+    checkArgKind :: Type -> Ti b ()
+    checkArgKind tau = do
+        kappa <- inferKind tau
+        case kappa of
+          TauK -> return ()
+          RhoK -> return ()
+          MuK  -> return ()
+          _    -> checkKind tau TauK
+
+    checkRetKind :: Type -> Ti b ()
+    checkRetKind tau = do
+        kappa <- inferKind tau
+        case kappa of
+          TauK -> return ()
+          MuK  -> return ()
+          _    -> checkKind tau MuK
 
 kcType tau0@(ConstI {}) kappa_exp =
     instKind tau0 IotaK kappa_exp
@@ -1011,9 +1028,6 @@ instKind _ kappa (Infer ref) =
 instKind _ kappa1 (Check kappa2) | kappa1 == kappa2 =
     return ()
 
-instKind _ TauK (Check RhoK) =
-    return ()
-
 instKind tau kappa1 (Check kappa2) = do
     [tau'] <- sanitizeTypes [tau]
     faildoc $
@@ -1032,13 +1046,11 @@ instKind tau kappa1 (Check kappa2) = do
 checkKind :: Type -> Kind -> Ti b ()
 checkKind tau kappa = kcType tau (Check kappa)
 
-{-
 inferKind :: Type -> Ti b Kind
 inferKind tau = do
     ref <- newRef (error "inferKind: empty result")
     kcType tau (Infer ref)
     readRef ref
--}
 
 generalize :: Type -> Ti b (Type, Co c)
 generalize tau0 =
