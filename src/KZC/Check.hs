@@ -814,14 +814,15 @@ tcStms (stm@(Z.ExpS e _) : []) exp_ty =
     readExpected exp_ty >>= checkSTType
     return ce
 
-tcStms (stm@(Z.ExpS e _) : stms) exp_ty =
-    withSummaryContext stm $ do
-    (tau1, mce1)            <- inferExp e
-    (_, sigma, alpha, beta) <- checkSTCType tau1
-    omega                   <- newMetaTvT OmegaK e
-    let tau                 =  stT omega sigma alpha beta
-    instType tau exp_ty
-    mce2 <- checkStms stms tau
+tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
+    (tau, mce1) <-
+        withSummaryContext stm $ do
+        nu          <- newMetaTvT TauK l
+        (tau, mce1) <- checkExpSTC e nu
+        instType tau exp_ty
+        return (tau, mce1)
+    mce2 <- collectValCtx tau $
+            checkStms stms tau
     return $ do ce1 <- withSummaryContext stm $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
@@ -847,17 +848,12 @@ tcCmds (cmd@(Z.BindC {}) : []) _ =
 tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
     (nu, tau, mce1) <-
         withSummaryContext cmd $ do
-        nu    <- fromZ (ztau, TauK)
-        sigma <- newMetaTvT TauK l
-        alpha <- newMetaTvT TauK l
-        beta  <- newMetaTvT TauK l
-        extendVars [(v, nu)] $ do
-        mce1    <- checkExp e (stT (C nu l) sigma alpha beta)
-        omega   <- newMetaTvT OmegaK l
-        let tau =  stT omega sigma alpha beta
+        nu          <- fromZ (ztau, TauK)
+        (tau, mce1) <- checkExpSTC e nu
         instType tau exp_ty
         return (nu, tau, mce1)
     mce2 <- extendVars [(v, nu)] $
+            collectValCtx tau $
             checkCmds cmds tau
     return $ do cv  <- trans v
                 ce1 <- withSummaryContext cmd $ mce1
@@ -870,14 +866,15 @@ tcCmds (cmd@(Z.ExpC e _) : []) exp_ty =
     _  <- readExpected exp_ty >>= checkSTType
     return ce
 
-tcCmds (cmd@(Z.ExpC e _) : cmds) exp_ty =
-    withSummaryContext cmd $ do
-    (tau1, mce1)            <- inferExp e
-    (_, sigma, alpha, beta) <- checkSTCType tau1
-    omega                   <- newMetaTvT OmegaK e
-    let tau                 =  stT omega sigma alpha beta
-    instType tau exp_ty
-    mce2 <- tcCmds cmds exp_ty
+tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
+    (tau, mce1) <-
+        withSummaryContext cmd $ do
+        nu          <- newMetaTvT TauK l
+        (tau, mce1) <- checkExpSTC e nu
+        instType tau exp_ty
+        return (tau, mce1)
+    mce2 <- collectValCtx tau $
+            checkCmds cmds tau
     return $ do ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
@@ -887,6 +884,24 @@ tcCmds [] _ =
 
 checkCmds :: [Z.Cmd] -> Type -> Ti b (Ti c C.Exp)
 checkCmds cmds tau = tcCmds cmds (Check tau)
+
+-- | @checkExpSTC e nu@ checks that @e@ has type @ST (C nu) s a b@ and returns a
+-- type @ST omega s a b@, where @omega@ is a fresh type variable, that can be
+-- used to type a sequence of @ST@ computations. Any side-effecting operations
+-- needed to produce values in @e@ are collected into a single @ST@ computation.
+checkExpSTC :: Z.Exp -> Type -> Ti b (Type, Ti c C.Exp)
+checkExpSTC e nu = do
+    omega   <- newMetaTvT OmegaK e
+    s       <- newMetaTvT TauK l
+    a       <- newMetaTvT TauK l
+    b       <- newMetaTvT TauK l
+    let tau =  stT omega s a b
+    mce     <- collectValCtx tau $
+               checkExp e (stT (C nu l) s a b)
+    return (tau, mce)
+  where
+    l ::SrcLoc
+    l = srclocOf e
 
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type
@@ -1255,24 +1270,6 @@ checkSTType tau =
         beta  <- newMetaTvT TauK tau
         unifyTypes tau (stT omega sigma alpha beta)
         return (omega, sigma, alpha, beta)
-
--- | Check that a type is an @ST (C \nu) \sigma \alpha \beta@ type, returning
--- the four type indices
-checkSTCType :: Type -> Ti b (Type, Type, Type, Type)
-checkSTCType tau =
-    compress tau >>= go
-  where
-    go :: Type -> Ti b (Type, Type, Type, Type)
-    go (ST [] (C nu _) sigma alpha beta _) =
-        return (nu, sigma, alpha, beta)
-
-    go tau = do
-        nu    <- newMetaTvT TauK tau
-        sigma <- newMetaTvT TauK tau
-        alpha <- newMetaTvT TauK tau
-        beta  <- newMetaTvT TauK tau
-        unifyTypes tau (stT (cT nu) sigma alpha beta)
-        return (nu, sigma, alpha, beta)
 
 -- | Check that a type is an @ST (C ()) \sigma \alpha \beta@ type, returning the
 -- three type indices
