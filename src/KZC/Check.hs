@@ -659,6 +659,18 @@ tcExp (Z.EmitE e l) exp_ty = do
     return $ do ce <- mce
                 return $ C.EmitE ce l
 
+tcExp (Z.EmitsE e l) exp_ty = do
+    iota    <- newMetaTvT IotaK l
+    s       <- newMetaTvT TauK l
+    a       <- newMetaTvT TauK l
+    b       <- newMetaTvT TauK l
+    let tau =  stT (C (UnitT l) l) s a b
+    instType tau exp_ty
+    collectValCtx tau $ do
+    mce <- checkVal e (arrT iota b)
+    return $ do ce <- mce
+                return $ C.EmitsE ce l
+
 tcExp (Z.RepeatE _ e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
         withSummaryContext e $ do
