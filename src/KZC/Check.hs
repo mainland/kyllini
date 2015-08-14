@@ -1092,7 +1092,7 @@ generalize tau0 =
         alphas        <- freshVars (length alphaMtvs) ((Set.toList . fvs) tau)
         extendTyVars (alphas `zip` repeat TauK) $
             zipWithM_ kcWriteTv alphaMtvs [TyVarT alpha noLoc | alpha <- alphas]
-        let tau    = ST alphas omega sigma tau1 tau2 l
+        tau <- compress $ ST alphas omega sigma tau1 tau2 l
         let co mce = do
             extendTyVars (alphas `zip` repeat TauK) $ do
             mce
@@ -1107,7 +1107,7 @@ generalize tau0 =
         iotas         <- freshVars (length iotaMtvs) ((Set.toList . fvs) tau)
         extendIVars (iotas `zip` repeat IotaK) $
             zipWithM_ kcWriteTv iotaMtvs [VarI iota noLoc | iota <- iotas]
-        let tau    = FunT iotas taus tau_ret l
+        tau <- compress $ FunT iotas taus tau_ret l
         let co mce = do
             extendIVars (iotas `zip` repeat IotaK) $ do
             ciotas                          <- mapM trans iotas
