@@ -72,14 +72,26 @@ checkProgram cls = do
     go []       = return $ return $ C.varE (C.mkVar "main")
     go (cl:cls) = checkCompLet cl $ go cls
 
-checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp
+checkLet :: Z.Var -> Maybe Z.Type -> Z.Exp
          -> Ti b (Type, Ti c C.Exp)
-checkLet v ztau kappa e =
+checkLet v ztau e =
     withExpContext e $ do
-    tau <- fromZ (ztau, kappa)
+    tau <- fromZ (ztau, TauK)
     extendVars [(v, tau)] $ do
     mce1 <- castVal tau e
     return (tau, mce1)
+
+checkLetComp :: Z.Var -> Maybe Z.Type -> Z.Exp
+             -> Ti b (Type, Ti c C.Exp)
+checkLetComp f ztau e =
+    withExpContext e $ do
+    tau <- fromZ (ztau, MuK)
+    mce <- extendVars [(f, tau)] $
+           collectValCtx tau $
+           checkExp e tau
+    (tau_gen, co) <- generalize tau
+    traceVar f tau_gen
+    return (tau_gen, co mce)
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
             -> Ti b (Type, Ti c (Maybe C.Exp))
@@ -126,7 +138,7 @@ checkCompLet :: Z.CompLet
              -> Ti b (Ti c C.Exp)
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
     (tau, mce1) <- withSummaryContext cl $ do
-                   checkLet v ztau TauK e
+                   checkLet v ztau e
     mce2        <- extendVars [(v, tau)] $
                    k
     return $ do cv   <- trans v
@@ -183,7 +195,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
 
 checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
     (tau, mce1) <- withSummaryContext cl $
-                   checkLet v ztau MuK e
+                   checkLetComp v ztau e
     mce2        <- extendVars [(v, tau)] $ k
     return $ do cv   <- trans v
                 ctau <- trans tau
@@ -396,7 +408,7 @@ tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
                 return $ C.IfE ce1 ce2 ce3 l
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
-    (tau, mce1) <- checkLet v ztau TauK e1
+    (tau, mce1) <- checkLet v ztau e1
     mce2        <- withExpContext e2 $
                    extendVars [(v, tau)] $ do
                    tau_ret <- newMetaTvT MuK l
@@ -798,7 +810,7 @@ tcStms (stm@(Z.LetS {}) : []) _ =
 
 tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
     (tau, mce1) <- withSummaryContext stm $
-                   checkLet v ztau TauK e
+                   checkLet v ztau e
     mce2        <- extendVars [(v, tau)] $ do
                    tau2 <- newMetaTvT MuK l
                    instType tau2 exp_ty
