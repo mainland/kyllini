@@ -27,7 +27,16 @@ data Name = Name
     , nameSym  :: !Symbol
     , nameLoc  :: !SrcLoc
     }
-  deriving (Read, Show)
+  deriving (Read)
+
+instance Show Name where
+    show (Name sort sym _)
+        | printUniques = unintern sym <> pprSort sort
+        | otherwise    = unintern sym
+      where
+        pprSort :: NameSort -> String
+        pprSort Orig         = ""
+        pprSort (Internal u) = "{" ++ show u ++ "}"
 
 instance Eq Name where
     n1 == n2 = nameSym n1 == nameSym n2
