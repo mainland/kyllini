@@ -407,10 +407,10 @@ inferExp (ReturnE e l) = do
 
 inferExp (BindE bv e1 e2 _) = do
     (tau_bv, s,  a,  b)  <- withExpContext e1 $ do
-                            inferExp e1 >>= checkSTC
+                            inferExp e1 >>= appSTScope >>= checkSTC
     (omega,  s', a', b') <- withExpContext e2 $
                             extendBindVars [(bv, tau_bv)] $
-                            inferExp e2 >>= checkST
+                            inferExp e2 >>= appSTScope >>= checkST
     withExpContext e2 $ do
     checkTypeEquality s' s
     checkTypeEquality a' a
