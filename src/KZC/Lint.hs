@@ -89,27 +89,27 @@ inferExp (BinopE op e1 e2 _) = do
   where
     binop :: Binop -> Type -> Type -> Tc b Type
     binop Lt tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return boolT
 
     binop Le tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return boolT
 
     binop Eq tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkEqBinop tau1 tau2
         return boolT
 
     binop Ge tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return boolT
 
     binop Gt tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return boolT
 
     binop Ne tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkEqBinop tau1 tau2
         return boolT
 
     binop Land tau1 tau2 = do
@@ -167,6 +167,16 @@ inferExp (BinopE op e1 e2 _) = do
     binop Pow tau1 tau2 = do
         checkNumBinop tau1 tau2
         return tau1
+
+    checkEqBinop :: Type -> Type -> Tc b ()
+    checkEqBinop tau1 tau2 = do
+        checkEqT tau1
+        checkTypeEquality tau2 tau1
+
+    checkOrdBinop :: Type -> Type -> Tc b ()
+    checkOrdBinop tau1 tau2 = do
+        checkOrdT tau1
+        checkTypeEquality tau2 tau1
 
     checkBoolBinop :: Type -> Type -> Tc b ()
     checkBoolBinop tau1 tau2 = do
@@ -706,6 +716,20 @@ appSTScope tau@(ST alphas omega s a b l) = do
 
 appSTScope tau =
     return tau
+
+-- | Check that a type supports equality.
+checkEqT :: Type -> Tc b ()
+checkEqT tau =
+    checkKind tau TauK
+
+-- | Check that a type supports ordering.
+checkOrdT :: Type -> Tc b ()
+checkOrdT (IntT _ _)                        = return ()
+checkOrdT (FloatT _ _)                      = return ()
+checkOrdT (StructT s _) | isComplexStruct s = return ()
+checkOrdT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected comparable type but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform Boolean operations.
 checkBoolT :: Type -> Tc b ()

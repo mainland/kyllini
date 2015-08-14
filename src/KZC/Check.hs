@@ -294,27 +294,27 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
   where
     binop :: Z.Binop -> Type -> Type -> Ti b (Type, C.Binop)
     binop Z.Lt tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return (boolT, C.Lt)
 
     binop Z.Le tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return (boolT, C.Le)
 
     binop Z.Eq tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkEqBinop tau1 tau2
         return (boolT, C.Eq)
 
     binop Z.Ge tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return (boolT, C.Ge)
 
     binop Z.Gt tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkOrdBinop tau1 tau2
         return (boolT, C.Gt)
 
     binop Z.Ne tau1 tau2 = do
-        checkNumBinop tau1 tau2
+        checkEqBinop tau1 tau2
         return (boolT, C.Ne)
 
     binop Z.Land tau1 tau2 = do
@@ -372,6 +372,16 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
     binop Z.Pow tau1 tau2 = do
         checkNumBinop tau1 tau2
         return (tau1, C.Pow)
+
+    checkEqBinop :: Type -> Type -> Ti b ()
+    checkEqBinop tau1 tau2 = do
+        checkEqType tau1
+        unifyTypes tau2 tau1
+
+    checkOrdBinop :: Type -> Type -> Ti b ()
+    checkOrdBinop tau1 tau2 = do
+        checkOrdType tau1
+        unifyTypes tau2 tau1
 
     checkBoolBinop :: Type -> Type -> Ti b ()
     checkBoolBinop tau1 tau2 = do
@@ -1185,6 +1195,30 @@ isRefVar v = do
     case tau of
       RefT {} -> return True
       _       -> return False
+
+-- | Check that a type supports equality.
+checkEqType :: Type -> Ti b ()
+checkEqType tau =
+    checkKind tau TauK
+
+-- | Check that a type supports ordering.
+checkOrdType :: Type -> Ti b ()
+checkOrdType tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti b ()
+    go (BitT {})              = return ()
+    go (IntT {})              = return ()
+    go (FloatT {})            = return ()
+    go (StructT s _)
+        | Z.isComplexStruct s = return ()
+    go tau                    = unifyTypes tau intT `catch`
+                                    \(_ :: SomeException) -> err
+
+    err :: Ti b a
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected comparable type, but got:" <+> ppr tau'
 
 -- | Check that a type is a type on which we can perform Boolean operations.
 checkBoolType :: Type -> Ti b ()
