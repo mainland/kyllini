@@ -1127,7 +1127,7 @@ generalize tau0 =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
 
     go tau =
-        return (tau, id)
+        panicdoc $ text "Asked to generalize non-ST/non-function type:" <+> (text . show) tau
 
     isKind :: Kind -> MetaTv -> Bool
     isKind kappa1 (MetaTv _ kappa2 _) = kappa2 == kappa1
