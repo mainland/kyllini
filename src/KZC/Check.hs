@@ -1133,8 +1133,8 @@ generalize tau0 =
     isKind kappa1 (MetaTv _ kappa2 _) = kappa2 == kappa1
 
 instantiate :: Type -> Ti b (Type, Co c)
-instantiate tau =
-    compress tau >>= go
+instantiate tau0 =
+    compress tau0 >>= go
   where
     go :: Type -> Ti b (Type, Co c)
     go (ST alphas omega sigma tau1 tau2 l) = do
@@ -1168,7 +1168,7 @@ instantiate tau =
     instVars tvs kappa = do
         mtvs      <- mapM (newMetaTvT kappa) tvs
         let theta =  Map.fromList (tvs `zip` mtvs)
-        let phi   =  fvs tau <\\> fromList tvs
+        let phi   =  fvs tau0 <\\> fromList tvs
         return (mtvs, theta, phi)
 
 -- | Update a type meta-variable with a type while checking that the type's kind
