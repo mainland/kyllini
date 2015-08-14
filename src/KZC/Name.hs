@@ -25,7 +25,7 @@ import KZC.Uniq
 data Name = Name
     { nameSort :: !NameSort
     , nameSym  :: !Symbol
-    , nameLoc  :: !Loc
+    , nameLoc  :: !SrcLoc
     }
   deriving (Read, Show)
 
@@ -68,12 +68,12 @@ instance Named Name where
     namedSymbol n = nameSym n
 
 mkName :: String -> Loc -> Name
-mkName s l = Name Orig (intern s) l
+mkName s l = Name Orig (intern s) (SrcLoc l)
 
 mkSymName :: Symbol -> Loc -> Name
-mkSymName s l = Name Orig s l
+mkSymName s l = Name Orig s (SrcLoc l)
 
 mkUniqName :: MonadUnique m => String -> Loc -> m Name
 mkUniqName s l = do
     u <- newUnique
-    return $ Name (Internal u) (intern s) l
+    return $ Name (Internal u) (intern s) (SrcLoc l)
