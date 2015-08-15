@@ -327,27 +327,30 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
 
     binop Z.Band tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return (boolT, C.Band)
+        return (tau1, C.Band)
 
     binop Z.Bor tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return (boolT, C.Bor)
+        return (tau1, C.Bor)
 
     binop Z.Bxor tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return (boolT, C.Bxor)
+        return (tau1, C.Bxor)
 
     binop Z.LshL tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (boolT, C.LshL)
+        checkBitType tau1
+        checkIntType tau2
+        return (tau1, C.LshL)
 
     binop Z.LshR tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (boolT, C.LshR)
+        checkBitType tau1
+        checkIntType tau2
+        return (tau1, C.LshR)
 
     binop Z.AshR tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (boolT, C.AshR)
+        checkBitType tau1
+        checkIntType tau2
+        return (tau1, C.AshR)
 
     binop Z.Add tau1 tau2 = do
         checkNumBinop tau1 tau2

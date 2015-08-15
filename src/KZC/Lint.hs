@@ -122,27 +122,30 @@ inferExp (BinopE op e1 e2 _) = do
 
     binop Band tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return boolT
+        return tau1
 
     binop Bor tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return boolT
+        return tau1
 
     binop Bxor tau1 tau2 = do
         checkBitBinop tau1 tau2
-        return boolT
+        return tau1
 
     binop LshL tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return boolT
+        checkBitT tau1
+        checkIntT tau2
+        return tau1
 
     binop LshR tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return boolT
+        checkBitT tau1
+        checkIntT tau2
+        return tau1
 
     binop AshR tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return boolT
+        checkBitT tau1
+        checkIntT tau2
+        return tau1
 
     binop Add tau1 tau2 = do
         checkNumBinop tau1 tau2
