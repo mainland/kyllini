@@ -456,7 +456,7 @@ inferExp (EmitE e l) = do
     a = "a"
 
 inferExp (EmitsE e l) = do
-    (_, tau) <- withExpContext e $ inferExp e >>= checkArrKnownT
+    (_, tau) <- withExpContext e $ inferExp e >>= checkArrT
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
@@ -782,14 +782,6 @@ checkArrT (ArrT iota alpha _) =
 checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
-
-checkArrKnownT :: Type -> Tc b (Int, Type)
-checkArrKnownT (ArrT (ConstI i _) alpha _) =
-    return (i, alpha)
-
-checkArrKnownT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected array type of known length but got:" <+/> ppr tau
 
 checkST :: Type -> Tc b (Omega, Type, Type, Type)
 checkST (ST [] omega s a b _) =
