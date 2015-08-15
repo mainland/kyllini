@@ -486,7 +486,7 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
     instType tau exp_ty
     collectValCtx tau $ do
     mce2  <- withSummaryContext e2 $
-             checkVal e2 gamma
+             castVal gamma e2
     return $ co $ do
         ce1   <- mce1
         ce2   <- mce2
