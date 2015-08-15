@@ -464,7 +464,7 @@ inferExp (EmitsE e l) = do
     a = "a"
 
 inferExp (RepeatE e l) = do
-    (s, a, b) <- withExpContext e $ inferExp e >>= checkSTCUnit
+    (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
 inferExp (ArrE e1 e2 l) = do
