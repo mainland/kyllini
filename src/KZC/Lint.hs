@@ -88,113 +88,102 @@ inferExp (BinopE op e1 e2 _) = do
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> Tc b Type
-    binop Lt tau1 tau2 = do
+    binop Lt tau1 tau2 =
         checkOrdBinop tau1 tau2
-        return boolT
 
-    binop Le tau1 tau2 = do
+    binop Le tau1 tau2 =
         checkOrdBinop tau1 tau2
-        return boolT
 
-    binop Eq tau1 tau2 = do
+    binop Eq tau1 tau2 =
         checkEqBinop tau1 tau2
-        return boolT
 
-    binop Ge tau1 tau2 = do
+    binop Ge tau1 tau2 =
         checkOrdBinop tau1 tau2
-        return boolT
 
-    binop Gt tau1 tau2 = do
+    binop Gt tau1 tau2 =
         checkOrdBinop tau1 tau2
-        return boolT
 
-    binop Ne tau1 tau2 = do
+    binop Ne tau1 tau2 =
         checkEqBinop tau1 tau2
-        return boolT
 
-    binop Land tau1 tau2 = do
+    binop Land tau1 tau2 =
         checkBoolBinop tau1 tau2
-        return boolT
 
-    binop Lor tau1 tau2 = do
+    binop Lor tau1 tau2 =
         checkBoolBinop tau1 tau2
-        return boolT
 
-    binop Band tau1 tau2 = do
+    binop Band tau1 tau2 =
         checkBitBinop tau1 tau2
-        return tau1
 
-    binop Bor tau1 tau2 = do
+    binop Bor tau1 tau2 =
         checkBitBinop tau1 tau2
-        return tau1
 
-    binop Bxor tau1 tau2 = do
+    binop Bxor tau1 tau2 =
         checkBitBinop tau1 tau2
-        return tau1
 
-    binop LshL tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return tau1
+    binop LshL tau1 tau2 =
+        checkBitShiftBinop tau1 tau2
 
-    binop LshR tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return tau1
+    binop LshR tau1 tau2 =
+        checkBitShiftBinop tau1 tau2
 
-    binop AshR tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return tau1
+    binop AshR tau1 tau2 =
+        checkBitShiftBinop tau1 tau2
 
-    binop Add tau1 tau2 = do
+    binop Add tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    binop Sub tau1 tau2 = do
+    binop Sub tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    binop Mul tau1 tau2 = do
+    binop Mul tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    binop Div tau1 tau2 = do
+    binop Div tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    binop Rem tau1 tau2 = do
+    binop Rem tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    binop Pow tau1 tau2 = do
+    binop Pow tau1 tau2 =
         checkNumBinop tau1 tau2
-        return tau1
 
-    checkEqBinop :: Type -> Type -> Tc b ()
+    checkEqBinop :: Type -> Type -> Tc b Type
     checkEqBinop tau1 tau2 = do
         checkEqT tau1
         checkTypeEquality tau2 tau1
+        return boolT
 
-    checkOrdBinop :: Type -> Type -> Tc b ()
+    checkOrdBinop :: Type -> Type -> Tc b Type
     checkOrdBinop tau1 tau2 = do
         checkOrdT tau1
         checkTypeEquality tau2 tau1
+        return boolT
 
-    checkBoolBinop :: Type -> Type -> Tc b ()
+    checkBoolBinop :: Type -> Type -> Tc b Type
     checkBoolBinop tau1 tau2 = do
         checkBoolT tau1
         checkTypeEquality tau2 tau1
+        return tau1
 
-    checkNumBinop :: Type -> Type -> Tc b ()
+    checkNumBinop :: Type -> Type -> Tc b Type
     checkNumBinop tau1 tau2 = do
         checkNumT tau1
         checkTypeEquality tau2 tau1
+        return tau1
 
-    checkBitBinop :: Type -> Type -> Tc b ()
+    checkBitBinop :: Type -> Type -> Tc b Type
     checkBitBinop tau1 tau2 = do
         checkBitT tau1
         checkTypeEquality tau2 tau1
+        return tau1
+        return tau1
+
+    checkBitShiftBinop :: Type -> Type -> Tc b Type
+    checkBitShiftBinop tau1 tau2 = do
+        checkBitT tau1
+        checkIntT tau2
+        return tau1
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT

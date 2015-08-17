@@ -294,112 +294,120 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty = do
   where
     binop :: Z.Binop -> Type -> Type -> Ti b (Type, C.Binop)
     binop Z.Lt tau1 tau2 = do
-        checkOrdBinop tau1 tau2
-        return (boolT, C.Lt)
+        tau <- checkOrdBinop tau1 tau2
+        return (tau, C.Lt)
 
     binop Z.Le tau1 tau2 = do
-        checkOrdBinop tau1 tau2
-        return (boolT, C.Le)
+        tau <- checkOrdBinop tau1 tau2
+        return (tau, C.Le)
 
     binop Z.Eq tau1 tau2 = do
-        checkEqBinop tau1 tau2
-        return (boolT, C.Eq)
+        tau <- checkEqBinop tau1 tau2
+        return (tau, C.Eq)
 
     binop Z.Ge tau1 tau2 = do
-        checkOrdBinop tau1 tau2
-        return (boolT, C.Ge)
+        tau <- checkOrdBinop tau1 tau2
+        return (tau, C.Ge)
 
     binop Z.Gt tau1 tau2 = do
-        checkOrdBinop tau1 tau2
-        return (boolT, C.Gt)
+        tau <- checkOrdBinop tau1 tau2
+        return (tau, C.Gt)
 
     binop Z.Ne tau1 tau2 = do
-        checkEqBinop tau1 tau2
-        return (boolT, C.Ne)
+        tau <- checkEqBinop tau1 tau2
+        return (tau, C.Ne)
 
     binop Z.Land tau1 tau2 = do
-        checkBoolBinop tau1 tau2
-        return (boolT, C.Land)
+        tau <- checkBoolBinop tau1 tau2
+        return (tau, C.Land)
 
     binop Z.Lor tau1 tau2 = do
-        checkBoolBinop tau1 tau2
-        return (boolT, C.Lor)
+        tau <- checkBoolBinop tau1 tau2
+        return (tau, C.Lor)
 
     binop Z.Band tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (tau1, C.Band)
+        tau <- checkBitBinop tau1 tau2
+        return (tau, C.Band)
 
     binop Z.Bor tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (tau1, C.Bor)
+        tau <- checkBitBinop tau1 tau2
+        return (tau, C.Bor)
 
     binop Z.Bxor tau1 tau2 = do
-        checkBitBinop tau1 tau2
-        return (tau1, C.Bxor)
+        tau <- checkBitBinop tau1 tau2
+        return (tau, C.Bxor)
 
     binop Z.LshL tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return (tau1, C.LshL)
+        tau <- checkBitShiftBinop tau1 tau2
+        return (tau, C.LshL)
 
     binop Z.LshR tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return (tau1, C.LshR)
+        tau <- checkBitShiftBinop tau1 tau2
+        return (tau, C.LshR)
 
     binop Z.AshR tau1 tau2 = do
-        checkBitT tau1
-        checkIntT tau2
-        return (tau1, C.AshR)
+        tau <- checkBitShiftBinop tau1 tau2
+        return (tau, C.AshR)
 
     binop Z.Add tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Add)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Add)
 
     binop Z.Sub tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Sub)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Sub)
 
     binop Z.Mul tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Mul)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Mul)
 
     binop Z.Div tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Mul)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Div)
 
     binop Z.Rem tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Rem)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Rem)
 
     binop Z.Pow tau1 tau2 = do
-        checkNumBinop tau1 tau2
-        return (tau1, C.Pow)
+        tau <- checkNumBinop tau1 tau2
+        return (tau, C.Pow)
 
-    checkEqBinop :: Type -> Type -> Ti b ()
+    checkEqBinop :: Type -> Type -> Ti b Type
     checkEqBinop tau1 tau2 = do
         checkEqT tau1
         unifyTypes tau2 tau1
+        return boolT
 
-    checkOrdBinop :: Type -> Type -> Ti b ()
+    checkOrdBinop :: Type -> Type -> Ti b Type
     checkOrdBinop tau1 tau2 = do
         checkOrdT tau1
         unifyTypes tau2 tau1
+        return boolT
 
-    checkBoolBinop :: Type -> Type -> Ti b ()
+    checkBoolBinop :: Type -> Type -> Ti b Type
     checkBoolBinop tau1 tau2 = do
         checkBoolT tau1
         unifyTypes tau2 tau1
+        return tau1
 
-    checkNumBinop :: Type -> Type -> Ti b ()
+    checkNumBinop :: Type -> Type -> Ti b Type
     checkNumBinop tau1 tau2 = do
         checkNumT tau1
         unifyTypes tau2 tau1
+        return tau1
 
-    checkBitBinop :: Type -> Type -> Ti b ()
+    checkBitBinop :: Type -> Type -> Ti b Type
     checkBitBinop tau1 tau2 = do
         checkBitT tau1
         unifyTypes tau2 tau1
+        return tau1
+
+    checkBitShiftBinop :: Type -> Type -> Ti b Type
+    checkBitShiftBinop tau1 tau2 = do
+        checkBitT tau1
+        checkIntT tau2
+        return tau1
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1 <- checkExp e1 (BoolT l)
