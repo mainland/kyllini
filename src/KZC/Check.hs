@@ -1196,6 +1196,10 @@ instantiate tau0 =
 -- matches the meta-variable's kind.
 kcWriteTv :: MetaTv -> Type -> Ti b ()
 kcWriteTv mtv@(MetaTv _ kappa _) tau = do
+    maybe_tau <- readTv mtv
+    case maybe_tau of
+      Nothing -> return ()
+      Just _  -> panicdoc $ text "Type meta-variable already written"
     checkKind tau kappa
     writeTv mtv tau
 
