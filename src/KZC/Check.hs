@@ -468,7 +468,7 @@ tcExp (Z.CallE f es l) exp_ty = do
         go :: Type -> Ti (Ti C.Exp)
         go (RefT {}) = checkExp e tau
         go (ST {})   = checkExp e tau
-        go _         = checkVal e tau
+        go _         = castVal tau e
 
     withArgContext :: MonadErr m
                    => Z.Exp
