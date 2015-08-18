@@ -191,7 +191,7 @@ instance Pretty Type where
         text "struct" <+> ppr s
 
     pprPrec _ (ArrT ind tau _) =
-        ppr tau <> brackets (ppr ind)
+        pprPrec appPrec1 tau <> brackets (ppr ind)
 
     pprPrec p (C tau _) =
         parensIf (p > appPrec) $
