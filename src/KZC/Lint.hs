@@ -35,11 +35,11 @@ import KZC.Error
 import KZC.Lint.Monad
 import KZC.Vars
 
-inferExp :: Exp -> Tc b Type
+inferExp :: Exp -> Tc Type
 inferExp (ConstE c l) =
     checkConst c
   where
-    checkConst :: Const -> Tc b Type
+    checkConst :: Const -> Tc Type
     checkConst UnitC       = return (UnitT l)
     checkConst(BoolC {})   = return (BoolT l)
     checkConst(BitC {})    = return (BitT l)
@@ -61,7 +61,7 @@ inferExp (UnopE op e1 _) = do
     tau1 <- inferExp e1
     unop op tau1
   where
-    unop :: Unop -> Type -> Tc b Type
+    unop :: Unop -> Type -> Tc Type
     unop Lnot tau = do
         checkBoolT tau
         return tau
@@ -87,7 +87,7 @@ inferExp (BinopE op e1 e2 _) = do
     tau2 <- inferExp e2
     binop op tau1 tau2
   where
-    binop :: Binop -> Type -> Type -> Tc b Type
+    binop :: Binop -> Type -> Type -> Tc Type
     binop Lt tau1 tau2 =
         checkOrdBinop tau1 tau2
 
@@ -148,38 +148,38 @@ inferExp (BinopE op e1 e2 _) = do
     binop Pow tau1 tau2 =
         checkNumBinop tau1 tau2
 
-    checkEqBinop :: Type -> Type -> Tc b Type
+    checkEqBinop :: Type -> Type -> Tc Type
     checkEqBinop tau1 tau2 = do
         checkEqT tau1
         checkTypeEquality tau2 tau1
         return boolT
 
-    checkOrdBinop :: Type -> Type -> Tc b Type
+    checkOrdBinop :: Type -> Type -> Tc Type
     checkOrdBinop tau1 tau2 = do
         checkOrdT tau1
         checkTypeEquality tau2 tau1
         return boolT
 
-    checkBoolBinop :: Type -> Type -> Tc b Type
+    checkBoolBinop :: Type -> Type -> Tc Type
     checkBoolBinop tau1 tau2 = do
         checkBoolT tau1
         checkTypeEquality tau2 tau1
         return tau1
 
-    checkNumBinop :: Type -> Type -> Tc b Type
+    checkNumBinop :: Type -> Type -> Tc Type
     checkNumBinop tau1 tau2 = do
         checkNumT tau1
         checkTypeEquality tau2 tau1
         return tau1
 
-    checkBitBinop :: Type -> Type -> Tc b Type
+    checkBitBinop :: Type -> Type -> Tc Type
     checkBitBinop tau1 tau2 = do
         checkBitT tau1
         checkTypeEquality tau2 tau1
         return tau1
         return tau1
 
-    checkBitShiftBinop :: Type -> Type -> Tc b Type
+    checkBitShiftBinop :: Type -> Type -> Tc Type
     checkBitShiftBinop tau1 tau2 = do
         checkBitT tau1
         checkIntT tau2
@@ -223,26 +223,26 @@ inferExp (CallE f ies es _) = do
     zipWithM_ checkArg es (subst theta phi taus)
     appSTScope tau_ret
   where
-    checkIotaArg :: Iota -> Tc b ()
+    checkIotaArg :: Iota -> Tc ()
     checkIotaArg (ConstI {}) =
         return ()
 
     checkIotaArg (VarI iv _) =
         void $ lookupIVar iv
 
-    checkArg :: Exp -> Type -> Tc b ()
+    checkArg :: Exp -> Type -> Tc ()
     checkArg e tau =
         withExpContext e $
         checkExp e tau
 
-    checkNumIotas :: Int -> Int -> Tc b ()
+    checkNumIotas :: Int -> Int -> Tc ()
     checkNumIotas n nexp =
         when (n /= nexp) $
              faildoc $
              text "Expected" <+> ppr nexp <+>
              text "index expression arguments but got" <+> ppr n
 
-    checkNumArgs :: Int -> Int -> Tc b ()
+    checkNumArgs :: Int -> Int -> Tc ()
     checkNumArgs n nexp =
         when (n /= nexp) $
              faildoc $
@@ -317,7 +317,7 @@ inferExp (IdxE e1 e2 len l) = do
     withExpContext e2 $ inferExp e2 >>= checkIntT
     go tau
   where
-    go :: Type -> Tc b Type
+    go :: Type -> Tc Type
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l
 
@@ -342,7 +342,7 @@ inferExp e0@(LetStruct s flds e l) = do
   where
     (fnames, taus) = unzip flds
 
-    checkStructNotRedefined :: Struct -> Tc b ()
+    checkStructNotRedefined :: Struct -> Tc ()
     checkStructNotRedefined s = do
       maybe_sdef <- maybeLookupStruct s
       case maybe_sdef of
@@ -358,14 +358,14 @@ inferExp e0@(StructE s flds l) =
     mapM_ (checkField fldDefs) flds
     return $ StructT s l
   where
-    checkField :: [(Field, Type)] -> (Field, Exp) -> Tc b ()
+    checkField :: [(Field, Type)] -> (Field, Exp) -> Tc ()
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
                Nothing  -> panicdoc $ "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
 
-    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc b ()
+    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc ()
     checkMissingFields flds fldDefs =
         when (not (Set.null missing)) $
           faildoc $
@@ -377,7 +377,7 @@ inferExp e0@(StructE s flds l) =
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         missing = fs Set.\\ fs'
 
-    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc b ()
+    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc ()
     checkExtraFields flds fldDefs =
         when (not (Set.null extra)) $
           faildoc $
@@ -419,7 +419,7 @@ inferExp (BindE bv e1 e2 _) = do
     checkTypeEquality b' b
     return $ stT omega s a b
   where
-    extendBindVars :: [(BindVar, Type)] -> Tc b a -> Tc b a
+    extendBindVars :: [(BindVar, Type)] -> Tc a -> Tc a
     extendBindVars bvtaus m =
         extendVars [(v, tau) | (BindV v, tau) <- bvtaus] m
 
@@ -468,7 +468,7 @@ inferExp (ArrE e1 e2 l) = do
     omega <- joinOmega omega1 omega2
     return $ ST [] omega s a b l
   where
-    joinOmega :: Omega -> Omega -> Tc b Omega
+    joinOmega :: Omega -> Omega -> Tc Omega
     joinOmega omega1@(C {}) (T {})        = return omega1
     joinOmega (T {})        omega2@(C {}) = return omega2
     joinOmega omega1@(T {}) (T {})        = return omega1
@@ -478,14 +478,14 @@ inferExp (ArrE e1 e2 l) = do
 
 inferExp e = faildoc $ nest 2 $ text "inferExp: cannot type check:" </> ppr e
 
-checkExp :: Exp -> Type -> Tc b ()
+checkExp :: Exp -> Type -> Tc ()
 checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
-checkCast :: Type -> Type -> Tc b ()
+checkCast :: Type -> Type -> Tc ()
 checkCast tau1 tau2 | tau1 == tau2 =
     return ()
 
@@ -501,7 +501,7 @@ checkCast (StructT s1 _) (StructT s2 _) | isComplexStruct s1 && isComplexStruct 
 checkCast tau1 tau2 =
     faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
-checkTypeEquality :: Type -> Type -> Tc b ()
+checkTypeEquality :: Type -> Type -> Tc ()
 checkTypeEquality tau1 tau2 =
     checkT Map.empty Map.empty tau1 tau2
   where
@@ -509,7 +509,7 @@ checkTypeEquality tau1 tau2 =
            -> Map IVar IVar
            -> Type
            -> Type
-           -> Tc b ()
+           -> Tc ()
     checkT _ _ (UnitT {}) (UnitT {}) = return ()
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
     checkT _ _ (BitT {})  (BitT {})  = return ()
@@ -560,7 +560,7 @@ checkTypeEquality tau1 tau2 =
            -> Map IVar IVar
            -> Omega
            -> Omega
-           -> Tc b ()
+           -> Tc ()
     checkO theta phi (C tau1) (C tau2) =
         checkT theta phi tau1 tau2
 
@@ -573,7 +573,7 @@ checkTypeEquality tau1 tau2 =
     checkI :: Map IVar IVar
            -> Iota
            -> Iota
-           -> Tc b ()
+           -> Tc ()
     checkI _ (ConstI i1 _) (ConstI i2 _) | i1 == i2 =
         return ()
 
@@ -584,17 +584,17 @@ checkTypeEquality tau1 tau2 =
     checkI _ _ _ =
         err
 
-    err :: Tc b ()
+    err :: Tc ()
     err =
       faildoc $ align $
           text "Expected type:" <+> ppr tau2 </>
           text "but got:      " <+> ppr tau1
 
-inferKind :: Type -> Tc b Kind
+inferKind :: Type -> Tc Kind
 inferKind tau =
     inferType tau
   where
-    inferType :: Type -> Tc b Kind
+    inferType :: Type -> Tc Kind
     inferType (UnitT {})   = return TauK
     inferType (BoolT {})   = return TauK
     inferType (BitT {})    = return TauK
@@ -627,7 +627,7 @@ inferKind tau =
         checkRetKind tau_ret
         return PhiK
       where
-        checkArgKind :: Type -> Tc b ()
+        checkArgKind :: Type -> Tc ()
         checkArgKind tau = do
             kappa <- inferType tau
             case kappa of
@@ -636,7 +636,7 @@ inferKind tau =
               MuK  -> return ()
               _    -> checkKindEquality kappa TauK
 
-        checkRetKind :: Type -> Tc b ()
+        checkRetKind :: Type -> Tc ()
         checkRetKind tau = do
             kappa <- inferType tau
             case kappa of
@@ -647,11 +647,11 @@ inferKind tau =
     inferType (TyVarT alpha _) =
         lookupTyVar alpha
 
-    inferIota :: Iota -> Tc b Kind
+    inferIota :: Iota -> Tc Kind
     inferIota (ConstI {}) = return IotaK
     inferIota (VarI iv _) = lookupIVar iv
 
-    inferOmega :: Omega -> Tc b Kind
+    inferOmega :: Omega -> Tc Kind
     inferOmega (C tau) = do
         checkKind tau TauK
         return OmegaK
@@ -659,12 +659,12 @@ inferKind tau =
     inferOmega T =
         return OmegaK
 
-checkKind :: Type -> Kind -> Tc b ()
+checkKind :: Type -> Kind -> Tc ()
 checkKind tau kappa = do
     kappa' <- inferKind tau
     checkKindEquality kappa' kappa
 
-checkKindEquality :: Kind -> Kind -> Tc b ()
+checkKindEquality :: Kind -> Kind -> Tc ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
     return ()
 
@@ -673,19 +673,19 @@ checkKindEquality kappa1 kappa2 =
     text "Expected kind:" <+> ppr kappa2 </>
     text "but got:      " <+> ppr kappa1
 
-absSTScope :: Type -> Tc b Type -> Tc b Type
+absSTScope :: Type -> Tc Type -> Tc Type
 absSTScope tau m =
     scopeOver tau $
     m >>= absScope
   where
-    scopeOver :: Type -> Tc b a -> Tc b a
+    scopeOver :: Type -> Tc a -> Tc a
     scopeOver (ST _ _ s a b _) m =
         localSTIndTypes (Just (s, a, b)) m
 
     scopeOver _ m =
         localSTIndTypes Nothing m
 
-    absScope :: Type -> Tc b Type
+    absScope :: Type -> Tc Type
     absScope (ST [] omega s a b l) = do
         (s',a',b') <- askSTIndTypes
         let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
@@ -694,7 +694,7 @@ absSTScope tau m =
     absScope tau =
         return tau
 
-appSTScope :: Type -> Tc b Type
+appSTScope :: Type -> Tc Type
 appSTScope tau@(ST alphas omega s a b l) = do
     (s',a',b') <- askSTIndTypes
     let theta = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
@@ -710,12 +710,12 @@ appSTScope tau =
     return tau
 
 -- | Check that a type supports equality.
-checkEqT :: Type -> Tc b ()
+checkEqT :: Type -> Tc ()
 checkEqT tau =
     checkKind tau TauK
 
 -- | Check that a type supports ordering.
-checkOrdT :: Type -> Tc b ()
+checkOrdT :: Type -> Tc ()
 checkOrdT (IntT _ _)                        = return ()
 checkOrdT (FloatT _ _)                      = return ()
 checkOrdT (StructT s _) | isComplexStruct s = return ()
@@ -724,7 +724,7 @@ checkOrdT tau =
     text "Expected comparable type but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform Boolean operations.
-checkBoolT :: Type -> Tc b ()
+checkBoolT :: Type -> Tc ()
 checkBoolT (BitT {})  = return ()
 checkBoolT (BoolT {}) = return ()
 checkBoolT (IntT {})  = return ()
@@ -733,7 +733,7 @@ checkBoolT tau =
     text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform bitwise operations.
-checkBitT :: Type -> Tc b ()
+checkBitT :: Type -> Tc ()
 checkBitT (BitT {})  = return ()
 checkBitT (BoolT {}) = return ()
 checkBitT (IntT {})  = return ()
@@ -742,14 +742,14 @@ checkBitT tau =
     text "Expected a bit type, e.g., bit or int, but got:" <+/> ppr tau
 
 -- | Check that a type is an integer type.
-checkIntT :: Type -> Tc b ()
+checkIntT :: Type -> Tc ()
 checkIntT (IntT _ _)  = return ()
 checkIntT tau =
     faildoc $ nest 2 $ group $
     text "Expected integer type but got:" <+/> ppr tau
 
 -- | Check that a type is a numerical type.
-checkNumT :: Type -> Tc b ()
+checkNumT :: Type -> Tc ()
 checkNumT (IntT _ _)                        = return ()
 checkNumT (FloatT _ _)                      = return ()
 checkNumT (StructT s _) | isComplexStruct s = return ()
@@ -767,7 +767,7 @@ checkSignedNumT tau =
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
-checkArrT :: Type -> Tc b (Iota, Type)
+checkArrT :: Type -> Tc (Iota, Type)
 checkArrT (ArrT iota alpha _) =
     return (iota, alpha)
 
@@ -775,7 +775,7 @@ checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
-checkST :: Type -> Tc b (Omega, Type, Type, Type)
+checkST :: Type -> Tc (Omega, Type, Type, Type)
 checkST (ST [] omega s a b _) =
     return (omega, s, a, b)
 
@@ -783,7 +783,7 @@ checkST tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'ST omega s a b' but got:" <+/> ppr tau
 
-checkSTC :: Type -> Tc b (Type, Type, Type, Type)
+checkSTC :: Type -> Tc (Type, Type, Type, Type)
 checkSTC (ST [] (C tau) s a b _) =
     return (tau, s, a, b)
 
@@ -791,7 +791,7 @@ checkSTC tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
 
-checkSTCUnit :: Type -> Tc b (Type, Type, Type)
+checkSTCUnit :: Type -> Tc (Type, Type, Type)
 checkSTCUnit (ST _ (C (UnitT _)) s a b _) =
     return (s, a, b)
 
@@ -799,7 +799,7 @@ checkSTCUnit tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
 
-checkRefT :: Type -> Tc b Type
+checkRefT :: Type -> Tc Type
 checkRefT (RefT tau _) =
     return tau
 
@@ -807,7 +807,7 @@ checkRefT tau =
     faildoc $ nest 2 $ group $
     text "Expected ref type but got:" <+/> ppr tau
 
-checkFunT :: Type -> Tc b ([IVar], [Type], Type)
+checkFunT :: Type -> Tc ([IVar], [Type], Type)
 checkFunT (FunT iotas taus tau_ret _) =
     return (iotas, taus, tau_ret)
 

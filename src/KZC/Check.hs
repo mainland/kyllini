@@ -55,7 +55,7 @@ import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
 
-type Co b = Ti b C.Exp -> Ti b C.Exp
+type Co = Ti C.Exp -> Ti C.Exp
 
 data Expected a = Infer (IORef a)
                 | Check a
@@ -65,17 +65,17 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.CompLet] -> Ti C.Exp C.Exp
+checkProgram :: [Z.CompLet] -> Ti C.Exp
 checkProgram cls = do
     mce <- go cls
     mce
   where
-    go :: [Z.CompLet] -> Ti C.Exp (Ti b C.Exp)
+    go :: [Z.CompLet] -> Ti (Ti C.Exp)
     go []       = return $ return $ C.varE (C.mkVar "main")
     go (cl:cls) = checkCompLet cl $ go cls
 
 checkLet :: Z.Var -> Maybe Z.Type -> Z.Exp
-         -> Ti b (Type, Ti c C.Exp)
+         -> Ti (Type, Ti C.Exp)
 checkLet v ztau e =
     withExpContext e $ do
     tau <- fromZ (ztau, TauK)
@@ -84,7 +84,7 @@ checkLet v ztau e =
     return (tau, mce1)
 
 checkLetComp :: Z.Var -> Maybe Z.Type -> Z.Exp
-             -> Ti b (Type, Ti c C.Exp)
+             -> Ti (Type, Ti C.Exp)
 checkLetComp f ztau e =
     withExpContext e $ do
     tau <- fromZ (ztau, MuK)
@@ -96,7 +96,7 @@ checkLetComp f ztau e =
     return (tau_gen, co mce)
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
-            -> Ti b (Type, Ti c (Maybe C.Exp))
+            -> Ti (Type, Ti (Maybe C.Exp))
 checkLetRef v ztau e_init =
     withMaybeExpContext e_init $ do
     tau <- fromZ ztau
@@ -107,12 +107,12 @@ checkLetRef v ztau e_init =
                             return $ Just <$> mce
     return (tau, mce1)
   where
-    withMaybeExpContext :: Maybe Z.Exp -> Ti b a -> Ti b a
+    withMaybeExpContext :: Maybe Z.Exp -> Ti a -> Ti a
     withMaybeExpContext Nothing  m = m
     withMaybeExpContext (Just e) m = withExpContext e m
 
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
-            -> Ti b (Type, [(Z.Var, Type)], Ti c C.Exp -> Ti c C.Exp)
+            -> Ti (Type, [(Z.Var, Type)], Ti C.Exp -> Ti C.Exp)
 checkLetFun f ztau ps e l = do
     tau   <- fromZ (ztau, PhiK)
     ptaus <- mapM fromZ ps
@@ -136,8 +136,8 @@ checkLetFun f ztau ps e l = do
     return (tau_gen, ptaus, mkLetFun)
 
 checkCompLet :: Z.CompLet
-             -> Ti b (Ti c C.Exp)
-             -> Ti b (Ti c C.Exp)
+             -> Ti (Ti C.Exp)
+             -> Ti (Ti C.Exp)
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
     (tau, mce1) <- withSummaryContext cl $ do
                    checkLet v ztau e
@@ -187,7 +187,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
   where
     (zfnames, ztaus) = unzip zflds
 
-    checkStructNotRedefined :: Z.Struct -> Ti b ()
+    checkStructNotRedefined :: Z.Struct -> Ti ()
     checkStructNotRedefined s = do
       maybe_sdef <- maybeLookupStruct zs
       case maybe_sdef of
@@ -214,12 +214,12 @@ checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
 
 checkCompLet e _ = faildoc $ text "checkCompLet: can't type check:" <+> ppr e
 
-tcExp :: Z.Exp -> Expected Type -> Ti b (Ti c C.Exp)
+tcExp :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
     cc <- tcConst zc
     return $ return $ C.ConstE cc l
   where
-    tcConst :: Z.Const -> Ti b C.Const
+    tcConst :: Z.Const -> Ti C.Const
     tcConst Z.UnitC = do
         instType (UnitT l) exp_ty
         return $ C.UnitC
@@ -261,7 +261,7 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
                 cop <- mcop
                 return $ C.UnopE cop ce1 l
   where
-    unop :: Z.Unop -> Type -> Ti b (Type, Ti c C.Unop)
+    unop :: Z.Unop -> Type -> Ti (Type, Ti C.Unop)
     unop Z.Lnot tau = do
         checkBoolT tau
         return (tau, return C.Lnot)
@@ -288,7 +288,7 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
 tcExp (Z.BinopE op e1 e2 l) exp_ty =
     binop op
   where
-    binop :: Z.Binop -> Ti b (Ti c C.Exp)
+    binop :: Z.Binop -> Ti (Ti C.Exp)
     binop Z.Lt   = checkOrdBinop C.Lt
     binop Z.Le   = checkOrdBinop C.Le
     binop Z.Eq   = checkEqBinop C.Eq
@@ -310,7 +310,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
     binop Z.Rem  = checkNumBinop C.Rem
     binop Z.Pow  = checkNumBinop C.Pow
 
-    promoteBinopArgs :: Ti b (Type, Ti c C.Exp, Ti c C.Exp)
+    promoteBinopArgs :: Ti (Type, Ti C.Exp, Ti C.Exp)
     promoteBinopArgs = do
         (tau1, mce1) <- inferVal e1
         (tau2, mce2) <- inferVal e2
@@ -318,9 +318,9 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
         tau2'        <- compress tau2
         go tau1' e1 mce1 tau2' e2 mce2
       where
-        go :: Type -> Z.Exp -> Ti c C.Exp
-           -> Type -> Z.Exp -> Ti c C.Exp
-           -> Ti b (Type, Ti c C.Exp, Ti c C.Exp)
+        go :: Type -> Z.Exp -> Ti C.Exp
+           -> Type -> Z.Exp -> Ti C.Exp
+           -> Ti (Type, Ti C.Exp, Ti C.Exp)
         go tau1@(MetaT {}) _ mce1 tau2 _ mce2 = do
             unifyTypes tau1 tau2
             return (tau2, mce1, mce2)
@@ -346,7 +346,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
             co2 <- mkCast tau2 tau
             return (tau, co1 mce1, co2 mce2)
 
-        lubType :: Type -> Type -> Ti b Type
+        lubType :: Type -> Type -> Ti Type
         lubType (IntT w1 l) (IntT w2 _) =
             return $ IntT (max w1 w2) l
 
@@ -360,42 +360,42 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
               text "with argument" <+> ppr e2 <+/>
               text "of type" <+> ppr tau2
 
-    checkEqBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkEqBinop :: C.Binop -> Ti (Ti C.Exp)
     checkEqBinop cop = do
         (tau, mce1, mce2) <- promoteBinopArgs
         checkEqT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkOrdBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkOrdBinop :: C.Binop -> Ti (Ti C.Exp)
     checkOrdBinop cop = do
         (tau, mce1, mce2) <- promoteBinopArgs
         checkOrdT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkBoolBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBoolBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBoolBinop cop = do
         (tau, mce1, mce2) <- promoteBinopArgs
         checkBoolT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkNumBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkNumBinop :: C.Binop -> Ti (Ti C.Exp)
     checkNumBinop cop = do
         (tau, mce1, mce2) <- promoteBinopArgs
         checkNumT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkBitBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBitBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitBinop cop = do
         (tau, mce1, mce2) <- promoteBinopArgs
         checkBitT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkBitShiftBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBitShiftBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
         (tau2, mce2) <- inferVal e2
@@ -460,11 +460,11 @@ tcExp (Z.CallE f es l) exp_ty = do
     -- reference. Similarly, if a parameter is an ST type, we do not want to
     -- implicitly run the corresponding argument. Otherwise, we assume we are in
     -- an r-value context.
-    checkArg :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
+    checkArg :: Z.Exp -> Type -> Ti (Ti C.Exp)
     checkArg e tau =
         compress tau >>= go
       where
-        go :: Type -> Ti b (Ti c C.Exp)
+        go :: Type -> Ti (Ti C.Exp)
         go (RefT {}) = checkExp e tau
         go (ST {})   = checkExp e tau
         go _         = checkVal e tau
@@ -559,14 +559,14 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
                    return mce2
     checkIdxE tau mce1 mce2
   where
-    checkIdxE :: forall b c . Type
-              -> Ti c C.Exp
-              -> Ti c C.Exp
-              -> Ti b (Ti c C.Exp)
+    checkIdxE :: Type
+              -> Ti C.Exp
+              -> Ti C.Exp
+              -> Ti (Ti C.Exp)
     checkIdxE tau mce1 mce2 = do
         compress tau >>= go
       where
-        go :: Type -> Ti b (Ti c C.Exp)
+        go :: Type -> Ti (Ti C.Exp)
         -- Indexing into a reference to an array returns a reference to an
         -- element of the array.
         go (RefT (ArrT _ tau _) _) = do
@@ -605,7 +605,7 @@ tcExp e0@(Z.StructE s flds l) exp_ty =
                 ces <- sequence mces
                 return $ C.StructE cs (cfs `zip` ces) l
   where
-    checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti b (Z.Field, Ti c C.Exp)
+    checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti (Z.Field, Ti C.Exp)
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
                Nothing  -> panicdoc $ "checkField: missing field!"
@@ -613,7 +613,7 @@ tcExp e0@(Z.StructE s flds l) exp_ty =
       mce <- castVal tau e
       return (f, mce)
 
-    checkMissingFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti b ()
+    checkMissingFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti ()
     checkMissingFields flds fldDefs =
         when (not (Set.null missing)) $
           faildoc $
@@ -625,7 +625,7 @@ tcExp e0@(Z.StructE s flds l) exp_ty =
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         missing = fs Set.\\ fs'
 
-    checkExtraFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti b ()
+    checkExtraFields :: [(Z.Field, Z.Exp)] -> [(Z.Field, Type)] -> Ti ()
     checkExtraFields flds fldDefs =
         when (not (Set.null extra)) $
           faildoc $
@@ -641,13 +641,13 @@ tcExp (Z.ProjE e f l) exp_ty = do
     (tau, mce) <- inferExp e
     checkProjE tau mce
   where
-    checkProjE :: forall b c . Type
-              -> Ti c C.Exp
-              -> Ti b (Ti c C.Exp)
+    checkProjE :: Type
+               -> Ti C.Exp
+               -> Ti (Ti C.Exp)
     checkProjE tau mce = do
         compress tau >>= go
       where
-        go :: Type -> Ti b (Ti c C.Exp)
+        go :: Type -> Ti (Ti C.Exp)
         go (RefT tau _) = do
             sdef  <- checkStructT tau >>= lookupStruct
             tau_f <- checkStructFieldT sdef f
@@ -673,7 +673,7 @@ tcExp (Z.PrintE newline es l) exp_ty = do
         ces <- sequence mces
         return $ C.PrintE newline ces l
   where
-    checkArg :: Z.Exp -> Ti b (Ti c C.Exp)
+    checkArg :: Z.Exp -> Ti (Ti C.Exp)
     checkArg e = do
         (tau, mce) <- inferVal e
         checkKind tau TauK
@@ -783,7 +783,7 @@ tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
                 ce2 <- mce2
                 return $ C.ArrE ce1 ce2 l
   where
-    checkForSplitContext :: Ti b ()
+    checkForSplitContext :: Ti ()
     checkForSplitContext = do
         common_refs <- filterM isRefVar (Set.toList common_fvs)
         when (not (null common_refs)) $
@@ -836,17 +836,17 @@ tcExp (Z.CmdE cmds _) exp_ty =
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
 
-checkExp :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
+checkExp :: Z.Exp -> Type -> Ti (Ti C.Exp)
 checkExp e tau = tcExp e (Check tau)
 
-inferExp :: Z.Exp -> Ti b (Type, Ti c C.Exp)
+inferExp :: Z.Exp -> Ti (Type, Ti C.Exp)
 inferExp e = do
     ref <- newRef (error "inferExp: empty result")
     mce <- tcExp e (Infer ref)
     tau <- readRef ref
     return (tau, mce)
 
-tcStms :: [Z.Stm] -> Expected Type -> Ti b (Ti c C.Exp)
+tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti C.Exp)
 tcStms (stm@(Z.LetS {}) : []) _ =
     withSummaryContext stm $
     faildoc $ text "Last statement in statement sequence must be an expression"
@@ -902,10 +902,10 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
 tcStms [] _ =
     panicdoc $ text "Empty statement sequence!"
 
-checkStms :: [Z.Stm] -> Type -> Ti b (Ti c C.Exp)
+checkStms :: [Z.Stm] -> Type -> Ti (Ti C.Exp)
 checkStms stms tau = tcStms stms (Check tau)
 
-tcCmds :: [Z.Cmd] -> Expected Type -> Ti b (Ti c C.Exp)
+tcCmds :: [Z.Cmd] -> Expected Type -> Ti (Ti C.Exp)
 tcCmds (cmd@(Z.LetC {}) : []) _ =
     withSummaryContext cmd $
     faildoc $ text "Last command in command sequence must be an expression"
@@ -954,14 +954,14 @@ tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
 tcCmds [] _ =
     panicdoc $ text "Empty command sequence!"
 
-checkCmds :: [Z.Cmd] -> Type -> Ti b (Ti c C.Exp)
+checkCmds :: [Z.Cmd] -> Type -> Ti (Ti C.Exp)
 checkCmds cmds tau = tcCmds cmds (Check tau)
 
 -- | @checkExpSTC e nu@ checks that @e@ has type @ST (C nu) s a b@ and returns a
 -- type @ST omega s a b@, where @omega@ is a fresh type variable, that can be
 -- used to type a sequence of @ST@ computations. Any side-effecting operations
 -- needed to produce values in @e@ are collected into a single @ST@ computation.
-checkExpSTC :: Z.Exp -> Type -> Ti b (Type, Ti c C.Exp)
+checkExpSTC :: Z.Exp -> Type -> Ti (Type, Ti C.Exp)
 checkExpSTC e nu = do
     omega   <- newMetaTvT OmegaK e
     s       <- newMetaTvT TauK l
@@ -978,12 +978,12 @@ checkExpSTC e nu = do
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type
 -- @forall s a b . ST tau s a b@.
-tcVal :: Z.Exp -> Expected Type -> Ti b (Ti c C.Exp)
+tcVal :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
 tcVal e exp_ty = do
     (tau, mce) <- inferExp e
     go tau mce
   where
-    go :: Type -> Ti c C.Exp -> Ti b (Ti c C.Exp)
+    go :: Type -> Ti C.Exp -> Ti (Ti C.Exp)
     go (RefT tau _) mce = do
         let mce' = do
             ce1 <- mce
@@ -1008,17 +1008,17 @@ tcVal e exp_ty = do
         instType tau exp_ty
         return mce
 
-checkVal :: Z.Exp -> Type -> Ti b (Ti c C.Exp)
+checkVal :: Z.Exp -> Type -> Ti (Ti C.Exp)
 checkVal e tau = tcVal e (Check tau)
 
-inferVal :: Z.Exp -> Ti b (Type, Ti c C.Exp)
+inferVal :: Z.Exp -> Ti (Type, Ti C.Exp)
 inferVal e = do
     ref <- newRef (error "inferVal: empty result")
     mce <- tcVal e (Infer ref)
     tau <- readRef ref
     return (tau, mce)
 
-checkBoolVal :: Z.Exp -> Ti b (Ti c C.Exp)
+checkBoolVal :: Z.Exp -> Ti (Ti C.Exp)
 checkBoolVal e = do
     mce <- checkExp e (BoolT l)
     return $ do ce <- mce
@@ -1027,7 +1027,7 @@ checkBoolVal e = do
     l :: SrcLoc
     l = srclocOf e
 
-kcType :: Type -> Expected Kind -> Ti b ()
+kcType :: Type -> Expected Kind -> Ti ()
 kcType tau@(UnitT {})    kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(BoolT {})    kappa_exp = instKind tau TauK kappa_exp
 kcType tau@(BitT {})     kappa_exp = instKind tau TauK kappa_exp
@@ -1062,7 +1062,7 @@ kcType tau0@(FunT ivs taus tau_ret _) kappa_exp =
     checkRetKind tau_ret
     instKind tau0 PhiK kappa_exp
   where
-    checkArgKind :: Type -> Ti b ()
+    checkArgKind :: Type -> Ti ()
     checkArgKind tau = do
         kappa <- inferKind tau
         case kappa of
@@ -1071,7 +1071,7 @@ kcType tau0@(FunT ivs taus tau_ret _) kappa_exp =
           MuK  -> return ()
           _    -> checkKind tau TauK
 
-    checkRetKind :: Type -> Ti b ()
+    checkRetKind :: Type -> Ti ()
     checkRetKind tau = do
         kappa <- inferKind tau
         case kappa of
@@ -1093,7 +1093,7 @@ kcType tau0@(TyVarT tv _) kappa_exp = do
 kcType tau0@(MetaT (MetaTv _ kappa _) _) kappa_exp =
     instKind tau0 kappa kappa_exp
 
-instKind :: Type -> Kind -> Expected Kind -> Ti b ()
+instKind :: Type -> Kind -> Expected Kind -> Ti ()
 instKind _ kappa (Infer ref) =
     writeRef ref kappa
 
@@ -1115,20 +1115,20 @@ instKind tau kappa1 (Check kappa2) = do
     friendly PhiK   = text "function type"
     friendly IotaK  = text "array index type"
 
-checkKind :: Type -> Kind -> Ti b ()
+checkKind :: Type -> Kind -> Ti ()
 checkKind tau kappa = kcType tau (Check kappa)
 
-inferKind :: Type -> Ti b Kind
+inferKind :: Type -> Ti Kind
 inferKind tau = do
     ref <- newRef (error "inferKind: empty result")
     kcType tau (Infer ref)
     readRef ref
 
-generalize :: Type -> Ti b (Type, Co c)
+generalize :: Type -> Ti (Type, Co)
 generalize tau0 =
     compress tau0 >>= go
   where
-    go :: Type -> Ti b (Type, Co c)
+    go :: Type -> Ti (Type, Co)
     go tau@(ST [] omega sigma tau1 tau2 l) = do
         mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
         let alphaMtvs =  filter (isKind TauK) mtvs
@@ -1158,7 +1158,7 @@ generalize tau0 =
             return $ C.LetFunE cf ciotas cvtaus ctau ce1 ce2 l
         return (tau, co)
       where
-        checkLetFunE :: C.Exp -> Ti b (C.Var, [(C.Var, C.Type)], C.Type, C.Exp, C.Exp, SrcLoc)
+        checkLetFunE :: C.Exp -> Ti (C.Var, [(C.Var, C.Type)], C.Type, C.Exp, C.Exp, SrcLoc)
         checkLetFunE (C.LetFunE cf [] cvtaus ctau ce1 ce2 l) =
             return (cf, cvtaus, ctau, ce1, ce2, l)
 
@@ -1175,11 +1175,11 @@ generalize tau0 =
     isKind :: Kind -> MetaTv -> Bool
     isKind kappa1 (MetaTv _ kappa2 _) = kappa2 == kappa1
 
-instantiate :: Type -> Ti b (Type, Co c)
+instantiate :: Type -> Ti (Type, Co)
 instantiate tau0 =
     compress tau0 >>= go
   where
-    go :: Type -> Ti b (Type, Co c)
+    go :: Type -> Ti (Type, Co)
     go (ST alphas omega sigma tau1 tau2 l) = do
         (_, theta, phi) <- instVars alphas TauK
         let tau = ST [] omega (subst theta phi sigma)
@@ -1195,7 +1195,7 @@ instantiate tau0 =
                 return $ C.CallE cf ciotas ces l
         return (tau, co)
       where
-        checkFunE :: C.Exp -> Ti b (C.Exp, [C.Exp], SrcLoc)
+        checkFunE :: C.Exp -> Ti (C.Exp, [C.Exp], SrcLoc)
         checkFunE (C.CallE cf [] ces l) =
             return (cf, ces, l)
 
@@ -1207,7 +1207,7 @@ instantiate tau0 =
         return (tau, id)
 
     instVars :: (Located tv, Subst Type tv Type)
-             => [tv] -> Kind -> Ti b ([Type], Map tv Type, Set tv)
+             => [tv] -> Kind -> Ti ([Type], Map tv Type, Set tv)
     instVars tvs kappa = do
         mtvs      <- mapM (newMetaTvT kappa) tvs
         let theta =  Map.fromList (tvs `zip` mtvs)
@@ -1216,7 +1216,7 @@ instantiate tau0 =
 
 -- | Update a type meta-variable with a type while checking that the type's kind
 -- matches the meta-variable's kind.
-kcWriteTv :: MetaTv -> Type -> Ti b ()
+kcWriteTv :: MetaTv -> Type -> Ti ()
 kcWriteTv mtv@(MetaTv _ kappa _) tau = do
     maybe_tau <- readTv mtv
     case maybe_tau of
@@ -1226,7 +1226,7 @@ kcWriteTv mtv@(MetaTv _ kappa _) tau = do
     writeTv mtv tau
 
 -- | Return 'True' if @v@ has a reference type, 'False' otherwise
-isRefVar :: Z.Var -> Ti b Bool
+isRefVar :: Z.Var -> Ti Bool
 isRefVar v = do
     tau <- lookupVar v >>= compress
     case tau of
@@ -1234,16 +1234,16 @@ isRefVar v = do
       _       -> return False
 
 -- | Check that a type supports equality.
-checkEqT :: Type -> Ti b ()
+checkEqT :: Type -> Ti ()
 checkEqT tau =
     checkKind tau TauK
 
 -- | Check that a type supports ordering.
-checkOrdT :: Type -> Ti b ()
+checkOrdT :: Type -> Ti ()
 checkOrdT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (BitT {})              = return ()
     go (IntT {})              = return ()
     go (FloatT {})            = return ()
@@ -1252,59 +1252,59 @@ checkOrdT tau =
     go tau                    = unifyTypes tau intT `catch`
                                     \(_ :: UnificationException) -> err
 
-    err :: Ti b a
+    err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected comparable type, but got:" <+> ppr tau'
 
 -- | Check that a type is a type on which we can perform Boolean operations.
-checkBoolT :: Type -> Ti b ()
+checkBoolT :: Type -> Ti ()
 checkBoolT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (BitT {})  = return ()
     go (BoolT {}) = return ()
     go (IntT {})  = return ()
     go tau        = unifyTypes tau intT `catch`
                         \(_ :: UnificationException) -> err
 
-    err :: Ti b a
+    err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+> ppr tau'
 
 -- | Check that a type is a type on which we can perform bitwise operations.
-checkBitT :: Type -> Ti b ()
+checkBitT :: Type -> Ti ()
 checkBitT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (BitT {}) = return ()
     go (IntT {}) = return ()
     go tau       = unifyTypes tau intT `catch`
                        \(_ :: UnificationException) -> err
 
-    err :: Ti b a
+    err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected a bit type, e.g., bit or int, but got:" <+> ppr tau'
 
 -- | Check that a type is an integral type
-checkIntT :: Type -> Ti b ()
+checkIntT :: Type -> Ti ()
 checkIntT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (IntT _ _) = return ()
     go tau        = unifyTypes tau intT
 
 -- | Check that a type is a numerical type.
-checkNumT :: Type -> Ti b ()
+checkNumT :: Type -> Ti ()
 checkNumT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (IntT {})              = return ()
     go (FloatT {})            = return ()
     go (StructT s _)
@@ -1312,17 +1312,17 @@ checkNumT tau =
     go tau                    = unifyTypes tau intT `catch`
                                     \(_ :: UnificationException) -> err
 
-    err :: Ti b a
+    err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected integral type, but got:" <+> ppr tau'
 
 -- | Check that a type is a /signed/ numerical type.
-checkSignedNumT :: Type -> Ti b ()
+checkSignedNumT :: Type -> Ti ()
 checkSignedNumT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b ()
+    go :: Type -> Ti ()
     go (IntT {})              = return ()
     go (FloatT {})            = return ()
     go (StructT s _)
@@ -1330,17 +1330,17 @@ checkSignedNumT tau =
     go tau                    = unifyTypes tau intT `catch`
                                     \(_ :: UnificationException) -> err
 
-    err :: Ti b a
+    err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected signed integral type, but got:" <+> ppr tau'
 
 -- | Check that a type is an @ref \alpha@ type, returning @\alpha@.
-checkRefT :: Type -> Ti b Type
+checkRefT :: Type -> Ti Type
 checkRefT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b Type
+    go :: Type -> Ti Type
     go (RefT alpha _) =
         return alpha
 
@@ -1351,11 +1351,11 @@ checkRefT tau =
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
-checkArrT :: Type -> Ti b (Type, Type)
+checkArrT :: Type -> Ti (Type, Type)
 checkArrT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b (Type, Type)
+    go :: Type -> Ti (Type, Type)
     go (ArrT iota alpha _) =
         return (iota, alpha)
 
@@ -1366,11 +1366,11 @@ checkArrT tau =
         return (iota, alpha)
 
 -- | Check that a type is a struct type, returning the name of the struct.
-checkStructT :: Type -> Ti b Z.Struct
+checkStructT :: Type -> Ti Z.Struct
 checkStructT tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b Z.Struct
+    go :: Type -> Ti Z.Struct
     go (StructT s _) =
         return s
 
@@ -1378,7 +1378,7 @@ checkStructT tau =
         faildoc $ nest 2 $
         text "Expected struct type, but got:" <+/> ppr tau
 
-checkStructFieldT :: StructDef -> Z.Field -> Ti b Type
+checkStructFieldT :: StructDef -> Z.Field -> Ti Type
 checkStructFieldT (StructDef s flds _) f =
     case lookup f flds of
       Just tau -> return tau
@@ -1389,11 +1389,11 @@ checkStructFieldT (StructDef s flds _) f =
 
 -- | Check that a type is an @ST \omega \sigma \alpha \beta@ type, returning the
 -- four type indices
-checkST :: Type -> Ti b (Type, Type, Type, Type)
+checkST :: Type -> Ti (Type, Type, Type, Type)
 checkST tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b (Type, Type, Type, Type)
+    go :: Type -> Ti (Type, Type, Type, Type)
     go (ST [] omega sigma alpha beta _) =
         return (omega, sigma, alpha, beta)
 
@@ -1407,11 +1407,11 @@ checkST tau =
 
 -- | Check that a type is an @ST (C ()) \sigma \alpha \beta@ type, returning the
 -- three type indices
-checkSTCUnit :: Type -> Ti b (Type, Type, Type)
+checkSTCUnit :: Type -> Ti (Type, Type, Type)
 checkSTCUnit tau =
     compress tau >>= go
   where
-    go :: Type -> Ti b (Type, Type, Type)
+    go :: Type -> Ti (Type, Type, Type)
     go (ST [] (C (UnitT _) _) sigma alpha beta _) =
         return (sigma, alpha, beta)
 
@@ -1423,11 +1423,11 @@ checkSTCUnit tau =
         return (sigma, alpha, beta)
 
 checkFunT :: Z.Var -> Int -> Type
-          -> Ti b ([Type], Type, Co c)
+          -> Ti ([Type], Type, Co)
 checkFunT _ nargs tau =
     instantiate tau >>= go
   where
-    go :: (Type, Co c) -> Ti b ([Type], Type, Co c)
+    go :: (Type, Co) -> Ti ([Type], Type, Co)
     go (FunT [] taus tau_ret _, co) =
         return (taus, tau_ret, co)
 
@@ -1442,7 +1442,7 @@ checkFunT _ nargs tau =
 -- it may read and write references, it neither consumes nor produces values
 -- from the stream.
 checkMapFunT :: Z.Var -> Type
-             -> Ti b (Type, Type, Co c)
+             -> Ti (Type, Type, Co)
 checkMapFunT f tau = do
     -- Instantiate the function type's outer forall, which quantifies over array
     -- index variables.
@@ -1470,7 +1470,7 @@ checkMapFunT f tau = do
         return $ C.callE cf [ce]
     return (a, b, co)
   where
-    checkMapReturnType :: Type -> Ti b ()
+    checkMapReturnType :: Type -> Ti ()
     checkMapReturnType (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _)
         | sort [s',a',b'] == sort [s,a,b] =
         return ()
@@ -1478,7 +1478,7 @@ checkMapFunT f tau = do
     checkMapReturnType _ =
         err
 
-    err :: Ti b a
+    err :: Ti a
     err =
         expectedTypeErr tau tau2
       where
@@ -1504,7 +1504,7 @@ checkMapFunT f tau = do
     l :: SrcLoc
     l = srclocOf tau
 
-mkSTC :: Type -> Ti b (Type, Co c)
+mkSTC :: Type -> Ti (Type, Co)
 mkSTC tau = do
     s <- newMetaTvT TauK l
     a <- newMetaTvT TauK l
@@ -1516,13 +1516,13 @@ mkSTC tau = do
 
 -- | @castVal tau e@ infers the type of @e@ and, if possible, generates an appropriate
 -- cast to the type @tau@. It returns an elaborated value expression.
-castVal :: Type -> Z.Exp -> Ti b (Ti c C.Exp)
+castVal :: Type -> Z.Exp -> Ti (Ti C.Exp)
 castVal tau2 e = do
     (tau1, mce) <- inferVal e
     co          <- mkCast tau1 tau2
     return $ co mce
 
-mkCast :: Type -> Type -> Ti b (Co c)
+mkCast :: Type -> Type -> Ti Co
 mkCast tau1 tau2 = do
     checkCast tau1 tau2
     return $ \mce -> do
@@ -1530,7 +1530,7 @@ mkCast tau1 tau2 = do
         tau2' <- compress tau2
         go tau1' tau2' mce
   where
-    go :: Type -> Type -> Co b
+    go :: Type -> Type -> Co
     go tau1 tau2 mce | tau1 == tau2 =
         mce
 
@@ -1541,13 +1541,13 @@ mkCast tau1 tau2 = do
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
-checkCast :: Type -> Type -> Ti b ()
+checkCast :: Type -> Type -> Ti ()
 checkCast tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' tau2'
   where
-    go :: Type -> Type -> Ti b ()
+    go :: Type -> Type -> Ti ()
     go tau1 tau2 | tau1 == tau2 =
         return ()
 
@@ -1567,13 +1567,13 @@ checkCast tau1 tau2 = do
         faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
 
 -- | Implement the join operation for types of kind omega
-joinOmega :: Type -> Type -> Ti b Type
+joinOmega :: Type -> Type -> Ti Type
 joinOmega tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' tau2'
   where
-    go :: Type -> Type -> Ti b Type
+    go :: Type -> Type -> Ti Type
     go tau1@(C {}) (T {})      = return tau1
     go (T {})      tau2@(C {}) = return tau2
     go tau1@(T {}) (T {})      = return tau1
@@ -1581,13 +1581,13 @@ joinOmega tau1 tau2 = do
     go tau1 tau2 =
         faildoc $ text "Cannot join" <+> ppr tau1 <+> text "and" <+> ppr tau2
 
-instType :: Type -> Expected Type -> Ti b ()
+instType :: Type -> Expected Type -> Ti ()
 instType tau1 (Infer ref)  = writeRef ref tau1
 instType tau1 (Check tau2) = unifyTypes tau1 tau2
 
 -- | Throw a "Expected type.." error. @tau1@ is the type we got, and @tau2@ is
 -- the expected type.
-expectedTypeErr :: Type -> Type -> Ti b a
+expectedTypeErr :: Type -> Type -> Ti a
 expectedTypeErr tau1 tau2 = do
     [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
     faildoc $
@@ -1607,7 +1607,7 @@ instance Exception UnificationException
 
 -- | Unify two types. The first argument is what we got, and the second is what
 -- we expect.
-unifyTypes :: Type -> Type -> Ti b ()
+unifyTypes :: Type -> Type -> Ti ()
 unifyTypes tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
@@ -1617,7 +1617,7 @@ unifyTypes tau1 tau2 = do
           -> Map IVar IVar
           -> Type
           -> Type
-          -> Ti b ()
+          -> Ti ()
     unify theta phi tau1 tau2 = do
         tau1' <- compress tau1
         tau2' <- compress tau2
@@ -1627,7 +1627,7 @@ unifyTypes tau1 tau2 = do
        -> Map IVar IVar
        -> Type
        -> Type
-       -> Ti b ()
+       -> Ti ()
     go _ _ (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
         return ()
 
@@ -1696,7 +1696,7 @@ unifyTypes tau1 tau2 = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ UnificationException tau1' tau2'
 
-    updateMetaTv :: MetaTv -> Type -> Type -> Ti b ()
+    updateMetaTv :: MetaTv -> Type -> Type -> Ti ()
     updateMetaTv mtv tau1 tau2 = do
         mtvs2 <- metaTvs [tau2]
         when (mtv `elem` mtvs2) $ do
@@ -1706,13 +1706,13 @@ unifyTypes tau1 tau2 = do
               ppr tau1' <+> text "=" <+> ppr tau2'
         kcWriteTv mtv tau2
 
-traceVar :: Z.Var -> Type -> Ti b ()
+traceVar :: Z.Var -> Type -> Ti ()
 traceVar v tau = do
     [tau'] <- sanitizeTypes [tau]
     traceTc $ text "Variable" <+> ppr v <+> colon <+> ppr tau'
 
 class FromZ a b | a -> b where
-    fromZ :: a -> Ti c b
+    fromZ :: a -> Ti b
 
 instance FromZ Z.W W where
     fromZ Z.W8  = pure W8
@@ -1760,7 +1760,7 @@ instance FromZ Z.VarBind (Z.Var, Type) where
           return (v, tau)
 
 class Trans a b | b -> a where
-    trans :: a -> Ti c b
+    trans :: a -> Ti b
 
 instance Trans Z.Var C.Var where
     trans (Z.Var n) = pure $ C.Var n
@@ -1786,7 +1786,7 @@ instance Trans W C.W where
 instance Trans Type C.Type where
     trans tau = compress tau >>= go
       where
-        go :: Type -> Ti b C.Type
+        go :: Type -> Ti C.Type
         go (UnitT l)      = C.UnitT <$> pure l
         go (BoolT l)      = C.BoolT <$> pure l
         go (BitT l)       = C.BitT <$> pure l

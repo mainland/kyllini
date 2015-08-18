@@ -16,9 +16,6 @@ module KZC.Lint.Monad (
     liftTc,
     withTc,
 
-    shift,
-    reset,
-
     localExp,
     askCurrentExp,
 
@@ -74,91 +71,101 @@ import KZC.Summary
 import KZC.Uniq
 import KZC.Vars
 
-newtype Tc b a = Tc { unTc :: TcEnv -> TcState -> (a -> TcEnv -> TcState -> KZC (b, TcState)) -> KZC (b, TcState) }
+newtype Tc a = Tc { unTc :: TcEnv -> TcState -> KZC (a, TcState) }
 
-runTc :: Tc a a -> TcEnv -> TcState -> KZC (a, TcState)
-runTc m r s = unTc m r s $ \x _ s' -> return (x, s')
+runTc :: Tc a -> TcEnv -> TcState -> KZC (a, TcState)
+runTc m r s = unTc m r s
 
 -- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
-liftTc :: Tc a a -> KZC a
+liftTc :: forall a . Tc a -> KZC a
 liftTc m = do
-    eref  <- asks tcenvref
-    sref  <- asks tcstateref
-    env   <- readRef eref
-    state <- readRef sref
-    (a, _) <- unTc m env state $ \a env' state' -> do
-              writeRef eref env'
-              writeRef sref state'
-              return (a, state')
+    eref   <- asks tcenvref
+    sref   <- asks tcstateref
+    env    <- readRef eref
+    state  <- readRef sref
+    (a, _) <- runTc (m' eref sref) env state
     return a
+  where
+    m' :: IORef TcEnv -> IORef TcState -> Tc a
+    m' eref sref = do
+        x <- m
+        ask >>= writeRef eref
+        get >>= writeRef sref
+        return x
 
 -- | Run a @Tc@ computation in the @KZC@ monad without updating the
 -- @Tc@ environment.
-withTc :: Tc a a -> KZC a
+withTc :: forall a . Tc a -> KZC a
 withTc m = do
-    eref  <- asks tcenvref
-    sref  <- asks tcstateref
-    env   <- readRef eref
-    state <- readRef sref
-    (a, _) <- unTc m env state $ \a _ state' -> do
-              writeRef sref state'
-              return (a, state')
+    eref   <- asks tcenvref
+    sref   <- asks tcstateref
+    env    <- readRef eref
+    state  <- readRef sref
+    (a, _) <- runTc (m' sref) env state
     return a
+  where
+    m' :: IORef TcState -> Tc a
+    m' sref = do
+        x <- m
+        get >>= writeRef sref
+        return x
 
-instance Functor (Tc b) where
+instance Functor Tc where
     fmap f x = x >>= return . f
 
-instance Applicative (Tc b) where
+instance Applicative Tc where
     pure  = return
     (<*>) = ap
 
-instance Monad (Tc b) where
+instance Monad Tc where
     {-# INLINE return #-}
-    return a = Tc $ \r s k -> k a r s
+    return a = Tc $ \_ s -> return (a, s)
 
     {-# INLINE (>>=) #-}
-    m >>= f  = Tc $ \r s k -> unTc m  r s $ \x r' s' -> unTc (f x) r' s' $ \y r'' s'' ->
-               k y r'' s''
+    m >>= f  = Tc $ \r s -> do
+               (x, s') <- runTc m r s
+               runTc (f x) r s'
 
     {-# INLINE (>>) #-}
-    m1 >> m2 = Tc $ \r s k -> unTc m1 r s $ \_ r' s' -> unTc m2    r' s' $ \y r'' s'' ->
-               k y r'' s''
+    m1 >> m2 = Tc $ \r s -> do
+               (_, s') <- runTc m1 r s
+               runTc m2 r s'
 
     fail msg = throw (FailException (string msg))
 
-instance MonadReader TcEnv (Tc b) where
-    ask = Tc $ \r s k -> k r r s
+instance MonadReader TcEnv Tc where
+    ask = Tc $ \r s -> return (r, s)
 
-    local f m =Tc $ \r s k -> unTc m (f r) s $ \x _ s' -> k x r s'
+    local f m = Tc $ \r s -> runTc m (f r) s
 
-instance MonadState TcState (Tc b) where
-    get   = Tc $ \r s k -> k s r s
-    put s = Tc $ \r _ k -> k () r s
+instance MonadState TcState Tc where
+    get   = Tc $ \_ s -> return (s, s)
+    put s = Tc $ \_ _ -> return ((), s)
 
-instance MonadRef IORef (Tc b) where
+instance MonadRef IORef Tc where
     newRef x     = liftIO $ newRef x
     readRef r    = liftIO $ readRef r
     writeRef r x = liftIO $ writeRef r x
 
-instance MonadIO (Tc b) where
+instance MonadIO Tc where
     liftIO = liftKZC . liftIO
 
-instance MonadUnique (Tc b) where
+instance MonadUnique Tc where
     newUnique = liftKZC newUnique
 
-instance MonadKZC (Tc b) where
-    liftKZC m = Tc $ \r s k -> do
+instance MonadKZC Tc where
+    liftKZC m = Tc $ \_ s -> do
                 a <- m
-                k a r s
+                return (a, s)
 
-instance MonadException (Tc b) where
+instance MonadException Tc where
     throw e =
         throwContextException (liftKZC . throw) e
 
-    m `catch` h = Tc $ \r s k ->
-      unTc m r s k `catchContextException` \e -> unTc (h e) r s k
+    m `catch` h = Tc $ \r s ->
+      unTc m r s `catchContextException` \e -> unTc (h e) r s
 
-instance MonadErr (Tc b) where
+instance MonadErr Tc where
     {-# INLINE askErrCtx #-}
     askErrCtx = asks errctx
 
@@ -177,23 +184,12 @@ instance MonadErr (Tc b) where
                    liftIO $ hPutStrLn stderr $
                      pretty 80 (text "Warning:" <+> ppr (toContextException ctx e))
 
-reset :: Tc a a -> Tc b a
-reset m = Tc $ \r s k -> do (x, s') <- runTc m r s
-                            k x r s'
-
-shift :: ((a -> Tc b b) -> Tc b b) -> Tc b a
-shift f = Tc $ \r s k ->
-    let c = \x -> Tc $ \r' s k' -> do (y, s') <- k x r' s
-                                      k' y r' s'
-    in
-      runTc (f c) r s
-
-extend :: forall k v a b . Ord k
+extend :: forall k v a . Ord k
        => (TcEnv -> Map k v)
        -> (TcEnv -> Map k v -> TcEnv)
        -> [(k, v)]
-       -> Tc b a
-       -> Tc b a
+       -> Tc a
+       -> Tc a
 extend _ _ [] m = m
 
 extend proj upd kvs m = do
@@ -204,66 +200,66 @@ extend proj upd kvs m = do
 
 lookupBy :: Ord k
          => (TcEnv -> Map k v)
-         -> Tc b v
+         -> Tc v
          -> k
-         -> Tc b v
+         -> Tc v
 lookupBy proj onerr k = do
     maybe_v <- asks (Map.lookup k . proj)
     case maybe_v of
       Nothing  -> onerr
       Just v   -> return v
 
-localExp :: Exp -> Tc b a -> Tc b a
+localExp :: Exp -> Tc a -> Tc a
 localExp e = local (\env -> env { curexp = Just e })
 
-askCurrentExp :: Tc b (Maybe Exp)
+askCurrentExp :: Tc (Maybe Exp)
 askCurrentExp = asks curexp
 
-extendStructs :: [StructDef] -> Tc b a -> Tc b a
+extendStructs :: [StructDef] -> Tc a -> Tc a
 extendStructs ss m =
     extend structs (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
 
-lookupStruct :: Struct -> Tc b StructDef
+lookupStruct :: Struct -> Tc StructDef
 lookupStruct s =
     lookupBy structs onerr s
   where
     onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
 
-maybeLookupStruct :: Struct -> Tc b (Maybe StructDef)
+maybeLookupStruct :: Struct -> Tc (Maybe StructDef)
 maybeLookupStruct s =
     asks (Map.lookup s . structs)
 
-extendVars :: [(Var, Type)] -> Tc b a -> Tc b a
+extendVars :: [(Var, Type)] -> Tc a -> Tc a
 extendVars vtaus m =
     extend varTypes (\env x -> env { varTypes = x }) vtaus m
 
-lookupVar :: Var -> Tc b Type
+lookupVar :: Var -> Tc Type
 lookupVar v =
     lookupBy varTypes onerr v
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
-extendTyVars :: [(TyVar, Kind)] -> Tc b a -> Tc b a
+extendTyVars :: [(TyVar, Kind)] -> Tc a -> Tc a
 extendTyVars tvks m =
     extend tyVars (\env x -> env { tyVars = x }) tvks m
 
-lookupTyVar :: TyVar -> Tc b Kind
+lookupTyVar :: TyVar -> Tc Kind
 lookupTyVar tv =
     lookupBy tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendIVars :: [(IVar, Kind)] -> Tc b a -> Tc b a
+extendIVars :: [(IVar, Kind)] -> Tc a -> Tc a
 extendIVars ivks m =
     extend iVars (\env x -> env { iVars = x }) ivks m
 
-lookupIVar :: IVar -> Tc b Kind
+lookupIVar :: IVar -> Tc Kind
 lookupIVar iv =
     lookupBy iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
 
-localSTIndTypes :: Maybe (Type, Type, Type) -> Tc b a -> Tc b a
+localSTIndTypes :: Maybe (Type, Type, Type) -> Tc a -> Tc a
 localSTIndTypes taus m =
     extendTyVars (alphas `zip` repeat TauK) $
     local (\env -> env { stIndTys = taus }) m
@@ -273,31 +269,31 @@ localSTIndTypes taus m =
                Nothing      -> []
                Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
 
-askSTIndTypes :: Tc b (Type, Type, Type)
+askSTIndTypes :: Tc (Type, Type, Type)
 askSTIndTypes = do
     maybe_taus <- asks stIndTys
     case maybe_taus of
       Just taus -> return taus
       Nothing   -> faildoc $ text "Not in scope of an ST computation"
 
-inScopeTyVars :: Tc b (Set TyVar)
+inScopeTyVars :: Tc (Set TyVar)
 inScopeTyVars = do
     maybe_idxs <- asks stIndTys
     case maybe_idxs of
       Nothing         -> return mempty
       Just (s',a',b') -> return $ fvs [s',a',b']
 
-traceNest :: Int -> Tc b a -> Tc b a
+traceNest :: Int -> Tc a -> Tc a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
 
-traceLint :: Doc -> Tc b ()
+traceLint :: Doc -> Tc ()
 traceLint doc = do
     doTrace <- liftKZC $ asksFlags (testTraceFlag TraceLint)
     when doTrace $ do
         d <- asks nestdepth
         liftIO $ hPutDocLn stderr $ text "traceLint:" <+> indent d (align doc)
 
-withExpContext :: Exp -> Tc b a -> Tc b a
+withExpContext :: Exp -> Tc a -> Tc a
 withExpContext e m =
     localExp e $
     withSummaryContext e m
@@ -308,12 +304,12 @@ withExpContext e m =
  -
  ------------------------------------------------------------------------------}
 
-relevantBindings :: Tc b Doc
+relevantBindings :: Tc Doc
 relevantBindings = do
     maybe_e <- askCurrentExp
     go maybe_e
   where
-    go :: Maybe Exp -> Tc b Doc
+    go :: Maybe Exp -> Tc Doc
     go Nothing =
         return Text.PrettyPrint.Mainland.empty
 
