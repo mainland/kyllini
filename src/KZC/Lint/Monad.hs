@@ -57,7 +57,7 @@ import qualified Data.Map as Map
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
-import System.IO (hPutStrLn, stderr)
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import Language.Core.Smart
@@ -175,14 +175,6 @@ instance MonadErr Tc where
 
     {-# INLINE warnIsError #-}
     warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
-
-    warn e = do
-        werror <- warnIsError
-        if werror
-           then err e
-           else do ctx <- take <$> getMaxContext <*> askErrCtx
-                   liftIO $ hPutStrLn stderr $
-                     pretty 80 (text "Warning:" <+> ppr (toContextException ctx e))
 
 extend :: forall k v a . Ord k
        => (TcEnv -> Map k v)

@@ -22,22 +22,24 @@ module KZC.Error (
     catchContextException,
 
     FailException(..),
+    WarnException(..),
 
     checkDuplicates
   ) where
 
 import Control.Applicative (Applicative, (<$>), (<*>))
-import Control.Monad (when)
 import Control.Monad.Exception
+import Control.Monad.IO.Class
 import Data.List (sortBy)
 import Data.Loc
 import Data.Ord (comparing)
 import Data.Typeable
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Pretty
 
-class (Applicative m, MonadException m) => MonadErr m where
+class (Applicative m, MonadIO m , MonadException m) => MonadErr m where
     {-# INLINE getMaxContext #-}
     getMaxContext :: m Int
     getMaxContext = return 4
@@ -59,8 +61,13 @@ class (Applicative m, MonadException m) => MonadErr m where
     warn :: Exception e => e -> m ()
     warn e = do
         werror <- warnIsError
-        when werror $
-           err e
+        if werror
+          then err e_warn
+          else do ctx <- take <$> getMaxContext <*> askErrCtx
+                  liftIO $ hPutDoc stderr $ ppr (toContextException ctx e_warn)
+      where
+        e_warn :: WarnException
+        e_warn = WarnException (toException e)
 
 localLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
 localLocContext a doc m =
@@ -138,6 +145,18 @@ instance Show FailException where
     show (FailException msg) = pretty 80 msg
 
 instance Exception FailException
+
+data WarnException = WarnException SomeException
+  deriving (Typeable)
+
+instance Exception WarnException where
+
+instance Pretty WarnException where
+    ppr (WarnException e) =
+        text "Warning:" <+> (string . show) e
+
+instance Show WarnException where
+    show = pretty 80 . ppr
 
 checkDuplicates :: forall m a . (Eq a, Ord a, Located a, Pretty a, MonadErr m)
                 => Doc -> [a] -> m ()

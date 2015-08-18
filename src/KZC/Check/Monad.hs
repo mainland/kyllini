@@ -69,7 +69,7 @@ import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
 import Data.Traversable (Traversable, traverse)
-import System.IO (hPutStrLn, stderr)
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import qualified Language.Core.Syntax as C
@@ -190,14 +190,6 @@ instance MonadErr Ti where
 
     {-# INLINE warnIsError #-}
     warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
-
-    warn e = do
-        werror <- warnIsError
-        if werror
-           then err e
-           else do ctx <- take <$> getMaxContext <*> askErrCtx
-                   liftIO $ hPutStrLn stderr $
-                     pretty 80 (text "Warning:" <+> ppr (toContextException ctx e))
 
 extend :: forall k v a . Ord k
        => (TiEnv -> Map k v)
