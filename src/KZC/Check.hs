@@ -635,6 +635,33 @@ tcExp e0@(Z.StructE s flds l) exp_ty =
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         extra = fs' Set.\\ fs
 
+tcExp (Z.ProjE e f l) exp_ty = do
+    (tau, mce) <- inferExp e
+    checkProjE tau mce
+  where
+    checkProjE :: forall b c . Type
+              -> Ti c C.Exp
+              -> Ti b (Ti c C.Exp)
+    checkProjE tau mce = do
+        compress tau >>= go
+      where
+        go :: Type -> Ti b (Ti c C.Exp)
+        go (RefT tau _) = do
+            sdef  <- checkStructT tau >>= lookupStruct
+            tau_f <- checkStructFieldT sdef f
+            instType (RefT tau_f l) exp_ty
+            return $ do ce <- mce
+                        cf <- trans f
+                        return $ C.ProjE ce cf l
+
+        go tau = do
+            sdef  <- checkStructT tau >>= lookupStruct
+            tau_f <- checkStructFieldT sdef f
+            instType tau_f exp_ty
+            return $ do ce <- mce
+                        cf <- trans f
+                        return $ C.ProjE ce cf l
+
 tcExp (Z.PrintE newline es l) exp_ty = do
     (tau, co) <- mkSTC (UnitT l)
     instType tau exp_ty
@@ -1335,6 +1362,28 @@ checkArrT tau =
         alpha <- newMetaTvT TauK tau
         unifyTypes tau (arrT iota alpha)
         return (iota, alpha)
+
+-- | Check that a type is a struct type, returning the name of the struct.
+checkStructT :: Type -> Ti b Z.Struct
+checkStructT tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti b Z.Struct
+    go (StructT s _) =
+        return s
+
+    go tau =
+        faildoc $ nest 2 $
+        text "Expected struct type, but got:" <+/> ppr tau
+
+checkStructFieldT :: StructDef -> Z.Field -> Ti b Type
+checkStructFieldT (StructDef s flds _) f =
+    case lookup f flds of
+      Just tau -> return tau
+      Nothing ->
+          faildoc $
+          text "Struct" <+> ppr s <+>
+          text "does not have a field named" <+> ppr f
 
 -- | Check that a type is an @ST \omega \sigma \alpha \beta@ type, returning the
 -- four type indices
