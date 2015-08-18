@@ -332,6 +332,21 @@ inferExp (IdxE e1 e2 len l) = do
     mkArrSlice tau Nothing  = tau
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
 
+inferExp (ProjE e f l) = do
+    tau <- withExpContext e $ inferExp e
+    go tau
+  where
+    go :: Type -> Tc Type
+    go (RefT tau _) = do
+        sdef  <- checkStructT tau >>= lookupStruct
+        tau_f <- checkStructFieldT sdef f
+        return $ RefT tau_f l
+
+    go tau = do
+        sdef  <- checkStructT tau >>= lookupStruct
+        tau_f <- checkStructFieldT sdef f
+        return tau_f
+
 inferExp e0@(LetStruct s flds e l) = do
     withExpContext e0 $ do
         checkStructNotRedefined s
@@ -774,6 +789,24 @@ checkArrT (ArrT iota alpha _) =
 checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
+
+-- | Check that a type is a struct type, returning the name of the struct.
+checkStructT :: Type -> Tc Struct
+checkStructT (StructT s _) =
+    return s
+
+checkStructT tau =
+    faildoc $ nest 2 $
+    text "Expected struct type, but got:" <+/> ppr tau
+
+checkStructFieldT :: StructDef -> Field -> Tc Type
+checkStructFieldT (StructDef s flds _) f =
+    case lookup f flds of
+      Just tau -> return tau
+      Nothing ->
+          faildoc $
+          text "Struct" <+> ppr s <+>
+          text "does not have a field named" <+> ppr f
 
 checkST :: Type -> Tc (Omega, Type, Type, Type)
 checkST (ST [] omega s a b _) =
