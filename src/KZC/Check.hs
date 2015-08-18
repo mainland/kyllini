@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -39,6 +40,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Typeable
 import Text.PrettyPrint.Mainland
 
 import qualified Language.Core.Smart as C
@@ -1248,7 +1250,7 @@ checkOrdT tau =
     go (StructT s _)
         | Z.isComplexStruct s = return ()
     go tau                    = unifyTypes tau intT `catch`
-                                    \(_ :: SomeException) -> err
+                                    \(_ :: UnificationException) -> err
 
     err :: Ti b a
     err = do
@@ -1265,7 +1267,7 @@ checkBoolT tau =
     go (BoolT {}) = return ()
     go (IntT {})  = return ()
     go tau        = unifyTypes tau intT `catch`
-                        \(_ :: SomeException) -> err
+                        \(_ :: UnificationException) -> err
 
     err :: Ti b a
     err = do
@@ -1281,7 +1283,7 @@ checkBitT tau =
     go (BitT {}) = return ()
     go (IntT {}) = return ()
     go tau       = unifyTypes tau intT `catch`
-                       \(_ :: SomeException) -> err
+                       \(_ :: UnificationException) -> err
 
     err :: Ti b a
     err = do
@@ -1308,7 +1310,7 @@ checkNumT tau =
     go (StructT s _)
         | Z.isComplexStruct s = return ()
     go tau                    = unifyTypes tau intT `catch`
-                                    \(_ :: SomeException) -> err
+                                    \(_ :: UnificationException) -> err
 
     err :: Ti b a
     err = do
@@ -1326,7 +1328,7 @@ checkSignedNumT tau =
     go (StructT s _)
         | Z.isComplexStruct s = return ()
     go tau                    = unifyTypes tau intT `catch`
-                                    \(_ :: SomeException) -> err
+                                    \(_ :: UnificationException) -> err
 
     err :: Ti b a
     err = do
@@ -1592,6 +1594,17 @@ expectedTypeErr tau1 tau2 = do
       text "Expected type:" <+> ppr tau2' </>
       text "but got:      " <+> ppr tau1'
 
+data UnificationException = UnificationException Type Type
+  deriving (Typeable)
+
+instance Show UnificationException where
+    show (UnificationException tau1 tau2) =
+        pretty 80 $
+        text "Expected type:" <+> ppr tau2 </>
+        text "but got:      " <+> ppr tau1
+
+instance Exception UnificationException
+
 -- | Unify two types. The first argument is what we got, and the second is what
 -- we expect.
 unifyTypes :: Type -> Type -> Ti b ()
@@ -1679,8 +1692,9 @@ unifyTypes tau1 tau2 = do
                                              , tv1 == tv2' = do
         return ()
 
-    go _ _ tau1 tau2 =
-        expectedTypeErr tau1 tau2
+    go _ _ tau1 tau2 = do
+        [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
+        throw $ UnificationException tau1' tau2'
 
     updateMetaTv :: MetaTv -> Type -> Type -> Ti b ()
     updateMetaTv mtv tau1 tau2 = do
