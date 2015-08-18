@@ -137,6 +137,8 @@ checkCompLet :: Z.CompLet
              -> Ti (Ti C.Exp)
              -> Ti (Ti C.Exp)
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
+    tau_ret <- newMetaTvT MuK l
+    collectValCtx tau_ret $ do
     (tau, mce1) <- withSummaryContext cl $ do
                    checkLet v ztau TauK e
     mce2        <- extendVars [(v, tau)] $
