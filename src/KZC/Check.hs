@@ -1675,7 +1675,8 @@ unifyTypes tau1 tau2 = do
     go _ _ (VarI v1 _) (VarI v2 _)  | v1 == v2 =
         return ()
 
-    go _ _ (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
+    go theta _ (TyVarT tv1 _) (TyVarT tv2 _) | Just tv2' <- Map.lookup tv2 theta
+                                             , tv1 == tv2' = do
         return ()
 
     go _ _ tau1 tau2 =
