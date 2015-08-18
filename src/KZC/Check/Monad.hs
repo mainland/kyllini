@@ -460,4 +460,3 @@ instance Compress Type where
           Just tau'  ->  do  tau'' <- compress tau'
                              writeTv mtv tau''
                              return tau''
-
