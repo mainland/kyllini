@@ -186,7 +186,8 @@ instance Pretty Type where
     pprPrec _ (StringT _) =
         text "string"
 
-    pprPrec _ (StructT s _) =
+    pprPrec p (StructT s _) =
+        parensIf (p > appPrec) $
         text "struct" <+> ppr s
 
     pprPrec _ (ArrT ind tau _) =
