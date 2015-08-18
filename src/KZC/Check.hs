@@ -110,7 +110,7 @@ checkLetRef v ztau e_init =
     withMaybeExpContext (Just e) m = withExpContext e m
 
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
-            -> Ti (Type, [(Z.Var, Type)], Ti C.Exp -> Ti C.Exp)
+            -> Ti (Type, Ti C.Exp -> Ti C.Exp)
 checkLetFun f ztau ps e l = do
     tau   <- fromZ (ztau, PhiK)
     ptaus <- mapM fromZ ps
@@ -131,7 +131,7 @@ checkLetFun f ztau ps e l = do
         ce1      <- withSummaryContext e $ mce1
         ce2      <- mce2
         return $ C.LetFunE cf [] cptaus ctau_ret ce1 ce2 l
-    return (tau_gen, ptaus, mkLetFun)
+    return (tau_gen, mkLetFun)
 
 checkCompLet :: Z.CompLet
              -> Ti (Ti C.Exp)
@@ -159,10 +159,10 @@ checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
                 return $ C.LetRefE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
-    (tau, ptaus, mkLetFun) <- withSummaryContext cl $
-                              checkLetFun f ztau ps e l
-    mce2                   <- extendVars ((f,tau) : ptaus) $
-                              k
+    (tau, mkLetFun) <- withSummaryContext cl $
+                       checkLetFun f ztau ps e l
+    mce2            <- extendVars [(f,tau)] $
+                       k
     return $ mkLetFun mce2
 
 checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
@@ -204,10 +204,10 @@ checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
                 return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
-    (tau, ptaus, mkLetFun) <- withSummaryContext cl $
-                              checkLetFun f ztau ps e l
-    mce2                   <- extendVars ((f,tau) : ptaus) $
-                              k
+    (tau, mkLetFun) <- withSummaryContext cl $
+                       checkLetFun f ztau ps e l
+    mce2            <- extendVars [(f,tau)] $
+                       k
     return $ mkLetFun mce2
 
 checkCompLet e _ = faildoc $ text "checkCompLet: can't type check:" <+> ppr e

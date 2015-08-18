@@ -204,9 +204,9 @@ inferExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
     let tau = FunT iotas (map snd vbs) tau_ret l
     checkKind tau PhiK
     extendVars [(f, tau)] $ do
-    extendIVars (iotas `zip` repeat IotaK) $ do
-    extendVars vbs $ do
     tau_ret' <- withExpContext e1 $
+                extendIVars (iotas `zip` repeat IotaK) $
+                extendVars vbs $
                 absSTScope tau_ret $
                 inferExp e1
     checkTypeEquality tau_ret' tau_ret
