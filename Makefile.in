@@ -193,7 +193,9 @@ TESTS = \
 	$(wildcard code/WiFi/transmitter/tests/*.blk) \
 	$(wildcard code/WiFi/receiver/tests/*.blk)
 
-TCTESTS = $(shell ls tests/parser/*.wpl | sort)
+TCTESTS = \
+	$(shell ls tests/parser/*.wpl | sort) \
+	$(shell ls tests/backend/*.wpl | sort)
 
 .PHONY : test-parser
 test-parser : kzc
