@@ -462,12 +462,22 @@ tcExp (Z.CallE f es l) exp_ty = do
     -- an r-value context.
     checkArg :: Z.Exp -> Type -> Ti (Ti C.Exp)
     checkArg e tau =
+        withArgContext e $
         compress tau >>= go
       where
         go :: Type -> Ti (Ti C.Exp)
         go (RefT {}) = checkExp e tau
         go (ST {})   = checkExp e tau
         go _         = checkVal e tau
+
+    withArgContext :: MonadErr m
+                   => Z.Exp
+                   -> m b
+                   -> m b
+    withArgContext e act =
+        localLocContext e doc act
+      where
+        doc = text "In argument:" <+> ppr e
 
 tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
     (tau, mce1) <- checkLetRef v ztau e1
