@@ -1542,9 +1542,7 @@ mkCast tau1 tau2 = do
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
 checkCast :: Type -> Type -> Ti b ()
-checkCast tau1 tau2 =
-    unifyTypes tau1 tau2
-  `catch` \(_ :: UnificationException) -> do
+checkCast tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' tau2'
@@ -1562,7 +1560,9 @@ checkCast tau1 tau2 =
     go (StructT s1 _) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2=
         return ()
 
-    go tau1 tau2 = do
+    go tau1 tau2 =
+        unifyTypes tau1 tau2
+      `catch` \(_ :: UnificationException) -> do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
 
