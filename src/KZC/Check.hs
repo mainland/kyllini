@@ -860,9 +860,9 @@ tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
 
 tcStms (stm@(Z.ExpS e _) : []) exp_ty =
     withSummaryContext stm $ do
-    ce <- tcExp e exp_ty
+    mce <- tcExp e exp_ty
     readExpected exp_ty >>= checkST
-    return ce
+    return mce
 
 tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
     (tau, mce1) <-
