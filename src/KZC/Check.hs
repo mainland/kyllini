@@ -1564,6 +1564,12 @@ checkCast tau1 tau2 = do
     go (IntT {}) (IntT {}) =
         return ()
 
+    go (IntT {}) (BitT {}) =
+        return ()
+
+    go (BitT {}) (IntT {}) =
+        return ()
+
     go (FloatT {}) (FloatT {}) =
         return ()
 

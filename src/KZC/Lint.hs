@@ -507,6 +507,12 @@ checkCast tau1 tau2 | tau1 == tau2 =
 checkCast (IntT {}) (IntT {}) =
     return ()
 
+checkCast (IntT {}) (BitT {}) =
+    return ()
+
+checkCast (BitT {}) (IntT {}) =
+    return ()
+
 checkCast (FloatT {}) (FloatT {}) =
     return ()
 
