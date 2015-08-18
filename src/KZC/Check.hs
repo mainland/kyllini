@@ -283,131 +283,124 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
         _ <- checkArrT tau
         return (intT, return C.Len)
 
-tcExp (Z.BinopE op e1 e2 l) exp_ty = do
-    (tau1, mce1) <- inferVal e1
-    (tau2, mce2) <- inferVal e2
-    (tau, cop)   <- binop op tau1 tau2
-    instType tau exp_ty
-    return $ do ce1 <- mce1
-                ce2 <- mce2
-                return $ C.BinopE cop ce1 ce2 l
+tcExp (Z.BinopE op e1 e2 l) exp_ty =
+    binop op
   where
-    binop :: Z.Binop -> Type -> Type -> Ti b (Type, C.Binop)
-    binop Z.Lt tau1 tau2 = do
-        tau <- checkOrdBinop tau1 tau2
-        return (tau, C.Lt)
+    binop :: Z.Binop -> Ti b (Ti c C.Exp)
+    binop Z.Lt   = checkOrdBinop C.Lt
+    binop Z.Le   = checkOrdBinop C.Le
+    binop Z.Eq   = checkEqBinop C.Eq
+    binop Z.Ge   = checkOrdBinop C.Ge
+    binop Z.Gt   = checkOrdBinop C.Gt
+    binop Z.Ne   = checkEqBinop C.Ne
+    binop Z.Land = checkBoolBinop C.Land
+    binop Z.Lor  = checkBoolBinop C.Lor
+    binop Z.Band = checkBitBinop C.Band
+    binop Z.Bor  = checkBitBinop C.Bor
+    binop Z.Bxor = checkBitBinop C.Bxor
+    binop Z.LshL = checkBitShiftBinop C.LshL
+    binop Z.LshR = checkBitShiftBinop C.LshR
+    binop Z.AshR = checkBitShiftBinop C.AshR
+    binop Z.Add  = checkNumBinop C.Add
+    binop Z.Sub  = checkNumBinop C.Sub
+    binop Z.Mul  = checkNumBinop C.Mul
+    binop Z.Div  = checkNumBinop C.Div
+    binop Z.Rem  = checkNumBinop C.Rem
+    binop Z.Pow  = checkNumBinop C.Pow
 
-    binop Z.Le tau1 tau2 = do
-        tau <- checkOrdBinop tau1 tau2
-        return (tau, C.Le)
+    promoteBinopArgs :: Ti b (Type, Ti c C.Exp, Ti c C.Exp)
+    promoteBinopArgs = do
+        (tau1, mce1) <- inferVal e1
+        (tau2, mce2) <- inferVal e2
+        tau1'        <- compress tau1
+        tau2'        <- compress tau2
+        go tau1' e1 mce1 tau2' e2 mce2
+      where
+        go :: Type -> Z.Exp -> Ti c C.Exp
+           -> Type -> Z.Exp -> Ti c C.Exp
+           -> Ti b (Type, Ti c C.Exp, Ti c C.Exp)
+        go tau1@(MetaT {}) _ mce1 tau2 _ mce2 = do
+            unifyTypes tau1 tau2
+            return (tau2, mce1, mce2)
 
-    binop Z.Eq tau1 tau2 = do
-        tau <- checkEqBinop tau1 tau2
-        return (tau, C.Eq)
+        go tau1 _ mce1 tau2@(MetaT {}) _ mce2 = do
+            unifyTypes tau2 tau1
+            return (tau1, mce1, mce2)
 
-    binop Z.Ge tau1 tau2 = do
-        tau <- checkOrdBinop tau1 tau2
-        return (tau, C.Ge)
+        go tau1 _ mce1 tau2 _ mce2 | tau1 == tau2 = do
+            return (tau1, mce1, mce2)
 
-    binop Z.Gt tau1 tau2 = do
-        tau <- checkOrdBinop tau1 tau2
-        return (tau, C.Gt)
+        go tau1 (Z.ConstE {}) mce1 tau2 _ mce2 = do
+            co <- mkCast tau1 tau2
+            return (tau2, co mce1, mce2)
 
-    binop Z.Ne tau1 tau2 = do
-        tau <- checkEqBinop tau1 tau2
-        return (tau, C.Ne)
+        go tau1 _ mce1 tau2 (Z.ConstE {}) mce2 = do
+            co <- mkCast tau2 tau1
+            return (tau2, mce1, co mce2)
 
-    binop Z.Land tau1 tau2 = do
-        tau <- checkBoolBinop tau1 tau2
-        return (tau, C.Land)
+        go tau1 _ mce1 tau2 _ mce2 = do
+            tau <- lubType tau1 tau2
+            co1 <- mkCast tau1 tau
+            co2 <- mkCast tau2 tau
+            return (tau, co1 mce1, co2 mce2)
 
-    binop Z.Lor tau1 tau2 = do
-        tau <- checkBoolBinop tau1 tau2
-        return (tau, C.Lor)
+        lubType :: Type -> Type -> Ti b Type
+        lubType (IntT w1 l) (IntT w2 _) =
+            return $ IntT (max w1 w2) l
 
-    binop Z.Band tau1 tau2 = do
-        tau <- checkBitBinop tau1 tau2
-        return (tau, C.Band)
+        lubType (FloatT w1 l) (FloatT w2 _) =
+            return $ FloatT (max w1 w2) l
 
-    binop Z.Bor tau1 tau2 = do
-        tau <- checkBitBinop tau1 tau2
-        return (tau, C.Bor)
+        lubType tau1 tau2 =
+            faildoc $ nest 2 $
+              text "Cannot align argument" <+> ppr e1 <+/>
+              text "of type" <+> ppr tau1 <+/>
+              text "with argument" <+> ppr e2 <+/>
+              text "of type" <+> ppr tau2
 
-    binop Z.Bxor tau1 tau2 = do
-        tau <- checkBitBinop tau1 tau2
-        return (tau, C.Bxor)
+    checkEqBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkEqBinop cop = do
+        (tau, mce1, mce2) <- promoteBinopArgs
+        checkEqT tau
+        instType boolT exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    binop Z.LshL tau1 tau2 = do
-        tau <- checkBitShiftBinop tau1 tau2
-        return (tau, C.LshL)
+    checkOrdBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkOrdBinop cop = do
+        (tau, mce1, mce2) <- promoteBinopArgs
+        checkOrdT tau
+        instType boolT exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    binop Z.LshR tau1 tau2 = do
-        tau <- checkBitShiftBinop tau1 tau2
-        return (tau, C.LshR)
+    checkBoolBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBoolBinop cop = do
+        (tau, mce1, mce2) <- promoteBinopArgs
+        checkBoolT tau
+        instType tau exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    binop Z.AshR tau1 tau2 = do
-        tau <- checkBitShiftBinop tau1 tau2
-        return (tau, C.AshR)
+    checkNumBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkNumBinop cop = do
+        (tau, mce1, mce2) <- promoteBinopArgs
+        checkNumT tau
+        instType tau exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    binop Z.Add tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Add)
+    checkBitBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBitBinop cop = do
+        (tau, mce1, mce2) <- promoteBinopArgs
+        checkBitT tau
+        instType tau exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    binop Z.Sub tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Sub)
-
-    binop Z.Mul tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Mul)
-
-    binop Z.Div tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Div)
-
-    binop Z.Rem tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Rem)
-
-    binop Z.Pow tau1 tau2 = do
-        tau <- checkNumBinop tau1 tau2
-        return (tau, C.Pow)
-
-    checkEqBinop :: Type -> Type -> Ti b Type
-    checkEqBinop tau1 tau2 = do
-        checkEqT tau1
-        unifyTypes tau2 tau1
-        return boolT
-
-    checkOrdBinop :: Type -> Type -> Ti b Type
-    checkOrdBinop tau1 tau2 = do
-        checkOrdT tau1
-        unifyTypes tau2 tau1
-        return boolT
-
-    checkBoolBinop :: Type -> Type -> Ti b Type
-    checkBoolBinop tau1 tau2 = do
-        checkBoolT tau1
-        unifyTypes tau2 tau1
-        return tau1
-
-    checkNumBinop :: Type -> Type -> Ti b Type
-    checkNumBinop tau1 tau2 = do
-        checkNumT tau1
-        unifyTypes tau2 tau1
-        return tau1
-
-    checkBitBinop :: Type -> Type -> Ti b Type
-    checkBitBinop tau1 tau2 = do
-        checkBitT tau1
-        unifyTypes tau2 tau1
-        return tau1
-
-    checkBitShiftBinop :: Type -> Type -> Ti b Type
-    checkBitShiftBinop tau1 tau2 = do
+    checkBitShiftBinop :: C.Binop -> Ti b (Ti c C.Exp)
+    checkBitShiftBinop cop = do
+        (tau1, mce1) <- inferVal e1
+        (tau2, mce2) <- inferVal e2
         checkBitT tau1
         checkIntT tau2
-        return tau1
+        instType tau1 exp_ty
+        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1 <- checkExp e1 (BoolT l)
@@ -1475,33 +1468,32 @@ mkSTC tau = do
 castVal :: Type -> Z.Exp -> Ti b (Ti c C.Exp)
 castVal tau2 e = do
     (tau1, mce) <- inferVal e
+    co          <- mkCast tau1 tau2
+    return $ co mce
+
+mkCast :: Type -> Type -> Ti b (Co c)
+mkCast tau1 tau2 = do
     checkCast tau1 tau2
-    return $ mkCast tau1 tau2 mce
-  where
-    mkCast :: Type -> Type -> Co b
-    mkCast tau1 tau2 mce = do
+    return $ \mce -> do
         tau1' <- compress tau1
         tau2' <- compress tau2
         go tau1' tau2' mce
-      where
-        go :: Type -> Type -> Co b
-        go tau1 tau2 mce | tau1 == tau2 =
-            mce
+  where
+    go :: Type -> Type -> Co b
+    go tau1 tau2 mce | tau1 == tau2 =
+        mce
 
-        go _ tau2 mce = do
-            ctau <- trans tau2
-            ce   <- mce
-            return $ C.UnopE (C.Cast ctau) ce l
-
-    l :: SrcLoc
-    l = srclocOf e
+    go _ tau2 mce = do
+        ctau <- trans tau2
+        ce   <- mce
+        return $ C.UnopE (C.Cast ctau) ce (srclocOf ce)
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
 checkCast :: Type -> Type -> Ti b ()
 checkCast tau1 tau2 =
     unifyTypes tau1 tau2
-  `catch` \(_ :: SomeException) -> do
+  `catch` \(_ :: UnificationException) -> do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' tau2'
