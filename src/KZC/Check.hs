@@ -427,10 +427,7 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
     (tau, mce1) <- checkLet v ztau TauK e1
     mce2        <- withExpContext e2 $
                    extendVars [(v, tau)] $ do
-                   tau_ret <- newMetaTvT MuK l
-                   instType tau_ret exp_ty
-                   collectValCtx tau_ret $ do
-                   checkExp e2 tau_ret
+                   tcExp e2 exp_ty
     return $ do cv   <- trans v
                 ctau <- trans tau
                 ce1  <- mce1
