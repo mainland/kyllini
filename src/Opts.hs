@@ -111,6 +111,7 @@ dTraceFlagOpts :: [(TraceFlag, String, String)]
 dTraceFlagOpts =
   [ (TraceLexer,  "lex",   "trace lexer")
   , (TraceParser, "parse", "trace parser")
+  , (TraceRn,     "rn",    "trace renamer")
   , (TraceTc,     "tc",    "trace type checker")
   , (TraceLint,   "lint",  "trace linter")
   ]

@@ -43,18 +43,43 @@ lookupVar v =
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
+extendCompVars :: Doc -> [Var] -> Rn a -> Rn a
+extendCompVars desc vs m = do
+    checkDuplicates desc vs
+    vs' <- mapM mkUniq vs
+    extend compVars (\env x -> env { compVars = x }) (vs `zip` vs') m
+
+lookupMaybeCompVar :: Var -> Rn Var
+lookupMaybeCompVar v = do
+    incs     <- asks compScope
+    maybe_v' <- if incs
+                then asks (Map.lookup v . compVars)
+                else asks (Map.lookup v . vars)
+    case maybe_v' of
+      Just v' -> return v'
+      Nothing -> do maybe_v' <- asks (Map.lookup v . vars)
+                    case maybe_v' of
+                      Nothing -> onerr
+                      Just v' -> return v'
+  where
+    onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+
 mkUniq :: Var -> Rn Var
 mkUniq v = do
     ins <- inscope v
     if ins then uniquify v else return v
-
-uniquify :: Var -> Rn Var
-uniquify (Var n) = do
-    u <- newUnique
-    return $ Var $ n { nameSort = Internal u }
+  where
+    uniquify :: Var -> Rn Var
+    uniquify (Var n) = do
+        u <- newUnique
+        return $ Var $ n { nameSort = Internal u }
 
 inscope :: Var -> Rn Bool
-inscope v = asks (Map.member v . vars)
+inscope v = do
+    member_vars <- asks (Map.member v . vars)
+    if member_vars
+       then return True
+       else asks (Map.member v . compVars)
 
 class Rename a where
     rn :: a -> Rn a
@@ -89,7 +114,7 @@ instance Rename Exp where
         LetE <$> rn v <*> pure tau <*> rn e1 <*> rn e2 <*> pure l
 
     rn (CallE f es l) =
-        CallE <$> rn f <*> rn es <*> pure l
+        CallE <$> lookupMaybeCompVar f <*> rn es <*> pure l
 
     rn (LetRefE v tau e1 e2 l) =
         extendVars (text "definition") [v] $
@@ -149,10 +174,10 @@ instance Rename Exp where
         EmitsE <$> rn e <*> pure l
 
     rn (RepeatE ann e l) =
-        RepeatE ann <$> rn e <*> pure l
+        RepeatE ann <$> inCompScope (rn e) <*> pure l
 
     rn (ArrE ann e1 e2 l) =
-        ArrE ann <$> rn e1 <*> rn e2 <*> pure l
+        ArrE ann <$> inCompScope (rn e1) <*> inCompScope (rn e2) <*> pure l
 
     rn (ReadE tau l) =
         pure $ ReadE tau l
@@ -184,13 +209,13 @@ rnCompLet :: CompLet -> (CompLet -> Rn a) -> Rn a
 rnCompLet cl@(LetCL v tau e l) k =
     extendVars (text "variable") [v] $ do
     cl' <- withSummaryContext cl $
-           LetCL <$> rn v <*> pure tau <*> rn e <*> pure l
+           LetCL <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
     k cl'
 
 rnCompLet cl@(LetRefCL v tau e l) k =
     extendVars (text "mutable variable") [v] $ do
     cl' <-withSummaryContext cl $
-            LetRefCL <$> rn v <*> pure tau <*> rn e <*> pure l
+            LetRefCL <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
     k cl'
 
 rnCompLet cl@(LetFunCL v tau vbs e l) k =
@@ -215,14 +240,15 @@ rnCompLet cl@(LetStructCL s l) k = do
 rnCompLet cl@(LetCompCL v tau range e l) k =
     extendVars (text "computation") [v] $ do
     cl' <- withSummaryContext cl $
-           LetCompCL <$> rn v <*> pure tau <*> pure range <*> rn e <*> pure l
+           LetCompCL <$> rn v <*> pure tau <*> pure range <*> inCompScope (rn e) <*> pure l
     k cl'
 
-rnCompLet cl@(LetFunCompCL v tau range vbs e l) k =
-    extendVars (text "computation function") [v] $ do
+rnCompLet cl@(LetFunCompCL f tau range vbs e l) k =
+    extendCompVars (text "computation function") [f] $ do
     cl' <- withSummaryContext cl $
            extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-           LetFunCompCL <$> rn v <*> pure tau <*> pure range <*> rn vbs <*> rn e <*> pure l
+           LetFunCompCL <$> inCompScope (lookupMaybeCompVar f) <*>
+               pure tau <*> pure range <*> rn vbs <*> rn e <*> pure l
     k cl'
 
 rnCompLets :: [CompLet] -> Rn [CompLet]
@@ -265,11 +291,11 @@ rnCmd (LetC cl l) k =
 
 rnCmd (BindC v tau e l) k =
     extendVars (text "definition") [v] $ do
-    cmd' <- BindC <$> rn v <*> pure tau <*> rn e <*> pure l
+    cmd' <- BindC <$> rn v <*> pure tau <*> inCompScope (rn e) <*> pure l
     k cmd'
 
 rnCmd (ExpC e l) k = do
-    cmd' <- ExpC <$> rn e <*> pure l
+    cmd' <- ExpC <$> inCompScope (rn e) <*> pure l
     k cmd'
 
 rnCmds :: [Cmd] -> Rn [Cmd]

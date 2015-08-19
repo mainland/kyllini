@@ -68,7 +68,7 @@ runPipeline filepath = do
     pipeline = renamePipe >=> checkPipe
 
     renamePipe :: [Z.CompLet] -> KZC [Z.CompLet]
-    renamePipe = runRn . renameProgram >=> dumpPass DumpRename "z" "rn"
+    renamePipe = runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
 
     checkPipe :: [Z.CompLet] -> KZC C.Exp
     checkPipe = withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore

@@ -57,6 +57,7 @@ data DumpFlag = DumpCPP
 
 data TraceFlag = TraceLexer
                | TraceParser
+               | TraceRn
                | TraceTc
                | TraceLint
   deriving (Eq, Ord, Enum, Show)

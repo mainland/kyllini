@@ -13,7 +13,13 @@ module KZC.Rename.Monad (
     runRn,
 
     extend,
-    lookupBy
+    lookupBy,
+
+    inCompScope,
+    inPureScope,
+
+    traceNest,
+    traceRn
   ) where
 
 import Control.Applicative
@@ -24,9 +30,10 @@ import Data.IORef
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
-import qualified Language.Ziria.Syntax as Z
+import Language.Ziria.Syntax
 
 import KZC.Error
 import KZC.Flags
@@ -36,7 +43,9 @@ import KZC.Uniq
 data RnEnv = RnEnv
     { errctx    :: ![ErrorContext]
     , nestdepth :: {-# UNPACK #-} !Int
-    , vars      :: Map Z.Var Z.Var
+    , vars      :: Map Var Var
+    , compVars  :: Map Var Var
+    , compScope :: Bool
     }
 
 defaultRnEnv :: RnEnv
@@ -44,6 +53,8 @@ defaultRnEnv = RnEnv
     { errctx    = []
     , nestdepth = 0
     , vars      = Map.empty
+    , compVars  = Map.empty
+    , compScope = False
     }
 
 newtype Rn a = Rn { unRn :: RnEnv -> KZC a }
@@ -135,3 +146,19 @@ lookupBy proj onerr k = do
     case maybe_v of
       Nothing  -> onerr
       Just v   -> return v
+
+inCompScope :: Rn a -> Rn a
+inCompScope m = local (\env -> env { compScope = True }) m
+
+inPureScope :: Rn a -> Rn a
+inPureScope m = local (\env -> env { compScope = False }) m
+
+traceNest :: Int -> Rn a -> Rn a
+traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
+
+traceRn :: Doc -> Rn ()
+traceRn doc = do
+    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceRn)
+    when doTrace $ do
+        d <- asks nestdepth
+        liftIO $ hPutDocLn stderr $ text "traceRn:" <+> indent d (align doc)
