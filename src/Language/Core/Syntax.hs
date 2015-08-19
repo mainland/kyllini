@@ -111,7 +111,7 @@ data Exp = ConstE Const !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | UntilE Exp Exp !SrcLoc
-         | ForE Var Exp Exp Exp !SrcLoc
+         | ForE Var Type Exp Exp Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
@@ -426,9 +426,9 @@ instance Pretty Exp where
         group (pprPrec appPrec1 e1) <+>
         pprBody e2
 
-    pprPrec _ (ForE v e1 e2 e3 _) =
+    pprPrec _ (ForE v tau e1 e2 e3 _) =
         text "for" <+>
-        group (ppr v <+> text "in" <+> brackets (commasep [ppr e1, ppr e2])) <>
+        group (parens (ppr v <+> colon <+> ppr tau) <+> text "in" <+> brackets (commasep [ppr e1, ppr e2])) <>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
@@ -740,7 +740,7 @@ instance Fvs Exp Var where
     fvs (AssignE e1 e2 _)         = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)          = fvs e1 <> fvs e2
     fvs (UntilE e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (ForE v e1 e2 e3 _)       = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ForE v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
     fvs (ArrayE es _)             = fvs es
     fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
     fvs (LetStruct _ _ e _)       = fvs e

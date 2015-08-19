@@ -536,22 +536,23 @@ tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
     return $ do cx  <- C.mkUniqVar "x" l
                 ce1 <- mce1
                 ce2 <- mce2
-                return $ C.ForE cx (C.intE 1) ce1 ce2 l
+                return $ C.ForE cx C.intT (C.intE 1) ce1 ce2 l
 
 tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)
     checkIntT tau_i
-    mce1 <- checkExp e1 tau_i
-    mce2 <- checkExp e2 tau_i
+    mce1 <- castVal tau_i e1
+    mce2 <- castVal tau_i e2
     (tau, mce3) <- extendVars [(i, tau_i)] $
                    inferExp e3
     _           <- checkSTCUnit tau
     instType tau exp_ty
-    return $ do ci  <- trans i
-                ce1 <- mce1
-                ce2 <- mce2
-                ce3 <- mce3
-                return $ C.ForE ci ce1 ce2 ce3 l
+    return $ do ci     <- trans i
+                ctau_i <- trans tau_i
+                ce1    <- mce1
+                ce2    <- mce2
+                ce3    <- mce3
+                return $ C.ForE ci ctau_i ce1 ce2 ce3 l
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT TauK l

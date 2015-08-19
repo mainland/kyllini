@@ -294,12 +294,13 @@ inferExp (UntilE e1 e2 _) = do
     void $ checkSTCUnit tau
     return tau
 
-inferExp (ForE v e1 e2 e3 _) = do
+inferExp (ForE v tau e1 e2 e3 _) = do
+    checkIntT tau
     withExpContext e1 $
-        checkExp e1 intT
+        checkExp e1 tau
     withExpContext e2 $
-        checkExp e2 intT
-    tau <- extendVars [(v, intT)] $
+        checkExp e2 tau
+    tau <- extendVars [(v, tau)] $
            withExpContext e3 $
            inferExp e3
     void $ checkSTCUnit tau
