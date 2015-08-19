@@ -514,6 +514,12 @@ checkCast (IntT {}) (BitT {}) =
 checkCast (BitT {}) (IntT {}) =
     return ()
 
+checkCast (IntT {}) (FloatT {}) =
+    return ()
+
+checkCast (FloatT {}) (IntT {}) =
+    return ()
+
 checkCast (FloatT {}) (FloatT {}) =
     return ()
 
