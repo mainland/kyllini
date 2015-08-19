@@ -338,7 +338,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
 
         go tau1 _ mce1 tau2 (Z.ConstE {}) mce2 = do
             co <- mkCast tau2 tau1
-            return (tau2, mce1, co mce2)
+            return (tau1, mce1, co mce2)
 
         go tau1 _ mce1 tau2 _ mce2 = do
             tau <- lubType tau1 tau2
