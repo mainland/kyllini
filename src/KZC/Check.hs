@@ -143,29 +143,32 @@ checkCompLet cl@(Z.LetCL v ztau e l) k = do
                    checkLet v ztau TauK e
     mce2        <- extendVars [(v, tau)] $
                    k
-    return $ do cv   <- trans v
-                ctau <- trans tau
-                ce1  <- withSummaryContext cl $ mce1
-                ce2  <- mce2
-                return $ C.LetE cv ctau ce1 ce2 l
+    return $ withSummaryContext cl $ do
+        cv   <- trans v
+        ctau <- trans tau
+        ce1  <- withSummaryContext cl $ mce1
+        ce2  <- mce2
+        return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
     (tau, mce1) <- withSummaryContext cl $
                    checkLetRef v ztau e_init
     mce2        <- extendVars [(v, refT tau)] $
                    k
-    return $ do cv   <- trans v
-                ctau <- trans tau
-                ce1  <- withSummaryContext cl $ mce1
-                ce2  <- mce2
-                return $ C.LetRefE cv ctau ce1 ce2 l
+    return $ withSummaryContext cl $ do
+        cv   <- trans v
+        ctau <- trans tau
+        ce1  <- withSummaryContext cl $ mce1
+        ce2  <- mce2
+        return $ C.LetRefE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
     (tau, mkLetFun) <- withSummaryContext cl $
                        checkLetFun f ztau ps e l
     mce2            <- extendVars [(f,tau)] $
                        k
-    return $ mkLetFun mce2
+    return $ withSummaryContext cl $
+             mkLetFun mce2
 
 checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
     (taus, mkLetStruct) <-
@@ -182,8 +185,9 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
         return (taus, mkLetStruct)
     mce <- extendStructs [StructDef zs (zfnames `zip` taus) l1] $
            k
-    return $ do ce <- mce
-                mkLetStruct ce
+    return $ withSummaryContext cl $ do
+        ce <- mce
+        mkLetStruct ce
   where
     (zfnames, ztaus) = unzip zflds
 
@@ -210,7 +214,8 @@ checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
                        checkLetFun f ztau ps e l
     mce2            <- extendVars [(f,tau)] $
                        k
-    return $ mkLetFun mce2
+    return $ withSummaryContext cl $
+             mkLetFun mce2
 
 checkCompLet e _ = faildoc $ text "checkCompLet: can't type check:" <+> ppr e
 
@@ -1825,6 +1830,22 @@ instance FromZ Z.VarBind (Z.Var, Type) where
     fromZ (Z.VarBind v True ztau) = do
           tau <- refT <$> fromZ ztau
           return (v, tau)
+
+instance FromZ [Z.VarBind] [(Z.Var, Type)] where
+    fromZ [] =
+        return []
+
+    fromZ (Z.VarBind v False ztau : vbs) = do
+          tau  <- fromZ ztau
+          vbs' <- extendVars [(v, tau)] $
+                  fromZ vbs
+          return $ (v, tau) : vbs'
+
+    fromZ (Z.VarBind v True ztau : vbs) = do
+          tau  <- refT <$> fromZ ztau
+          vbs' <- extendVars [(v, tau)] $
+                  fromZ vbs
+          return $ (v, tau) : vbs'
 
 class Trans a b | b -> a where
     trans :: a -> Ti b
