@@ -51,6 +51,7 @@ data WarnFlag = WarnError
   deriving (Eq, Ord, Enum, Show)
 
 data DumpFlag = DumpCPP
+              | DumpRename
               | DumpCore
   deriving (Eq, Ord, Enum, Show)
 

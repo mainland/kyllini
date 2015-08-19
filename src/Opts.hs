@@ -102,8 +102,9 @@ dDynFlagOpts =
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
 dDumpFlagOpts =
-  [ (DumpCPP,  "cpp",  "dump CPP output")
-  , (DumpCore, "core", "dump core")
+  [ (DumpCPP,    "cpp",  "dump CPP output")
+  , (DumpRename, "rn",   "dump renamer output")
+  , (DumpCore,   "core", "dump core")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]

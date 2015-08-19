@@ -30,6 +30,7 @@ import KZC.Check
 import KZC.Flags
 import qualified KZC.Lint as Lint
 import KZC.Monad
+import KZC.Rename
 import KZC.SysTools
 
 import Opts
@@ -64,13 +65,13 @@ runPipeline filepath = do
     start = startPos filepath
 
     pipeline :: [Z.CompLet] -> KZC C.Exp
-    pipeline = checkPipeline
+    pipeline = renamePipe >=> checkPipe
 
-    checkPipeline :: [Z.CompLet] -> KZC C.Exp
-    checkPipeline = check >=> dumpPass DumpCore "core" "tc" >=> lintCore
+    renamePipe :: [Z.CompLet] -> KZC [Z.CompLet]
+    renamePipe = runRn . renameProgram >=> dumpPass DumpRename "z" "rn"
 
-    check :: [Z.CompLet] -> KZC C.Exp
-    check decls = withTi $ checkProgram decls
+    checkPipe :: [Z.CompLet] -> KZC C.Exp
+    checkPipe = withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
     lintCore :: C.Exp -> KZC C.Exp
     lintCore e = do

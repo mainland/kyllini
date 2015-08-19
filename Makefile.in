@@ -111,6 +111,8 @@ SOURCE = \
 	KZC/Lint/State.hs \
 	KZC/Name.hs \
 	KZC/Pretty.hs \
+	KZC/Rename.hs \
+	KZC/Rename/Monad.hs \
 	KZC/Summary.hs \
 	KZC/SysTools.hs \
 	KZC/Uniq.hs \
