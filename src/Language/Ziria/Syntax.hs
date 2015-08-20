@@ -393,15 +393,17 @@ instance Pretty Exp where
 
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
+        nest 2 $
         text "let" <+> pprSig v tau <+>
         text "="   <+>
-        nest 2 (ppr e1 <+/> text "in" <+> ppr e2)
+        ppr e1 <+/> text "in" <+> ppr e2
 
     pprPrec _ (CallE f vs _) =
         ppr f <> parens (commasep (map ppr vs))
 
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
+        nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+>
         pprInitializer e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
@@ -410,17 +412,24 @@ instance Pretty Exp where
         ppr v <+> text ":=" <+> ppr e
 
     pprPrec _ (WhileE e1 e2 _) =
-        text "while" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
+        nest 2 $
+        text "while" <+> pprPrec appPrec1 e1 <+/>
+        pprPrec appPrec1 e2
 
     pprPrec _ (UntilE e1 e2 _) =
-        text "until" <+> pprPrec appPrec1 e1 <+> pprPrec appPrec1 e2
+        nest 2 $
+        text "until" <+> pprPrec appPrec1 e1 <+/>
+        pprPrec appPrec1 e2
 
     pprPrec _ (TimesE ann e1 e2 _) =
-        ppr ann <+> text "times" <+> ppr e1 <+> ppr e2
+        nest 2 $
+        ppr ann <+> text "times" <+> ppr e1 <+/>
+        ppr e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+        nest 2 $
         ppr ann <+> text "for" <+> pprSig v tau <+> text "in" <+>
-        brackets (commasep [ppr e1, ppr e2]) <+>
+        flatten (brackets (commasep [ppr e1, ppr e2])) <+/>
         ppr e3
 
     pprPrec _ (ArrayE es _) =
@@ -553,25 +562,31 @@ instance Pretty Binop where
 
 instance Pretty CompLet where
     ppr (LetCL v tau e _) =
+        nest 2 $
         text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
 
     ppr (LetRefCL v tau e _) =
+        nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
     ppr (LetFunCL f tau ps e _) =
+        nest 2 $
         text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+/> ppr e
 
     ppr (LetFunExternalCL f ps tau _) =
+        nest 2 $
         text "fun" <+> text "external" <+> ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
 
     ppr (LetStructCL def _) =
         ppr def
 
     ppr (LetCompCL v tau range e _) =
+        nest 2 $
         text "let" <+> text "comp" <+> pprRange range <+>
         pprSig v tau <+> text "=" <+/> ppr e
 
     ppr (LetFunCompCL f tau range ps e _) =
+        nest 2 $
         text "fun" <+> text "comp" <+> pprRange range <+>
         pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
 
@@ -579,16 +594,18 @@ instance Pretty CompLet where
 
 instance Pretty Stm where
     ppr (LetS v tau e _) =
+        nest 2 $
         text "let" <+> pprSig v tau <+> text "=" <+> ppr e
 
     ppr (LetRefS v tau e _) =
+        nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
     ppr (ExpS e _) =
         ppr e
 
     pprList stms =
-        embrace semisep (map ppr stms)
+        semiEmbrace (map ppr stms)
 
 instance Pretty Cmd where
     ppr (LetC l _) =
@@ -601,7 +618,7 @@ instance Pretty Cmd where
         ppr e
 
     pprList cmds =
-        embrace semisep (map ppr cmds)
+        semiEmbrace (map ppr cmds)
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
