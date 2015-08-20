@@ -444,7 +444,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
-    mce1 <- checkExp e1 (BoolT l)
+    mce1        <- checkVal e1 (BoolT l)
     (tau, mce2) <- inferExp e2
     checkSTCUnit tau
     instType tau exp_ty
@@ -453,7 +453,7 @@ tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
                 return $ C.IfE ce1 ce2 (C.returnE C.unitE) l
 
 tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
-    mce1 <- checkExp e1 (BoolT l)
+    mce1        <- checkVal e1 (BoolT l)
     (tau, mce2) <- inferExp e2
     mce3        <- checkExp e3 tau
     instType tau exp_ty
