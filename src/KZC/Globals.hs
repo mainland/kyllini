@@ -7,7 +7,10 @@
 
 module KZC.Globals (
     setPrintUniques,
-    printUniques
+    printUniques,
+
+    setExpertTypes,
+    expertTypes
   ) where
 
 import Control.Monad.Trans (MonadIO(..))
@@ -26,3 +29,16 @@ printUniques :: Bool
 {-# NOINLINE printUniques #-}
 printUniques =
     unsafePerformIO $ readIORef gPrintUniques
+
+gExpertTypes :: IORef Bool
+gExpertTypes =
+    unsafePerformIO $ newIORef False
+
+setExpertTypes :: MonadIO m => Bool -> m ()
+setExpertTypes flag =
+    liftIO $ writeIORef gExpertTypes flag
+
+expertTypes :: Bool
+{-# NOINLINE expertTypes #-}
+expertTypes =
+    unsafePerformIO $ readIORef gExpertTypes

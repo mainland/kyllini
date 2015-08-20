@@ -98,6 +98,8 @@ dDynFlagOpts =
                    "lint core")
   , (PrintUniques, "print-uniques",
                    "show uniques when pretty-printing")
+  , (ExpertTypes,  "expert-types",
+                   "show \"expert\" types when pretty-printing")
   ]
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
@@ -127,6 +129,8 @@ compilerOpts argv = do
       (fs,n,[] ) -> do let fs' = foldr ($) mempty fs
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
+                       when (testDynFlag ExpertTypes fs') $
+                           setExpertTypes True
                        return (fs', n)
       (_,_,errs) -> do usageDesc <- usage
                        ioError (userError (concat errs ++ usageDesc))

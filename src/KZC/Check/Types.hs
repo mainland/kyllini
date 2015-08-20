@@ -25,6 +25,7 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Globals
 import KZC.Name
 import KZC.Pretty
 import KZC.Uniq
@@ -186,9 +187,8 @@ instance Pretty Type where
     pprPrec _ (StringT _) =
         text "string"
 
-    pprPrec p (StructT s _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s
+    pprPrec _ (StructT s _) =
+        ppr s
 
     pprPrec _ (ArrT ind tau _) =
         pprPrec appPrec1 tau <> brackets (ppr ind)
@@ -200,7 +200,7 @@ instance Pretty Type where
     pprPrec _ (T _) =
         text "T"
 
-    pprPrec p (ST alphas omega tau1 tau2 tau3 _) =
+    pprPrec p (ST alphas omega tau1 tau2 tau3 _) | expertTypes =
         parensIf (p > appPrec) $
         pprForall alphas <+>
         text "ST" <+>
@@ -213,11 +213,25 @@ instance Pretty Type where
         pprForall []     = empty
         pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
 
-    pprPrec p (RefT tau _) =
+    pprPrec p (ST [_,_,_] (C tau _) _ _ _ _) =
+        pprPrec p tau
+
+    pprPrec p (ST _ omega _ tau2 tau3 _) =
+        parensIf (p > appPrec) $
+        text "ST" <+>
+        align (sep [pprPrec appPrec1 omega
+                   ,pprPrec appPrec1 tau2
+                   ,pprPrec appPrec1 tau3])
+
+    pprPrec p (RefT tau _) | expertTypes =
         parensIf (p > appPrec) $
         text "ref" <+> ppr tau
 
-    pprPrec p (FunT iotas taus tau _) =
+    pprPrec p (RefT tau _) =
+        parensIf (p > appPrec) $
+        text "var" <+> ppr tau
+
+    pprPrec p (FunT iotas taus tau _) | expertTypes =
         parensIf (p > arrowPrec) $
         pprArgs iotas taus <+>
         text "->" <+>
@@ -232,6 +246,19 @@ instance Pretty Type where
 
         pprArgs iotas taus =
             parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus))
+
+    pprPrec p (FunT _ taus tau _) =
+        parensIf (p > arrowPrec) $
+        pprArgs taus <+>
+        text "->" <+>
+        pprPrec arrowPrec1 tau
+      where
+        pprArgs :: [Type] -> Doc
+        pprArgs [tau1] =
+            ppr tau1
+
+        pprArgs taus =
+            parens (commasep (map ppr taus))
 
     pprPrec _ (ConstI i _) =
         ppr i
