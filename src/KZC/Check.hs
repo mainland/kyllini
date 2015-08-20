@@ -972,49 +972,54 @@ tcStms (stm@(Z.LetS {}) : []) _ =
     faildoc $ text "Last statement in statement sequence must be an expression"
 
 tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
-    (tau, mce1) <- withSummaryContext stm $
-                   checkLet v ztau TauK e
-    mce2        <- extendVars [(v, tau)] $ do
-                   tau2 <- newMetaTvT MuK l
-                   instType tau2 exp_ty
-                   collectValCtx tau2 $ do
-                   checkStms stms tau2
-    return $ do cv   <- trans v
-                ctau <- trans tau
-                ce1  <- withSummaryContext stm $ mce1
-                ce2  <- mce2
-                return $ C.LetE cv ctau ce1 ce2 l
+    tau <- mkSTOmega
+    instType tau exp_ty
+    collectValCtx tau $ do
+    (tau1, mce1) <- withSummaryContext stm $
+                    checkLet v ztau TauK e
+    mce2         <- extendVars [(v, tau1)] $
+                    checkStms stms tau
+    return $ do cv    <- trans v
+                ctau1 <- trans tau1
+                ce1   <- withSummaryContext stm $ mce1
+                ce2   <- mce2
+                return $ C.LetE cv ctau1 ce1 ce2 l
 
 tcStms (stm@(Z.LetRefS {}) : []) _ =
     withSummaryContext stm $
     faildoc $ text "Last statement in statement sequence must be an expression"
 
 tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
-    (tau, mce1) <- withSummaryContext stm $
-                   checkLetRef v ztau e_init
-    mce2        <- extendVars [(v, refT tau)] $
-                   tcStms stms exp_ty
-    return $ do cv   <- trans v
-                ctau <- trans tau
-                ce1  <- withSummaryContext stm $ mce1
-                ce2  <- mce2
-                return $ C.LetRefE cv ctau ce1 ce2 l
+    tau <- mkSTOmega
+    instType tau exp_ty
+    collectValCtx tau $ do
+    (tau1, mce1) <- withSummaryContext stm $
+                    checkLetRef v ztau e_init
+    mce2         <- extendVars [(v, refT tau1)] $
+                    checkStms stms tau
+    return $ do cv    <- trans v
+                ctau1 <- trans tau1
+                ce1   <- withSummaryContext stm $ mce1
+                ce2   <- mce2
+                return $ C.LetRefE cv ctau1 ce1 ce2 l
 
 tcStms (stm@(Z.ExpS e _) : []) exp_ty =
     withSummaryContext stm $ do
-    mce <- tcExp e exp_ty
-    readExpected exp_ty >>= checkST
-    return mce
+    tau <- mkSTOmega
+    instType tau exp_ty
+    collectValCtx tau $ do
+    checkExp e tau
 
 tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
-    (tau, mce1) <-
-        withSummaryContext stm $ do
-        nu          <- newMetaTvT TauK l
-        (tau, mce1) <- checkExpSTC e nu
-        instType tau exp_ty
-        return (tau, mce1)
-    mce2 <- collectValCtx tau $
-            checkStms stms tau
+    nu                     <- newMetaTvT TauK l
+    tau1@(ST [] _ s a b _) <- mkSTC nu
+    omega2                 <- newMetaTvT OmegaK l
+    let tau2               =  ST [] omega2 s a b l
+    instType tau2 exp_ty
+    mce1  <- withSummaryContext stm $
+             collectValCtx tau1 $
+             checkExp e tau1
+    mce2  <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
@@ -1030,23 +1035,28 @@ tcCmds (cmd@(Z.LetC {}) : []) _ =
     withSummaryContext cmd $
     faildoc $ text "Last command in command sequence must be an expression"
 
-tcCmds (Z.LetC cl _ : cmds) exp_ty =
-    checkCompLet cl $ tcCmds cmds exp_ty
+tcCmds (Z.LetC cl _ : cmds) exp_ty = do
+    tau <- mkSTOmega
+    instType tau exp_ty
+    collectValCtx tau $ do
+    checkCompLet cl $ do
+    checkCmds cmds tau
 
 tcCmds (cmd@(Z.BindC {}) : []) _ =
     withSummaryContext cmd $
     faildoc $ text "Last command in command sequence must be an expression"
 
 tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
-    (nu, tau, mce1) <-
-        withSummaryContext cmd $ do
-        nu          <- fromZ (ztau, TauK)
-        (tau, mce1) <- checkExpSTC e nu
-        instType tau exp_ty
-        return (nu, tau, mce1)
+    nu                     <- fromZ (ztau, TauK)
+    tau1@(ST [] _ s a b _) <- mkSTC nu
+    omega2                 <- newMetaTvT OmegaK l
+    let tau2               =  ST [] omega2 s a b l
+    instType tau2 exp_ty
+    mce1 <- withSummaryContext cmd $ do
+            collectValCtx tau1 $ do
+            checkExp e tau1
     mce2 <- extendVars [(v, nu)] $
-            collectValCtx tau $
-            checkCmds cmds tau
+            checkCmds cmds tau2
     return $ do cv  <- trans v
                 ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
@@ -1054,19 +1064,21 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
 
 tcCmds (cmd@(Z.ExpC e _) : []) exp_ty =
     withSummaryContext cmd $ do
-    ce <- tcExp e exp_ty
-    _  <- readExpected exp_ty >>= checkST
-    return ce
+    tau <- mkSTOmega
+    instType tau exp_ty
+    collectValCtx tau $ do
+    checkExp e tau
 
 tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
-    (tau, mce1) <-
-        withSummaryContext cmd $ do
-        nu          <- newMetaTvT TauK l
-        (tau, mce1) <- checkExpSTC e nu
-        instType tau exp_ty
-        return (tau, mce1)
-    mce2 <- collectValCtx tau $
-            checkCmds cmds tau
+    nu                     <- newMetaTvT TauK l
+    tau1@(ST [] _ s a b _) <- mkSTC nu
+    omega2                 <- newMetaTvT OmegaK l
+    let tau2               =  ST [] omega2 s a b l
+    instType tau2 exp_ty
+    mce1 <- withSummaryContext cmd $
+            collectValCtx tau1 $
+            checkExp e tau1
+    mce2 <- checkCmds cmds tau2
     return $ do ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
                 return $ C.seqE ce1 ce2
@@ -1076,24 +1088,6 @@ tcCmds [] _ =
 
 checkCmds :: [Z.Cmd] -> Type -> Ti (Ti C.Exp)
 checkCmds cmds tau = tcCmds cmds (Check tau)
-
--- | @checkExpSTC e nu@ checks that @e@ has type @ST (C nu) s a b@ and returns a
--- type @ST omega s a b@, where @omega@ is a fresh type variable, that can be
--- used to type a sequence of @ST@ computations. Any side-effecting operations
--- needed to produce values in @e@ are collected into a single @ST@ computation.
-checkExpSTC :: Z.Exp -> Type -> Ti (Type, Ti C.Exp)
-checkExpSTC e nu = do
-    omega   <- newMetaTvT OmegaK e
-    s       <- newMetaTvT TauK l
-    a       <- newMetaTvT TauK l
-    b       <- newMetaTvT TauK l
-    let tau =  stT omega s a b
-    mce     <- collectValCtx tau $
-               checkExp e (stT (C nu l) s a b)
-    return (tau, mce)
-  where
-    l ::SrcLoc
-    l = srclocOf e
 
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type
@@ -1510,24 +1504,6 @@ checkStructFieldT (StructDef s flds _) f =
           text "Struct" <+> ppr s <+>
           text "does not have a field named" <+> ppr f
 
--- | Check that a type is an @ST \omega \sigma \alpha \beta@ type, returning the
--- four type indices
-checkST :: Type -> Ti (Type, Type, Type, Type)
-checkST tau =
-    compress tau >>= go
-  where
-    go :: Type -> Ti (Type, Type, Type, Type)
-    go (ST [] omega sigma alpha beta _) =
-        return (omega, sigma, alpha, beta)
-
-    go tau = do
-        omega <- newMetaTvT OmegaK tau
-        sigma <- newMetaTvT TauK tau
-        alpha <- newMetaTvT TauK tau
-        beta  <- newMetaTvT TauK tau
-        unifyTypes tau (stT omega sigma alpha beta)
-        return (omega, sigma, alpha, beta)
-
 -- | Check that a type is an @ST (C ()) \sigma \alpha \beta@ type, returning the
 -- three type indices
 checkSTCUnit :: Type -> Ti (Type, Type, Type)
@@ -1636,6 +1612,17 @@ mkSTC tau = do
   where
     l :: SrcLoc
     l = srclocOf tau
+
+mkSTOmega :: Ti Type
+mkSTOmega = do
+    omega <- newMetaTvT OmegaK l
+    s     <- newMetaTvT TauK l
+    a     <- newMetaTvT TauK l
+    b     <- newMetaTvT TauK l
+    return $ ST [] omega s a b l
+  where
+    l :: SrcLoc
+    l = noLoc
 
 -- | @castVal tau e@ infers the type of @e@ and, if possible, generates an appropriate
 -- cast to the type @tau@. It returns an elaborated value expression.
