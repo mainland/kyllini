@@ -1280,7 +1280,7 @@ instantiate tau0 =
     go :: Type -> Ti (Type, Co)
     go (ST alphas omega sigma tau1 tau2 l) = do
         (_, theta, phi) <- instVars alphas TauK
-        let tau = ST [] omega (subst theta phi sigma)
+        let tau = ST [] (subst theta phi omega) (subst theta phi sigma)
                      (subst theta phi tau1) (subst theta phi tau2) l
         return (tau, id)
 
