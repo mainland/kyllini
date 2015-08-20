@@ -1076,7 +1076,8 @@ checkExpSTC e nu = do
 tcVal :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
 tcVal e exp_ty = do
     (tau, mce) <- inferExp e
-    go tau mce
+    tau' <- compress tau
+    go tau' mce
   where
     go :: Type -> Ti C.Exp -> Ti (Ti C.Exp)
     go (RefT tau _) mce = do
