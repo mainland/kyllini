@@ -1739,7 +1739,7 @@ unifyTypes tau1 tau2 = do
                                              , tv1 == tv2' = do
         return ()
 
-    go _ _ tau1 tau2 = do
+    go _ _ _ _ = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ UnificationException tau1' tau2'
 
