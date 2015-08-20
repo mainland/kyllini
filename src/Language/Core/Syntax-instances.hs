@@ -38,7 +38,7 @@ instance Located Exp where
   locOf (EmitE _ l) = locOf l
   locOf (EmitsE _ l) = locOf l
   locOf (RepeatE _ l) = locOf l
-  locOf (ArrE _ _ l) = locOf l
+  locOf (ArrE _ _ _ l) = locOf l
 instance Located StructDef where
   locOf (StructDef _ _ l) = locOf l
 instance Located Type where

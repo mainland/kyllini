@@ -861,22 +861,22 @@ tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
     checkExp e tau
 
 tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
-    (omega1, sigma, alpha, beta, mce1) <-
-        withSummaryContext e1 $ do
-        (tau_e1, mce1)               <- inferExp e1
-        (omega1, sigma, alpha, beta) <- checkST tau_e1
-        return (omega1, sigma, alpha, beta, mce1)
-    (omega2, mce2) <-
-        withSummaryContext e2 $ do
-        omega2 <- newMetaTvT OmegaK e2
-        mce2   <- checkExp e2 (stT omega2 sigma alpha beta)
-        return (omega2, mce2)
-    omega       <- joinOmega omega1 omega2
-    instType (stT omega sigma alpha beta) tau_exp
+    omega1 <- newMetaTvT OmegaK l
+    omega2 <- newMetaTvT OmegaK l
+    a      <- newMetaTvT TauK l
+    b      <- newMetaTvT TauK l
+    c      <- newMetaTvT TauK l
+    mce1   <- withSummaryContext e1 $
+              checkExp e1 (ST [] omega1 a a b l)
+    mce2   <- withSummaryContext e2 $
+              checkExp e2 (ST [] omega2 b b c l)
+    omega  <- joinOmega omega1 omega2
+    instType (ST [] omega a a c l) tau_exp
     checkForSplitContext
-    return $ do ce1 <- mce1
+    return $ do cb  <- trans b
+                ce1 <- mce1
                 ce2 <- mce2
-                return $ C.ArrE ce1 ce2 l
+                return $ C.ArrE cb ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do

@@ -131,7 +131,7 @@ data Exp = ConstE Const !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE Exp !SrcLoc
-         | ArrE Exp Exp !SrcLoc
+         | ArrE Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data BindVar = BindV Var
@@ -478,9 +478,11 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         text "repeat" <> pprBody e
 
-    pprPrec p (ArrE e1 e2 _) =
+    pprPrec p (ArrE tau e1 e2 _) =
         parensIf (p > arrPrec) $
-        pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
+        pprPrec arrPrec e1 <+>
+        text ">>>" <> text "@" <> pprPrec appPrec1 tau <+>
+        pprPrec arrPrec e2
 
 pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
 pprFunParams ivs vbs =
@@ -768,7 +770,7 @@ instance Fvs Exp Var where
     fvs (EmitE e _)               = fvs e
     fvs (EmitsE e _)              = fvs e
     fvs (RepeatE e _)             = fvs e
-    fvs (ArrE e1 e2 _)            = fvs e1 <> fvs e2
+    fvs (ArrE _ e1 e2 _)          = fvs e1 <> fvs e2
 
 instance Subst Type TyVar Type where
     subst _ _ tau@(UnitT {}) =

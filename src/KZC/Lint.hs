@@ -481,14 +481,22 @@ inferExp (RepeatE e l) = do
     (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
-inferExp (ArrE e1 e2 l) = do
-    (omega1, s,  a,  b)  <- withExpContext e1 $ inferExp e1 >>= checkST
-    (omega2, s', a', b') <- withExpContext e2 $ inferExp e2 >>= checkST
-    checkTypeEquality s' s
-    checkTypeEquality a' a
-    checkTypeEquality b' b
+inferExp (ArrE b e1 e2 l) = do
+    (s, a, c) <- askSTIndTypes
+    (omega1, s', a',    b') <- withExpContext e1 $
+                               localSTIndTypes (Just (s, a, b)) $
+                               inferExp e1 >>= checkST
+    (omega2, b'', b''', c') <- withExpContext e2 $
+                               localSTIndTypes (Just (b, b, c)) $
+                               inferExp e2 >>= checkST
+    checkTypeEquality s'   s
+    checkTypeEquality a'   a
+    checkTypeEquality b'   b
+    checkTypeEquality b''  b
+    checkTypeEquality b''' b
+    checkTypeEquality c'   c
     omega <- joinOmega omega1 omega2
-    return $ ST [] omega s a b l
+    return $ ST [] omega s a c l
   where
     joinOmega :: Omega -> Omega -> Tc Omega
     joinOmega omega1@(C {}) (T {})        = return omega1
