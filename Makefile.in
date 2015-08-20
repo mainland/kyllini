@@ -197,7 +197,8 @@ TESTS = \
 
 TCTESTS = \
 	$(shell ls tests/parser/*.wpl | sort) \
-	$(shell ls tests/backend/*.wpl | sort)
+	$(shell ls tests/backend/*.wpl | sort) \
+	$(wildcard code/WiFi/tests/*.blk)
 
 .PHONY : test-parser
 test-parser : kzc

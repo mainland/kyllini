@@ -349,112 +349,37 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
     binop Z.Rem  = checkNumBinop C.Rem
     binop Z.Pow  = checkNumBinop C.Pow
 
-    promoteBinopArgs :: Ti (Type, Ti C.Exp, Ti C.Exp)
-    promoteBinopArgs = do
-        (tau1, mce1) <- inferVal e1
-        (tau2, mce2) <- inferVal e2
-        tau1'        <- compress tau1
-        tau2'        <- compress tau2
-        go tau1' e1 mce1 tau2' e2 mce2
-      where
-        go :: Type -> Z.Exp -> Ti C.Exp
-           -> Type -> Z.Exp -> Ti C.Exp
-           -> Ti (Type, Ti C.Exp, Ti C.Exp)
-        go tau1@(MetaT {}) _ mce1 tau2 _ mce2 = do
-            unifyTypes tau1 tau2
-            return (tau2, mce1, mce2)
-
-        go tau1 _ mce1 tau2@(MetaT {}) _ mce2 = do
-            unifyTypes tau2 tau1
-            return (tau1, mce1, mce2)
-
-        go tau1 _ mce1 tau2 _ mce2 | tau1 == tau2 = do
-            return (tau1, mce1, mce2)
-
-        go tau1 (Z.ConstE {}) mce1 tau2 _ mce2 = do
-            co <- mkCast tau1 tau2
-            return (tau2, co mce1, mce2)
-
-        go tau1 _ mce1 tau2 (Z.ConstE {}) mce2 = do
-            co <- mkCast tau2 tau1
-            return (tau1, mce1, co mce2)
-
-        go tau1 _ mce1 tau2 _ mce2 = do
-            tau <- lubType tau1 tau2
-            co1 <- mkCast tau1 tau
-            co2 <- mkCast tau2 tau
-            return (tau, co1 mce1, co2 mce2)
-
-        lubType :: Type -> Type -> Ti Type
-        lubType (IntT w1 l) (IntT w2 _) =
-            return $ IntT (max w1 w2) l
-
-        lubType (FloatT w1 l) (FloatT w2 _) =
-            return $ FloatT (max w1 w2) l
-
-        lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
-            s <- lubComplex s1 s2
-            return $ StructT s l
-
-        lubType tau1 tau2 =
-            faildoc $ nest 2 $
-              text "Cannot align argument" <+> ppr e1 <+/>
-              text "of type" <+> ppr tau1 <+/>
-              text "with argument" <+> ppr e2 <+/>
-              text "of type" <+> ppr tau2
-
-        lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
-        lubComplex s1 s2 = do
-            i1 <- complexToInt s1
-            i2 <- complexToInt s2
-            intToComplex (max i1 i2)
-
-        complexToInt :: Z.Struct -> Ti Int
-        complexToInt "complex"   = return 3
-        complexToInt "complex8"  = return 0
-        complexToInt "complex16" = return 1
-        complexToInt "complex32" = return 2
-        complexToInt "complex64" = return 3
-        complexToInt _           = fail "intFromComplex: not a complex struct"
-
-        intToComplex :: Int -> Ti Z.Struct
-        intToComplex 0 = return "complex8"
-        intToComplex 1 = return "complex16"
-        intToComplex 2 = return "complex32"
-        intToComplex 3 = return "complex64"
-        intToComplex _ = fail "intToComplex: out of bounds"
-
     checkEqBinop :: C.Binop -> Ti (Ti C.Exp)
     checkEqBinop cop = do
-        (tau, mce1, mce2) <- promoteBinopArgs
+        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
         checkEqT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkOrdBinop :: C.Binop -> Ti (Ti C.Exp)
     checkOrdBinop cop = do
-        (tau, mce1, mce2) <- promoteBinopArgs
+        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
         checkOrdT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkBoolBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBoolBinop cop = do
-        (tau, mce1, mce2) <- promoteBinopArgs
+        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
         checkBoolT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkNumBinop :: C.Binop -> Ti (Ti C.Exp)
     checkNumBinop cop = do
-        (tau, mce1, mce2) <- promoteBinopArgs
+        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
         checkNumT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkBitBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitBinop cop = do
-        (tau, mce1, mce2) <- promoteBinopArgs
+        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
         checkBitT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
@@ -1827,6 +1752,83 @@ unifyTypes tau1 tau2 = do
               text "Cannot construct the infinite type:" <+/>
               ppr tau1' <+> text "=" <+> ppr tau2'
         kcWriteTv mtv tau2
+
+-- | Type check two expressions and attempt to unify their types. This may
+-- requires adding casts.
+unifyExpressionTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyExpressionTypes e1 e2 = do
+    (tau1, mce1) <- inferVal e1
+    (tau2, mce2) <- inferVal e2
+    tau1'        <- compress tau1
+    tau2'        <- compress tau2
+    go tau1' e1 mce1 tau2' e2 mce2
+  where
+    go :: Type -> Z.Exp -> Ti C.Exp
+       -> Type -> Z.Exp -> Ti C.Exp
+       -> Ti (Type, Ti C.Exp, Ti C.Exp)
+    go tau1@(MetaT {}) _ mce1 tau2 _ mce2 = do
+        unifyTypes tau1 tau2
+        return (tau2, mce1, mce2)
+
+    go tau1 _ mce1 tau2@(MetaT {}) _ mce2 = do
+        unifyTypes tau2 tau1
+        return (tau1, mce1, mce2)
+
+    go tau1 _ mce1 tau2 _ mce2 | tau1 == tau2 = do
+        return (tau1, mce1, mce2)
+
+    go tau1 (Z.ConstE {}) mce1 tau2 _ mce2 = do
+        co <- mkCast tau1 tau2
+        return (tau2, co mce1, mce2)
+
+    go tau1 _ mce1 tau2 (Z.ConstE {}) mce2 = do
+        co <- mkCast tau2 tau1
+        return (tau1, mce1, co mce2)
+
+    go tau1 _ mce1 tau2 _ mce2 = do
+        tau <- lubType tau1 tau2
+        co1 <- mkCast tau1 tau
+        co2 <- mkCast tau2 tau
+        return (tau, co1 mce1, co2 mce2)
+
+    lubType :: Type -> Type -> Ti Type
+    lubType (IntT w1 l) (IntT w2 _) =
+        return $ IntT (max w1 w2) l
+
+    lubType (FloatT w1 l) (FloatT w2 _) =
+        return $ FloatT (max w1 w2) l
+
+    lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
+        s <- lubComplex s1 s2
+        return $ StructT s l
+
+    lubType tau1 tau2 =
+        faildoc $ nest 2 $
+          text "Cannot align argument" <+> ppr e1 <+/>
+          text "of type" <+> ppr tau1 <+/>
+          text "with argument" <+> ppr e2 <+/>
+          text "of type" <+> ppr tau2
+
+    lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
+    lubComplex s1 s2 = do
+        i1 <- complexToInt s1
+        i2 <- complexToInt s2
+        intToComplex (max i1 i2)
+      where
+        complexToInt :: Z.Struct -> Ti Int
+        complexToInt "complex"   = return 3
+        complexToInt "complex8"  = return 0
+        complexToInt "complex16" = return 1
+        complexToInt "complex32" = return 2
+        complexToInt "complex64" = return 3
+        complexToInt _           = fail "intFromComplex: not a complex struct"
+
+        intToComplex :: Int -> Ti Z.Struct
+        intToComplex 0 = return "complex8"
+        intToComplex 1 = return "complex16"
+        intToComplex 2 = return "complex32"
+        intToComplex 3 = return "complex64"
+        intToComplex _ = fail "intToComplex: out of bounds"
 
 traceVar :: Z.Var -> Type -> Ti ()
 traceVar v tau = do
