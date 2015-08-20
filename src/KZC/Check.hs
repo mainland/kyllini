@@ -1692,7 +1692,7 @@ checkCast tau1 tau2 = do
     go (FloatT {}) (FloatT {}) =
         return ()
 
-    go (StructT s1 _) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2=
+    go (StructT s1 _) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 =
         return ()
 
     go tau1 tau2 =
