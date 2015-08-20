@@ -113,7 +113,7 @@ checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
             -> Ti (Type, Ti C.Exp -> Ti C.Exp)
 checkLetFun f ztau ps e l = do
     tau   <- fromZ (ztau, PhiK)
-    ptaus <- mapM fromZ ps
+    ptaus <- fromZ ps
     (tau_ret, mce1) <-
         extendVars ((f,tau) : ptaus) $ do
         tau_ret           <- newMetaTvT MuK l
@@ -132,6 +132,34 @@ checkLetFun f ztau ps e l = do
         ce2      <- mce2
         return $ C.LetFunE cf [] cptaus ctau_ret ce1 ce2 l
     return (tau_gen, mkLetFun)
+
+checkLetExtFun :: Z.Var -> [Z.VarBind] -> Z.Type -> SrcLoc
+               -> Ti (Type, Ti C.Exp -> Ti C.Exp)
+checkLetExtFun f ps ztau_ret l = do
+    ptaus        <- fromZ ps
+    -- Note that the output type may depend on the parameters because of array
+    -- lengths
+    tau_ret       <- extendVars ptaus $
+                     checkRetType ztau_ret
+    let tau       =  funT (map snd ptaus) tau_ret
+    (tau_gen, co) <- generalize tau
+    traceVar f tau_gen
+    let mkLetExtFun mce2 = co $ do
+        cf       <- trans f
+        cptaus   <- mapM trans ptaus
+        ctau_ret <- trans tau_ret
+        ce2      <- mce2
+        return $ C.LetExtFunE cf [] cptaus ctau_ret ce2 l
+    return (tau_gen, mkLetExtFun)
+  where
+    checkRetType :: Z.Type -> Ti Type
+    checkRetType (Z.UnitT {}) = do
+        s       <- newMetaTvT TauK l
+        a       <- newMetaTvT TauK l
+        b       <- newMetaTvT TauK l
+        fst <$> generalize (ST [] (C (UnitT l) l) s a b l)
+
+    checkRetType ztau = fromZ ztau
 
 checkCompLet :: Z.CompLet
              -> Ti (Ti C.Exp)
@@ -169,6 +197,14 @@ checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
                        k
     return $ withSummaryContext cl $
              mkLetFun mce2
+
+checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret l) k = do
+    (tau, mkLetExtFun) <- withSummaryContext cl $
+                          checkLetExtFun f ps ztau_ret l
+    mce2               <- extendVars [(f,tau)] $
+                          k
+    return $ withSummaryContext cl $
+             mkLetExtFun mce2
 
 checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l1) l2) k = do
     (taus, mkLetStruct) <-
@@ -216,8 +252,6 @@ checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
                        k
     return $ withSummaryContext cl $
              mkLetFun mce2
-
-checkCompLet e _ = faildoc $ text "checkCompLet: can't type check:" <+> ppr e
 
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
@@ -1213,16 +1247,18 @@ generalize tau0 =
         tau <- compress $ FunT iotas taus tau_ret l
         let co mce = do
             extendIVars (iotas `zip` repeat IotaK) $ do
-            ciotas                          <- mapM trans iotas
-            (cf, cvtaus, ctau, ce1, ce2, l) <- mce >>= checkLetFunE
-            return $ C.LetFunE cf ciotas cvtaus ctau ce1 ce2 l
+            ciotas <- mapM trans iotas
+            mce >>= checkLetFunE ciotas
         return (tau, co)
       where
-        checkLetFunE :: C.Exp -> Ti (C.Var, [(C.Var, C.Type)], C.Type, C.Exp, C.Exp, SrcLoc)
-        checkLetFunE (C.LetFunE cf [] cvtaus ctau ce1 ce2 l) =
-            return (cf, cvtaus, ctau, ce1, ce2, l)
+        checkLetFunE :: [C.IVar] -> C.Exp -> Ti C.Exp
+        checkLetFunE ciotas (C.LetFunE cf [] cvtaus ctau ce1 ce2 l) =
+            return $ C.LetFunE cf ciotas cvtaus ctau ce1 ce2 l
 
-        checkLetFunE ce =
+        checkLetFunE ciotas (C.LetExtFunE cf [] cvtaus ctau ce2 l) =
+            return $ C.LetExtFunE cf ciotas cvtaus ctau ce2 l
+
+        checkLetFunE _ ce =
             panicdoc $
             text "generalize: expected to coerce a letfun, but got:" <+> ppr ce
 

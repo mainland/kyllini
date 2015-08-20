@@ -103,6 +103,7 @@ data Exp = ConstE Const !SrcLoc
          | LetE Var Type Exp Exp !SrcLoc
          -- Functions
          | LetFunE Var [IVar] [(Var, Type)] Type Exp Exp !SrcLoc
+         | LetExtFunE Var [IVar] [(Var, Type)] Type Exp !SrcLoc
          | CallE Exp [Iota] [Exp] !SrcLoc
          -- References
          | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
@@ -373,27 +374,16 @@ instance Pretty Exp where
 
     pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
         parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprArgs ibs vbs <+>
+        text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
         nest 2 (text "=" </> ppr e1) </>
         text "in" </> pprPrec doPrec1 e2
-      where
-        pprArgs :: [IVar] -> [(Var, Type)] -> Doc
-        pprArgs [] [] =
-            empty
 
-        pprArgs [] [vb] =
-            pprArg vb
-
-        pprArgs [] vbs =
-            sep (map pprArg vbs)
-
-        pprArgs iotas vbs =
-            sep (map ppr iotas ++ map pprArg vbs)
-
-        pprArg :: (Var, Type) -> Doc
-        pprArg (v, tau) =
-            parens $ ppr v <+> text ":" <+> ppr tau
+    pprPrec p (LetExtFunE f ibs vbs tau e2 _) =
+        parensIf (p > appPrec) $
+        text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
+        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) </>
+        text "in" </> pprPrec doPrec1 e2
 
     pprPrec _ (CallE f is es _) =
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
@@ -491,6 +481,27 @@ instance Pretty Exp where
     pprPrec p (ArrE e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
+
+pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
+pprFunParams ivs vbs =
+    go ivs vbs
+  where
+    go :: [IVar] -> [(Var, Type)] -> Doc
+    go [] [] =
+        empty
+
+    go [] [vb] =
+        pprArg vb
+
+    go [] vbs =
+        sep (map pprArg vbs)
+
+    go iotas vbs =
+        sep (map ppr iotas ++ map pprArg vbs)
+
+    pprArg :: (Var, Type) -> Doc
+    pprArg (v, tau) =
+        parens $ ppr v <+> text ":" <+> ppr tau
 
 instance Pretty BindVar where
     ppr (BindV v) = ppr v
@@ -734,6 +745,7 @@ instance Fvs Exp Var where
     fvs (IfE e1 e2 e3 _)          = fvs e1 <> fvs e2 <> fvs e3
     fvs (LetE v _ e1 e2 _)        = delete v (fvs e1 <> fvs e2)
     fvs (LetFunE v _ _ _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (LetExtFunE v _ _ _ e2 _) = delete v (fvs e2)
     fvs (CallE e _ es _)          = fvs e <> fvs es
     fvs (LetRefE v _ e1 e2 _)     = delete v (fvs e1 <> fvs e2)
     fvs (DerefE e _)              = fvs e

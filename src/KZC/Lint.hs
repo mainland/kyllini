@@ -212,6 +212,12 @@ inferExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
     checkTypeEquality tau_ret' tau_ret
     inferExp e2
 
+inferExp e0@(LetExtFunE f iotas vbs tau_ret e2 l) = do
+    let tau = FunT iotas (map snd vbs) tau_ret l
+    withExpContext e0 $ checkKind tau PhiK
+    extendVars [(f, tau)] $ do
+    inferExp e2
+
 inferExp (CallE f ies es _) = do
     (ivs, taus, tau_ret) <- inferExp f >>= checkFunT
     checkNumIotas (length ies) (length ivs)

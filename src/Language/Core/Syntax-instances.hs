@@ -16,6 +16,7 @@ instance Located Exp where
   locOf (IfE _ _ _ l) = locOf l
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetFunE _ _ _ _ _ _ l) = locOf l
+  locOf (LetExtFunE _ _ _ _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
   locOf (LetRefE _ _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
