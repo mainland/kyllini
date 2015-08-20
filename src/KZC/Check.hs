@@ -787,7 +787,7 @@ tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     tau' <- fromZ (zbeta, TauK)
     unifyTypes tau' tau
     instType (stT (T l) tau tau tau) exp_ty
-    return $ do ctau <-trans tau
+    return $ do ctau <- trans tau
                 cx   <- C.mkUniqVar "x" l
                 return $ C.repeatE $
                          C.bindE cx (C.takeE ctau) $
