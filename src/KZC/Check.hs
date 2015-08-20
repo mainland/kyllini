@@ -392,12 +392,37 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
         lubType (FloatT w1 l) (FloatT w2 _) =
             return $ FloatT (max w1 w2) l
 
+        lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
+            s <- lubComplex s1 s2
+            return $ StructT s l
+
         lubType tau1 tau2 =
             faildoc $ nest 2 $
               text "Cannot align argument" <+> ppr e1 <+/>
               text "of type" <+> ppr tau1 <+/>
               text "with argument" <+> ppr e2 <+/>
               text "of type" <+> ppr tau2
+
+        lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
+        lubComplex s1 s2 = do
+            i1 <- complexToInt s1
+            i2 <- complexToInt s2
+            intToComplex (max i1 i2)
+
+        complexToInt :: Z.Struct -> Ti Int
+        complexToInt "complex"   = return 3
+        complexToInt "complex8"  = return 0
+        complexToInt "complex16" = return 1
+        complexToInt "complex32" = return 2
+        complexToInt "complex64" = return 3
+        complexToInt _           = fail "intFromComplex: not a complex struct"
+
+        intToComplex :: Int -> Ti Z.Struct
+        intToComplex 0 = return "complex8"
+        intToComplex 1 = return "complex16"
+        intToComplex 2 = return "complex32"
+        intToComplex 3 = return "complex64"
+        intToComplex _ = fail "intToComplex: out of bounds"
 
     checkEqBinop :: C.Binop -> Ti (Ti C.Exp)
     checkEqBinop cop = do
