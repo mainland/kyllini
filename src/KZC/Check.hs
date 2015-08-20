@@ -531,37 +531,37 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
         (tau, mce1) <- inferExp e1
         gamma       <- checkRefT tau
         return (gamma, mce1)
-    (tau, co) <- mkSTC (UnitT l)
+    tau <- mkSTC (UnitT l)
     instType tau exp_ty
     collectValCtx tau $ do
     mce2  <- withSummaryContext e2 $
              castVal gamma e2
-    return $ co $ do
+    return $ do
         ce1   <- mce1
         ce2   <- mce2
         return $ C.AssignE ce1 ce2 l
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
-    (tau, co) <- mkSTC (UnitT l)
-    mce1      <- collectValCtx tau $ do
-                 checkBoolVal e1
-    mce2      <- collectValCtx tau $
-                 checkExp e2 tau
+    tau  <- mkSTC (UnitT l)
+    mce1 <- collectValCtx tau $ do
+            checkBoolVal e1
+    mce2 <- collectValCtx tau $
+            checkExp e2 tau
     instType tau exp_ty
-    return $ co $ do ce1 <- mce1
-                     ce2 <- mce2
-                     return $ C.WhileE ce1 ce2 l
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.WhileE ce1 ce2 l
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
-    (tau, co) <- mkSTC (UnitT l)
-    mce1      <- collectValCtx tau $ do
-                 checkBoolVal e1
-    mce2      <- collectValCtx tau $
-                 checkExp e2 tau
+    tau  <- mkSTC (UnitT l)
+    mce1 <- collectValCtx tau $ do
+            checkBoolVal e1
+    mce2 <- collectValCtx tau $
+            checkExp e2 tau
     instType tau exp_ty
-    return $ co $ do ce1 <- mce1
-                     ce2 <- mce2
-                     return $ C.UntilE ce1 ce2 l
+    return $ do ce1 <- mce1
+                ce2 <- mce2
+                return $ C.UntilE ce1 ce2 l
 
 tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
@@ -577,12 +577,12 @@ tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
 tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)
     checkIntT tau_i
-    mce1     <- castVal tau_i e1
-    mce2     <- castVal tau_i e2
-    (tau, _) <- mkSTC (UnitT l)
-    mce3     <- extendVars [(i, tau_i)] $
-                collectValCtx tau $
-                checkExp e3 tau
+    mce1 <- castVal tau_i e1
+    mce2 <- castVal tau_i e2
+    tau  <- mkSTC (UnitT l)
+    mce3 <- extendVars [(i, tau_i)] $
+            collectValCtx tau $
+            checkExp e3 tau
     instType tau exp_ty
     return $ do ci     <- trans i
                 ctau_i <- trans tau_i
@@ -713,11 +713,11 @@ tcExp (Z.ProjE e f l) exp_ty = do
                         return $ C.ProjE ce cf l
 
 tcExp (Z.PrintE newline es l) exp_ty = do
-    (tau, co) <- mkSTC (UnitT l)
+    tau <- mkSTC (UnitT l)
     instType tau exp_ty
     collectValCtx tau $ do
     mces <- mapM checkArg es
-    return $ co $ do
+    return $ do
         ces <- sequence mces
         return $ C.PrintE newline ces l
   where
@@ -728,13 +728,13 @@ tcExp (Z.PrintE newline es l) exp_ty = do
         return mce
 
 tcExp (Z.ReturnE _ e l) exp_ty = do
-    tau           <- newMetaTvT TauK l
-    (tau_ret, co) <- mkSTC tau
+    tau     <- newMetaTvT TauK l
+    tau_ret <- mkSTC tau
     instType tau_ret exp_ty
     collectValCtx tau_ret $ do
     (tau', mce) <- inferVal e
     unifyTypes tau' tau
-    return $ co $ do
+    return $ do
         ce <- mce
         return $ C.ReturnE ce l
 
@@ -1602,12 +1602,12 @@ checkMapFunT f tau = do
     l :: SrcLoc
     l = srclocOf tau
 
-mkSTC :: Type -> Ti (Type, Co)
+mkSTC :: Type -> Ti Type
 mkSTC tau = do
     s <- newMetaTvT TauK l
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
-    return (ST [] (C tau l) s a b l, id)
+    return $ ST [] (C tau l) s a b l
   where
     l :: SrcLoc
     l = srclocOf tau
