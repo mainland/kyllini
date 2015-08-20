@@ -627,7 +627,7 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     (tau, mce1) <- withSummaryContext e1 $
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
-                   (tau2, mce2) <- inferExp e2
+                   (tau2, mce2) <- inferVal e2
                    checkIntT tau2
                    return mce2
     checkIdxE tau mce1 mce2
