@@ -287,7 +287,7 @@ pexp :
   | pexp '[' exp ':' const_int_exp ']'
       {% do { from      <- constIntExp $3
             ; let to    =  unLoc $5
-            ; let len   =  to - from
+            ; let len   =  to - from + 1
             ; let efrom =  ConstE (IntC W32 from) (srclocOf $5)
             ; return $ IdxE $1 efrom (Just (fromInteger len)) ($1 `srcspan` $6)
             }
