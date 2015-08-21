@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -35,6 +37,7 @@ module Language.Core.Syntax (
     stmsToExp
   ) where
 
+import Data.Foldable
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -740,6 +743,9 @@ instance Fvs Iota IVar where
     fvs (ConstI {}) = mempty
     fvs (VarI iv _) = singleton iv
 
+instance Fvs Type n => Fvs [Type] n where
+    fvs taus = foldMap fvs taus
+
 instance Fvs Exp Var where
     fvs (ConstE {})               = mempty
     fvs (VarE v _)                = singleton v
@@ -772,6 +778,9 @@ instance Fvs Exp Var where
     fvs (EmitsE e _)              = fvs e
     fvs (RepeatE e _)             = fvs e
     fvs (ArrE _ e1 e2 _)          = fvs e1 <> fvs e2
+
+instance Fvs Exp v => Fvs [Exp] v where
+    fvs es = foldMap fvs es
 
 instance Subst Type TyVar Type where
     subst _ _ tau@(UnitT {}) =

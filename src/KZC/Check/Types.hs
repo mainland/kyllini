@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
@@ -11,6 +13,7 @@
 module KZC.Check.Types where
 
 import Control.Monad.Ref
+import Data.Foldable
 import Data.IORef
 import Data.Loc
 import Data.List ((\\))
@@ -348,6 +351,9 @@ instance Fvs Type MetaTv where
     fvs (VarI _ _)                    = mempty
     fvs (TyVarT _ _)                  = mempty
     fvs (MetaT mtv _)                 = singleton mtv
+
+instance Fvs Type n => Fvs [Type] n where
+    fvs taus = foldMap fvs taus
 
 instance HasVars Type TyVar where
     allVars (UnitT {})                         = mempty

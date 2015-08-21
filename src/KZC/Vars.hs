@@ -37,7 +37,7 @@ class Ord n => Fvs x n where
     fvs :: SetLike m n => x -> m n
     fvs _ = mempty
 
-instance (Foldable f, Fvs x n) => Fvs (f x) n where
+instance Fvs x n => Fvs (Maybe x) n where
     fvs = foldMap fvs
 
 class Ord n => HasVars x n where

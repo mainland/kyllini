@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -39,6 +40,7 @@ module Language.Ziria.Syntax (
     isComplexStruct
   ) where
 
+import Data.Foldable
 import Data.Loc
 import Data.Monoid
 import Data.String
@@ -270,20 +272,23 @@ instance Fvs Exp Var where
     fvs (MapE _ v _ _)          = singleton v
     fvs (FilterE v _ _)         = singleton v
     fvs (CompLetE cl e _)       = fvs cl <> (fvs e <\\> binders cl)
+    fvs (StmE stms _)           = fvs stms
+    fvs (CmdE cmds _)           = fvs cmds
 
-    fvs (StmE stms0 _) = go stms0
-      where
-        go []                       = mempty
-        go (LetS v _ e _    : stms) = delete v (fvs e <> go stms)
-        go (LetRefS v _ e _ : stms) = delete v (fvs e <> go stms)
-        go (ExpS e _        : stms) = fvs e <> go stms
+instance Fvs Exp v => Fvs [Exp] v where
+    fvs es = foldMap fvs es
 
-    fvs (CmdE cmds0 _) = go cmds0
-      where
-        go []                     = mempty
-        go (LetC cl _     : cmds) = fvs cl <> (go cmds <\\> binders cl)
-        go (BindC v _ e _ : cmds) = delete v (fvs e <> go cmds)
-        go (ExpC e _      : cmds) = fvs e <> go cmds
+instance Fvs [Stm] Var where
+    fvs []                       = mempty
+    fvs (LetS v _ e _    : stms) = delete v (fvs e <> fvs stms)
+    fvs (LetRefS v _ e _ : stms) = delete v (fvs e <> fvs stms)
+    fvs (ExpS e _        : stms) = fvs e <> fvs stms
+
+instance Fvs [Cmd] Var where
+    fvs []                     = mempty
+    fvs (LetC cl _     : cmds) = fvs cl <> (fvs cmds <\\> binders cl)
+    fvs (BindC v _ e _ : cmds) = delete v (fvs e <> fvs cmds)
+    fvs (ExpC e _      : cmds) = fvs e <> fvs cmds
 
 instance Fvs CompLet Var where
     fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
