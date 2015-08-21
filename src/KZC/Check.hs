@@ -676,6 +676,12 @@ tcExp (Z.PrintE newline es l) exp_ty = do
         checkKind tau TauK
         return mce
 
+tcExp (Z.ErrorE s l) exp_ty = do
+    tau <- mkSTC (UnitT l)
+    instType tau exp_ty
+    return $ do
+        return $ C.ErrorE s l
+
 tcExp (Z.ReturnE _ e l) exp_ty = do
     tau     <- newMetaTvT TauK l
     tau_ret <- mkSTC tau

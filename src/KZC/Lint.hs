@@ -420,6 +420,14 @@ inferExp (PrintE _ es l) = do
     a = "a"
     b = "b"
 
+inferExp (ErrorE _ l) =
+    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+  where
+    s, a, b :: TyVar
+    s = "s"
+    a = "a"
+    b = "b"
+
 inferExp (ReturnE e l) = do
     tau <- inferExp e
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
@@ -505,8 +513,6 @@ inferExp (ArrE b e1 e2 l) = do
 
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
-
-inferExp e = faildoc $ nest 2 $ text "inferExp: cannot type check:" </> ppr e
 
 checkExp :: Exp -> Type -> Tc ()
 checkExp e tau = do
