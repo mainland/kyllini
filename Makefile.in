@@ -190,15 +190,11 @@ $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
 # Tests
 #
 TESTS = \
-	$(shell find tests -name '*.wpl') \
-	$(wildcard code/WiFi/tests/*.blk) \
-	$(wildcard code/WiFi/transmitter/tests/*.blk) \
-	$(wildcard code/WiFi/receiver/tests/*.blk)
-
-TCTESTS = \
 	$(shell ls tests/parser/*.wpl | sort) \
 	$(shell ls tests/backend/*.wpl | sort) \
-	$(wildcard code/WiFi/tests/*.blk)
+	$(shell ls code/WiFi/tests/*.blk | sort) \
+	$(shell ls code/WiFi/transmitter/tests/*.blk | sort) \
+	$(shell ls code/WiFi/receiver/tests/*.blk | sort)
 
 .PHONY : test-parser
 test-parser : kzc
@@ -210,7 +206,7 @@ test-parser : kzc
 .PHONY : test-tc
 test-tc : kzc
 	set -e; \
-	for TEST in $(TCTESTS); do \
+	for TEST in $(TESTS); do \
 		echo $$TEST; \
 		./kzc -Ilib --check --dlint $$TEST; \
 	done
