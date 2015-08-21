@@ -1569,12 +1569,38 @@ mkSTOmega = do
     l = noLoc
 
 -- | @castVal tau e@ infers the type of @e@ and, if possible, generates an appropriate
--- cast to the type @tau@. It returns an elaborated value expression.
+-- cast to the type @tau@. It returns an elaborated value expression. We special
+-- case casting array expressions---array expressions are the only time we cast
+-- between arrays types. This is all we need for the common case of arrays of
+-- integers that need to be represented as arrays on, say, int8's, and it is
+-- also the only case where we know we can make casting memory efficient.
 castVal :: Type -> Z.Exp -> Ti (Ti C.Exp)
 castVal tau2 e = do
     (tau1, mce) <- inferVal e
-    co          <- mkCast tau1 tau2
+    co <- case (e, tau1, tau2) of
+            (Z.ArrayE {}, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
+                unifyTypes iota1 iota2
+                mkArrayCast etau1 etau2
+            _ ->
+                mkCast tau1 tau2
     return $ co mce
+  where
+    mkArrayCast :: Type -> Type -> Ti Co
+    mkArrayCast tau1 tau2 = do
+        co <- mkCast tau1 tau2
+        return $ \mce -> do
+            (ces, l) <- mce >>= checkArrayE
+            ces'     <- sequence (map (co . return) ces)
+            return $ C.ArrayE ces' l
+
+
+    checkArrayE :: C.Exp -> Ti ([C.Exp], SrcLoc)
+    checkArrayE (C.ArrayE ces l) =
+        return (ces, l)
+
+    checkArrayE e =
+        faildoc $ nest 2 $
+        text "Expected array expression but got:" <+/> ppr e
 
 mkCast :: Type -> Type -> Ti Co
 mkCast tau1 tau2 = do
