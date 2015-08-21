@@ -810,22 +810,29 @@ tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
     checkExp e tau
 
 tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
-    omega1 <- newMetaTvT OmegaK l
-    omega2 <- newMetaTvT OmegaK l
-    a      <- newMetaTvT TauK l
-    b      <- newMetaTvT TauK l
-    c      <- newMetaTvT TauK l
-    mce1   <- withSummaryContext e1 $
-              checkExp e1 (ST [] omega1 a a b l)
-    mce2   <- withSummaryContext e2 $
-              checkExp e2 (ST [] omega2 b b c l)
+    omega1   <- newMetaTvT OmegaK l
+    omega2   <- newMetaTvT OmegaK l
+    a        <- newMetaTvT TauK l
+    b        <- newMetaTvT TauK l
+    b'       <- newMetaTvT TauK l
+    c        <- newMetaTvT TauK l
+    let tau1 =  ST [] omega1 a  a  b l
+    let tau2 =  ST [] omega2 b' b' c l
+    mce1     <- withSummaryContext e1 $
+                checkExp e1 tau1
+    mce2     <- withSummaryContext e2 $
+                checkExp e2 tau2
+    co       <- withSTContext tau1 tau2 $
+                withSummaryContext e2 $
+                mkCastT b b'
     omega  <- joinOmega omega1 omega2
     instType (ST [] omega a a c l) tau_exp
     checkForSplitContext
-    return $ do cb  <- trans b
-                ce1 <- mce1
-                ce2 <- mce2
-                return $ C.ArrE cb ce1 ce2 l
+    return $ co $ do
+        cb  <- trans b
+        ce1 <- mce1
+        ce2 <- mce2
+        return $ C.ArrE cb ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do
@@ -836,6 +843,13 @@ tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
       where
         common_fvs :: Set Z.Var
         common_fvs = fvs e1 `Set.intersection` fvs e2
+
+    withSTContext :: Type -> Type -> Ti a -> Ti a
+    withSTContext tau1 tau2 m = do
+        [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
+        let doc = text "When pipelining a computation of type:" <+> ppr tau1' </>
+                  text "             to a computation of type:" <+> ppr tau2'
+        localLocContext (tau1 <--> tau2) doc m
 
 tcExp e@(Z.ReadE {}) _ =
     withSummaryContext e $
@@ -1572,6 +1586,42 @@ mkCast tau1 tau2 = do
         ctau <- trans tau2
         ce   <- mce
         return $ C.UnopE (C.Cast ctau) ce (srclocOf ce)
+
+-- | @mkCastT tau1 tau2@ generates a computation of type @ST T tau1 tau2@ that
+-- casts values from @tau1@ to @tau2@.
+mkCastT :: Type -> Type -> Ti Co
+mkCastT tau1 tau2 = do
+    tau1' <- compress tau1
+    tau2' <- compress tau2
+    go tau1' tau2'
+  where
+    go :: Type -> Type -> Ti Co
+    go tau1 tau2 | tau1 == tau2 =
+        return id
+
+    go tau1 tau2 = do
+        co <- mkCast tau1 tau2
+        let mkPipe = do
+            ctau1 <- trans tau1
+            cx    <- C.mkUniqVar "x" (srclocOf tau1)
+            cxe   <- co $ return (C.varE cx)
+            return $ C.repeatE $
+                     C.bindE cx (C.takeE ctau1) $
+                     C.emitE cxe
+        return $ \mce -> do
+            (clhs, crhs, l) <- mce >>= checkArrE
+            ctau1           <- trans tau1
+            ctau2           <- trans tau2
+            cpipe           <- mkPipe
+            return $ C.ArrE ctau2 (C.ArrE ctau1 clhs cpipe l) crhs l
+      where
+        checkArrE :: C.Exp -> Ti (C.Exp, C.Exp, SrcLoc)
+        checkArrE (C.ArrE _ clhs crhs l) =
+            return (clhs, crhs, l)
+
+        checkArrE e =
+            faildoc $ nest 2 $
+            text "Expected arrow expression, but got:" <+/> ppr e
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
