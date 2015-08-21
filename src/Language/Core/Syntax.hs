@@ -564,7 +564,8 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "ref" <+> pprPrec tyappPrec1 tau
 
-    pprPrec _ (StructT s _) =
+    pprPrec p (StructT s _) =
+        parensIf (p > tyappPrec) $
         text "struct" <+> ppr s
 
     pprPrec _ (ArrT ind tau _) =
