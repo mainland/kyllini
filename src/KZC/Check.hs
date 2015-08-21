@@ -430,7 +430,6 @@ tcExp (Z.CallE f es l) exp_ty = do
           text "arguments but got" <+> ppr (length taus)
     (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
-    collectValCtx tau_ret' $ do
     mces <- zipWithM checkArg es taus
     return $ co2 $ co1 $ do
         cf  <- C.varE <$> trans f
@@ -482,7 +481,6 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
         return (gamma, mce1)
     tau <- mkSTC (UnitT l)
     instType tau exp_ty
-    collectValCtx tau $ do
     mce2  <- withSummaryContext e2 $
              castVal gamma e2
     return $ do
@@ -492,8 +490,7 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- collectValCtx tau $ do
-            checkBoolVal e1
+    mce1 <- checkBoolVal e1
     mce2 <- collectValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
@@ -503,8 +500,7 @@ tcExp (Z.WhileE e1 e2 l) exp_ty = do
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- collectValCtx tau $ do
-            checkBoolVal e1
+    mce1 <- checkBoolVal e1
     mce2 <- collectValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
@@ -664,7 +660,6 @@ tcExp (Z.ProjE e f l) exp_ty = do
 tcExp (Z.PrintE newline es l) exp_ty = do
     tau <- mkSTC (UnitT l)
     instType tau exp_ty
-    collectValCtx tau $ do
     mces <- mapM checkArg es
     return $ do
         ces <- sequence mces
@@ -688,7 +683,6 @@ tcExp (Z.ReturnE _ e l) exp_ty = do
     tau     <- newMetaTvT TauK l
     tau_ret <- mkSTC tau
     instType tau_ret exp_ty
-    collectValCtx tau_ret $ do
     (tau', mce) <- inferVal e
     unifyTypes tau' tau
     return $ do
@@ -734,7 +728,6 @@ tcExp (Z.EmitE e l) exp_ty = do
     b       <- newMetaTvT TauK l
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
-    collectValCtx tau $ do
     (tau_e, mce)      <- inferVal e
     ST [] _ _ a' b' _ <- compress tau
     tau_e'            <- compress tau_e
@@ -774,7 +767,6 @@ tcExp (Z.EmitsE e l) exp_ty = do
     b       <- newMetaTvT TauK l
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
-    collectValCtx tau $ do
     mce <- checkVal e (arrT iota b)
     return $ do ce <- mce
                 return $ C.EmitsE ce l
