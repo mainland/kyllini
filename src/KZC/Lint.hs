@@ -227,7 +227,7 @@ inferExp (CallE f ies es _) = do
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
     zipWithM_ checkArg es (subst theta phi taus)
-    appSTScope tau_ret
+    appSTScope (subst theta phi tau_ret)
   where
     checkIotaArg :: Iota -> Tc ()
     checkIotaArg (ConstI {}) =
