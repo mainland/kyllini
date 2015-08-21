@@ -420,8 +420,8 @@ inferExp (PrintE _ es l) = do
     a = "a"
     b = "b"
 
-inferExp (ErrorE _ l) =
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+inferExp (ErrorE nu _ l) =
+    appSTScope $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"

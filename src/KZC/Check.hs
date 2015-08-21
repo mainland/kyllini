@@ -677,10 +677,12 @@ tcExp (Z.PrintE newline es l) exp_ty = do
         return mce
 
 tcExp (Z.ErrorE s l) exp_ty = do
-    tau <- mkSTC (UnitT l)
+    nu  <- newMetaTvT TauK l
+    tau <- mkSTC nu
     instType tau exp_ty
     return $ do
-        return $ C.ErrorE s l
+        cnu <- trans nu
+        return $ C.ErrorE cnu s l
 
 tcExp (Z.ReturnE _ e l) exp_ty = do
     tau     <- newMetaTvT TauK l

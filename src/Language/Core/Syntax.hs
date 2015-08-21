@@ -122,7 +122,7 @@ data Exp = ConstE Const !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
-         | ErrorE String !SrcLoc
+         | ErrorE Type String !SrcLoc
          -- Computations
          | ReturnE Exp !SrcLoc
          | BindE BindVar Exp Exp !SrcLoc
@@ -449,8 +449,8 @@ instance Pretty Exp where
     pprPrec _ (PrintE False es _) =
         text "print" <> parens (commasep (map (pprPrec appPrec1) es))
 
-    pprPrec _ (ErrorE s _) =
-        text "error" <+> (text . show) s
+    pprPrec _ (ErrorE tau s _) =
+        text "error" <> text "@" <> pprPrec appPrec1 tau <+> (text . show) s
 
     pprPrec p (ReturnE e _) =
         parensIf (p > appPrec) $
