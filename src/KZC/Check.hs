@@ -351,35 +351,35 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
 
     checkEqBinop :: C.Binop -> Ti (Ti C.Exp)
     checkEqBinop cop = do
-        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
+        (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkEqT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkOrdBinop :: C.Binop -> Ti (Ti C.Exp)
     checkOrdBinop cop = do
-        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
+        (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkOrdT tau
         instType boolT exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkBoolBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBoolBinop cop = do
-        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
+        (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkBoolT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkNumBinop :: C.Binop -> Ti (Ti C.Exp)
     checkNumBinop cop = do
-        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
+        (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkNumT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
     checkBitBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitBinop cop = do
-        (tau, mce1, mce2) <- unifyExpressionTypes e1 e2
+        (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkBitT tau
         instType tau exp_ty
         return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
@@ -403,9 +403,8 @@ tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
                 return $ C.IfE ce1 ce2 (C.returnE C.unitE) l
 
 tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
-    mce1        <- checkVal e1 (BoolT l)
-    (tau, mce2) <- inferExp e2
-    mce3        <- checkExp e3 tau
+    mce1              <- checkVal e1 (BoolT l)
+    (tau, mce2, mce3) <- unifyExpTypes e2 e3
     instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2
@@ -1755,12 +1754,26 @@ unifyTypes tau1 tau2 = do
 
 -- | Type check two expressions and attempt to unify their types. This may
 -- requires adding casts.
-unifyExpressionTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
-unifyExpressionTypes e1 e2 = do
+unifyExpTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyExpTypes e1 e2 = do
+    (tau1, mce1) <- inferExp e1
+    (tau2, mce2) <- inferExp e2
+    unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2
+
+-- | Type check two expressions, treating them as values, and attempt to unify their types. This may
+-- requires adding casts.
+unifyValTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyValTypes e1 e2 = do
     (tau1, mce1) <- inferVal e1
     (tau2, mce2) <- inferVal e2
-    tau1'        <- compress tau1
-    tau2'        <- compress tau2
+    unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2
+
+unifyCompiledExpTypes :: Type -> Z.Exp -> Ti C.Exp
+                      -> Type -> Z.Exp -> Ti C.Exp
+                      -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
+    tau1' <- compress tau1
+    tau2' <- compress tau2
     go tau1' e1 mce1 tau2' e2 mce2
   where
     go :: Type -> Z.Exp -> Ti C.Exp
@@ -1786,28 +1799,27 @@ unifyExpressionTypes e1 e2 = do
         return (tau1, mce1, co mce2)
 
     go tau1 _ mce1 tau2 _ mce2 = do
-        tau <- lubType tau1 tau2
-        co1 <- mkCast tau1 tau
-        co2 <- mkCast tau2 tau
-        return (tau, co1 mce1, co2 mce2)
+        maybe_tau <- lubType tau1 tau2
+        case maybe_tau of
+          Just tau -> do co1 <- mkCast tau1 tau
+                         co2 <- mkCast tau2 tau
+                         return (tau, co1 mce1, co2 mce2)
+          Nothing  -> do unifyTypes tau1 tau2
+                         return (tau1, mce1, mce2)
 
-    lubType :: Type -> Type -> Ti Type
+    lubType :: Type -> Type -> Ti (Maybe Type)
     lubType (IntT w1 l) (IntT w2 _) =
-        return $ IntT (max w1 w2) l
+        return $ Just $ IntT (max w1 w2) l
 
     lubType (FloatT w1 l) (FloatT w2 _) =
-        return $ FloatT (max w1 w2) l
+        return $ Just $ FloatT (max w1 w2) l
 
     lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
         s <- lubComplex s1 s2
-        return $ StructT s l
+        return $ Just $ StructT s l
 
-    lubType tau1 tau2 =
-        faildoc $ nest 2 $
-          text "Cannot align argument" <+> ppr e1 <+/>
-          text "of type" <+> ppr tau1 <+/>
-          text "with argument" <+> ppr e2 <+/>
-          text "of type" <+> ppr tau2
+    lubType _ _ =
+        return Nothing
 
     lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
     lubComplex s1 s2 = do
