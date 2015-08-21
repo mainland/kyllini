@@ -542,8 +542,8 @@ tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT TauK l
-    mces <- mapM (\e -> checkExp e tau) es
     instType (ArrT (ConstI (length es) l) tau l) exp_ty
+    mces <- mapM (\e -> checkExp e tau) es
     return $ do ces <- sequence mces
                 return $ C.ArrayE ces l
 
