@@ -450,7 +450,7 @@ instance Pretty Exp where
         text "print" <> parens (commasep (map (pprPrec appPrec1) es))
 
     pprPrec _ (ErrorE s _) =
-        text "error" <+> ppr s
+        text "error" <+> (text . show) s
 
     pprPrec p (ReturnE e _) =
         parensIf (p > appPrec) $

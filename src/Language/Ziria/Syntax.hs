@@ -454,7 +454,7 @@ instance Pretty Exp where
         text "print" <+> commasep (map ppr es)
 
     pprPrec _ (ErrorE s _) =
-        text "error" <+> ppr s
+        text "error" <+> (text . show) s
 
     pprPrec _ (ReturnE ann e _) =
         ppr ann <+> text "return" <+> pprPrec appPrec1 e
