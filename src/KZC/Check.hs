@@ -508,18 +508,19 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
                 ce2 <- mce2
                 return $ C.UntilE ce1 ce2 l
 
-tcExp (Z.TimesE _ e1 e2 l) exp_ty = do
+tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
     checkIntT tau1
     (tau, mce2) <- inferExp e2
     _           <- checkSTCUnit tau
     instType tau exp_ty
-    return $ do cx  <- C.mkUniqVar "x" l
-                ce1 <- mce1
-                ce2 <- mce2
-                return $ C.ForE cx C.intT (C.intE 1) ce1 ce2 l
+    return $ do cann <- trans ann
+                cx   <- C.mkUniqVar "x" l
+                ce1  <- mce1
+                ce2  <- mce2
+                return $ C.ForE cann cx C.intT (C.intE 1) ce1 ce2 l
 
-tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
+tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)
     checkIntT tau_i
     mce1 <- castVal tau_i e1
@@ -529,12 +530,13 @@ tcExp (Z.ForE _ i ztau_i e1 e2 e3 l) exp_ty = do
             collectValCtx tau $
             checkExp e3 tau
     instType tau exp_ty
-    return $ do ci     <- trans i
+    return $ do cann   <- trans ann
+                ci     <- trans i
                 ctau_i <- trans tau_i
                 ce1    <- mce1
                 ce2    <- mce2
                 ce3    <- mce3
-                return $ C.ForE ci ctau_i ce1 ce2 ce3 l
+                return $ C.ForE cann ci ctau_i ce1 ce2 ce3 l
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT TauK l
@@ -679,15 +681,16 @@ tcExp (Z.ErrorE s l) exp_ty = do
         cnu <- trans nu
         return $ C.ErrorE cnu s l
 
-tcExp (Z.ReturnE _ e l) exp_ty = do
+tcExp (Z.ReturnE ann e l) exp_ty = do
     tau     <- newMetaTvT TauK l
     tau_ret <- mkSTC tau
     instType tau_ret exp_ty
     (tau', mce) <- inferVal e
     unifyTypes tau' tau
     return $ do
-        ce <- mce
-        return $ C.ReturnE ce l
+        cann <- trans ann
+        ce   <- mce
+        return $ C.ReturnE cann ce l
 
 tcExp (Z.TakeE l) exp_ty = do
     a <- newMetaTvT TauK l
@@ -771,15 +774,16 @@ tcExp (Z.EmitsE e l) exp_ty = do
     return $ do ce <- mce
                 return $ C.EmitsE ce l
 
-tcExp (Z.RepeatE _ e l) exp_ty = do
+tcExp (Z.RepeatE ann e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
         withSummaryContext e $ do
         (tau, mce)           <- inferExp e
         (sigma, alpha, beta) <- checkSTCUnit tau
         return (sigma, alpha, beta, mce)
     instType (stT (T l) sigma alpha beta) exp_ty
-    return $ do ce <- mce
-                return $ C.RepeatE ce l
+    return $ do cann <- trans ann
+                ce   <- mce
+                return $ C.RepeatE cann ce l
 
 tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     tau  <- fromZ (zalpha, TauK)
@@ -809,7 +813,7 @@ tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
     instType tau tau_exp
     checkExp e tau
 
-tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
+tcExp (Z.ArrE ann e1 e2 l) tau_exp = do
     omega1   <- newMetaTvT OmegaK l
     omega2   <- newMetaTvT OmegaK l
     a        <- newMetaTvT TauK l
@@ -829,10 +833,11 @@ tcExp (Z.ArrE _ e1 e2 l) tau_exp = do
     instType (ST [] omega a a c l) tau_exp
     checkForSplitContext
     return $ co $ do
-        cb  <- trans b
-        ce1 <- mce1
-        ce2 <- mce2
-        return $ C.ArrE cb ce1 ce2 l
+        cann <- trans ann
+        cb   <- trans b
+        ce1  <- mce1
+        ce2  <- mce2
+        return $ C.ArrE cann cb ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do
@@ -1649,10 +1654,10 @@ mkCastT tau1 tau2 = do
             ctau1           <- trans tau1
             ctau2           <- trans tau2
             cpipe           <- mkPipe
-            return $ C.ArrE ctau2 (C.ArrE ctau1 clhs cpipe l) crhs l
+            return $ C.ArrE C.AutoPipeline ctau2 (C.ArrE C.AutoPipeline ctau1 clhs cpipe l) crhs l
       where
         checkArrE :: C.Exp -> Ti (C.Exp, C.Exp, SrcLoc)
-        checkArrE (C.ArrE _ clhs crhs l) =
+        checkArrE (C.ArrE _ _ clhs crhs l) =
             return (clhs, crhs, l)
 
         checkArrE e =
@@ -2061,3 +2066,17 @@ instance Trans Type C.Iota where
 
 instance Trans (Z.Var, Type) (C.Var, C.Type) where
     trans (v, tau) = (,) <$> trans v <*> trans tau
+
+instance Trans Z.UnrollAnn C.UnrollAnn where
+    trans ann = pure $ (toEnum . fromEnum) ann
+
+instance Trans Z.InlineAnn C.InlineAnn where
+    trans ann = pure $ (toEnum . fromEnum) ann
+
+instance Trans Z.PipelineAnn C.PipelineAnn where
+    trans ann = pure $ (toEnum . fromEnum) ann
+
+instance Trans Z.VectAnn C.VectAnn where
+    trans Z.AutoVect      = pure C.AutoVect
+    trans (Z.Rigid f i j) = pure $ C.Rigid f i j
+    trans (Z.UpTo f i j)  = pure $ C.UpTo f i j

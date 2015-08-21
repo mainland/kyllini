@@ -136,20 +136,21 @@ data VarBind = VarBind Var Bool Type
 data UnrollAnn = Unroll     -- ^ Always unroll
                | NoUnroll   -- ^ Never unroll
                | AutoUnroll -- ^ Let the compiler choose when to unroll
-  deriving (Eq, Ord, Read, Show)
+  deriving (Enum, Eq, Ord, Read, Show)
 
 data InlineAnn = Inline     -- ^ Always inline
                | NoInline   -- ^ Never inline
                | AutoInline -- ^ Let the compiler decide when to inline
-  deriving (Eq, Ord, Read, Show)
+  deriving (Enum, Eq, Ord, Read, Show)
 
 data PipelineAnn = Pipeline     -- ^ Always pipeline
                  | NoPipeline   -- ^ Never pipeline
                  | AutoPipeline -- ^ Let the compiler decide when to pipeline
-  deriving (Eq, Ord, Read, Show)
+  deriving (Enum, Eq, Ord, Read, Show)
 
 data VectAnn = AutoVect
-             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False == disallow mitigations up
+             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
+                                   -- disallow mitigations up
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 

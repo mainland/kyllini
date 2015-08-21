@@ -20,6 +20,10 @@ module KZC.Core.Syntax (
     W(..),
     Const(..),
     Exp(..),
+    UnrollAnn(..),
+    InlineAnn(..),
+    PipelineAnn(..),
+    VectAnn(..),
     BindVar(..),
     Unop(..),
     Binop(..),
@@ -115,7 +119,7 @@ data Exp = ConstE Const !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | UntilE Exp Exp !SrcLoc
-         | ForE Var Type Exp Exp Exp !SrcLoc
+         | ForE UnrollAnn Var Type Exp Exp Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
@@ -127,14 +131,35 @@ data Exp = ConstE Const !SrcLoc
          | PrintE Bool [Exp] !SrcLoc
          | ErrorE Type String !SrcLoc
          -- Computations
-         | ReturnE Exp !SrcLoc
+         | ReturnE InlineAnn Exp !SrcLoc
          | BindE BindVar Exp Exp !SrcLoc
          | TakeE Type !SrcLoc
          | TakesE Int Type !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
-         | RepeatE Exp !SrcLoc
-         | ArrE Type Exp Exp !SrcLoc
+         | RepeatE VectAnn Exp !SrcLoc
+         | ArrE PipelineAnn Type Exp Exp !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data UnrollAnn = Unroll     -- ^ Always unroll
+               | NoUnroll   -- ^ Never unroll
+               | AutoUnroll -- ^ Let the compiler choose when to unroll
+  deriving (Enum, Eq, Ord, Read, Show)
+
+data InlineAnn = Inline     -- ^ Always inline
+               | NoInline   -- ^ Never inline
+               | AutoInline -- ^ Let the compiler decide when to inline
+  deriving (Enum, Eq, Ord, Read, Show)
+
+data PipelineAnn = Pipeline     -- ^ Always pipeline
+                 | NoPipeline   -- ^ Never pipeline
+                 | AutoPipeline -- ^ Let the compiler decide when to pipeline
+  deriving (Enum, Eq, Ord, Read, Show)
+
+data VectAnn = AutoVect
+             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
+                                   -- disallow mitigations up
+             | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
 data BindVar = BindV Var
@@ -221,15 +246,15 @@ isComplexStruct _           = False
  -
  ------------------------------------------------------------------------------}
 
-data Stm = ReturnS Exp !SrcLoc
+data Stm = ReturnS InlineAnn Exp !SrcLoc
          | BindS BindVar Exp !SrcLoc
          | ExpS Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 instance Pretty Stm where
-    pprPrec p (ReturnS e _) =
+    pprPrec p (ReturnS ann e _) =
         parensIf (p > appPrec) $
-        text "return" <+> ppr e
+        ppr ann <+> text "return" <+> ppr e
 
     pprPrec _ (BindS (BindV v) e _) =
         ppr v <+> text "<-" <+> align (ppr e)
@@ -257,7 +282,7 @@ stmsToExp :: [Stm] -> Exp
 stmsToExp = undefined
 #else /* !defined(ONLY_TYPEDEFS) */
 expToStms :: Exp -> [Stm]
-expToStms (ReturnE e l)      = [ReturnS e l]
+expToStms (ReturnE ann e l)  = [ReturnS ann e l]
 expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
 expToStms e                  = [ExpS e (srclocOf e)]
 
@@ -265,8 +290,8 @@ stmsToExp :: [Stm] -> Exp
 stmsToExp [] =
     error "Null statement list"
 
-stmsToExp [ReturnS e l] =
-    ReturnE e l
+stmsToExp [ReturnS ann e l] =
+    ReturnE ann e l
 
 stmsToExp [BindS {}] =
     error "Last statement must be an expression"
@@ -274,8 +299,8 @@ stmsToExp [BindS {}] =
 stmsToExp [ExpS e _] =
     e
 
-stmsToExp (ReturnS e1 _ : stms) =
-    BindE WildV e1 e2 (e1 `srcspan` e2)
+stmsToExp (ReturnS ann e1 l : stms) =
+    BindE WildV (ReturnE ann e1 l) e2 (e1 `srcspan` e2)
   where
     e2 :: Exp
     e2 = stmsToExp stms
@@ -419,9 +444,11 @@ instance Pretty Exp where
         group (pprPrec appPrec1 e1) <+>
         pprBody e2
 
-    pprPrec _ (ForE v tau e1 e2 e3 _) =
-        text "for" <+>
-        group (parens (ppr v <+> colon <+> ppr tau) <+> text "in" <+> brackets (commasep [ppr e1, ppr e2])) <>
+    pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+        ppr ann <+> text "for" <+>
+        group (parens (ppr v <+> colon <+> ppr tau) <+>
+               text "in" <+>
+               brackets (commasep [ppr e1, ppr e2])) <>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
@@ -455,9 +482,9 @@ instance Pretty Exp where
     pprPrec _ (ErrorE tau s _) =
         text "error" <> text "@" <> pprPrec appPrec1 tau <+> (text . show) s
 
-    pprPrec p (ReturnE e _) =
+    pprPrec p (ReturnE ann e _) =
         parensIf (p > appPrec) $
-        text "return" <+> pprPrec appPrec1 e
+        ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
     pprPrec _ e@(BindE {}) =
         ppr (expToStms e)
@@ -477,15 +504,37 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         text "emits" <+> pprPrec appPrec1 e
 
-    pprPrec p (RepeatE e _) =
+    pprPrec p (RepeatE ann e _) =
         parensIf (p > appPrec) $
-        text "repeat" <> pprBody e
+        ppr ann <+> text "repeat" <> pprBody e
 
-    pprPrec p (ArrE tau e1 e2 _) =
+    pprPrec p (ArrE Pipeline tau e1 e2 _) =
+        parensIf (p > arrPrec) $
+        pprPrec arrPrec e1 <+>
+        text "|>>>|" <> text "@" <> pprPrec appPrec1 tau <+>
+        pprPrec arrPrec e2
+
+    pprPrec p (ArrE _ tau e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+>
         text ">>>" <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
+
+instance Pretty UnrollAnn where
+    ppr Unroll     = text "unroll"
+    ppr NoUnroll   = text "nounroll"
+    ppr AutoUnroll = empty
+
+instance Pretty InlineAnn where
+    ppr AutoInline = empty
+    ppr NoInline   = text "noinline"
+    ppr Inline     = text "forceinline"
+
+instance Pretty VectAnn where
+    ppr (Rigid True from to)  = text "!" <> ppr (Rigid False from to)
+    ppr (Rigid False from to) = brackets (commasep [ppr from, ppr to])
+    ppr (UpTo f from to)      = text "<=" <+> ppr (Rigid f from to)
+    ppr AutoVect              = empty
 
 pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
 pprFunParams ivs vbs =
@@ -761,7 +810,7 @@ instance Fvs Exp Var where
     fvs (AssignE e1 e2 _)         = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)          = fvs e1 <> fvs e2
     fvs (UntilE e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (ForE v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ForE _ v _ e1 e2 e3 _)   = fvs e1 <> fvs e2 <> delete v (fvs e3)
     fvs (ArrayE es _)             = fvs es
     fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
     fvs (LetStruct _ _ e _)       = fvs e
@@ -769,15 +818,15 @@ instance Fvs Exp Var where
     fvs (ProjE e _ _)             = fvs e
     fvs (PrintE _ es _)           = fvs es
     fvs (ErrorE {})               = mempty
-    fvs (ReturnE e _)             = fvs e
+    fvs (ReturnE _ e _)           = fvs e
     fvs (BindE (BindV v) e1 e2 _) = fvs e1 <> delete v (fvs e2)
     fvs (BindE WildV e1 e2 _)     = fvs e1 <> fvs e2
     fvs (TakeE {})                = mempty
     fvs (TakesE {})               = mempty
     fvs (EmitE e _)               = fvs e
     fvs (EmitsE e _)              = fvs e
-    fvs (RepeatE e _)             = fvs e
-    fvs (ArrE _ e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (RepeatE _ e _)           = fvs e
+    fvs (ArrE _ _ e1 e2 _)        = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es

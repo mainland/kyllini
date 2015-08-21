@@ -23,7 +23,7 @@ instance Located Exp where
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
   locOf (UntilE _ _ l) = locOf l
-  locOf (ForE _ _ _ _ _ l) = locOf l
+  locOf (ForE _ _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
   locOf (LetStruct _ _ _ l) = locOf l
@@ -31,14 +31,14 @@ instance Located Exp where
   locOf (ProjE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
-  locOf (ReturnE _ l) = locOf l
+  locOf (ReturnE _ _ l) = locOf l
   locOf (BindE _ _ _ l) = locOf l
   locOf (TakeE _ l) = locOf l
   locOf (TakesE _ _ l) = locOf l
   locOf (EmitE _ l) = locOf l
   locOf (EmitsE _ l) = locOf l
-  locOf (RepeatE _ l) = locOf l
-  locOf (ArrE _ _ _ l) = locOf l
+  locOf (RepeatE _ _ l) = locOf l
+  locOf (ArrE _ _ _ _ l) = locOf l
 instance Located StructDef where
   locOf (StructDef _ _ l) = locOf l
 instance Located Type where
@@ -61,6 +61,6 @@ instance Located Iota where
   locOf (ConstI _ l) = locOf l
   locOf (VarI _ l) = locOf l
 instance Located Stm where
-  locOf (ReturnS _ l) = locOf l
+  locOf (ReturnS _ _ l) = locOf l
   locOf (BindS _ _ l) = locOf l
   locOf (ExpS _ l) = locOf l

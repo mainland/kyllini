@@ -301,7 +301,7 @@ inferExp (UntilE e1 e2 _) = do
         void $ checkSTCUnit tau
         return tau
 
-inferExp (ForE v tau e1 e2 e3 _) = do
+inferExp (ForE _ v tau e1 e2 e3 _) = do
     checkIntT tau
     withExpContext e1 $
         checkExp e1 tau
@@ -429,7 +429,7 @@ inferExp (ErrorE nu _ l) =
     a = "a"
     b = "b"
 
-inferExp (ReturnE e l) = do
+inferExp (ReturnE _ e l) = do
     tau <- inferExp e
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
@@ -486,11 +486,11 @@ inferExp (EmitsE e l) = do
     s = "s"
     a = "a"
 
-inferExp (RepeatE e l) = do
+inferExp (RepeatE _ e l) = do
     (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
-inferExp (ArrE b e1 e2 l) = do
+inferExp (ArrE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
     (omega1, s', a',    b') <- withExpContext e1 $
                                localSTIndTypes (Just (s, a, b)) $
