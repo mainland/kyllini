@@ -23,9 +23,8 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Language.Core.Smart
-import Language.Core.Syntax
-
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 
 data TcEnv = TcEnv

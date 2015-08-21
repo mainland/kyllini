@@ -28,9 +28,8 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
-import Language.Core.Smart
-import Language.Core.Syntax
-
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Lint.Monad
 import KZC.Vars

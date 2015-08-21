@@ -20,13 +20,13 @@ import System.IO (IOMode(..),
                   hPutStrLn,
                   openFile,
                   stderr)
-
-import qualified Language.Core.Syntax as C
-import Language.Ziria.Parser
-import qualified Language.Ziria.Syntax as Z
 import Text.PrettyPrint.Mainland
 
+import Language.Ziria.Parser
+import qualified Language.Ziria.Syntax as Z
+
 import KZC.Check
+import qualified KZC.Core.Syntax as C
 import KZC.Flags
 import qualified KZC.Lint as Lint
 import KZC.Monad

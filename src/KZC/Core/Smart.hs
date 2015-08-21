@@ -1,17 +1,16 @@
 -- |
--- Module      : Language.Core.Smart
+-- Module      : KZC.Core.Smart
 -- Copyright   : (c) 2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module Language.Core.Smart where
+module KZC.Core.Smart where
 
 import Control.Applicative
 import Data.Loc
 
-import Language.Core.Syntax
-
+import KZC.Core.Syntax
 import KZC.Name
 import KZC.Uniq
 

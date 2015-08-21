@@ -25,11 +25,11 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Smart
 import KZC.Check.Types
+import qualified KZC.Core.Syntax as C
 import KZC.Error
 
 data TiEnv = TiEnv

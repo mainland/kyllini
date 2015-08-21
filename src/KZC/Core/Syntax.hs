@@ -5,13 +5,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Module      : Language.Core.Syntax
+-- Module      : KZC.Core.Syntax
 -- Copyright   : (c) 2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module Language.Core.Syntax (
+module KZC.Core.Syntax (
     Var(..),
     Field(..),
     Struct(..),
@@ -927,6 +927,6 @@ instance Freshen IVar IVar Iota where
         phi'    = Set.insert alpha phi
         theta'  = Map.delete alpha theta
 
-#include "Language/Core/Syntax-instances.hs"
+#include "KZC/Core/Syntax-instances.hs"
 
 #endif /* !defined(ONLY_TYPEDEFS) */

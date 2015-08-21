@@ -72,12 +72,12 @@ import Data.Traversable (Traversable, traverse)
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
-import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
+import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
 import KZC.Monad

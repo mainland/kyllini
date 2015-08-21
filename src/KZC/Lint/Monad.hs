@@ -60,12 +60,11 @@ import qualified Data.Set as Set
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
-import Language.Core.Smart
-import Language.Core.Syntax
-
-import KZC.Lint.State
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Lint.State
 import KZC.Monad
 import KZC.Summary
 import KZC.Uniq

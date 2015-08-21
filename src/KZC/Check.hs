@@ -43,13 +43,13 @@ import qualified Data.Set as Set
 import Data.Typeable
 import Text.PrettyPrint.Mainland
 
-import qualified Language.Core.Smart as C
-import qualified Language.Core.Syntax as C
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Monad
 import KZC.Check.Smart
 import KZC.Check.Types
+import qualified KZC.Core.Smart as C
+import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Summary
 import KZC.Util.SetLike
