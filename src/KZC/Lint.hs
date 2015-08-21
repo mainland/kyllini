@@ -187,8 +187,8 @@ inferExp (BinopE op e1 e2 _) = do
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
-    tau <- inferExp e2
-    checkExp e3 tau
+    tau <- withExpContext e2 $ inferExp e2
+    withExpContext e3 $ checkExp e3 tau
     return tau
 
 inferExp (LetE v tau e1 e2 _) = do
@@ -288,17 +288,19 @@ inferExp (WhileE e1 e2 _) = do
     withExpContext e1 $ do
         (tau, _, _, _) <- inferExp e1 >>= checkSTC
         checkTypeEquality tau boolT
-    tau <- withExpContext e2 $ inferExp e2
-    void $ checkSTCUnit tau
-    return tau
+    withExpContext e2 $ do
+        tau <- inferExp e2
+        void $ checkSTCUnit tau
+        return tau
 
 inferExp (UntilE e1 e2 _) = do
     withExpContext e1 $ do
         (tau, _, _, _) <- inferExp e1 >>= checkSTC
         checkTypeEquality tau boolT
-    tau <- withExpContext e2 $ inferExp e2
-    void $ checkSTCUnit tau
-    return tau
+    withExpContext e2 $ do
+        tau <- inferExp e2
+        void $ checkSTCUnit tau
+        return tau
 
 inferExp (ForE v tau e1 e2 e3 _) = do
     checkIntT tau
@@ -306,11 +308,11 @@ inferExp (ForE v tau e1 e2 e3 _) = do
         checkExp e1 tau
     withExpContext e2 $
         checkExp e2 tau
-    tau <- extendVars [(v, tau)] $
-           withExpContext e3 $
-           inferExp e3
-    void $ checkSTCUnit tau
-    return tau
+    extendVars [(v, tau)] $
+        withExpContext e3 $ do
+        tau_body <- inferExp e3
+        void $ checkSTCUnit tau_body
+        return tau_body
 
 inferExp (ArrayE es l) = do
     taus <- mapM inferExp es
