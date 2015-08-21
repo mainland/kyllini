@@ -154,9 +154,9 @@ checkLetExtFun f ps ztau_ret l = do
   where
     checkRetType :: Z.Type -> Ti Type
     checkRetType (Z.UnitT {}) = do
-        s       <- newMetaTvT TauK l
-        a       <- newMetaTvT TauK l
-        b       <- newMetaTvT TauK l
+        s <- newMetaTvT TauK l
+        a <- newMetaTvT TauK l
+        b <- newMetaTvT TauK l
         fst <$> generalize (ST [] (C (UnitT l) l) s a b l)
 
     checkRetType ztau = fromZ ztau
