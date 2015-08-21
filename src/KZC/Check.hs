@@ -995,10 +995,20 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
             checkExp e tau1
     mce2 <- extendVars [(v, nu)] $
             checkCmds cmds tau2
+    withSummaryContext e $ checkForUnusedReturn
     return $ do cv  <- trans v
                 ce1 <- withSummaryContext cmd $ mce1
                 ce2 <- mce2
                 return $ C.BindE (C.BindV cv) ce1 ce2 l
+  where
+    checkForUnusedReturn :: Ti ()
+    checkForUnusedReturn =
+        when (isReturn e && (not (Set.member v (fvs cmds)))) $
+        faildoc "Result of return is not used"
+
+    isReturn :: Z.Exp -> Bool
+    isReturn (Z.ReturnE {}) = True
+    isReturn _              = False
 
 tcCmds (cmd@(Z.ExpC e _) : []) exp_ty =
     withSummaryContext cmd $ do
