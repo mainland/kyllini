@@ -74,6 +74,32 @@ checkProgram cls = do
     go []       = return $ return $ C.varE (C.mkVar "main")
     go (cl:cls) = checkCompLet cl $ go cls
 
+{-
+Value Contexts
+==============
+
+The core language is a monadic pure language, so it treats assignments and
+dereferences as monadic actions. The surface language does not, so "pure" Zira
+expressions may involve (implicit) dereferences. We "collect" these implicit
+actions in a /value context/ and sequence them so they take place before the
+expression in which their results are used.
+
+Where do we have value contexts?
+
+1) The right-hand-side of any binding is a value context if it is not pure, for
+example, in a Ziria @let comp@ construct. The body of a @let fun@ is also a
+value context, since any Ziria function results in a Core term that is monadic,
+that is, the Core term to which it is elaborated has an @ST@ type to the right
+of the arrow. The body of any @let comp@ variation is also a value context.
+
+2) The body of a @while@, @until@, @times@, or @for@ expression is a value
+context.
+
+3) The body of a @let comp@ variation is a value context.
+
+4) Any statement or command is a value context.
+-}
+
 checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp
          -> Ti (Type, Ti C.Exp)
 checkLet v ztau TauK e =
@@ -83,15 +109,19 @@ checkLet v ztau TauK e =
     mce1 <- castVal tau e
     return (tau, mce1)
 
-checkLet f ztau kappa e =
+checkLet f ztau MuK e =
     withExpContext e $ do
-    tau <- fromZ (ztau, kappa)
+    tau <- fromZ (ztau, MuK)
     mce <- extendVars [(f, tau)] $
            collectValCtx tau $
            checkExp e tau
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
     return (tau_gen, co mce)
+
+checkLet _ _ kappa _ =
+    panicdoc $
+    text "checkLet: expected kind tau or mu, but got:" <+> ppr kappa
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp
             -> Ti (Type, Ti (Maybe C.Exp))
@@ -179,6 +209,8 @@ checkCompLet cl@(Z.LetCL v ztau e l) k = do
         return $ C.LetE cv ctau ce1 ce2 l
 
 checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
+    tau_ret <- newMetaTvT MuK l
+    collectValCtx tau_ret $ do
     (tau, mce1) <- withSummaryContext cl $
                    checkLetRef v ztau e_init
     mce2        <- extendVars [(v, refT tau)] $
@@ -511,8 +543,9 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
 tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
     checkIntT tau1
-    (tau, mce2) <- inferExp e2
-    _           <- checkSTCUnit tau
+    tau  <- mkSTC (UnitT l)
+    mce2 <- collectValCtx tau $
+            checkExp e2 tau
     instType tau exp_ty
     return $ do cann <- trans ann
                 cx   <- C.mkUniqVar "x" l
@@ -981,7 +1014,6 @@ tcCmds (cmd@(Z.LetC {}) : []) _ =
 tcCmds (Z.LetC cl _ : cmds) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
     checkCompLet cl $ do
     checkCmds cmds tau
 
