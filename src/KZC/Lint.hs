@@ -498,12 +498,8 @@ inferExp (ArrE _ b e1 e2 l) = do
     (omega2, b'', b''', c') <- withExpContext e2 $
                                localSTIndTypes (Just (b, b, c)) $
                                inferExp e2 >>= checkST
-    checkTypeEquality s'   s
-    checkTypeEquality a'   a
-    checkTypeEquality b'   b
-    checkTypeEquality b''  b
-    checkTypeEquality b''' b
-    checkTypeEquality c'   c
+    checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
+    checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
     omega <- joinOmega omega1 omega2
     return $ ST [] omega s a c l
   where
