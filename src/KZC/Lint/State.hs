@@ -13,10 +13,7 @@
 
 module KZC.Lint.State (
     TcEnv(..),
-    defaultTcEnv,
-
-    TcState(..),
-    defaultTcState
+    defaultTcEnv
   ) where
 
 import Data.Loc
@@ -49,11 +46,6 @@ defaultTcEnv = TcEnv
     , iVars      = Map.empty
     , stIndTys   = Nothing
     }
-
-data TcState = TcState ()
-
-defaultTcState :: TcState
-defaultTcState = TcState ()
 
 builtinStructs :: [StructDef]
 builtinStructs =

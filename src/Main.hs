@@ -76,7 +76,7 @@ runPipeline filepath = do
     lintCore :: C.Exp -> KZC C.Exp
     lintCore e = do
         whenDynFlag Lint $
-            Lint.withTc $ void $ Lint.inferExp e
+            Lint.withTc (void $ Lint.inferExp e)
         return e
 
 {-

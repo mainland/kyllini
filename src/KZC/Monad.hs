@@ -39,7 +39,6 @@ data KZCEnv = KZCEnv
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
-    , tcstateref :: !(IORef TcState)
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
@@ -50,13 +49,11 @@ defaultKZCEnv fs = do
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
-    tcsref <- newRef defaultTcState
     return KZCEnv { uniq       = u
                   , flags      = fs
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
-                  , tcstateref = tcsref
                   }
 
 newtype KZC a = KZC { runKZC :: KZCEnv -> IO a }
