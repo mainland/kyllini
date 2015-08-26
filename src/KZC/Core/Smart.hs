@@ -38,8 +38,8 @@ derefE e = DerefE e (srclocOf e)
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
-bindE :: Var -> Exp -> Exp -> Exp
-bindE v e1 e2 = BindE (BindV v) e1 e2 (v `srcspan` e1 `srcspan` e2)
+bindE :: Var -> Type -> Exp -> Exp -> Exp
+bindE v tau e1 e2 = BindE (BindV v tau) e1 e2 (v `srcspan` e1 `srcspan` e2)
 
 seqE :: Exp -> Exp -> Exp
 seqE e1 e2 = BindE WildV e1 e2 (e1 `srcspan` e2)

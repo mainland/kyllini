@@ -826,7 +826,7 @@ tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     return $ do ctau <- trans tau
                 cx   <- C.mkUniqVar "x" l
                 return $ C.repeatE $
-                         C.bindE cx (C.takeE ctau) $
+                         C.bindE cx ctau (C.takeE ctau) $
                          C.emitE (C.varE cx)
 
 tcExp (Z.ArrE _ (Z.ReadE ztau l) e _) tau_exp = do
@@ -912,9 +912,10 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
                 cy     <- C.mkUniqVar "y" l
                 ccalle <- co $ return $ C.varE cx
                 ca     <- trans a
+                cb     <- trans b
                 return $ C.repeatE $
-                         C.bindE cx (C.takeE ca) $
-                         C.bindE cy ccalle $
+                         C.bindE cx ca (C.takeE ca) $
+                         C.bindE cy cb ccalle $
                          C.emitE (C.varE cy)
 
 tcExp (Z.CompLetE cl e l) exp_ty =
@@ -1035,8 +1036,9 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
     withSummaryContext e $ checkForUnusedReturn
     return $ do cv  <- trans v
                 ce1 <- withSummaryContext cmd $ mce1
+                cnu <- trans nu
                 ce2 <- mce2
-                return $ C.BindE (C.BindV cv) ce1 ce2 l
+                return $ C.BindE (C.BindV cv cnu) ce1 ce2 l
   where
     checkForUnusedReturn :: Ti ()
     checkForUnusedReturn =
@@ -1086,9 +1088,10 @@ tcVal e exp_ty = do
     go :: Type -> Ti C.Exp -> Ti (Ti C.Exp)
     go (RefT tau _) mce = do
         let mce' = do
-            ce1 <- mce
-            cx  <- C.mkUniqVar "x" ce1
-            tellValCtx $ \ce2 -> C.bindE cx (C.derefE ce1) ce2
+            ce1  <- mce
+            cx   <- C.mkUniqVar "x" ce1
+            ctau <- trans tau
+            tellValCtx $ \ce2 -> C.bindE cx ctau (C.derefE ce1) ce2
             return $ C.varE cx
         instType tau exp_ty
         return mce'
@@ -1099,9 +1102,10 @@ tcVal e exp_ty = do
         unifyTypes (ST [] omega s a b l) mu
         instType tau exp_ty
         return $ do
-            ce1   <- mce
-            cx    <- C.mkUniqVar "x" ce1
-            tellValCtx $ \ce2 -> C.bindE cx ce1 ce2
+            ce1  <- mce
+            cx   <- C.mkUniqVar "x" ce1
+            ctau <- trans tau
+            tellValCtx $ \ce2 -> C.bindE cx ctau ce1 ce2
             return $ C.varE cx
 
     go tau mce = do
@@ -1679,7 +1683,7 @@ mkCastT tau1 tau2 = do
             cx    <- C.mkUniqVar "x" (srclocOf tau1)
             cxe   <- co $ return (C.varE cx)
             return $ C.repeatE $
-                     C.bindE cx (C.takeE ctau1) $
+                     C.bindE cx ctau1 (C.takeE ctau1) $
                      C.emitE cxe
         return $ \mce -> do
             (clhs, crhs, l) <- mce >>= checkArrE

@@ -439,10 +439,13 @@ inferExp (ReturnE _ e l) = do
     b = "b"
 
 inferExp (BindE bv e1 e2 _) = do
-    (tau_bv, s,  a,  b)  <- withExpContext e1 $ do
-                            inferExp e1 >>= appSTScope >>= checkSTC
+    (tau', s,  a,  b)  <- withExpContext e1 $ do
+                          inferExp e1 >>= appSTScope >>= checkSTC
+    case bv of
+      WildV       -> return ()
+      BindV _ tau -> checkTypeEquality tau' tau
     (omega,  s', a', b') <- withExpContext e2 $
-                            extendBindVars [(bv, tau_bv)] $
+                            extendBindVars [bv] $
                             inferExp e2 >>= appSTScope >>= checkST
     withExpContext e2 $ do
     checkTypeEquality s' s
@@ -450,9 +453,9 @@ inferExp (BindE bv e1 e2 _) = do
     checkTypeEquality b' b
     return $ stT omega s a b
   where
-    extendBindVars :: [(BindVar, Type)] -> Tc r s a -> Tc r s a
-    extendBindVars bvtaus m =
-        extendVars [(v, tau) | (BindV v, tau) <- bvtaus] m
+    extendBindVars :: [BindVar] -> Tc r s a -> Tc r s a
+    extendBindVars bvs m =
+        extendVars [(v, tau) | BindV v tau <- bvs] m
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK

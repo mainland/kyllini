@@ -162,7 +162,7 @@ data VectAnn = AutoVect
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
-data BindVar = BindV Var
+data BindVar = BindV Var Type
              | WildV
   deriving (Eq, Ord, Read, Show)
 
@@ -256,8 +256,9 @@ instance Pretty Stm where
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
 
-    pprPrec _ (BindS (BindV v) e _) =
-        ppr v <+> text "<-" <+> align (ppr e)
+    pprPrec _ (BindS (BindV v tau) e _) =
+        parens (ppr v <+> colon <+> ppr tau) <+>
+        text "<-" <+> align (ppr e)
 
     pprPrec _ (BindS WildV e _) =
         ppr e
@@ -558,8 +559,8 @@ pprFunParams ivs vbs =
         parens $ ppr v <+> text ":" <+> ppr tau
 
 instance Pretty BindVar where
-    ppr (BindV v) = ppr v
-    ppr WildV     = text "_"
+    ppr (BindV v tau) = parens $ ppr v <+> colon <+> ppr tau
+    ppr WildV         = text "_"
 
 instance Pretty Unop where
     ppr Lnot       = text "!"
@@ -796,37 +797,37 @@ instance Fvs Type n => Fvs [Type] n where
     fvs taus = foldMap fvs taus
 
 instance Fvs Exp Var where
-    fvs (ConstE {})               = mempty
-    fvs (VarE v _)                = singleton v
-    fvs (UnopE _ e _)             = fvs e
-    fvs (BinopE _ e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)          = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE v _ e1 e2 _)        = delete v (fvs e1 <> fvs e2)
-    fvs (LetFunE v _ _ _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
-    fvs (LetExtFunE v _ _ _ e2 _) = delete v (fvs e2)
-    fvs (CallE e _ es _)          = fvs e <> fvs es
-    fvs (LetRefE v _ e1 e2 _)     = delete v (fvs e1 <> fvs e2)
-    fvs (DerefE e _)              = fvs e
-    fvs (AssignE e1 e2 _)         = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (UntilE e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _)   = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)             = fvs es
-    fvs (IdxE e1 e2 _ _)          = fvs e1 <> fvs e2
-    fvs (LetStruct _ _ e _)       = fvs e
-    fvs (StructE _ flds _)        = fvs (map snd flds)
-    fvs (ProjE e _ _)             = fvs e
-    fvs (PrintE _ es _)           = fvs es
-    fvs (ErrorE {})               = mempty
-    fvs (ReturnE _ e _)           = fvs e
-    fvs (BindE (BindV v) e1 e2 _) = fvs e1 <> delete v (fvs e2)
-    fvs (BindE WildV e1 e2 _)     = fvs e1 <> fvs e2
-    fvs (TakeE {})                = mempty
-    fvs (TakesE {})               = mempty
-    fvs (EmitE e _)               = fvs e
-    fvs (EmitsE e _)              = fvs e
-    fvs (RepeatE _ e _)           = fvs e
-    fvs (ArrE _ _ e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (ConstE {})                 = mempty
+    fvs (VarE v _)                  = singleton v
+    fvs (UnopE _ e _)               = fvs e
+    fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)            = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE v _ e1 e2 _)          = delete v (fvs e1 <> fvs e2)
+    fvs (LetFunE v _ _ _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
+    fvs (LetExtFunE v _ _ _ e2 _)   = delete v (fvs e2)
+    fvs (CallE e _ es _)            = fvs e <> fvs es
+    fvs (LetRefE v _ e1 e2 _)       = delete v (fvs e1 <> fvs e2)
+    fvs (DerefE e _)                = fvs e
+    fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2
+    fvs (UntilE e1 e2 _)            = fvs e1 <> fvs e2
+    fvs (ForE _ v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ArrayE es _)               = fvs es
+    fvs (IdxE e1 e2 _ _)            = fvs e1 <> fvs e2
+    fvs (LetStruct _ _ e _)         = fvs e
+    fvs (StructE _ flds _)          = fvs (map snd flds)
+    fvs (ProjE e _ _)               = fvs e
+    fvs (PrintE _ es _)             = fvs es
+    fvs (ErrorE {})                 = mempty
+    fvs (ReturnE _ e _)             = fvs e
+    fvs (BindE (BindV v _) e1 e2 _) = fvs e1 <> delete v (fvs e2)
+    fvs (BindE WildV e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (TakeE {})                  = mempty
+    fvs (TakesE {})                 = mempty
+    fvs (EmitE e _)                 = fvs e
+    fvs (EmitsE e _)                = fvs e
+    fvs (RepeatE _ e _)             = fvs e
+    fvs (ArrE _ _ e1 e2 _)          = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
