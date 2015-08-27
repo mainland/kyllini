@@ -24,6 +24,7 @@ module KZC.Lint.Monad (
     maybeLookupStruct,
 
     extendVars,
+    extendBindVars,
     lookupVar,
 
     extendTyVars,
@@ -77,14 +78,14 @@ runTc :: Tc r s a -> r -> s -> TcEnv -> KZC (a, s)
 runTc m r s e = unTc m r s e
 
 -- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
-liftTc :: forall a . Tc () () a -> KZC a
-liftTc m = do
+liftTc :: forall r s a . r -> s -> Tc r s a -> KZC a
+liftTc r s m = do
     eref   <- asks tcenvref
     env    <- readRef eref
-    (a, _) <- runTc (m' eref) () () env
+    (a, _) <- runTc (m' eref) r s env
     return a
   where
-    m' :: IORef TcEnv -> Tc () () a
+    m' :: IORef TcEnv -> Tc r s a
     m' eref = do
         x <- m
         askTc >>= writeRef eref
@@ -92,11 +93,11 @@ liftTc m = do
 
 -- | Run a @Tc@ computation in the @KZC@ monad without updating the
 -- @Tc@ environment.
-withTc :: forall a . Tc () () a -> KZC a
-withTc m = do
+withTc :: forall r s a . r -> s -> Tc r s a -> KZC a
+withTc r s m = do
     eref   <- asks tcenvref
     env    <- readRef eref
-    (a, _) <- runTc m () () env
+    (a, _) <- runTc m r s env
     return a
 
 instance Functor (Tc r s) where
@@ -222,6 +223,10 @@ maybeLookupStruct s =
 extendVars :: [(Var, Type)] -> Tc r s a -> Tc r s a
 extendVars vtaus m =
     extend varTypes (\env x -> env { varTypes = x }) vtaus m
+
+extendBindVars :: [BindVar] -> Tc r s a -> Tc r s a
+extendBindVars bvs m =
+    extendVars [(v, tau) | BindV v tau <- bvs] m
 
 lookupVar :: Var -> Tc r s Type
 lookupVar v =

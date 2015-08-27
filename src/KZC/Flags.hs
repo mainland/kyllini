@@ -60,6 +60,7 @@ data TraceFlag = TraceLexer
                | TraceParser
                | TraceRn
                | TraceTc
+               | TraceCg
                | TraceLint
   deriving (Eq, Ord, Enum, Show)
 
@@ -78,6 +79,7 @@ data Flags = Flags
     , output  :: Maybe FilePath
     , dumpDir :: Maybe FilePath
     }
+  deriving (Eq, Ord, Show)
 
 instance Monoid Flags where
     mempty = Flags

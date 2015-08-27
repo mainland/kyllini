@@ -64,11 +64,17 @@ newtype Var = Var Name
 instance IsString Var where
     fromString s = Var (fromString s)
 
+instance Named Var where
+    namedSymbol (Var n) = namedSymbol n
+
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
 instance IsString Field where
     fromString s = Field (fromString s)
+
+instance Named Field where
+    namedSymbol (Field n) = namedSymbol n
 
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
@@ -76,17 +82,26 @@ newtype Struct = Struct Name
 instance IsString Struct where
     fromString s = Struct (fromString s)
 
+instance Named Struct where
+    namedSymbol (Struct n) = namedSymbol n
+
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Read, Show)
 
 instance IsString TyVar where
     fromString s = TyVar (fromString s)
 
+instance Named TyVar where
+    namedSymbol (TyVar n) = namedSymbol n
+
 newtype IVar = IVar Name
   deriving (Eq, Ord, Read, Show)
 
 instance IsString IVar where
     fromString s = IVar (fromString s)
+
+instance Named IVar where
+    namedSymbol (IVar n) = namedSymbol n
 
 data W = W8
        | W16

@@ -25,6 +25,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
@@ -56,16 +57,15 @@ runPipeline filepath = do
     decls <- liftIO $ parseProgram text' start
     whenDynFlag PrettyPrint $
       liftIO $ putDocLn $ ppr decls
-    whenDynFlag Check $
-      void $ pipeline decls
+    pipeline decls
   where
     (root, ext) = splitExtension filepath
 
     start :: Pos
     start = startPos filepath
 
-    pipeline :: [Z.CompLet] -> KZC [C.Decl]
-    pipeline = renamePipe >=> checkPipe
+    pipeline :: [Z.CompLet] -> KZC ()
+    pipeline = renamePipe >=> checkPipe >=> compilePipe
 
     renamePipe :: [Z.CompLet] -> KZC [Z.CompLet]
     renamePipe = runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
@@ -73,10 +73,18 @@ runPipeline filepath = do
     checkPipe :: [Z.CompLet] -> KZC [C.Decl]
     checkPipe = withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
+    compilePipe :: [C.Decl] -> KZC ()
+    compilePipe cdecls = do
+        docomp <- asksFlags (not . testDynFlag Check)
+        if docomp
+          then do cdefs <- evalCg (compileProgram cdecls)
+                  writeOutput cdefs
+          else return ()
+
     lintCore :: [C.Decl] -> KZC [C.Decl]
     lintCore decls = do
         whenDynFlag Lint $
-            Lint.withTc (void $ Lint.checkDecls decls)
+            Lint.withTc () () (Lint.checkDecls decls)
         return decls
 
 {-
@@ -85,6 +93,16 @@ runPipeline filepath = do
         dopass <- asks (f . flags)
         if dopass then k a else return a
 -}
+
+    writeOutput :: Pretty a
+                => a
+                -> KZC ()
+    writeOutput x = do
+        let defaultOutpath = replaceExtension filepath ".c"
+        outpath <- asksFlags (maybe defaultOutpath id . output)
+        h       <- liftIO $ openFile outpath WriteMode
+        liftIO $ B.hPut h $ E.encodeUtf8 (prettyLazyText 80 (ppr x))
+        liftIO $ hClose h
 
     dumpPass :: Pretty a
              => DumpFlag

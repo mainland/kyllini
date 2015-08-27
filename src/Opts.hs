@@ -115,6 +115,7 @@ dTraceFlagOpts =
   , (TraceParser, "parse", "trace parser")
   , (TraceRn,     "rn",    "trace renamer")
   , (TraceTc,     "tc",    "trace type checker")
+  , (TraceCg,     "cg",    "trace code generation")
   , (TraceLint,   "lint",  "trace linter")
   ]
 

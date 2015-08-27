@@ -67,9 +67,11 @@ GHCFLAGS += \
 	-package bytestring \
 	-package containers \
 	-package directory \
+	-package dlist \
 	-package exception-mtl \
 	-package exception-transformers \
 	-package filepath \
+	-package language-c-quote \
 	-package mainland-pretty \
 	-package mtl \
 	-package process \
@@ -97,6 +99,8 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	KZC/Cg.hs \
+	KZC/Cg/Monad.hs \
 	KZC/Check.hs \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \

@@ -55,7 +55,6 @@ checkDecl (LetD v tau e _) k = do
     extendVars [(v, tau)] k
 
 checkDecl (LetFunD f iotas vbs tau_ret e l) k = do
-    let tau = FunT iotas (map snd vbs) tau_ret l
     checkKind tau PhiK
     extendVars [(f, tau)] $ do
     tau_ret' <- withExpContext e $
@@ -65,11 +64,16 @@ checkDecl (LetFunD f iotas vbs tau_ret e l) k = do
                 inferExp e >>= absSTScope
     checkTypeEquality tau_ret' tau_ret
     k
+  where
+    tau :: Type
+    tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl e0@(LetExtFunD f iotas vbs tau_ret l) k = do
-    let tau = FunT iotas (map snd vbs) tau_ret l
     withSummaryContext e0 $ checkKind tau PhiK
     extendVars [(f, tau)] k
+  where
+    tau :: Type
+    tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl (LetRefD v tau Nothing _) k = do
     checkKind tau TauK
@@ -464,10 +468,6 @@ inferExp (BindE bv e1 e2 _) = do
     checkTypeEquality a' a
     checkTypeEquality b' b
     return $ stT omega s a b
-  where
-    extendBindVars :: [BindVar] -> Tc r s a -> Tc r s a
-    extendBindVars bvs m =
-        extendVars [(v, tau) | BindV v tau <- bvs] m
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
