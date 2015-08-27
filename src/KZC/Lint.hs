@@ -9,6 +9,8 @@
 module KZC.Lint (
     withTc,
 
+    checkDecls,
+
     inferExp,
     checkExp,
 
@@ -32,7 +34,68 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Lint.Monad
+import KZC.Summary
 import KZC.Vars
+
+checkDecls :: [Decl] -> Tc r s ()
+checkDecls [] =
+    return ()
+
+checkDecls (decl:decls) =
+    checkDecl  decl $
+    checkDecls decls
+
+checkDecl :: Decl -> Tc r s a -> Tc r s a
+checkDecl (LetD v tau e _) k = do
+    void $ inferKind tau
+    tau' <- withExpContext e $
+            absSTScope tau $
+            inferExp e
+    checkTypeEquality tau' tau
+    extendVars [(v, tau)] k
+
+checkDecl (LetFunD f iotas vbs tau_ret e l) k = do
+    let tau = FunT iotas (map snd vbs) tau_ret l
+    checkKind tau PhiK
+    extendVars [(f, tau)] $ do
+    tau_ret' <- withExpContext e $
+                extendIVars (iotas `zip` repeat IotaK) $
+                extendVars vbs $
+                absSTScope tau_ret $
+                inferExp e
+    checkTypeEquality tau_ret' tau_ret
+    k
+
+checkDecl e0@(LetExtFunD f iotas vbs tau_ret l) k = do
+    let tau = FunT iotas (map snd vbs) tau_ret l
+    withSummaryContext e0 $ checkKind tau PhiK
+    extendVars [(f, tau)] k
+
+checkDecl (LetRefD v tau Nothing _) k = do
+    checkKind tau TauK
+    extendVars [(v, refT tau)] k
+
+checkDecl (LetRefD v tau (Just e) _) k = do
+    checkKind tau TauK
+    checkExp e tau
+    extendVars [(v, refT tau)] k
+
+checkDecl e0@(LetStructD s flds l) k = do
+    withSummaryContext e0 $ do
+        checkStructNotRedefined s
+        checkDuplicates "field names" fnames
+        mapM_ (\tau -> checkKind tau TauK) taus
+    extendStructs [StructDef s flds l] k
+  where
+    (fnames, taus) = unzip flds
+
+    checkStructNotRedefined :: Struct -> Tc r s ()
+    checkStructNotRedefined s = do
+      maybe_sdef <- maybeLookupStruct s
+      case maybe_sdef of
+        Nothing   -> return ()
+        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 inferExp :: Exp -> Tc r s Type
 inferExp (ConstE c l) =
@@ -190,32 +253,8 @@ inferExp (IfE e1 e2 e3 _) = do
     withExpContext e3 $ checkExp e3 tau
     return tau
 
-inferExp (LetE v tau e1 e2 _) = do
-    void $ inferKind tau
-    tau' <- withExpContext e1 $
-            absSTScope tau $
-            inferExp e1
-    checkTypeEquality tau' tau
-    extendVars [(v, tau)] $ do
-    inferExp e2
-
-inferExp (LetFunE f iotas vbs tau_ret e1 e2 l) = do
-    let tau = FunT iotas (map snd vbs) tau_ret l
-    checkKind tau PhiK
-    extendVars [(f, tau)] $ do
-    tau_ret' <- withExpContext e1 $
-                extendIVars (iotas `zip` repeat IotaK) $
-                extendVars vbs $
-                absSTScope tau_ret $
-                inferExp e1
-    checkTypeEquality tau_ret' tau_ret
-    inferExp e2
-
-inferExp e0@(LetExtFunE f iotas vbs tau_ret e2 l) = do
-    let tau = FunT iotas (map snd vbs) tau_ret l
-    withExpContext e0 $ checkKind tau PhiK
-    extendVars [(f, tau)] $ do
-    inferExp e2
+inferExp (LetE decl body _) =
+    checkDecl decl $ inferExp body
 
 inferExp (CallE f ies es _) = do
     (ivs, taus, tau_ret) <- inferExp f >>= checkFunT
@@ -253,15 +292,6 @@ inferExp (CallE f ies es _) = do
              faildoc $
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
-
-inferExp (LetRefE v tau Nothing e2 _) = do
-    checkKind tau TauK
-    extendVars [(v, refT tau)] $ inferExp e2
-
-inferExp (LetRefE v tau (Just e1) e2 _) = do
-    checkKind tau TauK
-    checkExp e1 tau
-    extendVars [(v, refT tau)] $ inferExp e2
 
 inferExp (DerefE e l) = do
     tau <- inferExp e >>= checkRefT
@@ -354,24 +384,6 @@ inferExp (ProjE e f l) = do
         sdef  <- checkStructT tau >>= lookupStruct
         tau_f <- checkStructFieldT sdef f
         return tau_f
-
-inferExp e0@(LetStruct s flds e l) = do
-    withExpContext e0 $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (\tau -> checkKind tau TauK) taus
-    extendStructs [StructDef s flds l] $
-        inferExp e
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> Tc r s ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 inferExp e0@(StructE s flds l) =
     withExpContext e0 $ do

@@ -64,20 +64,20 @@ runPipeline filepath = do
     start :: Pos
     start = startPos filepath
 
-    pipeline :: [Z.CompLet] -> KZC C.Exp
+    pipeline :: [Z.CompLet] -> KZC [C.Decl]
     pipeline = renamePipe >=> checkPipe
 
     renamePipe :: [Z.CompLet] -> KZC [Z.CompLet]
     renamePipe = runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
 
-    checkPipe :: [Z.CompLet] -> KZC C.Exp
+    checkPipe :: [Z.CompLet] -> KZC [C.Decl]
     checkPipe = withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
-    lintCore :: C.Exp -> KZC C.Exp
-    lintCore e = do
+    lintCore :: [C.Decl] -> KZC [C.Decl]
+    lintCore decls = do
         whenDynFlag Lint $
-            Lint.withTc (void $ Lint.inferExp e)
-        return e
+            Lint.withTc (void $ Lint.checkDecls decls)
+        return decls
 
 {-
     flagPass :: (Flags -> Bool) -> (a -> KZC a) -> a -> KZC a

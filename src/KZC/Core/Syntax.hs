@@ -19,6 +19,7 @@ module KZC.Core.Syntax (
     IVar(..),
     W(..),
     Const(..),
+    Decl(..),
     Exp(..),
     UnrollAnn(..),
     InlineAnn(..),
@@ -41,7 +42,7 @@ module KZC.Core.Syntax (
     stmsToExp
   ) where
 
-import Data.Foldable
+import Data.Foldable (foldMap)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -102,18 +103,22 @@ data Const = UnitC
            | ArrayC [Const]
   deriving (Eq, Ord, Read, Show)
 
+data Decl = LetD Var Type Exp !SrcLoc
+          | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
+          | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
+          | LetRefD Var Type (Maybe Exp) !SrcLoc
+          | LetStructD Struct [(Field, Type)] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data Exp = ConstE Const !SrcLoc
          | VarE Var !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
-         | LetE Var Type Exp Exp !SrcLoc
+         | LetE Decl Exp !SrcLoc
          -- Functions
-         | LetFunE Var [IVar] [(Var, Type)] Type Exp Exp !SrcLoc
-         | LetExtFunE Var [IVar] [(Var, Type)] Type Exp !SrcLoc
          | CallE Exp [Iota] [Exp] !SrcLoc
          -- References
-         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
@@ -124,7 +129,6 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | LetStruct Struct [(Field, Type)] Exp !SrcLoc
          | StructE Struct [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
@@ -326,6 +330,13 @@ stmsToExp (ExpS e1 _ : stms) =
  -
  ------------------------------------------------------------------------------}
 
+instance Summary Decl where
+    summary (LetD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunD v _ _ _ _ _)  = text "definition of" <+> ppr v
+    summary (LetExtFunD v _ _ _ _) = text "definition of" <+> ppr v
+    summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
+    summary (LetStructD s _ _)     = text "definition of" <+> ppr s
+
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
@@ -370,6 +381,42 @@ instance Pretty Const where
     ppr (StringC s)   = text (show s)
     ppr (ArrayC cs)   = braces $ commasep $ map ppr cs
 
+instance Pretty Decl where
+    pprPrec p (LetD v tau e _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr e))
+      where
+        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
+
+    pprPrec p (LetFunD f ibs vbs tau e _) =
+        parensIf (p > appPrec) $
+        text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
+        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
+        nest 2 (text "=" </> ppr e)
+
+    pprPrec p (LetExtFunD f ibs vbs tau _) =
+        parensIf (p > appPrec) $
+        text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
+        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
+
+    pprPrec p (LetRefD v tau Nothing _) =
+        parensIf (p > appPrec) $
+        text "letref" <+> ppr v <+> text ":" <+> ppr tau
+
+    pprPrec p (LetRefD v tau (Just e) _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr e))
+      where
+        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
+
+    pprPrec p (LetStructD s flds _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> pprStruct flds))
+      where
+        lhs = text "struct" <+> ppr s
+
+    pprList decls = stack (map ppr decls)
+
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
         ppr c
@@ -394,39 +441,13 @@ instance Pretty Exp where
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
-    pprPrec p (LetE v tau e1 e2 _) =
+    pprPrec p (LetE decl body _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e1)) </>
-        nest 2 (text "in" </> pprPrec doPrec1 e2)
-      where
-        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
-
-    pprPrec p (LetFunE f ibs vbs tau e1 e2 _) =
-        parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
-        nest 2 (text "=" </> ppr e1) </>
-        text "in" </> pprPrec doPrec1 e2
-
-    pprPrec p (LetExtFunE f ibs vbs tau e2 _) =
-        parensIf (p > appPrec) $
-        text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) </>
-        text "in" </> pprPrec doPrec1 e2
+        ppr decl </>
+        nest 2 (text "in" </> pprPrec doPrec1 body)
 
     pprPrec _ (CallE f is es _) =
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
-
-    pprPrec p (LetRefE v tau Nothing e2 _) =
-        parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau <+> text "in" </> pprPrec doPrec1 e2
-
-    pprPrec p (LetRefE v tau (Just e1) e2 _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e1)) </>
-        nest 2 (text "in" </> pprPrec doPrec1 e2)
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec _ (DerefE v _) =
         text "!" <> pprPrec appPrec1 v
@@ -460,13 +481,6 @@ instance Pretty Exp where
 
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
-
-    pprPrec p (LetStruct s flds e _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> pprStruct flds)) </>
-        nest 2 (text "in" </> pprPrec doPrec1 e)
-      where
-        lhs = text "struct" <+> ppr s
 
     pprPrec _ (StructE s fields _) =
         ppr s <+> pprStruct fields
@@ -796,17 +810,28 @@ instance Fvs Iota IVar where
 instance Fvs Type n => Fvs [Type] n where
     fvs taus = foldMap fvs taus
 
+instance Fvs Decl Var where
+    fvs (LetD v _ e _)         = delete v (fvs e)
+    fvs (LetFunD v _ _ _ e _)  = delete v (fvs e)
+    fvs (LetExtFunD {})        = mempty
+    fvs (LetRefD v _ e _)      = delete v (fvs e)
+    fvs (LetStructD {})        = mempty
+
+instance Binders Decl Var where
+    binders (LetD v _ _ _)         = singleton v
+    binders (LetFunD v _ _ _ _ _)  = singleton v
+    binders (LetExtFunD v _ _ _ _) = singleton v
+    binders (LetRefD v _ _ _)      = singleton v
+    binders (LetStructD {})        = mempty
+
 instance Fvs Exp Var where
     fvs (ConstE {})                 = mempty
     fvs (VarE v _)                  = singleton v
     fvs (UnopE _ e _)               = fvs e
     fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
     fvs (IfE e1 e2 e3 _)            = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE v _ e1 e2 _)          = delete v (fvs e1 <> fvs e2)
-    fvs (LetFunE v _ _ _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
-    fvs (LetExtFunE v _ _ _ e2 _)   = delete v (fvs e2)
+    fvs (LetE decl body _)          = fvs decl <> (fvs body <\\> binders decl)
     fvs (CallE e _ es _)            = fvs e <> fvs es
-    fvs (LetRefE v _ e1 e2 _)       = delete v (fvs e1 <> fvs e2)
     fvs (DerefE e _)                = fvs e
     fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2
@@ -814,7 +839,6 @@ instance Fvs Exp Var where
     fvs (ForE _ v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
     fvs (ArrayE es _)               = fvs es
     fvs (IdxE e1 e2 _ _)            = fvs e1 <> fvs e2
-    fvs (LetStruct _ _ e _)         = fvs e
     fvs (StructE _ flds _)          = fvs (map snd flds)
     fvs (ProjE e _ _)               = fvs e
     fvs (PrintE _ es _)             = fvs es
