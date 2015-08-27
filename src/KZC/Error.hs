@@ -64,7 +64,7 @@ class (Applicative m, MonadIO m , MonadException m) => MonadErr m where
         if werror
           then err e_warn
           else do ctx <- take <$> getMaxContext <*> askErrCtx
-                  liftIO $ hPutDoc stderr $ ppr (toContextException ctx e_warn)
+                  liftIO $ hPutDocLn stderr $ ppr (toContextException ctx e_warn)
       where
         e_warn :: WarnException
         e_warn = WarnException (toException e)
