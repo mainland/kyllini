@@ -453,29 +453,36 @@ instance Pretty Exp where
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
 
-    pprPrec _ (PrintE True es _) =
+    pprPrec p (PrintE True es _) =
+        parensIf (p > appPrec) $
         text "println" <+> commasep (map ppr es)
 
-    pprPrec _ (PrintE False es _) =
+    pprPrec p (PrintE False es _) =
+        parensIf (p > appPrec) $
         text "print" <+> commasep (map ppr es)
 
-    pprPrec _ (ErrorE s _) =
+    pprPrec p (ErrorE s _) =
+        parensIf (p > appPrec) $
         text "error" <+> (text . show) s
 
-    pprPrec _ (ReturnE ann e _) =
+    pprPrec p (ReturnE ann e _) =
+        parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
     pprPrec _ (TakeE _) =
         text "take"
 
-    pprPrec _ (TakesE i _) =
-        text "takes" <+> ppr i
+    pprPrec p (TakesE i _) =
+        parensIf (p > appPrec) $
+        text "takes" <+> pprPrec appPrec1 i
 
-    pprPrec _ (EmitE e _) =
-        text "emit" <+> ppr e
+    pprPrec p (EmitE e _) =
+        parensIf (p > appPrec) $
+        text "emit" <+> pprPrec appPrec1 e
 
-    pprPrec _ (EmitsE e _) =
-        text "emits" <+> ppr e
+    pprPrec p (EmitsE e _) =
+        parensIf (p > appPrec) $
+        text "emits" <+> pprPrec appPrec1 e
 
     pprPrec _ (RepeatE ann e _) =
         ppr ann <+> text "repeat" <+> ppr e
@@ -497,10 +504,12 @@ instance Pretty Exp where
     pprPrec _ (StandaloneE e _) =
         text "standalone" <+> ppr e
 
-    pprPrec _ (MapE ann v tau _) =
+    pprPrec p (MapE ann v tau _) =
+        parensIf (p > appPrec) $
         text "map" <+> ppr ann <+> pprSig v tau
 
-    pprPrec _ (FilterE v tau _) =
+    pprPrec p (FilterE v tau _) =
+        parensIf (p > appPrec) $
         text "filter" <+> pprSig v tau
 
     pprPrec _ (CompLetE cl e _) =
