@@ -35,9 +35,9 @@ compileProgram :: [Decl] -> Cg ()
 compileProgram decls =
     cgDecls decls $ do
     ccomp <- cgExp (varE "main") >>= unCComp
-    let takek _  = return $ CExp [cexp|buf[i++]|]
-    let emitk ce = appendStm [cstm|emit($ce);|]
-    let donek _  = appendStm [cstm|break;|]
+    let takek _  k = k $ CExp [cexp|buf[i++]|]
+    let emitk ce k = appendStm [cstm|emit($ce);|] >> k
+    let donek _    = appendStm [cstm|break;|]
     citems <- inNewBlock_ $ ccomp takek emitk donek
     appendTopDef [cedecl|
 int main(int argc, char **argv)
@@ -45,7 +45,7 @@ int main(int argc, char **argv)
     int buf[1];
     int i = 0;
 
-    for (;;) { $items:citems }
+    $items:citems
 }|]
 
 
@@ -57,7 +57,8 @@ cgDecls (decl:decls) k =
     cgDecl decl $ cgDecls decls k
 
 cgDecl :: Decl -> Cg a -> Cg a
-cgDecl (LetD v tau e _) k = do
+cgDecl (LetD v tau e _) k =
+    inSTScope tau $ do
     ce <- cgExp e
     cv <- cval v ce tau
     extendVars [(v, tau)] $ do
@@ -66,11 +67,12 @@ cgDecl (LetD v tau e _) k = do
 
 cgDecl (LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
-    let cf = cvar f
+    cf <- cvar f
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
     citems <- inNewBlock_ $
               extendIVars (iotas `zip` repeat IotaK) $
               extendVars vbs $ do
+              inSTScope tau $ do
               ciotas <- mapM cgIVarParam iotas
               cvbs   <- mapM cgParam vbs
               extendIVarCExps (iotas `zip` ciotas) $ do
@@ -87,15 +89,22 @@ cgDecl (LetFunD f iotas vbs tau_ret e l) k =
     tau = FunT iotas (map snd vbs) tau_ret l
 
     cgIVarParam :: IVar -> Cg CExp
-    cgIVarParam iv = return $ CExp [cexp|$id:(cvar iv)|]
+    cgIVarParam iv = do
+        civ <- cvar iv
+        return $ CExp [cexp|$id:civ|]
 
     cgParam :: (Var, Type) -> Cg CExp
-    cgParam (v, RefT {}) = return $ CPtr (CExp [cexp|$id:(cvar v)|])
-    cgParam (v, _)       = return $ CExp [cexp|$id:(cvar v)|]
+    cgParam (v, RefT {}) = do
+        cv <- cvar v
+        return $ CPtr (CExp [cexp|$id:cv|])
+
+    cgParam (v, _) = do
+        cv <- cvar v
+        return $ CExp [cexp|$id:cv|]
 
 cgDecl (LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
-    let cf = cvar f
+    let cf = C.Id (namedString f) l
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
     cparams1 <- mapM cgIVar iotas
     cparams2 <- mapM cgVarBind vbs
@@ -107,7 +116,7 @@ cgDecl (LetExtFunD f iotas vbs tau_ret l) k =
     tau = FunT iotas (map snd vbs) tau_ret l
 
 cgDecl (LetRefD v tau maybe_e _) k = do
-    let cv   =  cvar v
+    cv       <- cvar v
     ctau     <- cgType tau
     maybe_ce <- case maybe_e of
                   Nothing -> return Nothing
@@ -221,16 +230,26 @@ cgExp e@(IfE e1 e2 e3 _) = do
         appendStm [cstm|if ($ce1) { $cv = $ce2; } else { $cv = $ce3;}|]
         return cv
 
-    go _ ce1 ce2 ce3 =
+    go tau ce1 ce2 ce3 =
         return $ CComp ccomp
       where
         ccomp :: CComp
         ccomp takek emitk donek = do
+            (donek', cdone) <-
+                if isSTUnitT tau
+                  then do
+                      let donek' _ = return ()
+                      return (donek', CVoid)
+                  else do
+                      cdone <- cgTemp "done" tau Nothing
+                      let donek' ce = appendStm [cstm|$cdone= $ce;|]
+                      return (donek', cdone)
             ccomp2 <- unCComp ce2
             ccomp3 <- unCComp ce3
-            cthen <- inNewBlock_ $ ccomp2 takek donek emitk
-            celse <- inNewBlock_ $ ccomp3 takek donek emitk
+            cthen  <- inNewBlock_ $ ccomp2 takek emitk donek'
+            celse  <- inNewBlock_ $ ccomp3 takek emitk donek'
             appendStm [cstm|if ($ce1) { $items:cthen } else { $items:celse }|]
+            donek cdone
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -262,14 +281,24 @@ cgExp (BindE bv@(BindV v tau) e1 e2 _) =
     ccomp :: CComp
     ccomp takek emitk donek = do
         ccomp1 <- cgExp e1 >>= unCComp
-        ccomp2 <- cgExp e2 >>= unCComp
-        let cv =  cvar v
-        ctau   <- cgType tau
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
         ccomp1 takek emitk $ \ce -> do
+            cv   <- cvar v
+            ctau <- cgType tau
+            appendDecl [cdecl|$ty:ctau $id:cv;|]
             appendStm [cstm|$id:cv = $ce;|]
             extendBindVars [bv] $ do
             extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+            ccomp2 <- cgExp e2 >>= unCComp
+            ccomp2 takek emitk donek
+
+cgExp (BindE WildV e1 e2 _) =
+    return $ CComp ccomp
+  where
+    ccomp :: CComp
+    ccomp takek emitk donek = do
+        ccomp1 <- cgExp e1 >>= unCComp
+        ccomp2 <- cgExp e2 >>= unCComp
+        ccomp1 takek emitk $ \_ ->
             ccomp2 takek emitk donek
 
 cgExp (TakeE _ _) =
@@ -277,23 +306,26 @@ cgExp (TakeE _ _) =
   where
     ccomp :: CComp
     ccomp takek _ donek =
-        takek (CInt 1) >>= donek
+        takek (CInt 1) donek
 
+{-
 cgExp (TakesE i _ _) =
     return $ CComp ccomp
   where
     ccomp :: CComp
     ccomp takek _ donek =
-        takek (CInt (fromIntegral i)) >>= donek
+        takek (CInt (fromIntegral i)) donek
+-}
 
 cgExp (EmitE e _) =
     return $ CComp ccomp
   where
     ccomp :: CComp
     ccomp _ emitk donek = do
-        cgExp e >>= emitk
-        donek CVoid
+        ce <- cgExp e
+        emitk ce (donek CVoid)
 
+{-
 cgExp (EmitsE e _) =
     return $ CComp ccomp
   where
@@ -303,6 +335,7 @@ cgExp (EmitsE e _) =
         cfor (CInt 0) clen $ \ci ->
             emitk (cidx carr ci)
         donek CVoid
+-}
 
 cgExp (RepeatE _ e _) =
     return $ CComp ccomp
@@ -310,37 +343,37 @@ cgExp (RepeatE _ e _) =
     ccomp :: CComp
     ccomp takek emitk _ = do
         ccompe <- cgExp e >>= unCComp
-        citems <- inNewBlock_ $
-                  ccompe takek emitk (const (return ()))
-        appendStm [cstm|for (;;) { $items:citems }|]
+        clabel <- gensym "repeat"
+        stms <- collectStmts_ $ ccompe takek emitk (\_ -> appendStm [cstm|goto $id:clabel;|])
+        appendStm [cstm|$id:clabel: $stm:(head stms)|]
+        appendStms (tail stms)
 
-cgExp (ArrE _ tau e1 e2 _) = do
+cgExp (ArrE _ _ e1 e2 _) = do
     return $ CComp ccomp
   where
     ccomp :: CComp
     ccomp takek emitk donek = do
         ccomp1 <- cgExp e1 >>= unCComp
         ccomp2 <- cgExp e2 >>= unCComp
-        cbuf   <- cgTemp "buf" tau Nothing
-        let emitk' ce = do
-            appendStm [cstm|$cbuf = $ce;|]
-        let takek' _ = do
-            return $ CExp [cexp|$cbuf|]
-        ccomp1 takek  emitk' donek
-        ccomp2 takek' emitk  donek
+        let takek2 _ k1 = do
+            let emitk1 ce _ = k1 ce
+            ccomp1 takek emitk1 donek
+        ccomp2 takek2 emitk donek
 
 cgExp e =
     faildoc $ nest 2 $
     text "cgExp: cannot compile:" <+/> ppr e
 
 cgIVar :: IVar -> Cg C.Param
-cgIVar iv =
-    return $ [cparam|int $id:(cvar iv)|]
+cgIVar iv = do
+    civ <- cvar iv
+    return $ [cparam|int $id:civ|]
 
 cgVarBind :: (Var, Type) -> Cg C.Param
 cgVarBind (v, tau) = do
     ctau <- cgType tau
-    return $ [cparam|$ty:ctau $id:(cvar v)|]
+    cv   <- cvar v
+    return $ [cparam|$ty:ctau $id:cv|]
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
@@ -351,6 +384,7 @@ gensym s = do
     Uniq u <- newUnique
     return $ C.Id (s ++ show u) noLoc
 
+{-
 unCArray :: CExp -> Cg (CExp, CExp)
 unCArray (CArray ce1 ce2) =
     return (ce1, ce2)
@@ -358,6 +392,7 @@ unCArray (CArray ce1 ce2) =
 unCArray ce =
     panicdoc $
     text "unCArray: not a compiled array:" <+> ppr ce
+-}
 
 unCComp :: CExp -> Cg CComp
 unCComp (CComp ccomp) =
@@ -444,8 +479,8 @@ cgTemp s tau maybe_cinit = do
       Just cinit -> appendDecl [cdecl|$ty:ctau $id:cv = $init:cinit;|]
     return $ CExp [cexp|$id:cv|]
 
-cvar :: Named a => a -> C.Id
-cvar x = C.Id (concatMap zencode (namedString x)) noLoc
+cvar :: Named a => a -> Cg C.Id
+cvar x = gensym (concatMap zencode (namedString x))
   where
     -- | Implementation of Z-encoding. See:
     -- https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames
@@ -497,6 +532,7 @@ isPureish (ST {}) =
 isPureish _ =
     True
 
+{-
 cfor :: CExp -> CExp -> (CExp -> Cg a) -> Cg a
 cfor cfrom cto k = do
     ci <- gensym "i"
@@ -508,14 +544,15 @@ cfor cfrom cto k = do
 
 cidx :: CExp -> CExp -> CExp
 cidx carr cidx = CExp [cexp|$carr[$cidx]|]
+-}
 
 cval :: Var -> CExp -> Type -> Cg CExp
 cval _ ce@(CComp {}) _ =
     return ce
 
 cval v ce tau = do
-    let cv =  cvar v
-    ctau   <- cgType tau
+    cv   <- cvar v
+    ctau <- cgType tau
     appendDecl [cdecl|$ty:ctau $id:cv;|]
     appendStm [cstm|$id:cv = $ce;|]
     return $ CExp [cexp|$id:cv|]

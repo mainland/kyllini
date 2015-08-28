@@ -91,9 +91,9 @@ instance Monoid Code where
                          , stmts = stmts a <> stmts b
                          }
 
-type TakeK = CExp -> Cg CExp
+type TakeK = CExp -> (CExp -> Cg ()) -> Cg ()
 
-type EmitK = CExp -> Cg ()
+type EmitK = CExp -> Cg () -> Cg ()
 
 type DoneK = CExp -> Cg ()
 
