@@ -208,7 +208,7 @@ scalar_value :
   | "'0"    { L (locOf $1) $ BitC False }
   | "'1"    { L (locOf $1) $ BitC True }
   | INT     { L (locOf $1) $ IntC W32 (snd (getINT $1)) }
-  | FLOAT   { L (locOf $1) $ FloatC W32 (snd (getFLOAT $1)) }
+  | FLOAT   { L (locOf $1) $ FloatC W64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
 {------------------------------------------------------------------------------
