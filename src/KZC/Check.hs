@@ -1938,6 +1938,12 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     lubType (FloatT w1 l) (FloatT w2 _) =
         return $ Just $ FloatT (max w1 w2) l
 
+    lubType (IntT _ l) (FloatT w _) =
+        return $ Just $ FloatT w l
+
+    lubType (FloatT w _) (IntT _ l) =
+        return $ Just $ FloatT w l
+
     lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
         s <- lubComplex s1 s2
         return $ Just $ StructT s l
