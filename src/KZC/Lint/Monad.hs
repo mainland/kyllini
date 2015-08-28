@@ -34,6 +34,7 @@ module KZC.Lint.Monad (
 
     localSTIndTypes,
     askSTIndTypes,
+    inSTScope,
 
     inScopeTyVars,
 
@@ -257,6 +258,17 @@ localSTIndTypes taus m =
     alphas = case taus of
                Nothing      -> []
                Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
+
+inSTScope :: Type -> Tc r s a -> Tc r s a
+inSTScope tau m =
+    scopeOver tau m
+  where
+    scopeOver :: Type -> Tc r s a -> Tc r s a
+    scopeOver (ST _ _ s a b _) m =
+        localSTIndTypes (Just (s, a, b)) m
+
+    scopeOver _ m =
+        localSTIndTypes Nothing m
 
 askSTIndTypes :: Tc r s (Type, Type, Type)
 askSTIndTypes = do

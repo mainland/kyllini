@@ -49,8 +49,8 @@ checkDecl :: Decl -> Tc r s a -> Tc r s a
 checkDecl (LetD v tau e _) k = do
     void $ inferKind tau
     tau' <- withExpContext e $
-            absSTScope tau $
-            inferExp e
+            inSTScope tau $
+            inferExp e >>= absSTScope
     checkTypeEquality tau' tau
     extendVars [(v, tau)] k
 
@@ -61,8 +61,8 @@ checkDecl (LetFunD f iotas vbs tau_ret e l) k = do
     tau_ret' <- withExpContext e $
                 extendIVars (iotas `zip` repeat IotaK) $
                 extendVars vbs $
-                absSTScope tau_ret $
-                inferExp e
+                inSTScope tau_ret $
+                inferExp e >>= absSTScope
     checkTypeEquality tau_ret' tau_ret
     k
 
@@ -733,26 +733,14 @@ checkKindEquality kappa1 kappa2 =
     text "Expected kind:" <+> ppr kappa2 </>
     text "but got:      " <+> ppr kappa1
 
-absSTScope :: Type -> Tc r s Type -> Tc r s Type
-absSTScope tau m =
-    scopeOver tau $
-    m >>= absScope
-  where
-    scopeOver :: Type -> Tc r s a -> Tc r s a
-    scopeOver (ST _ _ s a b _) m =
-        localSTIndTypes (Just (s, a, b)) m
+absSTScope :: Type -> Tc r s Type
+absSTScope (ST [] omega s a b l) = do
+    (s',a',b') <- askSTIndTypes
+    let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
+    return $ ST alphas omega s a b l
 
-    scopeOver _ m =
-        localSTIndTypes Nothing m
-
-    absScope :: Type -> Tc r s Type
-    absScope (ST [] omega s a b l) = do
-        (s',a',b') <- askSTIndTypes
-        let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
-        return $ ST alphas omega s a b l
-
-    absScope tau =
-        return tau
+absSTScope tau =
+    return tau
 
 appSTScope :: Type -> Tc r s Type
 appSTScope tau@(ST alphas omega s a b l) = do
