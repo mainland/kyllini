@@ -98,5 +98,13 @@ stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
 
+isUnitT :: Type -> Bool
+isUnitT (UnitT {}) = True
+isUnitT _          = False
+
+isSTUnitT :: Type -> Bool
+isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
+isSTUnitT _                              = False
+
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s
