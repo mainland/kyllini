@@ -9,11 +9,15 @@
 
 module KZC.Cg (
     evalCg,
+    cgCComp,
 
     compileProgram
   ) where
 
 import Control.Applicative ((<$>))
+import Control.Monad (void)
+import Control.Monad.Free (Free(..),
+                           liftF)
 import Data.Char (ord)
 import Data.List (sort)
 import Data.Loc
@@ -34,11 +38,10 @@ import KZC.Uniq
 compileProgram :: [Decl] -> Cg ()
 compileProgram decls =
     cgDecls decls $ do
-    ccomp <- cgExp (varE "main") >>= unCComp
-    let takek _  k = k $ CExp [cexp|buf[i++]|]
-    let emitk ce k = appendStm [cstm|emit($ce);|] >> k
-    let donek _    = appendStm [cstm|break;|]
-    citems <- inNewBlock_ $ ccomp takek emitk donek
+    comp <- cgExp (varE "main") >>= unCComp
+    let take    = return $ CExp [cexp|buf[i++]|]
+    let emit ce = appendStm [cstm|emit($ce);|]
+    (citems, _) <- inNewBlock $ cgCComp take emit comp
     appendTopDef [cedecl|
 int main(int argc, char **argv)
 {
@@ -230,26 +233,10 @@ cgExp e@(IfE e1 e2 e3 _) = do
         appendStm [cstm|if ($ce1) { $cv = $ce2; } else { $cv = $ce3;}|]
         return cv
 
-    go tau ce1 ce2 ce3 =
-        return $ CComp ccomp
-      where
-        ccomp :: CComp
-        ccomp takek emitk donek = do
-            (donek', cdone) <-
-                if isSTUnitT tau
-                  then do
-                      let donek' _ = return ()
-                      return (donek', CVoid)
-                  else do
-                      cdone <- cgTemp "done" tau Nothing
-                      let donek' ce = appendStm [cstm|$cdone= $ce;|]
-                      return (donek', cdone)
-            ccomp2 <- unCComp ce2
-            ccomp3 <- unCComp ce3
-            cthen  <- inNewBlock_ $ ccomp2 takek emitk donek'
-            celse  <- inNewBlock_ $ ccomp3 takek emitk donek'
-            appendStm [cstm|if ($ce1) { $items:cthen } else { $items:celse }|]
-            donek cdone
+    go tau ce1 ce2 ce3 = do
+        comp2 <- unCComp ce2
+        comp3 <- unCComp ce3
+        return $ CComp $ Free $ IfC tau ce1 comp2 comp3 (\_ -> return CVoid)
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -270,12 +257,10 @@ cgExp (AssignE e1 e2 _) = do
     return CVoid
 
 cgExp (ReturnE _ e _) = do
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp _ _ donek = cgExp e >>= donek
-
-cgExp (BindE bv@(BindV v tau) e1 e2 _) =
+    ce <- cgExp e
+    return $ CComp $ return ce
+{-
+cgExp (BindE bv e1 e2 _) =
     return $ CComp ccomp
   where
     ccomp :: CComp
@@ -300,13 +285,10 @@ cgExp (BindE WildV e1 e2 _) =
         ccomp2 <- cgExp e2 >>= unCComp
         ccomp1 takek emitk $ \_ ->
             ccomp2 takek emitk donek
+-}
 
 cgExp (TakeE _ _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek _ donek =
-        takek (CInt 1) donek
+    return $ CComp $ liftF $ TakeC id
 
 {-
 cgExp (TakesE i _ _) =
@@ -317,13 +299,9 @@ cgExp (TakesE i _ _) =
         takek (CInt (fromIntegral i)) donek
 -}
 
-cgExp (EmitE e _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp _ emitk donek = do
-        ce <- cgExp e
-        emitk ce (donek CVoid)
+cgExp (EmitE e _) = do
+    ce <- cgExp e
+    return $ CComp $ liftF $ EmitC ce CVoid
 
 {-
 cgExp (EmitsE e _) =
@@ -337,17 +315,11 @@ cgExp (EmitsE e _) =
         donek CVoid
 -}
 
-cgExp (RepeatE _ e _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek emitk _ = do
-        ccompe <- cgExp e >>= unCComp
-        clabel <- gensym "repeat"
-        stms <- collectStmts_ $ ccompe takek emitk (\_ -> appendStm [cstm|goto $id:clabel;|])
-        appendStm [cstm|$id:clabel: $stm:(head stms)|]
-        appendStms (tail stms)
+cgExp (RepeatE _ e _) = do
+    comp <- cgExp e >>= unCComp
+    return $ CComp $ Free $ RepeatC comp
 
+{-
 cgExp (ArrE _ _ e1 e2 _) = do
     return $ CComp ccomp
   where
@@ -359,6 +331,7 @@ cgExp (ArrE _ _ e1 e2 _) = do
             let emitk1 ce _ = k1 ce
             ccomp1 takek emitk1 donek
         ccomp2 takek2 emitk donek
+-}
 
 cgExp e =
     faildoc $ nest 2 $
@@ -395,12 +368,12 @@ unCArray ce =
 -}
 
 unCComp :: CExp -> Cg CComp
-unCComp (CComp ccomp) =
-    return ccomp
+unCComp (CComp comp) =
+    return comp
 
 unCComp ce =
     panicdoc $
-    text "unCComp: not a compiled computation:" <+> ppr ce
+    text "unCComp: not a computation:" <+> ppr ce
 
 cgType :: Type -> Cg C.Type
 cgType (UnitT {}) =
@@ -556,3 +529,61 @@ cval v ce tau = do
     appendDecl [cdecl|$ty:ctau $id:cv;|]
     appendStm [cstm|$id:cv = $ce;|]
     return $ CExp [cexp|$id:cv|]
+
+cgCComp :: Cg CExp
+        -> (CExp -> Cg ())
+        -> CComp
+        -> Cg CExp
+cgCComp take emit comp =
+    cgFree comp
+  where
+    cgFree :: Free Comp CExp -> Cg CExp
+    cgFree (Pure ce) = return ce
+    cgFree (Free x)  = cgComp x
+
+    cgComp :: Comp (Free Comp CExp) -> Cg CExp
+    cgComp (BindC bv@(BindV v tau) k1 k2) = do
+        ce   <- cgFree k1
+        cv   <- cvar v
+        ctau <- cgType tau
+        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        appendStm [cstm|$id:cv = $ce;|]
+        extendBindVars [bv] $ do
+        extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+        cgFree k2
+
+    cgComp (BindC WildV k1 k2) = do
+        void $ cgFree k1
+        cgFree k2
+
+    cgComp (TakeC k) = do
+        ce <- take
+        cgFree (k ce)
+
+    cgComp (EmitC ce k) = do
+        emit ce
+        cgFree k
+
+    cgComp (IfC tau ce thenk elsek k) = do
+        (cdone, donek) <- mkDoneK
+        cthen          <- inNewBlock_ $ cgFree thenk >>= donek
+        celse          <- inNewBlock_ $ cgFree elsek >>= donek
+        appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
+        cgFree (k cdone)
+      where
+        mkDoneK :: Cg (CExp, CExp -> Cg ())
+        mkDoneK | isSTUnitT tau =
+            return (CVoid, \_ -> return ())
+                | otherwise = do
+            cdone <- cgTemp "done" tau Nothing
+            let donek ce = appendStm [cstm|$cdone= $ce;|]
+            return (cdone, donek)
+
+    cgComp (RepeatC k) = do
+        (citems, _) <- inNewBlock $ cgFree k
+        appendStm [cstm|for (;;) { $items:citems }|]
+        return CVoid
+        -- cgFree (k >> Free (RepeatC k))
+
+    cgComp (ArrC {}) =
+        panicdoc $ text "cgComp: cannot compile ArrC"

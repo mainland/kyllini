@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,8 +14,9 @@ module KZC.Cg.Monad (
     evalCg,
 
     Code(..),
-    CExp(..),
+    Comp(..),
     CComp,
+    CExp(..),
 
     extend,
     lookupBy,
@@ -49,6 +51,7 @@ module KZC.Cg.Monad (
   ) where
 
 import Control.Applicative ((<$>))
+import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.DList (DList)
@@ -91,16 +94,15 @@ instance Monoid Code where
                          , stmts = stmts a <> stmts b
                          }
 
-type TakeK = CExp -> (CExp -> Cg ()) -> Cg ()
+data Comp a = BindC BindVar a a
+            | TakeC (CExp -> a)
+            | EmitC CExp a
+            | IfC Type CExp a a (CExp -> a)
+            | RepeatC a
+            | ArrC Type a a
+  deriving (Functor)
 
-type EmitK = CExp -> Cg () -> Cg ()
-
-type DoneK = CExp -> Cg ()
-
-type CComp =  TakeK -- ^ Code generator to call when we take.
-           -> EmitK -- ^ Code generator to call when we emit.
-           -> DoneK -- ^ Code generator to call when we are done computing.
-           -> Cg ()
+type CComp = Free Comp CExp
 
 data CExp = CVoid
           | CInt Integer     -- ^ Integer constant

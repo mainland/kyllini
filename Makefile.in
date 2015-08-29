@@ -71,6 +71,7 @@ GHCFLAGS += \
 	-package exception-mtl \
 	-package exception-transformers \
 	-package filepath \
+        -package free \
 	-package language-c-quote \
 	-package mainland-pretty \
 	-package mtl \
