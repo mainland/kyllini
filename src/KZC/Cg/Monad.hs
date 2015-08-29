@@ -96,13 +96,13 @@ instance Monoid Code where
 
 data Comp a = BindC BindVar a a
             | TakeC (CExp -> a)
-            | EmitC CExp a
-            | IfC Type CExp a a (CExp -> a)
+            | EmitC (Cg CExp) a
+            | IfC Type (Cg CExp) a a (CExp -> a)
             | RepeatC a
             | ArrC Type a a
   deriving (Functor)
 
-type CComp = Free Comp CExp
+type CComp = Free Comp (Cg CExp)
 
 data CExp = CVoid
           | CInt Integer     -- ^ Integer constant

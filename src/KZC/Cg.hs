@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
@@ -9,7 +11,6 @@
 
 module KZC.Cg (
     evalCg,
-    cgCComp,
 
     compileProgram
   ) where
@@ -222,21 +223,21 @@ cgExp (BinopE op e1 e2 _) = do
 
 cgExp e@(IfE e1 e2 e3 _) = do
     tau <- inferExp e
-    ce1 <- cgExp e1
     ce2 <- cgExp e2
     ce3 <- cgExp e3
-    go tau ce1 ce2 ce3
+    go tau ce2 ce3
   where
-    go :: Type -> CExp -> CExp -> CExp -> Cg CExp
-    go tau ce1 ce2 ce3 | isPureish tau = do
-        cv <- cgTemp "cond" tau Nothing
+    go :: Type -> CExp -> CExp -> Cg CExp
+    go tau ce2 ce3 | isPureish tau = do
+        ce1 <- cgExp e1
+        cv  <- cgTemp "cond" tau Nothing
         appendStm [cstm|if ($ce1) { $cv = $ce2; } else { $cv = $ce3;}|]
         return cv
 
-    go tau ce1 ce2 ce3 = do
+    go tau ce2 ce3 = do
         comp2 <- unCComp ce2
         comp3 <- unCComp ce3
-        return $ CComp $ Free $ IfC tau ce1 comp2 comp3 (\_ -> return CVoid)
+        return $ CComp $ Free $ IfC tau (cgExp e1) comp2 comp3 (\_ -> return $ return CVoid)
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -257,38 +258,15 @@ cgExp (AssignE e1 e2 _) = do
     return CVoid
 
 cgExp (ReturnE _ e _) = do
-    ce <- cgExp e
-    return $ CComp $ return ce
-{-
-cgExp (BindE bv e1 e2 _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek emitk donek = do
-        ccomp1 <- cgExp e1 >>= unCComp
-        ccomp1 takek emitk $ \ce -> do
-            cv   <- cvar v
-            ctau <- cgType tau
-            appendDecl [cdecl|$ty:ctau $id:cv;|]
-            appendStm [cstm|$id:cv = $ce;|]
-            extendBindVars [bv] $ do
-            extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-            ccomp2 <- cgExp e2 >>= unCComp
-            ccomp2 takek emitk donek
+    return $ CComp $ return $ cgExp e
 
-cgExp (BindE WildV e1 e2 _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek emitk donek = do
-        ccomp1 <- cgExp e1 >>= unCComp
-        ccomp2 <- cgExp e2 >>= unCComp
-        ccomp1 takek emitk $ \_ ->
-            ccomp2 takek emitk donek
--}
+cgExp (BindE bv e1 e2 _) = do
+    comp1 <- cgExp e1 >>= unCComp
+    comp2 <- cgExp e2 >>= unCComp
+    return $ CComp $ Free $ BindC bv comp1 comp2
 
 cgExp (TakeE _ _) =
-    return $ CComp $ liftF $ TakeC id
+    return $ CComp $ liftF $ TakeC return
 
 {-
 cgExp (TakesE i _ _) =
@@ -299,9 +277,8 @@ cgExp (TakesE i _ _) =
         takek (CInt (fromIntegral i)) donek
 -}
 
-cgExp (EmitE e _) = do
-    ce <- cgExp e
-    return $ CComp $ liftF $ EmitC ce CVoid
+cgExp (EmitE e _) =
+    return $ CComp $ liftF $ EmitC (cgExp e) (return CVoid)
 
 {-
 cgExp (EmitsE e _) =
@@ -534,14 +511,14 @@ cgCComp :: Cg CExp
         -> (CExp -> Cg ())
         -> CComp
         -> Cg CExp
-cgCComp take emit comp =
-    cgFree comp
+cgCComp take emit ccomp =
+    cgFree ccomp
   where
-    cgFree :: Free Comp CExp -> Cg CExp
-    cgFree (Pure ce) = return ce
-    cgFree (Free x)  = cgComp x
+    cgFree :: CComp -> Cg CExp
+    cgFree (Pure mce) = mce
+    cgFree (Free x)   = cgComp x
 
-    cgComp :: Comp (Free Comp CExp) -> Cg CExp
+    cgComp :: Comp (CComp) -> Cg CExp
     cgComp (BindC bv@(BindV v tau) k1 k2) = do
         ce   <- cgFree k1
         cv   <- cvar v
@@ -560,12 +537,13 @@ cgCComp take emit comp =
         ce <- take
         cgFree (k ce)
 
-    cgComp (EmitC ce k) = do
-        emit ce
+    cgComp (EmitC mce k) = do
+        mce >>= emit
         cgFree k
 
-    cgComp (IfC tau ce thenk elsek k) = do
+    cgComp (IfC tau mce thenk elsek k) = do
         (cdone, donek) <- mkDoneK
+        ce             <- mce
         cthen          <- inNewBlock_ $ cgFree thenk >>= donek
         celse          <- inNewBlock_ $ cgFree elsek >>= donek
         appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
