@@ -100,6 +100,7 @@ data Comp a = BindC BindVar a a
             | IfC Type (Cg CExp) a a (CExp -> a)
             | RepeatC a
             | ArrC Type a a
+            | Done (Cg CExp)
   deriving (Functor)
 
 type CComp = Free Comp (Cg CExp)

@@ -237,7 +237,12 @@ cgExp e@(IfE e1 e2 e3 _) = do
     go tau ce2 ce3 = do
         comp2 <- unCComp ce2
         comp3 <- unCComp ce3
-        return $ CComp $ Free $ IfC tau (cgExp e1) comp2 comp3 (\_ -> return $ return CVoid)
+        return $ CComp $ Free $
+            IfC tau
+                (cgExp e1)
+                (comp2 >>= \mce -> liftF (Done mce))
+                (comp3 >>= \mce -> liftF (Done mce))
+                (\_ -> return $ return CVoid)
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -565,3 +570,6 @@ cgCComp take emit ccomp =
 
     cgComp (ArrC {}) =
         panicdoc $ text "cgComp: cannot compile ArrC"
+
+    cgComp (Done mce) =
+        mce
