@@ -78,7 +78,7 @@ fun external conj_mulw (ret:arr[4] complex16, x:arr[4] complex16, y:arr[4] compl
 
 -- CHECK, unify, and make inputs polymorphic
 fun external sumc16 (x:arr[4] complex16): complex16
-fun external sumc32 (x:arr[4] complex): complex
+fun external sumc32 (x:arr[4] complex32): complex32
 fun external sumi16 (x:arr[4] int16): int16
 fun external sumi32 (x:arr[4] int): int
 fun external v_sum_complex16(x:arr complex16 ) : complex16
