@@ -1,0 +1,6 @@
+
+var x : int; 
+
+var y : bool;
+
+let comp main = read [int] >>> write [int] 

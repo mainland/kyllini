@@ -1,0 +1,6 @@
+fun comp f() { 
+  x <- take;
+  emit x 
+}
+
+let comp main = read[int] >>> repeat f() >>> write

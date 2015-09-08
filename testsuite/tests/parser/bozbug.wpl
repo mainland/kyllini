@@ -1,0 +1,10 @@
+
+
+fun cc(len:int) { 
+  for i in [0,len] {
+    print 0;
+  }
+} 
+
+let comp main = read[int] >>> write[int]
+

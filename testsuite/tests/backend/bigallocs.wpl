@@ -1,0 +1,13 @@
+fun comp foo() {
+
+  var y : arr[500000] complex16;
+
+  var x : arr[20000] int; 
+
+  seq{
+    do{x[19] := 3};
+    emit (x[13])
+  }
+}
+
+let comp main = read[int] >>> foo() >>> write[int]

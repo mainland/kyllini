@@ -1,0 +1,7 @@
+fun comp f() { 
+  seq { x <- take
+      ; return 42
+      }
+}
+
+let comp main = read[int] >>> f() >>> write[int]

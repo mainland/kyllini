@@ -1,0 +1,5 @@
+var x : int;
+
+
+let comp main = read [int] >>> write [int]
+

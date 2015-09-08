@@ -1,0 +1,20 @@
+fun sum(a:arr int) {
+  var s : int := 0;
+--  var al : arr[length(a)] int;
+  for i in [0, length(a)] {
+    s := s + a[i]
+  };
+  return s
+}
+
+fun test1() {
+  var a1 : arr[2] int := {1,2};
+  return sum(a1);
+}
+
+fun test2() {
+  var a2 : arr[3] int := {1,2,3};
+  return sum(a2);
+}
+
+let comp main = read[int] >>> seq{emit test1(); emit test2()} >>> write[int]

@@ -1,0 +1,6 @@
+fun comp test_times() {
+  for nType in [0:3]
+    emit nType
+}
+
+let comp main = read[int] >>> test_times() >>> write

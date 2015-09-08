@@ -1,0 +1,18 @@
+fun enc(x : int) { 
+    return (x+1);
+}
+
+
+fun bar() {
+    let dvm1 = 1 
+    let dvm2 = 2 
+    let r1 = enc(dvm1)
+    let r2 = enc(dvm2)
+    return r2
+}
+
+let comp main = read[int] >>> write[int]
+
+
+
+

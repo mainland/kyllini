@@ -1,0 +1,25 @@
+fun comp stc() { 
+var x:arr[2] int;
+
+seq{
+   (a : int) <- take;
+   (b : int) <- take;
+
+   do{ x[0] := a; x[1] := b};
+
+   emit a;
+   emit b;
+
+   do{return(x)}
+}
+
+}
+
+fun comp stt(u:int) { 
+seq{
+  (inp  : int) <- take;
+  emit inp
+}
+}
+
+let comp main = read >>> seq{(y : arr[2] int) <- stc(); stt(y[0])} >>> write

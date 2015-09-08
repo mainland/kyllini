@@ -1,0 +1,9 @@
+fun comp f() { 
+    seq { (x:arr[5] int) <- takes 5
+        ; emit x }
+}
+let comp main = read >>> f() >>> write
+
+
+
+

@@ -1,7 +1,6 @@
 .cabal-sandbox/
 cabal.sandbox.config
 kzc
-lib/
 obj/
 src/Language/Ziria/Parser/Lexer.hs
 src/Language/Ziria/Parser/Lexer.info

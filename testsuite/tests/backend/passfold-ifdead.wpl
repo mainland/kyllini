@@ -1,0 +1,69 @@
+fun comp f() {
+  a <- take;
+  if (true) then {
+    emit a + 1;
+  } else {
+    emit a + 2;
+  }
+
+  b <- take;
+  if (false) then {
+    emit b + 3;
+  } else {
+    emit b + 4;
+  }
+
+  c <- take;
+  if (c == 1) then {
+    if (c == 1) then {
+      emit c + 5;
+    } else {
+      emit c + 6;
+    }
+  } else {
+    emit c + 7;
+  }
+
+  d <- take;
+  if (d == 1) then {
+    if (d == 2) then {
+      emit d + 8;
+    } else {
+      emit d + 9;
+    }
+  } else {
+    emit d + 10;
+  }
+
+  e <- take;
+  if (e == 1) then {
+    emit e + 11;
+  } else {
+    if (e != 1) then {
+      emit e + 12;
+    } else {
+      emit e + 13;
+    }
+  }
+
+  f <- take;
+  if (f > 1) then {
+    emit f + 14;
+  } else {
+    if (f == 2) then {
+      emit f + 15;
+    } else {
+      emit f + 16;
+    }
+  }
+
+  -- Test that we don't remove side effects
+  var x : int := 0;
+  if (var y : int := 1 in { x := y ; return true }) then {
+    emit x + 10;
+  } else {
+    emit x + 20;
+  }
+}
+
+let comp main = read[int] >>> f() >>> write[int]

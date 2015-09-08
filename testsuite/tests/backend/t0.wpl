@@ -1,0 +1,10 @@
+fun comp f() {
+seq{
+  (a : int) <- take;
+  emit (2*a)
+}
+
+}
+
+
+let comp main = read >>> repeat (f()) >>> write

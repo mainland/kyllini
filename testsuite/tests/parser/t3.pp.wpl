@@ -1,0 +1,18 @@
+# 1 "<stdin>"
+# 1 "<built-in>"
+# 1 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 1 "<command-line>" 2
+# 1 "<stdin>"
+# 1 "tests/parser/t3.wpl"
+
+var x : int;
+var y : bool;
+var z : complex32;
+
+fun foo(x : int) {
+   var z : bool := true;
+   return (x+1);
+}
+
+let comp main = read [int] >>> map foo >>> write [int]

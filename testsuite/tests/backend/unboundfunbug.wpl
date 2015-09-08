@@ -1,0 +1,20 @@
+fun comp test1(msg_len : int) {
+    repeat seq{
+        x <- take;
+        emit x
+    }
+}
+
+fun comp test2() {
+    repeat seq{
+      x <- take;
+      emit x
+    }
+}
+
+
+let comp main = read[int] >>> 
+    test1(10+8) >>>
+    test2() >>>
+write[int]
+

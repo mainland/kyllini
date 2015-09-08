@@ -1,0 +1,22 @@
+fun f(x:int) { 
+  var y : int;
+  y := x;
+  var z : int := 1;
+  z := y + 1;
+  return (z+1);
+} 
+
+fun g(x:int) { return x }
+
+
+fun comp g(y:int) {
+  var y : int; 
+  seq { x <- take 
+      ; do { y := f(x); } 
+      ; var z : int := 1
+      ; emit y
+      }
+
+}
+
+let comp main = read >>> g(33) >>> write
