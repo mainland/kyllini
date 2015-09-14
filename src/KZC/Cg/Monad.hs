@@ -54,13 +54,14 @@ import Control.Applicative ((<$>))
 import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.DList (DList)
-import qualified Data.DList as DL
+import Data.Foldable (toList)
 import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import Language.C.Quote.C
 import qualified Language.C.Syntax as C
 import System.IO (stderr)
@@ -75,11 +76,11 @@ import KZC.Monad
 -- | Contains generated code.
 data Code = Code
     { -- | Top-level definitions
-      defs  :: !(DList C.Definition)
+      defs  :: !(Seq C.Definition)
       -- | Local declarations
-    , decls :: !(DList C.InitGroup)
+    , decls :: !(Seq C.InitGroup)
       -- | Local statements
-    , stmts :: !(DList C.Stm)
+    , stmts :: !(Seq C.Stm)
     }
   deriving (Eq, Ord, Show)
 
@@ -159,7 +160,7 @@ defaultCgState = CgState
 evalCg :: Cg () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc defaultCgEnv defaultCgState (m >> get)
-    return $ (DL.toList . defs . code) s
+    return $ (toList . defs . code) s
 
 extend :: forall k v a . Ord k
        => (CgEnv -> Map k v)
@@ -216,22 +217,22 @@ instance ToCode Code where
     toCode code = code
 
 instance ToCode C.Definition where
-    toCode cdef = mempty { defs = DL.singleton cdef }
+    toCode cdef = mempty { defs = Seq.singleton cdef }
 
 instance ToCode [C.Definition] where
-    toCode cdefs = mempty { defs = DL.fromList cdefs }
+    toCode cdefs = mempty { defs = Seq.fromList cdefs }
 
 instance ToCode C.InitGroup where
-    toCode cdecl = mempty { decls = DL.singleton cdecl }
+    toCode cdecl = mempty { decls = Seq.singleton cdecl }
 
 instance ToCode [C.InitGroup] where
-    toCode cdecls = mempty { decls = DL.fromList cdecls }
+    toCode cdecls = mempty { decls = Seq.fromList cdecls }
 
 instance ToCode C.Stm where
-    toCode cstm = mempty { stmts = DL.singleton cstm }
+    toCode cstm = mempty { stmts = Seq.singleton cstm }
 
 instance ToCode [C.Stm] where
-    toCode cstms = mempty { stmts = DL.fromList cstms }
+    toCode cstms = mempty { stmts = Seq.fromList cstms }
 
 collect :: Cg a -> Cg (a, Code)
 collect m = do
@@ -246,7 +247,7 @@ collectDefinitions :: Cg a -> Cg ([C.Definition], a)
 collectDefinitions m = do
     (x, c) <- collect m
     tell c { defs = mempty }
-    return (DL.toList (defs c), x)
+    return (toList (defs c), x)
 
 collectDefinitions_ :: Cg () -> Cg ([C.Definition])
 collectDefinitions_ m = do
@@ -257,7 +258,7 @@ collectStmts :: Cg a -> Cg ([C.Stm], a)
 collectStmts m = do
     (x, c) <- collect m
     tell c { stmts = mempty }
-    return (DL.toList (stmts c), x)
+    return (toList (stmts c), x)
 
 collectStmts_ :: Cg () -> Cg ([C.Stm])
 collectStmts_ m = do
@@ -268,8 +269,8 @@ inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
 inNewBlock m = do
     (x, c) <- collect m
     tell c { decls = mempty, stmts  = mempty }
-    return ((map C.BlockDecl . DL.toList . decls) c ++
-            (map C.BlockStm .  DL.toList . stmts) c, x)
+    return ((map C.BlockDecl . toList . decls) c ++
+            (map C.BlockStm .  toList . stmts) c, x)
 
 inNewBlock_ :: Cg () -> Cg [C.BlockItem]
 inNewBlock_ m =
@@ -277,19 +278,19 @@ inNewBlock_ m =
 
 appendTopDef :: C.Definition -> Cg ()
 appendTopDef cdef =
-  tell mempty { defs = DL.singleton cdef }
+  tell mempty { defs = Seq.singleton cdef }
 
 appendTopDefs :: [C.Definition] -> Cg ()
 appendTopDefs cdefs =
-  tell mempty { defs = DL.fromList cdefs }
+  tell mempty { defs = Seq.fromList cdefs }
 
 appendTopDecl :: C.InitGroup -> Cg ()
 appendTopDecl cdecl =
-  tell mempty { defs = DL.singleton (C.DecDef cdecl noLoc) }
+  tell mempty { defs = Seq.singleton (C.DecDef cdecl noLoc) }
 
 appendTopDecls :: [C.InitGroup] -> Cg ()
 appendTopDecls cdecls =
-  tell mempty { defs = DL.fromList [C.DecDef decl noLoc | decl <- cdecls] }
+  tell mempty { defs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
 
 appendDecl :: C.InitGroup -> Cg ()
 appendDecl cdecl = tell cdecl
