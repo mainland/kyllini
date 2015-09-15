@@ -21,6 +21,9 @@ mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
 
+notE :: Exp -> Exp
+notE e = UnopE Lnot e (srclocOf e)
+
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 

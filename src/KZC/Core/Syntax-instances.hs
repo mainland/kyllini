@@ -25,7 +25,6 @@ instance Located Exp where
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
-  locOf (UntilE _ _ l) = locOf l
   locOf (ForE _ _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l

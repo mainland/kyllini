@@ -525,9 +525,11 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
     mce2 <- collectValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
-    return $ do ce1 <- mce1
-                ce2 <- mce2
-                return $ C.UntilE ce1 ce2 l
+    return $ do ce1       <- mce1
+                cx        <- C.mkUniqVar "x" l
+                ce2       <- mce2
+                let ctest =  C.bindE cx C.boolT ce1 (C.returnE (C.notE (C.varE cx)))
+                return $ C.WhileE ctest ce2 l
 
 tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1

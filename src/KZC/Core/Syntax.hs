@@ -138,7 +138,6 @@ data Exp = ConstE Const !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
-         | UntilE Exp Exp !SrcLoc
          | ForE UnrollAnn Var Type Exp Exp Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
@@ -473,11 +472,6 @@ instance Pretty Exp where
 
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+>
-        group (pprPrec appPrec1 e1) <+>
-        pprBody e2
-
-    pprPrec _ (UntilE e1 e2 _) =
-        text "until" <+>
         group (pprPrec appPrec1 e1) <+>
         pprBody e2
 
@@ -850,7 +844,6 @@ instance Fvs Exp Var where
     fvs (DerefE e _)                = fvs e
     fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2
-    fvs (UntilE e1 e2 _)            = fvs e1 <> fvs e2
     fvs (ForE _ v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
     fvs (ArrayE es _)               = fvs es
     fvs (IdxE e1 e2 _ _)            = fvs e1 <> fvs e2

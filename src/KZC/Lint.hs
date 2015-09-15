@@ -326,15 +326,6 @@ inferExp (WhileE e1 e2 _) = do
         void $ checkSTCUnit tau
         return tau
 
-inferExp (UntilE e1 e2 _) = do
-    withExpContext e1 $ do
-        (tau, _, _, _) <- inferExp e1 >>= checkSTC
-        checkTypeEquality tau boolT
-    withExpContext e2 $ do
-        tau <- inferExp e2
-        void $ checkSTCUnit tau
-        return tau
-
 inferExp (ForE _ v tau e1 e2 e3 _) = do
     checkIntT tau
     withExpContext e1 $
