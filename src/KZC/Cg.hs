@@ -34,7 +34,6 @@ import KZC.Error
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
-import KZC.Uniq
 
 compileProgram :: [Decl] -> Cg ()
 compileProgram decls =
@@ -235,13 +234,17 @@ cgExp e@(IfE e1 e2 e3 _) = do
         return cv
 
     go tau ce1 ce2 ce3 = do
-        comp2 <- unCComp ce2
-        comp3 <- unCComp ce3
-        cv    <- cgTemp "cond" tau Nothing
+        comp2     <- unCComp ce2
+        comp3     <- unCComp ce3
+        cv        <- cgTemp "cond" tau Nothing
+        ifl       <- genLabel "ifk"
+        donel     <- genLabel "donek"
+        bindk     <- cgBind cv
+        let donek =  liftF $ DoneC donel
         return $ CComp $ Free $
-            IfC cv ce1
-                (comp2 >>= cgBind cv >> liftF Done)
-                (comp3 >>= cgBind cv >> liftF Done)
+            IfC ifl cv ce1
+                (comp2 >>= bindk >> donek)
+                (comp3 >>= bindk >> donek)
                 return
 
 cgExp (LetE decl e _) =
@@ -281,31 +284,36 @@ cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
         let cve =  CExp [cexp|$id:cv|]
         ctau    <- cgType tau
         appendDecl [cdecl|$ty:ctau $id:cv;|]
-        return $ cgBind cve
+        cgBind cve
 
 cgExp (BindE WildV e1 e2 _) = do
     comp1 <- collectComp (cgExp e1 >>= unCComp)
     comp2 <- collectComp (cgExp e2 >>= unCComp)
     return $ CComp $ comp1 >> comp2
 
-cgExp (TakeE _ _) =
-    return $ CComp $ liftF $ TakeC id
+cgExp (TakeE _ _) = do
+    l <- genLabel "takek"
+    return $ CComp $ liftF $ TakeC l id
 
-cgExp (TakesE i _ _) =
-    return $ CComp $ liftF $ TakesC i id
+cgExp (TakesE i _ _) = do
+    l <- genLabel "takesk"
+    return $ CComp $ liftF $ TakesC l i id
 
 cgExp (EmitE e _) = liftM CComp $ collectComp $ do
+    l  <- genLabel "emitk"
     ce <- cgExp e
-    return $ liftF $ EmitC ce CVoid
+    return $ liftF $ EmitC l ce CVoid
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
+    l         <- genLabel "emitsk"
     (iota, _) <- inferExp e >>= splitArrT
     ce        <- cgExp e
-    return $ liftF $ EmitsC iota ce CVoid
+    return $ liftF $ EmitsC l iota ce CVoid
 
 cgExp (RepeatE _ e _) = do
+    l    <- genLabel "repeatk"
     comp <- cgExp e >>= unCComp
-    return $ CComp $ Free $ RepeatC comp
+    return $ CComp $ Free $ RepeatC l comp
 
 {-
 cgExp (ArrE _ _ e1 e2 _) = do
@@ -327,13 +335,15 @@ cgExp e =
 
 collectComp :: Cg CComp -> Cg CComp
 collectComp m = do
+    l            <- genLabel "codek"
     (comp, code) <- collect m
-    return $ liftF (CodeC code ()) >> comp
+    return $ liftF (CodeC l code ()) >> comp
 
 collectCompBind :: Cg (CExp -> CComp) -> Cg (CExp -> CComp)
 collectCompBind m = do
+    l             <- genLabel "codek"
     (compf, code) <- collect m
-    return $ \ce -> liftF (CodeC code ()) >> compf ce
+    return $ \ce -> liftF (CodeC l code ()) >> compf ce
 
 cgIVar :: IVar -> Cg C.Param
 cgIVar iv = do
@@ -349,11 +359,6 @@ cgVarBind (v, tau) = do
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
-
-gensym :: String -> Cg C.Id
-gensym s = do
-    Uniq u <- newUnique
-    return $ C.Id (s ++ show u) noLoc
 
 {-
 unCArray :: CExp -> Cg (CExp, CExp)
@@ -539,34 +544,34 @@ cgCComp take emit ccomp =
     cgFree (Pure ce) = return ce
     cgFree (Free x)  = cgComp x
 
-    cgComp :: Comp (CComp) -> Cg CExp
-    cgComp (CodeC c k) = do
+    cgComp :: Comp Label (CComp) -> Cg CExp
+    cgComp (CodeC _ c k) = do
         tell c
         cgFree k
 
-    cgComp (TakeC k) = do
+    cgComp (TakeC _ k) = do
         ce <- take 1
         cgFree (k ce)
 
-    cgComp (TakesC i k) = do
+    cgComp (TakesC _ i k) = do
         ce <- take i
         cgFree (k ce)
 
-    cgComp (EmitC ce k) = do
+    cgComp (EmitC _ ce k) = do
         emit (ConstI 1 noLoc) ce
         cgFree k
 
-    cgComp (EmitsC iota ce k) = do
+    cgComp (EmitsC _ iota ce k) = do
         emit iota ce
         cgFree k
 
-    cgComp (IfC cv ce thenk elsek k) = do
+    cgComp (IfC _ cv ce thenk elsek k) = do
         (cthen, _) <- inNewBlock $ cgFree thenk
         (celse, _) <- inNewBlock $ cgFree elsek
         appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
         cgFree (k cv)
 
-    cgComp (RepeatC k) = do
+    cgComp (RepeatC _ k) = do
         (citems, _) <- inNewBlock $ cgFree k
         appendStm [cstm|for (;;) { $items:citems }|]
         return CVoid
@@ -575,12 +580,14 @@ cgCComp take emit ccomp =
     cgComp (ArrC {}) =
         panicdoc $ text "cgComp: cannot compile ArrC"
 
-    cgComp (BindC cv ce k) = do
+    cgComp (BindC _ cv ce k) = do
         appendStm [cstm|$cv = $ce;|]
         cgFree k
 
-    cgComp Done =
+    cgComp (DoneC {}) =
         return CVoid
 
-cgBind :: CExp -> CExp -> CComp
-cgBind cv ce = liftF $ BindC cv ce CVoid
+cgBind :: CExp -> Cg (CExp -> CComp)
+cgBind cv = do
+    lbl <- genLabel "bindk"
+    return $ \ce -> liftF $ BindC lbl cv ce CVoid

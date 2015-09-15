@@ -14,9 +14,13 @@ module KZC.Cg.Monad (
     evalCg,
 
     Code(..),
-    Comp(..),
-    CComp,
+
     CExp(..),
+
+    Label,
+    Comp(..),
+    compLabel,
+    CComp,
 
     extend,
     lookupBy,
@@ -46,6 +50,9 @@ module KZC.Cg.Monad (
     appendStm,
     appendStms,
 
+    gensym,
+    genLabel,
+
     traceNest,
     traceCg
   ) where
@@ -60,7 +67,7 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Sequence (Seq)
+import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Language.C.Quote.C
 import qualified Language.C.Syntax as C
@@ -72,6 +79,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
+import KZC.Uniq
 
 -- | Contains generated code.
 data Code = Code
@@ -95,20 +103,7 @@ instance Monoid Code where
                          , stmts = stmts a <> stmts b
                          }
 
-data Comp a = CodeC Code a
-            | TakeC (CExp -> a)
-            | TakesC Int (CExp -> a)
-            | EmitC CExp a
-            | EmitsC Iota CExp a
-            | IfC CExp CExp a a (CExp -> a)
-            | RepeatC a
-            | ArrC Type a a
-            | BindC CExp CExp a
-            | Done
-  deriving (Functor)
-
-type CComp = Free Comp CExp
-
+-- | The type of "compiled" expressions.
 data CExp = CVoid
           | CInt Integer     -- ^ Integer constant
           | CFloat Double    -- ^ Float constant
@@ -136,6 +131,37 @@ instance Pretty CExp where
     ppr (CArray _ e) = ppr (toExp e noLoc)
     ppr (CComp {})   = text "<computation>"
 
+-- | A code label
+type Label = C.Id
+
+-- | A free monad representation of computations
+data Comp l a = CodeC l Code a
+              | TakeC l (CExp -> a)
+              | TakesC l Int (CExp -> a)
+              | EmitC l CExp a
+              | EmitsC l Iota CExp a
+              | IfC l CExp CExp a a (CExp -> a)
+              | RepeatC l a
+              | ArrC l Type a a
+              | BindC l CExp CExp a
+              | DoneC l
+  deriving (Functor)
+
+compLabel :: Comp l a -> l
+compLabel (CodeC l _ _)     = l
+compLabel (TakeC l _)       = l
+compLabel (TakesC l _ _)    = l
+compLabel (EmitC l _ _)     = l
+compLabel (EmitsC l _ _ _)  = l
+compLabel (IfC l _ _ _ _ _) = l
+compLabel (RepeatC l _)     = l
+compLabel (ArrC l _ _ _)    = l
+compLabel (BindC l _ _ _)   = l
+compLabel (DoneC l)         = l
+
+type CComp = Free (Comp Label) CExp
+
+-- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
 
 data CgEnv = CgEnv
@@ -154,12 +180,17 @@ defaultCgEnv = CgEnv
     }
 
 data CgState = CgState
-    { code :: Code }
+    { labels :: Seq Label
+    , code   :: Code
+    }
 
 defaultCgState :: CgState
 defaultCgState = CgState
-    { code = mempty }
+    { labels = mempty
+    , code   = mempty
+    }
 
+-- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
 evalCg :: Cg () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc defaultCgEnv defaultCgState (m >> get)
@@ -306,6 +337,17 @@ appendStm cstm = tell cstm
 
 appendStms :: [C.Stm] -> Cg ()
 appendStms cstms = tell cstms
+
+gensym :: String -> Cg C.Id
+gensym s = do
+    Uniq u <- newUnique
+    return $ C.Id (s ++ show u) noLoc
+
+genLabel :: String -> Cg Label
+genLabel s = do
+    lbl <- gensym s
+    modify $ \s -> s { labels = labels s |> lbl }
+    return lbl
 
 traceNest :: Int -> Cg a -> Cg a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
