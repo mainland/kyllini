@@ -35,8 +35,8 @@ module KZC.Cg.Monad (
     collect,
     collectDefinitions,
     collectDefinitions_,
-    collectStmts,
-    collectStmts_,
+    collectStms,
+    collectStms_,
 
     inNewBlock,
     inNewBlock_,
@@ -288,15 +288,15 @@ collectDefinitions_ m = do
     (defs, _) <- collectDefinitions m
     return defs
 
-collectStmts :: Cg a -> Cg ([C.Stm], a)
-collectStmts m = do
+collectStms :: Cg a -> Cg ([C.Stm], a)
+collectStms m = do
     (x, c) <- collect m
     tell c { stmts = mempty }
     return (toList (stmts c), x)
 
-collectStmts_ :: Cg () -> Cg ([C.Stm])
-collectStmts_ m = do
-    (stms, _) <- collectStmts m
+collectStms_ :: Cg () -> Cg ([C.Stm])
+collectStms_ m = do
+    (stms, _) <- collectStms m
     return stms
 
 inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
