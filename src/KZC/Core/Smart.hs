@@ -9,6 +9,7 @@ module KZC.Core.Smart where
 
 import Control.Applicative
 import Data.Loc
+import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
 import KZC.Name
@@ -108,3 +109,10 @@ isSTUnitT _                              = False
 
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s
+
+splitArrT :: Monad m => Type -> m (Iota, Type)
+splitArrT (ArrT iota tau _) =
+    return (iota, tau)
+
+splitArrT tau =
+    faildoc $ text "Expected array type, but got:" <+> ppr tau

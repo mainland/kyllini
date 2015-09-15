@@ -16,7 +16,7 @@ module KZC.Cg (
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (void)
+import Control.Monad (liftM)
 import Control.Monad.Free (Free(..),
                            liftF)
 import Data.Char (ord)
@@ -40,8 +40,8 @@ compileProgram :: [Decl] -> Cg ()
 compileProgram decls =
     cgDecls decls $ do
     comp <- cgExp (varE "main") >>= unCComp
-    let take    = return $ CExp [cexp|buf[i++]|]
-    let emit ce = appendStm [cstm|emit($ce);|]
+    let take _    = return $ CExp [cexp|buf[i++]|]
+    let emit _ ce = appendStm [cstm|emit($ce);|]
     (citems, _) <- inNewBlock $ cgCComp take emit comp
     appendTopDef [cedecl|
 int main(int argc, char **argv)
@@ -223,26 +223,26 @@ cgExp (BinopE op e1 e2 _) = do
 
 cgExp e@(IfE e1 e2 e3 _) = do
     tau <- inferExp e
+    ce1 <- cgExp e1
     ce2 <- cgExp e2
     ce3 <- cgExp e3
-    go tau ce2 ce3
+    go tau ce1 ce2 ce3
   where
-    go :: Type -> CExp -> CExp -> Cg CExp
-    go tau ce2 ce3 | isPureish tau = do
-        ce1 <- cgExp e1
-        cv  <- cgTemp "cond" tau Nothing
+    go :: Type -> CExp -> CExp -> CExp -> Cg CExp
+    go tau ce1 ce2 ce3 | isPureish tau = do
+        cv <- cgTemp "cond" tau Nothing
         appendStm [cstm|if ($ce1) { $cv = $ce2; } else { $cv = $ce3;}|]
         return cv
 
-    go tau ce2 ce3 = do
+    go tau ce1 ce2 ce3 = do
         comp2 <- unCComp ce2
         comp3 <- unCComp ce3
+        cv    <- cgTemp "cond" tau Nothing
         return $ CComp $ Free $
-            IfC tau
-                (cgExp e1)
-                (comp2 >>= \mce -> liftF (Done mce))
-                (comp3 >>= \mce -> liftF (Done mce))
-                (\_ -> return $ return CVoid)
+            IfC cv ce1
+                (comp2 >>= cgBind cv >> liftF Done)
+                (comp3 >>= cgBind cv >> liftF Done)
+                return
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -263,39 +263,45 @@ cgExp (AssignE e1 e2 _) = do
     return CVoid
 
 cgExp (ReturnE _ e _) = do
-    return $ CComp $ return $ cgExp e
+    ce <- cgExp e
+    return $ CComp $ return ce
 
-cgExp (BindE bv e1 e2 _) = do
-    comp1 <- cgExp e1 >>= unCComp
-    comp2 <- cgExp e2 >>= unCComp
-    return $ CComp $ Free $ BindC bv comp1 comp2
+cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
+    comp1   <- collectComp (cgExp e1 >>= unCComp)
+    cv      <- cvar v
+    let cve =  CExp [cexp|$id:cv|]
+    bindc   <- collectCompBind $ mkBind cv
+    comp2   <- extendBindVars [bv] $
+               extendVarCExps [(v, cve)] $
+               collectComp (cgExp e2 >>= unCComp)
+    return $ CComp $ comp1 >>= bindc >> comp2
+  where
+    mkBind :: C.Id -> Cg (CExp -> CComp)
+    mkBind cv = do
+        let cve =  CExp [cexp|$id:cv|]
+        ctau    <- cgType tau
+        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        return $ cgBind cve
+
+cgExp (BindE WildV e1 e2 _) = do
+    comp1 <- collectComp (cgExp e1 >>= unCComp)
+    comp2 <- collectComp (cgExp e2 >>= unCComp)
+    return $ CComp $ comp1 >> comp2
 
 cgExp (TakeE _ _) =
-    return $ CComp $ liftF $ TakeC return
+    return $ CComp $ liftF $ TakeC id
 
-{-
 cgExp (TakesE i _ _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek _ donek =
-        takek (CInt (fromIntegral i)) donek
--}
+    return $ CComp $ liftF $ TakesC i id
 
-cgExp (EmitE e _) =
-    return $ CComp $ liftF $ EmitC (cgExp e) (return CVoid)
+cgExp (EmitE e _) = liftM CComp $ collectComp $ do
+    ce <- cgExp e
+    return $ liftF $ EmitC ce CVoid
 
-{-
-cgExp (EmitsE e _) =
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp _ emitk donek = do
-        (clen, carr) <- cgExp e >>= unCArray
-        cfor (CInt 0) clen $ \ci ->
-            emitk (cidx carr ci)
-        donek CVoid
--}
+cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
+    (iota, _) <- inferExp e >>= splitArrT
+    ce        <- cgExp e
+    return $ liftF $ EmitsC iota ce CVoid
 
 cgExp (RepeatE _ e _) = do
     comp <- cgExp e >>= unCComp
@@ -318,6 +324,16 @@ cgExp (ArrE _ _ e1 e2 _) = do
 cgExp e =
     faildoc $ nest 2 $
     text "cgExp: cannot compile:" <+/> ppr e
+
+collectComp :: Cg CComp -> Cg CComp
+collectComp m = do
+    (comp, code) <- collect m
+    return $ liftF (CodeC code ()) >> comp
+
+collectCompBind :: Cg (CExp -> CComp) -> Cg (CExp -> CComp)
+collectCompBind m = do
+    (compf, code) <- collect m
+    return $ \ce -> liftF (CodeC code ()) >> compf ce
 
 cgIVar :: IVar -> Cg C.Param
 cgIVar iv = do
@@ -512,55 +528,43 @@ cval v ce tau = do
     appendStm [cstm|$id:cv = $ce;|]
     return $ CExp [cexp|$id:cv|]
 
-cgCComp :: Cg CExp
-        -> (CExp -> Cg ())
+cgCComp :: (Int -> Cg CExp)
+        -> (Iota -> CExp -> Cg ())
         -> CComp
         -> Cg CExp
 cgCComp take emit ccomp =
     cgFree ccomp
   where
     cgFree :: CComp -> Cg CExp
-    cgFree (Pure mce) = mce
-    cgFree (Free x)   = cgComp x
+    cgFree (Pure ce) = return ce
+    cgFree (Free x)  = cgComp x
 
     cgComp :: Comp (CComp) -> Cg CExp
-    cgComp (BindC bv@(BindV v tau) k1 k2) = do
-        ce   <- cgFree k1
-        cv   <- cvar v
-        ctau <- cgType tau
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
-        appendStm [cstm|$id:cv = $ce;|]
-        extendBindVars [bv] $ do
-        extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-        cgFree k2
-
-    cgComp (BindC WildV k1 k2) = do
-        void $ cgFree k1
-        cgFree k2
-
-    cgComp (TakeC k) = do
-        ce <- take
-        cgFree (k ce)
-
-    cgComp (EmitC mce k) = do
-        mce >>= emit
+    cgComp (CodeC c k) = do
+        tell c
         cgFree k
 
-    cgComp (IfC tau mce thenk elsek k) = do
-        (cdone, donek) <- mkDoneK
-        ce             <- mce
-        cthen          <- inNewBlock_ $ cgFree thenk >>= donek
-        celse          <- inNewBlock_ $ cgFree elsek >>= donek
+    cgComp (TakeC k) = do
+        ce <- take 1
+        cgFree (k ce)
+
+    cgComp (TakesC i k) = do
+        ce <- take i
+        cgFree (k ce)
+
+    cgComp (EmitC ce k) = do
+        emit (ConstI 1 noLoc) ce
+        cgFree k
+
+    cgComp (EmitsC iota ce k) = do
+        emit iota ce
+        cgFree k
+
+    cgComp (IfC cv ce thenk elsek k) = do
+        (cthen, _) <- inNewBlock $ cgFree thenk
+        (celse, _) <- inNewBlock $ cgFree elsek
         appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
-        cgFree (k cdone)
-      where
-        mkDoneK :: Cg (CExp, CExp -> Cg ())
-        mkDoneK | isSTUnitT tau =
-            return (CVoid, \_ -> return ())
-                | otherwise = do
-            cdone <- cgTemp "done" tau Nothing
-            let donek ce = appendStm [cstm|$cdone= $ce;|]
-            return (cdone, donek)
+        cgFree (k cv)
 
     cgComp (RepeatC k) = do
         (citems, _) <- inNewBlock $ cgFree k
@@ -571,5 +575,12 @@ cgCComp take emit ccomp =
     cgComp (ArrC {}) =
         panicdoc $ text "cgComp: cannot compile ArrC"
 
-    cgComp (Done mce) =
-        mce
+    cgComp (BindC cv ce k) = do
+        appendStm [cstm|$cv = $ce;|]
+        cgFree k
+
+    cgComp Done =
+        return CVoid
+
+cgBind :: CExp -> CExp -> CComp
+cgBind cv ce = liftF $ BindC cv ce CVoid

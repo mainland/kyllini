@@ -95,16 +95,19 @@ instance Monoid Code where
                          , stmts = stmts a <> stmts b
                          }
 
-data Comp a = BindC BindVar a a
+data Comp a = CodeC Code a
             | TakeC (CExp -> a)
-            | EmitC (Cg CExp) a
-            | IfC Type (Cg CExp) a a (CExp -> a)
+            | TakesC Int (CExp -> a)
+            | EmitC CExp a
+            | EmitsC Iota CExp a
+            | IfC CExp CExp a a (CExp -> a)
             | RepeatC a
             | ArrC Type a a
-            | Done (Cg CExp)
+            | BindC CExp CExp a
+            | Done
   deriving (Functor)
 
-type CComp = Free Comp (Cg CExp)
+type CComp = Free Comp CExp
 
 data CExp = CVoid
           | CInt Integer     -- ^ Integer constant
