@@ -129,7 +129,7 @@ data CExp = CVoid
           | CDelay (Cg CExp) -- ^ A delayed CExp
 
 instance ToExp CExp where
-    toExp CVoid        = error "void compiled expression"
+    toExp CVoid        = error "toExp: void compiled expression"
     toExp (CInt i)     = \_ -> [cexp|$int:i|]
     toExp (CFloat f)   = \_ -> [cexp|$float:(toRational f)|]
     toExp (CExp e)     = \_ -> e
