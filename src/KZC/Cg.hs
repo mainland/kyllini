@@ -649,14 +649,14 @@ cgCComp take emit done ccomp =
                 let ccomp = k1 $ CExp [cexp|*$cbuf|]
                 let lbl   = ccompLabel ccomp
                 appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
-                appendStm [cstm|CALLKONT($cleftk);|]
+                appendStm [cstm|INDJUMP($cleftk);|]
                 cgCCompWithLabel ccomp k2
         let emit' :: EmitK
             emit' _ ce ccomp k = do
                 let lbl = ccompLabel ccomp
                 appendStm [cstm|$cbuf = &$ce;|]
                 appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-                appendStm [cstm|CALLKONT($crightk);|]
+                appendStm [cstm|INDJUMP($crightk);|]
                 cgCCompWithLabel ccomp k
         cgCComp take' emit  done right
         cgCComp take  emit' done left
@@ -672,4 +672,4 @@ cgCComp take emit done ccomp =
         cgWithLabel l (cgFree k)
 
     cgComp (GotoC l) =
-        appendStm [cstm|GOTO($id:l);|]
+        appendStm [cstm|JUMP($id:l);|]
