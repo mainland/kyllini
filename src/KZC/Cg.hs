@@ -273,14 +273,14 @@ cgExp e@(IfE e1 e2 e3 _) = do
         comp3     <- unCComp ce3
         cv        <- cgTemp "cond" tau Nothing
         ifl       <- genLabel "ifk"
+        bindl     <- genLabel "bindk"
         donel     <- genLabel "donek"
-        bindk     <- cgBind cv
-        let donek =  liftF $ DoneC donel
-        return $ CComp $ Free $
-            IfC ifl cv ce1
+        let bindk =  bindC bindl cv
+        let donek =  doneC donel
+        return $ CComp $
+            ifC ifl cv ce1
                 (comp2 >>= bindk >> donek)
                 (comp3 >>= bindk >> donek)
-                return
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -316,10 +316,10 @@ cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
   where
     mkBind :: C.Id -> Cg (CExp -> CComp)
     mkBind cv = do
-        let cve =  CExp [cexp|$id:cv|]
-        ctau    <- cgType tau
+        ctau <- cgType tau
         appendDecl [cdecl|$ty:ctau $id:cv;|]
-        cgBind cve
+        l <- genLabel "bindk"
+        return $ bindC l (CExp [cexp|$id:cv|])
 
 cgExp (BindE WildV e1 e2 _) = do
     comp1 <- collectComp (cgExp e1 >>= unCComp)
@@ -328,16 +328,16 @@ cgExp (BindE WildV e1 e2 _) = do
 
 cgExp (TakeE _ _) = do
     l <- genLabel "takek"
-    return $ CComp $ liftF $ TakeC l id
+    return $ CComp $ takeC l
 
 cgExp (TakesE i _ _) = do
     l <- genLabel "takesk"
-    return $ CComp $ liftF $ TakesC l i id
+    return $ CComp $ takesC l i
 
 cgExp (EmitE e _) = liftM CComp $ collectComp $ do
     l  <- genLabel "emitk"
     ce <- cgExp e
-    return $ liftF $ EmitC l ce CVoid
+    return $ emitC l ce
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
     l         <- genLabel "emitsk"
@@ -348,12 +348,12 @@ cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
 cgExp (RepeatE _ e _) = do
     l      <- genLabel "repeatk"
     ccomp  <- cgExp e >>= unCComp
-    return $ CComp $ liftF (LabelC l CVoid) >> ccomp >> Free (GotoC l)
+    return $ CComp $ labelC l >> ccomp >> gotoC l
 
 cgExp (ParE _ tau e1 e2 _) = do
     comp1 <- cgExp e1 >>= unCComp
     comp2 <- cgExp e2 >>= unCComp
-    return $ CComp $ Free $ ParC tau comp1 comp2
+    return $ CComp $ parC tau comp1 comp2
 
 cgExp e =
     faildoc $ nest 2 $
@@ -673,8 +673,3 @@ cgCComp take emit done ccomp =
 
     cgComp (GotoC l) =
         appendStm [cstm|GOTO($id:l);|]
-
-cgBind :: CExp -> Cg (CExp -> CComp)
-cgBind cv = do
-    lbl <- genLabel "bindk"
-    return $ \ce -> liftF $ BindC lbl cv ce CVoid

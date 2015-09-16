@@ -19,8 +19,20 @@ module KZC.Cg.Monad (
 
     Label,
     Comp(..),
-    ccompLabel,
     CComp,
+
+    takeC,
+    takesC,
+    emitC,
+    emitsC,
+    ifC,
+    parC,
+    bindC,
+    doneC,
+    labelC,
+    gotoC,
+
+    ccompLabel,
 
     extend,
     lookupBy,
@@ -153,6 +165,39 @@ data Comp l a = CodeC l Code a
               | GotoC l
   deriving (Functor)
 
+type CComp = Free (Comp Label) CExp
+
+takeC :: Label -> CComp
+takeC l = liftF $ TakeC l id
+
+takesC :: Label -> Int -> CComp
+takesC l i = liftF $ TakesC l i id
+
+emitC :: Label -> CExp -> CComp
+emitC l ce = liftF $ EmitC l ce CVoid
+
+emitsC :: Label -> Iota -> CExp -> CComp
+emitsC l iota ce = liftF $ EmitsC l iota ce CVoid
+
+ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
+ifC l cv ce thenc elsec =
+    Free $ IfC l cv ce thenc elsec return
+
+doneC :: Label -> CComp
+doneC l = liftF $ DoneC l
+
+labelC :: Label -> CComp
+labelC l = liftF (LabelC l CVoid)
+
+parC :: Type -> CComp -> CComp -> CComp
+parC tau c1 c2 = Free $ ParC tau c1 c2
+
+bindC :: Label -> CExp -> CExp -> CComp
+bindC l cv ce = liftF $ BindC l cv ce CVoid
+
+gotoC :: Label -> CComp
+gotoC l = Free (GotoC l)
+
 ccompLabel :: CComp -> Label
 ccompLabel (Pure {})   = error "ccompLabel: saw Pure"
 ccompLabel (Free comp) = compLabel comp
@@ -169,8 +214,6 @@ ccompLabel (Free comp) = compLabel comp
     compLabel (DoneC l)         = l
     compLabel (LabelC l _)      = l
     compLabel (GotoC l)         = l
-
-type CComp = Free (Comp Label) CExp
 
 -- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
