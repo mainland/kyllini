@@ -20,6 +20,7 @@ import Control.Monad (liftM)
 import Control.Monad.Free (Free(..),
                            liftF)
 import Data.Char (ord)
+import Data.Foldable (toList)
 import Data.List (sort)
 import Data.Loc
 import qualified Language.C.Quote as C
@@ -35,22 +36,56 @@ import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
 
+cUR_KONT :: C.Id
+cUR_KONT = C.Id "curk" noLoc
+
 compileProgram :: [Decl] -> Cg ()
-compileProgram decls =
+compileProgram decls = do
+    appendTopDef [cedecl|$esc:("#include <kzc.h>")|]
     cgDecls decls $ do
     comp <- cgExp (varE "main") >>= unCComp
-    let take _    = return $ CExp [cexp|buf[i++]|]
-    let emit _ ce = appendStm [cstm|emit($ce);|]
-    (citems, _) <- inNewBlock $ cgCComp take emit comp
+    let take :: TakeK
+        take _ k1 k2 = do
+        appendStm [cstm|++i;|]
+        let ccomp = k1 $ CExp [cexp|in[i]|]
+        k2 ccomp
+    let emit :: EmitK
+        emit _ ce ccomp k = do
+            appendStm [cstm|out[j++] = $ce;|]
+            k ccomp
+    let done _  =  return ()
+    citems <- inNewBlock_ $ do
+              appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:(ccompLabel comp));|]
+              cgThread $ cgCComp take emit done comp
+    cgLabels
     appendTopDef [cedecl|
 int main(int argc, char **argv)
 {
-    int buf[1];
+    int in[1];
     int i = 0;
+    int out[1];
+    int j = 0;
 
     $items:citems
 }|]
 
+cgLabels :: Cg ()
+cgLabels = do
+    l:ls    <- getLabels
+    let cl  =  [cenum|$id:l = 0|]
+        cls =  [ [cenum|$id:l|] | l <- ls]
+    appendTopDef [cedecl|$esc:("#if !defined(FIRSTCLASSLABELS)")|]
+    appendTopDef [cedecl|enum { $enums:(cl:cls) };|]
+    appendTopDef [cedecl|$esc:("#endif /* !defined(FIRSTCLASSLABELS) */")|]
+
+cgThread :: Cg a -> Cg a
+cgThread k = do
+    (x, code) <- collect k
+    let cds   =  (toList . decls) code
+    let css   =  (toList . stmts) code
+    appendDecls cds
+    appendStms [cstms|BEGIN_DISPATCH; $stms:css END_DISPATCH;|]
+    return x
 
 cgDecls :: [Decl] -> Cg a -> Cg a
 cgDecls [] k =
@@ -62,7 +97,7 @@ cgDecls (decl:decls) k =
 cgDecl :: Decl -> Cg a -> Cg a
 cgDecl (LetD v tau e _) k =
     inSTScope tau $ do
-    ce <- cgExp e
+    ce <- if isComp tau then return (CDelay (cgExp e)) else cgExp e
     cv <- cval v ce tau
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
@@ -311,23 +346,14 @@ cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
     return $ liftF $ EmitsC l iota ce CVoid
 
 cgExp (RepeatE _ e _) = do
-    l    <- genLabel "repeatk"
-    comp <- cgExp e >>= unCComp
-    return $ CComp $ Free $ RepeatC l comp
+    l      <- genLabel "repeatk"
+    ccomp  <- cgExp e >>= unCComp
+    return $ CComp $ liftF (LabelC l CVoid) >> ccomp >> Free (GotoC l)
 
-{-
-cgExp (ArrE _ _ e1 e2 _) = do
-    return $ CComp ccomp
-  where
-    ccomp :: CComp
-    ccomp takek emitk donek = do
-        ccomp1 <- cgExp e1 >>= unCComp
-        ccomp2 <- cgExp e2 >>= unCComp
-        let takek2 _ k1 = do
-            let emitk1 ce _ = k1 ce
-            ccomp1 takek emitk1 donek
-        ccomp2 takek2 emitk donek
--}
+cgExp (ParE _ tau e1 e2 _) = do
+    comp1 <- cgExp e1 >>= unCComp
+    comp2 <- cgExp e2 >>= unCComp
+    return $ CComp $ Free $ ParC tau comp1 comp2
 
 cgExp e =
     faildoc $ nest 2 $
@@ -373,6 +399,9 @@ unCArray ce =
 unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =
     return comp
+
+unCComp (CDelay m) =
+    m >>= unCComp
 
 unCComp ce =
     panicdoc $
@@ -449,6 +478,10 @@ cgParam tau = do
 cgTemp :: String -> Type -> Maybe C.Initializer -> Cg CExp
 cgTemp s tau maybe_cinit = do
     ctau <- cgType tau
+    cgCTemp s ctau maybe_cinit
+
+cgCTemp :: String -> C.Type -> Maybe C.Initializer -> Cg CExp
+cgCTemp s ctau maybe_cinit = do
     cv   <- gensym s
     case maybe_cinit of
       Nothing    -> appendDecl [cdecl|$ty:ctau $id:cv;|]
@@ -498,6 +531,10 @@ cvar x = gensym (concatMap zencode (namedString x))
           h@(c : _) | 'a' <= c && c <= 'f' -> '0' : h
                     | otherwise            -> h
 
+isComp :: Type -> Bool
+isComp (ST {}) = True
+isComp _       = False
+
 isPureish :: Type -> Bool
 isPureish (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
     True
@@ -526,6 +563,9 @@ cval :: Var -> CExp -> Type -> Cg CExp
 cval _ ce@(CComp {}) _ =
     return ce
 
+cval _ ce@(CDelay {}) _ =
+    return ce
+
 cval v ce tau = do
     cv   <- cvar v
     ctau <- cgType tau
@@ -533,37 +573,65 @@ cval v ce tau = do
     appendStm [cstm|$id:cv = $ce;|]
     return $ CExp [cexp|$id:cv|]
 
-cgCComp :: (Int -> Cg CExp)
-        -> (Iota -> CExp -> Cg ())
+-- | Generate code for the specified 'CComp' using the given code-generating
+-- continuation and label the resulting code with the label belonging to the
+-- 'CComp'.
+cgCCompWithLabel :: CComp -> (CComp -> Cg a) -> Cg a
+cgCCompWithLabel ccomp@(Free (GotoC _)) k =
+    k ccomp
+
+cgCCompWithLabel ccomp k =
+    cgWithLabel (ccompLabel ccomp) (k ccomp)
+
+-- | Label the statements generated by the continuation @k@ with the specified
+-- label.
+cgWithLabel :: Label -> Cg a -> Cg a
+cgWithLabel (C.Id ident l) k = do
+    (stms, x) <- collectStms k
+    case stms of
+      []     -> panicdoc $ text "cgWithLabel: no statements!"
+      [s]    -> appendStm [cstm|$id:lbl: $stm:s|]
+      (s:ss) -> appendStms [cstms|$id:lbl: $stm:s $stms:ss|]
+    return x
+  where
+    lbl :: Label
+    lbl = C.Id ("LABEL(" ++ ident ++ ")") l
+
+cgWithLabel (C.AntiId {}) _ =
+    panicdoc $ text "cgWithLabel saw C.AntiId!"
+
+type TakeK = Int -> (CExp -> CComp) -> (CComp -> Cg ()) -> Cg ()
+type EmitK = Iota -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
+type DoneK = CExp -> Cg ()
+
+cgCComp :: TakeK
+        -> EmitK
+        -> DoneK
         -> CComp
-        -> Cg CExp
-cgCComp take emit ccomp =
+        -> Cg ()
+cgCComp take emit done ccomp =
     cgFree ccomp
   where
-    cgFree :: CComp -> Cg CExp
-    cgFree (Pure ce) = return ce
+    cgFree :: CComp -> Cg ()
+    cgFree (Pure ce) = done ce
     cgFree (Free x)  = cgComp x
 
-    cgComp :: Comp Label (CComp) -> Cg CExp
+    cgComp :: Comp Label CComp -> Cg ()
     cgComp (CodeC _ c k) = do
         tell c
         cgFree k
 
     cgComp (TakeC _ k) = do
-        ce <- take 1
-        cgFree (k ce)
+        take 1 k cgFree
 
     cgComp (TakesC _ i k) = do
-        ce <- take i
-        cgFree (k ce)
+        take i k cgFree
 
     cgComp (EmitC _ ce k) = do
-        emit (ConstI 1 noLoc) ce
-        cgFree k
+        emit (ConstI 1 noLoc) ce k cgFree
 
     cgComp (EmitsC _ iota ce k) = do
-        emit iota ce
-        cgFree k
+        emit iota ce k cgFree
 
     cgComp (IfC _ cv ce thenk elsek k) = do
         (cthen, _) <- inNewBlock $ cgFree thenk
@@ -571,21 +639,40 @@ cgCComp take emit ccomp =
         appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
         cgFree (k cv)
 
-    cgComp (RepeatC _ k) = do
-        (citems, _) <- inNewBlock $ cgFree k
-        appendStm [cstm|for (;;) { $items:citems }|]
-        return CVoid
-        -- cgFree (k >> Free (RepeatC k))
-
-    cgComp (ParC {}) =
-        panicdoc $ text "cgComp: cannot compile ParC"
+    cgComp (ParC tau left right) = do
+        ctau    <- cgType tau
+        cleftk  <- cgCTemp "leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:(ccompLabel left))|])
+        crightk <- cgCTemp "rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:(ccompLabel right))|])
+        cbuf    <- cgCTemp "bufp"   [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        let take' :: TakeK
+            take' _ k1 k2 = do
+                let ccomp = k1 $ CExp [cexp|*$cbuf|]
+                let lbl   = ccompLabel ccomp
+                appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+                appendStm [cstm|CALLKONT($cleftk);|]
+                cgCCompWithLabel ccomp k2
+        let emit' :: EmitK
+            emit' _ ce ccomp k = do
+                let lbl = ccompLabel ccomp
+                appendStm [cstm|$cbuf = &$ce;|]
+                appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
+                appendStm [cstm|CALLKONT($crightk);|]
+                cgCCompWithLabel ccomp k
+        cgCComp take' emit  done right
+        cgCComp take  emit' done left
 
     cgComp (BindC _ cv ce k) = do
         appendStm [cstm|$cv = $ce;|]
         cgFree k
 
     cgComp (DoneC {}) =
-        return CVoid
+        done CVoid
+
+    cgComp (LabelC l k) =
+        cgWithLabel l (cgFree k)
+
+    cgComp (GotoC l) =
+        appendStm [cstm|GOTO($id:l);|]
 
 cgBind :: CExp -> Cg (CExp -> CComp)
 cgBind cv = do

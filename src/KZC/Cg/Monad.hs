@@ -19,7 +19,7 @@ module KZC.Cg.Monad (
 
     Label,
     Comp(..),
-    compLabel,
+    ccompLabel,
     CComp,
 
     extend,
@@ -40,6 +40,8 @@ module KZC.Cg.Monad (
 
     inNewBlock,
     inNewBlock_,
+
+    getLabels,
 
     appendTopDef,
     appendTopDefs,
@@ -112,6 +114,7 @@ data CExp = CVoid
                              -- length, and the second is its contents.
           | CPtr CExp        -- ^ A pointer.
           | CComp CComp      -- ^ A computation.
+          | CDelay (Cg CExp) -- ^ A delayed CExp
 
 instance ToExp CExp where
     toExp CVoid        = error "void compiled expression"
@@ -121,6 +124,7 @@ instance ToExp CExp where
     toExp (CArray _ e) = toExp e
     toExp (CPtr e)     = \_ -> [cexp|*$e|]
     toExp (CComp {})   = error "toExp: cannot convert CComp to a C expression"
+    toExp (CDelay {})  = error "toExp: cannot convert CDelay to a C expression"
 
 instance Pretty CExp where
     ppr CVoid        = text "<void>"
@@ -130,6 +134,7 @@ instance Pretty CExp where
     ppr (CPtr e)     = ppr [cexp|*$e|]
     ppr (CArray _ e) = ppr (toExp e noLoc)
     ppr (CComp {})   = text "<computation>"
+    ppr (CDelay {})  = text "<delayed compiled expression>"
 
 -- | A code label
 type Label = C.Id
@@ -141,23 +146,29 @@ data Comp l a = CodeC l Code a
               | EmitC l CExp a
               | EmitsC l Iota CExp a
               | IfC l CExp CExp a a (CExp -> a)
-              | RepeatC l a
-              | ParC l Type a a
+              | ParC Type a a
               | BindC l CExp CExp a
               | DoneC l
+              | LabelC l a
+              | GotoC l
   deriving (Functor)
 
-compLabel :: Comp l a -> l
-compLabel (CodeC l _ _)     = l
-compLabel (TakeC l _)       = l
-compLabel (TakesC l _ _)    = l
-compLabel (EmitC l _ _)     = l
-compLabel (EmitsC l _ _ _)  = l
-compLabel (IfC l _ _ _ _ _) = l
-compLabel (RepeatC l _)     = l
-compLabel (ParC l _ _ _)    = l
-compLabel (BindC l _ _ _)   = l
-compLabel (DoneC l)         = l
+ccompLabel :: CComp -> Label
+ccompLabel (Pure {})   = error "ccompLabel: saw Pure"
+ccompLabel (Free comp) = compLabel comp
+  where
+    compLabel :: Comp Label CComp -> Label
+    compLabel (CodeC l _ _)     = l
+    compLabel (TakeC l _)       = l
+    compLabel (TakesC l _ _)    = l
+    compLabel (EmitC l _ _)     = l
+    compLabel (EmitsC l _ _ _)  = l
+    compLabel (IfC l _ _ _ _ _) = l
+    compLabel (ParC _ _ right)  = ccompLabel right
+    compLabel (BindC l _ _ _)   = l
+    compLabel (DoneC l)         = l
+    compLabel (LabelC l _)      = l
+    compLabel (GotoC l)         = l
 
 type CComp = Free (Comp Label) CExp
 
@@ -306,9 +317,12 @@ inNewBlock m = do
     return ((map C.BlockDecl . toList . decls) c ++
             (map C.BlockStm .  toList . stmts) c, x)
 
-inNewBlock_ :: Cg () -> Cg [C.BlockItem]
+inNewBlock_ :: Cg a -> Cg [C.BlockItem]
 inNewBlock_ m =
     fst <$> inNewBlock m
+
+getLabels :: Cg [Label]
+getLabels = gets (toList . labels)
 
 appendTopDef :: C.Definition -> Cg ()
 appendTopDef cdef =
