@@ -17,10 +17,14 @@ module KZC.Cg.Monad (
 
     CExp(..),
 
+    Required(..),
+    unRequired,
+
     Label,
     Comp(..),
     CComp,
 
+    codeC,
     takeC,
     takesC,
     emitC,
@@ -29,10 +33,10 @@ module KZC.Cg.Monad (
     parC,
     bindC,
     doneC,
-    labelC,
     gotoC,
 
     ccompLabel,
+    requireLabel,
 
     extend,
     lookupBy,
@@ -148,72 +152,100 @@ instance Pretty CExp where
     ppr (CComp {})   = text "<computation>"
     ppr (CDelay {})  = text "<delayed compiled expression>"
 
+data Required a = Required a
+                | NotRequired a
+
+unRequired :: Required a -> a
+unRequired (Required x)    = x
+unRequired (NotRequired x) = x
+
+require :: Required a -> Required a
+require (Required x)    = Required x
+require (NotRequired x) = Required x
+
 -- | A code label
 type Label = C.Id
 
--- | A free monad representation of computations
-data Comp l a = CodeC l Code a
-              | TakeC l (CExp -> a)
-              | TakesC l Int (CExp -> a)
-              | EmitC l CExp a
-              | EmitsC l Iota CExp a
-              | IfC l CExp CExp a a (CExp -> a)
+-- | A free monad representation of computations. All computations are labeled,
+-- but not all labels are 'Require'. Any computation that is used as a
+-- continuation /must/ have a required label, which results in a label in the
+-- generated code.
+data Comp l a = CodeC (Required l) Code a
+              | TakeC (Required l) (CExp -> a)
+              | TakesC (Required l) Int (CExp -> a)
+              | EmitC (Required l) CExp a
+              | EmitsC (Required l) Iota CExp a
+              | IfC (Required l) CExp CExp a a (CExp -> a)
               | ParC Type a a
-              | BindC l CExp CExp a
-              | DoneC l
-              | LabelC l a
-              | GotoC l
+              | BindC (Required l) CExp CExp a
+              | DoneC (Required l)
+              | GotoC (Required l)
   deriving (Functor)
 
 type CComp = Free (Comp Label) CExp
 
+codeC :: Label -> Code -> CComp
+codeC l code = liftF $ CodeC (NotRequired l) code CVoid
+
 takeC :: Label -> CComp
-takeC l = liftF $ TakeC l id
+takeC l = liftF $ TakeC (NotRequired l) id
 
 takesC :: Label -> Int -> CComp
-takesC l i = liftF $ TakesC l i id
+takesC l i = liftF $ TakesC (NotRequired l) i id
 
 emitC :: Label -> CExp -> CComp
-emitC l ce = liftF $ EmitC l ce CVoid
+emitC l ce = liftF $ EmitC (NotRequired l) ce CVoid
 
 emitsC :: Label -> Iota -> CExp -> CComp
-emitsC l iota ce = liftF $ EmitsC l iota ce CVoid
+emitsC l iota ce = liftF $ EmitsC (NotRequired l) iota ce CVoid
 
 ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
 ifC l cv ce thenc elsec =
-    Free $ IfC l cv ce thenc elsec return
+    Free $ IfC (NotRequired l) cv ce thenc elsec return
 
 doneC :: Label -> CComp
-doneC l = liftF $ DoneC l
-
-labelC :: Label -> CComp
-labelC l = liftF (LabelC l CVoid)
+doneC l = liftF $ DoneC (NotRequired l)
 
 parC :: Type -> CComp -> CComp -> CComp
 parC tau c1 c2 = Free $ ParC tau c1 c2
 
 bindC :: Label -> CExp -> CExp -> CComp
-bindC l cv ce = liftF $ BindC l cv ce CVoid
+bindC l cv ce = liftF $ BindC (NotRequired l) cv ce CVoid
 
 gotoC :: Label -> CComp
-gotoC l = Free (GotoC l)
+gotoC l = Free (GotoC (NotRequired l))
 
 ccompLabel :: CComp -> Label
 ccompLabel (Pure {})   = error "ccompLabel: saw Pure"
 ccompLabel (Free comp) = compLabel comp
   where
     compLabel :: Comp Label CComp -> Label
-    compLabel (CodeC l _ _)     = l
-    compLabel (TakeC l _)       = l
-    compLabel (TakesC l _ _)    = l
-    compLabel (EmitC l _ _)     = l
-    compLabel (EmitsC l _ _ _)  = l
-    compLabel (IfC l _ _ _ _ _) = l
+    compLabel (CodeC l _ _)     = unRequired l
+    compLabel (TakeC l _)       = unRequired l
+    compLabel (TakesC l _ _)    = unRequired l
+    compLabel (EmitC l _ _)     = unRequired l
+    compLabel (EmitsC l _ _ _)  = unRequired l
+    compLabel (IfC l _ _ _ _ _) = unRequired l
     compLabel (ParC _ _ right)  = ccompLabel right
-    compLabel (BindC l _ _ _)   = l
-    compLabel (DoneC l)         = l
-    compLabel (LabelC l _)      = l
-    compLabel (GotoC l)         = l
+    compLabel (BindC l _ _ _)   = unRequired l
+    compLabel (DoneC l)         = unRequired l
+    compLabel (GotoC l)         = unRequired l
+
+requireLabel :: CComp -> CComp
+requireLabel (Pure {})   = error "ccompLabel: saw Pure"
+requireLabel (Free comp) = Free $ go comp
+  where
+    go :: Comp Label CComp -> Comp Label CComp
+    go (CodeC l c k)       = CodeC (require l) c k
+    go (TakeC l k)         = TakeC (require l) k
+    go (TakesC l i k)      = TakesC (require l) i k
+    go (EmitC l e k)       = EmitC (require l) e k
+    go (EmitsC l i e k)    = EmitsC (require l) i e k
+    go (IfC l v e th el k) = IfC (require l) v e th el k
+    go (ParC tau l r)      = ParC tau l (requireLabel r)
+    go (BindC l v e k)     = BindC (require l) v e k
+    go (DoneC l)           = DoneC (require l)
+    go (GotoC l)           = GotoC l
 
 -- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
