@@ -733,9 +733,9 @@ opcomp :
     acomp
       { $1 }
   | opcomp '>>>' opcomp
-      { ArrE AutoPipeline $1 $3 ($1 `srcspan` $3) }
+      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
   | opcomp '|>>>|' opcomp
-      { ArrE Pipeline $1 $3 ($1 `srcspan` $3) }
+      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
 
 ifcomp :: { Exp }
 ifcomp :

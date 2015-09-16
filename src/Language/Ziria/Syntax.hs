@@ -116,7 +116,7 @@ data Exp = ConstE Const !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
-         | ArrE PipelineAnn Exp Exp !SrcLoc
+         | ParE PipelineAnn Exp Exp !SrcLoc
 
          | ReadE (Maybe Type) !SrcLoc
          | WriteE (Maybe Type) !SrcLoc
@@ -266,7 +266,7 @@ instance Fvs Exp Var where
     fvs (EmitE e _)             = fvs e
     fvs (EmitsE e _)            = fvs e
     fvs (RepeatE _ e _)         = fvs e
-    fvs (ArrE _ e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (ParE _ e1 e2 _)        = fvs e1 <> fvs e2
     fvs (ReadE {})              = mempty
     fvs (WriteE {})             = mempty
     fvs (StandaloneE e _)       = fvs e
@@ -487,11 +487,11 @@ instance Pretty Exp where
     pprPrec _ (RepeatE ann e _) =
         ppr ann <+> text "repeat" <+> ppr e
 
-    pprPrec p (ArrE Pipeline e1 e2 _) =
+    pprPrec p (ParE Pipeline e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+> text "|>>>|" <+> pprPrec arrPrec e2
 
-    pprPrec p (ArrE _ e1 e2 _) =
+    pprPrec p (ParE _ e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
 

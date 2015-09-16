@@ -30,7 +30,7 @@ instance Located Exp where
   locOf (EmitE _ l) = locOf l
   locOf (EmitsE _ l) = locOf l
   locOf (RepeatE _ _ l) = locOf l
-  locOf (ArrE _ _ _ l) = locOf l
+  locOf (ParE _ _ _ l) = locOf l
   locOf (ReadE _ l) = locOf l
   locOf (WriteE _ l) = locOf l
   locOf (StandaloneE _ l) = locOf l

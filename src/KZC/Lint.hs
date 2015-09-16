@@ -496,7 +496,7 @@ inferExp (RepeatE _ e l) = do
     (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
-inferExp (ArrE _ b e1 e2 l) = do
+inferExp (ParE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
     (omega1, s', a',    b') <- withExpContext e1 $
                                localSTIndTypes (Just (s, a, b)) $

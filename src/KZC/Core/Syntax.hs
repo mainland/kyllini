@@ -156,7 +156,7 @@ data Exp = ConstE Const !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
-         | ArrE PipelineAnn Type Exp Exp !SrcLoc
+         | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
@@ -532,13 +532,13 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         ppr ann <+> text "repeat" <> pprBody e
 
-    pprPrec p (ArrE Pipeline tau e1 e2 _) =
+    pprPrec p (ParE Pipeline tau e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+>
         text "|>>>|" <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
 
-    pprPrec p (ArrE _ tau e1 e2 _) =
+    pprPrec p (ParE _ tau e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+>
         text ">>>" <> text "@" <> pprPrec appPrec1 tau <+>
@@ -859,7 +859,7 @@ instance Fvs Exp Var where
     fvs (EmitE e _)                 = fvs e
     fvs (EmitsE e _)                = fvs e
     fvs (RepeatE _ e _)             = fvs e
-    fvs (ArrE _ _ e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (ParE _ _ e1 e2 _)          = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es

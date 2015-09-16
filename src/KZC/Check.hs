@@ -809,7 +809,7 @@ tcExp (Z.RepeatE ann e l) exp_ty = do
                 ce   <- mce
                 return $ C.RepeatE cann ce l
 
-tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
+tcExp (Z.ParE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     tau  <- fromZ (zalpha, TauK)
     tau' <- fromZ (zbeta, TauK)
     unifyTypes tau' tau
@@ -820,7 +820,7 @@ tcExp (Z.ArrE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
                          C.bindE cx ctau (C.takeE ctau) $
                          C.emitE (C.varE cx)
 
-tcExp (Z.ArrE _ (Z.ReadE ztau l) e _) tau_exp = do
+tcExp (Z.ParE _ (Z.ReadE ztau l) e _) tau_exp = do
     omega   <- newMetaTvT OmegaK l
     a       <- fromZ (ztau, TauK)
     b       <- newMetaTvT TauK l
@@ -828,7 +828,7 @@ tcExp (Z.ArrE _ (Z.ReadE ztau l) e _) tau_exp = do
     instType tau tau_exp
     checkExp e tau
 
-tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
+tcExp (Z.ParE _ e (Z.WriteE ztau l) _) tau_exp = do
     omega   <- newMetaTvT OmegaK l
     s       <- newMetaTvT TauK l
     a       <- newMetaTvT TauK l
@@ -837,7 +837,7 @@ tcExp (Z.ArrE _ e (Z.WriteE ztau l) _) tau_exp = do
     instType tau tau_exp
     checkExp e tau
 
-tcExp (Z.ArrE ann e1 e2 l) tau_exp = do
+tcExp (Z.ParE ann e1 e2 l) tau_exp = do
     omega1   <- newMetaTvT OmegaK l
     omega2   <- newMetaTvT OmegaK l
     a        <- newMetaTvT TauK l
@@ -861,7 +861,7 @@ tcExp (Z.ArrE ann e1 e2 l) tau_exp = do
         cb   <- trans b
         ce1  <- mce1
         ce2  <- mce2
-        return $ C.ArrE cann cb ce1 ce2 l
+        return $ C.ParE cann cb ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do
@@ -1683,17 +1683,17 @@ mkCastT tau1 tau2 = do
                      C.bindE cx ctau1 (C.takeE ctau1) $
                      C.emitE cxe
         return $ \mce -> do
-            (clhs, crhs, l) <- mce >>= checkArrE
+            (clhs, crhs, l) <- mce >>= checkParE
             ctau1           <- trans tau1
             ctau2           <- trans tau2
             cpipe           <- mkPipe
-            return $ C.ArrE C.AutoPipeline ctau2 (C.ArrE C.AutoPipeline ctau1 clhs cpipe l) crhs l
+            return $ C.ParE C.AutoPipeline ctau2 (C.ParE C.AutoPipeline ctau1 clhs cpipe l) crhs l
       where
-        checkArrE :: C.Exp -> Ti (C.Exp, C.Exp, SrcLoc)
-        checkArrE (C.ArrE _ _ clhs crhs l) =
+        checkParE :: C.Exp -> Ti (C.Exp, C.Exp, SrcLoc)
+        checkParE (C.ParE _ _ clhs crhs l) =
             return (clhs, crhs, l)
 
-        checkArrE e =
+        checkParE e =
             faildoc $ nest 2 $
             text "Expected arrow expression, but got:" <+/> ppr e
 

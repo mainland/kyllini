@@ -176,8 +176,8 @@ instance Rename Exp where
     rn (RepeatE ann e l) =
         RepeatE ann <$> inCompScope (rn e) <*> pure l
 
-    rn (ArrE ann e1 e2 l) =
-        ArrE ann <$> inCompScope (rn e1) <*> inCompScope (rn e2) <*> pure l
+    rn (ParE ann e1 e2 l) =
+        ParE ann <$> inCompScope (rn e1) <*> inCompScope (rn e2) <*> pure l
 
     rn (ReadE tau l) =
         pure $ ReadE tau l

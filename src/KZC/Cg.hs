@@ -577,8 +577,8 @@ cgCComp take emit ccomp =
         return CVoid
         -- cgFree (k >> Free (RepeatC k))
 
-    cgComp (ArrC {}) =
-        panicdoc $ text "cgComp: cannot compile ArrC"
+    cgComp (ParC {}) =
+        panicdoc $ text "cgComp: cannot compile ParC"
 
     cgComp (BindC _ cv ce k) = do
         appendStm [cstm|$cv = $ce;|]

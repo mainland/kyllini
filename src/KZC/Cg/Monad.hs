@@ -142,7 +142,7 @@ data Comp l a = CodeC l Code a
               | EmitsC l Iota CExp a
               | IfC l CExp CExp a a (CExp -> a)
               | RepeatC l a
-              | ArrC l Type a a
+              | ParC l Type a a
               | BindC l CExp CExp a
               | DoneC l
   deriving (Functor)
@@ -155,7 +155,7 @@ compLabel (EmitC l _ _)     = l
 compLabel (EmitsC l _ _ _)  = l
 compLabel (IfC l _ _ _ _ _) = l
 compLabel (RepeatC l _)     = l
-compLabel (ArrC l _ _ _)    = l
+compLabel (ParC l _ _ _)    = l
 compLabel (BindC l _ _ _)   = l
 compLabel (DoneC l)         = l
 
