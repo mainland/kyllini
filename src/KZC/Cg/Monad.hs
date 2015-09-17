@@ -19,6 +19,7 @@ module KZC.Cg.Monad (
 
     Required(..),
     unRequired,
+    require,
 
     Label,
     Comp(..),
@@ -132,6 +133,19 @@ data CExp = CVoid
           | CComp CComp      -- ^ A computation.
           | CDelay (Cg CExp) -- ^ A delayed CExp
 
+instance Num CExp where
+    x + y = CExp [cexp|$x + $y|]
+    x - y = CExp [cexp|$x - $y|]
+    x * y = CExp [cexp|$x * $y|]
+
+    negate x = CExp [cexp|-$x|]
+
+    abs _ = error "Num CExp: abs not implemented"
+
+    signum _ = error "Num CExp: signum not implemented"
+
+    fromInteger i = CExp [cexp|$int:i|]
+
 instance ToExp CExp where
     toExp CVoid        = error "toExp: void compiled expression"
     toExp (CInt i)     = \_ -> [cexp|$int:i|]
@@ -170,9 +184,14 @@ type Label = C.Id
 -- but not all labels are 'Require'. Any computation that is used as a
 -- continuation /must/ have a required label, which results in a label in the
 -- generated code.
+
+-- Why do we need 'BindC'? Because the bind's continuation needs a /known,
+-- fixed/ place to look for its input. If the continuation had type @Cg CComp@
+-- instead of @CComp@, things would be different, but that would bring its own
+-- set of problems. See the @cgExp@ case for 'BindE'.
 data Comp l a = CodeC (Required l) Code a
-              | TakeC (Required l) (CExp -> a)
-              | TakesC (Required l) Int (CExp -> a)
+              | TakeC (Required l) Type (CExp -> a)
+              | TakesC (Required l) Int Type (CExp -> a)
               | EmitC (Required l) CExp a
               | EmitsC (Required l) Iota CExp a
               | IfC (Required l) CExp CExp a a (CExp -> a)
@@ -187,11 +206,11 @@ type CComp = Free (Comp Label) CExp
 codeC :: Label -> Code -> CComp
 codeC l code = liftF $ CodeC (NotRequired l) code CVoid
 
-takeC :: Label -> CComp
-takeC l = liftF $ TakeC (NotRequired l) id
+takeC :: Label -> Type -> CComp
+takeC l tau = liftF $ TakeC (NotRequired l) tau id
 
-takesC :: Label -> Int -> CComp
-takesC l i = liftF $ TakesC (NotRequired l) i id
+takesC :: Label -> Int -> Type -> CComp
+takesC l i tau = liftF $ TakesC (NotRequired l) i tau id
 
 emitC :: Label -> CExp -> CComp
 emitC l ce = liftF $ EmitC (NotRequired l) ce CVoid
@@ -220,9 +239,11 @@ ccompLabel (Pure {})   = error "ccompLabel: saw Pure"
 ccompLabel (Free comp) = compLabel comp
   where
     compLabel :: Comp Label CComp -> Label
-    compLabel (CodeC l _ _)     = unRequired l
-    compLabel (TakeC l _)       = unRequired l
-    compLabel (TakesC l _ _)    = unRequired l
+    compLabel (CodeC l c k)
+        | stmts c == mempty     = ccompLabel k
+        | otherwise             = unRequired l
+    compLabel (TakeC l _ _)     = unRequired l
+    compLabel (TakesC l _ _ _)  = unRequired l
     compLabel (EmitC l _ _)     = unRequired l
     compLabel (EmitsC l _ _ _)  = unRequired l
     compLabel (IfC l _ _ _ _ _) = unRequired l
@@ -236,16 +257,18 @@ requireLabel (Pure {})   = error "ccompLabel: saw Pure"
 requireLabel (Free comp) = Free $ go comp
   where
     go :: Comp Label CComp -> Comp Label CComp
-    go (CodeC l c k)       = CodeC (require l) c k
-    go (TakeC l k)         = TakeC (require l) k
-    go (TakesC l i k)      = TakesC (require l) i k
-    go (EmitC l e k)       = EmitC (require l) e k
-    go (EmitsC l i e k)    = EmitsC (require l) i e k
-    go (IfC l v e th el k) = IfC (require l) v e th el k
-    go (ParC tau l r)      = ParC tau l (requireLabel r)
-    go (BindC l v e k)     = BindC (require l) v e k
-    go (DoneC l)           = DoneC (require l)
-    go (GotoC l)           = GotoC l
+    go (CodeC l c k)
+        | stmts c == mempty = CodeC l c (requireLabel k)
+        | otherwise         = CodeC (require l) c k
+    go (TakeC l tau k)      = TakeC (require l) tau k
+    go (TakesC l tau i k)   = TakesC (require l) tau i k
+    go (EmitC l e k)        = EmitC (require l) e k
+    go (EmitsC l i e k)     = EmitsC (require l) i e k
+    go (IfC l v e th el k)  = IfC (require l) v e th el k
+    go (ParC tau l r)       = ParC tau l (requireLabel r)
+    go (BindC l v e k)      = BindC (require l) v e k
+    go (DoneC l)            = DoneC (require l)
+    go (GotoC l)            = GotoC l
 
 -- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
