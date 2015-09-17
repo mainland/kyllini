@@ -22,6 +22,7 @@ import Data.Char (ord)
 import Data.Foldable (toList)
 import Data.List (sort)
 import Data.Loc
+import Data.Monoid (mempty)
 import qualified Language.C.Quote as C
 import Language.C.Quote.C
 import Numeric (showHex)
@@ -286,31 +287,36 @@ cgExp (BinopE op e1 e2 _) = do
     cgBinop ce1 ce2 Pow  = [cexp|pow($ce1, $ce2)|]
 
 cgExp e@(IfE e1 e2 e3 _) = do
-    tau <- inferExp e
-    ce1 <- cgExp e1
-    ce2 <- cgExp e2
-    ce3 <- cgExp e3
-    go tau ce1 ce2 ce3
+    inferExp e >>= go
   where
-    go :: Type -> CExp -> CExp -> CExp -> Cg CExp
-    go tau ce1 ce2 ce3 | isPureish tau = do
-        cv <- cgTemp "cond" tau Nothing
-        appendStm [cstm|if ($ce1) { $cv = $ce2; } else { $cv = $ce3;}|]
+    go :: Type -> Cg CExp
+    go tau | isPureish tau = do
+        cv <- cgTemp "cond" cv_tau Nothing
+        cif (cgExp e1)
+            (cgExp e2 >>= cassign cv_tau cv)
+            (cgExp e3 >>= cassign cv_tau cv)
         return cv
+      where
+        cv_tau :: Type
+        cv_tau = computedType tau
 
-    go tau ce1 ce2 ce3 = do
-        comp2     <- unCComp ce2
-        comp3     <- unCComp ce3
-        cv        <- cgTemp "cond" tau Nothing
+    go tau = do
+        ce1       <- cgExp e1
+        comp2     <- collectComp $ cgExp e2 >>= unCComp
+        comp3     <- collectComp $ cgExp e3 >>= unCComp
+        cv        <- cgTemp "cond" cv_tau Nothing
         ifl       <- genLabel "ifk"
-        bindl     <- genLabel "bindk"
-        donel     <- genLabel "donek"
-        let bindk =  bindC bindl cv
-        let donek =  doneC donel
+        bindthl   <- genLabel "then_bindk"
+        donethl   <- genLabel "then_donek"
+        bindell   <- genLabel "else_bindk"
+        doneell   <- genLabel "else_donek"
         return $ CComp $
             ifC ifl cv ce1
-                (comp2 >>= bindk >> donek)
-                (comp3 >>= bindk >> donek)
+                (comp2 >>= bindC bindthl cv_tau cv >> doneC donethl)
+                (comp3 >>= bindC bindell cv_tau cv >> doneC doneell)
+      where
+        cv_tau :: Type
+        cv_tau = computedType tau
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -321,14 +327,72 @@ cgExp (CallE f iotas es _) = do
     ces    <- mapM cgExp es
     return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
 
-cgExp (DerefE e _) =
-    cgExp e
+cgExp (DerefE e _) = do
+    ce <- cgExp e
+    case ce of
+      CPtr {} -> return $ CExp [cexp|*$ce|]
+      _       -> return ce
 
 cgExp (AssignE e1 e2 _) = do
     ce1 <- cgExp e1
     ce2 <- cgExp e2
     appendStm [cstm|$ce1 = $ce2;|]
     return CVoid
+
+cgExp e0@(WhileE e_test e_body _) = do
+    inferExp e0 >>= go
+  where
+    go :: Type -> Cg CExp
+    go tau | isPureish tau = do
+        ce_test <- cgExp e_test
+        ce_body <- cgExp e_body
+        appendStm [cstm|while ($ce_test) { $ce_body; }|]
+        return CVoid
+
+    go _ = do
+        ce_test <- cgExp e_test
+        bodyc   <- collectComp $ cgExp e_body >>= unCComp
+        whilel  <- genLabel "whilek"
+        donel   <- genLabel "whiledone"
+        return $ CComp $ requireLabel $
+            ifC whilel CVoid ce_test
+                (bodyc >> gotoC whilel)
+                (doneC donel)
+
+{-
+cgExp e0@(ForE _ v v_tau e_start e_end e_body _) = do
+    tau    <- inferExp e0
+    ce_body  <- cgExp e_body
+    go tau
+  where
+    go :: Type -> Cg CExp
+    go tau | isPureish tau = do
+        cv     <- cvar v
+        cv_tau <- cgType tau
+        extendVars     [(v, v_tau)] $ do
+        extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        ce_start <- cgExp e_start
+        ce_end   <- cgExp e_end
+        citems   <- inNewBlock_ $ cgExp e_body
+        appendStm [cstm|for ($id:cv = $ce_start; $id:cv < $ce_end; $id:cv++) { $items:citems }|]
+        return CVoid
+
+    go _ = do
+        cv     <- cvar v
+        cv_tau <- cgType tau
+        extendVars     [(v, v_tau)] $ do
+        extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        ce_start <- cgExp e_start
+        ce_end   <- cgExp e_end
+        appendStm  [cstm|$id:cv = $ce_start|]
+
+
+        citems   <- inNewBlock_ $ cgExp e_body
+        appendStm [cstm|for ($id:cv = $ce_start; $id:cv < $ce_end; $id:cv++) { $items:citems }|]
+        return CVoid
+-}
 
 cgExp (IdxE e1 e2 Nothing _) = do
     ce1 <- cgExp e1
@@ -340,21 +404,17 @@ cgExp (ReturnE _ e _) = do
     return $ CComp $ return ce
 
 cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
-    comp1   <- collectComp (cgExp e1 >>= unCComp)
-    cv      <- cvar v
-    let cve =  CExp [cexp|$id:cv|]
-    bindc   <- collectCompBind $ mkBind cv
-    comp2   <- extendBindVars [bv] $
-               extendVarCExps [(v, cve)] $
-               collectComp (cgExp e2 >>= unCComp)
-    return $ CComp $ comp1 >>= bindc >> comp2
-  where
-    mkBind :: C.Id -> Cg (CExp -> CComp)
-    mkBind cv = do
-        ctau <- cgType tau
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
-        l <- genLabel "bindk"
-        return $ bindC l (CExp [cexp|$id:cv|])
+    comp1 <- collectComp (cgExp e1 >>= unCComp)
+    cve   <- cgVar v tau
+    -- We create a CComp containing all the C code needed to define and bind @v@
+    -- and then execute @e2@.
+    comp2 <- collectCompBind $
+             extendBindVars [bv] $
+             extendVarCExps [(v, cve)] $ do
+             bindl <- genLabel "bindk"
+             comp2 <- collectComp (cgExp e2 >>= unCComp)
+             return $ \ce -> bindC bindl tau cve ce >> comp2
+    return $ CComp $ comp1 >>= comp2
 
 cgExp (BindE WildV e1 e2 _) = do
     comp1 <- collectComp (cgExp e1 >>= unCComp)
@@ -452,16 +512,16 @@ cgType (BitT {}) =
     return [cty|int|]
 
 cgType (IntT W8 _) =
-    return [cty|typename int8|]
+    return [cty|typename int8_t|]
 
 cgType (IntT W16 _) =
-    return [cty|typename int16|]
+    return [cty|typename int16_t|]
 
 cgType (IntT W32 _) =
-    return [cty|typename int32|]
+    return [cty|typename int32_t|]
 
 cgType (IntT W64 _) =
-    return [cty|typename int64|]
+    return [cty|typename int64_t|]
 
 cgType (FloatT W8 _) =
     return [cty|float|]
@@ -502,21 +562,34 @@ cgType (FunT ivs args ret _) = do
     return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
 
 cgType (TyVarT {}) =
-    panicdoc $ text "cgType: cannot compile type variable"
+    return [cty|void|]
 
 cgParam :: Type -> Cg C.Param
 cgParam tau = do
     ctau <- cgType tau
     return [cparam|$ty:ctau|]
 
+cgVar :: Var -> Type -> Cg CExp
+cgVar _ (UnitT {}) =
+    return CVoid
+
+cgVar v tau = do
+    ctau <- cgType tau
+    cv   <- cvar v
+    appendDecl [cdecl|$ty:ctau $id:cv;|]
+    return $ CExp [cexp|$id:cv|]
+
 cgTemp :: String -> Type -> Maybe C.Initializer -> Cg CExp
+cgTemp _ (UnitT {}) _ =
+    return CVoid
+
 cgTemp s tau maybe_cinit = do
     ctau <- cgType tau
     cgCTemp s ctau maybe_cinit
 
 cgCTemp :: String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgCTemp s ctau maybe_cinit = do
-    cv   <- gensym s
+    cv <- gensym s
     case maybe_cinit of
       Nothing    -> appendDecl [cdecl|$ty:ctau $id:cv;|]
       Just cinit -> appendDecl [cdecl|$ty:ctau $id:cv = $init:cinit;|]
@@ -671,13 +744,6 @@ cgCComp take emit done ccomp =
     cgComp (TakesC l n tau k) =
         take l n tau k cgFree
 
-{-
-    cgComp comp@(TakesC l n k) = do
-        cfor (CExp [cexp|0|]) (CExp [cexp|$int:n|]) $ \_ ->
-            cgWithLabel l $ take 1 (\_ -> Free comp) (\_ -> return ())
-        cgFree k
--}
-
     cgComp (EmitC l ce k) =
         emit l (ConstI 1 noLoc) ce k cgFree
 
@@ -685,12 +751,24 @@ cgCComp take emit done ccomp =
         emit l iota ce k cgFree
 
     cgComp (IfC l cv ce thenk elsek k) = cgWithLabel l $ do
-        (cthen, _) <- inNewBlock $ cgFree thenk
-        (celse, _) <- inNewBlock $ cgFree elsek
-        appendStm [cstm|if ($ce) { $items:cthen } else { $items:celse }|]
+        cif (return ce) (cgFree thenk) (cgFree elsek)
         cgFree (k cv)
 
-    cgComp (ParC tau left right) = do
+    cgComp (ParC tau left right) =
+        cgParSingleThreaded tau left right
+
+    cgComp (BindC l tau cv ce k) = cgWithLabel l $ do
+        cassign tau cv ce
+        cgFree k
+
+    cgComp (DoneC {}) =
+        done CVoid
+
+    cgComp (GotoC l) =
+        appendStm [cstm|JUMP($id:(unRequired l));|]
+
+    cgParSingleThreaded :: Type -> CComp -> CComp -> Cg ()
+    cgParSingleThreaded tau left right = do
         -- Generate variables to hold the left and right computations'
         -- continuations.
         cleftk  <- cgCTemp "leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:(ccompLabel left))|])
@@ -755,12 +833,22 @@ cgCComp take emit done ccomp =
                     appendStm [cstm|continue;|]
             k (requireLabel ccomp)
 
-    cgComp (BindC l cv ce k) = cgWithLabel l $ do
-        appendStm [cstm|$cv = $ce;|]
-        cgFree k
+cassign :: Type -> CExp -> CExp -> Cg ()
+cassign (UnitT {}) _ _ =
+    return ()
 
-    cgComp (DoneC {}) =
-        done CVoid
+cassign _ cv ce =
+    appendStm [cstm|$cv = $ce;|]
 
-    cgComp (GotoC l) =
-        appendStm [cstm|JUMP($id:(unRequired l));|]
+cif :: Cg CExp -> Cg () -> Cg () -> Cg ()
+cif e1 e2 e3 = do
+    ce1     <- e1
+    citems2 <- inNewBlock_ e2
+    citems3 <- inNewBlock_ e3
+    if citems3 == mempty
+      then appendStm [cstm|if ($ce1) { $items:citems2 }|]
+      else appendStm [cstm|if ($ce1) { $items:citems2 } else { $items:citems3 }|]
+
+computedType :: Type -> Type
+computedType (ST _ (C tau) _ _ _ _) = tau
+computedType tau                    = tau

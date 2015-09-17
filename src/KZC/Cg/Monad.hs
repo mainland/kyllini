@@ -125,7 +125,7 @@ instance Monoid Code where
 -- | The type of "compiled" expressions.
 data CExp = CVoid
           | CInt Integer     -- ^ Integer constant
-          | CFloat Double    -- ^ Float constant
+          | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
           | CArray CExp CExp -- ^ Array. The first argument is the array's
                              -- length, and the second is its contents.
@@ -134,27 +134,47 @@ data CExp = CVoid
           | CDelay (Cg CExp) -- ^ A delayed CExp
 
 instance Num CExp where
-    x + y = CExp [cexp|$x + $y|]
-    x - y = CExp [cexp|$x - $y|]
-    x * y = CExp [cexp|$x * $y|]
+    CInt x   + CInt y   = CInt (x + y)
+    CFloat x + CFloat y = CFloat (x + y)
+    x        + y        = CExp [cexp|$x + $y|]
 
-    negate x = CExp [cexp|-$x|]
+    CInt x   - CInt y   = CInt (x - y)
+    CFloat x - CFloat y = CFloat (x - y)
+    x        - y        = CExp [cexp|$x - $y|]
+
+    CInt x   * CInt y   = CInt (x * y)
+    CFloat x * CFloat y = CFloat (x * y)
+    x        * y        = CExp [cexp|$x * $y|]
+
+    negate (CInt x)   = CInt (-x)
+    negate (CFloat x) = CFloat (-x)
+    negate x          = CExp [cexp|-$x|]
 
     abs _ = error "Num CExp: abs not implemented"
 
     signum _ = error "Num CExp: signum not implemented"
 
-    fromInteger i = CExp [cexp|$int:i|]
+    fromInteger i = CInt i
+
+instance Fractional CExp where
+    CFloat x / CFloat y = CFloat (x / y)
+    x        / y        = CExp [cexp|$x / $y|]
+
+    recip (CFloat x) = CFloat (recip x)
+    recip x          = CExp [cexp|1/$x|]
+
+    fromRational r = CFloat r
 
 instance ToExp CExp where
-    toExp CVoid        = error "toExp: void compiled expression"
-    toExp (CInt i)     = \_ -> [cexp|$int:i|]
-    toExp (CFloat f)   = \_ -> [cexp|$float:(toRational f)|]
-    toExp (CExp e)     = \_ -> e
-    toExp (CArray _ e) = toExp e
-    toExp (CPtr e)     = \_ -> [cexp|*$e|]
-    toExp (CComp {})   = error "toExp: cannot convert CComp to a C expression"
-    toExp (CDelay {})  = error "toExp: cannot convert CDelay to a C expression"
+    toExp CVoid             = error "toExp: void compiled expression"
+    toExp (CInt i)          = \_ -> [cexp|$int:i|]
+    toExp (CFloat r)        = \_ -> [cexp|$double:r|]
+    toExp (CExp e)          = \_ -> e
+    toExp (CArray _ e)      = toExp e
+    toExp (CPtr e)          = toExp e
+    toExp (CComp (Pure ce)) = toExp ce
+    toExp (CComp {})        = error "toExp: cannot convert CComp to a C expression"
+    toExp (CDelay {})       = error "toExp: cannot convert CDelay to a C expression"
 
 instance Pretty CExp where
     ppr CVoid        = text "<void>"
@@ -196,7 +216,7 @@ data Comp l a = CodeC (Required l) Code a
               | EmitsC (Required l) Iota CExp a
               | IfC (Required l) CExp CExp a a (CExp -> a)
               | ParC Type a a
-              | BindC (Required l) CExp CExp a
+              | BindC (Required l) Type CExp CExp a
               | DoneC (Required l)
               | GotoC (Required l)
   deriving (Functor)
@@ -228,8 +248,8 @@ doneC l = liftF $ DoneC (NotRequired l)
 parC :: Type -> CComp -> CComp -> CComp
 parC tau c1 c2 = Free $ ParC tau c1 c2
 
-bindC :: Label -> CExp -> CExp -> CComp
-bindC l cv ce = liftF $ BindC (NotRequired l) cv ce CVoid
+bindC :: Label -> Type -> CExp -> CExp -> CComp
+bindC l tau cv ce = liftF $ BindC (NotRequired l) tau cv ce CVoid
 
 gotoC :: Label -> CComp
 gotoC l = Free (GotoC (NotRequired l))
@@ -248,7 +268,7 @@ ccompLabel (Free comp) = compLabel comp
     compLabel (EmitsC l _ _ _)  = unRequired l
     compLabel (IfC l _ _ _ _ _) = unRequired l
     compLabel (ParC _ _ right)  = ccompLabel right
-    compLabel (BindC l _ _ _)   = unRequired l
+    compLabel (BindC l _ _ _ _) = unRequired l
     compLabel (DoneC l)         = unRequired l
     compLabel (GotoC l)         = unRequired l
 
@@ -266,7 +286,7 @@ requireLabel (Free comp) = Free $ go comp
     go (EmitsC l i e k)     = EmitsC (require l) i e k
     go (IfC l v e th el k)  = IfC (require l) v e th el k
     go (ParC tau l r)       = ParC tau l (requireLabel r)
-    go (BindC l v e k)      = BindC (require l) v e k
+    go (BindC l tau v e k)  = BindC (require l) tau v e k
     go (DoneC l)            = DoneC (require l)
     go (GotoC l)            = GotoC l
 
