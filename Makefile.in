@@ -217,6 +217,12 @@ test-tc : kzc
 		./kzc -I$(TESTDIR)/lib --check --dlint $$TEST; \
 	done
 
+%.c : %.zr kzc
+	./kzc --ddump-core --dtrace-lint --dtrace-cg $<
+
+% : %.c
+	gcc -I. $^ -o $@ -lm
+
 #
 # autotools stuff
 #
