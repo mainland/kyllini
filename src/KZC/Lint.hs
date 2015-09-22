@@ -575,7 +575,7 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (IntT w1 _)   (IntT w2 _)     | w1 == w2 = return ()
     checkT _ _ (FloatT w1 _) (FloatT w2 _)   | w1 == w2 = return ()
 
-    checkT _ _ (StringT {}) (StringT {})  = return ()
+    checkT _ _ (StringT {}) (StringT {}) = return ()
 
     checkT theta phi (ArrT iota1 tau1 _) (ArrT iota2 tau2 _) = do
         checkI phi iota1 iota2
