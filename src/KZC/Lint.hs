@@ -466,10 +466,9 @@ inferExp (BindE bv e1 e2 _) = do
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [a,b] (C tau) (tyVarT a) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
   where
-    a, b :: TyVar
-    a = "a"
+    b :: TyVar
     b = "b"
 
 inferExp (TakesE i tau l) = do
