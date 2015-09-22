@@ -46,46 +46,50 @@ checkDecls (decl:decls) =
     checkDecls decls
 
 checkDecl :: Decl -> Tc r s a -> Tc r s a
-checkDecl (LetD v tau e _) k = do
-    void $ inferKind tau
-    tau' <- withExpContext e $
-            inSTScope tau $
-            inferExp e >>= absSTScope
-    checkTypeEquality tau' tau
+checkDecl decl@(LetD v tau e _) k = do
+    withSummaryContext decl $ do
+        void $ inferKind tau
+        tau' <- withExpContext e $
+                inSTScope tau $
+                inferExp e >>= absSTScope
+        checkTypeEquality tau' tau
     extendVars [(v, tau)] k
 
-checkDecl (LetFunD f iotas vbs tau_ret e l) k = do
-    checkKind tau PhiK
+checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
+    withSummaryContext decl $
+        checkKind tau PhiK
     extendVars [(f, tau)] $ do
-    tau_ret' <- withExpContext e $
-                extendIVars (iotas `zip` repeat IotaK) $
-                extendVars vbs $
-                inSTScope tau_ret $
-                inferExp e >>= absSTScope
-    checkTypeEquality tau_ret' tau_ret
+    withSummaryContext decl $ do
+        tau_ret' <- withExpContext e $
+                    extendIVars (iotas `zip` repeat IotaK) $
+                    extendVars vbs $
+                    inSTScope tau_ret $
+                    inferExp e >>= absSTScope
+        checkTypeEquality tau_ret' tau_ret
     k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-checkDecl e0@(LetExtFunD f iotas vbs tau_ret l) k = do
-    withSummaryContext e0 $ checkKind tau PhiK
+checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
+    withSummaryContext decl $ checkKind tau PhiK
     extendVars [(f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-checkDecl (LetRefD v tau Nothing _) k = do
-    checkKind tau TauK
+checkDecl decl@(LetRefD v tau Nothing _) k = do
+    withSummaryContext decl $ checkKind tau TauK
     extendVars [(v, refT tau)] k
 
-checkDecl (LetRefD v tau (Just e) _) k = do
-    checkKind tau TauK
-    checkExp e tau
+checkDecl decl@(LetRefD v tau (Just e) _) k = do
+    withSummaryContext decl $ do
+        checkKind tau TauK
+        checkExp e tau
     extendVars [(v, refT tau)] k
 
-checkDecl e0@(LetStructD s flds l) k = do
-    withSummaryContext e0 $ do
+checkDecl decl@(LetStructD s flds l) k = do
+    withSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
         mapM_ (\tau -> checkKind tau TauK) taus
@@ -496,7 +500,7 @@ inferExp (RepeatE _ e l) = do
     (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
-inferExp (ParE _ b e1 e2 l) = do
+inferExp e0@(ParE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
     (omega1, s', a',    b') <- withExpContext e1 $
                                localSTIndTypes (Just (s, a, b)) $
@@ -504,9 +508,12 @@ inferExp (ParE _ b e1 e2 l) = do
     (omega2, b'', b''', c') <- withExpContext e2 $
                                localSTIndTypes (Just (b, b, c)) $
                                inferExp e2 >>= checkST
-    checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
-    checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
-    omega <- joinOmega omega1 omega2
+    withExpContext e1 $
+        checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
+    withExpContext e2 $
+        checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
+    omega <- withExpContext e0 $
+             joinOmega omega1 omega2
     return $ ST [] omega s a c l
   where
     joinOmega :: Omega -> Omega -> Tc r s Omega
