@@ -559,6 +559,7 @@ checkCast (StructT s1 _) (StructT s2 _) | isComplexStruct s1 && isComplexStruct 
 checkCast tau1 tau2 =
     faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
+-- | Check that @tau1@ is equal to @tau2@.
 checkTypeEquality :: Type -> Type -> Tc r s ()
 checkTypeEquality tau1 tau2 =
     checkT Map.empty Map.empty tau1 tau2
