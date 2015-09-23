@@ -376,40 +376,43 @@ cgExp e0@(WhileE e_test e_body _) = do
                 (bodyc >> gotoC whilel)
                 (doneC donel)
 
-{-
-cgExp e0@(ForE _ v v_tau e_start e_end e_body _) = do
-    tau    <- inferExp e0
-    ce_body  <- cgExp e_body
-    go tau
+cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
+    inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
     go tau | isPureish tau = do
         cv     <- cvar v
-        cv_tau <- cgType tau
+        cv_tau <- cgType v_tau
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        appendDecl [cdecl|$ty:cv_tau $id:cv;|]
         ce_start <- cgExp e_start
         ce_end   <- cgExp e_end
         citems   <- inNewBlock_ $ cgExp e_body
-        appendStm [cstm|for ($id:cv = $ce_start; $id:cv < $ce_end; $id:cv++) { $items:citems }|]
+        appendStm [cstm|for ($id:cv = $ce_start; $id:cv <= $ce_end; $id:cv++) { $items:citems }|]
         return CVoid
 
     go _ = do
         cv     <- cvar v
-        cv_tau <- cgType tau
+        cv_tau <- cgType v_tau
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
-        ce_start <- cgExp e_start
-        ce_end   <- cgExp e_end
-        appendStm  [cstm|$id:cv = $ce_start|]
-
-
-        citems   <- inNewBlock_ $ cgExp e_body
-        appendStm [cstm|for ($id:cv = $ce_start; $id:cv < $ce_end; $id:cv++) { $items:citems }|]
-        return CVoid
--}
+        appendDecl [cdecl|$ty:cv_tau $id:cv;|]
+        initc   <- collectCodeAsComp $ do
+                   ce_start <- cgExp e_start
+                   appendStm [cstm|$id:cv = $ce_start;|]
+        ce_test <- cgExp $ varE v .<=. e_end
+        updatec <- collectCodeAsComp $
+                   appendStm [cstm|$id:cv++;|]
+        bodyc   <- collectComp $ cgExp e_body >>= unCComp
+        forl    <- genLabel "fork"
+        donel   <- genLabel "fordone"
+        return $ CComp $
+            initc >>
+            requireLabel
+            (ifC forl CVoid ce_test
+                 (bodyc >> updatec >> gotoC forl)
+                 (doneC donel))
 
 cgExp (IdxE e1 e2 Nothing _) = do
     ce1 <- cgExp e1
@@ -470,6 +473,12 @@ cgExp (ParE _ tau e1 e2 _) = do
 cgExp e =
     faildoc $ nest 2 $
     text "cgExp: cannot compile:" <+/> ppr e
+
+collectCodeAsComp :: Cg a -> Cg CComp
+collectCodeAsComp m = do
+    l         <- genLabel "codek"
+    (_, code) <- collect m
+    return $ codeC l code
 
 collectComp :: Cg CComp -> Cg CComp
 collectComp m = do

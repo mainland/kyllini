@@ -33,6 +33,18 @@ intE i = ConstE (IntC dEFAULT_INT_WIDTH i) noLoc
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
+(.<.) :: Exp -> Exp -> Exp
+e1 .<. e2 = BinopE Lt e1 e2 l
+  where
+    l :: SrcLoc
+    l = e1 `srcspan` e2
+
+(.<=.) :: Exp -> Exp -> Exp
+e1 .<=. e2 = BinopE Le e1 e2 l
+  where
+    l :: SrcLoc
+    l = e1 `srcspan` e2
+
 callE :: Exp -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
