@@ -128,9 +128,15 @@ cgDecls (decl:decls) k =
 
 cgDecl :: Decl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
-    inSTScope tau $ do
     cv <- withSummaryContext decl $ do
-          ce <- if isComp tau then return (CDelay (liftM CComp $ collectComp $ cgExp e >>= unCComp)) else cgExp e
+          let ce_comp = CDelay $
+                        liftM CComp $
+                        collectComp $
+                        inSTScope tau $
+                        cgExp e >>= unCComp
+          ce <- if isComp tau
+                then return ce_comp
+                else inSTScope tau $ cgExp e
           cval v ce tau
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
