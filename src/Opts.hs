@@ -23,12 +23,13 @@ options =
   where
     otherOpts :: [OptDescr (Flags -> Flags)]
     otherOpts =
-        [ Option ['q'] ["quiet"]      (NoArg (setDynFlag Quiet))         "be quiet"
-        , Option ['v'] ["verbose"]    (OptArg maybeSetVerbLevel "LEVEL") "be verbose"
-        , Option []    ["check-only"] (NoArg (setDynFlag Check))         "type check"
-        , Option ['I'] []             (ReqArg includePathOpt "DIR")      "include DIR"
-        , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")  "define macro"
-        , Option ['o'] ["output"]     (OptArg outOpt "FILE")             "output FILE"
+        [ Option ['q'] ["quiet"]      (NoArg (setDynFlag Quiet))          "be quiet"
+        , Option ['v'] ["verbose"]    (OptArg maybeSetVerbLevel "LEVEL")  "be verbose"
+        , Option ['P'] []             (NoArg (setDynFlag StopAfterParse)) "stop after parsing"
+        , Option ['C'] []             (NoArg (setDynFlag StopAfterCheck)) "stop after type checking"
+        , Option ['I'] []             (ReqArg includePathOpt "DIR")       "include DIR"
+        , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")   "define macro"
+        , Option ['o'] ["output"]     (OptArg outOpt "FILE")              "output FILE"
         ]
 
     maybeSetVerbLevel :: Maybe String -> Flags -> Flags

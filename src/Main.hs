@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
 import qualified Data.Text.Lazy.IO as TIO
@@ -57,42 +58,41 @@ runPipeline filepath = do
     decls <- liftIO $ parseProgram text' start
     whenDynFlag PrettyPrint $
       liftIO $ putDocLn $ ppr decls
-    pipeline decls
+    void $ runMaybeT $ pipeline decls
   where
     (root, ext) = splitExtension filepath
 
     start :: Pos
     start = startPos filepath
 
-    pipeline :: [Z.CompLet] -> KZC ()
-    pipeline = renamePipe >=> checkPipe >=> compilePipe
+    pipeline :: [Z.CompLet] -> MaybeT KZC ()
+    pipeline =
+        stopIf (testDynFlag StopAfterParse) >=>
+        renamePipe >=>
+        checkPipe >=>
+        stopIf (testDynFlag StopAfterCheck) >=>
+        lift . compilePipe
 
-    renamePipe :: [Z.CompLet] -> KZC [Z.CompLet]
-    renamePipe = runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
+    renamePipe :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
+    renamePipe = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
 
-    checkPipe :: [Z.CompLet] -> KZC [C.Decl]
-    checkPipe = withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
+    checkPipe :: [Z.CompLet] -> MaybeT KZC [C.Decl]
+    checkPipe = lift . withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
 
     compilePipe :: [C.Decl] -> KZC ()
-    compilePipe cdecls = do
-        docomp <- asksFlags (not . testDynFlag Check)
-        if docomp
-          then do cdefs <- evalCg (compileProgram cdecls)
-                  writeOutput cdefs
-          else return ()
+    compilePipe cdecls =
+        evalCg (compileProgram cdecls) >>= writeOutput
 
-    lintCore :: [C.Decl] -> KZC [C.Decl]
-    lintCore decls = do
+    lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
+    lintCore decls = lift $ do
         whenDynFlag Lint $
             Lint.withTc () () (Lint.checkDecls decls)
         return decls
 
-{-
-    flagPass :: (Flags -> Bool) -> (a -> KZC a) -> a -> KZC a
-    flagPass f k a = do
-        dopass <- asks (f . flags)
-        if dopass then k a else return a
--}
+    stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
+    stopIf f x = do
+        stop <- asksFlags f
+        if stop then MaybeT (return Nothing) else return x
 
     writeOutput :: Pretty a
                 => a
@@ -109,8 +109,8 @@ runPipeline filepath = do
              -> String
              -> String
              -> a
-             -> KZC a
-    dumpPass f ext suffix x = do
+             -> MaybeT KZC a
+    dumpPass f ext suffix x = lift $ do
         dump f filepath ext suffix (ppr x)
         return x
 

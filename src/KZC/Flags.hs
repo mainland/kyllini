@@ -32,6 +32,8 @@ module KZC.Flags (
   ) where
 
 import Control.Monad (when)
+import Control.Monad.Trans
+import Control.Monad.Trans.Maybe
 import Data.Bits
 import Data.Int
 import Data.Monoid
@@ -41,7 +43,8 @@ data ModeFlag = Help
   deriving (Eq, Ord, Enum, Show)
 
 data DynFlag = Quiet
-             | Check
+             | StopAfterParse
+             | StopAfterCheck
              | PrettyPrint
              | Lint
              | PrintUniques
@@ -160,6 +163,10 @@ setTraceFlag f flags =
 class Monad m => MonadFlags m where
     askFlags    :: m Flags
     localFlags  :: Flags -> m a -> m a
+
+instance MonadFlags m => MonadFlags (MaybeT m) where
+    askFlags       = lift askFlags
+    localFlags f k = MaybeT $ localFlags f (runMaybeT k)
 
 asksFlags :: MonadFlags m => (Flags -> a) -> m a
 asksFlags f = do

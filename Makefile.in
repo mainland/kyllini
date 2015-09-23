@@ -206,7 +206,8 @@ TESTS = \
 test-parser : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
-		./kzc -I$(TESTDIR)/lib $$TEST; \
+		echo $$TEST; \
+		./kzc -I$(TESTDIR)/lib -P $$TEST; \
 	done
 
 .PHONY : test-tc
@@ -214,7 +215,7 @@ test-tc : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
 		echo $$TEST; \
-		./kzc -I$(TESTDIR)/lib --check --dlint $$TEST; \
+		./kzc -I$(TESTDIR)/lib -C --dlint $$TEST; \
 	done
 
 %.c : %.zr kzc
