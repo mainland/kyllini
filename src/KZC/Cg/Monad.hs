@@ -70,7 +70,9 @@ module KZC.Cg.Monad (
     appendStms,
 
     gensym,
+
     genLabel,
+    useLabel,
 
     traceNest,
     traceCg
@@ -476,10 +478,12 @@ gensym s = do
     return $ C.Id (s ++ show u) noLoc
 
 genLabel :: String -> Cg Label
-genLabel s = do
-    lbl <- gensym s
+genLabel s =
+    gensym s
+
+useLabel :: Label -> Cg ()
+useLabel lbl =
     modify $ \s -> s { labels = labels s |> lbl }
-    return lbl
 
 traceNest :: Int -> Cg a -> Cg a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
