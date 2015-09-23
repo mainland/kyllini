@@ -357,6 +357,9 @@ cgExp e0@(WhileE e_test e_body _) = do
     inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
+    -- This case will only be invoked when the surrounding computation is
+    -- pureish since @tau@ is always instantiated with the surrounding
+    -- function's ST index variables.
     go tau | isPureish tau = do
         ce_test <- cgExp e_test
         ce_body <- cgExp e_body
