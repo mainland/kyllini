@@ -16,7 +16,8 @@ module KZC.Cg (
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (liftM)
+import Control.Monad (forM_,
+                      liftM)
 import Control.Monad.Free (Free(..))
 import Data.Char (ord)
 import Data.Foldable (toList)
@@ -414,6 +415,25 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
                  (bodyc >> updatec >> gotoC forl)
                  (doneC donel))
 
+cgExp e@(ArrayE es _) | all isConstE es = do
+    ArrT _ tau _ <- inferExp e
+    cv           <- gensym "const_arr"
+    ctau         <- cgType tau
+    ces          <- mapM cgExp es
+    let cinits   =  [[cinit|$ce|] | ce <- ces]
+    appendDecl [cdecl|const $ty:ctau $id:cv[$int:(length es)] = { $inits:cinits };|]
+    return $ CExp [cexp|$id:cv|]
+
+cgExp e@(ArrayE es _) = do
+    ArrT _ tau _ <- inferExp e
+    cv           <- gensym "arr"
+    ctau         <- cgType tau
+    appendDecl [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
+    forM_ (es `zip` [0..]) $ \(e,i) -> do
+        ce <- cgExp e
+        appendStm [cstm|$id:cv[$int:i] = $ce;|]
+    return $ CExp [cexp|$id:cv|]
+
 cgExp (IdxE e1 e2 Nothing _) = do
     ce1 <- cgExp e1
     ce2 <- cgExp e2
@@ -473,6 +493,10 @@ cgExp (ParE _ tau e1 e2 _) = do
 cgExp e =
     faildoc $ nest 2 $
     text "cgExp: cannot compile:" <+/> ppr e
+
+isConstE :: Exp -> Bool
+isConstE (ConstE {}) = True
+isConstE _           = False
 
 collectCodeAsComp :: Cg a -> Cg CComp
 collectCodeAsComp m = do
