@@ -83,7 +83,7 @@ int main(int argc, char **argv)
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i];|]
         appendStm [cstm|i += $int:n;|]
-        k2 $ k1 $ CExp [cexp|*$cbuf|]
+        k2 $ k1 $ CExp [cexp|$cbuf|]
 
     emit :: EmitK
     emit l (ConstI 1 _) ce ccomp k =
