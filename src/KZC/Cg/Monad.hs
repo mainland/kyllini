@@ -17,10 +17,6 @@ module KZC.Cg.Monad (
 
     CExp(..),
 
-    Required(..),
-    unRequired,
-    require,
-
     Label,
     Comp(..),
     CComp,
@@ -37,7 +33,6 @@ module KZC.Cg.Monad (
     gotoC,
 
     ccompLabel,
-    requireLabel,
 
     extend,
     lookupBy,
@@ -73,16 +68,20 @@ module KZC.Cg.Monad (
 
     genLabel,
     useLabel,
+    isLabelUsed,
 
     traceNest,
     traceCg
   ) where
 
+import Prelude hiding (elem)
+
 import Control.Applicative ((<$>))
 import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.Foldable (toList)
+import Data.Foldable (elem,
+                      toList)
 import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
@@ -188,17 +187,6 @@ instance Pretty CExp where
     ppr (CComp {})   = text "<computation>"
     ppr (CDelay {})  = text "<delayed compiled expression>"
 
-data Required a = Required a
-                | NotRequired a
-
-unRequired :: Required a -> a
-unRequired (Required x)    = x
-unRequired (NotRequired x) = x
-
-require :: Required a -> Required a
-require (Required x)    = Required x
-require (NotRequired x) = Required x
-
 -- | A code label
 type Label = C.Id
 
@@ -211,86 +199,68 @@ type Label = C.Id
 -- fixed/ place to look for its input. If the continuation had type @Cg CComp@
 -- instead of @CComp@, things would be different, but that would bring its own
 -- set of problems. See the @cgExp@ case for 'BindE'.
-data Comp l a = CodeC (Required l) Code a
-              | TakeC (Required l) Type (CExp -> a)
-              | TakesC (Required l) Int Type (CExp -> a)
-              | EmitC (Required l) CExp a
-              | EmitsC (Required l) Iota CExp a
-              | IfC (Required l) CExp CExp a a (CExp -> a)
+data Comp l a = CodeC l Code a
+              | TakeC l Type (CExp -> a)
+              | TakesC l Int Type (CExp -> a)
+              | EmitC l CExp a
+              | EmitsC l Iota CExp a
+              | IfC l CExp CExp a a (CExp -> a)
               | ParC Type a a
-              | BindC (Required l) Type CExp CExp a
-              | DoneC (Required l)
-              | GotoC (Required l)
+              | BindC l Type CExp CExp a
+              | DoneC l
+              | GotoC l
   deriving (Functor)
 
 type CComp = Free (Comp Label) CExp
 
 codeC :: Label -> Code -> CComp
-codeC l code = liftF $ CodeC (NotRequired l) code CVoid
+codeC l code = liftF $ CodeC l code CVoid
 
 takeC :: Label -> Type -> CComp
-takeC l tau = liftF $ TakeC (NotRequired l) tau id
+takeC l tau = liftF $ TakeC l tau id
 
 takesC :: Label -> Int -> Type -> CComp
-takesC l i tau = liftF $ TakesC (NotRequired l) i tau id
+takesC l i tau = liftF $ TakesC l i tau id
 
 emitC :: Label -> CExp -> CComp
-emitC l ce = liftF $ EmitC (NotRequired l) ce CVoid
+emitC l ce = liftF $ EmitC l ce CVoid
 
 emitsC :: Label -> Iota -> CExp -> CComp
-emitsC l iota ce = liftF $ EmitsC (NotRequired l) iota ce CVoid
+emitsC l iota ce = liftF $ EmitsC l iota ce CVoid
 
 ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
 ifC l cv ce thenc elsec =
-    Free $ IfC (NotRequired l) cv ce thenc elsec return
+    Free $ IfC l cv ce thenc elsec return
 
 doneC :: Label -> CComp
-doneC l = liftF $ DoneC (NotRequired l)
+doneC l = liftF $ DoneC l
 
 parC :: Type -> CComp -> CComp -> CComp
 parC tau c1 c2 = Free $ ParC tau c1 c2
 
 bindC :: Label -> Type -> CExp -> CExp -> CComp
-bindC l tau cv ce = liftF $ BindC (NotRequired l) tau cv ce CVoid
+bindC l tau cv ce = liftF $ BindC l tau cv ce CVoid
 
 gotoC :: Label -> CComp
-gotoC l = Free (GotoC (NotRequired l))
+gotoC l = Free (GotoC l)
 
-ccompLabel :: CComp -> Label
-ccompLabel (Pure {})   = error "ccompLabel: saw Pure"
+ccompLabel :: CComp -> Cg Label
+ccompLabel (Pure {})   = fail "ccompLabel: saw Pure"
 ccompLabel (Free comp) = compLabel comp
   where
-    compLabel :: Comp Label CComp -> Label
+    compLabel :: Comp Label CComp -> Cg Label
     compLabel (CodeC l c k)
         | stmts c == mempty     = ccompLabel k
-        | otherwise             = unRequired l
-    compLabel (TakeC l _ _)     = unRequired l
-    compLabel (TakesC l _ _ _)  = unRequired l
-    compLabel (EmitC l _ _)     = unRequired l
-    compLabel (EmitsC l _ _ _)  = unRequired l
-    compLabel (IfC l _ _ _ _ _) = unRequired l
+        | otherwise             = useLabel l
+    compLabel (TakeC l _ _)     = useLabel l
+    compLabel (TakesC l _ _ _)  = useLabel l
+    compLabel (EmitC l _ _)     = useLabel l
+    compLabel (EmitsC l _ _ _)  = useLabel l
+    compLabel (IfC l _ _ _ _ _) = useLabel l
     compLabel (ParC _ _ right)  = ccompLabel right
-    compLabel (BindC l _ _ _ _) = unRequired l
-    compLabel (DoneC l)         = unRequired l
-    compLabel (GotoC l)         = unRequired l
-
-requireLabel :: CComp -> CComp
-requireLabel (Pure {})   = error "ccompLabel: saw Pure"
-requireLabel (Free comp) = Free $ go comp
-  where
-    go :: Comp Label CComp -> Comp Label CComp
-    go (CodeC l c k)
-        | stmts c == mempty = CodeC l c (requireLabel k)
-        | otherwise         = CodeC (require l) c k
-    go (TakeC l tau k)      = TakeC (require l) tau k
-    go (TakesC l tau i k)   = TakesC (require l) tau i k
-    go (EmitC l e k)        = EmitC (require l) e k
-    go (EmitsC l i e k)     = EmitsC (require l) i e k
-    go (IfC l v e th el k)  = IfC (require l) v e th el k
-    go (ParC tau l r)       = ParC tau l (requireLabel r)
-    go (BindC l tau v e k)  = BindC (require l) tau v e k
-    go (DoneC l)            = DoneC (require l)
-    go (GotoC l)            = GotoC l
+    compLabel (BindC l _ _ _ _) = useLabel l
+    compLabel (DoneC l)         = useLabel l
+    compLabel (GotoC l)         = useLabel l
 
 -- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
@@ -481,9 +451,14 @@ genLabel :: String -> Cg Label
 genLabel s =
     gensym s
 
-useLabel :: Label -> Cg ()
-useLabel lbl =
+useLabel :: Label -> Cg Label
+useLabel lbl = do
     modify $ \s -> s { labels = labels s |> lbl }
+    return lbl
+
+isLabelUsed :: Label -> Cg Bool
+isLabelUsed lbl =
+    gets (elem lbl . labels)
 
 traceNest :: Int -> Cg a -> Cg a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
