@@ -890,10 +890,12 @@ instance Subst Type TyVar Type where
         ArrT iota (subst theta phi tau) l
 
     subst theta phi (ST alphas omega tau1 tau2 tau3 l) =
-        ST alphas' (subst theta phi omega) (subst theta' phi' tau1)
-               (subst theta' phi' tau2)  (subst theta' phi' tau3) l
+        ST alphas' (s omega) (s tau1) (s tau2) (s tau3) l
       where
         (alphas', theta', phi') = freshen alphas theta phi
+
+        s :: Subst Type TyVar a => a -> a
+        s = subst theta' phi'
 
     subst theta phi (RefT tau l) =
         RefT (subst theta phi tau) l
