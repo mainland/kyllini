@@ -35,6 +35,7 @@ import KZC.Error
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
+import KZC.Summary
 
 cUR_KONT :: C.Id
 cUR_KONT = C.Id "curk" noLoc
@@ -126,32 +127,35 @@ cgDecls (decl:decls) k =
     cgDecl decl $ cgDecls decls k
 
 cgDecl :: Decl -> Cg a -> Cg a
-cgDecl (LetD v tau e _) k =
+cgDecl decl@(LetD v tau e _) k = do
     inSTScope tau $ do
-    ce <- if isComp tau then return (CDelay (liftM CComp $ collectComp $ cgExp e >>= unCComp)) else cgExp e
-    cv <- cval v ce tau
+    cv <- withSummaryContext decl $ do
+          ce <- if isComp tau then return (CDelay (liftM CComp $ collectComp $ cgExp e >>= unCComp)) else cgExp e
+          cval v ce tau
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
     k
 
-cgDecl (LetFunD f iotas vbs tau_ret e l) k =
-    extendVars [(f, tau)] $ do
+cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     cf <- cvar f
+    extendVars [(f, tau)] $ do
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
-    citems <- inNewBlock_ $
-              extendIVars (iotas `zip` repeat IotaK) $
-              extendVars vbs $ do
-              inSTScope tau $ do
-              ciotas <- mapM cgIVarParam iotas
-              cvbs   <- mapM cgParam vbs
-              extendIVarCExps (iotas `zip` ciotas) $ do
-              extendVarCExps (map fst vbs `zip` cvbs) $ do
-              ce <- cgExp e
-              appendStm [cstm|return $ce;|]
-    cparams1 <- mapM cgIVar iotas
-    cparams2 <- mapM cgVarBind vbs
-    ctau_ret <- cgType tau_ret
-    appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+    withSummaryContext decl $ do
+        inSTScope tau_ret $ do
+        extendIVars (iotas `zip` repeat IotaK) $ do
+        extendVars vbs $ do
+        citems <- inNewBlock_ $
+                  inSTScope tau $ do
+                  ciotas <- mapM cgIVarParam iotas
+                  cvbs   <- mapM cgParam vbs
+                  extendIVarCExps (iotas `zip` ciotas) $ do
+                  extendVarCExps (map fst vbs `zip` cvbs) $ do
+                  ce <- cgExp e
+                  appendStm [cstm|return $ce;|]
+        cparams1 <- mapM cgIVar iotas
+        cparams2 <- mapM cgVarBind vbs
+        ctau_ret <- cgType tau_ret
+        appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
     k
   where
     tau :: Type
@@ -171,31 +175,35 @@ cgDecl (LetFunD f iotas vbs tau_ret e l) k =
         cv <- cvar v
         return $ CExp [cexp|$id:cv|]
 
-cgDecl (LetExtFunD f iotas vbs tau_ret l) k =
+cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
-    let cf = C.Id (namedString f) l
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
-    cparams1 <- mapM cgIVar iotas
-    cparams2 <- mapM cgVarBind vbs
-    ctau_ret <- cgType tau_ret
-    appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+    withSummaryContext decl $ do
+        cparams1 <- mapM cgIVar iotas
+        cparams2 <- mapM cgVarBind vbs
+        ctau_ret <- cgType tau_ret
+        appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-cgDecl (LetRefD v tau maybe_e _) k = do
-    cv       <- cvar v
-    ctau     <- cgType tau
-    maybe_ce <- case maybe_e of
-                  Nothing -> return Nothing
-                  Just e -> Just <$> cgExp e
-    appendDecl [cdecl|$ty:ctau $id:cv;|]
+    cf :: C.Id
+    cf = C.Id (namedString f) l
+
+cgDecl decl@(LetRefD v tau maybe_e _) k = do
+    cv <- cvar v
+    withSummaryContext decl $ do
+        ctau     <- cgType tau
+        maybe_ce <- case maybe_e of
+                      Nothing -> return Nothing
+                      Just e -> Just <$> cgExp e
+        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        case maybe_ce of
+          Nothing -> return ()
+          Just ce -> appendStm [cstm|$id:cv = $ce;|]
     extendVars [(v, refT tau)] $ do
     extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-    case maybe_ce of
-      Nothing -> return ()
-      Just ce -> appendStm [cstm|$id:cv = $ce;|]
     k
 
 cgDecl decl _ =
