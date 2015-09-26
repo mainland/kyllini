@@ -130,17 +130,28 @@ cgDecls [] k =
 cgDecls (decl:decls) k =
     cgDecl decl $ cgDecls decls k
 
+-- | Compile an expression that is going to be bound. The expression could be
+-- bound either to a variable via a let binding or to an argument via a function
+-- call. A computation must be delayed until its use, when we will know how to
+-- hook it up so it can take and emit.
+cgBoundExp :: Type -> Exp -> Cg CExp
+cgBoundExp tau e =
+    if isComp tau
+    then return ce_delayed
+    else inSTScope tau $ cgExp e
+  where
+    ce_delayed :: CExp
+    ce_delayed = CDelay [] [] $
+        liftM CComp $
+        collectComp $
+        withSummaryContext e $
+        inSTScope tau $ do
+        cgExp e >>= unCComp
+
 cgDecl :: forall a . Decl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
     cv <- withSummaryContext decl $ do
-          let ce_comp = CDelay [] [] $
-                        liftM CComp $
-                        collectComp $
-                        inSTScope tau $
-                        cgExp e >>= unCComp
-          ce <- if isComp tau
-                then return ce_comp
-                else inSTScope tau $ cgExp e
+          ce <- cgBoundExp tau e
           cval v ce tau
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
@@ -362,11 +373,36 @@ cgExp e@(IfE e1 e2 e3 _) = do
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
 
-cgExp (CallE f iotas es _) = do
-    cf     <- lookupVarCExp f
-    ciotas <- mapM cgIota iotas
-    ces    <- mapM cgExp es
-    return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+cgExp e0@(CallE f iotas es _) = do
+    FunT _ _ tau _ <- lookupVar f
+    if isPureish tau
+      then cgPureCall
+      else cgImpureCall
+  where
+    cgPureCall :: Cg CExp
+    cgPureCall = do
+        traceCg $ text "pure call" <+> ppr e0
+        cf     <- lookupVarCExp f
+        ciotas <- mapM cgIota iotas
+        ces    <- mapM cgExp es
+        return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+
+    cgImpureCall :: Cg CExp
+    cgImpureCall = do
+        traceCg $ text "impure call" <+> ppr e0
+        (ivs, vbs, m) <- lookupVarCExp f >>= unCDelay
+        ciotas        <- mapM cgIota iotas
+        ces           <- mapM cgArg es
+        extendIVars (ivs `zip` repeat IotaK) $ do
+        extendVars  vbs $ do
+        extendIVarCExps (ivs `zip` ciotas) $ do
+        extendVarCExps  (map fst vbs `zip` ces) $ do
+        m
+
+    cgArg :: Exp -> Cg CExp
+    cgArg e = do
+        tau <- inferExp e
+        cgBoundExp tau e
 
 cgExp (DerefE e _) = do
     ce <- cgExp e
@@ -616,6 +652,13 @@ unCComp (CDelay {}) =
 
 unCComp ce =
     return $ return ce
+
+unCDelay :: CExp -> Cg ([IVar], [(Var, Type)], Cg CExp)
+unCDelay (CDelay ivs vbs m) =
+    return (ivs, vbs, m)
+
+unCDelay _ =
+    panicdoc $ text "unCDelay: not a CDelay"
 
 cgType :: Type -> Cg C.Type
 cgType (UnitT {}) =
