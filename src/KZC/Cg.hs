@@ -463,6 +463,11 @@ cgExp (IdxE e1 e2 Nothing _) = do
     ce2 <- cgExp e2
     return $ CExp [cexp|$ce1[$ce2]|]
 
+cgExp (IdxE e1 e2 (Just i) _) = do
+    ce1 <- cgExp e1
+    ce2 <- cgExp e2
+    return $ CExp [cexp|&$ce1[$ce2 + $int:i]|]
+
 cgExp (StructE s flds l) = do
     cv <- cgTemp "struct" (StructT s l) Nothing
     mapM_ (cgField cv) flds
