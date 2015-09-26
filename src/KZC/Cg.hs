@@ -236,9 +236,17 @@ cgDecl decl@(LetRefD v tau maybe_e _) k = do
     extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
     k
 
-cgDecl decl _ =
-    faildoc $ nest 2 $
-    text "cgDecl: cannot compile:" <+/> ppr decl
+cgDecl decl@(LetStructD s flds l) k = do
+    withSummaryContext decl $ do
+        cflds <- mapM cgField flds
+        appendTopDecl [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
+    extendStructs [StructDef s flds l] k
+  where
+    cgField :: (Field, Type) -> Cg C.FieldGroup
+    cgField (fld, tau) = do
+        let cfld =  zencode (namedString fld)
+        ctau     <- cgType tau
+        return [csdecl|$ty:ctau $id:cfld;|]
 
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) =
