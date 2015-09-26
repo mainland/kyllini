@@ -894,7 +894,7 @@ cgCComp take emit done ccomp =
         cgFree k
 
     cgComp (DoneC {}) =
-        done CVoid
+        return ()
 
     cgComp (LabelC l k) = cgWithLabel l $ do
         cgFree k
