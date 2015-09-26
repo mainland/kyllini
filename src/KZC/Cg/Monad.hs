@@ -112,6 +112,12 @@ data Code = Code
     }
   deriving (Eq, Ord, Show)
 
+instance Pretty Code where
+    ppr c = stack $
+            (map ppr . toList . defs)  c ++
+            (map ppr . toList . decls) c ++
+            (map ppr . toList . stmts) c
+
 instance Monoid Code where
     mempty = Code { defs     = mempty
                   , decls    = mempty
