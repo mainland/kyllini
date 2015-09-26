@@ -511,7 +511,8 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- checkBoolVal e1
+    mce1 <- collectValCtx boolT $
+            checkBoolVal e1
     mce2 <- collectValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
@@ -521,7 +522,8 @@ tcExp (Z.WhileE e1 e2 l) exp_ty = do
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- checkBoolVal e1
+    mce1 <- collectValCtx boolT $
+            checkBoolVal e1
     mce2 <- collectValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
