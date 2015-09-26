@@ -646,8 +646,8 @@ cgType (FloatT W64 _) =
 cgType (StringT {}) =
     return [cty|char*|]
 
-cgType (StructT s _) =
-    return [cty|typename $id:(namedString s ++ "_struct_t")|]
+cgType (StructT s l) =
+    return [cty|typename $id:(cstruct s l)|]
 
 cgType (ArrT _ tau _) = do
     ctau <- cgType tau
@@ -703,8 +703,14 @@ cgCTemp s ctau maybe_cinit = do
       Just cinit -> appendDecl [cdecl|$ty:ctau $id:cv = $init:cinit;|]
     return $ CExp [cexp|$id:cv|]
 
+-- | Return the C identifier corresponding to a value that is an instance of
+-- 'Named'.
 cvar :: Named a => a -> Cg C.Id
 cvar x = gensym (zencode (namedString x))
+
+-- | Return the C identifier corresponding to a struct.
+cstruct :: Struct -> SrcLoc -> C.Id
+cstruct s l = C.Id (namedString s ++ "_t") l
 
 -- | Z-encode a string. This converts a string with special characters into a
 -- form that is guaranteed to be usable as an identifier by a C compiler or
