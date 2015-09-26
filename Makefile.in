@@ -218,6 +218,14 @@ test-tc : kzc
 		./kzc -I$(TESTDIR)/lib -C --dlint $$TEST; \
 	done
 
+.PHONY : test-compiler
+test-compiler : kzc
+	set -e; \
+	for TEST in $(TESTS); do \
+		echo $$TEST; \
+		./kzc -I$(TESTDIR)/lib --dlint $$TEST -o test.c; \
+	done
+
 %.c : %.zr kzc
 	./kzc -I$(TESTDIR)/lib --ddump-core --dtrace-lint --dtrace-cg $<
 
