@@ -541,9 +541,11 @@ cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
     emitsC iota ce
 
 cgExp (RepeatE _ e _) = do
-    ccomp <- cgExp e >>= unCComp
-    l     <- ccompLabel ccomp
-    return $ CComp $ ccomp >> gotoC l
+    ccomp  <- cgExp e >>= unCComp
+    -- Ensure we have a starting label; @ccomp@ could be a @Pure@ action!
+    startl <- genLabel "repeatk"
+    useLabel startl
+    return $ CComp $ labelC startl >> ccomp >> gotoC startl
 
 cgExp (ParE _ tau e1 e2 _) = do
     comp1 <- cgExp e1 >>= unCComp
