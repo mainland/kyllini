@@ -271,7 +271,7 @@ cgExp e@(ConstE c _) =
 cgExp (VarE v _) =
     lookupVarCExp v
 
-cgExp e0@(UnopE op e _) = do
+cgExp (UnopE op e _) = do
     ce <- cgExp e
     cgUnop ce op
   where
@@ -289,13 +289,9 @@ cgExp e0@(UnopE op e _) = do
         ctau <- cgType tau
         return $ CExp [cexp|($ty:ctau) $ce|]
 
-    cgUnop (CArray i _) Len =
-        return i
-
-    cgUnop ce Len =
-        faildoc $ nest 2 $
-        text "cgUnop: cannot compile:" <+/> ppr e0 </>
-        text "sub-expression compiled to:" <+> ppr ce
+    cgUnop _ Len = do
+        ArrT iota _ _ <- inferExp e
+        cgIota iota
 
 cgExp (BinopE op e1 e2 _) = do
     ce1 <- cgExp e1
