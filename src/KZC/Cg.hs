@@ -698,40 +698,48 @@ cgCTemp s ctau maybe_cinit = do
     return $ CExp [cexp|$id:cv|]
 
 cvar :: Named a => a -> Cg C.Id
-cvar x = gensym (concatMap zencode (namedString x))
+cvar x = gensym (zencode (namedString x))
+
+-- | Z-encode a string. This converts a string with special characters into a
+-- form that is guaranteed to be usable as an identifier by a C compiler or
+-- assembler. See
+-- <https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames
+-- Z-Encoding>
+zencode :: String -> String
+zencode s = concatMap zenc s
   where
     -- | Implementation of Z-encoding. See:
     -- https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames
-    zencode :: Char -> [Char]
-    zencode c | 'a' <= c && c <= 'y' = [c]
+    zenc :: Char -> [Char]
+    zenc c | 'a' <= c && c <= 'y' = [c]
               | 'A' <= c && c <= 'Y' = [c]
               | '0' <= c && c <= '9' = [c]
-    zencode 'z'  = "zz"
-    zencode 'Z'  = "ZZ"
-    zencode '('  = "ZL"
-    zencode ')'  = "ZR"
-    zencode '['  = "ZM"
-    zencode ']'  = "ZN"
-    zencode ':'  = "ZC"
-    zencode '&'  = "za"
-    zencode '|'  = "zb"
-    zencode '^'  = "zc"
-    zencode '$'  = "zd"
-    zencode '='  = "ze"
-    zencode '>'  = "zg"
-    zencode '#'  = "zh"
-    zencode '.'  = "zi"
-    zencode '<'  = "zl"
-    zencode '-'  = "zm"
-    zencode '!'  = "zn"
-    zencode '+'  = "zp"
-    zencode '\'' = "zq"
-    zencode '\\' = "zr"
-    zencode '/'  = "zs"
-    zencode '*'  = "zt"
-    zencode '_'  = "zu"
-    zencode '%'  = "zv"
-    zencode c    = "z" ++ hexOf c ++ "U"
+    zenc 'z'  = "zz"
+    zenc 'Z'  = "ZZ"
+    zenc '('  = "ZL"
+    zenc ')'  = "ZR"
+    zenc '['  = "ZM"
+    zenc ']'  = "ZN"
+    zenc ':'  = "ZC"
+    zenc '&'  = "za"
+    zenc '|'  = "zb"
+    zenc '^'  = "zc"
+    zenc '$'  = "zd"
+    zenc '='  = "ze"
+    zenc '>'  = "zg"
+    zenc '#'  = "zh"
+    zenc '.'  = "zi"
+    zenc '<'  = "zl"
+    zenc '-'  = "zm"
+    zenc '!'  = "zn"
+    zenc '+'  = "zp"
+    zenc '\'' = "zq"
+    zenc '\\' = "zr"
+    zenc '/'  = "zs"
+    zenc '*'  = "zt"
+    zenc '_'  = "zu"
+    zenc '%'  = "zv"
+    zenc c    = "z" ++ hexOf c ++ "U"
 
     hexOf :: Char -> String
     hexOf c =
