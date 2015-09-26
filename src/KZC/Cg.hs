@@ -792,7 +792,7 @@ cgWithLabel lbl k = do
     if required
       then do (stms, x) <- collectStms k
               case stms of
-                []     -> panicdoc $ text "cgWithLabel: no statements!"
+                []     -> appendStm [cstm|$id:lblMacro:;|]
                 [s]    -> appendStm [cstm|$id:lblMacro: $stm:s|]
                 (s:ss) -> appendStms [cstms|$id:lblMacro: $stm:s $stms:ss|]
               return x
