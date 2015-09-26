@@ -138,7 +138,9 @@ data CExp = CVoid
                              -- length, and the second is its contents.
           | CPtr CExp        -- ^ A pointer.
           | CComp CComp      -- ^ A computation.
-          | CDelay (Cg CExp) -- ^ A delayed CExp
+          | CDelay [IVar] [(Var, Type)] (Cg CExp)
+            -- ^ A delayed CExp. This represents a computation that may take
+            -- and/or emit.
 
 instance Num CExp where
     CInt x   + CInt y   = CInt (x + y)

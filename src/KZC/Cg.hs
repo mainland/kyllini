@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Cg
@@ -17,7 +18,8 @@ module KZC.Cg (
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM_,
-                      liftM)
+                      liftM,
+                      when)
 import Control.Monad.Free (Free(..))
 import Data.Char (ord)
 import Data.Foldable (toList)
@@ -128,10 +130,10 @@ cgDecls [] k =
 cgDecls (decl:decls) k =
     cgDecl decl $ cgDecls decls k
 
-cgDecl :: Decl -> Cg a -> Cg a
+cgDecl :: forall a . Decl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
     cv <- withSummaryContext decl $ do
-          let ce_comp = CDelay $
+          let ce_comp = CDelay [] [] $
                         liftM CComp $
                         collectComp $
                         inSTScope tau $
@@ -145,50 +147,70 @@ cgDecl decl@(LetD v tau e _) k = do
     k
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
-    cf <- cvar f
-    extendVars [(f, tau)] $ do
-    extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
-    withSummaryContext decl $ do
-        inSTScope tau_ret $ do
-        extendIVars (iotas `zip` repeat IotaK) $ do
-        extendVars vbs $ do
-        citems <- inNewBlock_ $
-                  inSTScope tau $ do
-                  ciotas <- mapM cgIVarParam iotas
-                  cvbs   <- mapM cgParam vbs
-                  extendIVarCExps (iotas `zip` ciotas) $ do
-                  extendVarCExps (map fst vbs `zip` cvbs) $ do
-                  ce <- cgExp e
-                  appendStm [cstm|return $ce;|]
-        cparams1 <- mapM cgIVar iotas
-        cparams2 <- mapM cgVarBind vbs
-        ctau_ret <- cgType tau_ret
-        appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
-    k
+    if isPureish tau_ret
+      then cgPureishLetFun
+      else cgImpureLetFun
   where
+    -- A function that doesn't take or emit can be compiled directly to a C
+    -- function. The body of the function may be a @CComp@ since it could still
+    -- use references, so we must compile it using 'cgPureishCComp'.
+    cgPureishLetFun :: Cg a
+    cgPureishLetFun = do
+        cf <- cvar f
+        extendVars [(f, tau)] $ do
+        extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
+        withSummaryContext decl $ do
+            extendIVars (iotas `zip` repeat IotaK) $ do
+            extendVars vbs $ do
+            (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
+            (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
+            citems <- inNewBlock_ $ do
+                      extendIVarCExps (iotas `zip` ciotas) $ do
+                      extendVarCExps  (map fst vbs `zip` cvbs) $ do
+                      inSTScope tau_ret $ do
+                      cres <- cgTemp "result" tau_res Nothing
+                      cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
+                      when (not (isUnitT tau_res)) $
+                          appendStm [cstm|return $cres;|]
+            ctau_ret <- cgType tau_ret
+            appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+        k
+      where
+        tau_res :: Type
+        ST _ (C tau_res) _ _ _ _ = tau_ret
+
+    -- We can't yet generate code for a function that uses take and/or emit
+    -- because we don't know where it will be taking or emitting when it is
+    -- called. Therefore we wrap the body of the function in a 'CDelay'
+    -- constructor which causes compilation to be delayed until the function is
+    -- actually called. This effectively inlines the function at every call
+    -- site, but we can't do much better because 1) we don't have a good way to
+    -- abstract over queues, and, more importantly, 2) we compile computations
+    -- to a state machine, so we need all code to be in the same block so we can
+    -- freely jump between states.
+    cgImpureLetFun :: Cg a
+    cgImpureLetFun = do
+        extendVars [(f, tau)] $ do
+        extendVarCExps [(f, ce_delayed)] $ do
+        k
+      where
+        ce_delayed :: CExp
+        ce_delayed = CDelay iotas vbs $
+            liftM CComp $
+            withSummaryContext decl $
+            inSTScope tau_ret $
+            collectComp $
+            cgExp e >>= unCComp
+
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-    cgIVarParam :: IVar -> Cg CExp
-    cgIVarParam iv = do
-        civ <- cvar iv
-        return $ CExp [cexp|$id:civ|]
-
-    cgParam :: (Var, Type) -> Cg CExp
-    cgParam (v, RefT {}) = do
-        cv <- cvar v
-        return $ CPtr (CExp [cexp|$id:cv|])
-
-    cgParam (v, _) = do
-        cv <- cvar v
-        return $ CExp [cexp|$id:cv|]
 
 cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
     withSummaryContext decl $ do
-        cparams1 <- mapM cgIVar iotas
-        cparams2 <- mapM cgVarBind vbs
+        (_, cparams1) <- unzip <$> mapM cgIVar iotas
+        (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         ctau_ret <- cgType tau_ret
         appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
@@ -518,16 +540,16 @@ collectCompBind m = do
     (compf, code) <- collect m
     return $ \ce -> codeC l code >> compf ce
 
-cgIVar :: IVar -> Cg C.Param
+cgIVar :: IVar -> Cg (CExp, C.Param)
 cgIVar iv = do
     civ <- cvar iv
-    return $ [cparam|int $id:civ|]
+    return (CExp [cexp|$id:civ|], [cparam|int $id:civ|])
 
-cgVarBind :: (Var, Type) -> Cg C.Param
+cgVarBind :: (Var, Type) -> Cg (CExp, C.Param)
 cgVarBind (v, tau) = do
     ctau <- cgType tau
     cv   <- cvar v
-    return $ [cparam|$ty:ctau $id:cv|]
+    return (CExp [cexp|$id:cv|], [cparam|$ty:ctau $id:cv|])
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
@@ -547,8 +569,11 @@ unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =
     return comp
 
-unCComp (CDelay m) =
+unCComp (CDelay [] [] m) =
     m >>= unCComp
+
+unCComp (CDelay {}) =
+    panicdoc $ text "unCComp: CDelay with arguments"
 
 unCComp ce =
     return $ return ce
@@ -775,6 +800,24 @@ type EmitK = Label -> Iota -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
 -- | A 'DoneK' continuation takes a 'CExp' representing the returned value and
 -- generates the appropriate code.
 type DoneK = CExp -> Cg ()
+
+-- | Compile a 'CComp' that doesn't take or emit, and generate code that places
+-- the result of the computation @ccomp@, which has 'Type' @tau_res@, in @cres'.
+cgPureishCComp :: Type -> CExp -> CComp -> Cg ()
+cgPureishCComp tau_res cres ccomp =
+    cgCComp take emit done ccomp
+  where
+    take :: TakeK
+    take _ _ _ _ _ =
+        panicdoc $ text "Pure computation tried to take!"
+
+    emit :: EmitK
+    emit _ _ _ _ _ =
+        panicdoc $ text "Pure computation tried to emit!"
+
+    done :: DoneK
+    done ce =
+        cassign tau_res cres ce
 
 cgCComp :: TakeK
         -> EmitK
