@@ -29,7 +29,7 @@ options =
         , Option ['C'] []             (NoArg (setDynFlag StopAfterCheck)) "stop after type checking"
         , Option ['I'] []             (ReqArg includePathOpt "DIR")       "include DIR"
         , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")   "define macro"
-        , Option ['o'] ["output"]     (OptArg outOpt "FILE")              "output FILE"
+        , Option ['o'] ["output"]     (ReqArg outOpt "FILE")              "output FILE"
         ]
 
     maybeSetVerbLevel :: Maybe String -> Flags -> Flags
@@ -41,8 +41,8 @@ options =
           [(n, "")]  -> fs { verbLevel = n }
           _          -> error "argument to --verbose must be an integer"
 
-    outOpt :: Maybe String -> Flags -> Flags
-    outOpt path fs = fs { output = path }
+    outOpt :: String -> Flags -> Flags
+    outOpt path fs = fs { output = Just path }
 
     includePathOpt :: String -> Flags -> Flags
     includePathOpt path fs = fs { includePaths = includePaths fs ++ [path] }
