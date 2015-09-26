@@ -463,6 +463,17 @@ cgExp (IdxE e1 e2 Nothing _) = do
     ce2 <- cgExp e2
     return $ CExp [cexp|$ce1[$ce2]|]
 
+cgExp (StructE s flds l) = do
+    cv <- cgTemp "struct" (StructT s l) Nothing
+    mapM_ (cgField cv) flds
+    return cv
+  where
+    cgField :: CExp -> (Field, Exp) -> Cg ()
+    cgField cv (fld, e) = do
+        let cfld =  zencode (namedString fld)
+        ce       <- cgExp e
+        appendStm [cstm|$cv.$id:cfld = $ce;|]
+
 cgExp (PrintE nl es _) = do
     mapM_ cgPrint es
     when nl $
