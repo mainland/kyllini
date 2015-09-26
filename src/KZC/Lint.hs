@@ -265,7 +265,7 @@ inferExp (LetE decl body _) =
     checkDecl decl $ inferExp body
 
 inferExp (CallE f ies es _) = do
-    (ivs, taus, tau_ret) <- inferExp f >>= checkFunT
+    (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
     checkNumIotas (length ies) (length ivs)
     checkNumArgs  (length es)  (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do

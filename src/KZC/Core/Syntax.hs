@@ -132,7 +132,7 @@ data Exp = ConstE Const !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
          | LetE Decl Exp !SrcLoc
          -- Functions
-         | CallE Exp [Iota] [Exp] !SrcLoc
+         | CallE Var [Iota] [Exp] !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
@@ -840,7 +840,7 @@ instance Fvs Exp Var where
     fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
     fvs (IfE e1 e2 e3 _)            = fvs e1 <> fvs e2 <> fvs e3
     fvs (LetE decl body _)          = fvs decl <> (fvs body <\\> binders decl)
-    fvs (CallE e _ es _)            = fvs e <> fvs es
+    fvs (CallE f _ es _)            = singleton f <> fvs es
     fvs (DerefE e _)                = fvs e
     fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2

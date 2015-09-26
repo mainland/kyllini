@@ -338,7 +338,7 @@ cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
 
 cgExp (CallE f iotas es _) = do
-    cf     <- cgExp f
+    cf     <- lookupVarCExp f
     ciotas <- mapM cgIota iotas
     ces    <- mapM cgExp es
     return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]

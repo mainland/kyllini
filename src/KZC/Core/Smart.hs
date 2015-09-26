@@ -45,7 +45,7 @@ e1 .<=. e2 = BinopE Le e1 e2 l
     l :: SrcLoc
     l = e1 `srcspan` e2
 
-callE :: Exp -> [Exp] -> Exp
+callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
 derefE :: Exp -> Exp

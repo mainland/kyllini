@@ -454,7 +454,7 @@ tcExp (Z.CallE f es l) exp_ty = do
     instType tau_ret' exp_ty
     mces <- zipWithM checkArg es taus
     return $ co2 $ co1 $ do
-        cf  <- C.varE <$> trans f
+        cf  <- trans f
         ces <- sequence mces
         return $ C.CallE cf [] ces l
   where
@@ -1298,7 +1298,7 @@ instantiate tau0 =
                 return $ C.CallE cf ciotas ces l
         return (tau, co)
       where
-        checkFunE :: C.Exp -> Ti (C.Exp, [C.Exp], SrcLoc)
+        checkFunE :: C.Exp -> Ti (C.Var, [C.Exp], SrcLoc)
         checkFunE (C.CallE cf [] ces l) =
             return (cf, ces, l)
 
@@ -1550,8 +1550,8 @@ checkMapFunT f tau = do
     unifyTypes s a
     unifyTypes d b
     let co mce = co2 $ co1 $ do
+        cf <- trans f
         ce <- mce
-        cf <- C.varE <$> trans f
         return $ C.callE cf [ce]
     return (a, b, co)
   where
