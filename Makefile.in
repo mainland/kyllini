@@ -219,7 +219,7 @@ test-tc : kzc
 	done
 
 %.c : %.zr kzc
-	./kzc --ddump-core --dtrace-lint --dtrace-cg $<
+	./kzc -I$(TESTDIR)/lib --ddump-core --dtrace-lint --dtrace-cg $<
 
 % : %.c
 	gcc -I. $^ -o $@ -lm
