@@ -474,6 +474,13 @@ cgExp (StructE s flds l) = do
         ce       <- cgExp e
         appendStm [cstm|$cv.$id:cfld = $ce;|]
 
+cgExp (ProjE e fld l) = do
+    ce <- cgExp e
+    return $ CExp [cexp|$ce.$id:cfld|]
+  where
+    cfld :: C.Id
+    cfld = C.Id (zencode (namedString fld)) l
+
 cgExp (PrintE nl es _) = do
     mapM_ cgPrint es
     when nl $
@@ -551,10 +558,6 @@ cgExp (ParE _ tau e1 e2 _) = do
     comp1 <- cgExp e1 >>= unCComp
     comp2 <- cgExp e2 >>= unCComp
     return $ CComp $ parC tau comp1 comp2
-
-cgExp e =
-    faildoc $ nest 2 $
-    text "cgExp: cannot compile:" <+/> ppr e
 
 isConstE :: Exp -> Bool
 isConstE (ConstE {}) = True
