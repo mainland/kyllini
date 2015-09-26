@@ -463,6 +463,33 @@ cgExp (IdxE e1 e2 Nothing _) = do
     ce2 <- cgExp e2
     return $ CExp [cexp|$ce1[$ce2]|]
 
+cgExp (PrintE nl es _) = do
+    mapM_ cgPrint es
+    when nl $
+        appendStm [cstm|printf("\n");|]
+    return CVoid
+  where
+    cgPrint :: Exp -> Cg ()
+    cgPrint e = do
+        tau <- inferExp e
+        ce  <- cgExp e
+        go tau ce
+      where
+        go :: Type -> CExp -> Cg ()
+        go (UnitT {})   _  = appendStm [cstm|printf("()");|]
+        go (BoolT {})   ce = appendStm [cstm|printf("%s",  $ce ? "true" : "false");|]
+        go (BitT  {})   ce = appendStm [cstm|printf("%s",  $ce ? "1" : "0");|]
+        go (IntT W64 _) ce = appendStm [cstm|printf("%ld", $ce);|]
+        go (IntT {})    ce = appendStm [cstm|printf("%d",  $ce);|]
+        go (FloatT {})  ce = appendStm [cstm|printf("%f",  $ce);|]
+        go (StringT {}) ce = appendStm [cstm|printf("%s",  $ce);|]
+        go (ArrT {})    _  = appendStm [cstm|printf("array");|]
+        go tau          _  = faildoc $ text "Cannot print type:" <+> ppr tau
+
+cgExp (ErrorE _ s _) = do
+    appendStm [cstm|kzc_error($string:s);|]
+    return CVoid
+
 cgExp (ReturnE _ e _) = do
     ce <- cgExp e
     return $ CComp $ return ce
