@@ -521,15 +521,13 @@ cgExp (TakesE i tau _) = do
     return $ CComp $ takesC l i tau
 
 cgExp (EmitE e _) = liftM CComp $ collectComp $ do
-    l  <- genLabel "emitk"
     ce <- cgExp e
-    return $ emitC l ce
+    emitC ce
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
-    l         <- genLabel "emitsk"
     (iota, _) <- inferExp e >>= splitArrT
     ce        <- cgExp e
-    return $ emitsC l iota ce
+    emitsC iota ce
 
 cgExp (RepeatE _ e _) = do
     ccomp <- cgExp e >>= unCComp
@@ -888,6 +886,9 @@ cgCComp take emit done ccomp =
 
     cgComp (DoneC {}) =
         done CVoid
+
+    cgComp (LabelC l k) = cgWithLabel l $ do
+        cgFree k
 
     cgComp (GotoC l) =
         appendStm [cstm|JUMP($id:l);|]
