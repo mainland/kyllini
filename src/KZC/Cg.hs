@@ -257,8 +257,7 @@ cgExp e@(ConstE c _) =
     cgConst (ArrayC cs) = do
         tau    <- inferExp e
         cinits <- mapM cgConstInit cs
-        carr   <- cgTemp "const_arr" tau (Just [cinit|{ $inits:cinits }|])
-        return $ CArray (CInt (fromIntegral (length cs))) carr
+        cgTemp "const_arr" tau (Just [cinit|{ $inits:cinits }|])
 
     cgConstInit :: Const -> Cg C.Initializer
     cgConstInit c = do
@@ -591,16 +590,6 @@ cgVarBind (v, tau) = do
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
-
-{-
-unCArray :: CExp -> Cg (CExp, CExp)
-unCArray (CArray ce1 ce2) =
-    return (ce1, ce2)
-
-unCArray ce =
-    panicdoc $
-    text "unCArray: not a compiled array:" <+> ppr ce
--}
 
 unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =

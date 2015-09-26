@@ -135,8 +135,6 @@ data CExp = CVoid
           | CInt Integer     -- ^ Integer constant
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
-          | CArray CExp CExp -- ^ Array. The first argument is the array's
-                             -- length, and the second is its contents.
           | CPtr CExp        -- ^ A pointer.
           | CComp CComp      -- ^ A computation.
           | CDelay [IVar] [(Var, Type)] (Cg CExp)
@@ -180,7 +178,6 @@ instance ToExp CExp where
     toExp (CInt i)          = \_ -> [cexp|$int:i|]
     toExp (CFloat r)        = \_ -> [cexp|$double:r|]
     toExp (CExp e)          = \_ -> e
-    toExp (CArray _ e)      = toExp e
     toExp (CPtr e)          = toExp e
     toExp (CComp (Pure ce)) = toExp ce
     toExp (CComp {})        = error "toExp: cannot convert CComp to a C expression"
@@ -192,7 +189,6 @@ instance Pretty CExp where
     ppr (CFloat f)   = ppr f
     ppr (CExp e)     = ppr e
     ppr (CPtr e)     = ppr [cexp|*$e|]
-    ppr (CArray _ e) = ppr (toExp e noLoc)
     ppr (CComp {})   = text "<computation>"
     ppr (CDelay {})  = text "<delayed compiled expression>"
 
