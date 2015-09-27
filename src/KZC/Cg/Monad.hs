@@ -291,18 +291,20 @@ ccompLabel (Free comp) = compLabel comp
 type Cg a = Tc CgEnv CgState a
 
 data CgEnv = CgEnv
-    { errctx    :: ![ErrorContext]
-    , nestdepth :: {-# UNPACK #-} !Int
-    , varCExps  :: Map Var CExp
-    , ivarCExps :: Map IVar CExp
+    { errctx     :: ![ErrorContext]
+    , nestdepth  :: {-# UNPACK #-} !Int
+    , varCExps   :: Map Var CExp
+    , ivarCExps  :: Map IVar CExp
+    , tyvarTypes :: Map TyVar Type
     }
 
 defaultCgEnv :: CgEnv
 defaultCgEnv = CgEnv
-    { errctx    = []
-    , nestdepth = 0
-    , varCExps  = mempty
-    , ivarCExps = mempty
+    { errctx     = []
+    , nestdepth  = 0
+    , varCExps   = mempty
+    , ivarCExps  = mempty
+    , tyvarTypes = mempty
     }
 
 data CgState = CgState
@@ -366,6 +368,16 @@ lookupIVarCExp v =
     lookupBy ivarCExps onerr v
   where
     onerr = faildoc $ text "Compiled variable" <+> ppr v <+> text "not in scope"
+
+extendTyVarTypes :: [(TyVar, Type)] -> Cg a -> Cg a
+extendTyVarTypes tvtaus m =
+    extend tyvarTypes (\env x -> env { tyvarTypes = x }) tvtaus m
+
+lookupTyVarType :: TyVar -> Cg Type
+lookupTyVarType alpha =
+    lookupBy tyvarTypes onerr alpha
+  where
+    onerr = faildoc $ text "Instantiated type variable" <+> ppr alpha <+> text "not in scope"
 
 tell :: ToCode a => a -> Cg ()
 tell c = modify $ \s -> s { code = code s <> toCode c }

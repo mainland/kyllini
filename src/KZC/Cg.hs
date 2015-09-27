@@ -414,12 +414,19 @@ cgExp e0@(CallE f iotas es _) = do
         extendVars  vbs $ do
         extendIVarCExps (ivs `zip` ciotas) $ do
         extendVarCExps  (map fst vbs `zip` ces) $ do
+        instantiateSTScope $ do
         m
 
     cgArg :: Exp -> Cg CExp
     cgArg e = do
         tau <- inferExp e
         cgBoundExp tau e
+
+    instantiateSTScope :: Cg a -> Cg a
+    instantiateSTScope m = do
+        FunT _ _ (ST _ _ s a b _) _ <- lookupVar f
+        ST _ _ s' a' b' _           <- inferExp e0
+        extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] m
 
 cgExp (DerefE e _) = do
     ce <- cgExp e
@@ -594,9 +601,19 @@ cgExp (BindE WildV e1 e2 _) = do
     comp2 <- collectComp (cgExp e2 >>= unCComp)
     return $ CComp $ comp1 >> comp2
 
+cgExp (TakeE (TyVarT alpha _) _) = do
+    l   <- genLabel "takek"
+    tau <- lookupTyVarType alpha
+    return $ CComp $ takeC l tau
+
 cgExp (TakeE tau _) = do
     l <- genLabel "takek"
     return $ CComp $ takeC l tau
+
+cgExp (TakesE i (TyVarT alpha _) _) = do
+    l   <- genLabel "takesk"
+    tau <- lookupTyVarType alpha
+    return $ CComp $ takesC l i tau
 
 cgExp (TakesE i tau _) = do
     l <- genLabel "takesk"
@@ -758,8 +775,8 @@ cgType (FunT ivs args ret _) = do
     retTy     <- cgType ret
     return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
 
-cgType (TyVarT {}) =
-    return [cty|void|]
+cgType (TyVarT alpha _) =
+    lookupTyVarType alpha >>= cgType
 
 cgParam :: Type -> Cg C.Param
 cgParam tau = do
