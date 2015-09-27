@@ -481,7 +481,7 @@ appendStms cstms = tell cstms
 gensym :: String -> Cg C.Id
 gensym s = do
     Uniq u <- newUnique
-    return $ C.Id (s ++ show u) noLoc
+    return $ C.Id (s ++ "__" ++ show u) noLoc
 
 genLabel :: String -> Cg Label
 genLabel s =
