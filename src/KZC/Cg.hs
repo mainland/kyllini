@@ -513,7 +513,7 @@ cgExp e@(ArrayE es _) | all isConstE es = do
     ces          <- mapM cgExp es
     let cinits   =  [[cinit|$ce|] | ce <- ces]
     appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length es)] = { $inits:cinits };|]
-    return $ CExp [cexp|$id:cv|]
+    return $ CExp [cexp|($ty:ctau*) $id:cv|]
 
 cgExp e@(ArrayE es _) = do
     ArrT _ tau _ <- inferExp e
