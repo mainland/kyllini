@@ -303,13 +303,30 @@ cgExp (UnopE op e _) = do
     cgUnop ce Neg =
         return $ CExp [cexp|-$ce|]
 
-    cgUnop ce (Cast tau) = do
-        ctau <- cgType tau
-        return $ CExp [cexp|($ty:ctau) $ce|]
+    cgUnop ce (Cast tau_to) = do
+        tau_from <- inferExp e
+        cgCast ce tau_from tau_to
 
     cgUnop _ Len = do
         ArrT iota _ _ <- inferExp e
         cgIota iota
+
+    cgCast :: CExp -> Type -> Type -> Cg CExp
+    cgCast ce (StructT s1 _) tau_to@(StructT s2 _) | isComplexStruct s1 && isComplexStruct s2 = do
+        ctemp <- cgTemp "cast_complex" tau_to Nothing
+        appendStm [cstm|$ctemp.re = $ce.re;|]
+        appendStm [cstm|$ctemp.im = $ce.im;|]
+        return ctemp
+
+    cgCast ce _ tau_to@(StructT s  _) | isComplexStruct s = do
+        ctemp <- cgTemp "cast_complex" tau_to Nothing
+        appendStm [cstm|$ctemp.re = $ce;|]
+        appendStm [cstm|$ctemp.im = $ce;|]
+        return ctemp
+
+    cgCast ce _ tau_to = do
+        ctau_to <- cgType tau_to
+        return $ CExp [cexp|($ty:ctau_to) $ce|]
 
 cgExp (BinopE op e1 e2 _) = do
     ce1 <- cgExp e1
