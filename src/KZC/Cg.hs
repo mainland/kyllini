@@ -436,9 +436,10 @@ cgExp (DerefE e _) = do
       _       -> return ce
 
 cgExp (AssignE e1 e2 _) = do
+    tau <- inferExp e1
     ce1 <- cgExp e1
     ce2 <- cgExp e2
-    appendStm [cstm|$ce1 = $ce2;|]
+    cgAssign tau ce1 ce2
     return CVoid
 
 cgExp e0@(WhileE e_test e_body _) = do
@@ -533,7 +534,7 @@ cgExp (IdxE e1 e2 Nothing _) = do
 cgExp (IdxE e1 e2 (Just i) _) = do
     ce1 <- cgExp e1
     ce2 <- cgExp e2
-    return $ CExp [cexp|&$ce1[$(ce2 + fromIntegral i)]|]
+    cgSlice ce1 ce2 i
 
 cgExp (StructE s flds l) = do
     cv <- cgTemp "struct" (StructT s l) Nothing
@@ -1051,12 +1052,20 @@ cgAssign (UnitT {}) _ _ =
 cgAssign _ _ CVoid =
     return ()
 
+cgAssign (RefT (ArrT _ tau _) _) (CSlice carr1 cidx1 len1) (CSlice carr2 cidx2 len2) | len1 == len2 = do
+    ctau <- cgType tau
+    appendStm [cstm|memcpy(&$carr1[$cidx1], &$carr2[$cidx2], $int:len1*sizeof($ty:ctau));|]
+
 cgAssign _ cv ce =
     appendStm [cstm|$cv = $ce;|]
 
 cgIdx :: CExp -> CExp -> Cg CExp
 cgIdx carr cidx =
     return $ CExp [cexp|$carr[$cidx]|]
+
+cgSlice :: CExp -> CExp -> Int -> Cg CExp
+cgSlice carr cidx len =
+    return $ CSlice carr cidx len
 
 cgAddrOf :: Type -> CExp -> Cg CExp
 cgAddrOf tau ce | isConstant ce = do

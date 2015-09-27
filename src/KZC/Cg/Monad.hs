@@ -141,6 +141,9 @@ data CExp = CVoid
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
           | CPtr CExp        -- ^ A pointer.
+          | CSlice CExp CExp Int
+            -- ^ An array slice. The data constructors arguments are the array,
+            -- the offset, and the length of the slice.
           | CComp CComp      -- ^ A computation.
           | CDelay [IVar] [(Var, Type)] (Cg CExp)
             -- ^ A delayed CExp. This represents a computation that may take
@@ -187,23 +190,25 @@ instance Fractional CExp where
     fromRational r = CFloat r
 
 instance ToExp CExp where
-    toExp CVoid             = error "toExp: void compiled expression"
-    toExp (CInt i)          = \_ -> [cexp|$int:i|]
-    toExp (CFloat r)        = \_ -> [cexp|$double:r|]
-    toExp (CExp e)          = \_ -> e
-    toExp (CPtr e)          = toExp e
-    toExp (CComp (Pure ce)) = toExp ce
-    toExp (CComp {})        = error "toExp: cannot convert CComp to a C expression"
-    toExp (CDelay {})       = error "toExp: cannot convert CDelay to a C expression"
+    toExp CVoid                  = error "toExp: void compiled expression"
+    toExp (CInt i)               = \_ -> [cexp|$int:i|]
+    toExp (CFloat r)             = \_ -> [cexp|$double:r|]
+    toExp (CExp e)               = \_ -> e
+    toExp (CPtr e)               = toExp e
+    toExp (CSlice carr cidx len) = \_ -> [cexp|&$carr[$(cidx + fromIntegral len)]|]
+    toExp (CComp (Pure ce))      = toExp ce
+    toExp (CComp {})             = error "toExp: cannot convert CComp to a C expression"
+    toExp (CDelay {})            = error "toExp: cannot convert CDelay to a C expression"
 
 instance Pretty CExp where
-    ppr CVoid        = text "<void>"
-    ppr (CInt i)     = ppr i
-    ppr (CFloat f)   = ppr f
-    ppr (CExp e)     = ppr e
-    ppr (CPtr e)     = ppr [cexp|*$e|]
-    ppr (CComp {})   = text "<computation>"
-    ppr (CDelay {})  = text "<delayed compiled expression>"
+    ppr CVoid                  = text "<void>"
+    ppr (CInt i)               = ppr i
+    ppr (CFloat f)             = ppr f
+    ppr (CExp e)               = ppr e
+    ppr (CPtr e)               = ppr [cexp|*$e|]
+    ppr (CSlice carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CComp {})             = text "<computation>"
+    ppr (CDelay {})            = text "<delayed compiled expression>"
 
 -- | A code label
 type Label = C.Id
