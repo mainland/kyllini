@@ -343,32 +343,32 @@ cgExp e@(IfE e1 e2 e3 _) = do
   where
     go :: Type -> Cg CExp
     go tau | isPureish tau = do
-        cv <- cgTemp "cond" cv_tau Nothing
-        cif (cgExp e1)
-            (cgExp e2 >>= cassign cv_tau cv)
-            (cgExp e3 >>= cassign cv_tau cv)
-        return cv
+        cres <- cgTemp "if_res" cres_tau Nothing
+        cif (cgCond "if_cond" e1)
+            (cgExp e2 >>= cassign cres_tau cres)
+            (cgExp e3 >>= cassign cres_tau cres)
+        return cres
       where
-        cv_tau :: Type
-        cv_tau = computedType tau
+        cres_tau :: Type
+        cres_tau = computedType tau
 
     go tau = do
-        ce1       <- cgExp e1
+        ccond     <- cgCond "if_cond" e1
         comp2     <- collectComp $ cgExp e2 >>= unCComp
         comp3     <- collectComp $ cgExp e3 >>= unCComp
-        cv        <- cgTemp "cond" cv_tau Nothing
+        cres      <- cgTemp "if_res" cres_tau Nothing
         ifl       <- genLabel "ifk"
         bindthl   <- genLabel "then_bindk"
         donethl   <- genLabel "then_donek"
         bindell   <- genLabel "else_bindk"
         doneell   <- genLabel "else_donek"
         return $ CComp $
-            ifC ifl cv ce1
-                (comp2 >>= bindC bindthl cv_tau cv >> doneC donethl)
-                (comp3 >>= bindC bindell cv_tau cv >> doneC doneell)
+            ifC ifl cres ccond
+                (comp2 >>= bindC bindthl cres_tau cres >> doneC donethl)
+                (comp3 >>= bindC bindell cres_tau cres >> doneC doneell)
       where
-        cv_tau :: Type
-        cv_tau = computedType tau
+        cres_tau :: Type
+        cres_tau = computedType tau
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -424,20 +424,23 @@ cgExp e0@(WhileE e_test e_body _) = do
     -- pureish since @tau@ is always instantiated with the surrounding
     -- function's ST index variables.
     go tau | isPureish tau = do
-        ce_test <- cgExp e_test
+        ce_test <- cgCond "while_cond" e_test
         ce_body <- cgExp e_body
         appendStm [cstm|while ($ce_test) { $ce_body; }|]
         return CVoid
 
     go _ = do
-        ce_test <- cgExp e_test
-        bodyc   <- collectComp $ cgExp e_body >>= unCComp
-        whilel  <- genLabel "whilek"
-        donel   <- genLabel "whiledone"
-        useLabel whilel
+        (ce_test, testc) <- collectCodeAsComp $
+                            cgCond "while_test" e_test
+        bodyc            <- collectComp $
+                            cgExp e_body >>= unCComp
+        testl            <- ccompLabel testc
+        condl            <- genLabel "while_cond"
+        donel            <- genLabel "while_done"
         return $ CComp $
-            ifC whilel CVoid ce_test
-                (bodyc >> gotoC whilel)
+            testc >>
+            ifC condl CVoid ce_test
+                (bodyc >> gotoC testl)
                 (doneC donel)
 
 cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
@@ -462,11 +465,11 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
         appendDecl [cdecl|$ty:cv_tau $id:cv;|]
-        initc   <- collectCodeAsComp $ do
+        initc   <- collectCodeAsComp_ $ do
                    ce_start <- cgExp e_start
                    appendStm [cstm|$id:cv = $ce_start;|]
         ce_test <- cgExp $ varE v .<=. e_end
-        updatec <- collectCodeAsComp $
+        updatec <- collectCodeAsComp_ $
                    appendStm [cstm|$id:cv++;|]
         bodyc   <- collectComp $ cgExp e_body >>= unCComp
         forl    <- genLabel "fork"
@@ -603,15 +606,27 @@ cgExp (ParE _ tau e1 e2 _) = do
     comp2 <- cgExp e2 >>= unCComp
     return $ CComp $ parC tau comp1 comp2
 
+cgCond :: String -> Exp -> Cg CExp
+cgCond s e = do
+    ccond <- cgTemp s boolT Nothing
+    cgExp e >>= unCComp >>= cgPureishCComp boolT ccond
+    return ccond
+
+-- | @'isConstE' e@ returns 'True' only if @e@ compiles to a constant C
+-- expression.
 isConstE :: Exp -> Bool
 isConstE (ConstE {}) = True
 isConstE _           = False
 
-collectCodeAsComp :: Cg a -> Cg CComp
+collectCodeAsComp :: Cg a -> Cg (a, CComp)
 collectCodeAsComp m = do
     l         <- genLabel "codek"
-    (_, code) <- collect m
-    return $ codeC l code
+    (x, code) <- collect m
+    return (x, codeC l code)
+
+collectCodeAsComp_ :: Cg a -> Cg CComp
+collectCodeAsComp_ m =
+    snd <$> collectCodeAsComp m
 
 collectComp :: Cg CComp -> Cg CComp
 collectComp m = do
