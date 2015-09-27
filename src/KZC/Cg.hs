@@ -703,10 +703,10 @@ cgType (UnitT {}) =
     return [cty|void|]
 
 cgType (BoolT {}) =
-    return [cty|int|]
+    return [cty|typename uint8_t|]
 
 cgType (BitT {}) =
-    return [cty|int|]
+    return [cty|typename uint8_t|]
 
 cgType (IntT W8 _) =
     return [cty|typename int8_t|]
