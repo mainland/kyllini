@@ -635,8 +635,10 @@ cgCond s e = do
 -- | @'isConstE' e@ returns 'True' only if @e@ compiles to a constant C
 -- expression.
 isConstE :: Exp -> Bool
-isConstE (ConstE {}) = True
-isConstE _           = False
+isConstE (ConstE {})        = True
+isConstE (UnopE _ e _)      = isConstE e
+isConstE (BinopE _ e1 e2 _) = isConstE e1 && isConstE e2
+isConstE _                  = False
 
 collectCodeAsComp :: Cg a -> Cg (a, CComp)
 collectCodeAsComp m = do
