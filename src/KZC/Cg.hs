@@ -972,10 +972,11 @@ cgCComp take emit done ccomp =
             k2 ccomp
 
         emit' :: CExp -> CExp -> CExp -> EmitK
-        emit' cleftk crightk cbuf l (ConstI 1 _) _ ce ccomp k = cgWithLabel l $ do
+        emit' cleftk crightk cbuf l (ConstI 1 _) tau ce ccomp k = cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            appendStm [cstm|$cbuf = &$ce;|]
+            caddr <- cgAddrOf tau ce
+            appendStm [cstm|$cbuf = $caddr;|]
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
@@ -1056,6 +1057,21 @@ cgAssign _ cv ce =
 cgIdx :: CExp -> CExp -> Cg CExp
 cgIdx carr cidx =
     return $ CExp [cexp|$carr[$cidx]|]
+
+cgAddrOf :: Type -> CExp -> Cg CExp
+cgAddrOf tau ce | isConstant ce = do
+    ctemp <- cgTemp "addrof" tau Nothing
+    cgAssign tau ctemp ce
+    return $ CExp [cexp|&$ctemp|]
+  where
+    isConstant :: CExp -> Bool
+    isConstant (CInt {})           = True
+    isConstant (CFloat {})         = True
+    isConstant (CExp (C.Const {})) = True
+    isConstant _                   = False
+
+cgAddrOf _ ce =
+    return $ CExp [cexp|&$ce|]
 
 -- | Generate code for an if statement.
 cgIf :: Cg CExp -> Cg () -> Cg () -> Cg ()
