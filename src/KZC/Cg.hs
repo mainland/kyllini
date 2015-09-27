@@ -601,10 +601,13 @@ cgExp (RepeatE _ e _) = do
     useLabel startl
     return $ CComp $ labelC startl >> ccomp >> gotoC startl
 
-cgExp (ParE _ tau e1 e2 _) = do
-    comp1 <- cgExp e1 >>= unCComp
-    comp2 <- cgExp e2 >>= unCComp
-    return $ CComp $ parC tau comp1 comp2
+cgExp (ParE _ b e1 e2 _) = do
+    (s, a, c) <- askSTIndTypes
+    comp1     <- localSTIndTypes (Just (s, a, b)) $
+                 cgExp e1 >>= unCComp
+    comp2     <- localSTIndTypes (Just (b, b, c)) $
+                 cgExp e2 >>= unCComp
+    return $ CComp $ parC b comp1 comp2
 
 cgCond :: String -> Exp -> Cg CExp
 cgCond s e = do
