@@ -527,7 +527,7 @@ cgExp e@(ArrayE es _) = do
 cgExp (IdxE e1 e2 Nothing _) = do
     ce1 <- cgExp e1
     ce2 <- cgExp e2
-    return $ CExp [cexp|$ce1[$ce2]|]
+    cgIdx ce1 ce2
 
 cgExp (IdxE e1 e2 (Just i) _) = do
     ce1 <- cgExp e1
@@ -982,7 +982,8 @@ cgCComp take emit done ccomp =
             useLabel l
             appendStm [cstm|$cleftk = LABELADDR($id:l);|]
             cgFor 0 cn $ \ci -> do
-                appendStm [cstm|$cbuf = &($ce[$ci]);|]
+                cidx <- cgIdx ce ci
+                appendStm [cstm|$cbuf = &$cidx;|]
                 appendStm [cstm|INDJUMP($crightk);|]
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
@@ -1049,6 +1050,10 @@ cgAssign _ _ CVoid =
 
 cgAssign _ cv ce =
     appendStm [cstm|$cv = $ce;|]
+
+cgIdx :: CExp -> CExp -> Cg CExp
+cgIdx carr cidx =
+    return $ CExp [cexp|$carr[$cidx]|]
 
 -- | Generate code for an if statement.
 cgIf :: Cg CExp -> Cg () -> Cg () -> Cg ()
