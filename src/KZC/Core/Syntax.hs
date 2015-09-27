@@ -586,7 +586,7 @@ instance Pretty BindVar where
     ppr WildV         = text "_"
 
 instance Pretty Unop where
-    ppr Lnot       = text "!"
+    ppr Lnot       = text "not" <> space
     ppr Bnot       = text "~"
     ppr Neg        = text "-"
     ppr Len        = text "length" <> space
