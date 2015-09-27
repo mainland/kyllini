@@ -94,10 +94,11 @@ int main(int argc, char **argv)
         appendStm [cstm|out[j++] = $ce;|]
         k ccomp
 
-    emit l iota _ ce ccomp k =
+    emit l iota tau ce ccomp k =
         cgWithLabel l $ do
-        cn <- cgIota iota
-        appendStm [cstm|memcpy(&out[j], $ce, $cn*sizeof(double));|]
+        cn   <- cgIota iota
+        ctau <- cgType tau
+        appendStm [cstm|memcpy(&out[j], $ce, $cn*sizeof($ty:ctau));|]
         appendStm [cstm|j += $cn;|]
         k ccomp
 
