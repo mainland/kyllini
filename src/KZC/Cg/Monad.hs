@@ -44,10 +44,15 @@ module KZC.Cg.Monad (
     extendIVarCExps,
     lookupIVarCExp,
 
+    extendTyVarTypes,
+    lookupTyVarType,
+
     tell,
     collect,
     collectDefinitions,
     collectDefinitions_,
+    collectDecls,
+    collectDecls_,
     collectStms,
     collectStms_,
 
@@ -408,6 +413,17 @@ collectDefinitions_ :: Cg () -> Cg ([C.Definition])
 collectDefinitions_ m = do
     (defs, _) <- collectDefinitions m
     return defs
+
+collectDecls :: Cg a -> Cg ([C.InitGroup], a)
+collectDecls m = do
+    (x, c) <- collect m
+    tell c { decls = mempty }
+    return (toList (decls c), x)
+
+collectDecls_ :: Cg () -> Cg ([C.InitGroup])
+collectDecls_ m = do
+    (decls, _) <- collectDecls m
+    return decls
 
 collectStms :: Cg a -> Cg ([C.Stm], a)
 collectStms m = do
