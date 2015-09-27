@@ -224,6 +224,7 @@ test-compiler : kzc
 	for TEST in $(TESTS); do \
 		echo $$TEST; \
 		./kzc -I$(TESTDIR)/lib --dlint $$TEST -o test.c; \
+		make test; \
 	done
 
 %.c : %.zr kzc
