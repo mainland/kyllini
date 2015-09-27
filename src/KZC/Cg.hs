@@ -89,12 +89,12 @@ int main(int argc, char **argv)
         k2 $ k1 $ CExp [cexp|$cbuf|]
 
     emit :: EmitK
-    emit l (ConstI 1 _) ce ccomp k =
+    emit l (ConstI 1 _) _ ce ccomp k =
         cgWithLabel l $ do
         appendStm [cstm|out[j++] = $ce;|]
         k ccomp
 
-    emit l iota ce ccomp k =
+    emit l iota _ ce ccomp k =
         cgWithLabel l $ do
         cn <- cgIota iota
         appendStm [cstm|memcpy(&out[j], $ce, $cn*sizeof(double));|]
@@ -620,13 +620,14 @@ cgExp (TakesE i tau _) = do
     return $ CComp $ takesC l i tau
 
 cgExp (EmitE e _) = liftM CComp $ collectComp $ do
-    ce <- cgExp e
-    emitC ce
+    tau <- inferExp e
+    ce  <- cgExp e
+    emitC tau ce
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
-    (iota, _) <- inferExp e >>= splitArrT
-    ce        <- cgExp e
-    emitsC iota ce
+    (iota, tau) <- inferExp e >>= splitArrT
+    ce          <- cgExp e
+    emitsC iota tau ce
 
 cgExp (RepeatE _ e _) = do
     ccomp  <- cgExp e >>= unCComp
@@ -848,7 +849,7 @@ type TakeK = Label -> Int -> Type -> (CExp -> CComp) -> (CComp -> Cg ()) -> Cg (
 -- the emit's continuation, and a continuation that generates code corresponding
 -- to the 'CComp'. We split the continuation into two parts just as we did for
 -- 'TakeK' for exactly the same reason.
-type EmitK = Label -> Iota -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
+type EmitK = Label -> Iota -> Type -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
 
 -- | A 'DoneK' continuation takes a 'CExp' representing the returned value and
 -- generates the appropriate code.
@@ -865,7 +866,7 @@ cgPureishCComp tau_res cres ccomp =
         panicdoc $ text "Pure computation tried to take!"
 
     emit :: EmitK
-    emit _ _ _ _ _ =
+    emit _ _ _ _ _ _ =
         panicdoc $ text "Pure computation tried to emit!"
 
     done :: DoneK
@@ -895,11 +896,11 @@ cgCComp take emit done ccomp =
     cgComp (TakesC l n tau k) =
         take l n tau k cgFree
 
-    cgComp (EmitC l ce k) =
-        emit l (ConstI 1 noLoc) ce k cgFree
+    cgComp (EmitC l tau ce k) =
+        emit l (ConstI 1 noLoc) tau ce k cgFree
 
-    cgComp (EmitsC l iota ce k) =
-        emit l iota ce k cgFree
+    cgComp (EmitsC l iota tau ce k) =
+        emit l iota tau ce k cgFree
 
     cgComp (IfC l cv ce thenk elsek k) = cgWithLabel l $ do
         cgIf (return ce) (cgFree thenk) (cgFree elsek)
@@ -970,14 +971,14 @@ cgCComp take emit done ccomp =
             k2 ccomp
 
         emit' :: CExp -> CExp -> CExp -> EmitK
-        emit' cleftk crightk cbuf l (ConstI 1 _) ce ccomp k = cgWithLabel l $ do
+        emit' cleftk crightk cbuf l (ConstI 1 _) _ ce ccomp k = cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
             appendStm [cstm|$cbuf = &$ce;|]
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        emit' cleftk crightk cbuf l iota ce ccomp k = do
+        emit' cleftk crightk cbuf l iota _ ce ccomp k = do
             cn <- cgIota iota
             useLabel l
             appendStm [cstm|$cleftk = LABELADDR($id:l);|]

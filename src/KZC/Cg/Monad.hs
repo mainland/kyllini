@@ -212,8 +212,8 @@ type Label = C.Id
 data Comp l a = CodeC l Code a
               | TakeC l Type (CExp -> a)
               | TakesC l Int Type (CExp -> a)
-              | EmitC l CExp a
-              | EmitsC l Iota CExp a
+              | EmitC l Type CExp a
+              | EmitsC l Iota Type CExp a
               | IfC l CExp CExp a a (CExp -> a)
               | ParC Type a a
               | BindC l Type CExp CExp a
@@ -235,17 +235,17 @@ takesC l i tau = liftF $ TakesC l i tau id
 
 -- emit and emits always need a continuation to return to, so we must insert a
 -- label after them in case their continuation is a @Pure@ computation.
-emitC :: CExp -> Cg CComp
-emitC ce = do
+emitC :: Type -> CExp -> Cg CComp
+emitC tau ce = do
     beforel <- genLabel "emitk"
     afterl  <- genLabel "emitk_after"
-    return $ (liftF $ EmitC beforel ce CVoid) >>= \ce -> labelC afterl >> return ce
+    return $ (liftF $ EmitC beforel tau ce CVoid) >>= \ce -> labelC afterl >> return ce
 
-emitsC :: Iota -> CExp -> Cg CComp
-emitsC iota ce = do
+emitsC :: Iota -> Type -> CExp -> Cg CComp
+emitsC iota tau ce = do
     beforel <- genLabel "emitsk"
     afterl  <- genLabel "emitsk_after"
-    return $ (liftF $ EmitsC beforel iota ce CVoid) >>= \ce -> labelC afterl >> return ce
+    return $ (liftF $ EmitsC beforel iota tau ce CVoid) >>= \ce -> labelC afterl >> return ce
 
 ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
 ifC l cv ce thenc elsec =
@@ -277,8 +277,8 @@ ccompLabel (Free comp) = compLabel comp
         | otherwise                 = useLabel l
     compLabel (TakeC l _ _)         = useLabel l
     compLabel (TakesC l _ _ _)      = useLabel l
-    compLabel (EmitC l _ _)         = useLabel l
-    compLabel (EmitsC l _ _ _)      = useLabel l
+    compLabel (EmitC l _ _ _)       = useLabel l
+    compLabel (EmitsC l _ _ _ _)    = useLabel l
     compLabel (IfC l _ _ _ _ _)     = useLabel l
     compLabel (ParC _ _ right)      = ccompLabel right
     compLabel (BindC l _ _ _ _)     = useLabel l
