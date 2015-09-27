@@ -1068,7 +1068,7 @@ cgCComp take emit done ccomp =
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
                 cgWithLabel l $
-                    appendStm [cstm|continue;|]
+                    appendStm [cstm|;|]
             k ccomp
 
 cassign :: Type -> CExp -> CExp -> Cg ()
