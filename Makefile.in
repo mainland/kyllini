@@ -231,7 +231,7 @@ test-compiler : kzc
 	./kzc -I$(TESTDIR)/lib --ddump-core --dtrace-lint --dtrace-cg $<
 
 % : %.c
-	gcc -I. $^ -o $@ -lm
+	gcc -I. -Werror $^ -o $@ -lm
 
 #
 # autotools stuff
