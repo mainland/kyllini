@@ -239,7 +239,7 @@ cgDecl decl@(LetRefD v tau maybe_e _) k = do
         maybe_ce <- case maybe_e of
                       Nothing -> return Nothing
                       Just e -> Just <$> cgExp e
-        appendDecl [cdecl|$ty:ctau $id:cv;|]
+        appendLetDecl [cdecl|$ty:ctau $id:cv;|]
         case maybe_ce of
           Nothing -> return ()
           Just ce -> appendStm [cstm|$id:cv = $ce;|]
@@ -1077,3 +1077,10 @@ cif e1 e2 e3 = do
 computedType :: Type -> Type
 computedType (ST _ (C tau) _ _ _ _) = tau
 computedType tau                    = tau
+
+appendLetDecl :: C.InitGroup -> Cg ()
+appendLetDecl decl = do
+    inLocalScope <- isInSTScope
+    if inLocalScope
+      then appendDecl decl
+      else appendTopDecl decl
