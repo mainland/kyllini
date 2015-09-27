@@ -266,12 +266,12 @@ cgExp e@(ConstE c _) =
   where
     cgConst :: Const -> Cg CExp
     cgConst UnitC         = return CVoid
-    cgConst (BoolC False) = return $ CExp [cexp|0|]
-    cgConst (BoolC True)  = return $ CExp [cexp|1|]
-    cgConst (BitC False)  = return $ CExp [cexp|0|]
-    cgConst (BitC True)   = return $ CExp [cexp|1|]
-    cgConst (IntC _ i)    = return $ CExp [cexp|$int:i|]
-    cgConst (FloatC _ r)  = return $ CExp [cexp|$double:r|]
+    cgConst (BoolC False) = return $ CInt 0
+    cgConst (BoolC True)  = return $ CInt 1
+    cgConst (BitC False)  = return $ CInt 0
+    cgConst (BitC True)   = return $ CInt 1
+    cgConst (IntC _ i)    = return $ CInt i
+    cgConst (FloatC _ r)  = return $ CFloat r
     cgConst (StringC s)   = return $ CExp [cexp|$string:s|]
 
     cgConst (ArrayC cs) = do
@@ -533,7 +533,7 @@ cgExp (IdxE e1 e2 Nothing _) = do
 cgExp (IdxE e1 e2 (Just i) _) = do
     ce1 <- cgExp e1
     ce2 <- cgExp e2
-    return $ CExp [cexp|&$ce1[$ce2 + $int:i]|]
+    return $ CExp [cexp|&$ce1[$(ce2 + fromIntegral i)]|]
 
 cgExp (StructE s flds l) = do
     cv <- cgTemp "struct" (StructT s l) Nothing

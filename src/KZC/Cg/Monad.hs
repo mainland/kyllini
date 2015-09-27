@@ -147,11 +147,19 @@ data CExp = CVoid
             -- and/or emit.
 
 instance Num CExp where
+    CInt 0   + CInt y   = CInt y
+    CInt x   + CInt 0   = CInt x
     CInt x   + CInt y   = CInt (x + y)
+    CFloat 0 + CFloat y = CFloat y
+    CFloat x + CFloat 0 = CFloat x
     CFloat x + CFloat y = CFloat (x + y)
     x        + y        = CExp [cexp|$x + $y|]
 
+    CInt x   - CInt 0   = CInt x
+    CInt 0   - CInt x   = CInt (-x)
     CInt x   - CInt y   = CInt (x - y)
+    CFloat x - CFloat 0 = CFloat x
+    CFloat 0 - CFloat x = CFloat (-x)
     CFloat x - CFloat y = CFloat (x - y)
     x        - y        = CExp [cexp|$x - $y|]
 
