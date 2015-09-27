@@ -654,7 +654,8 @@ collectComp :: Cg CComp -> Cg CComp
 collectComp m = do
     l            <- genLabel "codek"
     (comp, code) <- collect m
-    return $ codeC l code >> comp
+    tell code { decls = mempty, stmts = mempty }
+    return $ codeC l code { defs = mempty } >> comp
 
 collectCompBind :: Cg (CExp -> CComp) -> Cg (CExp -> CComp)
 collectCompBind m = do
