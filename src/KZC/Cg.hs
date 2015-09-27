@@ -1052,7 +1052,14 @@ cgCComp take emit done ccomp =
             k ccomp
 
 cassign :: Type -> CExp -> CExp -> Cg ()
+-- If the type of the value is unit, don't actually perform the assignment.
 cassign (UnitT {}) _ _ =
+    return ()
+
+-- Also, if we don't care about the value, don't actually perform the
+-- assignment. This can happen when we are in a loop---we don't actually need
+-- the result of the computation in the body of the loop, just its effect(s).
+cassign _ _ CVoid =
     return ()
 
 cassign _ cv ce =
