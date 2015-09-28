@@ -25,7 +25,6 @@ module KZC.Cg.Monad (
     takeC,
     takesC,
     emitC,
-    emitsC,
     ifC,
     parC,
     bindC,
@@ -226,7 +225,6 @@ data Comp l a = CodeC l Code a
               | TakeC l Type (CExp -> a)
               | TakesC l Int Type (CExp -> a)
               | EmitC l Type CExp a
-              | EmitsC l Iota Type CExp a
               | IfC l CExp CExp a a (CExp -> a)
               | ParC Type a a
               | BindC l Type CExp CExp a
@@ -253,12 +251,6 @@ emitC tau ce = do
     beforel <- genLabel "emitk"
     afterl  <- genLabel "emitk_after"
     return $ (liftF $ EmitC beforel tau ce CVoid) >>= \ce -> labelC afterl >> return ce
-
-emitsC :: Iota -> Type -> CExp -> Cg CComp
-emitsC iota tau ce = do
-    beforel <- genLabel "emitsk"
-    afterl  <- genLabel "emitsk_after"
-    return $ (liftF $ EmitsC beforel iota tau ce CVoid) >>= \ce -> labelC afterl >> return ce
 
 ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
 ifC l cv ce thenc elsec =
@@ -291,7 +283,6 @@ ccompLabel (Free comp) = compLabel comp
     compLabel (TakeC l _ _)         = useLabel l
     compLabel (TakesC l _ _ _)      = useLabel l
     compLabel (EmitC l _ _ _)       = useLabel l
-    compLabel (EmitsC l _ _ _ _)    = useLabel l
     compLabel (IfC l _ _ _ _ _)     = useLabel l
     compLabel (ParC _ _ right)      = ccompLabel right
     compLabel (BindC l _ _ _ _)     = useLabel l

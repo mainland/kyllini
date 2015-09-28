@@ -89,17 +89,22 @@ int main(int argc, char **argv)
         k2 $ k1 $ CExp [cexp|$cbuf|]
 
     emit :: EmitK
-    emit l (ConstI 1 _) _ ce ccomp k =
+    emit l (ArrT (ConstI 1 _) _ _) ce ccomp k =
         cgWithLabel l $ do
-        appendStm [cstm|out[j++] = $ce;|]
+        appendStm [cstm|out[j++] = $ce[0];|]
         k ccomp
 
-    emit l iota tau ce ccomp k =
+    emit l (ArrT iota tau _) ce ccomp k =
         cgWithLabel l $ do
         cn   <- cgIota iota
         ctau <- cgType tau
         appendStm [cstm|memcpy(&out[j], $ce, $cn*sizeof($ty:ctau));|]
         appendStm [cstm|j += $cn;|]
+        k ccomp
+
+    emit l _ ce ccomp k =
+        cgWithLabel l $ do
+        appendStm [cstm|out[j++] = $ce;|]
         k ccomp
 
     done :: DoneK
@@ -627,9 +632,9 @@ cgExp (EmitE e _) = liftM CComp $ collectComp $ do
     emitC tau ce
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
-    (iota, tau) <- inferExp e >>= splitArrT
-    ce          <- cgExp e
-    emitsC iota tau ce
+    tau <- inferExp e
+    ce  <- cgExp e
+    emitC tau ce
 
 cgExp (RepeatE _ e _) = do
     ccomp  <- cgExp e >>= unCComp
@@ -843,22 +848,22 @@ cgWithLabel lbl k = do
     l :: SrcLoc
     C.Id ident l = lbl
 
--- | A 'TakeK' continuation takes a label, the number of elements to take, the type of the
--- elements, a continuation that computes a 'CComp' from the 'CExp' representing
--- the taken elements, and a continuation that generates code corresponding to
--- the 'CComp' returned by the first continuation. Why not one continuation of
--- type @CExp -> Cg ()@ instead of two that we have to manually chain together?
--- In general, we may want look inside the 'CComp' to see what it does with the
--- taken values. In particular, we need to see the label of the 'CComp' so that
--- we can save it as a continuation.
+-- | A 'TakeK' continuation takes a label, the number of elements to take, the
+-- type of the elements, a continuation that computes a 'CComp' from the 'CExp'
+-- representing the taken elements, and a continuation that generates code
+-- corresponding to the 'CComp' returned by the first continuation. Why not one
+-- continuation of type @CExp -> Cg ()@ instead of two that we have to manually
+-- chain together?  In general, we may want look inside the 'CComp' to see what
+-- it does with the taken values. In particular, we need to see the label of the
+-- 'CComp' so that we can save it as a continuation.
 type TakeK = Label -> Int -> Type -> (CExp -> CComp) -> (CComp -> Cg ()) -> Cg ()
 
--- | A 'EmitK' continuation takes a label, an 'Iota' representing the number of elements
--- to emit, a 'CExp' representing the elements to emit, a 'CComp' representing
--- the emit's continuation, and a continuation that generates code corresponding
--- to the 'CComp'. We split the continuation into two parts just as we did for
--- 'TakeK' for exactly the same reason.
-type EmitK = Label -> Iota -> Type -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
+-- | A 'EmitK' continuation takes a label, the type of the value being emitted,
+-- a 'CExp' representing the elements to emit, a 'CComp' representing the emit's
+-- continuation, and a continuation that generates code corresponding to the
+-- 'CComp'. We split the continuation into two parts just as we did for 'TakeK'
+-- for exactly the same reason.
+type EmitK = Label -> Type -> CExp -> CComp -> (CComp -> Cg ()) -> Cg ()
 
 -- | A 'DoneK' continuation takes a 'CExp' representing the returned value and
 -- generates the appropriate code.
@@ -875,7 +880,7 @@ cgPureishCComp tau_res cres ccomp =
         panicdoc $ text "Pure computation tried to take!"
 
     emit :: EmitK
-    emit _ _ _ _ _ _ =
+    emit _ _ _ _ _ =
         panicdoc $ text "Pure computation tried to emit!"
 
     done :: DoneK
@@ -906,10 +911,7 @@ cgCComp take emit done ccomp =
         take l n tau k cgFree
 
     cgComp (EmitC l tau ce k) =
-        emit l (ConstI 1 noLoc) tau ce k cgFree
-
-    cgComp (EmitsC l iota tau ce k) =
-        emit l iota tau ce k cgFree
+        emit l tau ce k cgFree
 
     cgComp (IfC l cv ce thenk elsek k) = cgWithLabel l $ do
         cgIf (return ce) (cgFree thenk) (cgFree elsek)
@@ -980,7 +982,8 @@ cgCComp take emit done ccomp =
             k2 ccomp
 
         emit' :: CExp -> CExp -> CExp -> EmitK
-        emit' cleftk crightk cbuf l (ConstI 1 _) tau ce ccomp k = cgWithLabel l $ do
+        emit' cleftk crightk cbuf l (ArrT (ConstI 1 _) tau _) ce ccomp k =
+            cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
             caddr <- cgAddrOf tau ce
@@ -988,7 +991,7 @@ cgCComp take emit done ccomp =
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        emit' cleftk crightk cbuf l iota _ ce ccomp k = do
+        emit' cleftk crightk cbuf l (ArrT iota _ _) ce ccomp k = do
             cn <- cgIota iota
             useLabel l
             appendStm [cstm|$cleftk = LABELADDR($id:l);|]
@@ -1000,6 +1003,16 @@ cgCComp take emit done ccomp =
                 -- the next loop iteration...
                 cgWithLabel l $
                     appendStm [cstm|;|]
+            k ccomp
+
+        -- @tau@ must be a base (scalar) type
+        emit' cleftk crightk cbuf l tau ce ccomp k =
+            cgWithLabel l $ do
+            lbl <- ccompLabel ccomp
+            appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
+            caddr <- cgAddrOf tau ce
+            appendStm [cstm|$cbuf = $caddr;|]
+            appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
 -- | @'isComp' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
