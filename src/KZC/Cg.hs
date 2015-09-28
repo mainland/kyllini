@@ -690,9 +690,9 @@ cgIVar iv = do
 
 cgVarBind :: (Var, Type) -> Cg (CExp, C.Param)
 cgVarBind (v, tau) = do
-    ctau <- cgType tau
-    cv   <- cvar v
-    return (CExp [cexp|$id:cv|], [cparam|$ty:ctau $id:cv|])
+    cv     <- cvar v
+    cparam <- cgParam tau (Just cv)
+    return (CExp [cexp|$id:cv|], cparam)
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
@@ -774,17 +774,20 @@ cgType (RefT tau _) = do
 
 cgType (FunT ivs args ret _) = do
     let ivTys =  replicate (length ivs) [cparam|int|]
-    argTys    <- mapM cgParam args
+    argTys    <- mapM (\tau -> cgParam tau Nothing) args
     retTy     <- cgType ret
     return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
 
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
 
-cgParam :: Type -> Cg C.Param
-cgParam tau = do
+-- | Compile a function parameter.
+cgParam :: Type -> Maybe C.Id -> Cg C.Param
+cgParam tau maybe_cv = do
     ctau <- cgType tau
-    return [cparam|$ty:ctau|]
+    case maybe_cv of
+      Nothing -> return [cparam|$ty:ctau|]
+      Just cv -> return [cparam|$ty:ctau $id:cv|]
 
 cgVar :: Var -> Type -> Cg CExp
 cgVar _ (UnitT {}) =
