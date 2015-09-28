@@ -1059,12 +1059,22 @@ cgAssign (UnitT {}) _ _ =
 cgAssign _ _ CVoid =
     return ()
 
-cgAssign (RefT (ArrT _ tau _) _) (CSlice carr1 cidx1 len1) (CSlice carr2 cidx2 len2) | len1 == len2 = do
+cgAssign (RefT (ArrT iota tau _) _) ce1 ce2 = do
     ctau <- cgType tau
-    appendStm [cstm|memcpy(&$carr1[$cidx1], &$carr2[$cidx2], $int:len1*sizeof($ty:ctau));|]
+    ce1' <- cgArrayAddr ce1
+    ce2' <- cgArrayAddr ce2
+    clen <- cgIota iota
+    appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
 
 cgAssign _ cv ce =
     appendStm [cstm|$cv = $ce;|]
+
+cgArrayAddr :: CExp -> Cg CExp
+cgArrayAddr (CSlice carr cidx _) =
+    return $ CExp [cexp|&$carr[$cidx]|]
+
+cgArrayAddr ce =
+    return ce
 
 cgIdx :: CExp -> CExp -> Cg CExp
 cgIdx carr cidx =
