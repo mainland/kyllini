@@ -768,6 +768,10 @@ cgType (ST _ (C tau) _ _ _ _) =
 cgType (ST _ T _ _ _ _)=
     return [cty|void|]
 
+cgType (RefT tau@(ArrT {}) _) = do
+    ctau <- cgType tau
+    return [cty|$ty:ctau|]
+
 cgType (RefT tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau*|]
