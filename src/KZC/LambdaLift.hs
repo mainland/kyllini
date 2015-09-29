@@ -77,11 +77,11 @@ liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
 
     uniquify :: Var -> Lift Var
     uniquify f@(Var n) = do
-        inLocalScope <- isInSTScope
-        if inLocalScope
-          then do u <- newUnique
+        atTop <- isInTopScope
+        if atTop
+          then return f
+          else do u <- newUnique
                   return $ Var $ n { nameSort = Internal u }
-          else return f
 
 liftDecl (LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
