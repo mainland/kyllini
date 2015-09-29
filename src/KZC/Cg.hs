@@ -896,12 +896,17 @@ cgVar v tau = do
     return $ CExp [cexp|$id:cv|]
 
 cgTemp :: String -> Type -> Maybe C.Initializer -> Cg CExp
-cgTemp _ (UnitT {}) _ =
-    return CVoid
+cgTemp s tau maybe_cinit =
+    go tau
+  where
+    go :: Type -> Cg CExp
+    go (ST _ T   _ _ _ _)     = return CVoid
+    go (ST _ (C tau) _ _ _ _) = go tau
+    go (UnitT {})             = return CVoid
 
-cgTemp s tau maybe_cinit = do
-    ctau <- cgType tau
-    cgCTemp s ctau maybe_cinit
+    go tau =do
+        ctau <- cgType tau
+        cgCTemp s ctau maybe_cinit
 
 cgCTemp :: String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgCTemp s ctau maybe_cinit = do
