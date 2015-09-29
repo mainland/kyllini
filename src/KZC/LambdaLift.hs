@@ -96,7 +96,7 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
     maybe_e' <-  withSummaryContext decl $
                  case maybe_e of
                    Nothing -> return Nothing
-                   Just e -> Just <$> liftExp e
+                   Just e -> Just <$> inLocalScope (liftExp e)
     extendVars [(v, refT tau)] $ do
     withDecl (LetRefD v tau maybe_e' l) k
 
