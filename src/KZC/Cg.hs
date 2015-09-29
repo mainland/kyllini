@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     take l 1 tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp "bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i++];|]
         k2 $ k1 $ CExp [cexp|*$cbuf|]
@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     take l n tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp "bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i];|]
         appendStm [cstm|i += $int:n;|]
@@ -188,7 +188,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       extendVarCExps  (map fst vbs `zip` cvbs) $
                       inSTScope tau_ret $
                       inLocalScope $ do
-                      cres <- cgTemp "result" tau_res Nothing
+                      cres <- cgTemp "let_res" tau_res Nothing
                       cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
                       when (not (isUnitT tau_res)) $
                           appendStm [cstm|return $cres;|]
@@ -270,7 +270,7 @@ cgDecl decl@(LetStructD s flds l) k = do
 
 cgConstArray :: Type -> [CExp] -> Cg CExp
 cgConstArray tau ces = do
-    cv           <- gensym "const_arr"
+    cv           <- gensym "__const_arr"
     ctau         <- cgType tau
     let cinits   =  [[cinit|$ce|] | ce <- ces]
     appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length ces)] = { $inits:cinits };|]
@@ -595,7 +595,7 @@ cgExp e@(ArrayE es _) | all isConstE es = do
 
 cgExp e@(ArrayE es _) = do
     ArrT _ tau _ <- inferExp e
-    cv           <- gensym "arr"
+    cv           <- gensym "__arr"
     ctau         <- cgType tau
     appendDecl [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
     forM_ (es `zip` [0..]) $ \(e,i) -> do
@@ -910,7 +910,7 @@ cgTemp s tau maybe_cinit =
 
 cgCTemp :: String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgCTemp s ctau maybe_cinit = do
-    cv <- gensym s
+    cv <- gensym ("__" ++ s)
     case maybe_cinit of
       Nothing    -> appendDecl [cdecl|$ty:ctau $id:cv;|]
       Just cinit -> appendDecl [cdecl|$ty:ctau $id:cv = $init:cinit;|]
@@ -1031,12 +1031,12 @@ cgCComp take emit done ccomp =
         -- continuations.
         leftl   <- ccompLabel left
         rightl  <- ccompLabel right
-        cleftk  <- cgCTemp "leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
-        crightk <- cgCTemp "rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
+        cleftk  <- cgCTemp "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
+        crightk <- cgCTemp "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
         -- Generate a pointer to the current element in the buffer.
         ctau  <- cgType tau
-        cbuf  <- cgCTemp "buf"  [cty|$ty:ctau|]  Nothing
-        cbufp <- cgCTemp "bufp" [cty|$ty:ctau*|] Nothing
+        cbuf  <- cgCTemp "par_buf"  [cty|$ty:ctau|]  Nothing
+        cbufp <- cgCTemp "par_bufp" [cty|$ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
         cgCComp (take' cleftk crightk cbuf cbufp)
                 emit
@@ -1069,7 +1069,7 @@ cgCComp take emit done ccomp =
         -- without forcing its label to be required---we don't need the label!
         take' cleftk crightk _ cbufp l n tau k1 k2 = cgWithLabel l $ do
             ctau      <- cgType tau
-            carr      <- cgCTemp "xs" [cty|$ty:ctau[$int:n]|] Nothing
+            carr      <- cgCTemp "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             lbl       <- genLabel "inner_takesk"
             useLabel lbl
             let ccomp =  k1 carr
@@ -1259,7 +1259,7 @@ cgIf e1 e2 e3 = do
 -- index and generates the body of the loop.
 cgFor :: CExp -> CExp -> (CExp -> Cg a) -> Cg a
 cgFor cfrom cto k = do
-    ci <- gensym "i"
+    ci <- gensym "__i"
     appendDecl [cdecl|int $id:ci;|]
     (cbody, x) <- inNewBlock $
                   k (CExp [cexp|$id:ci|])
