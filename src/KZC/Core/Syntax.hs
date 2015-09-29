@@ -820,11 +820,11 @@ instance Fvs Type n => Fvs [Type] n where
     fvs taus = foldMap fvs taus
 
 instance Fvs Decl Var where
-    fvs (LetD v _ e _)         = delete v (fvs e)
-    fvs (LetFunD v _ _ _ e _)  = delete v (fvs e)
-    fvs (LetExtFunD {})        = mempty
-    fvs (LetRefD v _ e _)      = delete v (fvs e)
-    fvs (LetStructD {})        = mempty
+    fvs (LetD v _ e _)          = delete v (fvs e)
+    fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetExtFunD {})         = mempty
+    fvs (LetRefD v _ e _)       = delete v (fvs e)
+    fvs (LetStructD {})         = mempty
 
 instance Binders Decl Var where
     binders (LetD v _ _ _)         = singleton v
