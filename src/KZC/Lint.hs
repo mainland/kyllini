@@ -51,6 +51,7 @@ checkDecl decl@(LetD v tau e _) k = do
         void $ inferKind tau
         tau' <- withExpContext e $
                 inSTScope tau $
+                inLocalScope $
                 inferExp e >>= absSTScope
         checkTypeEquality tau' tau
     extendVars [(v, tau)] k
@@ -64,6 +65,7 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
                     inSTScope tau_ret $
+                    inLocalScope $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
     k
@@ -83,7 +85,8 @@ checkDecl decl@(LetRefD v tau Nothing _) k = do
     extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetRefD v tau (Just e) _) k = do
-    withSummaryContext decl $ do
+    withSummaryContext decl $
+        inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
     extendVars [(v, refT tau)] k

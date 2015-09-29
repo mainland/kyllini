@@ -19,6 +19,8 @@ module KZC.Lint.State (
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Monoid (mempty)
+import Data.Set (Set)
 
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -29,6 +31,8 @@ data TcEnv = TcEnv
     , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Exp
     , structs    :: !(Map Struct StructDef)
+    , topScope   :: Bool
+    , topVars    :: Set Var
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
@@ -41,9 +45,11 @@ defaultTcEnv = TcEnv
     , nestdepth  = 0
     , curexp     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
-    , varTypes   = Map.empty
-    , tyVars     = Map.empty
-    , iVars      = Map.empty
+    , topScope   = True
+    , topVars    = mempty
+    , varTypes   = mempty
+    , tyVars     = mempty
+    , iVars      = mempty
     , stIndTys   = Nothing
     }
 

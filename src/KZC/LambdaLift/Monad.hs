@@ -10,12 +10,6 @@ module KZC.LambdaLift.Monad (
     Lift,
     runLift,
 
-    inLocalScope,
-
-    extendVars,
-
-    askTopVars,
-
     lookupFvs,
     lookupFunFvs,
     extendFunFvs,
@@ -45,8 +39,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
-import qualified KZC.Lint.Monad as Lint
-import KZC.Lint.Monad hiding (extendVars, traceNest)
+import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
 
 type Lift a = Tc LiftEnv LiftState a
@@ -54,8 +47,6 @@ type Lift a = Tc LiftEnv LiftState a
 data LiftEnv = LiftEnv
     { errctx    :: ![ErrorContext]
     , nestdepth :: {-# UNPACK #-} !Int
-    , topScope  :: Bool
-    , topVars   :: Set Var
     , funFvs    :: Map Var (Var, [Var])
     }
 
@@ -63,8 +54,6 @@ defaultLiftEnv :: LiftEnv
 defaultLiftEnv = LiftEnv
     { errctx    = []
     , nestdepth = 0
-    , topScope  = True
-    , topVars   = mempty
     , funFvs    = mempty
     }
 
@@ -103,29 +92,6 @@ lookupBy proj onerr k = do
     case maybe_v of
       Nothing  -> onerr
       Just v   -> return v
-
-inLocalScope :: Lift a -> Lift a
-inLocalScope k =
-    local (\env -> env { topScope = False }) k
-
-isInTopScope :: Lift Bool
-isInTopScope = asks topScope
-
-extendVars :: [(Var, Type)] -> Lift a -> Lift a
-extendVars vtaus m = do
-    topScope <- isInTopScope
-    extendTopVars topScope (map fst vtaus) $ do
-    Lint.extendVars vtaus m
-  where
-    extendTopVars :: Bool -> [Var] -> Lift a -> Lift a
-    extendTopVars True vs k =
-        local (\env -> env { topVars = topVars env `Set.union` Set.fromList vs }) k
-
-    extendTopVars False _ k =
-        k
-
-askTopVars :: Lift (Set Var)
-askTopVars = asks topVars
 
 lookupFvs :: Var -> Lift (Set Var)
 lookupFvs v = do

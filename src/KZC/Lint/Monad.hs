@@ -23,6 +23,10 @@ module KZC.Lint.Monad (
     lookupStruct,
     maybeLookupStruct,
 
+    inLocalScope,
+    isInTopScope,
+    askTopVars,
+
     extendVars,
     extendBindVars,
     lookupVar,
@@ -221,9 +225,28 @@ maybeLookupStruct :: Struct -> Tc r s (Maybe StructDef)
 maybeLookupStruct s =
     asksTc (Map.lookup s . structs)
 
+inLocalScope :: Tc r s a -> Tc r s a
+inLocalScope k =
+    localTc (\env -> env { topScope = False }) k
+
+isInTopScope :: Tc r s Bool
+isInTopScope = asksTc topScope
+
+askTopVars :: Tc r s (Set Var)
+askTopVars = asksTc topVars
+
 extendVars :: [(Var, Type)] -> Tc r s a -> Tc r s a
-extendVars vtaus m =
+extendVars vtaus m = do
+    topScope <- isInTopScope
+    extendTopVars topScope (map fst vtaus) $ do
     extend varTypes (\env x -> env { varTypes = x }) vtaus m
+  where
+    extendTopVars :: Bool -> [Var] -> Tc r s a -> Tc r s a
+    extendTopVars True vs k =
+        localTc (\env -> env { topVars = topVars env `Set.union` Set.fromList vs }) k
+
+    extendTopVars False _ k =
+        k
 
 extendBindVars :: [BindVar] -> Tc r s a -> Tc r s a
 extendBindVars bvs m =
