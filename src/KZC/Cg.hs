@@ -123,6 +123,7 @@ cgLabels = do
 cgThread :: Cg a -> Cg a
 cgThread k = do
     (x, code) <- collect k
+    tell code { decls = mempty, stmts = mempty }
     let cds   =  (toList . decls) code
     let css   =  (toList . stmts) code
     appendDecls cds
