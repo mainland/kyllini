@@ -40,7 +40,6 @@ module KZC.Lint.Monad (
     localSTIndTypes,
     askSTIndTypes,
     inSTScope,
-    isInSTScope,
 
     inScopeTyVars,
 
@@ -298,13 +297,6 @@ inSTScope tau m =
 
     scopeOver _ m =
         localSTIndTypes Nothing m
-
-isInSTScope :: Tc r s Bool
-isInSTScope = do
-    maybe_taus <- asksTc stIndTys
-    case maybe_taus of
-      Just _  -> return True
-      Nothing -> return False
 
 askSTIndTypes :: Tc r s (Type, Type, Type)
 askSTIndTypes = do
