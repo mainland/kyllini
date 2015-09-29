@@ -158,7 +158,7 @@ cgDecl :: forall a . Decl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
     cv <- withSummaryContext decl $ do
           ce <- cgBoundExp tau e
-          cgVal v ce tau
+          cgLet v ce tau
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
     k
@@ -1047,21 +1047,21 @@ computedType :: Type -> Type
 computedType (ST _ (C tau) _ _ _ _) = tau
 computedType tau                    = tau
 
--- | @'cgVal' v ce tau@ generates code to assign the compiled expression @ce@,
+-- | @'cgLet' v ce tau@ generates code to assign the compiled expression @ce@,
 -- of type @tau@, to the core variable @v@. If @ce@ is a computation or a
 -- delayed compiled expression, then we don't need to generate code. Otherwise
--- we create a local declaration to hold the value.
-cgVal :: Var -> CExp -> Type -> Cg CExp
-cgVal _ ce@(CComp {}) _ =
+-- we create a declaration to hold the value.
+cgLet :: Var -> CExp -> Type -> Cg CExp
+cgLet _ ce@(CComp {}) _ =
     return ce
 
-cgVal _ ce@(CDelay {}) _ =
+cgLet _ ce@(CDelay {}) _ =
     return ce
 
-cgVal v ce tau = do
+cgLet v ce tau = do
     cv   <- cvar v
     ctau <- cgType tau
-    appendDecl [cdecl|$ty:ctau $id:cv;|]
+    appendLetDecl [cdecl|$ty:ctau $id:cv;|]
     appendStm [cstm|$id:cv = $ce;|]
     return $ CExp [cexp|$id:cv|]
 
