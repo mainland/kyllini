@@ -266,6 +266,14 @@ cgDecl decl@(LetStructD s flds l) k = do
         ctau     <- cgType tau
         return [csdecl|$ty:ctau $id:cfld;|]
 
+cgConstArray :: Type -> [CExp] -> Cg CExp
+cgConstArray tau ces = do
+    cv           <- gensym "const_arr"
+    ctau         <- cgType tau
+    let cinits   =  [[cinit|$ce|] | ce <- ces]
+    appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length ces)] = { $inits:cinits };|]
+    return $ CExp [cexp|($ty:ctau*) $id:cv|]
+
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) =
     cgConst c
@@ -281,17 +289,9 @@ cgExp e@(ConstE c _) =
     cgConst (StringC s)   = return $ CExp [cexp|$string:s|]
 
     cgConst (ArrayC cs) = do
-        tau    <- inferExp e
-        cinits <- mapM cgConstInit cs
-        cgTemp "const_arr" tau (Just [cinit|{ $inits:cinits }|])
-
-    cgConstInit :: Const -> Cg C.Initializer
-    cgConstInit c = do
-        ce <- cgConst c
-        return $ C.ExpInitializer (toExp ce l) l
-
-    l :: SrcLoc
-    l = srclocOf e
+        ArrT _ tau _ <- inferExp e
+        ces          <- mapM cgConst cs
+        cgConstArray tau ces
 
 cgExp (VarE v _) =
     lookupVarCExp v
@@ -515,12 +515,8 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
 
 cgExp e@(ArrayE es _) | all isConstE es = do
     ArrT _ tau _ <- inferExp e
-    cv           <- gensym "const_arr"
-    ctau         <- cgType tau
     ces          <- mapM cgExp es
-    let cinits   =  [[cinit|$ce|] | ce <- ces]
-    appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length es)] = { $inits:cinits };|]
-    return $ CExp [cexp|($ty:ctau*) $id:cv|]
+    cgConstArray tau ces
 
 cgExp e@(ArrayE es _) = do
     ArrT _ tau _ <- inferExp e
