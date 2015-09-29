@@ -473,8 +473,20 @@ cgExp e0@(CallE f iotas es _) = do
         traceCg $ text "pure call" <+> ppr e0
         cf     <- lookupVarCExp f
         ciotas <- mapM cgIota iotas
-        ces    <- mapM cgExp es
+        ces    <- mapM cgArg es
         return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+      where
+        cgArg :: Exp -> Cg CExp
+        cgArg e = do
+            tau <- inferExp e
+            go tau
+          where
+            go :: Type -> Cg CExp
+            go tau | isPassByRef tau =
+                cgExp e >>= cgAddrOf tau
+
+            go _ =
+                cgExp e
 
     cgImpureCall :: Cg CExp
     cgImpureCall = do
@@ -488,11 +500,11 @@ cgExp e0@(CallE f iotas es _) = do
         extendVarCExps  (map fst vbs `zip` ces) $ do
         instantiateSTScope $ do
         m
-
-    cgArg :: Exp -> Cg CExp
-    cgArg e = do
-        tau <- inferExp e
-        cgBoundExp tau e
+      where
+        cgArg :: Exp -> Cg CExp
+        cgArg e = do
+            tau <- inferExp e
+            cgBoundExp tau e
 
     instantiateSTScope :: Cg a -> Cg a
     instantiateSTScope m = do
@@ -760,10 +772,9 @@ cgVarBind :: (Var, Type) -> Cg (CExp, C.Param)
 cgVarBind (v, tau) = do
     cv     <- cvar v
     cparam <- cgParam tau (Just cv)
-    case tau of
-      RefT (ArrT {}) _ -> return (CExp [cexp|$id:cv|], cparam)
-      RefT {}          -> return (CPtr (CExp [cexp|$id:cv|]), cparam)
-      _                -> return (CExp [cexp|$id:cv|], cparam)
+    if isPassByRef tau
+      then return (CPtr (CExp [cexp|$id:cv|]), cparam)
+      else return (CExp [cexp|$id:cv|], cparam)
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
@@ -1117,6 +1128,15 @@ computedType :: Type -> Type
 computedType (ST _ (C tau) _ _ _ _) = tau
 computedType tau                    = tau
 
+-- | Return @True@ is a value of the given type is passed by reference, i.e., if
+-- we need to pass the address of the value's corresponding 'CExp'. Note that
+-- arrays are always passed by reference, so 'isPassByRef' returns @False@ for
+-- array types.
+isPassByRef :: Type -> Bool
+isPassByRef (RefT (ArrT {}) _) = False
+isPassByRef (RefT {})          = True
+isPassByRef _                  = False
+
 -- | @'cgLet' v ce tau@ generates code to assign the compiled expression @ce@,
 -- of type @tau@, to the core variable @v@. If @ce@ is a computation or a
 -- delayed compiled expression, then we don't need to generate code. Otherwise
@@ -1186,6 +1206,9 @@ cgAddrOf tau ce | isConstant ce = do
     isConstant (CFloat {})         = True
     isConstant (CExp (C.Const {})) = True
     isConstant _                   = False
+
+cgAddrOf _ (CPtr ce) =
+    return ce
 
 cgAddrOf _ ce =
     return $ CExp [cexp|&$ce|]
