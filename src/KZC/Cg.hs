@@ -693,11 +693,17 @@ cgIVar iv = do
     civ <- cvar iv
     return (CExp [cexp|$id:civ|], [cparam|int $id:civ|])
 
+-- | Compile a function variable binding. When the variable is a ref type, it is
+-- represented as a pointer, so we use the 'CPtr' constructor to ensure that
+-- dereferencing occurs.
 cgVarBind :: (Var, Type) -> Cg (CExp, C.Param)
 cgVarBind (v, tau) = do
     cv     <- cvar v
     cparam <- cgParam tau (Just cv)
-    return (CExp [cexp|$id:cv|], cparam)
+    case tau of
+      RefT (ArrT {}) _ -> return (CExp [cexp|$id:cv|], cparam)
+      RefT {}          -> return (CPtr (CExp [cexp|$id:cv|]), cparam)
+      _                -> return (CExp [cexp|$id:cv|], cparam)
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
