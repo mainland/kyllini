@@ -765,9 +765,8 @@ checkEqT tau =
 
 -- | Check that a type supports ordering.
 checkOrdT :: Type -> Tc r s ()
-checkOrdT (IntT _ _)                        = return ()
-checkOrdT (FloatT _ _)                      = return ()
-checkOrdT (StructT s _) | isComplexStruct s = return ()
+checkOrdT (IntT _ _)   = return ()
+checkOrdT (FloatT _ _) = return ()
 checkOrdT tau =
     faildoc $ nest 2 $ group $
     text "Expected comparable type but got:" <+/> ppr tau
