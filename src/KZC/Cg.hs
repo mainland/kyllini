@@ -321,13 +321,13 @@ cgExp (UnopE op e _) = do
         cgIota iota
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
-    cgCast ce (StructT s1 _) tau_to@(StructT s2 _) | isComplexStruct s1 && isComplexStruct s2 = do
+    cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
         ctemp <- cgTemp "cast_complex" tau_to Nothing
         appendStm [cstm|$ctemp.re = $ce.re;|]
         appendStm [cstm|$ctemp.im = $ce.im;|]
         return ctemp
 
-    cgCast ce _ tau_to@(StructT s  _) | isComplexStruct s = do
+    cgCast ce _ tau_to | isComplexT tau_to = do
         ctemp <- cgTemp "cast_complex" tau_to Nothing
         appendStm [cstm|$ctemp.re = $ce;|]
         appendStm [cstm|$ctemp.im = $ce;|]

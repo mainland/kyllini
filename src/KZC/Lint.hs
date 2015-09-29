@@ -555,7 +555,7 @@ checkCast (FloatT {}) (IntT {}) =
 checkCast (FloatT {}) (FloatT {}) =
     return ()
 
-checkCast (StructT s1 _) (StructT s2 _) | isComplexStruct s1 && isComplexStruct s2=
+checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
     return ()
 
 checkCast tau1 tau2 =
@@ -798,17 +798,17 @@ checkIntT tau =
 
 -- | Check that a type is a numerical type.
 checkNumT :: Type -> Tc r s ()
-checkNumT (IntT _ _)                        = return ()
-checkNumT (FloatT _ _)                      = return ()
-checkNumT (StructT s _) | isComplexStruct s = return ()
+checkNumT (IntT _ _)           = return ()
+checkNumT (FloatT _ _)         = return ()
+checkNumT tau | isComplexT tau = return ()
 checkNumT tau =
     faildoc $ nest 2 $ group $
     text "Expected numerical type but got:" <+/> ppr tau
 
 -- | Check that a type is a /signed/ numerical type.
-checkSignedNumT (IntT _ _)                        = return ()
-checkSignedNumT (FloatT _ _)                      = return ()
-checkSignedNumT (StructT s _) | isComplexStruct s = return ()
+checkSignedNumT (IntT _ _)           = return ()
+checkSignedNumT (FloatT _ _)         = return ()
+checkSignedNumT tau | isComplexT tau = return ()
 checkSignedNumT tau =
     faildoc $ nest 2 $ group $
     text "Expected numerical type but got:" <+/> ppr tau

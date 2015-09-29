@@ -117,6 +117,10 @@ stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
 
+isComplexT :: Type -> Bool
+isComplexT (StructT s _) = isComplexStruct s
+isComplexT _             = False
+
 isUnitT :: Type -> Bool
 isUnitT (UnitT {}) = True
 isUnitT _          = False
