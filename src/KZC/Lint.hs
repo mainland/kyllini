@@ -476,10 +476,9 @@ inferExp (TakeE tau l) = do
 
 inferExp (TakesE i tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [a,b] (C (arrKnownT i tau)) (tyVarT a) (tyVarT a) (tyVarT b) l
+    appSTScope $ ST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
-    a, b :: TyVar
-    a = "a"
+    b :: TyVar
     b = "b"
 
 inferExp (EmitE e l) = do
