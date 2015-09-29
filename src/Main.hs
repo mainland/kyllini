@@ -68,20 +68,20 @@ runPipeline filepath = do
     pipeline :: [Z.CompLet] -> MaybeT KZC ()
     pipeline =
         stopIf (testDynFlag StopAfterParse) >=>
-        renamePipe >=>
-        checkPipe >=>
+        renamePhase >=>
+        checkPhase >=>
+        lintCore >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        lift . compilePipe
+        compilePhase
 
-    renamePipe :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
-    renamePipe = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
+    renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
+    renamePhase = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
 
-    checkPipe :: [Z.CompLet] -> MaybeT KZC [C.Decl]
-    checkPipe = lift . withTi . checkProgram >=> dumpPass DumpCore "core" "tc" >=> lintCore
+    checkPhase :: [Z.CompLet] -> MaybeT KZC [C.Decl]
+    checkPhase = lift . withTi . checkProgram >=> dumpPass DumpCore "core" "tc"
 
-    compilePipe :: [C.Decl] -> KZC ()
-    compilePipe cdecls =
-        evalCg (compileProgram cdecls) >>= writeOutput
+    compilePhase :: [C.Decl] -> MaybeT KZC ()
+    compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
 
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
