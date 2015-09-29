@@ -45,7 +45,7 @@ cUR_KONT = C.Id "curk" noLoc
 
 compileProgram :: [Decl] -> Cg ()
 compileProgram decls = do
-    appendTopDef [cedecl|$esc:("#include <kzc.h>")|]
+    appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     cgDecls decls $ do
     ST _ _ _ a b _ <- lookupVar "main"
     ca     <- cgType a
@@ -236,7 +236,7 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     tau = FunT iotas (map snd vbs) tau_ret l
 
     cf :: C.Id
-    cf = C.Id (namedString f) l
+    cf = C.Id ("__kz_" ++ namedString f) l
 
 cgDecl decl@(LetRefD v tau maybe_e _) k = do
     cv <- cvar v
