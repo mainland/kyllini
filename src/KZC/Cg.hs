@@ -1029,22 +1029,29 @@ cgCComp take emit done ccomp =
         cleftk  <- cgCTemp "leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
         crightk <- cgCTemp "rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
         -- Generate a pointer to the current element in the buffer.
-        ctau <- cgType tau
-        cbuf <- cgCTemp "bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        ctau  <- cgType tau
+        cbuf  <- cgCTemp "buf"  [cty|$ty:ctau|]  Nothing
+        cbufp <- cgCTemp "bufp" [cty|$ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
-        cgCComp (take' cleftk crightk cbuf) emit                        done right
-        cgCComp take                        (emit' cleftk crightk cbuf) done left
+        cgCComp (take' cleftk crightk cbuf cbufp)
+                emit
+                done
+                right
+        cgCComp take
+                (emit' cleftk crightk cbuf cbufp)
+                done
+                left
       where
-        take' :: CExp -> CExp -> CExp -> TakeK
-        -- The one element take is easy. We know the element will be in @cbuf@,
-        -- so we call @k1@ with @cbuf@ as the argument, which generates a
+        take' :: CExp -> CExp -> CExp -> CExp -> TakeK
+        -- The one element take is easy. We know the element will be in @cbufp@,
+        -- so we call @k1@ with @cbufp@ as the argument, which generates a
         -- 'CComp', @ccomp@ that represents the continuation that consumes the
         -- taken value. We then set the right computation's continuation to the
         -- label of @ccomp@, since it is the continuation, generate code to jump
         -- to the left computation's continuation, and then call @k2@ with
         -- @ccomp@ suitably modified to have a required label.
-        take' cleftk crightk cbuf l 1 _tau k1 k2 = cgWithLabel l $ do
-            let ccomp =  k1 $ CExp [cexp|*$cbuf|]
+        take' cleftk crightk _ cbufp l 1 _tau k1 k2 = cgWithLabel l $ do
+            let ccomp =  k1 $ CExp [cexp|*$cbufp|]
             lbl       <- ccompLabel ccomp
             appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
             appendStm [cstm|INDJUMP($cleftk);|]
@@ -1055,7 +1062,7 @@ cgCComp take emit done ccomp =
         -- continuation repeatedly, until the buffer is full. Then we fall
         -- through to the next action, which is why we call @k2@ with @ccomp@
         -- without forcing its label to be required---we don't need the label!
-        take' cleftk crightk cbuf l n tau k1 k2 = cgWithLabel l $ do
+        take' cleftk crightk _ cbufp l n tau k1 k2 = cgWithLabel l $ do
             ctau      <- cgType tau
             carr      <- cgCTemp "xs" [cty|$ty:ctau[$int:n]|] Nothing
             lbl       <- genLabel "inner_takesk"
@@ -1065,26 +1072,25 @@ cgCComp take emit done ccomp =
             cgFor 0 (fromIntegral n) $ \ci -> do
                 appendStm [cstm|INDJUMP($cleftk);|]
                 cgWithLabel lbl $
-                    appendStm [cstm|$carr[$ci] = *$cbuf;|]
+                    appendStm [cstm|$carr[$ci] = *$cbufp;|]
             k2 ccomp
 
-        emit' :: CExp -> CExp -> CExp -> EmitK
-        emit' cleftk crightk cbuf l (ArrT (ConstI 1 _) tau _) ce ccomp k =
+        emit' :: CExp -> CExp -> CExp -> CExp -> EmitK
+        emit' cleftk crightk cbuf cbufp l (ArrT (ConstI 1 _) tau _) ce ccomp k =
             cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            caddr <- cgAddrOf tau ce
-            appendStm [cstm|$cbuf = $caddr;|]
+            cgAssignBufp tau cbuf cbufp ce
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        emit' cleftk crightk cbuf l (ArrT iota _ _) ce ccomp k = do
+        emit' cleftk crightk _ cbufp l (ArrT iota _ _) ce ccomp k = do
             cn <- cgIota iota
             useLabel l
             appendStm [cstm|$cleftk = LABELADDR($id:l);|]
             cgFor 0 cn $ \ci -> do
                 cidx <- cgIdx ce ci
-                appendStm [cstm|$cbuf = &$cidx;|]
+                appendStm [cstm|$cbufp = &$cidx;|]
                 appendStm [cstm|INDJUMP($crightk);|]
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
@@ -1093,14 +1099,34 @@ cgCComp take emit done ccomp =
             k ccomp
 
         -- @tau@ must be a base (scalar) type
-        emit' cleftk crightk cbuf l tau ce ccomp k =
+        emit' cleftk crightk cbuf cbufp l tau ce ccomp k =
             cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            caddr <- cgAddrOf tau ce
-            appendStm [cstm|$cbuf = $caddr;|]
+            cgAssignBufp tau cbuf cbufp ce
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
+
+        -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
+        -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
+        -- @cbuf@. This ensures that we can always pass buffer elements by
+        -- reference.
+        cgAssignBufp :: Type -> CExp -> CExp -> CExp -> Cg ()
+        cgAssignBufp tau _ cbufp ce | isLvalue ce = do
+            caddr <- cgAddrOf tau ce
+            appendStm [cstm|$cbufp = $caddr;|]
+
+        cgAssignBufp tau cbuf cbufp ce = do
+            cgAssign tau cbuf ce
+            appendStm [cstm|$cbufp = &$cbuf;|]
+
+-- | Return 'True' if a compiled expression is a C lvalue.
+isLvalue :: CExp -> Bool
+isLvalue (CExp (C.Var {}))       = True
+isLvalue (CExp (C.Member {}))    = True
+isLvalue (CExp (C.PtrMember {})) = True
+isLvalue (CExp (C.Index {}))     = True
+isLvalue _                       = False
 
 -- | @'isComp' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
 isComp :: Type -> Bool
