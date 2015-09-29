@@ -152,7 +152,8 @@ cgBoundExp tau e =
         liftM CComp $
         collectComp $
         withSummaryContext e $
-        inSTScope tau $ do
+        inSTScope tau $
+        inLocalScope $
         cgExp e >>= unCComp
 
 cgDecl :: forall a . Decl -> Cg a -> Cg a
@@ -182,10 +183,11 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
             extendVars vbs $ do
             (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
             (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
-            citems <- inNewBlock_ $ do
-                      extendIVarCExps (iotas `zip` ciotas) $ do
-                      extendVarCExps  (map fst vbs `zip` cvbs) $ do
-                      inSTScope tau_ret $ do
+            citems <- inNewBlock_ $
+                      extendIVarCExps (iotas `zip` ciotas) $
+                      extendVarCExps  (map fst vbs `zip` cvbs) $
+                      inSTScope tau_ret $
+                      inLocalScope $ do
                       cres <- cgTemp "result" tau_res Nothing
                       cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
                       when (not (isUnitT tau_res)) $
@@ -245,7 +247,7 @@ cgDecl decl@(LetRefD v tau maybe_e _) k = do
         ctau     <- cgType tau
         maybe_ce <- case maybe_e of
                       Nothing -> return Nothing
-                      Just e -> Just <$> cgExp e
+                      Just e -> Just <$> inLocalScope (cgExp e)
         appendLetDecl [cdecl|$ty:ctau $id:cv;|]
         case maybe_ce of
           Nothing -> return ()
@@ -1141,10 +1143,10 @@ cgFor cfrom cto k = do
 -- this a top-level C declaration; otherwise, make it a local C declaration.
 appendLetDecl :: C.InitGroup -> Cg ()
 appendLetDecl decl = do
-    inLocalScope <- isInSTScope
-    if inLocalScope
-      then appendDecl decl
-      else appendTopDecl decl
+    atTop <- isInTopScope
+    if atTop
+      then appendTopDecl decl
+      else appendDecl decl
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
