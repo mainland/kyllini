@@ -45,6 +45,9 @@ e1 .<=. e2 = BinopE Le e1 e2 l
     l :: SrcLoc
     l = e1 `srcspan` e2
 
+letE :: Decl -> Exp -> Exp
+letE d e = LetE d e (d `srcspan` e)
+
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
@@ -117,6 +120,10 @@ tyVarT alpha = TyVarT alpha noLoc
 isUnitT :: Type -> Bool
 isUnitT (UnitT {}) = True
 isUnitT _          = False
+
+isFunT :: Type -> Bool
+isFunT (FunT {}) = True
+isFunT _         = False
 
 isSTUnitT :: Type -> Bool
 isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
