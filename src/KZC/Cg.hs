@@ -299,26 +299,24 @@ cgExp (VarE v _) =
     lookupVarCExp v
 
 cgExp (UnopE op e _) = do
-    ce <- cgExp e
-    cgUnop ce op
+    tau <- inferExp e
+    ce  <- cgExp e
+    cgUnop tau ce op
   where
-    cgUnop :: CExp -> Unop -> Cg CExp
-    cgUnop ce Lnot =
-        return $ CExp [cexp|!$ce|]
+    cgUnop :: Type -> CExp -> Unop -> Cg CExp
+    cgUnop _ ce Lnot = return $ CExp [cexp|!$ce|]
+    cgUnop _ ce Bnot = return $ CExp [cexp|~$ce|]
+    cgUnop _ ce Neg  = return $ CExp [cexp|-$ce|]
 
-    cgUnop ce Bnot =
-        return $ CExp [cexp|~$ce|]
-
-    cgUnop ce Neg =
-        return $ CExp [cexp|-$ce|]
-
-    cgUnop ce (Cast tau_to) = do
-        tau_from <- inferExp e
+    cgUnop tau_from ce (Cast tau_to) =
         cgCast ce tau_from tau_to
 
-    cgUnop _ Len = do
-        ArrT iota _ _ <- inferExp e
+    cgUnop (ArrT iota _ _) _ Len =
         cgIota iota
+
+    cgUnop _ _ Len =
+        panicdoc $
+        text "cgUnop: tried to take the length of a non-array type!"
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
@@ -338,31 +336,32 @@ cgExp (UnopE op e _) = do
         return $ CExp [cexp|($ty:ctau_to) $ce|]
 
 cgExp (BinopE op e1 e2 _) = do
+    tau <- inferExp e1
     ce1 <- cgExp e1
     ce2 <- cgExp e2
-    return $ CExp $ cgBinop ce1 ce2 op
+    cgBinop tau ce1 ce2 op
   where
-    cgBinop :: CExp -> CExp -> Binop -> C.Exp
-    cgBinop ce1 ce2 Lt   = [cexp|$ce1 <  $ce2|]
-    cgBinop ce1 ce2 Le   = [cexp|$ce1 <= $ce2|]
-    cgBinop ce1 ce2 Eq   = [cexp|$ce1 == $ce2|]
-    cgBinop ce1 ce2 Ge   = [cexp|$ce1 >= $ce2|]
-    cgBinop ce1 ce2 Gt   = [cexp|$ce1 >  $ce2|]
-    cgBinop ce1 ce2 Ne   = [cexp|$ce1 != $ce2|]
-    cgBinop ce1 ce2 Land = [cexp|$ce1 && $ce2|]
-    cgBinop ce1 ce2 Lor  = [cexp|$ce1 || $ce2|]
-    cgBinop ce1 ce2 Band = [cexp|$ce1 &  $ce2|]
-    cgBinop ce1 ce2 Bor  = [cexp|$ce1 |  $ce2|]
-    cgBinop ce1 ce2 Bxor = [cexp|$ce1 ^  $ce2|]
-    cgBinop ce1 ce2 LshL = [cexp|$ce1 << $ce2|]
-    cgBinop ce1 ce2 LshR = [cexp|$ce1 >> $ce2|]
-    cgBinop ce1 ce2 AshR = [cexp|((unsigned int) $ce1) >> $ce2|]
-    cgBinop ce1 ce2 Add  = [cexp|$ce1 + $ce2|]
-    cgBinop ce1 ce2 Sub  = [cexp|$ce1 - $ce2|]
-    cgBinop ce1 ce2 Mul  = [cexp|$ce1 * $ce2|]
-    cgBinop ce1 ce2 Div  = [cexp|$ce1 / $ce2|]
-    cgBinop ce1 ce2 Rem  = [cexp|$ce1 % $ce2|]
-    cgBinop ce1 ce2 Pow  = [cexp|pow($ce1, $ce2)|]
+    cgBinop :: Type -> CExp -> CExp -> Binop -> Cg CExp
+    cgBinop _ ce1 ce2 Lt   = return $ CExp [cexp|$ce1 <  $ce2|]
+    cgBinop _ ce1 ce2 Le   = return $ CExp [cexp|$ce1 <= $ce2|]
+    cgBinop _ ce1 ce2 Eq   = return $ CExp [cexp|$ce1 == $ce2|]
+    cgBinop _ ce1 ce2 Ge   = return $ CExp [cexp|$ce1 >= $ce2|]
+    cgBinop _ ce1 ce2 Gt   = return $ CExp [cexp|$ce1 >  $ce2|]
+    cgBinop _ ce1 ce2 Ne   = return $ CExp [cexp|$ce1 != $ce2|]
+    cgBinop _ ce1 ce2 Land = return $ CExp [cexp|$ce1 && $ce2|]
+    cgBinop _ ce1 ce2 Lor  = return $ CExp [cexp|$ce1 || $ce2|]
+    cgBinop _ ce1 ce2 Band = return $ CExp [cexp|$ce1 &  $ce2|]
+    cgBinop _ ce1 ce2 Bor  = return $ CExp [cexp|$ce1 |  $ce2|]
+    cgBinop _ ce1 ce2 Bxor = return $ CExp [cexp|$ce1 ^  $ce2|]
+    cgBinop _ ce1 ce2 LshL = return $ CExp [cexp|$ce1 << $ce2|]
+    cgBinop _ ce1 ce2 LshR = return $ CExp [cexp|$ce1 >> $ce2|]
+    cgBinop _ ce1 ce2 AshR = return $ CExp [cexp|((unsigned int) $ce1) >> $ce2|]
+    cgBinop _ ce1 ce2 Add  = return $ CExp [cexp|$ce1 + $ce2|]
+    cgBinop _ ce1 ce2 Sub  = return $ CExp [cexp|$ce1 - $ce2|]
+    cgBinop _ ce1 ce2 Mul  = return $ CExp [cexp|$ce1 * $ce2|]
+    cgBinop _ ce1 ce2 Div  = return $ CExp [cexp|$ce1 / $ce2|]
+    cgBinop _ ce1 ce2 Rem  = return $ CExp [cexp|$ce1 % $ce2|]
+    cgBinop _ ce1 ce2 Pow  = return $ CExp [cexp|pow($ce1, $ce2)|]
 
 cgExp e@(IfE e1 e2 e3 _) = do
     inferExp e >>= go
