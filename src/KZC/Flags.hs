@@ -56,12 +56,14 @@ data WarnFlag = WarnError
 
 data DumpFlag = DumpCPP
               | DumpRename
+              | DumpLift
               | DumpCore
   deriving (Eq, Ord, Enum, Show)
 
 data TraceFlag = TraceLexer
                | TraceParser
                | TraceRn
+               | TraceLift
                | TraceTc
                | TraceCg
                | TraceLint

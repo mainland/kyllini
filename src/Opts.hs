@@ -107,6 +107,7 @@ dDumpFlagOpts :: [(DumpFlag, String, String)]
 dDumpFlagOpts =
   [ (DumpCPP,    "cpp",  "dump CPP output")
   , (DumpRename, "rn",   "dump renamer output")
+  , (DumpLift,   "lift", "dump lambda lifter output")
   , (DumpCore,   "core", "dump core")
   ]
 
@@ -115,6 +116,7 @@ dTraceFlagOpts =
   [ (TraceLexer,  "lex",   "trace lexer")
   , (TraceParser, "parse", "trace parser")
   , (TraceRn,     "rn",    "trace renamer")
+  , (TraceLift,   "lift",  "trace lambda lifter")
   , (TraceTc,     "tc",    "trace type checker")
   , (TraceCg,     "cg",    "trace code generation")
   , (TraceLint,   "lint",  "trace linter")

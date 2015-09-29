@@ -30,6 +30,7 @@ import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
+import KZC.LambdaLift
 import qualified KZC.Lint as Lint
 import KZC.Monad
 import KZC.Rename
@@ -71,6 +72,8 @@ runPipeline filepath = do
         renamePhase >=>
         checkPhase >=>
         lintCore >=>
+        lambdaLiftPhase >=>
+        lintCore >=>
         stopIf (testDynFlag StopAfterCheck) >=>
         compilePhase
 
@@ -79,6 +82,9 @@ runPipeline filepath = do
 
     checkPhase :: [Z.CompLet] -> MaybeT KZC [C.Decl]
     checkPhase = lift . withTi . checkProgram >=> dumpPass DumpCore "core" "tc"
+
+    lambdaLiftPhase :: [C.Decl] -> MaybeT KZC [C.Decl]
+    lambdaLiftPhase = lift . runLift . liftProgram >=> dumpPass DumpLift "core" "ll"
 
     compilePhase :: [C.Decl] -> MaybeT KZC ()
     compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
