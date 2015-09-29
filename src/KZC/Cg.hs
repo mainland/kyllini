@@ -304,10 +304,6 @@ cgExp (UnopE op e _) = do
     cgUnop tau ce op
   where
     cgUnop :: Type -> CExp -> Unop -> Cg CExp
-    cgUnop _ ce Lnot = return $ CExp [cexp|!$ce|]
-    cgUnop _ ce Bnot = return $ CExp [cexp|~$ce|]
-    cgUnop _ ce Neg  = return $ CExp [cexp|-$ce|]
-
     cgUnop tau_from ce (Cast tau_to) =
         cgCast ce tau_from tau_to
 
@@ -317,6 +313,25 @@ cgExp (UnopE op e _) = do
     cgUnop _ _ Len =
         panicdoc $
         text "cgUnop: tried to take the length of a non-array type!"
+
+    cgUnop tau ce op | isComplexT tau =
+        go op
+      where
+        go :: Unop -> Cg CExp
+        go Neg = do
+            let a,b :: CExp
+                (a, b) = unComplex ce
+            cv <- cgTemp "binop_complex" tau Nothing
+            appendStm [cstm|$cv.re = $(-a);|]
+            appendStm [cstm|$cv.im = $(-b);|]
+            return cv
+
+        go op =
+            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
+
+    cgUnop _ ce Lnot = return $ CExp [cexp|!$ce|]
+    cgUnop _ ce Bnot = return $ CExp [cexp|~$ce|]
+    cgUnop _ ce Neg  = return $ CExp [cexp|-$ce|]
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
@@ -342,6 +357,55 @@ cgExp (BinopE op e1 e2 _) = do
     cgBinop tau ce1 ce2 op
   where
     cgBinop :: Type -> CExp -> CExp -> Binop -> Cg CExp
+    cgBinop tau ce1 ce2 op | isComplexT tau =
+        go op
+      where
+        go :: Binop -> Cg CExp
+        go Eq =
+            return $ CExp [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
+
+        go Ne =
+            return $ CExp [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
+
+        go Add = do
+            let a,b,c,d :: CExp
+                (a, b) = unComplex ce1
+                (c, d) = unComplex ce2
+            cv <- cgTemp "binop_complex" tau Nothing
+            appendStm [cstm|$cv.re = $(a+c);|]
+            appendStm [cstm|$cv.im = $(b+d);|]
+            return cv
+
+        go Sub = do
+            let a,b,c,d :: CExp
+                (a, b) = unComplex ce1
+                (c, d) = unComplex ce2
+            cv <- cgTemp "binop_complex" tau Nothing
+            appendStm [cstm|$cv.re = $(a-c);|]
+            appendStm [cstm|$cv.im = $(b-d);|]
+            return cv
+
+        go Mul = do
+            let a,b,c,d :: CExp
+                (a, b) = unComplex ce1
+                (c, d) = unComplex ce2
+            cv <- cgTemp "binop_complex" tau Nothing
+            appendStm [cstm|$cv.re = $(a*c - b*d);|]
+            appendStm [cstm|$cv.im = $(b*c + a*d);|]
+            return cv
+
+        go Div = do
+            let a,b,c,d :: CExp
+                (a, b) = unComplex ce1
+                (c, d) = unComplex ce2
+            cv <- cgTemp "binop_complex" tau Nothing
+            appendStm [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
+            appendStm [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
+            return cv
+
+        go op =
+            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
+
     cgBinop _ ce1 ce2 Lt   = return $ CExp [cexp|$ce1 <  $ce2|]
     cgBinop _ ce1 ce2 Le   = return $ CExp [cexp|$ce1 <= $ce2|]
     cgBinop _ ce1 ce2 Eq   = return $ CExp [cexp|$ce1 == $ce2|]
@@ -706,6 +770,11 @@ cgVarBind (v, tau) = do
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
+
+-- | Destruct a 'CExp' representing a complex number into its constituent real
+-- and imaginary parts.
+unComplex :: CExp -> (CExp, CExp)
+unComplex ce = (CExp [cexp|$ce.re|], CExp [cexp|$ce.im|])
 
 unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =
