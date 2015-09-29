@@ -502,9 +502,7 @@ cgExp e0@(CallE f iotas es _) = do
 
 cgExp (DerefE e _) = do
     ce <- cgExp e
-    case ce of
-      CPtr {} -> return $ CExp [cexp|*$ce|]
-      _       -> return ce
+    return $ unPtr ce
 
 cgExp (AssignE e1 e2 _) = do
     tau <- inferExp e1
@@ -775,6 +773,11 @@ cgIota (VarI iv _)  = lookupIVarCExp iv
 -- and imaginary parts.
 unComplex :: CExp -> (CExp, CExp)
 unComplex ce = (CExp [cexp|$ce.re|], CExp [cexp|$ce.im|])
+
+-- | Dereference a ref type, which may or may not be represented as a pointer.
+unPtr :: CExp -> CExp
+unPtr (CPtr ce) = CExp [cexp|*$ce|]
+unPtr ce        = ce
 
 unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =
@@ -1152,8 +1155,10 @@ cgAssign (RefT (ArrT iota tau _) _) ce1 ce2 = do
     clen <- cgIota iota
     appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
 
+-- We call 'unPtr' on @cv@ because the lhs of an assignment is a ref type and
+-- may need to be dereferenced.
 cgAssign _ cv ce =
-    appendStm [cstm|$cv = $ce;|]
+    appendStm [cstm|$(unPtr cv) = $ce;|]
 
 cgArrayAddr :: CExp -> Cg CExp
 cgArrayAddr (CSlice carr cidx _) =
