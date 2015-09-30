@@ -470,7 +470,6 @@ cgExp e0@(CallE f iotas es l) = do
   where
     cgPureCall :: Cg CExp
     cgPureCall = do
-        traceCg $ text "pure call" <+> ppr e0
         cf     <- lookupVarCExp f
         ciotas <- mapM cgIota iotas
         ces    <- mapM cgArg es
@@ -490,7 +489,6 @@ cgExp e0@(CallE f iotas es l) = do
 
     cgImpureCall :: Cg CExp
     cgImpureCall = do
-        traceCg $ text "impure call" <+> ppr e0
         (ivs, vbs, m) <- lookupVarCExp f >>= unCDelay
         ciotas        <- mapM cgIota iotas
         ces           <- mapM cgArg es
