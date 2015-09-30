@@ -178,6 +178,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
         cf <- cvar f
         extendVars [(f, tau)] $ do
         extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
+        appendTopComment (ppr f <+> colon <+> align (ppr tau))
         withSummaryContext decl $ do
             extendIVars (iotas `zip` repeat IotaK) $ do
             extendVars vbs $ do
@@ -228,6 +229,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
 cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
+    appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do
         (_, cparams1) <- unzip <$> mapM cgIVar iotas
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
@@ -1301,6 +1303,11 @@ appendLetDecl decl = do
     if atTop
       then appendTopDecl decl
       else appendDecl decl
+
+-- | Append a comment to the list of top-level definitions.
+appendTopComment :: Doc -> Cg ()
+appendTopComment doc =
+    appendTopDef [cedecl|$esc:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
