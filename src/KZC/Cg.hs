@@ -1032,17 +1032,17 @@ cgCComp take emit done ccomp =
         appendStm [cstm|JUMP($id:l);|]
 
     cgParSingleThreaded :: Type -> CComp -> CComp -> Cg ()
-    cgParSingleThreaded tau left right = do
+    cgParSingleThreaded tau_internal left right = do
         -- Generate variables to hold the left and right computations'
         -- continuations.
         leftl   <- ccompLabel left
         rightl  <- ccompLabel right
-        cleftk  <- cgCTemp tau "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
-        crightk <- cgCTemp tau "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
+        cleftk  <- cgCTemp tau_internal "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
+        crightk <- cgCTemp tau_internal "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
         -- Generate a pointer to the current element in the buffer.
-        ctau  <- cgType tau
-        cbuf  <- cgCTemp tau "par_buf"  [cty|$ty:ctau|]  Nothing
-        cbufp <- cgCTemp tau "par_bufp" [cty|$ty:ctau*|] Nothing
+        ctau  <- cgType tau_internal
+        cbuf  <- cgCTemp tau_internal "par_buf"  [cty|$ty:ctau|]  Nothing
+        cbufp <- cgCTemp tau_internal "par_bufp" [cty|$ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
         cgCComp (take' cleftk crightk cbuf cbufp)
                 emit
@@ -1061,7 +1061,8 @@ cgCComp take emit done ccomp =
         -- label of @ccomp@, since it is the continuation, generate code to jump
         -- to the left computation's continuation, and then call @k2@ with
         -- @ccomp@ suitably modified to have a required label.
-        take' cleftk crightk _ cbufp l 1 _tau k1 k2 = cgWithLabel l $ do
+        take' cleftk crightk _ cbufp l 1 _tau k1 k2 =
+            cgWithLabel l $ do
             let ccomp =  k1 $ CExp [cexp|*$cbufp|]
             lbl       <- ccompLabel ccomp
             appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
@@ -1073,7 +1074,8 @@ cgCComp take emit done ccomp =
         -- continuation repeatedly, until the buffer is full. Then we fall
         -- through to the next action, which is why we call @k2@ with @ccomp@
         -- without forcing its label to be required---we don't need the label!
-        take' cleftk crightk _ cbufp l n tau k1 k2 = cgWithLabel l $ do
+        take' cleftk crightk _ cbufp l n tau k1 k2 =
+            cgWithLabel l $ do
             ctau      <- cgType tau
             carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             lbl       <- genLabel "inner_takesk"
