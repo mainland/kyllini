@@ -231,8 +231,11 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     withSummaryContext decl $ do
         (_, cparams1) <- unzip <$> mapM cgIVar iotas
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
-        ctau_ret <- cgType tau_ret
-        appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+        if isReturnedByRef tau_ret
+          then do cretparam <- cgParam tau_ret Nothing
+                  appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
+          else do ctau_ret <- cgType tau_ret
+                  appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
@@ -463,17 +466,21 @@ cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
 
 cgExp e0@(CallE f iotas es l) = do
-    FunT _ _ tau _ <- lookupVar f
-    if isPureish tau
-      then cgPureCall
-      else cgImpureCall
+    FunT _ _ tau_ret _ <- lookupVar f
+    if isPureish tau_ret
+      then cgPureCall tau_ret
+      else cgImpureCall tau_ret
   where
-    cgPureCall :: Cg CExp
-    cgPureCall = do
+    cgPureCall :: Type -> Cg CExp
+    cgPureCall tau_ret = do
         cf     <- lookupVarCExp f
         ciotas <- mapM cgIota iotas
         ces    <- mapM cgArg es
-        return $ CExp $ rl l [cexp|$cf($args:ciotas, $args:ces)|]
+        if isReturnedByRef tau_ret
+          then do cres <- cgTemp "call_res" tau_ret Nothing
+                  appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
+                  return cres
+          else do return $ CExp $ rl l [cexp|$cf($args:ciotas, $args:ces)|]
       where
         cgArg :: Exp -> Cg CExp
         cgArg e = do
@@ -487,8 +494,8 @@ cgExp e0@(CallE f iotas es l) = do
             go _ =
                 cgExp e
 
-    cgImpureCall :: Cg CExp
-    cgImpureCall = do
+    cgImpureCall :: Type -> Cg CExp
+    cgImpureCall _ = do
         (ivs, vbs, m) <- lookupVarCExp f >>= unCDelay
         ciotas        <- mapM cgIota iotas
         ces           <- mapM cgArg es
@@ -874,8 +881,11 @@ cgType (RefT tau _) = do
 cgType (FunT ivs args ret _) = do
     let ivTys =  replicate (length ivs) [cparam|int|]
     argTys    <- mapM (\tau -> cgParam tau Nothing) args
-    retTy     <- cgType ret
-    return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
+    if isReturnedByRef ret
+      then do retTy <- cgParam ret Nothing
+              return [cty|void (*)($params:(ivTys ++ argTys ++ [retTy]))|]
+      else do retTy     <- cgType ret
+              return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
 
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
@@ -1178,6 +1188,12 @@ isPassByRef :: Type -> Bool
 isPassByRef (RefT (ArrT {}) _) = False
 isPassByRef (RefT {})          = True
 isPassByRef _                  = False
+
+-- | Return @True@ if a value of the given type is passed by reference as an
+-- argument when it is the result of a function call.
+isReturnedByRef :: Type -> Bool
+isReturnedByRef (ArrT {}) = True
+isReturnedByRef _         = False
 
 -- | @'cgLet' v ce tau@ generates code to assign the compiled expression @ce@,
 -- of type @tau@, to the core variable @v@. If @ce@ is a computation or a
