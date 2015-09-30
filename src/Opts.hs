@@ -1,3 +1,9 @@
+-- |
+-- Module      :  Opts
+-- Copyright   :  (c) 2015 Drexel University
+-- License     :  BSD-style
+-- Maintainer  :  mainland@cdrexel.edu
+
 module Opts (
     compilerOpts,
     usage

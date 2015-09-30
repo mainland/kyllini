@@ -1,3 +1,9 @@
+-- |
+-- Module      :  Main
+-- Copyright   :  (c) 2015 Drexel University
+-- License     :  BSD-style
+-- Maintainer  :  mainland@cdrexel.edu
+
 module Main where
 
 import Control.Applicative
