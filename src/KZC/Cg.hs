@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     take l 1 tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp tau "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i++];|]
         k2 $ k1 $ CExp [cexp|*$cbuf|]
@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     take l n tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp tau "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i];|]
         appendStm [cstm|i += $int:n;|]
@@ -191,9 +191,9 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       cres <- cgTemp "let_res" tau_res Nothing
                       cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
                       when (not (isUnitT tau_res)) $
-                          appendStm [cstm|return $cres;|]
+                          appendStm $ rl l [cstm|return $cres;|]
             ctau_ret <- cgType tau_ret
-            appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+            appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
         k
       where
         tau_res :: Type
@@ -232,7 +232,7 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
         (_, cparams1) <- unzip <$> mapM cgIVar iotas
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         ctau_ret <- cgType tau_ret
-        appendTopDef [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+        appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
@@ -241,17 +241,17 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     cf :: C.Id
     cf = C.Id ("__kz_" ++ namedString f) l
 
-cgDecl decl@(LetRefD v tau maybe_e _) k = do
+cgDecl decl@(LetRefD v tau maybe_e l) k = do
     cv <- cvar v
     withSummaryContext decl $ do
         ctau     <- cgType tau
         maybe_ce <- case maybe_e of
                       Nothing -> return Nothing
                       Just e -> Just <$> inLocalScope (cgExp e)
-        appendLetDecl [cdecl|$ty:ctau $id:cv;|]
+        appendLetDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
         case maybe_ce of
           Nothing -> return ()
-          Just ce -> appendStm [cstm|$id:cv = $ce;|]
+          Just ce -> appendStm $ rl l [cstm|$id:cv = $ce;|]
     extendVars [(v, refT tau)] $ do
     extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
     k
@@ -259,7 +259,7 @@ cgDecl decl@(LetRefD v tau maybe_e _) k = do
 cgDecl decl@(LetStructD s flds l) k = do
     withSummaryContext decl $ do
         cflds <- mapM cgField flds
-        appendTopDecl [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
+        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
     extendStructs [StructDef s flds l] k
   where
     cgField :: (Field, Type) -> Cg C.FieldGroup
@@ -298,7 +298,7 @@ cgExp e@(ConstE c _) =
 cgExp (VarE v _) =
     lookupVarCExp v
 
-cgExp (UnopE op e _) = do
+cgExp (UnopE op e l) = do
     tau <- inferExp e
     ce  <- cgExp e
     cgUnop tau ce op
@@ -322,8 +322,8 @@ cgExp (UnopE op e _) = do
             let a,b :: CExp
                 (a, b) = unComplex ce
             cv <- cgTemp "binop_complex" tau Nothing
-            appendStm [cstm|$cv.re = $(-a);|]
-            appendStm [cstm|$cv.im = $(-b);|]
+            appendStm $ rl l [cstm|$cv.re = $(-a);|]
+            appendStm $ rl l [cstm|$cv.im = $(-b);|]
             return cv
 
         go op =
@@ -336,21 +336,21 @@ cgExp (UnopE op e _) = do
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
         ctemp <- cgTemp "cast_complex" tau_to Nothing
-        appendStm [cstm|$ctemp.re = $ce.re;|]
-        appendStm [cstm|$ctemp.im = $ce.im;|]
+        appendStm $ rl l [cstm|$ctemp.re = $ce.re;|]
+        appendStm $ rl l [cstm|$ctemp.im = $ce.im;|]
         return ctemp
 
     cgCast ce _ tau_to | isComplexT tau_to = do
         ctemp <- cgTemp "cast_complex" tau_to Nothing
-        appendStm [cstm|$ctemp.re = $ce;|]
-        appendStm [cstm|$ctemp.im = $ce;|]
+        appendStm $ rl l [cstm|$ctemp.re = $ce;|]
+        appendStm $ rl l [cstm|$ctemp.im = $ce;|]
         return ctemp
 
     cgCast ce _ tau_to = do
         ctau_to <- cgType tau_to
-        return $ CExp [cexp|($ty:ctau_to) $ce|]
+        return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
-cgExp (BinopE op e1 e2 _) = do
+cgExp (BinopE op e1 e2 l) = do
     tau <- inferExp e1
     ce1 <- cgExp e1
     ce2 <- cgExp e2
@@ -362,18 +362,18 @@ cgExp (BinopE op e1 e2 _) = do
       where
         go :: Binop -> Cg CExp
         go Eq =
-            return $ CExp [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
+            return $ CExp $ rl l [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
 
         go Ne =
-            return $ CExp [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
+            return $ CExp $ rl l [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
 
         go Add = do
             let a,b,c,d :: CExp
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
             cv <- cgTemp "binop_complex" tau Nothing
-            appendStm [cstm|$cv.re = $(a+c);|]
-            appendStm [cstm|$cv.im = $(b+d);|]
+            appendStm $ rl l [cstm|$cv.re = $(a+c);|]
+            appendStm $ rl l [cstm|$cv.im = $(b+d);|]
             return cv
 
         go Sub = do
@@ -390,8 +390,8 @@ cgExp (BinopE op e1 e2 _) = do
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
             cv <- cgTemp "binop_complex" tau Nothing
-            appendStm [cstm|$cv.re = $(a*c - b*d);|]
-            appendStm [cstm|$cv.im = $(b*c + a*d);|]
+            appendStm $ rl l [cstm|$cv.re = $(a*c - b*d);|]
+            appendStm $ rl l [cstm|$cv.im = $(b*c + a*d);|]
             return cv
 
         go Div = do
@@ -399,33 +399,33 @@ cgExp (BinopE op e1 e2 _) = do
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
             cv <- cgTemp "binop_complex" tau Nothing
-            appendStm [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
-            appendStm [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
+            appendStm $ rl l [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
+            appendStm $ rl l [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
             return cv
 
         go op =
             panicdoc $ text "Illegal operation on complex values:" <+> ppr op
 
-    cgBinop _ ce1 ce2 Lt   = return $ CExp [cexp|$ce1 <  $ce2|]
-    cgBinop _ ce1 ce2 Le   = return $ CExp [cexp|$ce1 <= $ce2|]
-    cgBinop _ ce1 ce2 Eq   = return $ CExp [cexp|$ce1 == $ce2|]
-    cgBinop _ ce1 ce2 Ge   = return $ CExp [cexp|$ce1 >= $ce2|]
-    cgBinop _ ce1 ce2 Gt   = return $ CExp [cexp|$ce1 >  $ce2|]
-    cgBinop _ ce1 ce2 Ne   = return $ CExp [cexp|$ce1 != $ce2|]
-    cgBinop _ ce1 ce2 Land = return $ CExp [cexp|$ce1 && $ce2|]
-    cgBinop _ ce1 ce2 Lor  = return $ CExp [cexp|$ce1 || $ce2|]
-    cgBinop _ ce1 ce2 Band = return $ CExp [cexp|$ce1 &  $ce2|]
-    cgBinop _ ce1 ce2 Bor  = return $ CExp [cexp|$ce1 |  $ce2|]
-    cgBinop _ ce1 ce2 Bxor = return $ CExp [cexp|$ce1 ^  $ce2|]
-    cgBinop _ ce1 ce2 LshL = return $ CExp [cexp|$ce1 << $ce2|]
-    cgBinop _ ce1 ce2 LshR = return $ CExp [cexp|$ce1 >> $ce2|]
-    cgBinop _ ce1 ce2 AshR = return $ CExp [cexp|((unsigned int) $ce1) >> $ce2|]
-    cgBinop _ ce1 ce2 Add  = return $ CExp [cexp|$ce1 + $ce2|]
-    cgBinop _ ce1 ce2 Sub  = return $ CExp [cexp|$ce1 - $ce2|]
-    cgBinop _ ce1 ce2 Mul  = return $ CExp [cexp|$ce1 * $ce2|]
-    cgBinop _ ce1 ce2 Div  = return $ CExp [cexp|$ce1 / $ce2|]
-    cgBinop _ ce1 ce2 Rem  = return $ CExp [cexp|$ce1 % $ce2|]
-    cgBinop _ ce1 ce2 Pow  = return $ CExp [cexp|pow($ce1, $ce2)|]
+    cgBinop _ ce1 ce2 Lt   = return $ CExp $ rl l [cexp|$ce1 <  $ce2|]
+    cgBinop _ ce1 ce2 Le   = return $ CExp $ rl l [cexp|$ce1 <= $ce2|]
+    cgBinop _ ce1 ce2 Eq   = return $ CExp $ rl l [cexp|$ce1 == $ce2|]
+    cgBinop _ ce1 ce2 Ge   = return $ CExp $ rl l [cexp|$ce1 >= $ce2|]
+    cgBinop _ ce1 ce2 Gt   = return $ CExp $ rl l [cexp|$ce1 >  $ce2|]
+    cgBinop _ ce1 ce2 Ne   = return $ CExp $ rl l [cexp|$ce1 != $ce2|]
+    cgBinop _ ce1 ce2 Land = return $ CExp $ rl l [cexp|$ce1 && $ce2|]
+    cgBinop _ ce1 ce2 Lor  = return $ CExp $ rl l [cexp|$ce1 || $ce2|]
+    cgBinop _ ce1 ce2 Band = return $ CExp $ rl l [cexp|$ce1 &  $ce2|]
+    cgBinop _ ce1 ce2 Bor  = return $ CExp $ rl l [cexp|$ce1 |  $ce2|]
+    cgBinop _ ce1 ce2 Bxor = return $ CExp $ rl l [cexp|$ce1 ^  $ce2|]
+    cgBinop _ ce1 ce2 LshL = return $ CExp $ rl l [cexp|$ce1 << $ce2|]
+    cgBinop _ ce1 ce2 LshR = return $ CExp $ rl l [cexp|$ce1 >> $ce2|]
+    cgBinop _ ce1 ce2 AshR = return $ CExp $ rl l [cexp|((unsigned int) $ce1) >> $ce2|]
+    cgBinop _ ce1 ce2 Add  = return $ CExp $ rl l [cexp|$ce1 + $ce2|]
+    cgBinop _ ce1 ce2 Sub  = return $ CExp $ rl l [cexp|$ce1 - $ce2|]
+    cgBinop _ ce1 ce2 Mul  = return $ CExp $ rl l [cexp|$ce1 * $ce2|]
+    cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$ce1 / $ce2|]
+    cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
+    cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
 
 cgExp e@(IfE e1 e2 e3 _) = do
     inferExp e >>= go
@@ -462,7 +462,7 @@ cgExp e@(IfE e1 e2 e3 _) = do
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
 
-cgExp e0@(CallE f iotas es _) = do
+cgExp e0@(CallE f iotas es l) = do
     FunT _ _ tau _ <- lookupVar f
     if isPureish tau
       then cgPureCall
@@ -474,7 +474,7 @@ cgExp e0@(CallE f iotas es _) = do
         cf     <- lookupVarCExp f
         ciotas <- mapM cgIota iotas
         ces    <- mapM cgArg es
-        return $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+        return $ CExp $ rl l [cexp|$cf($args:ciotas, $args:ces)|]
       where
         cgArg :: Exp -> Cg CExp
         cgArg e = do
@@ -523,7 +523,7 @@ cgExp (AssignE e1 e2 _) = do
     cgAssign tau ce1 ce2
     return CVoid
 
-cgExp e0@(WhileE e_test e_body _) = do
+cgExp e0@(WhileE e_test e_body l) = do
     inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
@@ -533,7 +533,7 @@ cgExp e0@(WhileE e_test e_body _) = do
     go tau | isPureish tau = do
         ce_test <- cgCond "while_cond" e_test
         ce_body <- cgExp e_body
-        appendStm [cstm|while ($ce_test) { $ce_body; }|]
+        appendStm $ rl l [cstm|while ($ce_test) { $ce_body; }|]
         return CVoid
 
     go _ = do
@@ -550,7 +550,7 @@ cgExp e0@(WhileE e_test e_body _) = do
                 (bodyc >> gotoC testl)
                 (doneC donel)
 
-cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
+cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
     inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
@@ -559,11 +559,11 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
         cv_tau <- cgType v_tau
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-        appendDecl [cdecl|$ty:cv_tau $id:cv;|]
+        appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
         ce_start <- cgExp e_start
         ce_end   <- cgExp e_end
         citems   <- inNewBlock_ $ cgExp e_body
-        appendStm [cstm|for ($id:cv = $ce_start; $id:cv <= $ce_end; $id:cv++) { $items:citems }|]
+        appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv <= $ce_end; $id:cv++) { $items:citems }|]
         return CVoid
 
     go _ = do
@@ -571,13 +571,13 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body _) =
         cv_tau <- cgType v_tau
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-        appendDecl [cdecl|$ty:cv_tau $id:cv;|]
+        appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
         initc   <- collectCodeAsComp_ $ do
                    ce_start <- cgExp e_start
                    appendStm [cstm|$id:cv = $ce_start;|]
         ce_test <- cgExp $ varE v .<=. e_end
         updatec <- collectCodeAsComp_ $
-                   appendStm [cstm|$id:cv++;|]
+                   appendStm $ rl l [cstm|$id:cv++;|]
         bodyc   <- collectComp $ cgExp e_body >>= unCComp
         forl    <- genLabel "fork"
         donel   <- genLabel "fordone"
@@ -593,14 +593,14 @@ cgExp e@(ArrayE es _) | all isConstE es = do
     ces          <- mapM cgExp es
     cgConstArray tau ces
 
-cgExp e@(ArrayE es _) = do
+cgExp e@(ArrayE es l) = do
     ArrT _ tau _ <- inferExp e
     cv           <- gensym "__arr"
     ctau         <- cgType tau
-    appendDecl [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
+    appendDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
     forM_ (es `zip` [0..]) $ \(e,i) -> do
         ce <- cgExp e
-        appendStm [cstm|$id:cv[$int:i] = $ce;|]
+        appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
     return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 Nothing _) = do
@@ -622,19 +622,19 @@ cgExp (StructE s flds l) = do
     cgField cv (fld, e) = do
         let cfld =  zencode (namedString fld)
         ce       <- cgExp e
-        appendStm [cstm|$cv.$id:cfld = $ce;|]
+        appendStm $ rl l [cstm|$cv.$id:cfld = $ce;|]
 
 cgExp (ProjE e fld l) = do
     ce <- cgExp e
-    return $ CExp [cexp|$ce.$id:cfld|]
+    return $ CExp $ rl l [cexp|$ce.$id:cfld|]
   where
     cfld :: C.Id
     cfld = C.Id (zencode (namedString fld)) l
 
-cgExp (PrintE nl es _) = do
+cgExp (PrintE nl es l) = do
     mapM_ cgPrint es
     when nl $
-        appendStm [cstm|printf("\n");|]
+        appendStm $ rl l [cstm|printf("\n");|]
     return CVoid
   where
     cgPrint :: Exp -> Cg ()
@@ -644,18 +644,18 @@ cgExp (PrintE nl es _) = do
         go tau ce
       where
         go :: Type -> CExp -> Cg ()
-        go (UnitT {})   _  = appendStm [cstm|printf("()");|]
-        go (BoolT {})   ce = appendStm [cstm|printf("%s",  $ce ? "true" : "false");|]
-        go (BitT  {})   ce = appendStm [cstm|printf("%s",  $ce ? "1" : "0");|]
-        go (IntT W64 _) ce = appendStm [cstm|printf("%ld", $ce);|]
-        go (IntT {})    ce = appendStm [cstm|printf("%d",  $ce);|]
-        go (FloatT {})  ce = appendStm [cstm|printf("%f",  $ce);|]
-        go (StringT {}) ce = appendStm [cstm|printf("%s",  $ce);|]
-        go (ArrT {})    _  = appendStm [cstm|printf("array");|]
+        go (UnitT {})   _  = appendStm $ rl l [cstm|printf("()");|]
+        go (BoolT {})   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
+        go (BitT  {})   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
+        go (IntT W64 _) ce = appendStm $ rl l [cstm|printf("%ld", $ce);|]
+        go (IntT {})    ce = appendStm $ rl l [cstm|printf("%d",  $ce);|]
+        go (FloatT {})  ce = appendStm $ rl l [cstm|printf("%f",  $ce);|]
+        go (StringT {}) ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
+        go (ArrT {})    _  = appendStm $ rl l [cstm|printf("array");|]
         go tau          _  = faildoc $ text "Cannot print type:" <+> ppr tau
 
-cgExp (ErrorE _ s _) = do
-    appendStm [cstm|kzc_error($string:s);|]
+cgExp (ErrorE _ s l) = do
+    appendStm $ rl l [cstm|kzc_error($string:s);|]
     return CVoid
 
 cgExp (ReturnE _ e _) = do
@@ -773,8 +773,11 @@ cgVarBind (v, tau) = do
     cv     <- cvar v
     cparam <- cgParam tau (Just cv)
     if isPassByRef tau
-      then return (CPtr (CExp [cexp|$id:cv|]), cparam)
-      else return (CExp [cexp|$id:cv|], cparam)
+      then return (CPtr (CExp $ rl l [cexp|$id:cv|]), cparam)
+      else return (CExp $ rl l [cexp|$id:cv|], cparam)
+  where
+    l :: Loc
+    l = locOf v <--> locOf tau
 
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
@@ -892,8 +895,11 @@ cgVar _ (UnitT {}) =
 cgVar v tau = do
     ctau <- cgType tau
     cv   <- cvar v
-    appendDecl [cdecl|$ty:ctau $id:cv;|]
-    return $ CExp [cexp|$id:cv|]
+    appendDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
+    return $ CExp $ rl l [cexp|$id:cv|]
+  where
+    l :: Loc
+    l = locOf v
 
 cgTemp :: String -> Type -> Maybe C.Initializer -> Cg CExp
 cgTemp s tau maybe_cinit =
@@ -906,15 +912,15 @@ cgTemp s tau maybe_cinit =
 
     go tau =do
         ctau <- cgType tau
-        cgCTemp s ctau maybe_cinit
+        cgCTemp tau s ctau maybe_cinit
 
-cgCTemp :: String -> C.Type -> Maybe C.Initializer -> Cg CExp
-cgCTemp s ctau maybe_cinit = do
+cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
+cgCTemp l s ctau maybe_cinit = do
     cv <- gensym ("__" ++ s)
     case maybe_cinit of
-      Nothing    -> appendDecl [cdecl|$ty:ctau $id:cv;|]
-      Just cinit -> appendDecl [cdecl|$ty:ctau $id:cv = $init:cinit;|]
-    return $ CExp [cexp|$id:cv|]
+      Nothing    -> appendDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
+      Just cinit -> appendDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
+    return $ CExp $ rl l [cexp|$id:cv|]
 
 -- | Label the statements generated by the continuation @k@ with the specified
 -- label. We only generate a C label when the label is actually used, as
@@ -1031,12 +1037,12 @@ cgCComp take emit done ccomp =
         -- continuations.
         leftl   <- ccompLabel left
         rightl  <- ccompLabel right
-        cleftk  <- cgCTemp "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
-        crightk <- cgCTemp "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
+        cleftk  <- cgCTemp tau "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
+        crightk <- cgCTemp tau "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
         -- Generate a pointer to the current element in the buffer.
         ctau  <- cgType tau
-        cbuf  <- cgCTemp "par_buf"  [cty|$ty:ctau|]  Nothing
-        cbufp <- cgCTemp "par_bufp" [cty|$ty:ctau*|] Nothing
+        cbuf  <- cgCTemp tau "par_buf"  [cty|$ty:ctau|]  Nothing
+        cbufp <- cgCTemp tau "par_bufp" [cty|$ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
         cgCComp (take' cleftk crightk cbuf cbufp)
                 emit
@@ -1069,7 +1075,7 @@ cgCComp take emit done ccomp =
         -- without forcing its label to be required---we don't need the label!
         take' cleftk crightk _ cbufp l n tau k1 k2 = cgWithLabel l $ do
             ctau      <- cgType tau
-            carr      <- cgCTemp "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
+            carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             lbl       <- genLabel "inner_takesk"
             useLabel lbl
             let ccomp =  k1 carr
@@ -1331,3 +1337,6 @@ zencode s = concatMap zenc s
           [] -> []
           h@(c : _) | 'a' <= c && c <= 'f' -> '0' : h
                     | otherwise            -> h
+
+rl :: (Located a, Relocatable b) => a -> b -> b
+rl l x = reloc (locOf l) x
