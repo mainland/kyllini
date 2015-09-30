@@ -51,3 +51,31 @@ typedef struct complex64_t {
     int64_t re;
     int64_t im;
 } complex64_t;
+
+void kzc_error(const char*);
+
+double __kz_sqrt(double d);
+double __kz_log2(double d);
+
+int32_t __kz_round_int32(double d);
+int32_t __kz_ceil_int32(double d);
+
+int16_t __kz_sin_int16(int16_t x);
+int16_t __kz_cos_int16(int16_t x);
+int16_t __kz_atan2_int16(int16_t y, int16_t x);
+
+int32_t __kz_atan2_int32(int32_t y, int32_t x);
+
+complex32_t __kz_sumc32(complex32_t *x);
+
+int32_t __kz_v_sum_int32(int n, int32_t *xs);
+
+complex16_t __kz_v_sum_complex16(int n, complex16_t *xs);
+
+void __kz_v_or(int n, uint8_t *in1, uint8_t *in2, uint8_t *out);
+
+void __kz_sora_ifft(int n, complex16_t *in, complex16_t *out);
+void __kz_sora_fft(int n, complex16_t *in, complex16_t *out);
+
+int16_t __kz_viterbiSig11a_brick_decode_fast(int n, int8_t *svalue, uint8_t *bitValue);
+int16_t __kz_viterbi_brick_decode_fast(int n, int8_t *svalue, uint8_t *bitValue);
