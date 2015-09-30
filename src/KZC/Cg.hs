@@ -448,13 +448,13 @@ cgExp e@(IfE e1 e2 e3 _) = do
         cres      <- cgTemp "if_res" cres_tau Nothing
         ifl       <- genLabel "ifk"
         bindthl   <- genLabel "then_bindk"
-        donethl   <- genLabel "then_donek"
+        endthl    <- genLabel "then_endk"
         bindell   <- genLabel "else_bindk"
-        doneell   <- genLabel "else_donek"
+        endell    <- genLabel "else_endk"
         return $ CComp $
             ifC ifl cres ccond
-                (comp2 >>= bindC bindthl cres_tau cres >> doneC donethl)
-                (comp3 >>= bindC bindell cres_tau cres >> doneC doneell)
+                (comp2 >>= bindC bindthl cres_tau cres >> endC endthl)
+                (comp3 >>= bindC bindell cres_tau cres >> endC endell)
       where
         cres_tau :: Type
         cres_tau = computedType tau
@@ -543,12 +543,12 @@ cgExp e0@(WhileE e_test e_body l) = do
                             cgExp e_body >>= unCComp
         testl            <- ccompLabel testc
         condl            <- genLabel "while_cond"
-        donel            <- genLabel "while_done"
+        endl             <- genLabel "while_end"
         return $ CComp $
             testc >>
             ifC condl CVoid ce_test
                 (bodyc >> gotoC testl)
-                (doneC donel)
+                (endC endl)
 
 cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
     inferExp e0 >>= go
@@ -580,13 +580,13 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
                    appendStm $ rl l [cstm|$id:cv++;|]
         bodyc   <- collectComp $ cgExp e_body >>= unCComp
         forl    <- genLabel "fork"
-        donel   <- genLabel "fordone"
+        endl    <- genLabel "for_end"
         useLabel forl
         return $ CComp $
             initc >>
             ifC forl CVoid ce_test
                 (bodyc >> updatec >> gotoC forl)
-                (doneC donel)
+                (endC endl)
 
 cgExp e@(ArrayE es _) | all isConstE es = do
     ArrT _ tau _ <- inferExp e
@@ -717,11 +717,13 @@ cgExp (RepeatE _ e _) = do
 
 cgExp (ParE _ b e1 e2 _) = do
     (s, a, c) <- askSTIndTypes
+    donell    <- genLabel "done_left"
+    donerl    <- genLabel "done_right"
     comp1     <- localSTIndTypes (Just (s, a, b)) $
                  cgExp e1 >>= unCComp
     comp2     <- localSTIndTypes (Just (b, b, c)) $
                  cgExp e2 >>= unCComp
-    return $ CComp $ parC b comp1 comp2
+    return $ CComp $ parC b (comp1 >>= doneC donell) (comp2 >>= doneC donerl)
 
 cgCond :: String -> Exp -> Cg CExp
 cgCond s e = do
@@ -1022,8 +1024,11 @@ cgCComp take emit done ccomp =
         cgAssign tau cv ce
         cgFree k
 
-    cgComp (DoneC {}) =
+    cgComp (EndC {}) =
         return ()
+
+    cgComp (DoneC _ ce) =
+        done ce
 
     cgComp (LabelC l k) = cgWithLabel l $ do
         cgFree k

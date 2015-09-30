@@ -28,6 +28,7 @@ module KZC.Cg.Monad (
     ifC,
     parC,
     bindC,
+    endC,
     doneC,
     labelC,
     gotoC,
@@ -228,7 +229,8 @@ data Comp l a = CodeC l Code a
               | IfC l CExp CExp a a (CExp -> a)
               | ParC Type a a
               | BindC l Type CExp CExp a
-              | DoneC l
+              | EndC l
+              | DoneC l CExp
               | LabelC l a
               | GotoC l
   deriving (Functor)
@@ -256,8 +258,11 @@ ifC :: Label -> CExp -> CExp -> CComp -> CComp -> CComp
 ifC l cv ce thenc elsec =
     Free $ IfC l cv ce thenc elsec return
 
-doneC :: Label -> CComp
-doneC l = liftF $ DoneC l
+endC :: Label -> CComp
+endC l = liftF $ EndC l
+
+doneC :: Label -> CExp -> CComp
+doneC l ce = liftF $ DoneC l ce
 
 parC :: Type -> CComp -> CComp -> CComp
 parC tau c1 c2 = Free $ ParC tau c1 c2
@@ -286,7 +291,8 @@ ccompLabel (Free comp) = compLabel comp
     compLabel (IfC l _ _ _ _ _)     = useLabel l
     compLabel (ParC _ _ right)      = ccompLabel right
     compLabel (BindC l _ _ _ _)     = useLabel l
-    compLabel (DoneC l)             = useLabel l
+    compLabel (EndC l)              = useLabel l
+    compLabel (DoneC l _)           = useLabel l
     compLabel (LabelC l (Pure {}))  = useLabel l
     compLabel (LabelC _ k)          = ccompLabel k
     compLabel (GotoC l)             = useLabel l
