@@ -49,6 +49,7 @@ data DynFlag = Quiet
              | Lint
              | PrintUniques
              | ExpertTypes
+             | LinePragmas
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError
@@ -91,7 +92,7 @@ instance Monoid Flags where
         { mode      = Compile
         , verbLevel = 0
 
-        , dynFlags   = 0
+        , dynFlags   = bit (fromEnum LinePragmas)
         , warnFlags  = 0
         , dumpFlags  = 0
         , traceFlags = 0

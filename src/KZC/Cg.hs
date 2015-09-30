@@ -26,8 +26,7 @@ import Data.Foldable (toList)
 import Data.List (sort)
 import Data.Loc
 import Data.Monoid (mempty)
-import qualified Language.C.Quote as C
-import Language.C.Quote.C
+import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
@@ -38,6 +37,7 @@ import KZC.Error
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
+import KZC.Quote.C
 import KZC.Summary
 
 cUR_KONT :: C.Id

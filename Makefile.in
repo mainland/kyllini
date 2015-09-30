@@ -80,6 +80,7 @@ GHCFLAGS += \
 	-package syb \
 	-package symbol \
 	-package text \
+	-package template-haskell \
 	-package transformers
 
 GHCFLAGS_OPT = -O2 -funbox-strict-fields

@@ -22,7 +22,7 @@ options =
     map mkModeFlag modeFlagOpts ++
     otherOpts ++
     concatMap (mkSetOptFlag "W" "" setWarnFlag unsetWarnFlag) wWarnFlagOpts ++
-    map (mkOptFlag "f" "" setDynFlag) fDynFlagOpts ++
+    concatMap (mkSetOptFlag "f" "" setDynFlag unsetDynFlag) fDynFlagOpts ++
     map (mkOptFlag "d" "" setDynFlag) dDynFlagOpts ++
     map (mkOptFlag "d" "dump-" setDumpFlag) dDumpFlagOpts ++
     map (mkOptFlag "d" "trace-" setTraceFlag) dTraceFlagOpts
@@ -96,7 +96,8 @@ modeFlagOpts =
 
 fDynFlagOpts :: [(DynFlag, String, String)]
 fDynFlagOpts =
-  [ (PrettyPrint, "pprint", "pretty-print file")
+  [ (PrettyPrint, "pprint",       "pretty-print file")
+  , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]

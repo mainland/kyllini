@@ -111,9 +111,12 @@ runPipeline filepath = do
                 -> KZC ()
     writeOutput x = do
         let defaultOutpath = replaceExtension filepath ".c"
-        outpath <- asksFlags (maybe defaultOutpath id . output)
-        h       <- liftIO $ openFile outpath WriteMode
-        liftIO $ B.hPut h $ E.encodeUtf8 (prettyLazyText 80 (ppr x))
+        outpath     <- asksFlags (maybe defaultOutpath id . output)
+        linePragmas <- asksFlags (testDynFlag LinePragmas)
+        let pprint | linePragmas = prettyPragmaLazyText 80 . ppr
+                   | otherwise   = prettyLazyText 80 . ppr
+        h <- liftIO $ openFile outpath WriteMode
+        liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
 
     dumpPass :: Pretty a

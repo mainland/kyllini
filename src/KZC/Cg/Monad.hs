@@ -94,7 +94,6 @@ import qualified Data.Map as Map
 import Data.Monoid
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
-import Language.C.Quote.C
 import qualified Language.C.Syntax as C
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
@@ -104,6 +103,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
+import KZC.Quote.C
 import KZC.Uniq
 
 -- | Contains generated code.
