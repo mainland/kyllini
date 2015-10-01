@@ -17,30 +17,38 @@
 -- permissions and limitations under the License.
 --
 --
-#pragma once 
 
+let comp map_ofdm() = 
+  repeat
+  seq {
+    x <- takes 48;
 
--- This is a default initial scrambler's state for tests
--- In a real MAC the initial state should be selected
--- pseudorandomly for each re-transmission
-let (default_scrmbl_st: arr[7] bit) = {'1,'0,'1,'1,'1,'0,'1}; 
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
 
-fun comp scrambler(init_scrmbl_st: arr[7] bit) {
-var scrmbl_st: arr[7] bit := init_scrmbl_st; 
-var y:bit;
-  
-  repeat <= [8,8] seq {
-    x <- take;
-    
-    var tmp : bit;
-    do{
-      tmp := (scrmbl_st[3] ^ scrmbl_st[0]);
-      scrmbl_st[0:5] := scrmbl_st[1:6];
-      scrmbl_st[6] := tmp;
-    }; 
+    emits x[0:4];
+    emit x[2];
+    emits x[5:17];
+    emit x[3];
+    emits x[18:23];
 
-    emit (x^tmp)
+    emit complex16{re=0; im=0};
+
+    emits x[24:29];
+    emit x[0];
+    emits x[30:42];
+    emit x[1];
+    emits x[43:47];
+
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
+    emit complex16{re=0; im=0};
   }
-}
 
-
+in

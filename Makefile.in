@@ -202,6 +202,9 @@ TESTDIR = testsuite
 TESTS = \
 	$(shell ls $(TESTDIR)/tests/parser/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/tests/libs/*.blk | sort) \
+	$(shell ls $(TESTDIR)/tests/threads/*.blk | sort) \
+	$(shell ls $(TESTDIR)/tests/vectorizer/transmitter.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.blk | sort)

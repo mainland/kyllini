@@ -17,30 +17,22 @@
 -- permissions and limitations under the License.
 --
 --
-#pragma once 
 
+-- Used with macros to create a simple template structure
 
--- This is a default initial scrambler's state for tests
--- In a real MAC the initial state should be selected
--- pseudorandomly for each re-transmission
-let (default_scrmbl_st: arr[7] bit) = {'1,'0,'1,'1,'1,'0,'1}; 
+let comp [8, CRC_VEC] CRC_NAME (len : int) =  
+  times len seq {
+    (x:arr[8] bit) <- takes 8;
+    emits x;
+  };
+  emits {'0,'0,'0,'0};
+  emits {'0,'0,'0,'0};
 
-fun comp scrambler(init_scrmbl_st: arr[7] bit) {
-var scrmbl_st: arr[7] bit := init_scrmbl_st; 
-var y:bit;
-  
-  repeat <= [8,8] seq {
-    x <- take;
-    
-    var tmp : bit;
-    do{
-      tmp := (scrmbl_st[3] ^ scrmbl_st[0]);
-      scrmbl_st[0:5] := scrmbl_st[1:6];
-      scrmbl_st[6] := tmp;
-    }; 
+  -- Add padding so that the length of output is a multiple of CRC_VEC in bits
+  let len_so_far = (len+1) * 8 in 
+  let len_mod = if len_so_far % CRC_VEC > 0 then 1 else 0 in 
+  let final_len = ((len_so_far / CRC_VEC) + len_mod) * CRC_VEC in
+  times (final_len - len_so_far) emits {'0,'0,'0,'0,'0,'0,'0,'0};
 
-    emit (x^tmp)
-  }
-}
-
-
+  return {'0,'0,'0,'0};
+in
