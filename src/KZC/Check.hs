@@ -1762,19 +1762,22 @@ instType tau1 (Check tau2) = unifyTypes tau1 tau2
 -- the expected type.
 expectedTypeErr :: Type -> Type -> Ti a
 expectedTypeErr tau1 tau2 = do
+    msg            <- relevantBindings
     [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
     faildoc $
       text "Expected type:" <+> ppr tau2' </>
-      text "but got:      " <+> ppr tau1'
+      text "but got:      " <+> ppr tau1' <>
+      msg
 
-data UnificationException = UnificationException Type Type
+data UnificationException = UnificationException Type Type Doc
   deriving (Typeable)
 
 instance Show UnificationException where
-    show (UnificationException tau1 tau2) =
+    show (UnificationException tau1 tau2 msg) =
         pretty 80 $
         text "Expected type:" <+> ppr tau2 </>
-        text "but got:      " <+> ppr tau1
+        text "but got:      " <+> ppr tau1 <>
+        msg
 
 instance Exception UnificationException
 
@@ -1866,8 +1869,9 @@ unifyTypes tau1 tau2 = do
         return ()
 
     go _ _ _ _ = do
+        msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
-        throw $ UnificationException tau1' tau2'
+        throw $ UnificationException tau1' tau2' msg
 
     updateMetaTv :: MetaTv -> Type -> Type -> Ti ()
     updateMetaTv mtv tau1 tau2 = do
