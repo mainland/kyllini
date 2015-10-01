@@ -114,9 +114,13 @@ ziria :-
 
   @id { identifier }
 
-  @decimal            { lexConst TintConst }
-  0[oO] @octal        { lexConst TintConst }
-  0[xX] @hexadecimal  { lexConst TintConst }
+  @decimal            { lexConst (TintConst Signed) }
+  0[oO] @octal        { lexConst (TintConst Signed) }
+  0[xX] @hexadecimal  { lexConst (TintConst Signed) }
+
+  @decimal [uU]            { lexConst1 (TintConst Unsigned) }
+  0[oO] @octal [uU]        { lexConst1 (TintConst Unsigned) }
+  0[xX] @hexadecimal [uU]  { lexConst1 (TintConst Unsigned) }
 
   @decimal (\. @decimal @exponent? | @exponent) { lexConst TfloatConst }
 
@@ -221,6 +225,11 @@ keywords = Map.fromList kws
           , ("then",        Tthen)
           , ("times",       Ttimes)
           , ("true",        Ttrue)
+          , ("uint",        Tuint)
+          , ("uint8",       Tuint8)
+          , ("uint16",      Tuint16)
+          , ("uint32",      Tuint32)
+          , ("uint64",      Tuint64)
           , ("unroll",      Tunroll)
           , ("until",       Tuntil)
           , ("var",         Tvar)
@@ -246,6 +255,17 @@ lexConst tok beg end = do
   where
     s :: String
     s = inputString beg end
+
+-- Lex a constant, dropping the final character.
+lexConst1 :: Read a => ((String, a) -> Token) -> Action P Token
+lexConst1 tok beg end = do
+    token (tok (s, read s)) beg end1
+  where
+    s :: String
+    s = inputString beg end1
+
+    end1 :: AlexInput
+    end1 = end { alexOff = alexOff end -1 }
 
 setLineFromPragma :: Action P Token
 setLineFromPragma beg end = do

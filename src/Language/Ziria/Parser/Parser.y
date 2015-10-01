@@ -39,7 +39,8 @@ import KZC.Name
 
 %token
   STRING      { L _ (T.TstringConst _) }
-  INT         { L _ (T.TintConst _) }
+  INT         { L _ (T.TintConst T.Signed (_, _)) }
+  UINT        { L _ (T.TintConst T.Unsigned (_, _)) }
   FLOAT       { L _ (T.TfloatConst _) }
   ID          { L _ (T.Tidentifier _) }
   STRUCTID    { L _ (T.TstructIdentifier _) }
@@ -93,6 +94,11 @@ import KZC.Name
   'then'        { L _ T.Tthen }
   'times'       { L _ T.Ttimes }
   'true'        { L _ T.Ttrue }
+  'uint'        { L _ T.Tuint }
+  'uint8'       { L _ T.Tuint8 }
+  'uint16'      { L _ T.Tuint16 }
+  'uint32'      { L _ T.Tuint32 }
+  'uint64'      { L _ T.Tuint64 }
   'unroll'      { L _ T.Tunroll }
   'until'       { L _ T.Tuntil }
   'var'         { L _ T.Tvar }
@@ -208,7 +214,8 @@ scalar_value :
   | 'false' { L (locOf $1) $ BoolC False }
   | "'0"    { L (locOf $1) $ BitC False }
   | "'1"    { L (locOf $1) $ BitC True }
-  | INT     { L (locOf $1) $ IntC WDefault (snd (getINT $1)) }
+  | INT     { L (locOf $1) $ IntC WDefault Signed (snd (getINT $1)) }
+  | UINT    { L (locOf $1) $ IntC WDefault Unsigned (snd (getUINT $1)) }
   | FLOAT   { L (locOf $1) $ FloatC W64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -289,7 +296,7 @@ pexp :
       {% do { from      <- constIntExp $3
             ; let to    =  unLoc $5
             ; let len   =  to - from + 1
-            ; let efrom =  ConstE (IntC WDefault from) (srclocOf $5)
+            ; let efrom =  intC from (srclocOf $5)
             ; return $ IdxE $1 efrom (Just (fromInteger len)) ($1 `srcspan` $6)
             }
       }
@@ -463,8 +470,7 @@ gen_interval :
             ; let to   =  unLoc $4
             ; let len  =  to - from
             ; return $ L ($1 <--> $5)
-              (ConstE (IntC WDefault from) (srclocOf $2),
-               ConstE (IntC WDefault len) (srclocOf $4))
+                (intC from (srclocOf $2), intC len (srclocOf $4))
             }
       }
   | '[' exp ',' exp ']'
@@ -476,37 +482,38 @@ gen_interval :
  -
  ------------------------------------------------------------------------------}
 
-base_type :: { Type }
-base_type :
-    '(' ')'           { UnitT ($1 `srcspan` $2) }
-  | 'bool'            { BoolT (srclocOf $1) }
-  | 'bit'             { BitT (srclocOf $1) }
-  | 'int'             { IntT WDefault (srclocOf $1) }
-  | 'int8'            { IntT W8 (srclocOf $1) }
-  | 'int16'           { IntT W16 (srclocOf $1) }
-  | 'int32'           { IntT W32 (srclocOf $1) }
-  | 'int64'           { IntT W64 (srclocOf $1) }
+simple_type :: { Type }
+simple_type :
+    'bit'             { BitT (srclocOf $1) }
+  | 'int'             { IntT WDefault Signed   (srclocOf $1) }
+  | 'int8'            { IntT W8       Signed   (srclocOf $1) }
+  | 'int16'           { IntT W16      Signed   (srclocOf $1) }
+  | 'int32'           { IntT W32      Signed   (srclocOf $1) }
+  | 'int64'           { IntT W64      Signed   (srclocOf $1) }
+  | 'uint'            { IntT WDefault Unsigned (srclocOf $1) }
+  | 'uint8'           { IntT W8       Unsigned (srclocOf $1) }
+  | 'uint16'          { IntT W16      Unsigned (srclocOf $1) }
+  | 'uint32'          { IntT W32      Unsigned (srclocOf $1) }
+  | 'uint64'          { IntT W64      Unsigned (srclocOf $1) }
   | 'float'           { FloatT W32 (srclocOf $1) }
   | 'double'          { FloatT W64 (srclocOf $1) }
+  | structid          { StructT $1 (srclocOf $1) }
+  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
+
+base_type :: { Type }
+base_type :
+    simple_type       { $1 }
+  | '(' ')'           { UnitT ($1 `srcspan` $2) }
+  | 'bool'            { BoolT (srclocOf $1) }
   | 'arr' arr_length  { let { (ind, tau) = $2 }
                         in
                           ArrT ind tau ($1 `srcspan` tau)
                       }
-  | structid          { StructT $1 (srclocOf $1) }
-  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
   | '(' base_type ')' { $2 }
 
 cast_type :: { Type }
 cast_type :
-    'bit'    { BitT (srclocOf $1) }
-  | 'int'    { IntT WDefault (srclocOf $1) }
-  | 'int8'   { IntT W8 (srclocOf $1) }
-  | 'int16'  { IntT W16 (srclocOf $1) }
-  | 'int32'  { IntT W32 (srclocOf $1) }
-  | 'int64'  { IntT W64 (srclocOf $1) }
-  | 'float'  { FloatT W32 (srclocOf $1) }
-  | 'double' { FloatT W64 (srclocOf $1) }
-  | structid { StructT $1 (srclocOf $1) }
+    simple_type { $1 }
 
 arr_length :: { (Ind, Type) }
 arr_length :
@@ -919,7 +926,8 @@ happyError (L loc t) =
     quote :: Doc -> Doc
     quote = enclose (char '`') (char '\'')
 
-getINT         (L _ (T.TintConst x))             = x
+getINT         (L _ (T.TintConst T.Signed x))      = x
+getUINT        (L _ (T.TintConst T.Unsigned x))    = x
 getFLOAT       (L _ (T.TfloatConst x))           = x
 getCHAR        (L _ (T.TcharConst x))            = x
 getSTRING      (L _ (T.TstringConst x))          = x
@@ -948,7 +956,9 @@ constIntExp :: Exp -> P Integer
 constIntExp e = go e
   where
     go :: Exp -> P Integer
-    go (ConstE (IntC _ i) _) = return i
+    go (ConstE (IntC _ _ i) _) =
+        return i
+
     go (BinopE op e1 e2 _) = do
         x <- go e1
         y <- go e2
@@ -963,6 +973,9 @@ constIntExp e = go e
     binop Mul x y = return $ x * y
     binop Div x y = return $ x `div` y
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
+
+intC :: Integer -> SrcLoc -> Exp
+intC i l = ConstE (IntC WDefault Signed i) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

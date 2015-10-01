@@ -116,7 +116,7 @@ inferExp (ConstE c l) =
     checkConst UnitC       = return (UnitT l)
     checkConst(BoolC {})   = return (BoolT l)
     checkConst(BitC {})    = return (BitT l)
-    checkConst(IntC w _)   = return (IntT w l)
+    checkConst(IntC w s _) = return (IntT w s l)
     checkConst(FloatC w _) = return (FloatT w l)
     checkConst(StringC _)  = return (StringT l)
 
@@ -144,8 +144,12 @@ inferExp (UnopE op e1 _) = do
         return tau
 
     unop Neg tau = do
-        checkSignedNumT tau
-        return tau
+        checkNumT tau
+        return $ mkSigned tau
+      where
+        mkSigned :: Type -> Type
+        mkSigned (IntT w _ l) = IntT w Signed l
+        mkSigned tau          = tau
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
@@ -574,8 +578,11 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
     checkT _ _ (BitT {})  (BitT {})  = return ()
 
-    checkT _ _ (IntT w1 _)   (IntT w2 _)     | w1 == w2 = return ()
-    checkT _ _ (FloatT w1 _) (FloatT w2 _)   | w1 == w2 = return ()
+    checkT _ _ (IntT w1 s1 _) (IntT w2 s2 _)
+        | w1 == w2 && s1 == s2 = return ()
+
+    checkT _ _ (FloatT w1 _)  (FloatT w2 _)
+        | w1 == w2 = return ()
 
     checkT _ _ (StringT {}) (StringT {}) = return ()
 
@@ -764,8 +771,8 @@ checkEqT tau =
 
 -- | Check that a type supports ordering.
 checkOrdT :: Type -> Tc r s ()
-checkOrdT (IntT _ _)   = return ()
-checkOrdT (FloatT _ _) = return ()
+checkOrdT (IntT {})   = return ()
+checkOrdT (FloatT {}) = return ()
 checkOrdT tau =
     faildoc $ nest 2 $ group $
     text "Expected comparable type but got:" <+/> ppr tau
@@ -790,25 +797,17 @@ checkBitT tau =
 
 -- | Check that a type is an integer type.
 checkIntT :: Type -> Tc r s ()
-checkIntT (IntT _ _)  = return ()
+checkIntT (IntT {}) = return ()
 checkIntT tau =
     faildoc $ nest 2 $ group $
     text "Expected integer type but got:" <+/> ppr tau
 
 -- | Check that a type is a numerical type.
 checkNumT :: Type -> Tc r s ()
-checkNumT (IntT _ _)           = return ()
-checkNumT (FloatT _ _)         = return ()
+checkNumT (IntT {})            = return ()
+checkNumT (FloatT {})          = return ()
 checkNumT tau | isComplexT tau = return ()
 checkNumT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected numerical type but got:" <+/> ppr tau
-
--- | Check that a type is a /signed/ numerical type.
-checkSignedNumT (IntT _ _)           = return ()
-checkSignedNumT (FloatT _ _)         = return ()
-checkSignedNumT tau | isComplexT tau = return ()
-checkSignedNumT tau =
     faildoc $ nest 2 $ group $
     text "Expected numerical type but got:" <+/> ppr tau
 

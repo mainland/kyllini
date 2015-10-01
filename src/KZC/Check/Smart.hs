@@ -26,19 +26,19 @@ bitT :: Type
 bitT = BitT noLoc
 
 intT :: Type
-intT = IntT W32 noLoc
+intT = IntT W32 Signed noLoc
 
 int8T :: Type
-int8T = IntT W8 noLoc
+int8T = IntT W8 Signed noLoc
 
 int16T :: Type
-int16T = IntT W16 noLoc
+int16T = IntT W16 Signed noLoc
 
 int32T :: Type
-int32T = IntT W32 noLoc
+int32T = IntT W32 Signed noLoc
 
 int64T :: Type
-int64T = IntT W64 noLoc
+int64T = IntT W64 Signed noLoc
 
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)

@@ -29,7 +29,7 @@ unitE :: Exp
 unitE = ConstE UnitC noLoc
 
 intE :: Integer -> Exp
-intE i = ConstE (IntC dEFAULT_INT_WIDTH i) noLoc
+intE i = ConstE (IntC dEFAULT_INT_WIDTH Signed i) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
@@ -89,19 +89,19 @@ bitT :: Type
 bitT = BitT noLoc
 
 intT :: Type
-intT = IntT dEFAULT_INT_WIDTH noLoc
+intT = IntT dEFAULT_INT_WIDTH Signed noLoc
 
 int8T :: Type
-int8T = IntT W8 noLoc
+int8T = IntT W8 Signed noLoc
 
 int16T :: Type
-int16T = IntT W16 noLoc
+int16T = IntT W16 Signed noLoc
 
 int32T :: Type
-int32T = IntT W32 noLoc
+int32T = IntT W32 Signed noLoc
 
 int64T :: Type
-int64T = IntT W64 noLoc
+int64T = IntT W64 Signed noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc

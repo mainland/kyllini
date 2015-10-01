@@ -6,14 +6,19 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module Language.Ziria.Parser.Tokens (
+    Signedness(..),
     Token(..)
   ) where
 
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
+data Signedness = Signed
+                | Unsigned
+  deriving (Eq, Ord, Read, Show)
+
 data Token = Teof
-           | TintConst (String, Integer)
+           | TintConst Signedness (String, Integer)
            | TfloatConst (String, Double)
            | TcharConst (String, Char)
            | TstringConst (String, String)
@@ -69,6 +74,11 @@ data Token = Teof
            | Tthen
            | Ttimes
            | Ttrue
+           | Tuint
+           | Tuint8
+           | Tuint16
+           | Tuint32
+           | Tuint64
            | Tunroll
            | Tuntil
            | Tvar
@@ -122,7 +132,7 @@ data Token = Teof
 instance Pretty Token where
     ppr Teof = text "end of file"
 
-    ppr (TintConst (s, _))    = text s
+    ppr (TintConst _ (s, _))  = text s
     ppr (TfloatConst (s, _))  = text s
     ppr (TcharConst (s, _))   = text s
     ppr (TstringConst (s, _)) = text s
@@ -178,6 +188,11 @@ instance Pretty Token where
     ppr Tthen        = text "then"
     ppr Ttimes       = text "times"
     ppr Ttrue        = text "true"
+    ppr Tuint        = text "uint"
+    ppr Tuint8       = text "uint8"
+    ppr Tuint16      = text "uint16"
+    ppr Tuint32      = text "uint32"
+    ppr Tuint64      = text "uint64"
     ppr Tunroll      = text "unroll"
     ppr Tuntil       = text "until"
     ppr Tvar         = text "var"

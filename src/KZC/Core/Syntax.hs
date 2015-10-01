@@ -18,6 +18,7 @@ module KZC.Core.Syntax (
     TyVar(..),
     IVar(..),
     W(..),
+    Signedness(..),
     Const(..),
     Decl(..),
     Exp(..),
@@ -108,10 +109,14 @@ data W = W8
        | W64
   deriving (Eq, Ord, Read, Show)
 
+data Signedness = Signed
+                | Unsigned
+  deriving (Eq, Ord, Read, Show)
+
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | IntC W Integer
+           | IntC W Signedness Integer
            | FloatC W Rational
            | StringC String
            | ArrayC [Const]
@@ -218,7 +223,7 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | IntT W !SrcLoc
+          | IntT W Signedness !SrcLoc
           | FloatT W !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
@@ -381,15 +386,16 @@ instance Pretty W where
     ppr W64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC         = text "()"
-    ppr (BoolC False) = text "false"
-    ppr (BoolC True)  = text "true"
-    ppr (BitC False)  = text "'0"
-    ppr (BitC True)   = text "'1"
-    ppr (IntC _ i)    = ppr i
-    ppr (FloatC _ f)  = ppr (fromRational f :: Double)
-    ppr (StringC s)   = text (show s)
-    ppr (ArrayC cs)   = braces $ commasep $ map ppr cs
+    ppr UnitC               = text "()"
+    ppr (BoolC False)       = text "false"
+    ppr (BoolC True)        = text "true"
+    ppr (BitC False)        = text "'0"
+    ppr (BitC True)         = text "'1"
+    ppr (IntC _ Signed i)   = ppr i
+    ppr (IntC _ Unsigned i) = ppr i <> char 'u'
+    ppr (FloatC _ f)        = ppr (fromRational f :: Double)
+    ppr (StringC s)         = text (show s)
+    ppr (ArrayC cs)         = braces $ commasep $ map ppr cs
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
@@ -620,8 +626,11 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w _) =
+    pprPrec _ (IntT w Signed _) =
         text "int" <> ppr w
+
+    pprPrec _ (IntT w Unsigned _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT W32 _) =
         text "float"

@@ -292,7 +292,7 @@ cgExp e@(ConstE c _) =
     cgConst (BoolC True)  = return $ CInt 1
     cgConst (BitC False)  = return $ CInt 0
     cgConst (BitC True)   = return $ CInt 1
-    cgConst (IntC _ i)    = return $ CInt i
+    cgConst (IntC _ _ i)  = return $ CInt i
     cgConst (FloatC _ r)  = return $ CFloat r
     cgConst (StringC s)   = return $ CExp [cexp|$string:s|]
 
@@ -652,15 +652,15 @@ cgExp (PrintE nl es l) = do
         go tau ce
       where
         go :: Type -> CExp -> Cg ()
-        go (UnitT {})   _  = appendStm $ rl l [cstm|printf("()");|]
-        go (BoolT {})   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-        go (BitT  {})   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
-        go (IntT W64 _) ce = appendStm $ rl l [cstm|printf("%ld", $ce);|]
-        go (IntT {})    ce = appendStm $ rl l [cstm|printf("%d",  $ce);|]
-        go (FloatT {})  ce = appendStm $ rl l [cstm|printf("%f",  $ce);|]
-        go (StringT {}) ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-        go (ArrT {})    _  = appendStm $ rl l [cstm|printf("array");|]
-        go tau          _  = faildoc $ text "Cannot print type:" <+> ppr tau
+        go (UnitT {})     _  = appendStm $ rl l [cstm|printf("()");|]
+        go (BoolT {})     ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
+        go (BitT  {})     ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
+        go (IntT W64 _ _) ce = appendStm $ rl l [cstm|printf("%ld", $ce);|]
+        go (IntT {})      ce = appendStm $ rl l [cstm|printf("%d",  $ce);|]
+        go (FloatT {})    ce = appendStm $ rl l [cstm|printf("%f",  $ce);|]
+        go (StringT {})   ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
+        go (ArrT {})      _  = appendStm $ rl l [cstm|printf("array");|]
+        go tau            _  = faildoc $ text "Cannot print type:" <+> ppr tau
 
 cgExp (ErrorE _ s l) = do
     appendStm $ rl l [cstm|kzc_error($string:s);|]
@@ -835,17 +835,29 @@ cgType (BoolT {}) =
 cgType (BitT {}) =
     return [cty|typename uint8_t|]
 
-cgType (IntT W8 _) =
+cgType (IntT W8 Signed _) =
     return [cty|typename int8_t|]
 
-cgType (IntT W16 _) =
+cgType (IntT W16 Signed _) =
     return [cty|typename int16_t|]
 
-cgType (IntT W32 _) =
+cgType (IntT W32 Signed _) =
     return [cty|typename int32_t|]
 
-cgType (IntT W64 _) =
+cgType (IntT W64 Signed _) =
     return [cty|typename int64_t|]
+
+cgType (IntT W8 Unsigned _) =
+    return [cty|typename uint8_t|]
+
+cgType (IntT W16 Unsigned _) =
+    return [cty|typename uint16_t|]
+
+cgType (IntT W32 Unsigned _) =
+    return [cty|typename uint32_t|]
+
+cgType (IntT W64 Unsigned _) =
+    return [cty|typename uint64_t|]
 
 cgType (FloatT W8 _) =
     return [cty|float|]

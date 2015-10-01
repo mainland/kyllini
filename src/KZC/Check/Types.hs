@@ -55,6 +55,10 @@ fromCoreWidth C.W16 = W16
 fromCoreWidth C.W32 = W32
 fromCoreWidth C.W64 = W64
 
+data Signedness = Signed
+                | Unsigned
+  deriving (Eq, Ord, Read, Show)
+
 data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
   deriving (Eq, Ord, Show)
 
@@ -62,7 +66,7 @@ data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | IntT W !SrcLoc
+          | IntT W Signedness !SrcLoc
           | FloatT W !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct !SrcLoc
@@ -183,11 +187,17 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
+    pprPrec _ (IntT w Signed _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
         text "int"
 
-    pprPrec _ (IntT w _) =
+    pprPrec _ (IntT w Signed _) =
         text "int" <> ppr w
+
+    pprPrec _ (IntT w Unsigned _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
+        text "uint"
+
+    pprPrec _ (IntT w Unsigned _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT W32 _) =
         text "float"
