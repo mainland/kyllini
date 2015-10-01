@@ -39,6 +39,7 @@ data Token = Teof
            | Texternal
            | Tfalse
            | Tfilter
+           | Tfloat
            | Tfor
            | Tforceinline
            | Tfun
@@ -147,6 +148,7 @@ instance Pretty Token where
     ppr Texternal    = text "external"
     ppr Tfalse       = text "false"
     ppr Tfilter      = text "filter"
+    ppr Tfloat       = text "float"
     ppr Tfor         = text "for"
     ppr Tforceinline = text "Tforceinline"
     ppr Tfun         = text "fun"

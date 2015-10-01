@@ -63,6 +63,7 @@ import KZC.Name
   'external'    { L _ T.Texternal }
   'false'       { L _ T.Tfalse }
   'filter'      { L _ T.Tfilter }
+  'float'       { L _ T.Tfloat }
   'for'         { L _ T.Tfor }
   'forceinline' { L _ T.Tforceinline }
   'fun'         { L _ T.Tfun }
@@ -485,6 +486,7 @@ base_type :
   | 'int16'           { IntT W16 (srclocOf $1) }
   | 'int32'           { IntT W32 (srclocOf $1) }
   | 'int64'           { IntT W64 (srclocOf $1) }
+  | 'float'           { FloatT W32 (srclocOf $1) }
   | 'double'          { FloatT W64 (srclocOf $1) }
   | 'arr' arr_length  { let { (ind, tau) = $2 }
                         in
@@ -502,6 +504,7 @@ cast_type :
   | 'int16'  { IntT W16 (srclocOf $1) }
   | 'int32'  { IntT W32 (srclocOf $1) }
   | 'int64'  { IntT W64 (srclocOf $1) }
+  | 'float'  { FloatT W32 (srclocOf $1) }
   | 'double' { FloatT W64 (srclocOf $1) }
   | structid { StructT $1 (srclocOf $1) }
 

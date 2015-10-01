@@ -653,6 +653,12 @@ instance Pretty Type where
     pprPrec _ (IntT w _) =
         text "int" <> ppr w
 
+    pprPrec _ (FloatT W32 _) =
+        text "float"
+
+    pprPrec _ (FloatT W64 _) =
+        text "double"
+
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
