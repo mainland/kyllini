@@ -207,7 +207,7 @@ scalar_value :
   | 'false' { L (locOf $1) $ BoolC False }
   | "'0"    { L (locOf $1) $ BitC False }
   | "'1"    { L (locOf $1) $ BitC True }
-  | INT     { L (locOf $1) $ IntC W32 (snd (getINT $1)) }
+  | INT     { L (locOf $1) $ IntC WDefault (snd (getINT $1)) }
   | FLOAT   { L (locOf $1) $ FloatC W64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -288,7 +288,7 @@ pexp :
       {% do { from      <- constIntExp $3
             ; let to    =  unLoc $5
             ; let len   =  to - from + 1
-            ; let efrom =  ConstE (IntC W32 from) (srclocOf $5)
+            ; let efrom =  ConstE (IntC WDefault from) (srclocOf $5)
             ; return $ IdxE $1 efrom (Just (fromInteger len)) ($1 `srcspan` $6)
             }
       }
@@ -461,7 +461,9 @@ gen_interval :
       {% do { from     <- constIntExp $2
             ; let to   =  unLoc $4
             ; let len  =  to - from
-            ; return $L ($1 <--> $5) (ConstE (IntC W32 from) (srclocOf $2), ConstE (IntC W32 len) (srclocOf $4))
+            ; return $ L ($1 <--> $5)
+              (ConstE (IntC WDefault from) (srclocOf $2),
+               ConstE (IntC WDefault len) (srclocOf $4))
             }
       }
   | '[' exp ',' exp ']'
@@ -478,7 +480,7 @@ base_type :
     '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
   | 'bit'             { BitT (srclocOf $1) }
-  | 'int'             { IntT W32 (srclocOf $1) }
+  | 'int'             { IntT WDefault (srclocOf $1) }
   | 'int8'            { IntT W8 (srclocOf $1) }
   | 'int16'           { IntT W16 (srclocOf $1) }
   | 'int32'           { IntT W32 (srclocOf $1) }
@@ -495,7 +497,7 @@ base_type :
 cast_type :: { Type }
 cast_type :
     'bit'    { BitT (srclocOf $1) }
-  | 'int'    { IntT W32 (srclocOf $1) }
+  | 'int'    { IntT WDefault (srclocOf $1) }
   | 'int8'   { IntT W8 (srclocOf $1) }
   | 'int16'  { IntT W16 (srclocOf $1) }
   | 'int32'  { IntT W32 (srclocOf $1) }

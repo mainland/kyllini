@@ -51,6 +51,7 @@ import KZC.Check.Types
 import qualified KZC.Core.Smart as C
 import qualified KZC.Core.Syntax as C
 import KZC.Error
+import KZC.Platform
 import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
@@ -1985,10 +1986,11 @@ class FromZ a b | a -> b where
     fromZ :: a -> Ti b
 
 instance FromZ Z.W W where
-    fromZ Z.W8  = pure W8
-    fromZ Z.W16 = pure W16
-    fromZ Z.W32 = pure W32
-    fromZ Z.W64 = pure W64
+    fromZ Z.W8       = pure W8
+    fromZ Z.W16      = pure W16
+    fromZ Z.W32      = pure W32
+    fromZ Z.W64      = pure W64
+    fromZ Z.WDefault = pure $ fromCoreWidth dEFAULT_INT_WIDTH
 
 instance FromZ Z.Type Type where
     fromZ (Z.UnitT l)      = pure $ UnitT l

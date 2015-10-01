@@ -13,6 +13,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
 import KZC.Name
+import KZC.Platform
 import KZC.Uniq
 
 mkUniqVar :: (Located a, Applicative m, MonadUnique m) => String -> a -> m Var

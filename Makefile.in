@@ -119,6 +119,7 @@ SOURCE = \
 	KZC/Lint/Monad.hs \
 	KZC/Lint/State.hs \
 	KZC/Name.hs \
+	KZC/Platform.hs \
 	KZC/Pretty.hs \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \

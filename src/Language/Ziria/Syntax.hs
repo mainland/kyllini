@@ -36,7 +36,6 @@ module Language.Ziria.Syntax (
     Type(..),
     Ind(..),
 
-    dEFAULT_INT_WIDTH,
     isComplexStruct
   ) where
 
@@ -74,6 +73,7 @@ data W = W8
        | W16
        | W32
        | W64
+       | WDefault
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -222,9 +222,6 @@ data Ind = ConstI Int !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W32
-
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
 isComplexStruct "complex"   = True
@@ -356,10 +353,11 @@ instance Pretty Struct where
     ppr (Struct n) = ppr n
 
 instance Pretty W where
-    ppr W8  = text "8"
-    ppr W16 = text "16"
-    ppr W32 = text "32"
-    ppr W64 = text "64"
+    ppr W8       = text "8"
+    ppr W16      = text "16"
+    ppr W32      = text "32"
+    ppr W64      = text "64"
+    ppr WDefault = text "<default>"
 
 instance Pretty Const where
     ppr UnitC         = text "()"
@@ -649,7 +647,7 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w _) | w == dEFAULT_INT_WIDTH =
+    pprPrec _ (IntT WDefault _) =
         text "int"
 
     pprPrec _ (IntT w _) =

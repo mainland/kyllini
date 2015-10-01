@@ -28,8 +28,10 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
+import qualified KZC.Core.Syntax as C
 import KZC.Globals
 import KZC.Name
+import KZC.Platform
 import KZC.Pretty
 import KZC.Uniq
 import KZC.Util.SetLike
@@ -47,8 +49,11 @@ data W = W8
        | W64
   deriving (Eq, Ord, Read, Show)
 
-dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W32
+fromCoreWidth :: C.W -> W
+fromCoreWidth C.W8  = W8
+fromCoreWidth C.W16 = W16
+fromCoreWidth C.W32 = W32
+fromCoreWidth C.W64 = W64
 
 data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
   deriving (Eq, Ord, Show)
@@ -178,7 +183,7 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w _) | w == dEFAULT_INT_WIDTH =
+    pprPrec _ (IntT w _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
         text "int"
 
     pprPrec _ (IntT w _) =
