@@ -86,15 +86,16 @@ import Control.Applicative ((<$>))
 import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.Foldable (elem,
-                      toList)
+import Data.Foldable (toList)
 import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Sequence (Seq, (|>))
+import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
@@ -318,7 +319,7 @@ defaultCgEnv = CgEnv
     }
 
 data CgState = CgState
-    { labels :: Seq Label
+    { labels :: Set Label
     , code   :: Code
     }
 
@@ -470,7 +471,7 @@ inNewBlock_ m =
     fst <$> inNewBlock m
 
 getLabels :: Cg [Label]
-getLabels = gets (toList . labels)
+getLabels = gets (Set.toList . labels)
 
 appendTopDef :: C.Definition -> Cg ()
 appendTopDef cdef =
@@ -511,12 +512,12 @@ genLabel s =
 
 useLabel :: Label -> Cg Label
 useLabel lbl = do
-    modify $ \s -> s { labels = labels s |> lbl }
+    modify $ \s -> s { labels = Set.insert lbl (labels s) }
     return lbl
 
 isLabelUsed :: Label -> Cg Bool
 isLabelUsed lbl =
-    gets (elem lbl . labels)
+    gets (Set.member lbl . labels)
 
 traceNest :: Int -> Cg a -> Cg a
 traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
