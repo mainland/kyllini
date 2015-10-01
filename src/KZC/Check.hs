@@ -177,7 +177,7 @@ checkLetFun f ztau ps e l = do
 checkLetExtFun :: Z.Var -> [Z.VarBind] -> Z.Type -> SrcLoc
                -> Ti (Type, Ti C.Decl)
 checkLetExtFun f ps ztau_ret l = do
-    ptaus        <- fromZ ps
+    ptaus         <- fromZ ps
     -- Note that the output type may depend on the parameters because of array
     -- lengths
     tau_ret       <- extendVars ptaus $
@@ -1455,14 +1455,17 @@ checkRefT tau =
         unifyTypes tau (refT alpha)
         return alpha
 
--- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
--- @\alpha@.
+-- | Check that a type is an @arr \iota \alpha@ type or a reference to an @arr
+-- \iota \alpha@, returning @\iota@ and @\alpha@.
 checkArrT :: Type -> Ti (Type, Type)
 checkArrT tau =
     compress tau >>= go
   where
     go :: Type -> Ti (Type, Type)
     go (ArrT iota alpha _) =
+        return (iota, alpha)
+
+    go (RefT (ArrT iota alpha _) _) =
         return (iota, alpha)
 
     go tau = do
