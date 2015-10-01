@@ -47,17 +47,18 @@ compileProgram :: [Decl] -> Cg ()
 compileProgram decls = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     cgDecls decls $ do
-    ST _ _ _ a b _ <- lookupVar "main"
+    tau@(ST _ _ _ a b _) <- lookupVar "main"
     ca     <- cgType a
     cb     <- cgType b
     comp   <- cgExp (varE "main") >>= unCComp
     citems <- inNewBlock_ $ do
               -- Keep track of the current continuation. This is only used when
               -- we do not have first class labels.
-              lbl <- ccompLabel comp
+              lbl  <- ccompLabel comp
+              cres <- cgTemp "main_res" (computedType tau) Nothing
               appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:lbl);|]
               -- Generate code for the computation
-              cgThread $ cgCComp take emit done comp
+              cgThread $ cgCComp take emit (done (computedType tau) cres) comp
     cgLabels
     appendTopDef [cedecl|
 int main(int argc, char **argv)
@@ -107,9 +108,9 @@ int main(int argc, char **argv)
         appendStm [cstm|out[j++] = $ce;|]
         k ccomp
 
-    done :: DoneK
-    done _ce =
-        return ()
+    done :: Type -> CExp -> DoneK
+    done tau cv ce =
+        cgAssign tau cv ce
 
 cgLabels :: Cg ()
 cgLabels = do
@@ -722,7 +723,9 @@ cgExp (RepeatE _ e _) = do
     useLabel startl
     return $ CComp $ labelC startl >> ccomp >> gotoC startl
 
-cgExp (ParE _ b e1 e2 _) = do
+cgExp e0@(ParE _ b e1 e2 _) = do
+    tau_res   <- computedType <$> inferExp e0
+    cres      <- cgTemp "par_res" tau_res Nothing
     (s, a, c) <- askSTIndTypes
     donell    <- genLabel "done_left"
     donerl    <- genLabel "done_right"
@@ -730,7 +733,7 @@ cgExp (ParE _ b e1 e2 _) = do
                  cgExp e1 >>= unCComp
     comp2     <- localSTIndTypes (Just (b, b, c)) $
                  cgExp e2 >>= unCComp
-    return $ CComp $ parC b (comp1 >>= doneC donell) (comp2 >>= doneC donerl)
+    return $ CComp $ parC b tau_res cres (comp1 >>= doneC donell) (comp2 >>= doneC donerl)
 
 cgCond :: String -> Exp -> Cg CExp
 cgCond s e = do
@@ -1027,8 +1030,8 @@ cgCComp take emit done ccomp =
         cgIf (return ce) (cgFree thenk) (cgFree elsek)
         cgFree (k cv)
 
-    cgComp (ParC tau left right) =
-        cgParSingleThreaded tau left right
+    cgComp (ParC tau tau_res cres left right k) = do
+        cgParSingleThreaded tau tau_res cres left right k
 
     cgComp (BindC l tau cv ce k) = cgWithLabel l $ do
         cgAssign tau cv ce
@@ -1037,7 +1040,7 @@ cgCComp take emit done ccomp =
     cgComp (EndC {}) =
         return ()
 
-    cgComp (DoneC _ ce) =
+    cgComp (DoneC l ce) = cgWithLabel l $ do
         done ce
 
     cgComp (LabelC l k) = cgWithLabel l $ do
@@ -1046,8 +1049,16 @@ cgCComp take emit done ccomp =
     cgComp (GotoC l) =
         appendStm [cstm|JUMP($id:l);|]
 
-    cgParSingleThreaded :: Type -> CComp -> CComp -> Cg ()
-    cgParSingleThreaded tau_internal left right = do
+    cgParSingleThreaded :: Type -> Type -> CExp -> CComp -> CComp -> (CExp -> CComp) -> Cg ()
+    cgParSingleThreaded tau_internal tau_res cres left right k = do
+        -- Create the computation that follows the par. We ensure that it has a
+        -- label so that we can jump to it when we are done. Note that @kl@ /may
+        -- not/ be equal to @parl@, in particular if the computation returned by
+        -- @k res@ itself has a label!
+        parl      <- genLabel "park"
+        let kcomp =  labelC parl >> k cres
+        kl        <- ccompLabel kcomp
+        useLabel kl
         -- Generate variables to hold the left and right computations'
         -- continuations.
         leftl   <- ccompLabel left
@@ -1061,12 +1072,14 @@ cgCComp take emit done ccomp =
         -- Generate code for the left and right computations.
         cgCComp (take' cleftk crightk cbuf cbufp)
                 emit
-                done
+                (done' kl)
                 right
         cgCComp take
                 (emit' cleftk crightk cbuf cbufp)
-                done
+                (done' kl)
                 left
+        -- Generate code for our continuation
+        cgFree kcomp
       where
         take' :: CExp -> CExp -> CExp -> CExp -> TakeK
         -- The one element take is easy. We know the element will be in @cbufp@,
@@ -1134,6 +1147,11 @@ cgCComp take emit done ccomp =
             cgAssignBufp tau cbuf cbufp ce
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
+
+        done' :: Label -> DoneK
+        done' kl ce = do
+            cgAssign tau_res cres ce
+            appendStm [cstm|JUMP($id:kl);|]
 
         -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
         -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to

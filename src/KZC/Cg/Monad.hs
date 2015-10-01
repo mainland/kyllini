@@ -228,7 +228,7 @@ data Comp l a = CodeC l Code a
               | TakesC l Int Type (CExp -> a)
               | EmitC l Type CExp a
               | IfC l CExp CExp a a (CExp -> a)
-              | ParC Type a a
+              | ParC Type Type CExp a a (CExp -> a)
               | BindC l Type CExp CExp a
               | EndC l
               | DoneC l CExp
@@ -265,8 +265,8 @@ endC l = liftF $ EndC l
 doneC :: Label -> CExp -> CComp
 doneC l ce = liftF $ DoneC l ce
 
-parC :: Type -> CComp -> CComp -> CComp
-parC tau c1 c2 = Free $ ParC tau c1 c2
+parC :: Type -> Type -> CExp -> CComp -> CComp -> CComp
+parC tau tau_res ce_res c1 c2 = Free $ ParC tau tau_res ce_res c1 c2 return
 
 bindC :: Label -> Type -> CExp -> CExp -> CComp
 bindC l tau cv ce = liftF $ BindC l tau cv ce CVoid
@@ -284,19 +284,19 @@ ccompLabel (Free comp) = compLabel comp
     compLabel :: Comp Label CComp -> Cg Label
     compLabel (CodeC l _ (Pure {})) = useLabel l
     compLabel (CodeC l c k)
-        | stmts c == mempty         = ccompLabel k
-        | otherwise                 = useLabel l
-    compLabel (TakeC l _ _)         = useLabel l
-    compLabel (TakesC l _ _ _)      = useLabel l
-    compLabel (EmitC l _ _ _)       = useLabel l
-    compLabel (IfC l _ _ _ _ _)     = useLabel l
-    compLabel (ParC _ _ right)      = ccompLabel right
-    compLabel (BindC l _ _ _ _)     = useLabel l
-    compLabel (EndC l)              = useLabel l
-    compLabel (DoneC l _)           = useLabel l
-    compLabel (LabelC l (Pure {}))  = useLabel l
-    compLabel (LabelC _ k)          = ccompLabel k
-    compLabel (GotoC l)             = useLabel l
+        | stmts c == mempty          = ccompLabel k
+        | otherwise                  = useLabel l
+    compLabel (TakeC l _ _)          = useLabel l
+    compLabel (TakesC l _ _ _)       = useLabel l
+    compLabel (EmitC l _ _ _)        = useLabel l
+    compLabel (IfC l _ _ _ _ _)      = useLabel l
+    compLabel (ParC _ _ _ _ right _) = ccompLabel right
+    compLabel (BindC l _ _ _ _)      = useLabel l
+    compLabel (EndC l)               = useLabel l
+    compLabel (DoneC l _)            = useLabel l
+    compLabel (LabelC l (Pure {}))   = useLabel l
+    compLabel (LabelC _ k)           = ccompLabel k
+    compLabel (GotoC l)              = useLabel l
 
 -- | The 'Cg' monad.
 type Cg a = Tc CgEnv CgState a
