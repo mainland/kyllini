@@ -380,7 +380,7 @@ lookupIVarCExp :: IVar -> Cg CExp
 lookupIVarCExp v =
     lookupBy ivarCExps onerr v
   where
-    onerr = faildoc $ text "Compiled variable" <+> ppr v <+> text "not in scope"
+    onerr = faildoc $ text "Compiled array size variable" <+> ppr v <+> text "not in scope"
 
 extendTyVarTypes :: [(TyVar, Type)] -> Cg a -> Cg a
 extendTyVarTypes tvtaus m =
