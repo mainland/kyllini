@@ -181,21 +181,27 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
         extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
         appendTopComment (ppr f <+> colon <+> align (ppr tau))
         withSummaryContext decl $ do
+            inSTScope tau_ret $ do
             extendIVars (iotas `zip` repeat IotaK) $ do
             extendVars vbs $ do
             (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
             (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
+            cres_ident         <- gensym "let_res"
             citems <- inNewBlock_ $
                       extendIVarCExps (iotas `zip` ciotas) $
                       extendVarCExps  (map fst vbs `zip` cvbs) $
-                      inSTScope tau_ret $
                       inLocalScope $ do
-                      cres <- cgTemp "let_res" tau_res Nothing
+                      cres <- if isReturnedByRef tau_res
+                              then return $ CExp [cexp|$id:cres_ident|]
+                              else cgTemp "let_res" tau_res Nothing
                       cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
-                      when (not (isUnitT tau_res)) $
+                      when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                           appendStm $ rl l [cstm|return $cres;|]
-            ctau_ret <- cgType tau_ret
-            appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+            if isReturnedByRef tau_res
+             then do cretparam <- cgParam tau_res (Just cres_ident)
+                     appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
+             else do ctau_res <- cgType tau_res
+                     appendTopDef $ rl l [cedecl|$ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
         k
       where
         tau_res :: Type
@@ -248,7 +254,8 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     cf = C.Id ("__kz_" ++ namedString f) l
 
 cgDecl decl@(LetRefD v tau maybe_e l) k = do
-    cv <- cvar v
+    cv      <- cvar v
+    let cve =  CExp $ rl l[cexp|$id:cv|]
     withSummaryContext decl $ do
         ctau     <- cgType tau
         maybe_ce <- case maybe_e of
@@ -257,9 +264,9 @@ cgDecl decl@(LetRefD v tau maybe_e l) k = do
         appendLetDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
         case maybe_ce of
           Nothing -> return ()
-          Just ce -> appendStm $ rl l [cstm|$id:cv = $ce;|]
+          Just ce -> cgAssign tau cve ce
     extendVars [(v, refT tau)] $ do
-    extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+    extendVarCExps [(v, cve)] $ do
     k
 
 cgDecl decl@(LetStructD s flds l) k = do
@@ -472,8 +479,8 @@ cgExp (LetE decl e _) =
 cgExp e0@(CallE f iotas es l) = do
     FunT _ _ tau_ret _ <- lookupVar f
     if isPureish tau_ret
-      then cgPureCall tau_ret
-      else cgImpureCall tau_ret
+      then cgPureCall (computedType tau_ret)
+      else cgImpureCall (computedType tau_ret)
   where
     cgPureCall :: Type -> Cg CExp
     cgPureCall tau_ret = do
@@ -877,6 +884,10 @@ cgType (StringT {}) =
 cgType (StructT s l) =
     return [cty|typename $id:(cstruct s l)|]
 
+cgType (ArrT (ConstI n _) tau _) = do
+    ctau <- cgType tau
+    return [cty|$ty:ctau[$int:n]|]
+
 cgType (ArrT _ tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau*|]
@@ -1239,11 +1250,12 @@ cgLet _ ce@(CDelay {}) _ =
     return ce
 
 cgLet v ce tau = do
-    cv   <- cvar v
-    ctau <- cgType tau
+    cv      <- cvar v
+    let cve =  CExp [cexp|$id:cv|]
+    ctau    <- cgType tau
     appendLetDecl [cdecl|$ty:ctau $id:cv;|]
-    appendStm [cstm|$id:cv = $ce;|]
-    return $ CExp [cexp|$id:cv|]
+    cgAssign tau cve ce
+    return cve
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
@@ -1257,6 +1269,13 @@ cgAssign (UnitT {}) _ _ =
 -- the result of the computation in the body of the loop, just its effect(s).
 cgAssign _ _ CVoid =
     return ()
+
+cgAssign (ArrT iota tau _) ce1 ce2 = do
+    ctau <- cgType tau
+    ce1' <- cgArrayAddr ce1
+    ce2' <- cgArrayAddr ce2
+    clen <- cgIota iota
+    appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
 
 cgAssign (RefT (ArrT iota tau _) _) ce1 ce2 = do
     ctau <- cgType tau
