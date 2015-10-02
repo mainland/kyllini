@@ -1360,8 +1360,8 @@ appendTopComment doc =
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
-cvar :: Named a => a -> Cg C.Id
-cvar x = gensym (zencode (namedString x))
+cvar :: (Located a, Named a) => a -> Cg C.Id
+cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
