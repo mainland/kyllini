@@ -46,6 +46,7 @@ module KZC.Cg.Monad (
 
     extendTyVarTypes,
     lookupTyVarType,
+    askTyVarTypeSubst,
 
     tell,
     collect,
@@ -107,6 +108,7 @@ import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
 import KZC.Quote.C
 import KZC.Uniq
+import KZC.Vars
 
 -- | Contains generated code.
 data Code = Code
@@ -389,6 +391,13 @@ lookupTyVarType alpha =
     lookupBy tyvarTypes onerr alpha
   where
     onerr = faildoc $ text "Instantiated type variable" <+> ppr alpha <+> text "not in scope"
+
+-- | Return a function that substitutes type variables for their current
+-- instantiation.
+askTyVarTypeSubst :: Cg (Type -> Type)
+askTyVarTypeSubst = do
+    theta <- asks tyvarTypes
+    return $ subst theta mempty
 
 tell :: ToCode a => a -> Cg ()
 tell c = modify $ \s -> s { code = code s <> toCode c }

@@ -451,7 +451,8 @@ cgExp e@(IfE e1 e2 e3 _) = do
         ccond     <- cgCond "if_cond" e1
         comp2     <- collectComp $ cgExp e2 >>= unCComp
         comp3     <- collectComp $ cgExp e3 >>= unCComp
-        cres      <- cgTemp "if_res" cres_tau Nothing
+        theta     <- askTyVarTypeSubst
+        cres      <- cgTemp "if_res" (theta cres_tau) Nothing
         ifl       <- genLabel "ifk"
         bindthl   <- genLabel "then_bindk"
         endthl    <- genLabel "then_endk"
@@ -459,8 +460,8 @@ cgExp e@(IfE e1 e2 e3 _) = do
         endell    <- genLabel "else_endk"
         return $ CComp $
             ifC ifl cres ccond
-                (comp2 >>= bindC bindthl cres_tau cres >> endC endthl)
-                (comp3 >>= bindC bindell cres_tau cres >> endC endell)
+                (comp2 >>= bindC bindthl (theta cres_tau) cres >> endC endthl)
+                (comp3 >>= bindC bindell (theta cres_tau) cres >> endC endell)
       where
         cres_tau :: Type
         cres_tau = computedType tau
@@ -678,9 +679,10 @@ cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
     comp2 <- collectCompBind $
              extendBindVars [bv] $
              extendVarCExps [(v, cve)] $ do
+             theta <- askTyVarTypeSubst
              bindl <- genLabel "bindk"
              comp2 <- collectComp (cgExp e2 >>= unCComp)
-             return $ \ce -> bindC bindl tau cve ce >> comp2
+             return $ \ce -> bindC bindl (theta tau) cve ce >> comp2
     return $ CComp $ comp1 >>= comp2
 
 cgExp (BindE WildV e1 e2 _) = do
@@ -688,33 +690,27 @@ cgExp (BindE WildV e1 e2 _) = do
     comp2 <- collectComp (cgExp e2 >>= unCComp)
     return $ CComp $ comp1 >> comp2
 
-cgExp (TakeE (TyVarT alpha _) _) = do
-    l   <- genLabel "takek"
-    tau <- lookupTyVarType alpha
-    return $ CComp $ takeC l tau
-
 cgExp (TakeE tau _) = do
-    l <- genLabel "takek"
-    return $ CComp $ takeC l tau
-
-cgExp (TakesE i (TyVarT alpha _) _) = do
-    l   <- genLabel "takesk"
-    tau <- lookupTyVarType alpha
-    return $ CComp $ takesC l i tau
+    l     <- genLabel "takek"
+    theta <- askTyVarTypeSubst
+    return $ CComp $ takeC l (theta tau)
 
 cgExp (TakesE i tau _) = do
-    l <- genLabel "takesk"
-    return $ CComp $ takesC l i tau
+    l     <- genLabel "takesk"
+    theta <- askTyVarTypeSubst
+    return $ CComp $ takesC l i (theta tau)
 
 cgExp (EmitE e _) = liftM CComp $ collectComp $ do
-    tau <- inferExp e
-    ce  <- cgExp e
-    emitC tau ce
+    tau   <- inferExp e
+    ce    <- cgExp e
+    theta <- askTyVarTypeSubst
+    emitC (theta tau) ce
 
 cgExp (EmitsE e _) = liftM CComp $ collectComp $ do
-    tau <- inferExp e
-    ce  <- cgExp e
-    emitC tau ce
+    tau   <- inferExp e
+    ce    <- cgExp e
+    theta <- askTyVarTypeSubst
+    emitC (theta tau) ce
 
 cgExp (RepeatE _ e _) = do
     ccomp  <- cgExp e >>= unCComp
@@ -733,7 +729,11 @@ cgExp e0@(ParE _ b e1 e2 _) = do
                  cgExp e1 >>= unCComp
     comp2     <- localSTIndTypes (Just (b, b, c)) $
                  cgExp e2 >>= unCComp
-    return $ CComp $ parC b tau_res cres (comp1 >>= doneC donell) (comp2 >>= doneC donerl)
+    theta     <- askTyVarTypeSubst
+    return $ CComp $
+      parC (theta b) (theta tau_res) cres
+           (comp1 >>= doneC donell)
+           (comp2 >>= doneC donerl)
 
 cgCond :: String -> Exp -> Cg CExp
 cgCond s e = do
