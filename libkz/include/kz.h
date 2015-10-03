@@ -1,3 +1,4 @@
+#include <alloca.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -66,16 +67,16 @@ int16_t __kz_atan2_int16(int16_t y, int16_t x);
 
 int32_t __kz_atan2_int32(int32_t y, int32_t x);
 
-complex32_t __kz_sumc32(complex32_t *x);
+complex32_t __kz_sumc32(const complex32_t x[4]);
 
-int32_t __kz_v_sum_int32(int n, int32_t *xs);
+int32_t __kz_v_sum_int32(int n, const int32_t *xs);
 
-complex16_t __kz_v_sum_complex16(int n, complex16_t *xs);
+complex16_t __kz_v_sum_complex16(int n, const complex16_t *xs);
 
-void __kz_v_or(int n, uint8_t *in1, uint8_t *in2, uint8_t *out);
+void __kz_v_or(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 
-void __kz_sora_ifft(int n, complex16_t *in, complex16_t *out);
-void __kz_sora_fft(int n, complex16_t *in, complex16_t *out);
+void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out);
+void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out);
 
-int16_t __kz_viterbiSig11a_brick_decode_fast(int n, int8_t *svalue, uint8_t *bitValue);
-int16_t __kz_viterbi_brick_decode_fast(int n, int8_t *svalue, uint8_t *bitValue);
+int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);
+int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);

@@ -48,24 +48,27 @@ compileProgram decls = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     cgDecls decls $ do
     tau@(ST _ _ _ a b _) <- lookupVar "main"
+    comp   <- cgExp (varE "main") >>= unCComp
     ca     <- cgType a
     cb     <- cgType b
-    comp   <- cgExp (varE "main") >>= unCComp
     citems <- inNewBlock_ $ do
               -- Keep track of the current continuation. This is only used when
               -- we do not have first class labels.
               lbl  <- ccompLabel comp
-              cres <- cgTemp "main_res" (computedType tau) Nothing
+              cres <- cgTemp "main_res" (resultType tau)
               appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:lbl);|]
               -- Generate code for the computation
-              cgThread $ cgCComp take emit (done (computedType tau) cres) comp
+              cgThread $ cgCComp take emit (done (resultType tau) cres) comp
     cgLabels
     appendTopDef [cedecl|
 int main(int argc, char **argv)
 {
-    $ty:ca in[1];
+    return 0;
+}|];
+    appendTopDef [cedecl|
+int __kz_main(const $ty:ca* in, $ty:cb* out)
+{
     int i = 0;
-    $ty:cb out[1];
     int j = 0;
 
     $items:citems
@@ -75,7 +78,7 @@ int main(int argc, char **argv)
     take l 1 tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp tau "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp tau "take_bufp" [cty|const $ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i++];|]
         k2 $ k1 $ CExp [cexp|*$cbuf|]
@@ -83,7 +86,7 @@ int main(int argc, char **argv)
     take l n tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp tau "take_bufp" [cty|$ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp tau "take_bufp" [cty|const $ty:ctau *|] (Just [cinit|NULL|])
         cgWithLabel l $ do
         appendStm [cstm|$cbuf = &in[i];|]
         appendStm [cstm|i += $int:n;|]
@@ -165,6 +168,23 @@ cgDecl decl@(LetD v tau e _) k = do
     extendVars [(v, tau)] $ do
     extendVarCExps [(v, cv)] $ do
     k
+  where
+    -- | @'cgLet' v ce tau@ generates code to assign the compiled expression @ce@,
+    -- of type @tau@, to the core variable @v@. If @ce@ is a computation or a
+    -- delayed compiled expression, then we don't need to generate code. Otherwise
+    -- we create a declaration to hold the value.
+    cgLet :: Var -> CExp -> Type -> Cg CExp
+    cgLet _ ce@(CComp {}) _ =
+        return ce
+
+    cgLet _ ce@(CDelay {}) _ =
+        return ce
+
+    cgLet v ce tau = do
+        isTopLevel <- isInTopScope
+        cve        <- cgBinder isTopLevel v tau
+        cgAssign tau cve ce
+        return cve
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     if isPureish tau_ret
@@ -193,12 +213,12 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       inLocalScope $ do
                       cres <- if isReturnedByRef tau_res
                               then return $ CExp [cexp|$id:cres_ident|]
-                              else cgTemp "let_res" tau_res Nothing
+                              else cgTemp "let_res" tau_res
                       cgExp e >>= unCComp >>= cgPureishCComp tau_res cres
                       when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                           appendStm $ rl l [cstm|return $cres;|]
             if isReturnedByRef tau_res
-             then do cretparam <- cgParam tau_res (Just cres_ident)
+             then do cretparam <- cgRetParam tau_res (Just cres_ident)
                      appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
              else do ctau_res <- cgType tau_res
                      appendTopDef $ rl l [cedecl|$ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
@@ -217,7 +237,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     -- to a state machine, so we need all code to be in the same block so we can
     -- freely jump between states.
     cgImpureLetFun :: Cg a
-    cgImpureLetFun = do
+    cgImpureLetFun =
         extendVars [(f, tau)] $ do
         extendVarCExps [(f, ce_delayed)] $ do
         k
@@ -234,37 +254,37 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(f, tau)] $ do
+    extendVars [(f, tau)] $
     extendVarCExps [(f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do
         (_, cparams1) <- unzip <$> mapM cgIVar iotas
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
-        if isReturnedByRef tau_ret
-          then do cretparam <- cgParam tau_ret Nothing
+        if isReturnedByRef tau_res
+          then do cretparam <- cgRetParam tau_res Nothing
                   appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
-          else do ctau_ret <- cgType tau_ret
+          else do ctau_ret <- cgType tau_res
                   appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
+    tau_res :: Type
+    tau_res = resultType tau_ret
+
     cf :: C.Id
     cf = C.Id ("__kz_" ++ namedString f) l
 
-cgDecl decl@(LetRefD v tau maybe_e l) k = do
-    cv      <- cvar v
-    let cve =  CExp $ rl l[cexp|$id:cv|]
-    withSummaryContext decl $ do
-        ctau     <- cgType tau
-        maybe_ce <- case maybe_e of
-                      Nothing -> return Nothing
-                      Just e -> Just <$> inLocalScope (cgExp e)
-        appendLetDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
-        case maybe_ce of
+cgDecl decl@(LetRefD v tau maybe_e _) k = do
+    cve <- withSummaryContext decl $ do
+           isTopLevel <- isInTopScope
+           cgBinder isTopLevel v tau
+    withSummaryContext decl $
+        case maybe_e of
           Nothing -> return ()
-          Just ce -> cgAssign tau cve ce
+          Just e  -> do ce <- inLocalScope $ cgExp e
+                        cgAssign tau cve ce
     extendVars [(v, refT tau)] $ do
     extendVarCExps [(v, cve)] $ do
     k
@@ -287,7 +307,7 @@ cgConstArray tau ces = do
     ctau         <- cgType tau
     let cinits   =  [[cinit|$ce|] | ce <- ces]
     appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length ces)] = { $inits:cinits };|]
-    return $ CExp [cexp|($ty:ctau*) $id:cv|]
+    return $ CExp [cexp|$id:cv|]
 
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) =
@@ -334,7 +354,7 @@ cgExp (UnopE op e l) = do
         go Neg = do
             let a,b :: CExp
                 (a, b) = unComplex ce
-            cv <- cgTemp "binop_complex" tau Nothing
+            cv <- cgTemp "binop_complex" tau
             appendStm $ rl l [cstm|$cv.re = $(-a);|]
             appendStm $ rl l [cstm|$cv.im = $(-b);|]
             return cv
@@ -348,13 +368,13 @@ cgExp (UnopE op e l) = do
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
-        ctemp <- cgTemp "cast_complex" tau_to Nothing
+        ctemp <- cgTemp "cast_complex" tau_to
         appendStm $ rl l [cstm|$ctemp.re = $ce.re;|]
         appendStm $ rl l [cstm|$ctemp.im = $ce.im;|]
         return ctemp
 
     cgCast ce _ tau_to | isComplexT tau_to = do
-        ctemp <- cgTemp "cast_complex" tau_to Nothing
+        ctemp <- cgTemp "cast_complex" tau_to
         appendStm $ rl l [cstm|$ctemp.re = $ce;|]
         appendStm $ rl l [cstm|$ctemp.im = $ce;|]
         return ctemp
@@ -384,7 +404,7 @@ cgExp (BinopE op e1 e2 l) = do
             let a,b,c,d :: CExp
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau Nothing
+            cv <- cgTemp "binop_complex" tau
             appendStm $ rl l [cstm|$cv.re = $(a+c);|]
             appendStm $ rl l [cstm|$cv.im = $(b+d);|]
             return cv
@@ -393,7 +413,7 @@ cgExp (BinopE op e1 e2 l) = do
             let a,b,c,d :: CExp
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau Nothing
+            cv <- cgTemp "binop_complex" tau
             appendStm [cstm|$cv.re = $(a-c);|]
             appendStm [cstm|$cv.im = $(b-d);|]
             return cv
@@ -402,7 +422,7 @@ cgExp (BinopE op e1 e2 l) = do
             let a,b,c,d :: CExp
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau Nothing
+            cv <- cgTemp "binop_complex" tau
             appendStm $ rl l [cstm|$cv.re = $(a*c - b*d);|]
             appendStm $ rl l [cstm|$cv.im = $(b*c + a*d);|]
             return cv
@@ -411,7 +431,7 @@ cgExp (BinopE op e1 e2 l) = do
             let a,b,c,d :: CExp
                 (a, b) = unComplex ce1
                 (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau Nothing
+            cv <- cgTemp "binop_complex" tau
             appendStm $ rl l [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
             appendStm $ rl l [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
             return cv
@@ -445,21 +465,21 @@ cgExp e@(IfE e1 e2 e3 _) = do
   where
     go :: Type -> Cg CExp
     go tau | isPureish tau = do
-        cres <- cgTemp "if_res" cres_tau Nothing
+        cres <- cgTemp "if_res" tau_res
         cgIf (cgCond "if_cond" e1)
-             (cgExp e2 >>= cgAssign cres_tau cres)
-             (cgExp e3 >>= cgAssign cres_tau cres)
+             (cgExp e2 >>= cgAssign tau_res cres)
+             (cgExp e3 >>= cgAssign tau_res cres)
         return cres
       where
-        cres_tau :: Type
-        cres_tau = computedType tau
+        tau_res :: Type
+        tau_res = resultType tau
 
     go tau = do
         ccond     <- cgCond "if_cond" e1
         comp2     <- collectComp $ cgExp e2 >>= unCComp
         comp3     <- collectComp $ cgExp e3 >>= unCComp
         theta     <- askTyVarTypeSubst
-        cres      <- cgTemp "if_res" (theta cres_tau) Nothing
+        cres      <- cgTemp "if_res" (theta tau_res)
         ifl       <- genLabel "ifk"
         bindthl   <- genLabel "then_bindk"
         endthl    <- genLabel "then_endk"
@@ -467,11 +487,11 @@ cgExp e@(IfE e1 e2 e3 _) = do
         endell    <- genLabel "else_endk"
         return $ CComp $
             ifC ifl cres ccond
-                (comp2 >>= bindC bindthl (theta cres_tau) cres >> endC endthl)
-                (comp3 >>= bindC bindell (theta cres_tau) cres >> endC endell)
+                (comp2 >>= bindC bindthl (theta tau_res) cres >> endC endthl)
+                (comp3 >>= bindC bindell (theta tau_res) cres >> endC endell)
       where
-        cres_tau :: Type
-        cres_tau = computedType tau
+        tau_res :: Type
+        tau_res = resultType tau
 
 cgExp (LetE decl e _) =
     cgDecl decl $ cgExp e
@@ -479,16 +499,18 @@ cgExp (LetE decl e _) =
 cgExp e0@(CallE f iotas es l) = do
     FunT _ _ tau_ret _ <- lookupVar f
     if isPureish tau_ret
-      then cgPureCall (computedType tau_ret)
-      else cgImpureCall (computedType tau_ret)
+      then cgPureCall (resultType tau_ret)
+      else cgImpureCall (resultType tau_ret)
   where
     cgPureCall :: Type -> Cg CExp
-    cgPureCall tau_ret = do
+    cgPureCall tau_res = do
         cf     <- lookupVarCExp f
+        FunT ivs _ _ _ <- lookupVar f
         ciotas <- mapM cgIota iotas
+        extendIVarCExps (ivs `zip` ciotas) $ do
         ces    <- mapM cgArg es
-        if isReturnedByRef tau_ret
-          then do cres <- cgTemp "call_res" tau_ret Nothing
+        if isReturnedByRef tau_res
+          then do cres <- cgTemp "call_res" tau_res
                   appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
                   return cres
           else do return $ CExp $ rl l [cexp|$cf($args:ciotas, $args:ces)|]
@@ -630,7 +652,7 @@ cgExp (IdxE e1 e2 (Just i) _) = do
     cgSlice ce1 ce2 i
 
 cgExp (StructE s flds l) = do
-    cv <- cgTemp "struct" (StructT s l) Nothing
+    cv <- cgTemp "struct" (StructT s l)
     mapM_ (cgField cv) flds
     return cv
   where
@@ -680,7 +702,7 @@ cgExp (ReturnE _ e _) = do
 
 cgExp (BindE bv@(BindV v tau) e1 e2 _) = do
     comp1 <- collectComp (cgExp e1 >>= unCComp)
-    cve   <- cgVar v tau
+    cve   <- cgBinder False v tau
     -- We create a CComp containing all the C code needed to define and bind @v@
     -- and then execute @e2@.
     comp2 <- collectCompBind $
@@ -727,8 +749,8 @@ cgExp (RepeatE _ e _) = do
     return $ CComp $ labelC startl >> ccomp >> gotoC startl
 
 cgExp e0@(ParE _ b e1 e2 _) = do
-    tau_res   <- computedType <$> inferExp e0
-    cres      <- cgTemp "par_res" tau_res Nothing
+    tau_res   <- resultType <$> inferExp e0
+    cres      <- cgTemp "par_res" tau_res
     (s, a, c) <- askSTIndTypes
     donell    <- genLabel "done_left"
     donerl    <- genLabel "done_right"
@@ -744,7 +766,7 @@ cgExp e0@(ParE _ b e1 e2 _) = do
 
 cgCond :: String -> Exp -> Cg CExp
 cgCond s e = do
-    ccond <- cgTemp s boolT Nothing
+    ccond <- cgTemp s boolT
     cgExp e >>= unCComp >>= cgPureishCComp boolT ccond
     return ccond
 
@@ -888,19 +910,15 @@ cgType (ArrT (ConstI n _) tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau[$int:n]|]
 
-cgType (ArrT _ tau _) = do
+cgType tau@(ArrT (VarI {}) _ _) =
+    panicdoc $ text "cgType: cannot translate array of unknown size:" <+> ppr tau
+
+cgType tau@(ST {}) =
+    panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
+
+cgType (RefT (ArrT _ tau _) _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau*|]
-
-cgType (ST _ (C tau) _ _ _ _) =
-    cgType tau
-
-cgType (ST _ T _ _ _ _)=
-    return [cty|void|]
-
-cgType (RefT tau@(ArrT {}) _) = do
-    ctau <- cgType tau
-    return [cty|$ty:ctau|]
 
 cgType (RefT tau _) = do
     ctau <- cgType tau
@@ -912,7 +930,7 @@ cgType (FunT ivs args ret _) = do
     if isReturnedByRef ret
       then do retTy <- cgParam ret Nothing
               return [cty|void (*)($params:(ivTys ++ argTys ++ [retTy]))|]
-      else do retTy     <- cgType ret
+      else do retTy <- cgType ret
               return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
 
 cgType (TyVarT alpha _) =
@@ -921,37 +939,92 @@ cgType (TyVarT alpha _) =
 -- | Compile a function parameter.
 cgParam :: Type -> Maybe C.Id -> Cg C.Param
 cgParam tau maybe_cv = do
-    ctau <- cgType tau
+    ctau <- cgParamType tau
     case maybe_cv of
       Nothing -> return [cparam|$ty:ctau|]
       Just cv -> return [cparam|$ty:ctau $id:cv|]
-
-cgVar :: Var -> Type -> Cg CExp
-cgVar _ (UnitT {}) =
-    return CVoid
-
-cgVar v tau = do
-    ctau <- cgType tau
-    cv   <- cvar v
-    appendDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
-    return $ CExp $ rl l [cexp|$id:cv|]
   where
-    l :: Loc
-    l = locOf v
+    cgParamType :: Type -> Cg C.Type
+    cgParamType (ArrT (ConstI n _) tau _) = do
+        ctau <- cgType tau
+        return [cty|const $ty:ctau[$int:n]|]
 
-cgTemp :: String -> Type -> Maybe C.Initializer -> Cg CExp
-cgTemp s tau maybe_cinit =
+    cgParamType (ArrT _ tau _) = do
+        ctau <- cgType tau
+        return [cty|const $ty:ctau*|]
+
+    cgParamType tau = cgType tau
+
+-- | Compile a function parameter that is used to return a result.
+cgRetParam :: Type -> Maybe C.Id -> Cg C.Param
+cgRetParam tau maybe_cv = do
+    ctau <- cgRetParamType tau
+    case maybe_cv of
+      Nothing -> return [cparam|$ty:ctau|]
+      Just cv -> return [cparam|$ty:ctau $id:cv|]
+  where
+    cgRetParamType :: Type -> Cg C.Type
+    cgRetParamType (ArrT (ConstI n _) tau _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau[$int:n]|]
+
+    cgRetParamType (ArrT _ tau _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau*|]
+
+    cgRetParamType tau = cgType tau
+
+-- | Allocate storage for a temporary of the given core type. The name of the
+-- temporary is gensym'd using @s@ with a prefix of @__@.
+cgTemp :: String -> Type -> Cg CExp
+cgTemp s tau = do
+    cv <- gensym ("__" ++ s)
+    cgStorage False cv tau
+
+-- | Allocate storage for a binder with the given core type. The first
+-- argument is a boolean flag that is 'True' if this binding corresponds to a
+-- top-level core binding and 'False' otherwise.
+cgBinder :: Bool -> Var -> Type -> Cg CExp
+cgBinder isTopLevel v tau = do
+    cv <- cvar v
+    cgStorage isTopLevel cv tau
+
+-- | Allocate storage for a C identifier with the given core type. The first
+-- argument is a boolean flag that is 'True' if this binding corresponds to a
+-- top-level core binding and 'False' otherwise.
+cgStorage :: Bool -> C.Id -> Type -> Cg CExp
+cgStorage isTopLevel cv tau =
     go tau
   where
     go :: Type -> Cg CExp
-    go (ST _ T   _ _ _ _)     = return CVoid
-    go (ST _ (C tau) _ _ _ _) = go tau
-    go (UnitT {})             = return CVoid
+    go (UnitT {}) =
+        return CVoid
 
-    go tau =do
+    go (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
-        cgCTemp tau s ctau maybe_cinit
+        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
+        return $ CExp $ rl cv [cexp|$id:cv|]
 
+    go (ArrT iota@(VarI {}) tau _) = do
+        cn   <- cgIota iota
+        ctau <- cgType tau
+        appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
+        return $ CExp $ rl cv [cexp|$id:cv|]
+
+    go tau = do
+        ctau <- cgType tau
+        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv;|]
+        return $ CExp $ rl cv [cexp|$id:cv|]
+
+    -- Append a C declaration. If we are at top-level, make this a top-level C
+    -- declaration; otherwise, make it a local C declaration.
+    appendLetDecl :: C.InitGroup -> Cg ()
+    appendLetDecl decl | isTopLevel = appendTopDecl decl
+                       | otherwise  = appendDecl decl
+
+-- | Generate code for a C temporary with a gensym'd name, based on @s@ and
+-- prefixed with @__@, having C type @ctau@, and with the initializer
+-- @maybe_cinit@.
 cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgCTemp l s ctau maybe_cinit = do
     cv <- gensym ("__" ++ s)
@@ -1091,7 +1164,7 @@ cgCComp take emit done ccomp =
         -- Generate a pointer to the current element in the buffer.
         ctau  <- cgType tau_internal
         cbuf  <- cgCTemp tau_internal "par_buf"  [cty|$ty:ctau|]  Nothing
-        cbufp <- cgCTemp tau_internal "par_bufp" [cty|$ty:ctau*|] Nothing
+        cbufp <- cgCTemp tau_internal "par_bufp" [cty|const $ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
         cgCComp (take' cleftk crightk cbuf cbufp)
                 emit
@@ -1215,13 +1288,15 @@ isPureish (ST {}) =
 isPureish _ =
     True
 
--- | @'computedType' tau@ returns the type of the result of a computation of
+-- | @'resultType' tau@ returns the type of the result of a computation of
 -- type @tau@. If @tau@ is @ST (C tau') s a b@, then the type of the result of
 -- the computation is @tau'@. For a pure computation of type @tau@, the result
--- is just of type @tau..
-computedType :: Type -> Type
-computedType (ST _ (C tau) _ _ _ _) = tau
-computedType tau                    = tau
+-- is just of type @tau. For a non-terminating computation of type @ST T s a b@,
+-- the result type is the unit type.
+resultType :: Type -> Type
+resultType (ST _ (C tau) _ _ _ _) = tau
+resultType (ST _ T _ _ _ l)       = UnitT l
+resultType tau                    = tau
 
 -- | Return @True@ is a value of the given type is passed by reference, i.e., if
 -- we need to pass the address of the value's corresponding 'CExp'. Note that
@@ -1230,6 +1305,7 @@ computedType tau                    = tau
 isPassByRef :: Type -> Bool
 isPassByRef (RefT (ArrT {}) _) = False
 isPassByRef (RefT {})          = True
+isPassByRef (ST {})            = error "isPassByRef: got ST type"
 isPassByRef _                  = False
 
 -- | Return @True@ if a value of the given type is passed by reference as an
@@ -1237,25 +1313,6 @@ isPassByRef _                  = False
 isReturnedByRef :: Type -> Bool
 isReturnedByRef (ArrT {}) = True
 isReturnedByRef _         = False
-
--- | @'cgLet' v ce tau@ generates code to assign the compiled expression @ce@,
--- of type @tau@, to the core variable @v@. If @ce@ is a computation or a
--- delayed compiled expression, then we don't need to generate code. Otherwise
--- we create a declaration to hold the value.
-cgLet :: Var -> CExp -> Type -> Cg CExp
-cgLet _ ce@(CComp {}) _ =
-    return ce
-
-cgLet _ ce@(CDelay {}) _ =
-    return ce
-
-cgLet v ce tau = do
-    cv      <- cvar v
-    let cve =  CExp [cexp|$id:cv|]
-    ctau    <- cgType tau
-    appendLetDecl [cdecl|$ty:ctau $id:cv;|]
-    cgAssign tau cve ce
-    return cve
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
@@ -1306,7 +1363,7 @@ cgSlice carr cidx len =
 
 cgAddrOf :: Type -> CExp -> Cg CExp
 cgAddrOf tau ce | isConstant ce = do
-    ctemp <- cgTemp "addrof" tau Nothing
+    ctemp <- cgTemp "addrof" tau
     cgAssign tau ctemp ce
     return $ CExp [cexp|&$ctemp|]
   where
@@ -1343,15 +1400,6 @@ cgFor cfrom cto k = do
                   k (CExp [cexp|$id:ci|])
     appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) { $items:cbody }|]
     return x
-
--- | Append a declaration corresponding to a let. If we are at top-level, make
--- this a top-level C declaration; otherwise, make it a local C declaration.
-appendLetDecl :: C.InitGroup -> Cg ()
-appendLetDecl decl = do
-    atTop <- isInTopScope
-    if atTop
-      then appendTopDecl decl
-      else appendDecl decl
 
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg ()
