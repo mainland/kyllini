@@ -38,6 +38,7 @@ import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
 import KZC.Quote.C
+import KZC.Staged
 import KZC.Summary
 
 cUR_KONT :: C.Id
@@ -314,14 +315,12 @@ cgExp e@(ConstE c _) =
     cgConst c
   where
     cgConst :: Const -> Cg CExp
-    cgConst UnitC         = return CVoid
-    cgConst (BoolC False) = return $ CInt 0
-    cgConst (BoolC True)  = return $ CInt 1
-    cgConst (BitC False)  = return $ CInt 0
-    cgConst (BitC True)   = return $ CInt 1
-    cgConst (IntC _ _ i)  = return $ CInt i
-    cgConst (FloatC _ r)  = return $ CFloat r
-    cgConst (StringC s)   = return $ CExp [cexp|$string:s|]
+    cgConst UnitC        = return CVoid
+    cgConst (BoolC b)    = return $ CBool b
+    cgConst (BitC b)     = return $ CBit b
+    cgConst (IntC _ _ i) = return $ CInt i
+    cgConst (FloatC _ r) = return $ CFloat r
+    cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 
     cgConst (ArrayC cs) = do
         ArrT _ tau _ <- inferExp e

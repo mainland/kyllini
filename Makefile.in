@@ -124,6 +124,7 @@ SOURCE = \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \
 	KZC/Summary.hs \
+	KZC/Staged.hs \
 	KZC/SysTools.hs \
 	KZC/Uniq.hs \
 	KZC/Util/SetLike.hs \

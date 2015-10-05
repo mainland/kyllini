@@ -87,6 +87,7 @@ import Control.Applicative ((<$>))
 import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.Bits
 import Data.Foldable (toList)
 import Data.List (foldl')
 import Data.Loc
@@ -107,6 +108,7 @@ import KZC.Flags
 import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
 import KZC.Quote.C
+import KZC.Staged
 import KZC.Uniq
 import KZC.Vars
 
@@ -140,6 +142,8 @@ instance Monoid Code where
 
 -- | The type of "compiled" expressions.
 data CExp = CVoid
+          | CBool Bool
+          | CBit Bool
           | CInt Integer     -- ^ Integer constant
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
@@ -152,36 +156,124 @@ data CExp = CVoid
             -- ^ A delayed CExp. This represents a computation that may take
             -- and/or emit.
 
+instance Eq CExp where
+    CVoid        == CVoid        = True
+    CBool x      == CBool y      = x == y
+    CBit x       == CBit y       = x == y
+    CInt x       == CInt y       = x == y
+    CFloat x     == CFloat y     = x == y
+    CPtr x       == CPtr y       = x == y
+    CSlice r s t == CSlice x y z = (r,s,t) == (x,y,z)
+    _            == _            = error "Eq CExp: incomparable"
+
+instance Ord CExp where
+    compare CVoid          CVoid          = EQ
+    compare (CBool x)      (CBool y)      = compare x y
+    compare (CBit x)       (CBit y)       = compare x y
+    compare (CInt x)       (CInt y)       = compare x y
+    compare (CFloat x)     (CFloat y)     = compare x y
+    compare (CPtr x)       (CPtr y)       = compare x y
+    compare (CSlice r s t) (CSlice x y z) = compare (r,s,t) (x,y,z)
+    compare _              _              = error "Ord CExp: incomparable"
+
+instance Enum CExp where
+    toEnum n = CInt (fromIntegral n)
+
+    fromEnum (CInt n) = fromIntegral n
+    fromEnum _        = error "Enum Exp: fromEnum not implemented"
+
+instance IsEq CExp where
+    CBool x  .==. CBool y =  CBool (x == y)
+    CBit x   .==. CBit y   = CBool (x == y)
+    CInt x   .==. CInt y   = CBool (x == y)
+    CFloat x .==. CFloat y = CBool (x == y)
+    ce1      .==. ce2      = CExp [cexp|$ce1 == $ce2|]
+
+    CBool x  ./=. CBool y =  CBool (x /= y)
+    CBit x   ./=. CBit y   = CBool (x /= y)
+    CInt x   ./=. CInt y   = CBool (x /= y)
+    CFloat x ./=. CFloat y = CBool (x /= y)
+    ce1      ./=. ce2      = CExp [cexp|$ce1 != $ce2|]
+
+instance IsOrd CExp where
+    CInt x   .<. CInt y   = CBool (x < y)
+    CFloat x .<. CFloat y = CBool (x < y)
+    ce1      .<. ce2      = CExp [cexp|$ce1 < $ce2|]
+
+    CInt x   .<=. CInt y   = CBool (x <= y)
+    CFloat x .<=. CFloat y = CBool (x <= y)
+    ce1      .<=. ce2      = CExp [cexp|$ce1 <= $ce2|]
+
+    CInt x   .>=. CInt y   = CBool (x >= y)
+    CFloat x .>=. CFloat y = CBool (x >= y)
+    ce1      .>=. ce2      = CExp [cexp|$ce1 >= $ce2|]
+
+    CInt x   .>. CInt y   = CBool (x > y)
+    CFloat x .>. CFloat y = CBool (x > y)
+    ce1      .>. ce2      = CExp [cexp|$ce1 > $ce2|]
+
 instance Num CExp where
-    CInt 0   + CInt y   = CInt y
-    CInt x   + CInt 0   = CInt x
+    CInt 0   + y        = y
+    x        + CInt 0   = x
     CInt x   + CInt y   = CInt (x + y)
-    CFloat 0 + CFloat y = CFloat y
-    CFloat x + CFloat 0 = CFloat x
+
+    CFloat 0 + y        = y
+    x        + CFloat 0 = x
     CFloat x + CFloat y = CFloat (x + y)
+
     x        + y        = CExp [cexp|$x + $y|]
 
-    CInt x   - CInt 0   = CInt x
-    CInt 0   - CInt x   = CInt (-x)
+    x        - CInt 0   = x
+    CInt 0   - x        = -x
     CInt x   - CInt y   = CInt (x - y)
-    CFloat x - CFloat 0 = CFloat x
-    CFloat 0 - CFloat x = CFloat (-x)
+
+    x        - CFloat 0 = x
+    CFloat 0 - x        = -x
     CFloat x - CFloat y = CFloat (x - y)
+
     x        - y        = CExp [cexp|$x - $y|]
 
+    CInt 1   * y        = y
+    x        * CInt 1   = x
     CInt x   * CInt y   = CInt (x * y)
+
+    CFloat 1 * y        = y
+    x        * CFloat 1 = x
     CFloat x * CFloat y = CFloat (x * y)
+
     x        * y        = CExp [cexp|$x * $y|]
 
     negate (CInt x)   = CInt (-x)
     negate (CFloat x) = CFloat (-x)
     negate x          = CExp [cexp|-$x|]
 
-    abs _ = error "Num CExp: abs not implemented"
+    abs (CInt x)   = CInt (abs x)
+    abs (CFloat x) = CFloat (abs x)
+    abs _          = error "Num CExp: abs not implemented"
 
-    signum _ = error "Num CExp: signum not implemented"
+    signum (CInt x)   = CInt (signum x)
+    signum (CFloat x) = CFloat (signum x)
+    signum ce         = error $ "Num CExp: signum not implemented: " ++ pretty 80 (ppr ce)
 
     fromInteger i = CInt i
+
+instance Real CExp where
+    toRational (CInt n)   = toRational n
+    toRational (CFloat n) = n
+    toRational _          = error "Real CExp: toRational not implemented"
+
+instance Integral CExp where
+    CInt x `div` CInt y = CInt (x `div` y)
+    x      `div` y      = CExp [cexp|$x / $y|]
+
+    CInt x `quotRem` CInt y = (CInt q, CInt r)
+      where
+        (q, r) = x `quotRem` y
+
+    ce1 `quotRem` ce2 = (CExp [cexp|$ce1 / $ce2|], CExp [cexp|$ce1 % $ce2|])
+
+    toInteger (CInt i) = i
+    toInteger _        = error "Integral CExp: fromInteger not implemented"
 
 instance Fractional CExp where
     CFloat x / CFloat y = CFloat (x / y)
@@ -192,8 +284,60 @@ instance Fractional CExp where
 
     fromRational r = CFloat r
 
+instance Bits CExp where
+    CInt x .&. CInt y = CInt (x .&. y)
+    ce1    .&. ce2    = CExp [cexp|$ce1 & $ce2|]
+
+    CInt 0 .|. y      = y
+    x      .|. CInt 0 = x
+    CInt x .|. CInt y = CInt (x .|. y)
+    ce1    .|. ce2    = CExp [cexp|$ce1 | $ce2|]
+
+    CInt x `xor` CInt y = CInt (x .|. y)
+    ce1    `xor` ce2    = CExp [cexp|$ce1 ^ $ce2|]
+
+    complement (CInt x) = CInt (complement x)
+    complement ce       = CExp [cexp|~$ce|]
+
+    CInt x `shiftL` i = CInt (x `shiftL` i)
+    x      `shiftL` 0 = x
+    ce     `shiftL` i = CExp [cexp|$ce << $int:i|]
+
+    CInt x `shiftR` i = CInt (x `shiftR` i)
+    x      `shiftR` 0 = x
+    ce     `shiftR` i = CExp [cexp|$ce >> $int:i|]
+
+    -- See http://blog.regehr.org/archives/1063
+    CInt x `rotateL` i = CInt (x `rotateL` i)
+    x      `rotateL` 0 = x
+    ce     `rotateL` i = CExp [cexp|($ce << $int:i) | ($ce >> ((-$int:i) & $mask))|]
+      where
+        mask :: C.Exp
+        mask = [cexp|(CHAR_BIT*sizeof($ce)-1)|]
+
+    CInt x `rotateR` i = CInt (x `rotateR` i)
+    x      `rotateR` 0 = x
+    ce     `rotateR` i = CExp [cexp|($ce >> $int:i) | ($ce << ((-$int:i) & $mask))|]
+      where
+        mask :: C.Exp
+        mask = [cexp|(CHAR_BIT*sizeof($ce)-1)|]
+
+    bit i = CInt $ bit i
+
+    bitSize _ = error "Bits CExp: bitSize not implemented"
+    bitSizeMaybe _ = error "Bits CExp: bitSizeMaybe not implemented"
+    isSigned _ = error "Bits CExp: isSigned not implemented"
+    testBit _ _ = error "Bits CExp: testBit not implemented"
+    popCount _ = error "Bits CExp: popCount not implemented"
+
+instance IsBits CExp where
+    bit' (CInt i) = CInt $ bit (fromIntegral i)
+    bit' ci       = CExp [cexp|1 << $ci|]
+
 instance ToExp CExp where
     toExp CVoid                  = error "toExp: void compiled expression"
+    toExp (CBool i)              = \_ -> [cexp|$int:(if i then 1 else 0)|]
+    toExp (CBit i)               = \_ -> [cexp|$int:(if i then 1 else 0)|]
     toExp (CInt i)               = \_ -> [cexp|$int:i|]
     toExp (CFloat r)             = \_ -> [cexp|$double:r|]
     toExp (CExp e)               = \_ -> e
@@ -205,6 +349,10 @@ instance ToExp CExp where
 
 instance Pretty CExp where
     ppr CVoid                  = text "<void>"
+    ppr (CBool True)           = text "true"
+    ppr (CBool False)          = text "false"
+    ppr (CBit True)            = text "'1"
+    ppr (CBit False)           = text "'0"
     ppr (CInt i)               = ppr i
     ppr (CFloat f)             = ppr f
     ppr (CExp e)               = ppr e
