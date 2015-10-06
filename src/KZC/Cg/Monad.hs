@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -107,6 +108,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Lint.Monad hiding (traceNest)
 import KZC.Monad
+import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
@@ -148,33 +150,54 @@ data CExp = CVoid
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
           | CPtr CExp        -- ^ A pointer.
-          | CSlice CExp CExp Int
-            -- ^ An array slice. The data constructors arguments are the array,
-            -- the offset, and the length of the slice.
+          | CIdx Type CExp CExp
+            -- ^ An array element. The data constructors arguments are the type
+            -- of the array's elements, the array, and the index.
+          | CSlice Type CExp CExp Int
+            -- ^ An array slice. The data constructors arguments are the type of
+            -- the array's elements, the array, the offset, the length of the
+            -- slice.
           | CComp CComp      -- ^ A computation.
           | CDelay [IVar] [(Var, Type)] (Cg CExp)
             -- ^ A delayed CExp. This represents a computation that may take
             -- and/or emit.
 
+instance IfThenElse CExp CExp where
+    ifThenElse (CBool True)  t _ = t
+    ifThenElse (CBool False) _ e = e
+    ifThenElse c             t e = CExp [cexp|$c ? $t : $e|]
+
+instance IfThenElse CExp (Cg ()) where
+    ifThenElse (CBool True)  t _ = t
+    ifThenElse (CBool False) _ e = e
+    ifThenElse c t e = do
+       cthen_items <- inNewBlock_ t
+       celse_items <- inNewBlock_ e
+       if null celse_items
+         then appendStm [cstm|if ($c) { $items:cthen_items }|]
+         else appendStm [cstm|if ($c) { $items:cthen_items } else { $items:celse_items }|]
+
 instance Eq CExp where
-    CVoid        == CVoid        = True
-    CBool x      == CBool y      = x == y
-    CBit x       == CBit y       = x == y
-    CInt x       == CInt y       = x == y
-    CFloat x     == CFloat y     = x == y
-    CPtr x       == CPtr y       = x == y
-    CSlice r s t == CSlice x y z = (r,s,t) == (x,y,z)
-    _            == _            = error "Eq CExp: incomparable"
+    CVoid          == CVoid          = True
+    CBool x        == CBool y        = x == y
+    CBit x         == CBit y         = x == y
+    CInt x         == CInt y         = x == y
+    CFloat x       == CFloat y       = x == y
+    CPtr x         == CPtr y         = x == y
+    CIdx r s t     == CIdx x y z     = (r,s,t) == (x,y,z)
+    CSlice q r s t == CSlice w x y z = (q,r,s,t) == (w,x,y,z)
+    _              == _              = error "Eq CExp: incomparable"
 
 instance Ord CExp where
-    compare CVoid          CVoid          = EQ
-    compare (CBool x)      (CBool y)      = compare x y
-    compare (CBit x)       (CBit y)       = compare x y
-    compare (CInt x)       (CInt y)       = compare x y
-    compare (CFloat x)     (CFloat y)     = compare x y
-    compare (CPtr x)       (CPtr y)       = compare x y
-    compare (CSlice r s t) (CSlice x y z) = compare (r,s,t) (x,y,z)
-    compare _              _              = error "Ord CExp: incomparable"
+    compare CVoid            CVoid            = EQ
+    compare (CBool x)        (CBool y)        = compare x y
+    compare (CBit x)         (CBit y)         = compare x y
+    compare (CInt x)         (CInt y)         = compare x y
+    compare (CFloat x)       (CFloat y)       = compare x y
+    compare (CPtr x)         (CPtr y)         = compare x y
+    compare (CIdx r s t)     (CIdx x y z)     = compare (r,s,t) (x,y,z)
+    compare (CSlice q r s t) (CSlice w x y z) = compare (q,r,s,t) (w,x,y,z)
+    compare _                _                = error "Ord CExp: incomparable"
 
 instance Enum CExp where
     toEnum n = CInt (fromIntegral n)
@@ -263,14 +286,26 @@ instance Real CExp where
     toRational _          = error "Real CExp: toRational not implemented"
 
 instance Integral CExp where
-    CInt x `div` CInt y = CInt (x `div` y)
-    x      `div` y      = CExp [cexp|$x / $y|]
+    CInt x `quot` CInt y = CInt (x `quot` y)
+    x      `quot` y      = CExp [cexp|$x / $y|]
 
     CInt x `quotRem` CInt y = (CInt q, CInt r)
       where
         (q, r) = x `quotRem` y
 
-    ce1 `quotRem` ce2 = (CExp [cexp|$ce1 / $ce2|], CExp [cexp|$ce1 % $ce2|])
+    ce1 `quotRem` ce2@(CInt i) | isPowerOf2 i =
+        (CExp [cexp|$ce1 / $ce2|], CExp [cexp|$ce1 & $(ce2-1)|])
+      where
+        isPowerOf2 0 = False
+        isPowerOf2 1 = False
+        isPowerOf2 2 = True
+        isPowerOf2 n | r == 0    = isPowerOf2 q
+                     | otherwise = False
+          where
+            (q,r) = n `quotRem` 2
+
+    ce1 `quotRem` ce2 =
+        (CExp [cexp|$ce1 / $ce2|], CExp [cexp|$ce1 % $ce2|])
 
     toInteger (CInt i) = i
     toInteger _        = error "Integral CExp: fromInteger not implemented"
@@ -330,36 +365,78 @@ instance Bits CExp where
     testBit _ _ = error "Bits CExp: testBit not implemented"
     popCount _ = error "Bits CExp: popCount not implemented"
 
+instance IsBool CExp where
+    CBool True  .&&. ce  = ce
+    CBool False .&&. _   = CBool False
+    ce1         .&&. ce2 = CExp [cexp|$ce1 && $ce2|]
+
+    CBool True  .||. _   = CBool True
+    CBool False .||. ce  = ce
+    ce1         .||. ce2 = CExp [cexp|$ce1 || $ce2|]
+
 instance IsBits CExp where
     bit' (CInt i) = CInt $ bit (fromIntegral i)
     bit' ci       = CExp [cexp|1 << $ci|]
 
+    CInt x `shiftL'` CInt i = CInt (x `shiftL` fromIntegral i)
+    x      `shiftL'` CInt 0 = x
+    ce     `shiftL'` i      = CExp [cexp|$ce << $i|]
+
+    CInt x `shiftR'` CInt i = CInt (x `shiftR` fromIntegral i)
+    x      `shiftR'` CInt 0 = x
+    ce     `shiftR'` i      = CExp [cexp|$ce >> $i|]
+
 instance ToExp CExp where
-    toExp CVoid                  = error "toExp: void compiled expression"
-    toExp (CBool i)              = \_ -> [cexp|$int:(if i then 1 else 0)|]
-    toExp (CBit i)               = \_ -> [cexp|$int:(if i then 1 else 0)|]
-    toExp (CInt i)               = \_ -> [cexp|$int:i|]
-    toExp (CFloat r)             = \_ -> [cexp|$double:r|]
-    toExp (CExp e)               = \_ -> e
-    toExp (CPtr e)               = toExp e
-    toExp (CSlice carr cidx len) = \_ -> [cexp|&$carr[$(cidx + fromIntegral len)]|]
-    toExp (CComp (Pure ce))      = toExp ce
-    toExp (CComp {})             = error "toExp: cannot convert CComp to a C expression"
-    toExp (CDelay {})            = error "toExp: cannot convert CDelay to a C expression"
+    toExp CVoid                      = error "toExp: void compiled expression"
+    toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1 else 0)|]
+    toExp (CBit i)                   = \_ -> [cexp|$int:(if i then 1 else 0)|]
+    toExp (CInt i)                   = \_ -> [cexp|$int:i|]
+    toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
+    toExp (CExp e)                   = \_ -> e
+    toExp (CPtr e)                   = toExp e
+    toExp (CIdx tau carr cidx)       = \_ -> lowerCIdx tau carr cidx
+    toExp (CSlice tau carr cidx len) = \_ -> lowerCSlice tau carr cidx len
+    toExp (CComp (Pure ce))          = toExp ce
+    toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
+    toExp (CDelay {})                = error "toExp: cannot convert CDelay to a C expression"
 
 instance Pretty CExp where
-    ppr CVoid                  = text "<void>"
-    ppr (CBool True)           = text "true"
-    ppr (CBool False)          = text "false"
-    ppr (CBit True)            = text "'1"
-    ppr (CBit False)           = text "'0"
-    ppr (CInt i)               = ppr i
-    ppr (CFloat f)             = ppr f
-    ppr (CExp e)               = ppr e
-    ppr (CPtr e)               = ppr [cexp|*$e|]
-    ppr (CSlice carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
-    ppr (CComp {})             = text "<computation>"
-    ppr (CDelay {})            = text "<delayed compiled expression>"
+    ppr CVoid                    = text "<void>"
+    ppr (CBool True)             = text "true"
+    ppr (CBool False)            = text "false"
+    ppr (CBit True)              = text "'1"
+    ppr (CBit False)             = text "'0"
+    ppr (CInt i)                 = ppr i
+    ppr (CFloat f)               = ppr f
+    ppr (CExp e)                 = ppr e
+    ppr (CPtr e)                 = ppr [cexp|*$e|]
+    ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
+    ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CComp {})               = text "<computation>"
+    ppr (CDelay {})              = text "<delayed compiled expression>"
+
+lowerCIdx :: Type -> CExp -> CExp -> C.Exp
+lowerCIdx (BitT _) carr cidx =
+    [cexp|$carr[$cbitIdx] & $(1 `shiftL'` cbitOff)|]
+  where
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+
+lowerCIdx _ carr cidx =
+    [cexp|$carr[$cidx]|]
+
+lowerCSlice :: Type -> CExp -> CExp -> Int -> C.Exp
+lowerCSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
+    [cexp|&$carr[$int:bitIdx]|]
+  where
+    bitIdx, bitOff :: Integer
+    (bitIdx, bitOff) = fromIntegral i `quotRem` bIT_ARRAY_ELEM_BITS
+
+lowerCSlice (BitT _) _ _ _ =
+    error "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width"
+
+lowerCSlice _ carr cidx _ =
+    [cexp|&$carr[$cidx]|]
 
 -- | A code label
 type Label = C.Id

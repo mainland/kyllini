@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -16,13 +17,17 @@ module KZC.Cg (
     compileProgram
   ) where
 
+import Prelude
+
 import Control.Applicative ((<$>))
 import Control.Monad (forM_,
                       liftM,
                       when)
 import Control.Monad.Free (Free(..))
+import Data.Bits
 import Data.Char (ord)
 import Data.Foldable (toList)
+import Data.String (fromString)
 import Data.List (sort)
 import Data.Loc
 import Data.Monoid (mempty)
@@ -37,6 +42,7 @@ import KZC.Error
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
+import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
@@ -303,12 +309,46 @@ cgDecl decl@(LetStructD s flds l) k = do
         return [csdecl|$ty:ctau $id:cfld;|]
 
 cgConstArray :: Type -> [CExp] -> Cg CExp
+cgConstArray (BitT {}) ces = do
+    cv <- gensym "__const_arr"
+    appendTopDecl [cdecl|const $ty:bIT_ARRAY_ELEM_TYPE $id:cv[$int:(bitArrayLen (length ces))] = { $inits:cinits };|]
+    return $ CExp [cexp|$id:cv|]
+  where
+    cinits :: [C.Initializer]
+    cinits = finalizeBits $ foldl mkBits (0,0,[]) ces
+
+    mkBits :: (CExp, Int, [C.Initializer]) -> CExp -> (CExp, Int, [C.Initializer])
+    mkBits (cconst, i, cinits) ce
+        | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
+        | otherwise                    = (cconst', i+1, cinits)
+      where
+        cconst' :: CExp
+        cconst' = cconst .|. (fromBits ce `shiftL` i)
+
+        fromBits :: CExp -> CExp
+        fromBits (CBit True)  = CInt 1
+        fromBits (CBit False) = CInt 0
+        fromBits ce           = ce
+
+    finalizeBits :: (CExp, Int, [C.Initializer]) -> [C.Initializer]
+    finalizeBits (_,      0, cinits) = reverse cinits
+    finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+
+    const :: CExp -> C.Initializer
+    const (CInt i) = [cinit|$(hexConst i)|]
+    const ce       = [cinit|$ce|]
+
+    hexConst :: Integer -> C.Exp
+    hexConst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
+
 cgConstArray tau ces = do
-    cv           <- gensym "__const_arr"
-    ctau         <- cgType tau
-    let cinits   =  [[cinit|$ce|] | ce <- ces]
+    cv   <- gensym "__const_arr"
+    ctau <- cgType tau
     appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length ces)] = { $inits:cinits };|]
     return $ CExp [cexp|$id:cv|]
+  where
+    cinits :: [C.Initializer]
+    cinits =  [[cinit|$ce|] | ce <- ces]
 
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) =
@@ -640,15 +680,13 @@ cgExp e@(ArrayE es l) = do
         appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
     return $ CExp [cexp|$id:cv|]
 
-cgExp (IdxE e1 e2 Nothing _) = do
-    ce1 <- cgExp e1
-    ce2 <- cgExp e2
-    cgIdx ce1 ce2
-
-cgExp (IdxE e1 e2 (Just i) _) = do
-    ce1 <- cgExp e1
-    ce2 <- cgExp e2
-    cgSlice ce1 ce2 i
+cgExp (IdxE e1 e2 maybe_len _) = do
+    (_, tau) <- inferExp e1 >>= checkArrT
+    ce1      <- cgExp e1
+    ce2      <- cgExp e2
+    case maybe_len of
+      Nothing  -> cgIdx tau ce1 ce2
+      Just len -> cgSlice tau ce1 ce2 len
 
 cgExp (StructE s flds l) = do
     cv <- cgTemp "struct" (StructT s l)
@@ -833,6 +871,15 @@ unPtr :: CExp -> CExp
 unPtr (CPtr ce) = CExp [cexp|*$ce|]
 unPtr ce        = ce
 
+-- | Check that the argument is either an array or a reference to an array and
+-- return the array's size and the type of its elements.
+checkArrT :: Monad m => Type -> m (Iota, Type)
+checkArrT (ArrT iota tau _)          = return (iota, tau)
+checkArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
+checkArrT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected array type but got:" <+/> ppr tau
+
 unCComp :: CExp -> Cg CComp
 unCComp (CComp comp) =
     return comp
@@ -861,7 +908,7 @@ cgType (BoolT {}) =
     return [cty|typename uint8_t|]
 
 cgType (BitT {}) =
-    return [cty|typename uint8_t|]
+    return bIT_ARRAY_ELEM_TYPE
 
 cgType (IntT W8 Signed _) =
     return [cty|typename int8_t|]
@@ -905,6 +952,9 @@ cgType (StringT {}) =
 cgType (StructT s l) =
     return [cty|typename $id:(cstruct s l)|]
 
+cgType (ArrT (ConstI n _) (BitT _) _) =
+    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+
 cgType (ArrT (ConstI n _) tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau[$int:n]|]
@@ -944,6 +994,9 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg C.Type
+    cgParamType (ArrT (ConstI n _) (BitT _) _) =
+        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+
     cgParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
         return [cty|const $ty:ctau[$int:n]|]
@@ -963,6 +1016,9 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg C.Type
+    cgRetParamType (ArrT (ConstI n _) (BitT _) _) =
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+
     cgRetParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
         return [cty|$ty:ctau[$int:n]|]
@@ -998,6 +1054,21 @@ cgStorage isTopLevel cv tau =
     go :: Type -> Cg CExp
     go (UnitT {}) =
         return CVoid
+
+    go (ArrT (ConstI n _) (BitT {}) _) = do
+        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+        return $ CExp $ rl cv [cexp|$id:cv|]
+      where
+        ctau :: C.Type
+        ctau = bIT_ARRAY_ELEM_TYPE
+
+    go (ArrT iota@(VarI {}) (BitT {}) _) = do
+        cn <- cgIota iota
+        appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
+        return $ CExp $ rl cv [cexp|$id:cv|]
+      where
+        ctau :: C.Type
+        ctau = bIT_ARRAY_ELEM_TYPE
 
     go (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
@@ -1220,13 +1291,13 @@ cgCComp take emit done ccomp =
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        emit' cleftk crightk _ cbufp l (ArrT iota _ _) ce ccomp k = do
+        emit' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
             cn <- cgIota iota
             useLabel l
             appendStm [cstm|$cleftk = LABELADDR($id:l);|]
             cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx ce ci
-                appendStm [cstm|$cbufp = &$cidx;|]
+                cidx <- cgIdx tau ce ci
+                cgAssignBufp tau cbuf cbufp cidx
                 appendStm [cstm|INDJUMP($crightk);|]
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
@@ -1326,39 +1397,142 @@ cgAssign (UnitT {}) _ _ =
 cgAssign _ _ CVoid =
     return ()
 
-cgAssign (ArrT iota tau _) ce1 ce2 = do
-    ctau <- cgType tau
-    ce1' <- cgArrayAddr ce1
-    ce2' <- cgArrayAddr ce2
-    clen <- cgIota iota
-    appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+-- XXX: Should use more efficient bit twiddling code here. See:
+--
+--   http://realtimecollisiondetection.net/blog/?p=78
+--   https://graphics.stanford.edu/~seander/bithacks.html
+--   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
+--
+cgAssign (RefT (BitT {}) _) (CIdx _ carr cidx) ce2 =
+    appendStm [cstm|if ($ce2) { $stm:csetbit } else { $stm:cclearbit }|]
+  where
+    csetbit, cclearbit :: C.Stm
+    csetbit   = [cstm|$carr[$cbitIdx] |=  $cbitMask;|]
+    cclearbit = [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
 
-cgAssign (RefT (ArrT iota tau _) _) ce1 ce2 = do
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+
+    cbitMask :: CExp
+    cbitMask = 1 `shiftL'` cbitOff
+
+cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrT tau0 = do
+    clen <- cgIota iota
+    cgAssignBitArray clen ce1 ce2
+
+cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrT tau0 = do
     ctau <- cgType tau
     ce1' <- cgArrayAddr ce1
     ce2' <- cgArrayAddr ce2
     clen <- cgIota iota
     appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+  where
+    cgArrayAddr :: CExp -> Cg CExp
+    cgArrayAddr (CSlice (BitT _) _ _ _) =
+        panicdoc $ text "cgArrayAddr: the impossible happened!"
+
+    cgArrayAddr (CSlice _ carr cidx _) =
+        return $ CExp [cexp|&$carr[$cidx]|]
+
+    cgArrayAddr ce =
+        return ce
 
 -- We call 'unPtr' on @cv@ because the lhs of an assignment is a ref type and
 -- may need to be dereferenced.
 cgAssign _ cv ce =
     appendStm [cstm|$(unPtr cv) = $ce;|]
 
-cgArrayAddr :: CExp -> Cg CExp
-cgArrayAddr (CSlice carr cidx _) =
-    return $ CExp [cexp|&$carr[$cidx]|]
+-- XXX: This code is not correct, but we will fix it later. See:
+--
+--   https://stackoverflow.com/questions/3534535/whats-a-time-efficient-algorithm-to-copy-unaligned-bit-arrays
+--
+cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
+cgAssignBitArray clen ce1 ce2 =
+    if cBitOff1 .==. cBitOff2
+    then cgSameOffset
+    else cgDifferentOffset
+  where
+    cgElem1 :: CExp -> CExp
+    cBitOff1 :: CExp
+    (cgElem1, cBitOff1) = unBitSlice ce1
 
-cgArrayAddr ce =
-    return ce
+    cgElem2 :: CExp -> CExp
+    cBitOff2 :: CExp
+    (cgElem2, cBitOff2) = unBitSlice ce2
 
-cgIdx :: CExp -> CExp -> Cg CExp
-cgIdx carr cidx =
-    return $ CExp [cexp|$carr[$cidx]|]
+    cgSameOffset :: Cg ()
+    cgSameOffset = do
+        -- Preserve low bits in first entry of destination
+        if cBitOff ./=. 0 .||. clen .<. bIT_ARRAY_ELEM_BITS
+          then do let headBits = (cgElem1 0 .&. loBitsMask cBitOff) .|.
+                                 (cgElem2 0 .&. hiBitsMask cBitOff)
+                  appendStm [cstm|$(cgElem1 0) = $headBits;|]
+          else return ()
+        -- Figure out how many whole and partial elements we have left to copy
+        let (middleLen, tailLen) = (clen - cBitOff) `quotRem` bIT_ARRAY_ELEM_BITS
+        -- Copy the middle of the bit array
+        if middleLen .>. 0
+          then appendStm [cstm|memcpy(&$(cgElem1 1), &$(cgElem2 1), $middleLen*sizeof($ty:bIT_ARRAY_ELEM_TYPE));|]
+          else return ()
+        -- Copy the end of the bit array
+        if tailLen .>. 0
+          then do let tailIdx  = bitArrayLen clen - 1
+                  let tailBits = (cgElem2 tailIdx .&. loBitsMask tailLen) .|.
+                                 (cgElem1 tailIdx .&. hiBitsMask tailLen)
+                  appendStm [cstm|$(cgElem1 tailIdx) = $tailBits;|]
+          else return ()
+      where
+        cBitOff :: CExp
+        cBitOff = cBitOff1
 
-cgSlice :: CExp -> CExp -> Int -> Cg CExp
-cgSlice carr cidx len =
-    return $ CSlice carr cidx len
+    cgDifferentOffset :: Cg ()
+    cgDifferentOffset =
+        cgFor 0 (bitArrayLen clen) $ \ci -> do
+            let -- Get the lower bits from the destination that we aren't
+                -- overwriting and must preserve
+                oldBits   = if cBitOff1 .==. 0
+                            then 0
+                            else cgElem1 ci .&. loBitsMask cBitOff1
+                -- Get the new bits from the source
+                newBits   = (cgElem2 ci `shiftR'` cBitOff2) `shiftL'` cBitOff1
+                -- Figure out how many bits we have copied so far
+                bitsSoFar = ci * bIT_ARRAY_ELEM_BITS + (bIT_ARRAY_ELEM_BITS - (cBitOff2 - cBitOff1))
+                -- We may need some extra bits from the next entry...
+                newBits1  = if bitsSoFar .<. clen
+                            then cgElem2 (ci + 1) `shiftL'` (bIT_ARRAY_ELEM_BITS - cBitOff2)
+                            else 0
+                allBits   = oldBits .|. newBits .|. newBits1
+            appendStm [cstm|$(cgElem1 ci) = $allBits;|]
+
+    loBitsMask :: CExp -> CExp
+    loBitsMask off = (1 `shiftL'` (off + 1)) - 1
+
+    hiBitsMask :: CExp -> CExp
+    hiBitsMask off = bitComplement (loBitsMask off)
+
+    unBitSlice :: CExp -> (CExp -> CExp, CExp)
+    unBitSlice (CSlice _ carr cidx _) =
+        (cgElem, cBitOff)
+      where
+        cgElem :: CExp -> CExp
+        cgElem ci = CExp [cexp|$carr[$(ci + cIdxOff)]|]
+
+        cIdxOff, cBitOff :: CExp
+        (cIdxOff, cBitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+
+    unBitSlice carr =
+        (cgElem, 0)
+      where
+        cgElem :: CExp -> CExp
+        cgElem ci = CExp [cexp|$carr[$ci]|]
+
+cgIdx :: Type -> CExp -> CExp -> Cg CExp
+cgIdx tau carr cidx =
+    return $ CIdx tau carr cidx
+
+cgSlice :: Type -> CExp -> CExp -> Int -> Cg CExp
+cgSlice tau carr cidx len =
+    return $ CSlice tau carr cidx len
 
 cgAddrOf :: Type -> CExp -> Cg CExp
 cgAddrOf tau ce | isConstant ce = do
@@ -1391,7 +1565,11 @@ cgIf e1 e2 e3 = do
 -- | Generate C code for a @for@ loop. @cfrom@ and @cto@ are the loop bounds,
 -- and @k@ is a continuation that takes an expression representing the loop
 -- index and generates the body of the loop.
-cgFor :: CExp -> CExp -> (CExp -> Cg a) -> Cg a
+cgFor :: CExp -> CExp -> (CExp -> Cg ()) -> Cg ()
+cgFor cfrom@(CInt i) (CInt j) k
+    | j <= i     = return ()
+    | j == i + 1 = k cfrom
+
 cgFor cfrom cto k = do
     ci <- gensym "__i"
     appendDecl [cdecl|int $id:ci;|]
@@ -1413,6 +1591,10 @@ cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
 cstruct s l = C.Id (namedString s ++ "_t") l
+
+bitComplement :: CExp -> CExp
+bitComplement (CInt i) = CInt (fromIntegral (complement (fromIntegral i :: BitArrayElemType)))
+bitComplement ce       = CExp [cexp|~(($ty:bIT_ARRAY_ELEM_TYPE) $ce)|]
 
 -- | Z-encode a string. This converts a string with special characters into a
 -- form that is guaranteed to be usable as an identifier by a C compiler or
