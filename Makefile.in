@@ -1,3 +1,15 @@
+CC=gcc
+CFLAGS=-O0 -g -Werror
+
+CXX=g++
+CXXFLAGS=$(CFLAGS) -std=c++11
+
+CPPFLAGS=-Ilibkz/include
+
+LD=gcc
+LDFLAGS=
+LIBS=-lm
+
 GHC=ghc
 GHCFLAGS=-W -Werror
 
@@ -9,6 +21,11 @@ HAPPY_ARGS=-agci
 
 ALEX=alex 
 ALEX_ARGS=-gi
+
+#
+# No built-in rules
+#
+MAKEFLAGS += --no-builtin-rules
 
 #
 # opt and noopt make commands
@@ -157,7 +174,7 @@ all : kzc
 
 .PHONY : clean
 clean :
-	rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED))
+	rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
 
 .PHONY : distclean
 distclean : clean
@@ -196,6 +213,39 @@ $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
 	$(ALEX) $(ALEX_ARGS) -o $@ $<
 
 #
+# Executables
+#
+
+KZC=./kzc
+KZCFLAGS=-I$(TESTDIR)/lib --dlint --ddump-core --ddump-lift --dtrace-lint --dtrace-cg --fno-line-pragmas
+
+RUNTIME_SRC = libkz/src/driver.c libkz/src/ext.c libkz/src/io.cpp libkz/src/rt.c
+RUNTIME_OBJ = $(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
+
+.PRECIOUS : $(RUNTIME_OBJ)
+
+%.c : %.blk kzc
+	$(KZC) $(KZCFLAGS) $< -o $@
+
+%.c : %.wpl kzc
+	$(KZC) $(KZCFLAGS) $< -o $@
+
+%.c : %.zr kzc
+	$(KZC) $(KZCFLAGS) $< -o $@
+
+%.o : %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+%.o : %.cpp
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+%.exe : %.o $(RUNTIME_OBJ)
+	$(LD) $(LDFLAGS) $< $(RUNTIME_OBJ) $(LIBS) -o $@
+
+%.outfile : %.exe %.infile
+	$< --input=$*.infile --output=$*.outfile
+
+#
 # Tests
 #
 TESTDIR = testsuite
@@ -204,7 +254,7 @@ TESTS = \
 	$(shell ls $(TESTDIR)/tests/parser/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.blk | sort) \
-	$(shell ls $(TESTDIR)/tests/threads/*.blk | sort) \
+	$(shell ls $(TESTDIR)/tests/libs/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/vectorizer/transmitter.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
@@ -215,7 +265,7 @@ test-parser : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
 		echo $$TEST; \
-		./kzc -I$(TESTDIR)/lib -P $$TEST; \
+		./kzc $(KZCFLAGS) -P $$TEST; \
 	done
 
 .PHONY : test-tc
@@ -223,7 +273,7 @@ test-tc : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
 		echo $$TEST; \
-		./kzc -I$(TESTDIR)/lib -C --dlint $$TEST; \
+		./kzc $(KZCFLAGS) -C $$TEST; \
 	done
 
 .PHONY : test-compiler
@@ -231,15 +281,28 @@ test-compiler : kzc
 	set -e; \
 	for TEST in $(TESTS); do \
 		echo $$TEST; \
-		./kzc -I$(TESTDIR)/lib --dlint $$TEST -o test.c; \
-		make test; \
+		./kzc $(KZCFLAGS) $$TEST -o test.c; \
+		$(MAKE) test.exe; \
 	done
 
-%.c : %.zr kzc
-	./kzc -I$(TESTDIR)/lib --ddump-core --dtrace-lint --dtrace-cg $<
+GROUNDFILES= \
+	$(shell ls $(TESTDIR)/tests/parser/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/tests/backend/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/tests/vectorizer/transmitter.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.outfile.ground | sort)
 
-% : %.c
-	gcc -Ilibkz/include -Werror $^ libkz/src/kz.c -o $@ -lm
+GROUNDTESTS=$(patsubst %.outfile.ground,%,$(GROUNDFILES))
+
+.PHONY : test-ground
+test-ground : kzc
+	set -e; \
+	for TEST in $(GROUNDTESTS); do \
+		echo $$TEST; \
+		$(MAKE) $$TEST.outfile; \
+	done
 
 #
 # autotools stuff

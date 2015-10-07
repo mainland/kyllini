@@ -27,7 +27,7 @@ import Control.Monad.Free (Free(..))
 import Data.Bits
 import Data.Char (ord)
 import Data.Foldable (toList)
-import Data.String (fromString)
+import Data.String (IsString(..))
 import Data.List (sort)
 import Data.Loc
 import Data.Monoid (mempty)
@@ -47,18 +47,15 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
 
-cUR_KONT :: C.Id
-cUR_KONT = C.Id "curk" noLoc
-
 compileProgram :: [Decl] -> Cg ()
 compileProgram decls = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     cgDecls decls $ do
     tau@(ST _ _ _ a b _) <- lookupVar "main"
-    comp   <- cgExp (varE "main") >>= unCComp
-    ca     <- cgType a
-    cb     <- cgType b
+    comp <- cgExp (varE "main") >>= unCComp
     citems <- inNewBlock_ $ do
+              cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
+              cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
               -- Keep track of the current continuation. This is only used when
               -- we do not have first class labels.
               lbl  <- ccompLabel comp
@@ -66,61 +63,177 @@ compileProgram decls = do
               appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:lbl);|]
               -- Generate code for the computation
               cgThread $ cgCComp take emit (done (resultType tau) cres) comp
+              cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
+              cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels
     appendTopDef [cedecl|
-int main(int argc, char **argv)
+void kz_main(const typename kz_params_t* $id:params)
 {
-    return 0;
-}|];
-    appendTopDef [cedecl|
-int __kz_main(const $ty:ca* in, $ty:cb* out)
-{
-    int i = 0;
-    int j = 0;
+    typename kz_buf_t $id:in_buf;
+    typename kz_buf_t $id:out_buf;
 
     $items:citems
 }|]
   where
-    take :: TakeK
-    take l 1 tau k1 k2 = do
-        -- Generate a pointer to the current element in the buffer.
-        ctau <- cgType tau
-        cbuf <- cgCTemp tau "take_bufp" [cty|const $ty:ctau *|] (Just [cinit|NULL|])
-        cgWithLabel l $ do
-        appendStm [cstm|$cbuf = &in[i++];|]
-        k2 $ k1 $ CExp [cexp|*$cbuf|]
+    in_buf, out_buf, params :: C.Id
+    in_buf  = "in"
+    out_buf = "out"
+    params = "params"
 
+    take :: TakeK
     take l n tau k1 k2 = do
         -- Generate a pointer to the current element in the buffer.
         ctau <- cgType tau
-        cbuf <- cgCTemp tau "take_bufp" [cty|const $ty:ctau *|] (Just [cinit|NULL|])
+        cbuf <- cgCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
         cgWithLabel l $ do
-        appendStm [cstm|$cbuf = &in[i];|]
-        appendStm [cstm|i += $int:n;|]
-        k2 $ k1 $ CExp [cexp|$cbuf|]
+        cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
+        appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
+        appendStm [cstm|if($cbuf == NULL) { BREAK; }|]
+        k2 $ k1 $ if n == 1 then CExp [cexp|*$cbuf|] else CExp [cexp|$cbuf|]
 
     emit :: EmitK
-    emit l (ArrT (ConstI 1 _) _ _) ce ccomp k =
+    emit l tau@(ArrT {}) ce ccomp k =
         cgWithLabel l $ do
-        appendStm [cstm|out[j++] = $ce[0];|]
+        ceAddr <- cgAddrOf tau ce
+        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
         k ccomp
 
-    emit l (ArrT iota tau _) ce ccomp k =
+    emit l tau ce ccomp k =
         cgWithLabel l $ do
-        cn   <- cgIota iota
-        ctau <- cgType tau
-        appendStm [cstm|memcpy(&out[j], $ce, $cn*sizeof($ty:ctau));|]
-        appendStm [cstm|j += $cn;|]
-        k ccomp
-
-    emit l _ ce ccomp k =
-        cgWithLabel l $ do
-        appendStm [cstm|out[j++] = $ce;|]
+        ceAddr <- cgAddrOf tau ce
+        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
         k ccomp
 
     done :: Type -> CExp -> DoneK
     done tau cv ce =
         cgAssign tau cv ce
+
+    cUR_KONT :: C.Id
+    cUR_KONT = "curk"
+
+    cgInitInput :: Type -> CExp -> CExp -> Cg ()
+    cgInitInput tau cp cbuf = go tau
+      where
+        go :: Type -> Cg ()
+        go (ArrT _ tau _)          = go tau
+        go (BitT {})               = appendStm [cstm|kz_init_input_bit($cp, &$cbuf);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|kz_init_input_int8($cp, &$cbuf);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|kz_init_input_int16($cp, &$cbuf);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|kz_init_input_int32($cp, &$cbuf);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_init_input_uint8($cp, &$cbuf);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_init_input_uint16($cp, &$cbuf);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_init_input_uint32($cp, &$cbuf);|]
+        go (FloatT W8  _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
+        go (FloatT W16 _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
+        go (FloatT W32 _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
+        go (FloatT W64 _)          = appendStm [cstm|kz_init_input_double($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appendStm [cstm|kz_init_input_complex16($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appendStm [cstm|kz_init_input_complex32($cp, &$cbuf);|]
+        go _                       = appendStm [cstm|kz_init_input_bytes($cp, &$cbuf);|]
+
+    cgInitOutput :: Type -> CExp -> CExp -> Cg ()
+    cgInitOutput tau cp cbuf = go tau
+      where
+        go :: Type -> Cg ()
+        go (ArrT _ tau _)          = go tau
+        go (BitT {})               = appendStm [cstm|kz_init_output_bit($cp, &$cbuf);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|kz_init_output_int8($cp, &$cbuf);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|kz_init_output_int16($cp, &$cbuf);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|kz_init_output_int32($cp, &$cbuf);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_init_output_uint8($cp, &$cbuf);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_init_output_uint16($cp, &$cbuf);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_init_output_uint32($cp, &$cbuf);|]
+        go (FloatT W8  _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
+        go (FloatT W16 _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
+        go (FloatT W32 _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
+        go (FloatT W64 _)          = appendStm [cstm|kz_init_output_double($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appendStm [cstm|kz_init_output_complex16($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appendStm [cstm|kz_init_output_complex32($cp, &$cbuf);|]
+        go _                       = appendStm [cstm|kz_init_output_bytes($cp, &$cbuf);|]
+
+    cgCleanupInput :: Type -> CExp -> CExp -> Cg ()
+    cgCleanupInput tau cp cbuf = go tau
+      where
+        go :: Type -> Cg ()
+        go (ArrT _ tau _)          = go tau
+        go (BitT {})               = appendStm [cstm|kz_cleanup_input_bit($cp, &$cbuf);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|kz_cleanup_input_int8($cp, &$cbuf);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|kz_cleanup_input_int16($cp, &$cbuf);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|kz_cleanup_input_int32($cp, &$cbuf);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint8($cp, &$cbuf);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint16($cp, &$cbuf);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint32($cp, &$cbuf);|]
+        go (FloatT W8  _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
+        go (FloatT W16 _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
+        go (FloatT W32 _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
+        go (FloatT W64 _)          = appendStm [cstm|kz_cleanup_input_double($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appendStm [cstm|kz_cleanup_input_complex16($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appendStm [cstm|kz_cleanup_input_complex32($cp, &$cbuf);|]
+        go _                       = appendStm [cstm|kz_cleanup_input_bytes($cp, &$cbuf);|]
+
+    cgCleanupOutput :: Type -> CExp -> CExp -> Cg ()
+    cgCleanupOutput tau cp cbuf = go tau
+      where
+        go :: Type -> Cg ()
+        go (ArrT _ tau _)          = go tau
+        go (BitT {})               = appendStm [cstm|kz_cleanup_output_bit($cp, &$cbuf);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|kz_cleanup_output_int8($cp, &$cbuf);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|kz_cleanup_output_int16($cp, &$cbuf);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|kz_cleanup_output_int32($cp, &$cbuf);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint8($cp, &$cbuf);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint16($cp, &$cbuf);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint32($cp, &$cbuf);|]
+        go (FloatT W8  _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
+        go (FloatT W16 _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
+        go (FloatT W32 _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
+        go (FloatT W64 _)          = appendStm [cstm|kz_cleanup_output_double($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appendStm [cstm|kz_cleanup_output_complex16($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appendStm [cstm|kz_cleanup_output_complex32($cp, &$cbuf);|]
+        go _                       = appendStm [cstm|kz_cleanup_output_bytes($cp, &$cbuf);|]
+
+    cgInput :: Type -> CExp -> CExp -> Cg CExp
+    cgInput tau cbuf cn = go tau
+      where
+        go :: Type -> Cg CExp
+        go (ArrT iota tau _)       = do ci <- cgIota iota
+                                        cgInput tau cbuf (cn*ci)
+        go (BitT {})               = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
+        go (IntT W8  Signed _)     = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (IntT W16 Signed _)     = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (IntT W32 Signed _)     = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (IntT W8  Unsigned _)   = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (IntT W16 Unsigned _)   = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (IntT W32 Unsigned _)   = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go (FloatT W8  _)          = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT W16 _)          = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT W32 _)          = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT W64 _)          = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
+        go (StructT "complex16" _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
+        go (StructT "complex32" _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
+        go tau                     = do ctau <- cgType tau
+                                        return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+
+    cgOutput :: Type -> CExp -> CExp -> CExp -> Cg ()
+    cgOutput tau cbuf cn cval = go tau
+      where
+        go :: Type -> Cg ()
+        go (ArrT iota tau _)       = do ci <- cgIota iota
+                                        cgOutput tau cbuf (cn*ci) cval
+        go (BitT {})               = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go (FloatT W8  _)          = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT W16 _)          = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT W32 _)          = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT W64 _)          = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
+        go (StructT "complex16" _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
+        go (StructT "complex32" _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
+        go tau                     = do ctau <- cgType tau
+                                        appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
 cgLabels :: Cg ()
 cgLabels = do
@@ -730,7 +843,7 @@ cgExp (PrintE nl es l) = do
         go tau            _  = faildoc $ text "Cannot print type:" <+> ppr tau
 
 cgExp (ErrorE _ s l) = do
-    appendStm $ rl l [cstm|kzc_error($string:s);|]
+    appendStm $ rl l [cstm|kz_error($string:s);|]
     return CVoid
 
 cgExp (ReturnE _ e _) = do
@@ -1418,7 +1531,7 @@ cgAssign (RefT (BitT {}) _) (CIdx _ carr cidx) ce2 =
 
 cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrT tau0 = do
     clen <- cgIota iota
-    cgAssignBitArray clen ce1 ce2
+    cgAssignBitArray ce1 ce2 clen
 
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrT tau0 = do
     ctau <- cgType tau
@@ -1442,89 +1555,22 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrT tau0 = do
 cgAssign _ cv ce =
     appendStm [cstm|$(unPtr cv) = $ce;|]
 
--- XXX: This code is not correct, but we will fix it later. See:
---
---   https://stackoverflow.com/questions/3534535/whats-a-time-efficient-algorithm-to-copy-unaligned-bit-arrays
---
 cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
-cgAssignBitArray clen ce1 ce2 =
-    if cBitOff1 .==. cBitOff2
-    then cgSameOffset
-    else cgDifferentOffset
+cgAssignBitArray ce1 ce2 clen =
+    appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc, $csrcIdx, $clen);|]
   where
-    cgElem1 :: CExp -> CExp
-    cBitOff1 :: CExp
-    (cgElem1, cBitOff1) = unBitSlice ce1
+    cdst, cdstIdx :: CExp
+    (cdst, cdstIdx) = unBitSlice ce1
 
-    cgElem2 :: CExp -> CExp
-    cBitOff2 :: CExp
-    (cgElem2, cBitOff2) = unBitSlice ce2
+    csrc, csrcIdx :: CExp
+    (csrc, csrcIdx) = unBitSlice ce2
 
-    cgSameOffset :: Cg ()
-    cgSameOffset = do
-        -- Preserve low bits in first entry of destination
-        if cBitOff ./=. 0 .||. clen .<. bIT_ARRAY_ELEM_BITS
-          then do let headBits = (cgElem1 0 .&. loBitsMask cBitOff) .|.
-                                 (cgElem2 0 .&. hiBitsMask cBitOff)
-                  appendStm [cstm|$(cgElem1 0) = $headBits;|]
-          else return ()
-        -- Figure out how many whole and partial elements we have left to copy
-        let (middleLen, tailLen) = (clen - cBitOff) `quotRem` bIT_ARRAY_ELEM_BITS
-        -- Copy the middle of the bit array
-        if middleLen .>. 0
-          then appendStm [cstm|memcpy(&$(cgElem1 1), &$(cgElem2 1), $middleLen*sizeof($ty:bIT_ARRAY_ELEM_TYPE));|]
-          else return ()
-        -- Copy the end of the bit array
-        if tailLen .>. 0
-          then do let tailIdx  = bitArrayLen clen - 1
-                  let tailBits = (cgElem2 tailIdx .&. loBitsMask tailLen) .|.
-                                 (cgElem1 tailIdx .&. hiBitsMask tailLen)
-                  appendStm [cstm|$(cgElem1 tailIdx) = $tailBits;|]
-          else return ()
-      where
-        cBitOff :: CExp
-        cBitOff = cBitOff1
-
-    cgDifferentOffset :: Cg ()
-    cgDifferentOffset =
-        cgFor 0 (bitArrayLen clen) $ \ci -> do
-            let -- Get the lower bits from the destination that we aren't
-                -- overwriting and must preserve
-                oldBits   = if cBitOff1 .==. 0
-                            then 0
-                            else cgElem1 ci .&. loBitsMask cBitOff1
-                -- Get the new bits from the source
-                newBits   = (cgElem2 ci `shiftR'` cBitOff2) `shiftL'` cBitOff1
-                -- Figure out how many bits we have copied so far
-                bitsSoFar = ci * bIT_ARRAY_ELEM_BITS + (bIT_ARRAY_ELEM_BITS - (cBitOff2 - cBitOff1))
-                -- We may need some extra bits from the next entry...
-                newBits1  = if bitsSoFar .<. clen
-                            then cgElem2 (ci + 1) `shiftL'` (bIT_ARRAY_ELEM_BITS - cBitOff2)
-                            else 0
-                allBits   = oldBits .|. newBits .|. newBits1
-            appendStm [cstm|$(cgElem1 ci) = $allBits;|]
-
-    loBitsMask :: CExp -> CExp
-    loBitsMask off = (1 `shiftL'` (off + 1)) - 1
-
-    hiBitsMask :: CExp -> CExp
-    hiBitsMask off = bitComplement (loBitsMask off)
-
-    unBitSlice :: CExp -> (CExp -> CExp, CExp)
+    unBitSlice :: CExp -> (CExp, CExp)
     unBitSlice (CSlice _ carr cidx _) =
-        (cgElem, cBitOff)
-      where
-        cgElem :: CExp -> CExp
-        cgElem ci = CExp [cexp|$carr[$(ci + cIdxOff)]|]
-
-        cIdxOff, cBitOff :: CExp
-        (cIdxOff, cBitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+        (carr, cidx)
 
     unBitSlice carr =
-        (cgElem, 0)
-      where
-        cgElem :: CExp -> CExp
-        cgElem ci = CExp [cexp|$carr[$ci]|]
+        (carr, 0)
 
 cgIdx :: Type -> CExp -> CExp -> Cg CExp
 cgIdx tau carr cidx =
@@ -1535,22 +1581,24 @@ cgSlice tau carr cidx len =
     return $ CSlice tau carr cidx len
 
 cgAddrOf :: Type -> CExp -> Cg CExp
-cgAddrOf tau ce | isConstant ce = do
-    ctemp <- cgTemp "addrof" tau
-    cgAssign tau ctemp ce
-    return $ CExp [cexp|&$ctemp|]
-  where
-    isConstant :: CExp -> Bool
-    isConstant (CInt {})           = True
-    isConstant (CFloat {})         = True
-    isConstant (CExp (C.Const {})) = True
-    isConstant _                   = False
-
 cgAddrOf _ (CPtr ce) =
     return ce
 
-cgAddrOf _ ce =
+cgAddrOf (ArrT {}) ce | isLvalue ce =
+    return $ CExp [cexp|$ce|]
+
+cgAddrOf _ ce | isLvalue ce =
     return $ CExp [cexp|&$ce|]
+
+cgAddrOf tau@(ArrT {}) ce = do
+    ctemp <- cgTemp "addrof" tau
+    cgAssign tau ctemp ce
+    return $ CExp [cexp|$ctemp|]
+
+cgAddrOf tau ce = do
+    ctemp <- cgTemp "addrof" tau
+    cgAssign tau ctemp ce
+    return $ CExp [cexp|&$ctemp|]
 
 -- | Generate code for an if statement.
 cgIf :: Cg CExp -> Cg () -> Cg () -> Cg ()
@@ -1591,10 +1639,6 @@ cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
 cstruct s l = C.Id (namedString s ++ "_t") l
-
-bitComplement :: CExp -> CExp
-bitComplement (CInt i) = CInt (fromIntegral (complement (fromIntegral i :: BitArrayElemType)))
-bitComplement ce       = CExp [cexp|~(($ty:bIT_ARRAY_ELEM_TYPE) $ce)|]
 
 -- | Z-encode a string. This converts a string with special characters into a
 -- form that is guaranteed to be usable as an identifier by a C compiler or

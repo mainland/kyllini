@@ -99,6 +99,7 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String (IsString(..))
 import qualified Language.C.Syntax as C
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
@@ -141,6 +142,9 @@ instance Monoid Code where
                          , decls = decls a <> decls b
                          , stmts = stmts a <> stmts b
                          }
+
+instance IsString C.Id where
+    fromString s = C.Id s noLoc
 
 -- | The type of "compiled" expressions.
 data CExp = CVoid
