@@ -402,7 +402,7 @@ cgDecl decl@(LetRefD v tau maybe_e _) k = do
            cgBinder isTopLevel v tau
     withSummaryContext decl $
         case maybe_e of
-          Nothing -> return ()
+          Nothing -> cgDefaultValue tau cve
           Just e  -> do ce <- inLocalScope $ cgExp e
                         cgAssign tau cve ce
     extendVars [(v, refT tau)] $ do
@@ -462,6 +462,32 @@ cgConstArray tau ces = do
   where
     cinits :: [C.Initializer]
     cinits =  [[cinit|$ce|] | ce <- ces]
+
+cgDefaultValue :: Type -> CExp -> Cg ()
+cgDefaultValue tau cv = go tau
+  where
+    go :: Type -> Cg ()
+    go (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
+    go (BitT {})   = cgAssign tau cv (CExp [cexp|0|])
+    go (IntT {})   = cgAssign tau cv (CExp [cexp|0|])
+    go (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
+
+    go (ArrT iota (BitT {}) _) = do
+        cn <- cgIota iota
+        appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+      where
+        ctau :: C.Type
+        ctau = bIT_ARRAY_ELEM_TYPE
+
+    go (ArrT iota tau _) = do
+        cn    <- cgIota iota
+        ctau  <- cgType tau
+        appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
+
+    go tau = do
+        ctau  <- cgType tau
+        caddr <- cgAddrOf tau cv
+        appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) =
