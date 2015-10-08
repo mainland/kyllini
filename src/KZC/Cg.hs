@@ -1171,30 +1171,22 @@ cgStorage isTopLevel cv tau =
     go (UnitT {}) =
         return CVoid
 
-    go (ArrT (ConstI n _) (BitT {}) _) = do
-        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
-        return $ CExp $ rl cv [cexp|$id:cv|]
-      where
-        ctau :: C.Type
-        ctau = bIT_ARRAY_ELEM_TYPE
-
-    go (ArrT iota@(VarI {}) (BitT {}) _) = do
+    go (ArrT iota (BitT {}) _) = do
         cn <- cgIota iota
-        appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
+        case cn of
+          CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+          _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
         return $ CExp $ rl cv [cexp|$id:cv|]
       where
         ctau :: C.Type
         ctau = bIT_ARRAY_ELEM_TYPE
 
-    go (ArrT (ConstI n _) tau _) = do
+    go (ArrT iota tau _) = do
         ctau <- cgType tau
-        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
-        return $ CExp $ rl cv [cexp|$id:cv|]
-
-    go (ArrT iota@(VarI {}) tau _) = do
-        cn   <- cgIota iota
-        ctau <- cgType tau
-        appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
+        cn <- cgIota iota
+        case cn of
+          CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
+          _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
         return $ CExp $ rl cv [cexp|$id:cv|]
 
     go tau = do
