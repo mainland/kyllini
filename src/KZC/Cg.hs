@@ -1442,6 +1442,21 @@ cgCComp take emit done ccomp =
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp -> Bool
+isLvalue (CIdx (BitT {}) _ _) =
+    False
+
+isLvalue (CIdx _ ce _) =
+    isLvalue ce
+
+isLvalue (CSlice (BitT {}) carr (CInt i) _) =
+    isLvalue carr && i `rem` bIT_ARRAY_ELEM_BITS == 0
+
+isLvalue (CSlice (BitT {}) _ _ _) =
+    False
+
+isLvalue (CSlice _ carr _ _) =
+    isLvalue carr
+
 isLvalue (CExp (C.Var {}))       = True
 isLvalue (CExp (C.Member {}))    = True
 isLvalue (CExp (C.PtrMember {})) = True
