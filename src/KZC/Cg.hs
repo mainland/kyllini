@@ -1395,7 +1395,8 @@ cgCComp take emit done ccomp =
             cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            cgAssignBufp tau cbuf cbufp ce
+            cidx <- cgIdx tau ce 0
+            cgAssignBufp tau cbuf cbufp cidx
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
