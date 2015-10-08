@@ -673,6 +673,9 @@ cgExp e0@(CallE f iotas es l) = do
             go tau
           where
             go :: Type -> Cg CExp
+            go tau@(ArrT {}) =
+                cgExp e >>= cgAddrOf tau
+
             go tau | isPassByRef tau =
                 cgExp e >>= cgAddrOf tau
 
