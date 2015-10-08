@@ -691,7 +691,9 @@ cgExp e0@(CallE f iotas es l) = do
           then do cres <- cgTemp "call_res" tau_res
                   appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
                   return cres
-          else do return $ CExp $ rl l [cexp|$cf($args:ciotas, $args:ces)|]
+          else do cres <- cgTemp "call_res" tau_res
+                  cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+                  return cres
       where
         cgArg :: Exp -> Cg CExp
         cgArg e = do
@@ -1537,15 +1539,17 @@ isReturnedByRef _         = False
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
 cgAssign :: Type -> CExp -> CExp -> Cg ()
--- If the type of the value is unit, don't actually perform the assignment.
-cgAssign (UnitT {}) _ _ =
-    return ()
-
--- Also, if we don't care about the value, don't actually perform the
--- assignment. This can happen when we are in a loop---we don't actually need
--- the result of the computation in the body of the loop, just its effect(s).
+-- If we don't care about the value, don't actually perform the assignment. This
+-- can happen when we are in a loop---we don't actually need the result of the
+-- computation in the body of the loop, just its effect(s).
 cgAssign _ _ CVoid =
     return ()
+
+-- If the type of the value is unit, don't actually perform the
+-- assignment. However, we *do* need no evaluate the expression; it could, for
+-- example, be a function call!
+cgAssign (UnitT {}) _ ce =
+   appendStm [cstm|$ce;|]
 
 -- XXX: Should use more efficient bit twiddling code here. See:
 --
