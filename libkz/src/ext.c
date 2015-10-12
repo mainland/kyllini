@@ -6,6 +6,16 @@
 
 #include <kz/ext.h>
 
+void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src)
+{
+    memcpy(dst, src, n);
+}
+
+void __kz_int8_to_bits(int n, int m, uint8_t *dst, const int8_t *src)
+{
+    memcpy(dst, src, m);
+}
+
 void __kz_zero_bit(int n, bit_t *x)
 {
     memset(x, 0, n / BIT_ARRAY_ELEM_BITS);
@@ -400,11 +410,23 @@ void __kz_v_andnot(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
         out[i] = (~xs[i]) & ys[i];
 }
 
+void __kz_permutatew1313(const complex16_t x[4], const complex16_t y[4])
+{
+}
+
+void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], const complex16_t z[4])
+{
+}
+
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
 {
 }
 
 void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out)
+{
+}
+
+void __kz_viterbi_brick_init_fast(int32_t frame_length, int16_t code_rate, int16_t depth)
 {
 }
 

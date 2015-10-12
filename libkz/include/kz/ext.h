@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src);
+void __kz_int8_to_bits(int n, int m, uint8_t *dst, const int8_t *src);
+
 void __kz_zero_bit(int n, bit_t *x);
 void __kz_zero_int8(int n, int8_t *x);
 void __kz_zero_int16(int n, int16_t *x);
@@ -75,9 +78,13 @@ void __kz_v_and(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 void __kz_v_xor(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 void __kz_v_andnot(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 
+void __kz_permutatew1313(const complex16_t x[4], const complex16_t y[4]);
+void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], const complex16_t z[4]);
+
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out);
 void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out);
 
+void __kz_viterbi_brick_init_fast(int32_t frame_length, int16_t code_rate, int16_t depth);
 int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);
 int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);
 
