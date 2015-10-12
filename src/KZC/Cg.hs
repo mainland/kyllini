@@ -771,7 +771,7 @@ cgExp e0@(WhileE e_test e_body l) = do
                 (bodyc >> gotoC testl)
                 (endC endl)
 
-cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
+cgExp e0@(ForE _ v v_tau e_start e_len e_body l) =
     inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
@@ -782,9 +782,9 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
         appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
         ce_start <- cgExp e_start
-        ce_end   <- cgExp e_end
+        ce_len   <- cgExp e_len
         citems   <- inNewBlock_ $ cgExp e_body
-        appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv <= $ce_end; $id:cv++) { $items:citems }|]
+        appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
         return CVoid
 
     go _ = do
@@ -793,19 +793,20 @@ cgExp e0@(ForE _ v v_tau e_start e_end e_body l) =
         extendVars     [(v, v_tau)] $ do
         extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
         appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
-        initc   <- collectCodeAsComp_ $ do
-                   ce_start <- cgExp e_start
-                   appendStm [cstm|$id:cv = $ce_start;|]
-        ce_test <- cgExp $ varE v .<=. e_end
-        updatec <- collectCodeAsComp_ $
-                   appendStm $ rl l [cstm|$id:cv++;|]
-        bodyc   <- collectComp $ cgExp e_body >>= unCComp
-        forl    <- genLabel "fork"
-        endl    <- genLabel "for_end"
+        ce_start <- cgExp e_start
+        ce_len   <- cgExp e_len
+        initc    <- collectCodeAsComp_ $ do
+                    ce_start <- cgExp e_start
+                    appendStm [cstm|$id:cv = $ce_start;|]
+        updatec  <- collectCodeAsComp_ $
+                    appendStm $ rl l [cstm|$id:cv++;|]
+        bodyc    <- collectComp $ cgExp e_body >>= unCComp
+        forl     <- genLabel "fork"
+        endl     <- genLabel "for_end"
         useLabel forl
         return $ CComp $
             initc >>
-            ifC forl CVoid ce_test
+            ifC forl CVoid (CExp [cexp|$id:cv < $(ce_start + ce_len)|])
                 (bodyc >> updatec >> gotoC forl)
                 (endC endl)
 

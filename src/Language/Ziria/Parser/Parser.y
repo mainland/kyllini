@@ -468,7 +468,7 @@ gen_interval :
     '[' exp ':' const_int_exp ']'
       {% do { from     <- constIntExp $2
             ; let to   =  unLoc $4
-            ; let len  =  to - from
+            ; let len  =  to - from + 1
             ; return $ L ($1 <--> $5)
                 (intC from (srclocOf $2), intC len (srclocOf $4))
             }
