@@ -193,6 +193,7 @@ test-compiler : kzc
 GROUNDFILES= \
 	$(shell ls $(TESTDIR)/tests/backend/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/tests/lut/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.outfile.ground | sort)
