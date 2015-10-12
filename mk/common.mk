@@ -141,7 +141,8 @@ RUNTIME_SRC=\
 	$(TOP)/libkz/src/driver.c \
 	$(TOP)/libkz/src/ext.c \
 	$(TOP)/libkz/src/io.cpp \
-	$(TOP)/libkz/src/rt.c
+	$(TOP)/libkz/src/rt.c \
+	$(TOP)/libkz/src/sora/kz_sora.cpp
 
 RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 
