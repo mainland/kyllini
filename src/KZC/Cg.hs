@@ -1592,24 +1592,8 @@ cgAssign _ _ CVoid =
 cgAssign (UnitT {}) _ ce =
    appendStm [cstm|$ce;|]
 
--- XXX: Should use more efficient bit twiddling code here. See:
---
---   http://realtimecollisiondetection.net/blog/?p=78
---   https://graphics.stanford.edu/~seander/bithacks.html
---   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
---
 cgAssign (RefT (BitT {}) _) (CIdx _ carr cidx) ce2 =
-    appendStm [cstm|if ($ce2) { $stm:csetbit } else { $stm:cclearbit }|]
-  where
-    csetbit, cclearbit :: C.Stm
-    csetbit   = [cstm|$carr[$cbitIdx] |=  $cbitMask;|]
-    cclearbit = [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
-
-    cbitIdx, cbitOff :: CExp
-    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
-
-    cbitMask :: CExp
-    cbitMask = 1 `shiftL'` cbitOff
+    cgBitArrayWrite carr cidx ce2
 
 cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrT tau0 = do
     clen <- cgIota iota

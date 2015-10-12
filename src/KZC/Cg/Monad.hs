@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -79,7 +80,10 @@ module KZC.Cg.Monad (
     isLabelUsed,
 
     traceNest,
-    traceCg
+    traceCg,
+
+    cgBitArrayRead,
+    cgBitArrayWrite
   ) where
 
 import Prelude hiding (elem)
@@ -433,14 +437,8 @@ instance Pretty CExp where
     ppr (CDelay {})              = text "<delayed compiled expression>"
 
 lowerCIdx :: Type -> CExp -> CExp -> C.Exp
-lowerCIdx (BitT _) carr cidx =
-    [cexp|($carr[$cbitIdx] & $(1 `shiftL'` cbitOff)) ? 1 : 0|]
-  where
-    cbitIdx, cbitOff :: CExp
-    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
-
-lowerCIdx _ carr cidx =
-    [cexp|$carr[$cidx]|]
+lowerCIdx (BitT _) carr cidx = cgBitArrayRead carr cidx
+lowerCIdx _        carr cidx = [cexp|$carr[$cidx]|]
 
 lowerCSlice :: Type -> CExp -> CExp -> Int -> C.Exp
 lowerCSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
@@ -783,3 +781,33 @@ traceCg doc = do
     when doTrace $ do
         d <- asks nestdepth
         liftIO $ hPutDocLn stderr $ text "traceCg:" <+> indent d (align doc)
+
+-- | Read an element from a bit array.
+cgBitArrayRead :: CExp -> CExp -> C.Exp
+cgBitArrayRead carr ci =
+    [cexp|($carr[$cbitIdx] & $cbitMask) ? 1 : 0|]
+  where
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
+
+    cbitMask :: CExp
+    cbitMask = 1 `shiftL'` cbitOff
+
+-- XXX: Should use more efficient bit twiddling code here. See:
+--
+--   http://realtimecollisiondetection.net/blog/?p=78
+--   https://graphics.stanford.edu/~seander/bithacks.html
+--   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
+--
+-- | Read an element of a bit array.
+cgBitArrayWrite :: CExp -> CExp -> CExp -> Cg ()
+cgBitArrayWrite carr ci cx =
+    if cx
+    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
+    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
+  where
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
+
+    cbitMask :: CExp
+    cbitMask = 1 `shiftL'` cbitOff
