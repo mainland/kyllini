@@ -50,21 +50,23 @@ import KZC.Summary
 compileProgram :: [Decl] -> Cg ()
 compileProgram decls = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
-    cgDecls decls $ do
-    tau@(ST _ _ _ a b _) <- lookupVar "main"
-    comp <- cgExp (varE "main") >>= unCComp
-    citems <- inNewBlock_ $ do
-              cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
-              cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
-              -- Keep track of the current continuation. This is only used when
-              -- we do not have first class labels.
-              lbl  <- ccompLabel comp
-              cres <- cgTemp "main_res" (resultType tau)
-              appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:lbl);|]
-              -- Generate code for the computation
-              cgThread $ cgCComp take emit (done (resultType tau) cres) comp
-              cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
-              cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
+    (cinit_items, citems) <-
+        inNewBlock $ do
+        cgDecls decls $ do
+        tau@(ST _ _ _ a b _) <- lookupVar "main"
+        comp <- cgExp (varE "main") >>= unCComp
+        inNewBlock_ $ do
+        cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
+        cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
+        -- Keep track of the current continuation. This is only used when
+        -- we do not have first class labels.
+        lbl  <- ccompLabel comp
+        cres <- cgTemp "main_res" (resultType tau)
+        appendDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:lbl);|]
+        -- Generate code for the computation
+        cgThread $ cgCComp take emit (done (resultType tau) cres) comp
+        cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
+        cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels
     appendTopDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
@@ -72,13 +74,24 @@ void kz_main(const typename kz_params_t* $id:params)
     typename kz_buf_t $id:in_buf;
     typename kz_buf_t $id:out_buf;
 
-    $items:citems
+    $items:(filter isBlockDecl cinit_items)
+    $items:(filter isBlockDecl citems)
+    $items:(filter isBlockStm cinit_items)
+    $items:(filter isBlockStm citems)
 }|]
   where
     in_buf, out_buf, params :: C.Id
     in_buf  = "in"
     out_buf = "out"
     params = "params"
+
+    isBlockDecl :: C.BlockItem -> Bool
+    isBlockDecl (C.BlockDecl {}) = True
+    isBlockDecl _                = False
+
+    isBlockStm :: C.BlockItem -> Bool
+    isBlockStm (C.BlockStm {}) = True
+    isBlockStm _               = False
 
     take :: TakeK
     take l n tau k1 k2 = do
