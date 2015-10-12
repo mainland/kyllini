@@ -1,77 +1,9 @@
-CC=gcc
-CFLAGS=-O0 -g -Werror
+TOP=.
 
-CXX=g++
-CXXFLAGS=$(CFLAGS) -std=c++11
+.PHONY : all
+all : kzc $(BLINKDIFF)
 
-CPPFLAGS=-Ilibkz/include
-
-LD=gcc
-LDFLAGS=
-LIBS=-lm
-
-GHC=ghc
-GHCFLAGS=-W -Werror
-
-RUNGHC=runghc
-RUNGHCFLAGS=-W -fno-warn-unused-imports
-
-HAPPY=happy 
-HAPPY_ARGS=-agci
-
-ALEX=alex 
-ALEX_ARGS=-gi
-
-#
-# No built-in rules
-#
-MAKEFLAGS += --no-builtin-rules
-
-#
-# opt and noopt make commands
-#
-OPT_MAKECMD := $(filter opt, $(MAKECMDGOALS))
-MAKECMDGOALS := $(filter-out opt, $(MAKECMDGOALS))
-
-NOOPT_MAKECMD := $(filter noopt, $(MAKECMDGOALS))
-MAKECMDGOALS := $(filter-out noopt, $(MAKECMDGOALS))
-
-ifeq ($(OPT_MAKECMD), opt)
-VIRTUAL_GOALS += opt
-
-OPT_MAKECMD := 1
-OPT := 1
-else
-OPT_MAKECMD := 0
-OPT := 0
-endif
-
-ifeq ($(NOOPT_MAKECMD), noopt)
-VIRTUAL_GOALS += noopt
-
-NOOPT_MAKECMD := 1
-NOOPT := 1
-else
-NOOPT_MAKECMD := 0
-endif
-
-#
-# Support cabal sandbox
-#
-ifneq ($(wildcard .cabal-sandbox/*-packages.conf.d),)
-GHCFLAGS += \
-	-no-user-package-db \
-	-package-db $(wildcard .cabal-sandbox/*-packages.conf.d)
-
-RUNGHCFLAGS += \
-	-no-user-package-db \
-	-package-db --ghc-arg=$(wildcard .cabal-sandbox/*-packages.conf.d)
-endif
-
-#
-# Support Cabal's MIN_VERSION
-#
-GHCFLAGS += -optP-include -optPdist/build/autogen/cabal_macros.h
+include mk/common.mk
 
 #
 # GHC flags
@@ -169,16 +101,24 @@ SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 #
 # all, clean, and distclean targets
 #
-.PHONY : all
-all : kzc
-
 .PHONY : clean
-clean :
-	rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
+clean : clean-tests
+	$(_QUIET)cabal clean
+	$(_QUIET)rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
+
+.PHONY : clean-tests
+clean-tests :
+	$(_QUIET)rm -f \
+	      $(patsubst %.blk,%.dump*,$(patsubst %.wpl,%.dump*,$(TESTS)))
+	$(_QUIET)rm -f \
+	      $(patsubst %.outfile.ground,%.c,$(GROUNDFILES)) \
+	      $(patsubst %.outfile.ground,%.exe,$(GROUNDFILES)) \
+	      $(patsubst %.outfile.ground,%.outfile,$(GROUNDFILES)) \
+	      $(patsubst %.outfile.ground,%.dump*,$(GROUNDFILES))
 
 .PHONY : distclean
 distclean : clean
-	rm -rf \
+	$(_QUIET)rm -rf \
 	    dist \
 	    autom4te.cache configure config.log config.status \
 	    include/KzcConfig.h include/KzcSysTools.h Makefile kzc.buildinfo
@@ -188,62 +128,29 @@ distclean : clean
 #
 kzc : $(SRC) dist/build/autogen/cabal_macros.h
 	@mkdir -p obj
-	$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
+	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
 		-o $@
 
 #
 # Generated instances
 #
 $(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
-	runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
-	runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
-	runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #
 # Lexer and parser generation
 #
 $(SRCDIR)Language/Ziria/Parser/Parser.hs : $(SRCDIR)Language/Ziria/Parser/Parser.y
-	$(HAPPY) $(HAPPY_ARGS) -o $@ $<
+	$(_QUIET)$(HAPPY) $(HAPPY_ARGS) -o $@ $<
 
 $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
-	$(ALEX) $(ALEX_ARGS) -o $@ $<
-
-#
-# Executables
-#
-
-KZC=./kzc
-KZCFLAGS=-I$(TESTDIR)/lib --dlint --ddump-core --ddump-lift --dtrace-lint --dtrace-cg --fno-line-pragmas
-
-RUNTIME_SRC = libkz/src/driver.c libkz/src/ext.c libkz/src/io.cpp libkz/src/rt.c
-RUNTIME_OBJ = $(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
-
-.PRECIOUS : $(RUNTIME_OBJ)
-
-%.c : %.blk kzc
-	$(KZC) $(KZCFLAGS) $< -o $@
-
-%.c : %.wpl kzc
-	$(KZC) $(KZCFLAGS) $< -o $@
-
-%.c : %.zr kzc
-	$(KZC) $(KZCFLAGS) $< -o $@
-
-%.o : %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
-
-%.o : %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
-
-%.exe : %.o $(RUNTIME_OBJ)
-	$(LD) $(LDFLAGS) $< $(RUNTIME_OBJ) $(LIBS) -o $@
-
-%.outfile : %.exe %.infile
-	$< --input=$*.infile --output=$*.outfile
+	$(_QUIET)$(ALEX) $(ALEX_ARGS) -o $@ $<
 
 #
 # Tests
@@ -253,9 +160,7 @@ TESTDIR = testsuite
 TESTS = \
 	$(shell ls $(TESTDIR)/tests/parser/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/libs/*.blk | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/vectorizer/transmitter.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.blk | sort)
@@ -286,23 +191,14 @@ test-compiler : kzc
 	done
 
 GROUNDFILES= \
-	$(shell ls $(TESTDIR)/tests/parser/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/backend/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/tests/vectorizer/transmitter.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.outfile.ground | sort)
 
-GROUNDTESTS=$(patsubst %.outfile.ground,%,$(GROUNDFILES))
-
 .PHONY : test-ground
-test-ground : kzc
-	set -e; \
-	for TEST in $(GROUNDTESTS); do \
-		echo $$TEST; \
-		$(MAKE) $$TEST.outfile; \
-	done
+test-ground : $(patsubst %.outfile.ground,%.test,$(GROUNDFILES))
 
 #
 # autotools stuff
@@ -321,19 +217,3 @@ Makefile : Makefile.in
 
 dist/build/autogen/cabal_macros.h :
 	cabal build
-
-#
-# Print Makefile variables
-#
-print-%: ; @echo $*=$($*)
-
-#
-# Rules for virtual goals
-#
-ifeq ($(MAKECMDGOALS),)
-$(VIRTUAL_GOALS) : all
-	@true
-else
-$(VIRTUAL_GOALS) :
-	@true
-endif
