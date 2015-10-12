@@ -166,6 +166,19 @@ data CExp = CVoid
             -- ^ A delayed CExp. This represents a computation that may take
             -- and/or emit.
 
+instance Located CExp where
+    locOf CVoid               = NoLoc
+    locOf (CBool {})          = NoLoc
+    locOf (CBit {})           = NoLoc
+    locOf (CInt {})           = NoLoc
+    locOf (CFloat {})         = NoLoc
+    locOf (CExp ce)           = locOf ce
+    locOf (CPtr ce)           = locOf ce
+    locOf (CIdx _ _ cidx)     = locOf cidx
+    locOf (CSlice _ _ cidx _) = locOf cidx
+    locOf (CComp {})          = NoLoc
+    locOf (CDelay {})         = NoLoc
+
 instance IfThenElse CExp CExp where
     ifThenElse (CBool True)  t _ = t
     ifThenElse (CBool False) _ e = e
@@ -434,10 +447,14 @@ lowerCSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
     [cexp|&$carr[$int:bitIdx]|]
   where
     bitIdx, bitOff :: Integer
-    (bitIdx, bitOff) = fromIntegral i `quotRem` bIT_ARRAY_ELEM_BITS
+    (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
 
-lowerCSlice (BitT _) _ _ _ =
-    error "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width"
+lowerCSlice tau@(BitT _) carr ce len =
+    errordoc $
+    nest 4 $
+    ppr (locOf ce) <> text ":" </>
+    text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
+    ppr (CSlice tau carr ce len)
 
 lowerCSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]
