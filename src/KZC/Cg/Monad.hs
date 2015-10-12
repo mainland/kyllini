@@ -434,7 +434,7 @@ instance Pretty CExp where
 
 lowerCIdx :: Type -> CExp -> CExp -> C.Exp
 lowerCIdx (BitT _) carr cidx =
-    [cexp|$carr[$cbitIdx] & $(1 `shiftL'` cbitOff)|]
+    [cexp|($carr[$cbitIdx] & $(1 `shiftL'` cbitOff)) ? 1 : 0|]
   where
     cbitIdx, cbitOff :: CExp
     (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS

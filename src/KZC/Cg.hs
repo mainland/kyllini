@@ -89,7 +89,10 @@ void kz_main(const typename kz_params_t* $id:params)
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if($cbuf == NULL) { BREAK; }|]
-        k2 $ k1 $ if n == 1 then CExp [cexp|*$cbuf|] else CExp [cexp|$cbuf|]
+        k2 $ k1 $ case (tau, n) of
+                    (BitT {}, 1) -> CExp [cexp|*$cbuf & 1|]
+                    (_, 1)       -> CExp [cexp|*$cbuf|]
+                    _            -> CExp [cexp|$cbuf|]
 
     emit :: EmitK
     emit l tau@(ArrT {}) ce ccomp k =
