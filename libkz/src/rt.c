@@ -12,6 +12,20 @@ void kz_error(const char* s)
     exit(EXIT_FAILURE);
 }
 
+void kz_bitarray_print(const bit_t* x, int32_t n)
+{
+    int i;
+
+    for (i = 0; i < n; ++i) {
+        int bit = x[i/BIT_ARRAY_ELEM_BITS] & (1 << (i % BIT_ARRAY_ELEM_BITS));
+
+        if (bit)
+            fprintf(stdout, "1");
+        else
+            fprintf(stdout, "0");
+    }
+}
+
 inline
 void copy_first_bits(uint8_t* dst, int dst_off, int* len, uint8_t c)
 {

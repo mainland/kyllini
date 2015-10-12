@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 void kz_error(const char*);
+void kz_bitarray_print(const bit_t* x, int32_t n);
 void kz_bitarray_copy(uint8_t* dst, int dst_idx,
                       const uint8_t* src, int src_idx,
                       int len);
