@@ -553,9 +553,10 @@ cgExp (UnopE op e l) = do
         go op =
             panicdoc $ text "Illegal operation on complex values:" <+> ppr op
 
-    cgUnop _ ce Lnot = return $ CExp [cexp|!$ce|]
-    cgUnop _ ce Bnot = return $ CExp [cexp|~$ce|]
-    cgUnop _ ce Neg  = return $ CExp [cexp|-$ce|]
+    cgUnop _         ce Lnot = return $ CExp [cexp|!$ce|]
+    cgUnop (BitT {}) ce Bnot = return $ CExp [cexp|!$ce|]
+    cgUnop _         ce Bnot = return $ CExp [cexp|~$ce|]
+    cgUnop _         ce Neg  = return $ CExp [cexp|-$ce|]
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
