@@ -78,8 +78,8 @@ void __kz_v_and(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 void __kz_v_xor(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 void __kz_v_andnot(int n, const uint8_t *in1, const uint8_t *in2, uint8_t *out);
 
-void __kz_permutatew1313(const complex16_t x[4], const complex16_t y[4]);
-void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], const complex16_t z[4]);
+void __kz_permutatew1313(const complex16_t x[4], complex16_t *y);
+void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], complex16_t* z);
 
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out);
 void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out);

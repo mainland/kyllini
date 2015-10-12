@@ -409,11 +409,3 @@ void __kz_v_andnot(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
     for (i = 0; i < BIT_ARRAY_LEN(n); ++i)
         out[i] = (~xs[i]) & ys[i];
 }
-
-void __kz_permutatew1313(const complex16_t x[4], const complex16_t y[4])
-{
-}
-
-void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], const complex16_t z[4])
-{
-}

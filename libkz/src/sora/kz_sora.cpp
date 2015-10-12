@@ -27,6 +27,19 @@
 #include <kz/ext.h>
 #include <sora/fft.h>
 
+void __kz_permutatew1313(const complex16_t x[4], complex16_t *y)
+{
+    __m128i mx = _mm_loadu_si128((__m128i*) x);
+    _mm_storeu_si128((__m128i*) y, _mm_shuffle_epi32(mx, _MM_SHUFFLE(3, 1, 3, 1)));
+}
+
+void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], complex16_t* z)
+{
+    __m128i mx = _mm_loadu_si128((__m128i*) x);
+    __m128i my = _mm_loadu_si128((__m128i*) y);
+    _mm_storeu_si128((__m128i*) z, _mm_unpacklo_epi64(mx, my));
+}
+
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
 {
     // We use the safe version to respect Blink's semantic
