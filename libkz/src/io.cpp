@@ -551,20 +551,8 @@ void kz_output_bit(kz_buf_t* buf, const bit_t* data, size_t n)
             assert(buf->buf != NULL);
         }
 
-        if (buf->idx % BIT_ARRAY_ELEM_BITS == 0) {
-            memcpy(&((bit_t*) buf->buf)[buf->idx / BIT_ARRAY_ELEM_BITS],
-                   data,
-                   (n + BIT_ARRAY_ELEM_BITS - 1)/BIT_ARRAY_ELEM_BITS);
-            buf->idx += n;
-        } else {
-            int i;
-
-            for (i = 0; i < n; ++i) {
-                bit_t bit  = data[i / BIT_ARRAY_ELEM_BITS] & (1 << (i & (BIT_ARRAY_ELEM_BITS - 1)));
-
-                write_bit(buf, buf->idx + i, bit);
-            }
-        }
+        kz_bitarray_copy((bit_t*) buf->buf, buf->idx, data, 0, n);
+        buf->idx += n;
     }
 }
 
