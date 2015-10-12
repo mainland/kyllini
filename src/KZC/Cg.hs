@@ -1431,6 +1431,20 @@ cgCComp take emit done ccomp =
         -- continuation repeatedly, until the buffer is full. Then we fall
         -- through to the next action, which is why we call @k2@ with @ccomp@
         -- without forcing its label to be required---we don't need the label!
+        take' cleftk crightk _ cbufp l n tau@(BitT {}) k1 k2 =
+            cgWithLabel l $ do
+            ctau      <- cgType tau
+            carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
+            lbl       <- genLabel "inner_takesk"
+            useLabel lbl
+            let ccomp =  k1 carr
+            appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+            cgFor 0 (fromIntegral n) $ \ci -> do
+                appendStm [cstm|INDJUMP($cleftk);|]
+                cgWithLabel lbl $
+                    cgBitArrayWrite carr ci (CExp [cexp|*$cbufp|])
+            k2 ccomp
+
         take' cleftk crightk _ cbufp l n tau k1 k2 =
             cgWithLabel l $ do
             ctau      <- cgType tau
