@@ -168,7 +168,7 @@ RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 
 bin_%.outfile: bin_%.exe bin_%.infile
 	$(_QUIET)./$< \
-	     --input=bin_$*.infile \
+	     --input=$(shell dirname $*.infile)/bin_$(shell basename $*.infile) \
              --output=$@ \
              --input-mode=bin \
              --output-mode=bin
