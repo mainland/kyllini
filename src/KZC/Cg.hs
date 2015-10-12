@@ -464,11 +464,8 @@ cgConstArray (BitT {}) ces = do
     finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
 
     const :: CExp -> C.Initializer
-    const (CInt i) = [cinit|$(hexConst i)|]
+    const (CInt i) = [cinit|$(chexconst i)|]
     const ce       = [cinit|$ce|]
-
-    hexConst :: Integer -> C.Exp
-    hexConst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
 
 cgConstArray tau ces = do
     cv   <- gensym "__const_arr"
@@ -1700,6 +1697,10 @@ cgFor cfrom cto k = do
 appendTopComment :: Doc -> Cg ()
 appendTopComment doc =
     appendTopDef [cedecl|$esc:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
+
+-- | Return a C hex constant.
+chexconst :: Integer -> C.Exp
+chexconst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
