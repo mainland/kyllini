@@ -187,10 +187,6 @@ bin_%.outfile: bin_%.exe
 	$(_QUIET)./$< \
 	     --output=$@
 
-%.test : %.outfile %.outfile.ground
-	@echo "Comparing output for" $*
-	$(_QUIET)$(BLINKDIFF) -f $< -g $<.ground -d -v -p
-
 #
 # Print Makefile variables
 #

@@ -14,3 +14,7 @@ clean :
 	      $(patsubst %.wpl, %.exe, $(TESTS)) \
 	      $(patsubst %.wpl, %.outfile, $(TESTS)) \
 	      $(patsubst %.wpl, %.dump*, $(TESTS))
+
+%.test : %.outfile %.outfile.ground
+	@echo "Comparing output for" $*
+	$(_QUIET)$(BLINKDIFF) -f $< -g $<.ground -d -v -p
