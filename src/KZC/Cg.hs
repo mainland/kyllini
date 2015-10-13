@@ -1480,17 +1480,20 @@ cgCComp take emit done ccomp =
             k ccomp
 
         emit' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
-            cn <- cgIota iota
+            cn    <- cgIota iota
+            loopl <- genLabel "emitsk_next"
             useLabel l
-            appendStm [cstm|$cleftk = LABELADDR($id:l);|]
-            cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx tau ce ci
-                cgAssignBufp tau cbuf cbufp cidx
-                appendStm [cstm|INDJUMP($crightk);|]
-                -- Because we need a statement to label, but the continuation is
-                -- the next loop iteration...
-                cgWithLabel l $
-                    appendStm [cstm|;|]
+            useLabel loopl
+            cgWithLabel l $ do
+                appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
+                cgFor 0 cn $ \ci -> do
+                    cidx <- cgIdx tau ce ci
+                    cgAssignBufp tau cbuf cbufp cidx
+                    appendStm [cstm|INDJUMP($crightk);|]
+                    -- Because we need a statement to label, but the continuation is
+                    -- the next loop iteration...
+                    cgWithLabel loopl $
+                        appendStm [cstm|;|]
             k ccomp
 
         -- @tau@ must be a base (scalar) type
