@@ -213,8 +213,8 @@ fun external sora_fft_dynamic(nFFTSize : int16, inp : arr complex16) : arr [leng
 
 -- Fast version which use MSR-LA license
 fun external viterbi_brick_init_fast(frame_length:int, code_rate:int16, depth:int16): ()
-fun external viterbi_brick_decode_fast(svalue:arr[48] int8, bitValue:arr bit): int16
-fun external viterbiSig11a_brick_decode_fast(svalue:arr[48] int8, bitValue:arr bit): int16
+fun external viterbi_brick_decode_fast(svalue:arr[48] int8, var bitValue:arr bit): int16
+fun external viterbiSig11a_brick_decode_fast(svalue:arr[48] int8, var bitValue:arr bit): int16
 
 
 -- DbgPlot library (works only in 32-bit mode)

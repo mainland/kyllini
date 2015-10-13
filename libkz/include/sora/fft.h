@@ -21,11 +21,13 @@ permissions and limitations under the License.
 
 
 // DSP_INLINE usually defined in vector128.h so defined here for gcc
-#ifdef __GNUC__
-#define DSP_INLINE1             inline
-#define DSP_INLINE __attribute__((always_inline))
+//#ifdef __GNUC__
+//#define DSP_INLINE1             inline
+//#define DSP_INLINE __attribute__((always_inline))
+//#endif
 
-#endif
+#define DSP_INLINE
+#define DSP_INLINE1
 
 #include <sora/fft_r4difx.h>
 #include <sora/ifft_r4difx.h>

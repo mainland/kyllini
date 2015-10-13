@@ -22,10 +22,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <emmintrin.h>
 #include <xmmintrin.h>
 
 #include <kz/ext.h>
 #include <sora/fft.h>
+#include <sora/viterbicore.h>
+#include <sora/ieee80211const.h>
 
 void __kz_permutatew1313(const complex16_t x[4], complex16_t *y)
 {
@@ -315,22 +318,116 @@ void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out)
     }
 }
 
-void __kz_viterbi_brick_init_fast(int32_t frame_length, int16_t code_rate, int16_t depth)
+// Viterbi brick template parameters:
+const size_t TRELLIS_MAX = 5000 * 8;
+TViterbiCore<TRELLIS_MAX> m_viterbi;
+
+ulong ob_count;
+uint16_t frame_length = 1500;
+int16_t code_rate = CR_12;
+size_t TRELLIS_DEPTH = 256;
+unsigned char *m_outbuf = NULL;
+
+void __kz_viterbi_brick_init_fast(int32_t frame_len, int16_t code_r, int16_t depth)
 {
-    fprintf(stderr, "viterbi_brick_init_fast not implemented\n");
-    abort();
+    ob_count = 0;
+    m_viterbi.Reset();
+    frame_length = frame_len;
+    code_rate = code_r;
+    if (m_outbuf != NULL) free((void *)m_outbuf);
+    TRELLIS_DEPTH = (size_t) depth;
+    m_outbuf = (unsigned char*) malloc((size_t) (TRELLIS_DEPTH + 1));
+    if (m_outbuf == NULL) {
+        fprintf(stderr, "Viterbi memory allocation failure!\n");
+        exit(1);
+    }
 }
 
-int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue)
+int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *bitValue)
 {
-    fprintf(stderr, "viterbiSig11a_brick_decode_fast not implemented\n");
-    abort();
-    return 0;
+    static const int trellis_prefix = 6;     // 6 bit zero prefix
+    static const int trellis_lookahead = 24;
+
+    //uchar  m_outbuf[TRELLIS_DEPTH / 8 + 1];
+
+
+    unsigned int total_byte_count = 0;
+
+    // vector128 constants
+    static const __m128i * const pVITMA = (const __m128i*)VIT_MA; // Branch Metric A
+    static const __m128i * const pVITMB = (const __m128i*)VIT_MB; // Branch Metric B
+
+
+    //uchar* input = ipin.peek();
+    unsigned char* input = (unsigned char*)svalue;
+    //uchar* input_end = input + NUM_INPUT;
+    unsigned char* input_end = input + 48;
+    while (input < input_end) {
+        // advance branch
+        if (code_rate == CR_12) {
+                m_viterbi.BranchACS(pVITMA, input[0], pVITMB, input[1]);
+                input += 2; // jump to data
+        }  else if (code_rate == CR_34) {
+                m_viterbi.BranchACS(pVITMA, input[0], pVITMB, input[1]);
+                m_viterbi.BranchACS(pVITMA, input[2]);
+                m_viterbi.BranchACS(pVITMB, input[3]);
+                input += 4;
+        } else if (code_rate == CR_23) {
+            m_viterbi.BranchACS(pVITMA, input[0], pVITMB, input[1]);
+                m_viterbi.BranchACS(pVITMA, input[2]);
+                input += 3;
+        }
+
+        unsigned int tr_index = m_viterbi.trellis_index();
+
+        if ((tr_index & 7) == 0) {
+            m_viterbi.Normalize();
+        }
+
+        // check trace_back
+        unsigned int output_count = 0;
+        unsigned int lookahead = 0;
+        const unsigned int tr_index_end = frame_length * 8 + trellis_prefix;
+        if (tr_index >= tr_index_end) {
+            // all bytes have been processed - track back all of them
+            output_count = tr_index_end - ob_count
+                - trellis_prefix;
+            lookahead = tr_index - tr_index_end;
+        } else if (tr_index >= ob_count + TRELLIS_DEPTH + trellis_lookahead + trellis_prefix) {
+            // trace back partially
+
+            // Note: tr_index increase during 'BranchACS', to decode out complete bytes, we may lookahead the
+            // trellis without output a few more than 'trellis_lookahead'
+            unsigned int remain = (tr_index - (ob_count + TRELLIS_DEPTH + trellis_lookahead + trellis_prefix)) % 8;
+            output_count = TRELLIS_DEPTH;
+            lookahead = trellis_lookahead + remain;
+        }
+
+        if (output_count) {
+            m_viterbi.Traceback((char*)m_outbuf, output_count, lookahead);
+            ob_count += output_count;
+
+            unsigned int last_byte_count = 0;
+            while (last_byte_count < output_count / 8) {
+                bitValue[total_byte_count] = m_outbuf[last_byte_count];
+                last_byte_count++;
+                total_byte_count++;
+            }
+        }
+    }
+    return total_byte_count * 8;
 }
 
-int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue)
+int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *bitValue)
 {
-    fprintf(stderr, "viterbiSig11a_brick_decode_fast not implemented\n");
-    abort();
+    static const int state_size = 64;
+    static const int input_size = 48; // always 48 soft-values
+
+    __m128i trellis[state_size / 16 * input_size];
+    unsigned int output = 0;
+
+    Viterbi_sig11(trellis, (char *)svalue, (char *)(bitValue));
+    *((unsigned int *)bitValue) >>= 6; // remove the prefix 6 zeros
+
     return 0;
 }

@@ -85,8 +85,8 @@ void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out);
 void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out);
 
 void __kz_viterbi_brick_init_fast(int32_t frame_length, int16_t code_rate, int16_t depth);
-int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);
-int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], const uint8_t *bitValue);
+int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *bitValue);
+int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *bitValue);
 
 #ifdef __cplusplus
 }
