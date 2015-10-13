@@ -6,6 +6,14 @@
 
 #include <kz/ext.h>
 
+#define PI 3.14159265358979323846
+
+#define FROM_FP_RAD(x) ((PI*((double) (x)))/((double) INT16_MAX))
+#define TO_FP_RAD(x) (((x)*((double) INT16_MAX))/PI)
+#define TO_FP_RAD32(x) (((x)*((double) INT32_MAX))/PI)
+
+#define TO_FP_FRAC(x) ((int16_t) ((x)*((double) INT16_MAX)))
+
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src)
 {
     memcpy(dst, src, n);
@@ -84,22 +92,22 @@ int32_t __kz_ceil_int32(double d)
 
 int16_t __kz_sin_int16(int16_t x)
 {
-    return sin(x);
+    return TO_FP_FRAC(sin(FROM_FP_RAD(x)));
 }
 
 int16_t __kz_cos_int16(int16_t x)
 {
-    return cos(x);
+    return TO_FP_FRAC(cos(FROM_FP_RAD(x)));
 }
 
 int16_t __kz_atan2_int16(int16_t y, int16_t x)
 {
-    return atan2(y, x);
+    return TO_FP_RAD(atan2(y,x));
 }
 
 int32_t __kz_atan2_int32(int32_t y, int32_t x)
 {
-    return atan2(y, x);
+    return TO_FP_RAD32(atan2(y,x));
 }
 
 complex32_t __kz_sumc32(const complex32_t x[4])
