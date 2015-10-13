@@ -1,6 +1,6 @@
 TOP=../../../../..
 
-TESTS=$(shell ls *.outfile.ground | sort | grep -v testPilotTrack)
+TESTS=$(shell ls *.outfile.ground | sort)
 
 .PHONY : all
 all : $(patsubst %.outfile.ground, %.test, $(TESTS))

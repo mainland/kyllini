@@ -27,8 +27,19 @@
 
 #include <kz/ext.h>
 #include <sora/fft.h>
+#include <sora/intalglutx.h>
 #include <sora/viterbicore.h>
 #include <sora/ieee80211const.h>
+
+//
+// We support Fixed Point Radians in this file.
+// FP_RAD maps PI (and -PI) to 0x8000 and it represents only radians [-PI, PI)
+//
+typedef short FP_RAD;  // fixed point radians
+
+// FP_FRAC fixed point fraction - [-1,1)
+//
+typedef short FP_FRAC; // fixed point fraction
 
 void __kz_permutatew1313(const complex16_t x[4], complex16_t *y)
 {
@@ -41,6 +52,69 @@ void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], comple
     __m128i mx = _mm_loadu_si128((__m128i*) x);
     __m128i my = _mm_loadu_si128((__m128i*) y);
     _mm_storeu_si128((__m128i*) z, _mm_unpacklo_epi64(mx, my));
+}
+
+int16_t __kz_sin_int16(int16_t r)
+{
+    return sinx_lut[(unsigned short)r];
+}
+
+int16_t __kz_cos_int16(int16_t r)
+{
+    return cosx_lut[(unsigned short)r];
+}
+
+// bit_scope - find the highest bit position of an integer
+unsigned char bit_scope_ub(unsigned char x)
+{
+    return bit_high_pos_lutx[x];
+}
+
+unsigned char bit_scope_us(unsigned short x)
+{
+    unsigned char tt;
+    if (tt = (x >> 8))
+        return bit_scope_ub (tt) + 8;
+    else
+        return bit_scope_ub ((unsigned char)(x));
+}
+
+unsigned char bit_scope_ui(unsigned int x)
+{
+    unsigned short tt;
+
+    if (tt = (x >> 16))
+        return bit_scope_us (tt) + 16;
+    else
+        return bit_scope_us ((unsigned short)(x));
+}
+
+unsigned char bit_scope_s(int x)
+{
+    if (x>0)
+        // positive value
+        return bit_scope_ui ((unsigned int)x);
+    else
+        // negative value
+        return bit_scope_ui ((unsigned int)(-x));
+}
+
+int16_t __kz_atan2_int16(int16_t y, int16_t x)
+{
+    int ys = bit_scope_s(y);
+    int xs = bit_scope_s(x);
+
+    int shift = ((xs>ys)?xs:ys) - 6;
+
+    if ( shift > 0 )
+        return atan2x_lut[(unsigned char)(y>>shift)][(unsigned char)(x>>shift)];
+    else
+        return atan2x_lut[(unsigned char)(y)][(unsigned char)(x)];
+}
+
+int32_t __kz_atan2_int32(int32_t y, int32_t x)
+{
+    return __kz_atan2_int16(y, x);
 }
 
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
