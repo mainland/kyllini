@@ -878,15 +878,22 @@ cgExp (PrintE nl es l) = do
         cgPrintScalar tau ce
 
     cgPrintScalar :: Type -> CExp -> Cg ()
-    cgPrintScalar (UnitT {})        _  = appendStm $ rl l [cstm|printf("()");|]
-    cgPrintScalar (BoolT {})        ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-    cgPrintScalar (BitT  {})        ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
-    cgPrintScalar (IntT W64 _ _)    ce = appendStm $ rl l [cstm|printf("%ld", $ce);|]
-    cgPrintScalar (IntT {})         ce = appendStm $ rl l [cstm|printf("%d",  $ce);|]
-    cgPrintScalar (FloatT {})       ce = appendStm $ rl l [cstm|printf("%f",  $ce);|]
-    cgPrintScalar (StringT {})      ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-    cgPrintScalar (ArrT iota tau _) ce = cgPrintArray iota tau ce
-    cgPrintScalar tau               _  = faildoc $ text "Cannot print type:" <+> ppr tau
+    cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
+    cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
+    cgPrintScalar (BitT  {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
+    cgPrintScalar (IntT W64 Signed _)   ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
+    cgPrintScalar (IntT W64 Unsigned _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
+    cgPrintScalar (IntT _ Signed _)     ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
+    cgPrintScalar (IntT _ Unsigned _)   ce = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
+    cgPrintScalar (FloatT {})           ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
+    cgPrintScalar (StringT {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
+    cgPrintScalar (ArrT iota tau _)     ce = cgPrintArray iota tau ce
+
+    cgPrintScalar (StructT s _) ce | isComplexStruct s =
+        appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+
+    cgPrintScalar tau _ =
+        faildoc $ text "Cannot print type:" <+> ppr tau
 
     cgPrintArray :: Iota -> Type -> CExp -> Cg ()
     cgPrintArray iota tau@(BitT {}) ce = do
@@ -899,6 +906,9 @@ cgExp (PrintE nl es l) = do
         caddr <- cgAddrOf (ArrT iota tau noLoc) ce
         cgFor 0 cn $ \ci -> do
             cgPrintScalar tau (CExp [cexp|$caddr[$ci]|])
+            if cn .==. ci
+              then return ()
+              else appendStm $ rl l [cstm|printf(",");|]
 
 cgExp (ErrorE _ s l) = do
     appendStm $ rl l [cstm|kz_error($string:s);|]
