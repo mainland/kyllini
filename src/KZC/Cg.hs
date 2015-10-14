@@ -810,7 +810,6 @@ cgExp e0@(ForE _ v v_tau e_start e_len e_body l) =
         ce_start <- cgExp e_start
         ce_len   <- cgExp e_len
         initc    <- collectCodeAsComp_ $ do
-                    ce_start <- cgExp e_start
                     appendStm [cstm|$id:cv = $ce_start;|]
         updatec  <- collectCodeAsComp_ $
                     appendStm $ rl l [cstm|$id:cv++;|]
