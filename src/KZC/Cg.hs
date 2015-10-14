@@ -263,9 +263,9 @@ cgLabels = do
 cgThread :: Cg a -> Cg a
 cgThread k = do
     (x, code) <- collect k
-    tell code { decls = mempty, stmts = mempty }
-    let cds   =  (toList . decls) code
-    let css   =  (toList . stmts) code
+    tell code { codeDecls = mempty, codeStms = mempty }
+    let cds   =  (toList . codeDecls) code
+    let css   =  (toList . codeStms) code
     appendDecls cds
     appendStms [cstms|BEGIN_DISPATCH; $stms:css END_DISPATCH;|]
     return x
@@ -1010,8 +1010,8 @@ collectComp :: Cg CComp -> Cg CComp
 collectComp m = do
     l            <- genLabel "codek"
     (comp, code) <- collect m
-    tell code { decls = mempty, stmts = mempty }
-    return $ codeC l code { defs = mempty } >> comp
+    tell code { codeDecls = mempty, codeStms = mempty }
+    return $ codeC l code { codeDefs = mempty } >> comp
 
 collectCompBind :: Cg (CExp -> CComp) -> Cg (CExp -> CComp)
 collectCompBind m = do

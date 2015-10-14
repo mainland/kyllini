@@ -122,29 +122,29 @@ import KZC.Vars
 -- | Contains generated code.
 data Code = Code
     { -- | Top-level definitions
-      defs  :: !(Seq C.Definition)
+      codeDefs :: !(Seq C.Definition)
       -- | Local declarations
-    , decls :: !(Seq C.InitGroup)
+    , codeDecls :: !(Seq C.InitGroup)
       -- | Local statements
-    , stmts :: !(Seq C.Stm)
+    , codeStms :: !(Seq C.Stm)
     }
   deriving (Eq, Ord, Show)
 
 instance Pretty Code where
     ppr c = stack $
-            (map ppr . toList . defs)  c ++
-            (map ppr . toList . decls) c ++
-            (map ppr . toList . stmts) c
+            (map ppr . toList . codeDefs)  c ++
+            (map ppr . toList . codeDecls) c ++
+            (map ppr . toList . codeStms) c
 
 instance Monoid Code where
-    mempty = Code { defs     = mempty
-                  , decls    = mempty
-                  , stmts    = mempty
+    mempty = Code { codeDefs  = mempty
+                  , codeDecls = mempty
+                  , codeStms  = mempty
                   }
 
-    a `mappend` b = Code { defs  = defs a <> defs b
-                         , decls = decls a <> decls b
-                         , stmts = stmts a <> stmts b
+    a `mappend` b = Code { codeDefs  = codeDefs a <> codeDefs b
+                         , codeDecls = codeDecls a <> codeDecls b
+                         , codeStms  = codeStms a <> codeStms b
                          }
 
 instance IsString C.Id where
@@ -530,7 +530,7 @@ ccompLabel (Free comp) = compLabel comp
     compLabel :: Comp Label CComp -> Cg Label
     compLabel (CodeC l _ (Pure {})) = useLabel l
     compLabel (CodeC l c k)
-        | stmts c == mempty          = ccompLabel k
+        | codeStms c == mempty       = ccompLabel k
         | otherwise                  = useLabel l
     compLabel (TakeC l _ _)          = useLabel l
     compLabel (TakesC l _ _ _)       = useLabel l
@@ -579,7 +579,7 @@ defaultCgState = CgState
 evalCg :: Cg () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc defaultCgEnv defaultCgState (m >> get)
-    return $ (toList . defs . code) s
+    return $ (toList . codeDefs . code) s
 
 extend :: forall k v a . Ord k
        => (CgEnv -> Map k v)
@@ -653,22 +653,22 @@ instance ToCode Code where
     toCode code = code
 
 instance ToCode C.Definition where
-    toCode cdef = mempty { defs = Seq.singleton cdef }
+    toCode cdef = mempty { codeDefs = Seq.singleton cdef }
 
 instance ToCode [C.Definition] where
-    toCode cdefs = mempty { defs = Seq.fromList cdefs }
+    toCode cdefs = mempty { codeDefs = Seq.fromList cdefs }
 
 instance ToCode C.InitGroup where
-    toCode cdecl = mempty { decls = Seq.singleton cdecl }
+    toCode cdecl = mempty { codeDecls = Seq.singleton cdecl }
 
 instance ToCode [C.InitGroup] where
-    toCode cdecls = mempty { decls = Seq.fromList cdecls }
+    toCode cdecls = mempty { codeDecls = Seq.fromList cdecls }
 
 instance ToCode C.Stm where
-    toCode cstm = mempty { stmts = Seq.singleton cstm }
+    toCode cstm = mempty { codeStms = Seq.singleton cstm }
 
 instance ToCode [C.Stm] where
-    toCode cstms = mempty { stmts = Seq.fromList cstms }
+    toCode cstms = mempty { codeStms = Seq.fromList cstms }
 
 collect :: Cg a -> Cg (a, Code)
 collect m = do
@@ -682,8 +682,8 @@ collect m = do
 collectDefinitions :: Cg a -> Cg ([C.Definition], a)
 collectDefinitions m = do
     (x, c) <- collect m
-    tell c { defs = mempty }
-    return (toList (defs c), x)
+    tell c { codeDefs = mempty }
+    return (toList (codeDefs c), x)
 
 collectDefinitions_ :: Cg () -> Cg ([C.Definition])
 collectDefinitions_ m = do
@@ -693,8 +693,8 @@ collectDefinitions_ m = do
 collectDecls :: Cg a -> Cg ([C.InitGroup], a)
 collectDecls m = do
     (x, c) <- collect m
-    tell c { decls = mempty }
-    return (toList (decls c), x)
+    tell c { codeDecls = mempty }
+    return (toList (codeDecls c), x)
 
 collectDecls_ :: Cg () -> Cg ([C.InitGroup])
 collectDecls_ m = do
@@ -704,8 +704,8 @@ collectDecls_ m = do
 collectStms :: Cg a -> Cg ([C.Stm], a)
 collectStms m = do
     (x, c) <- collect m
-    tell c { stmts = mempty }
-    return (toList (stmts c), x)
+    tell c { codeStms = mempty }
+    return (toList (codeStms c), x)
 
 collectStms_ :: Cg () -> Cg ([C.Stm])
 collectStms_ m = do
@@ -715,9 +715,9 @@ collectStms_ m = do
 inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
 inNewBlock m = do
     (x, c) <- collect m
-    tell c { decls = mempty, stmts  = mempty }
-    return ((map C.BlockDecl . toList . decls) c ++
-            (map C.BlockStm .  toList . stmts) c, x)
+    tell c { codeDecls = mempty, codeStms  = mempty }
+    return ((map C.BlockDecl . toList . codeDecls) c ++
+            (map C.BlockStm .  toList . codeStms) c, x)
 
 inNewBlock_ :: Cg a -> Cg [C.BlockItem]
 inNewBlock_ m =
@@ -728,19 +728,19 @@ getLabels = gets (Set.toList . labels)
 
 appendTopDef :: C.Definition -> Cg ()
 appendTopDef cdef =
-  tell mempty { defs = Seq.singleton cdef }
+  tell mempty { codeDefs = Seq.singleton cdef }
 
 appendTopDefs :: [C.Definition] -> Cg ()
 appendTopDefs cdefs =
-  tell mempty { defs = Seq.fromList cdefs }
+  tell mempty { codeDefs = Seq.fromList cdefs }
 
 appendTopDecl :: C.InitGroup -> Cg ()
 appendTopDecl cdecl =
-  tell mempty { defs = Seq.singleton (C.DecDef cdecl noLoc) }
+  tell mempty { codeDefs = Seq.singleton (C.DecDef cdecl noLoc) }
 
 appendTopDecls :: [C.InitGroup] -> Cg ()
 appendTopDecls cdecls =
-  tell mempty { defs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
+  tell mempty { codeDefs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
 
 appendDecl :: C.InitGroup -> Cg ()
 appendDecl cdecl = tell cdecl
