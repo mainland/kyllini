@@ -1324,18 +1324,18 @@ type DoneK = CExp -> Cg ()
 -- the result of the computation @ccomp@, which has 'Type' @tau_res@, in @cres'.
 cgPureishCComp :: Type -> CExp -> CComp -> Cg ()
 cgPureishCComp tau_res cres ccomp =
-    cgCComp take emit done ccomp
+    cgCComp takek emitk donek ccomp
   where
-    take :: TakeK
-    take _ _ _ _ _ =
+    takek :: TakeK
+    takek _ _ _ _ _ =
         panicdoc $ text "Pure computation tried to take!"
 
-    emit :: EmitK
-    emit _ _ _ _ _ =
+    emitk :: EmitK
+    emitk _ _ _ _ _ =
         panicdoc $ text "Pure computation tried to emit!"
 
-    done :: DoneK
-    done ce =
+    donek :: DoneK
+    donek ce =
         cgAssign tau_res cres ce
 
 cgCComp :: TakeK
@@ -1343,11 +1343,11 @@ cgCComp :: TakeK
         -> DoneK
         -> CComp
         -> Cg ()
-cgCComp take emit done ccomp =
+cgCComp takek emitk donek ccomp =
     cgFree ccomp
   where
     cgFree :: CComp -> Cg ()
-    cgFree (Pure ce) = done ce
+    cgFree (Pure ce) = donek ce
     cgFree (Free x)  = cgComp x
 
     cgComp :: Comp Label CComp -> Cg ()
@@ -1356,13 +1356,13 @@ cgCComp take emit done ccomp =
         cgFree k
 
     cgComp (TakeC l tau k) =
-        take l 1 tau k cgFree
+        takek l 1 tau k cgFree
 
     cgComp (TakesC l n tau k) =
-        take l n tau k cgFree
+        takek l n tau k cgFree
 
     cgComp (EmitC l tau ce k) =
-        emit l tau ce k cgFree
+        emitk l tau ce k cgFree
 
     cgComp (IfC l cv ce thenk elsek k) = cgWithLabel l $ do
         cgIf (return ce) (cgFree thenk) (cgFree elsek)
@@ -1379,7 +1379,7 @@ cgCComp take emit done ccomp =
         return ()
 
     cgComp (DoneC l ce) = cgWithLabel l $ do
-        done ce
+        donek ce
 
     cgComp (LabelC l k) = cgWithLabel l $ do
         cgFree k
@@ -1408,18 +1408,18 @@ cgCComp take emit done ccomp =
         cbuf  <- cgCTemp tau_internal "par_buf"  [cty|$ty:ctau|]  Nothing
         cbufp <- cgCTemp tau_internal "par_bufp" [cty|const $ty:ctau*|] Nothing
         -- Generate code for the left and right computations.
-        cgCComp (take' cleftk crightk cbuf cbufp)
-                emit
-                (done' kl)
+        cgCComp (takek' cleftk crightk cbuf cbufp)
+                emitk
+                (donek' kl)
                 right
-        cgCComp take
-                (emit' cleftk crightk cbuf cbufp)
-                (done' kl)
+        cgCComp takek
+                (emitk' cleftk crightk cbuf cbufp)
+                (donek' kl)
                 left
         -- Generate code for our continuation
         cgFree kcomp
       where
-        take' :: CExp -> CExp -> CExp -> CExp -> TakeK
+        takek' :: CExp -> CExp -> CExp -> CExp -> TakeK
         -- The one element take is easy. We know the element will be in @cbufp@,
         -- so we call @k1@ with @cbufp@ as the argument, which generates a
         -- 'CComp', @ccomp@ that represents the continuation that consumes the
@@ -1427,7 +1427,7 @@ cgCComp take emit done ccomp =
         -- label of @ccomp@, since it is the continuation, generate code to jump
         -- to the left computation's continuation, and then call @k2@ with
         -- @ccomp@ suitably modified to have a required label.
-        take' cleftk crightk _ cbufp l 1 _tau k1 k2 =
+        takek' cleftk crightk _ cbufp l 1 _tau k1 k2 =
             cgWithLabel l $ do
             let ccomp =  k1 $ CExp [cexp|*$cbufp|]
             lbl       <- ccompLabel ccomp
@@ -1440,7 +1440,7 @@ cgCComp take emit done ccomp =
         -- continuation repeatedly, until the buffer is full. Then we fall
         -- through to the next action, which is why we call @k2@ with @ccomp@
         -- without forcing its label to be required---we don't need the label!
-        take' cleftk crightk _ cbufp l n tau@(BitT {}) k1 k2 =
+        takek' cleftk crightk _ cbufp l n tau@(BitT {}) k1 k2 =
             cgWithLabel l $ do
             ctau      <- cgType tau
             carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
@@ -1454,7 +1454,7 @@ cgCComp take emit done ccomp =
                     cgBitArrayWrite carr ci (CExp [cexp|*$cbufp|])
             k2 ccomp
 
-        take' cleftk crightk _ cbufp l n tau k1 k2 =
+        takek' cleftk crightk _ cbufp l n tau k1 k2 =
             cgWithLabel l $ do
             ctau      <- cgType tau
             carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
@@ -1468,8 +1468,8 @@ cgCComp take emit done ccomp =
                     appendStm [cstm|$carr[$ci] = *$cbufp;|]
             k2 ccomp
 
-        emit' :: CExp -> CExp -> CExp -> CExp -> EmitK
-        emit' cleftk crightk cbuf cbufp l (ArrT (ConstI 1 _) tau _) ce ccomp k =
+        emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK
+        emitk' cleftk crightk cbuf cbufp l (ArrT (ConstI 1 _) tau _) ce ccomp k =
             cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
@@ -1478,7 +1478,7 @@ cgCComp take emit done ccomp =
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        emit' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
+        emitk' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
             cn    <- cgIota iota
             loopl <- genLabel "emitsk_next"
             useLabel l
@@ -1496,7 +1496,7 @@ cgCComp take emit done ccomp =
             k ccomp
 
         -- @tau@ must be a base (scalar) type
-        emit' cleftk crightk cbuf cbufp l tau ce ccomp k =
+        emitk' cleftk crightk cbuf cbufp l tau ce ccomp k =
             cgWithLabel l $ do
             lbl <- ccompLabel ccomp
             appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
@@ -1504,8 +1504,8 @@ cgCComp take emit done ccomp =
             appendStm [cstm|INDJUMP($crightk);|]
             k ccomp
 
-        done' :: Label -> DoneK
-        done' kl ce = do
+        donek' :: Label -> DoneK
+        donek' kl ce = do
             cgAssign tau_res cres ce
             appendStm [cstm|JUMP($id:kl);|]
 
