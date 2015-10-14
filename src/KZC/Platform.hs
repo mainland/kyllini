@@ -35,7 +35,7 @@ bIT_ARRAY_ELEM_LOG_BITS = 3
 type BitArrayElemType = Word8
 
 bIT_ARRAY_ELEM_BITS :: Num a => a
-bIT_ARRAY_ELEM_BITS = 2^bIT_ARRAY_ELEM_LOG_BITS
+bIT_ARRAY_ELEM_BITS = 2^(bIT_ARRAY_ELEM_LOG_BITS :: Int)
 
 -- | Given the length of a bit array, return the number of elements of type
 -- 'bIT_ARRAY_ELEM_TYPE' in the array's representation.

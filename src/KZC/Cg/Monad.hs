@@ -4,6 +4,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
 -- Module      :  KZC.Lint.Monad
@@ -409,8 +410,8 @@ instance IsBits CExp where
 
 instance ToExp CExp where
     toExp CVoid                      = error "toExp: void compiled expression"
-    toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1 else 0)|]
-    toExp (CBit i)                   = \_ -> [cexp|$int:(if i then 1 else 0)|]
+    toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
+    toExp (CBit i)                   = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
     toExp (CInt i)                   = \_ -> [cexp|$int:i|]
     toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
     toExp (CExp e)                   = \_ -> e

@@ -27,8 +27,9 @@ module KZC.Check (
 
 import Control.Applicative hiding ((<|>))
 import Control.Monad (filterM,
-                      when,
                       replicateM,
+                      void,
+                      when,
                       zipWithM,
                       zipWithM_)
 import Control.Monad.Exception
@@ -426,7 +427,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
     (tau, mce2) <- inferExp e2
-    checkSTCUnit tau
+    void $ checkSTCUnit tau
     instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2

@@ -15,7 +15,7 @@ LDFLAGS=
 LIBS=-lm
 
 GHC=ghc
-GHCFLAGS=-W -Werror
+GHCFLAGS=-Wall -fno-warn-name-shadowing -Werror
 
 RUNGHC=runghc
 RUNGHCFLAGS=-W -fno-warn-unused-imports

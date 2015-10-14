@@ -22,6 +22,7 @@ import Prelude
 import Control.Applicative ((<$>))
 import Control.Monad (forM_,
                       liftM,
+                      void,
                       when)
 import Control.Monad.Free (Free(..))
 import Data.Bits
@@ -816,7 +817,7 @@ cgExp e0@(ForE _ v v_tau e_start e_len e_body l) =
         bodyc    <- collectComp $ cgExp e_body >>= unCComp
         forl     <- genLabel "fork"
         endl     <- genLabel "for_end"
-        useLabel forl
+        void $ useLabel forl
         return $ CComp $
             initc >>
             ifC forl CVoid (CExp [cexp|$id:cv < $(ce_start + ce_len)|])
@@ -833,7 +834,7 @@ cgExp e@(ArrayE es l) = do
     cv           <- gensym "__arr"
     ctau         <- cgType tau
     appendDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
-    forM_ (es `zip` [0..]) $ \(e,i) -> do
+    forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
         ce <- cgExp e
         appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
     return $ CExp [cexp|$id:cv|]
@@ -962,7 +963,7 @@ cgExp (RepeatE _ e _) = do
     ccomp  <- cgExp e >>= unCComp
     -- Ensure we have a starting label; @ccomp@ could be a @Pure@ action!
     startl <- genLabel "repeatk"
-    useLabel startl
+    void $ useLabel startl
     return $ CComp $ labelC startl >> ccomp >> gotoC startl
 
 cgExp e0@(ParE _ b e1 e2 _) = do
@@ -1396,7 +1397,7 @@ cgCComp takek emitk donek ccomp =
         parl      <- genLabel "park"
         let kcomp =  labelC parl >> k cres
         kl        <- ccompLabel kcomp
-        useLabel kl
+        void $ useLabel kl
         -- Generate variables to hold the left and right computations'
         -- continuations.
         leftl   <- ccompLabel left
@@ -1445,7 +1446,7 @@ cgCComp takek emitk donek ccomp =
             ctau      <- cgType tau
             carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
             lbl       <- genLabel "inner_takesk"
-            useLabel lbl
+            void $ useLabel lbl
             let ccomp =  k1 carr
             appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
             cgFor 0 (fromIntegral n) $ \ci -> do
@@ -1459,7 +1460,7 @@ cgCComp takek emitk donek ccomp =
             ctau      <- cgType tau
             carr      <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             lbl       <- genLabel "inner_takesk"
-            useLabel lbl
+            void $ useLabel lbl
             let ccomp =  k1 carr
             appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
             cgFor 0 (fromIntegral n) $ \ci -> do
@@ -1481,8 +1482,8 @@ cgCComp takek emitk donek ccomp =
         emitk' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
             cn    <- cgIota iota
             loopl <- genLabel "emitsk_next"
-            useLabel l
-            useLabel loopl
+            void $ useLabel l
+            void $ useLabel loopl
             cgWithLabel l $ do
                 appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
                 cgFor 0 cn $ \ci -> do

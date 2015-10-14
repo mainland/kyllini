@@ -56,7 +56,7 @@ executable kzc
     happy
 
   ghc-options:
-    -Wall
+    -Wall -fno-warn-name-shadowing
 
   hs-source-dirs:
     src

@@ -54,6 +54,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Name
 import KZC.Pretty
+import KZC.Staged
 import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
@@ -1018,6 +1019,22 @@ instance Freshen IVar IVar Iota where
       where
         phi'    = Set.insert alpha phi
         theta'  = Map.delete alpha theta
+
+{------------------------------------------------------------------------------
+ -
+ - Staging
+ -
+ ------------------------------------------------------------------------------}
+
+instance IsEq Exp where
+    e1 .==. e2 = BinopE Eq e1 e2 (e1 `srcspan` e2)
+    e1 ./=. e2 = BinopE Ne e1 e2 (e1 `srcspan` e2)
+
+instance IsOrd Exp where
+    e1 .<.  e2 = BinopE Lt e1 e2 (e1 `srcspan` e2)
+    e1 .<=. e2 = BinopE Le e1 e2 (e1 `srcspan` e2)
+    e1 .>=. e2 = BinopE Ge e1 e2 (e1 `srcspan` e2)
+    e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
 
 #include "KZC/Core/Syntax-instances.hs"
 

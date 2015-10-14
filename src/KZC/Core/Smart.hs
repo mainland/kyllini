@@ -14,18 +14,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Syntax
 import KZC.Name
 import KZC.Platform
-import KZC.Staged
 import KZC.Uniq
-
-instance IsEq Exp where
-    e1 .==. e2 = BinopE Eq e1 e2 (e1 `srcspan` e2)
-    e1 ./=. e2 = BinopE Ne e1 e2 (e1 `srcspan` e2)
-
-instance IsOrd Exp where
-    e1 .<.  e2 = BinopE Lt e1 e2 (e1 `srcspan` e2)
-    e1 .<=. e2 = BinopE Le e1 e2 (e1 `srcspan` e2)
-    e1 .>=. e2 = BinopE Ge e1 e2 (e1 `srcspan` e2)
-    e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
 
 mkUniqVar :: (Located a, Applicative m, MonadUnique m) => String -> a -> m Var
 mkUniqVar s l = Var <$> mkUniqName s (locOf l)

@@ -670,14 +670,14 @@ inferKind tau =
     inferType (StructT {}) = return TauK
 
     inferType (ArrT iota tau _) = do
-        inferIota iota
+        void $ inferIota iota
         kappa <- inferType tau
         checkKindEquality kappa TauK
         return TauK
 
     inferType (ST alphas omega tau1 tau2 tau3 _) =
         extendTyVars (alphas `zip` repeat TauK) $ do
-        inferOmega omega
+        void $ inferOmega omega
         checkKind tau1 TauK
         checkKind tau2 TauK
         checkKind tau3 TauK
