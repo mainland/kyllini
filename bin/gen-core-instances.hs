@@ -40,7 +40,6 @@ DERIVE(StructDef)
 DERIVE(Type)
 DERIVE(Omega)
 DERIVE(Iota)
-DERIVE(Stm)
 
 main :: IO ()
 main = do
@@ -57,4 +56,3 @@ main = do
     DERIVE(Type)
     DERIVE(Omega)
     DERIVE(Iota)
-    DERIVE(Stm)

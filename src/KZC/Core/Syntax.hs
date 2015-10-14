@@ -22,6 +22,7 @@ module KZC.Core.Syntax (
     Const(..),
     Decl(..),
     Exp(..),
+    Stm(..),
     UnrollAnn(..),
     InlineAnn(..),
     PipelineAnn(..),
@@ -35,11 +36,7 @@ module KZC.Core.Syntax (
     Iota(..),
     Kind(..),
 
-    isComplexStruct,
-
-    Stm(..),
-    expToStms,
-    stmsToExp
+    isComplexStruct
   ) where
 
 import Data.Foldable (foldMap)
@@ -164,6 +161,11 @@ data Exp = ConstE Const !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
+data Stm e = ReturnS InlineAnn e !SrcLoc
+           | BindS BindVar e !SrcLoc
+           | ExpS e !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data UnrollAnn = Unroll     -- ^ Always unroll
                | NoUnroll   -- ^ Never unroll
                | AutoUnroll -- ^ Let the compiler choose when to unroll
@@ -260,86 +262,7 @@ isComplexStruct "complex32" = True
 isComplexStruct "complex64" = True
 isComplexStruct _           = False
 
-{------------------------------------------------------------------------------
- -
- - Statements
- -
- ------------------------------------------------------------------------------}
-
-data Stm = ReturnS InlineAnn Exp !SrcLoc
-         | BindS BindVar Exp !SrcLoc
-         | ExpS Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-instance Pretty Stm where
-    pprPrec p (ReturnS ann e _) =
-        parensIf (p > appPrec) $
-        ppr ann <+> text "return" <+> ppr e
-
-    pprPrec _ (BindS (BindV v tau) e _) =
-        parens (ppr v <+> colon <+> ppr tau) <+>
-        text "<-" <+> align (ppr e)
-
-    pprPrec _ (BindS WildV e _) =
-        ppr e
-
-    pprPrec p (ExpS e _) =
-        pprPrec p e
-
-    pprList stms =
-        semiEmbrace (map ppr stms)
-
-pprBody :: Exp -> Doc
-pprBody e =
-    case expToStms e of
-      [_]  -> line <> align (ppr e)
-      stms -> space <> semiEmbraceWrap (map ppr stms)
-
-#if defined(ONLY_TYPEDEFS)
-expToStms :: Exp -> [Stm]
-expToStms = undefined
-
-stmsToExp :: [Stm] -> Exp
-stmsToExp = undefined
-#else /* !defined(ONLY_TYPEDEFS) */
-expToStms :: Exp -> [Stm]
-expToStms (ReturnE ann e l)  = [ReturnS ann e l]
-expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
-expToStms e                  = [ExpS e (srclocOf e)]
-
-stmsToExp :: [Stm] -> Exp
-stmsToExp [] =
-    error "Null statement list"
-
-stmsToExp [ReturnS ann e l] =
-    ReturnE ann e l
-
-stmsToExp [BindS {}] =
-    error "Last statement must be an expression"
-
-stmsToExp [ExpS e _] =
-    e
-
-stmsToExp (ReturnS ann e1 l : stms) =
-    BindE WildV (ReturnE ann e1 l) e2 (e1 `srcspan` e2)
-  where
-    e2 :: Exp
-    e2 = stmsToExp stms
-
-stmsToExp (BindS bv e1 _ : stms) =
-    BindE bv e1 e2 (e1 `srcspan` e2)
-  where
-    e2 :: Exp
-    e2 = stmsToExp stms
-
-stmsToExp (ExpS e1 _ : stms) =
-    BindE WildV e1 e2 (e1 `srcspan` e2)
-  where
-    e2 :: Exp
-    e2 = stmsToExp stms
-
-#endif /* !defined(ONLY_TYPEDEFS) */
-
+#if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
  -
  - Summaries
@@ -546,6 +469,35 @@ instance Pretty Exp where
         pprPrec arrPrec e1 <+>
         text ">>>" <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
+
+expToStms :: Exp -> [Stm Exp]
+expToStms (ReturnE ann e l)  = [ReturnS ann e l]
+expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
+expToStms e                  = [ExpS e (srclocOf e)]
+
+pprBody :: Exp -> Doc
+pprBody e =
+    case expToStms e of
+      [_]  -> line <> align (ppr e)
+      stms -> space <> semiEmbraceWrap (map ppr stms)
+
+instance Pretty e => Pretty (Stm e) where
+    pprPrec p (ReturnS ann e _) =
+        parensIf (p > appPrec) $
+        ppr ann <+> text "return" <+> ppr e
+
+    pprPrec _ (BindS (BindV v tau) e _) =
+        parens (ppr v <+> colon <+> ppr tau) <+>
+        text "<-" <+> align (ppr e)
+
+    pprPrec _ (BindS WildV e _) =
+        ppr e
+
+    pprPrec p (ExpS e _) =
+        pprPrec p e
+
+    pprList stms =
+        semiEmbrace (map ppr stms)
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
@@ -776,7 +728,6 @@ instance HasFixity Unop where
     fixity Len      = infixr_ 10
     fixity (Cast _) = infixr_ 10
 
-#if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
  -
  - Free variables
