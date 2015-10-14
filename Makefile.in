@@ -201,6 +201,18 @@ GROUNDFILES= \
 .PHONY : test-ground
 test-ground : $(patsubst %.outfile.ground,%.test,$(GROUNDFILES))
 
+.PHONY : test-all
+test-all :
+	for DIR in \
+	  tests/backend \
+	  tests/lut \
+	  tests/libs \
+	  code/WiFi/transmitter/tests \
+	  code/WiFi/receiver/tests \
+	  code/WiFi/tests; do \
+		(cd $(TESTDIR)/$$DIR && make); \
+	done
+
 #
 # autotools stuff
 #
