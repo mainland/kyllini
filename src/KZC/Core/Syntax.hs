@@ -981,9 +981,9 @@ instance Freshen TyVar TyVar Type where
       where
         phi'    = Set.insert alpha' phi
         theta'  = Map.insert alpha (tyVarT alpha') theta
-        alpha'  = head [alpha  | i <- [show i | i <- [1..]]
-                               , let alpha' = TyVar n { nameSym = intern (s ++ i) }
-                               , alpha' `Set.notMember` phi]
+        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
+                              , let beta = TyVar n { nameSym = intern (s ++ i) }
+                              , beta `Set.notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1003,9 +1003,9 @@ instance Freshen IVar IVar Iota where
       where
         phi'    = Set.insert alpha' phi
         theta'  = Map.insert alpha (ivarT alpha') theta
-        alpha'  = head [alpha  | i <- [show i | i <- [1..] :: [Int]]
-                               , let alpha' = IVar n { nameSym = intern (s ++ i) }
-                               , alpha' `Set.notMember` phi]
+        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
+                              , let beta = IVar n { nameSym = intern (s ++ i) }
+                              , beta `Set.notMember` phi]
           where
             s :: String
             s = namedString n
