@@ -254,7 +254,6 @@ inferExp (BinopE op e1 e2 _) = do
         checkBitT tau1
         checkTypeEquality tau2 tau1
         return tau1
-        return tau1
 
     checkBitShiftBinop :: Type -> Type -> Tc r s Type
     checkBitShiftBinop tau1 tau2 = do
