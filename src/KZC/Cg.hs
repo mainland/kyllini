@@ -841,7 +841,7 @@ cgExp e@(ArrayE es l) = do
     return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 maybe_len _) = do
-    (_, tau) <- inferExp e1 >>= checkArrT
+    (_, tau) <- inferExp e1 >>= checkArrOrRefArrT
     ce1      <- cgExp e1
     ce2      <- cgExp e2
     case maybe_len of
@@ -1055,10 +1055,10 @@ unPtr ce        = ce
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
-checkArrT :: Monad m => Type -> m (Iota, Type)
-checkArrT (ArrT iota tau _)          = return (iota, tau)
-checkArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
-checkArrT tau =
+checkArrOrRefArrT :: Monad m => Type -> m (Iota, Type)
+checkArrOrRefArrT (ArrT iota tau _)          = return (iota, tau)
+checkArrOrRefArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
+checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
@@ -1609,11 +1609,11 @@ cgAssign (UnitT {}) _ ce =
 cgAssign (RefT (BitT {}) _) (CIdx _ carr cidx) ce2 =
     cgBitArrayWrite carr cidx ce2
 
-cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrT tau0 = do
+cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrOrRefArrT tau0 = do
     clen <- cgIota iota
     cgAssignBitArray ce1 ce2 clen
 
-cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrT tau0 = do
+cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     ctau <- cgType tau
     ce1' <- cgArrayAddr ce1
     ce2' <- cgArrayAddr ce2

@@ -15,7 +15,30 @@ module KZC.Lint (
     checkExp,
 
     inferKind,
-    checkKind
+    checkKind,
+
+    checkCast,
+
+    checkTypeEquality,
+    checkKindEquality,
+
+    absSTScope,
+    appSTScope,
+
+    checkEqT,
+    checkOrdT,
+    checkBoolT,
+    checkBitT,
+    checkIntT,
+    checkNumT,
+    checkArrT,
+    checkStructT,
+    checkStructFieldT,
+    checkST,
+    checkSTC,
+    checkSTCUnit,
+    checkRefT,
+    checkFunT
   ) where
 
 import Control.Monad (when,

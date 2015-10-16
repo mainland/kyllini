@@ -36,7 +36,19 @@ module KZC.Core.Syntax (
     Iota(..),
     Kind(..),
 
-    isComplexStruct
+    isComplexStruct,
+
+#if !defined(ONLY_TYPEDEFS)
+    arrPrec,
+    doPrec,
+    doPrec1,
+    appPrec,
+    appPrec1,
+    arrowPrec,
+    arrowPrec1,
+    tyappPrec,
+    tyappPrec1
+#endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
 import Data.Foldable (foldMap)
