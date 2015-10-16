@@ -38,9 +38,6 @@ module KZC.Check.Monad (
     extendIVars,
     lookupIVar,
 
-    traceNest,
-    traceTc,
-
     withExpContext,
 
     readTv,
@@ -69,7 +66,6 @@ import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
 import Data.Traversable (Traversable, traverse)
-import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
@@ -82,6 +78,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Monad
 import KZC.Summary
+import KZC.Trace
 import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
@@ -191,6 +188,14 @@ instance MonadErr Ti where
     {-# INLINE warnIsError #-}
     warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
 
+instance MonadFlags Ti where
+    askFlags        = liftKZC askFlags
+    localFlags fs m = Ti $ \r s -> runTi (localFlags fs m) r s
+
+instance MonadTrace Ti where
+    asksTraceDepth      = liftKZC asksTraceDepth
+    localTraceDepth d m = Ti $ \r s -> runTi (localTraceDepth d m) r s
+
 extend :: forall k v a . Ord k
        => (TiEnv -> Map k v)
        -> (TiEnv -> Map k v -> TiEnv)
@@ -294,16 +299,6 @@ lookupIVar iv =
     lookupBy iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
-
-traceNest :: Int -> Ti a -> Ti a
-traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
-
-traceTc :: Doc -> Ti ()
-traceTc doc = do
-    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceTc)
-    when doTrace $ do
-        d <- asks nestdepth
-        liftIO $ hPutDocLn stderr $ text "traceTc:" <+> indent d (align doc)
 
 withExpContext :: Z.Exp -> Ti a -> Ti a
 withExpContext e m =

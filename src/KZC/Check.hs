@@ -55,6 +55,7 @@ import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Platform
 import KZC.Summary
+import KZC.Trace
 import KZC.Util.SetLike
 import KZC.Vars
 

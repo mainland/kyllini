@@ -17,10 +17,7 @@ module KZC.LambdaLift.Monad (
     withDecl,
 
     appendTopDecl,
-    getTopDecls,
-
-    traceNest,
-    traceLift
+    getTopDecls
   ) where
 
 import Control.Monad.Reader
@@ -33,28 +30,24 @@ import Data.Monoid (mempty)
 import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
 import qualified Data.Set as Set
-import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
-import KZC.Lint.Monad hiding (traceNest)
+import KZC.Lint.Monad
 import KZC.Monad
 
 type Lift a = Tc LiftEnv LiftState a
 
 data LiftEnv = LiftEnv
-    { errctx    :: ![ErrorContext]
-    , nestdepth :: {-# UNPACK #-} !Int
-    , funFvs    :: Map Var (Var, [Var])
+    { errctx :: ![ErrorContext]
+    , funFvs :: Map Var (Var, [Var])
     }
 
 defaultLiftEnv :: LiftEnv
 defaultLiftEnv = LiftEnv
-    { errctx    = []
-    , nestdepth = 0
-    , funFvs    = mempty
+    { errctx = []
+    , funFvs = mempty
     }
 
 data LiftState = LiftState
@@ -124,13 +117,3 @@ appendTopDecl decl =
 
 getTopDecls :: Lift [Decl]
 getTopDecls = gets (toList . topdecls)
-
-traceNest :: Int -> Lift a -> Lift a
-traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
-
-traceLift :: Doc -> Lift ()
-traceLift doc = do
-    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceLift)
-    when doTrace $ do
-        d <- asks nestdepth
-        liftIO $ hPutDocLn stderr $ text "traceLift:" <+> indent d (align doc)

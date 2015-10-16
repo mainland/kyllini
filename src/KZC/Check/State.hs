@@ -34,7 +34,6 @@ import KZC.Error
 
 data TiEnv = TiEnv
     { errctx     :: ![ErrorContext]
-    , nestdepth  :: {-# UNPACK #-} !Int
     , curexp     :: Maybe Z.Exp
     , structs    :: !(Map Z.Struct StructDef)
     , varTypes   :: !(Map Z.Var Type)
@@ -47,7 +46,6 @@ data TiEnv = TiEnv
 defaultTiEnv :: TiEnv
 defaultTiEnv = TiEnv
     { errctx     = []
-    , nestdepth  = 0
     , curexp     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , varTypes   = Map.empty

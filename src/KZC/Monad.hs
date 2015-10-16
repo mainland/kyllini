@@ -31,11 +31,13 @@ import KZC.Check.State
 import KZC.Error
 import KZC.Flags
 import KZC.Lint.State
+import KZC.Trace
 import KZC.Uniq
 
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
     , flags      :: !Flags
+    , tracedepth :: !Int
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
@@ -51,6 +53,7 @@ defaultKZCEnv fs = do
     tceref <- newRef defaultTcEnv
     return KZCEnv { uniq       = u
                   , flags      = fs
+                  , tracedepth = 0
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
@@ -143,3 +146,7 @@ instance MonadUnique KZC where
 instance MonadFlags KZC where
     askFlags = asks flags
     localFlags fs = local (\env -> env { flags = fs })
+
+instance MonadTrace KZC where
+    asksTraceDepth    = asks tracedepth
+    localTraceDepth d = local (\env -> env { tracedepth = d })

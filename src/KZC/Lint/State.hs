@@ -28,7 +28,6 @@ import KZC.Error
 
 data TcEnv = TcEnv
     { errctx     :: ![ErrorContext]
-    , nestdepth  :: {-# UNPACK #-} !Int
     , curfvs     :: Maybe (Set Var)
     , structs    :: !(Map Struct StructDef)
     , topScope   :: Bool
@@ -42,7 +41,6 @@ data TcEnv = TcEnv
 defaultTcEnv :: TcEnv
 defaultTcEnv = TcEnv
     { errctx     = []
-    , nestdepth  = 0
     , curfvs     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , topScope   = True

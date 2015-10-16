@@ -80,9 +80,6 @@ module KZC.Cg.Monad (
     useLabel,
     isLabelUsed,
 
-    traceNest,
-    traceCg,
-
     cgBitArrayRead,
     cgBitArrayWrite
   ) where
@@ -106,13 +103,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
 import qualified Language.C.Syntax as C
-import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
-import KZC.Lint.Monad hiding (traceNest)
+import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Platform
 import KZC.Quote.C
@@ -550,7 +545,6 @@ type Cg a = Tc CgEnv CgState a
 
 data CgEnv = CgEnv
     { errctx     :: ![ErrorContext]
-    , nestdepth  :: {-# UNPACK #-} !Int
     , varCExps   :: Map Var CExp
     , ivarCExps  :: Map IVar CExp
     , tyvarTypes :: Map TyVar Type
@@ -559,7 +553,6 @@ data CgEnv = CgEnv
 defaultCgEnv :: CgEnv
 defaultCgEnv = CgEnv
     { errctx     = []
-    , nestdepth  = 0
     , varCExps   = mempty
     , ivarCExps  = mempty
     , tyvarTypes = mempty
@@ -772,16 +765,6 @@ useLabel lbl = do
 isLabelUsed :: Label -> Cg Bool
 isLabelUsed lbl =
     gets (Set.member lbl . labels)
-
-traceNest :: Int -> Cg a -> Cg a
-traceNest d = local (\env -> env { nestdepth = nestdepth env + d })
-
-traceCg :: Doc -> Cg ()
-traceCg doc = do
-    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceCg)
-    when doTrace $ do
-        d <- asks nestdepth
-        liftIO $ hPutDocLn stderr $ text "traceCg:" <+> indent d (align doc)
 
 -- | Read an element from a bit array.
 cgBitArrayRead :: CExp -> CExp -> C.Exp

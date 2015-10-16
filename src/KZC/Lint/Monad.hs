@@ -43,9 +43,6 @@ module KZC.Lint.Monad (
 
     inScopeTyVars,
 
-    traceNest,
-    traceLint,
-
     withFvContext,
 
     relevantBindings
@@ -64,7 +61,6 @@ import qualified Data.Map as Map
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
-import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Smart
@@ -74,6 +70,7 @@ import KZC.Flags
 import KZC.Lint.State
 import KZC.Monad
 import KZC.Summary
+import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
@@ -169,7 +166,15 @@ instance MonadErr (Tc r s) where
         localTc (\env -> env { errctx = ctx : errctx env }) m
 
     {-# INLINE warnIsError #-}
-    warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
+    warnIsError = asksFlags (testWarnFlag WarnError)
+
+instance MonadFlags (Tc r s) where
+    askFlags = liftKZC askFlags
+    localFlags fs m = Tc $ \r s e -> runTc (localFlags fs m) r s e
+
+instance MonadTrace (Tc r s) where
+    asksTraceDepth = liftKZC asksTraceDepth
+    localTraceDepth d m = Tc $ \r s e -> runTc (localTraceDepth d m) r s e
 
 askTc :: Tc r s TcEnv
 askTc = Tc $ \_ s e -> return (e, s)
@@ -312,16 +317,6 @@ inScopeTyVars = do
     case maybe_idxs of
       Nothing         -> return mempty
       Just (s',a',b') -> return $ fvs [s',a',b']
-
-traceNest :: Int -> Tc r s a -> Tc r s a
-traceNest d = localTc (\env -> env { nestdepth = nestdepth env + d })
-
-traceLint :: Doc -> Tc r s ()
-traceLint doc = do
-    doTrace <- liftKZC $ asksFlags (testTraceFlag TraceLint)
-    when doTrace $ do
-        d <- asksTc nestdepth
-        liftIO $ hPutDocLn stderr $ text "traceLint:" <+> indent d (align doc)
 
 withFvContext :: (Summary e, Located e, Fvs e Var)
               => e
