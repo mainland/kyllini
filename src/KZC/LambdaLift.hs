@@ -42,7 +42,7 @@ liftDecls (decl:decls) k =
 liftDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
 liftDecl decl@(LetD v tau e l) k = do
     e' <- withSummaryContext decl $
-          withExpContext e $
+          withFvContext e $
           inSTScope tau $
           inLocalScope $
           liftExp e
@@ -57,7 +57,7 @@ liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     e' <- withSummaryContext decl $
           extendIVars (iotas `zip` repeat IotaK) $
           extendVars vbs $
-          withExpContext e $
+          withFvContext e $
           inSTScope tau_ret $
           inLocalScope $
           liftExp e

@@ -49,7 +49,7 @@ checkDecl :: Decl -> Tc r s a -> Tc r s a
 checkDecl decl@(LetD v tau e _) k = do
     withSummaryContext decl $ do
         void $ inferKind tau
-        tau' <- withExpContext e $
+        tau' <- withFvContext e $
                 inSTScope tau $
                 inLocalScope $
                 inferExp e >>= absSTScope
@@ -61,7 +61,7 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
     withSummaryContext decl $ do
-        tau_ret' <- withExpContext e $
+        tau_ret' <- withFvContext e $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
                     inSTScope tau_ret $
@@ -263,8 +263,8 @@ inferExp (BinopE op e1 e2 _) = do
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
-    tau <- withExpContext e2 $ inferExp e2
-    withExpContext e3 $ checkExp e3 tau
+    tau <- withFvContext e2 $ inferExp e2
+    withFvContext e3 $ checkExp e3 tau
     return tau
 
 inferExp (LetE decl body _) =
@@ -290,7 +290,7 @@ inferExp (CallE f ies es _) = do
 
     checkArg :: Exp -> Type -> Tc r s ()
     checkArg e tau =
-        withExpContext e $
+        withFvContext e $
         checkExp e tau
 
     checkNumIotas :: Int -> Int -> Tc r s ()
@@ -319,7 +319,7 @@ inferExp (DerefE e l) = do
 inferExp (AssignE e1 e2 l) = do
     tau  <- inferExp e1 >>= checkRefT
     tau' <- inferExp e2
-    withExpContext e2 $ checkTypeEquality tau' tau
+    withFvContext e2 $ checkTypeEquality tau' tau
     appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -328,22 +328,22 @@ inferExp (AssignE e1 e2 l) = do
     b = "b"
 
 inferExp (WhileE e1 e2 _) = do
-    withExpContext e1 $ do
+    withFvContext e1 $ do
         (tau, _, _, _) <- inferExp e1 >>= checkSTC
         checkTypeEquality tau boolT
-    withExpContext e2 $ do
+    withFvContext e2 $ do
         tau <- inferExp e2
         void $ checkSTCUnit tau
         return tau
 
 inferExp (ForE _ v tau e1 e2 e3 _) = do
     checkIntT tau
-    withExpContext e1 $
+    withFvContext e1 $
         checkExp e1 tau
-    withExpContext e2 $
+    withFvContext e2 $
         checkExp e2 tau
     extendVars [(v, tau)] $
-        withExpContext e3 $ do
+        withFvContext e3 $ do
         tau_body <- inferExp e3
         void $ checkSTCUnit tau_body
         return tau_body
@@ -356,8 +356,8 @@ inferExp (ArrayE es l) = do
                      return $ ArrT (ConstI (length es) l) tau l
 
 inferExp (IdxE e1 e2 len l) = do
-    tau <- withExpContext e1 $ inferExp e1
-    withExpContext e2 $ inferExp e2 >>= checkIntT
+    tau <- withFvContext e1 $ inferExp e1
+    withFvContext e2 $ inferExp e2 >>= checkIntT
     go tau
   where
     go :: Type -> Tc r s Type
@@ -376,7 +376,7 @@ inferExp (IdxE e1 e2 len l) = do
     mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
 
 inferExp (ProjE e f l) = do
-    tau <- withExpContext e $ inferExp e
+    tau <- withFvContext e $ inferExp e
     go tau
   where
     go :: Type -> Tc r s Type
@@ -391,7 +391,7 @@ inferExp (ProjE e f l) = do
         return tau_f
 
 inferExp e0@(StructE s flds l) =
-    withExpContext e0 $ do
+    withFvContext e0 $ do
     StructDef _ fldDefs _ <- lookupStruct s
     checkMissingFields flds fldDefs
     checkExtraFields flds fldDefs
@@ -456,15 +456,15 @@ inferExp (ReturnE _ e l) = do
     b = "b"
 
 inferExp (BindE bv e1 e2 _) = do
-    (tau', s,  a,  b)  <- withExpContext e1 $ do
+    (tau', s,  a,  b)  <- withFvContext e1 $ do
                           inferExp e1 >>= appSTScope >>= checkSTC
     case bv of
       WildV       -> return ()
       BindV _ tau -> checkTypeEquality tau' tau
-    (omega,  s', a', b') <- withExpContext e2 $
+    (omega,  s', a', b') <- withFvContext e2 $
                             extendBindVars [bv] $
                             inferExp e2 >>= appSTScope >>= checkST
-    withExpContext e2 $ do
+    withFvContext e2 $ do
     checkTypeEquality s' s
     checkTypeEquality a' a
     checkTypeEquality b' b
@@ -485,7 +485,7 @@ inferExp (TakesE i tau l) = do
     b = "b"
 
 inferExp (EmitE e l) = do
-    tau <- withExpContext e $ inferExp e
+    tau <- withFvContext e $ inferExp e
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
@@ -493,7 +493,7 @@ inferExp (EmitE e l) = do
     a = "a"
 
 inferExp (EmitsE e l) = do
-    (_, tau) <- withExpContext e $ inferExp e >>= checkArrT
+    (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s, a :: TyVar
@@ -501,22 +501,22 @@ inferExp (EmitsE e l) = do
     a = "a"
 
 inferExp (RepeatE _ e l) = do
-    (s, a, b) <- withExpContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
+    (s, a, b) <- withFvContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
     return $ ST [] T s a b l
 
 inferExp e0@(ParE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
-    (omega1, s', a',    b') <- withExpContext e1 $
+    (omega1, s', a',    b') <- withFvContext e1 $
                                localSTIndTypes (Just (s, a, b)) $
                                inferExp e1 >>= checkST
-    (omega2, b'', b''', c') <- withExpContext e2 $
+    (omega2, b'', b''', c') <- withFvContext e2 $
                                localSTIndTypes (Just (b, b, c)) $
                                inferExp e2 >>= checkST
-    withExpContext e1 $
+    withFvContext e1 $
         checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
-    withExpContext e2 $
+    withFvContext e2 $
         checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
-    omega <- withExpContext e0 $
+    omega <- withFvContext e0 $
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
   where

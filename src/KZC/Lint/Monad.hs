@@ -16,8 +16,8 @@ module KZC.Lint.Monad (
     liftTc,
     withTc,
 
-    localExp,
-    askCurrentExp,
+    localFvs,
+    askCurrentFvs,
 
     extendStructs,
     lookupStruct,
@@ -46,7 +46,7 @@ module KZC.Lint.Monad (
     traceNest,
     traceLint,
 
-    withExpContext,
+    withFvContext,
 
     relevantBindings
   ) where
@@ -58,6 +58,7 @@ import Control.Monad.Ref
 import Control.Monad.State
 import Data.IORef
 import Data.List (foldl')
+import Data.Loc (Located)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
@@ -204,11 +205,11 @@ lookupBy proj onerr k = do
       Nothing  -> onerr
       Just v   -> return v
 
-localExp :: Exp -> Tc r s a -> Tc r s a
-localExp e = localTc (\env -> env { curexp = Just e })
+localFvs :: Fvs e Var => e -> Tc r s a -> Tc r s a
+localFvs e = localTc (\env -> env { curfvs = Just (fvs e) })
 
-askCurrentExp :: Tc r s (Maybe Exp)
-askCurrentExp = asksTc curexp
+askCurrentFvs :: Tc r s (Maybe (Set Var))
+askCurrentFvs = asksTc curfvs
 
 extendStructs :: [StructDef] -> Tc r s a -> Tc r s a
 extendStructs ss m =
@@ -322,9 +323,12 @@ traceLint doc = do
         d <- asksTc nestdepth
         liftIO $ hPutDocLn stderr $ text "traceLint:" <+> indent d (align doc)
 
-withExpContext :: Exp -> Tc r s a -> Tc r s a
-withExpContext e m =
-    localExp e $
+withFvContext :: (Summary e, Located e, Fvs e Var)
+              => e
+              -> Tc r s a
+              -> Tc r s a
+withFvContext e m =
+    localFvs e $
     withSummaryContext e m
 
 {------------------------------------------------------------------------------
@@ -335,16 +339,15 @@ withExpContext e m =
 
 relevantBindings :: Tc r s Doc
 relevantBindings = do
-    maybe_e <- askCurrentExp
-    go maybe_e
+    maybe_fvs <- fmap Set.toList <$> askCurrentFvs
+    go maybe_fvs
   where
-    go :: Maybe Exp -> Tc r s Doc
+    go :: Maybe [Var] -> Tc r s Doc
     go Nothing =
         return Text.PrettyPrint.Mainland.empty
 
-    go (Just e) = do
-        let vs =  Set.toList $ fvs e
-        taus   <- mapM lookupVar vs
+    go (Just vs) = do
+        taus <- mapM lookupVar vs
         return $ line <>
             nest 2 (text "Relevant bindings:" </>
                     stack (map pprBinding (vs `zip` taus)))
