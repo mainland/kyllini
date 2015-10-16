@@ -458,17 +458,15 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         ppr ann <+> text "repeat" <> pprBody e
 
-    pprPrec p (ParE Pipeline tau e1 e2 _) =
+    pprPrec p (ParE ann tau e1 e2 _) =
         parensIf (p > arrPrec) $
         pprPrec arrPrec e1 <+>
-        text "|>>>|" <> text "@" <> pprPrec appPrec1 tau <+>
+        ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
 
-    pprPrec p (ParE _ tau e1 e2 _) =
-        parensIf (p > arrPrec) $
-        pprPrec arrPrec e1 <+>
-        text ">>>" <> text "@" <> pprPrec appPrec1 tau <+>
-        pprPrec arrPrec e2
+instance Pretty PipelineAnn where
+    ppr Pipeline = text "|>>>|"
+    ppr _        = text ">>>"
 
 expToStms :: Exp -> [Stm Exp]
 expToStms (ReturnE ann e l)  = [ReturnS ann e l]
