@@ -32,6 +32,9 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
+import qualified KZC.Auto.Lint as Auto
+import qualified KZC.Auto.Syntax as A
+import KZC.Auto.Transform
 import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Syntax as C
@@ -81,7 +84,7 @@ runPipeline filepath = do
         lambdaLiftPhase >=>
         lintCore >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        compilePhase
+        iteFlag (testDynFlag Auto) autoCompilePhase compilePhase
 
     renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
     renamePhase = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
@@ -95,16 +98,38 @@ runPipeline filepath = do
     compilePhase :: [C.Decl] -> MaybeT KZC ()
     compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
 
+    autoCompilePhase :: [C.Decl] -> MaybeT KZC ()
+    autoCompilePhase = lift . runT . transformProgram    >=>
+                       dumpPass DumpLift "acore" "trans" >=>
+                       lintAuto                          >=>
+                       sink
+
+    sink :: a -> MaybeT KZC ()
+    sink _ = return ()
+
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
             Lint.withTc () () (Lint.checkDecls decls)
         return decls
 
+    lintAuto :: Pretty l
+             => A.Program l c
+             -> MaybeT KZC (A.Program l c)
+    lintAuto p = lift $ do
+        whenDynFlag AutoLint $
+            Auto.withTc () () (Auto.checkProgram p)
+        return p
+
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
     stopIf f x = do
         stop <- asksFlags f
         if stop then MaybeT (return Nothing) else return x
+
+    iteFlag :: (Flags -> Bool) -> (a -> MaybeT KZC b) -> (a -> MaybeT KZC b) -> a -> MaybeT KZC b
+    iteFlag f th el x = do
+        stop <- asksFlags f
+        if stop then th x else el x
 
     writeOutput :: Pretty a
                 => a

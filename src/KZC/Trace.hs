@@ -16,7 +16,9 @@ module KZC.Trace (
     traceLift,
     traceTc,
     traceCg,
-    traceLint
+    traceLint,
+    traceAuto,
+    traceAutoLint
   ) where
 
 import Control.Monad.Reader
@@ -65,3 +67,9 @@ traceCg = traceIfSet TraceCg "traceCg:"
 
 traceLint :: MonadTrace m => Doc -> m ()
 traceLint = traceIfSet TraceLint "traceLint:"
+
+traceAuto :: MonadTrace m => Doc -> m ()
+traceAuto = traceIfSet TraceAuto "traceAuto:"
+
+traceAutoLint :: MonadTrace m => Doc -> m ()
+traceAutoLint = traceIfSet TraceAutoLint "traceAutoLint:"

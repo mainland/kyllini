@@ -98,12 +98,15 @@ fDynFlagOpts :: [(DynFlag, String, String)]
 fDynFlagOpts =
   [ (PrettyPrint, "pprint",       "pretty-print file")
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
+  , (Auto,        "auto",         "use the auto compiler")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
 dDynFlagOpts =
   [ (Lint,         "lint",
                    "lint core")
+  , (AutoLint,     "auto-lint",
+                   "lint auto")
   , (PrintUniques, "print-uniques",
                    "show uniques when pretty-printing")
   , (ExpertTypes,  "expert-types",
@@ -116,17 +119,20 @@ dDumpFlagOpts =
   , (DumpRename, "rn",   "dump renamer output")
   , (DumpLift,   "lift", "dump lambda lifter output")
   , (DumpCore,   "core", "dump core")
+  , (DumpAuto,   "auto", "dump automata")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
 dTraceFlagOpts =
-  [ (TraceLexer,  "lex",   "trace lexer")
-  , (TraceParser, "parse", "trace parser")
-  , (TraceRn,     "rn",    "trace renamer")
-  , (TraceLift,   "lift",  "trace lambda lifter")
-  , (TraceTc,     "tc",    "trace type checker")
-  , (TraceCg,     "cg",    "trace code generation")
-  , (TraceLint,   "lint",  "trace linter")
+  [ (TraceLexer,    "lex",       "trace lexer")
+  , (TraceParser,   "parse",     "trace parser")
+  , (TraceRn,       "rn",        "trace renamer")
+  , (TraceLift,     "lift",      "trace lambda lifter")
+  , (TraceTc,       "tc",        "trace type checker")
+  , (TraceCg,       "cg",        "trace code generation")
+  , (TraceLint,     "lint",      "trace linter")
+  , (TraceAuto,     "auto",      "trace auto")
+  , (TraceAutoLint, "auto-lint", "trace auto linter")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]
