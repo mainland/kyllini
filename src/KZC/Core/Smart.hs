@@ -8,6 +8,7 @@
 module KZC.Core.Smart where
 
 import Control.Applicative
+import Data.List (sort)
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
@@ -121,6 +122,24 @@ isFunT _         = False
 isSTUnitT :: Type -> Bool
 isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
 isSTUnitT _                              = False
+
+-- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
+isCompT :: Type -> Bool
+isCompT (ST {}) = True
+isCompT _       = False
+
+-- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
+-- otherwise. A pureish computation may use references, but it may not take or
+-- emit, so it has type @forall s a b . ST omega s a b@.
+isPureishT :: Type -> Bool
+isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
+    True
+
+isPureishT (ST {}) =
+    False
+
+isPureishT _ =
+    True
 
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s

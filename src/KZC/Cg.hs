@@ -30,7 +30,6 @@ import Data.Bits
 import Data.Char (ord)
 import Data.Foldable (toList)
 import Data.String (IsString(..))
-import Data.List (sort)
 import Data.Loc
 import Data.Monoid (mempty)
 import qualified Language.C.Syntax as C
@@ -285,7 +284,7 @@ cgDecls (decl:decls) k =
 -- hook it up so it can take and emit.
 cgBoundExp :: Type -> Exp -> Cg CExp
 cgBoundExp tau e =
-    if isComp tau
+    if isCompT tau
     then return ce_delayed
     else inSTScope tau $ cgExp e
   where
@@ -325,7 +324,7 @@ cgDecl decl@(LetD v tau e _) k = do
         return cve
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
-    if isPureish tau_ret
+    if isPureishT tau_ret
       then cgPureishLetFun
       else cgImpureLetFun
   where
@@ -658,7 +657,7 @@ cgExp e@(IfE e1 e2 e3 _) = do
     inferExp e >>= go
   where
     go :: Type -> Cg CExp
-    go tau | isPureish tau = do
+    go tau | isPureishT tau = do
         cres <- cgTemp "if_res" tau_res
         cgIf (cgCond "if_cond" e1)
              (cgExp e2 >>= cgAssign tau_res cres)
@@ -692,7 +691,7 @@ cgExp (LetE decl e _) =
 
 cgExp e0@(CallE f iotas es l) = do
     FunT _ _ tau_ret _ <- lookupVar f
-    if isPureish tau_ret
+    if isPureishT tau_ret
       then cgPureCall (resultType tau_ret)
       else cgImpureCall (resultType tau_ret)
   where
@@ -767,7 +766,7 @@ cgExp e0@(WhileE e_test e_body l) = do
     -- This case will only be invoked when the surrounding computation is
     -- pureish since @tau@ is always instantiated with the surrounding
     -- function's ST index variables.
-    go tau | isPureish tau = do
+    go tau | isPureishT tau = do
         ce_test <- cgCond "while_cond" e_test
         ce_body <- cgExp e_body
         appendStm $ rl l [cstm|while ($ce_test) { $ce_body; }|]
@@ -791,7 +790,7 @@ cgExp e0@(ForE _ v v_tau e_start e_len e_body l) =
     inferExp e0 >>= go
   where
     go :: Type -> Cg CExp
-    go tau | isPureish tau = do
+    go tau | isPureishT tau = do
         cv     <- cvar v
         cv_tau <- cgType v_tau
         extendVars     [(v, v_tau)] $ do
@@ -1546,24 +1545,6 @@ isLvalue (CExp (C.Member {}))    = True
 isLvalue (CExp (C.PtrMember {})) = True
 isLvalue (CExp (C.Index {}))     = True
 isLvalue _                       = False
-
--- | @'isComp' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
-isComp :: Type -> Bool
-isComp (ST {}) = True
-isComp _       = False
-
--- | @'isComp' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
--- otherwise. A pureish computation may use references, but it may not take or
--- emit, so it has type @forall s a b . ST omega s a b@.
-isPureish :: Type -> Bool
-isPureish (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
-
-isPureish (ST {}) =
-    False
-
-isPureish _ =
-    True
 
 -- | @'resultType' tau@ returns the type of the result of a computation of
 -- type @tau@. If @tau@ is @ST (C tau') s a b@, then the type of the result of
