@@ -106,7 +106,6 @@ import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Platform
@@ -544,16 +543,14 @@ ccompLabel (Free comp) = compLabel comp
 type Cg a = Tc CgEnv CgState a
 
 data CgEnv = CgEnv
-    { errctx     :: ![ErrorContext]
-    , varCExps   :: Map Var CExp
+    { varCExps   :: Map Var CExp
     , ivarCExps  :: Map IVar CExp
     , tyvarTypes :: Map TyVar Type
     }
 
 defaultCgEnv :: CgEnv
 defaultCgEnv = CgEnv
-    { errctx     = []
-    , varCExps   = mempty
+    { varCExps   = mempty
     , ivarCExps  = mempty
     , tyvarTypes = mempty
     }

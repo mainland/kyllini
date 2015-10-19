@@ -30,11 +30,9 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Check.Smart
 import KZC.Check.Types
 import qualified KZC.Core.Syntax as C
-import KZC.Error
 
 data TiEnv = TiEnv
-    { errctx     :: ![ErrorContext]
-    , curexp     :: Maybe Z.Exp
+    { curexp     :: Maybe Z.Exp
     , structs    :: !(Map Z.Struct StructDef)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
@@ -45,8 +43,7 @@ data TiEnv = TiEnv
 
 defaultTiEnv :: TiEnv
 defaultTiEnv = TiEnv
-    { errctx     = []
-    , curexp     = Nothing
+    { curexp     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , varTypes   = Map.empty
     , tyVars     = Map.empty

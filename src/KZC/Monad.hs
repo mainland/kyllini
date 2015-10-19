@@ -38,6 +38,7 @@ data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
     , flags      :: !Flags
     , tracedepth :: !Int
+    , errctx     :: ![ErrorContext]
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
@@ -54,6 +55,7 @@ defaultKZCEnv fs = do
     return KZCEnv { uniq       = u
                   , flags      = fs
                   , tracedepth = 0
+                  , errctx     = []
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
@@ -150,3 +152,14 @@ instance MonadFlags KZC where
 instance MonadTrace KZC where
     asksTraceDepth    = asks tracedepth
     localTraceDepth d = local (\env -> env { tracedepth = d })
+
+instance MonadErr KZC where
+    {-# INLINE askErrCtx #-}
+    askErrCtx = asks errctx
+
+    {-# INLINE localErrCtx #-}
+    localErrCtx ctx m =
+        local (\env -> env { errctx = ctx : errctx env }) m
+
+    {-# INLINE warnIsError #-}
+    warnIsError = asksFlags (testWarnFlag WarnError)

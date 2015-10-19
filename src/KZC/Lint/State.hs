@@ -24,11 +24,9 @@ import Data.Set (Set)
 
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 
 data TcEnv = TcEnv
-    { errctx     :: ![ErrorContext]
-    , curfvs     :: Maybe (Set Var)
+    { curfvs     :: Maybe (Set Var)
     , structs    :: !(Map Struct StructDef)
     , topScope   :: Bool
     , topVars    :: Set Var
@@ -40,8 +38,7 @@ data TcEnv = TcEnv
 
 defaultTcEnv :: TcEnv
 defaultTcEnv = TcEnv
-    { errctx     = []
-    , curfvs     = Nothing
+    { curfvs     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , topScope   = True
     , topVars    = mempty

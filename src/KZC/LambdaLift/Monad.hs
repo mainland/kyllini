@@ -33,22 +33,17 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Lint.Monad
 import KZC.Monad
 
 type Lift a = Tc LiftEnv LiftState a
 
 data LiftEnv = LiftEnv
-    { errctx :: ![ErrorContext]
-    , funFvs :: Map Var (Var, [Var])
-    }
+    { funFvs :: Map Var (Var, [Var]) }
 
 defaultLiftEnv :: LiftEnv
 defaultLiftEnv = LiftEnv
-    { errctx = []
-    , funFvs = mempty
-    }
+    { funFvs = mempty }
 
 data LiftState = LiftState
     { topdecls :: !(Seq Decl) }

@@ -38,16 +38,14 @@ import KZC.Trace
 import KZC.Uniq
 
 data RnEnv = RnEnv
-    { errctx    :: ![ErrorContext]
-    , vars      :: Map Var Var
+    { vars      :: Map Var Var
     , compVars  :: Map Var Var
     , compScope :: Bool
     }
 
 defaultRnEnv :: RnEnv
 defaultRnEnv = RnEnv
-    { errctx    = []
-    , vars      = Map.empty
+    { vars      = Map.empty
     , compVars  = Map.empty
     , compScope = False
     }
@@ -108,14 +106,13 @@ instance MonadException Rn where
 
 instance MonadErr Rn where
     {-# INLINE askErrCtx #-}
-    askErrCtx = asks errctx
+    askErrCtx = liftKZC askErrCtx
 
     {-# INLINE localErrCtx #-}
-    localErrCtx ctx m =
-        local (\env -> env { errctx = ctx : errctx env }) m
+    localErrCtx ctx m = Rn $ \r -> localErrCtx ctx (unRn m r)
 
     {-# INLINE warnIsError #-}
-    warnIsError = liftKZC $ asksFlags (testWarnFlag WarnError)
+    warnIsError = asksFlags (testWarnFlag WarnError)
 
 instance MonadFlags Rn where
     askFlags = liftKZC askFlags

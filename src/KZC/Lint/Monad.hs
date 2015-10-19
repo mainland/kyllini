@@ -159,11 +159,10 @@ instance MonadException (Tc r s) where
 
 instance MonadErr (Tc r s) where
     {-# INLINE askErrCtx #-}
-    askErrCtx = asksTc errctx
+    askErrCtx = liftKZC askErrCtx
 
     {-# INLINE localErrCtx #-}
-    localErrCtx ctx m =
-        localTc (\env -> env { errctx = ctx : errctx env }) m
+    localErrCtx ctx m = Tc $ \r s env -> localErrCtx ctx (unTc m r s env)
 
     {-# INLINE warnIsError #-}
     warnIsError = asksFlags (testWarnFlag WarnError)
