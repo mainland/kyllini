@@ -674,10 +674,17 @@ checkTypeEquality tau1 tau2 =
         err
 
     err :: Tc r s ()
-    err =
-      faildoc $ align $
-          text "Expected type:" <+> ppr tau2 </>
-          text "but got:      " <+> ppr tau1
+    err = expectedTypeErr tau1 tau2
+
+-- | Throw a "Expected type.." error. @tau1@ is the type we got, and @tau2@ is
+-- the expected type.
+expectedTypeErr :: Type -> Type -> Tc r s a
+expectedTypeErr tau1 tau2 = do
+    msg <- relevantBindings
+    faildoc $ align $
+      text "Expected type:" <+> ppr tau2 </>
+      text "but got:      " <+> ppr tau1 <>
+      msg
 
 inferKind :: Type -> Tc r s Kind
 inferKind tau =

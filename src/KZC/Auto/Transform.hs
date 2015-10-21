@@ -12,45 +12,23 @@ module KZC.Auto.Transform (
     T,
     runT,
 
-    transformProgram,
-
-    (.>>.),
-    (.>>=.),
-    varC,
-    callC,
-    ifC,
-    ifC',
-    letC,
-    letC',
-    returnC,
-    bindC,
-    labelC,
-    gotoC,
-    takeC,
-    takesC,
-    emitC,
-    parC,
-    endC,
-    doneC,
-    compLabel,
-    genLabel
+    transformProgram
   ) where
 
 import Control.Applicative ((<$>), (<*>), pure)
-import Control.Monad.Free
-import Data.Loc
-import Data.Symbol
+import Control.Monad (void)
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Comp
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import qualified KZC.Core.Syntax as C
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Monad
+import KZC.Name
 import KZC.Summary
 import KZC.Staged
-import KZC.Uniq
 
 -- | The 'T' monad.
 type T a = Tc () () a
@@ -58,125 +36,8 @@ type T a = Tc () () a
 runT :: T a -> KZC a
 runT m = withTc () () m
 
-infixl 1 .>>., .>>=.
-
-(.>>.) :: T (LComp c) -> T (LComp c) -> T (LComp c)
-m1 .>>. m2 = do
-    m1' <- m1
-    m2' <- m2
-    return $ m1' >> m2'
-
-(.>>=.) :: T (LComp c) -> T (c -> LComp c) -> T (LComp c)
-m .>>=. k = do
-    m' <- m
-    k' <- k
-    return $ m' >>= k'
-
-varC :: Located a => Var -> a -> Tc r s (LComp c)
-varC v a = do
-    l <- genLabel "vark"
-    return $ liftF $ VarC l v id (srclocOf a)
-
-callC :: Located a => Var -> [Iota] -> [Exp] -> a -> Tc r s (LComp c)
-callC f is es a = do
-    l <- genLabel "callk"
-    return $ liftF $ CallC l f is es id (srclocOf a)
-
-ifC :: Located a => Exp -> LComp c -> LComp c -> a -> Tc r s (LComp c)
-ifC ce thenc elsec a = do
-    l      <- genLabel "ifk"
-    end_th <- endC a
-    end_el <- endC a
-    return $ wrap $ IfC l ce (thenc >>= end_th) (elsec >>= end_el) return (srclocOf a)
-
-ifC' :: Located a => Label -> Exp -> LComp c -> LComp c -> a -> LComp c
-ifC' l ce thenc elsec a =
-    wrap $ IfC l ce thenc elsec return (srclocOf a)
-
-letC :: Located a => LocalDecl -> a -> Tc r s (LComp c)
-letC decl a = do
-    l <- genLabel "letk"
-    return $ liftF $ LetC l decl undefined (srclocOf a)
-
-letC' :: Located a => Label -> LocalDecl -> a -> LComp c
-letC' l decl a = liftF $ LetC l decl undefined (srclocOf a)
-
-returnC :: Located a => Exp -> a -> Tc r s (LComp c)
-returnC e a = do
-    l <- genLabel "returnk"
-    return $ liftF $ ReturnC l e id (srclocOf a)
-
-bindC :: Located a => BindVar -> a -> Tc r s (c -> LComp c)
-bindC bv a = do
-    l <- genLabel "bindk"
-    return $ \c -> liftF $ BindC l bv c undefined (srclocOf a)
-
-labelC :: Located a => a -> Label -> LComp c
-labelC a l = liftF $ LabelC l undefined (srclocOf a)
-
-gotoC :: Located a => Label -> a -> Tc r s (LComp c)
-gotoC l a =
-    return $ wrap $ GotoC l (srclocOf a)
-
-takeC :: Located a => Type -> a -> Tc r s (LComp c)
-takeC tau a = do
-    l <- genLabel "takek"
-    return $ liftF $ TakeC l tau id (srclocOf a)
-
-takesC :: Located a => Int -> Type -> a -> Tc r s (LComp c)
-takesC i tau a = do
-    l <- genLabel "takesk"
-    return $ liftF $ TakesC l i tau id (srclocOf a)
-
-emitC :: Located a => Exp -> a -> Tc r s (LComp c)
-emitC e a = do
-    l <- genLabel "emitk"
-    return $ liftF $ EmitC l e undefined (srclocOf a)
-
-parC :: Located a => PipelineAnn -> Type -> LComp c -> LComp c -> a -> Tc r s (LComp c)
-parC ann tau c1 c2 a = do
-    end_left  <- doneC a
-    end_right <- doneC a
-    return $ wrap $ ParC ann tau (c1 >>= end_left) (c2 >>= end_right) return (srclocOf a)
-
-endC :: Located a => a -> Tc r s (c -> LComp c)
-endC a = do
-  l <- genLabel "endk"
-  return $ \c -> liftF $ EndC l c (srclocOf a)
-
-doneC :: Located a => a -> Tc r s (c -> LComp c)
-doneC a = do
-  l <- genLabel "donek"
-  return $ \c -> liftF $ DoneC l c (srclocOf a)
-
-compLabel :: forall c r s . LComp c -> Tc r s Label
-compLabel (Pure {})   = fail "compLabel: saw Pure"
-compLabel (Free comp) = comp0Label comp
-  where
-    comp0Label :: Comp0 Label c (Comp Label c) -> Tc r s Label
-    comp0Label (VarC l _ _ _)         = return l
-    comp0Label (CallC l _ _ _ _ _)    = return l
-    comp0Label (IfC l _ _ _ _ _)      = return l
-    comp0Label (LetC l _ _ _)         = return l
-    comp0Label (ReturnC l _ _ _)      = return l
-    comp0Label (BindC l _ _ _ _)      = return l
-    comp0Label (LabelC l (Pure {}) _) = return l
-    comp0Label (LabelC _ k _)         = compLabel k
-    comp0Label (GotoC l _)            = return l
-    comp0Label (TakeC l _ _ _)        = return l
-    comp0Label (TakesC l _ _ _ _)     = return l
-    comp0Label (EmitC l _ _ _)        = return l
-    comp0Label (ParC _ _ _ right _ _) = compLabel right
-    comp0Label (EndC l _ _)           = return l
-    comp0Label (DoneC l _ _)          = return l
-
-genLabel :: String -> Tc r s Label
-genLabel s = do
-    Uniq u <- newUnique
-    return $ Label (intern (s ++ "__" ++ show u))
-
 transformProgram :: [C.Decl] -> T (LProgram c)
-transformProgram cdecls =
+transformProgram cdecls = do
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
@@ -204,12 +65,20 @@ transDecls (cdecl:cdecls) k =
 transDecl :: C.Decl -> (LDecl c -> T a) -> T a
 transDecl decl@(C.LetD v tau e l) k
   | isPureishT tau = do
-    e' <- withSummaryContext decl $ transExp e
+    e' <- withSummaryContext decl $
+          withFvContext e $
+          inSTScope tau $
+          inLocalScope $
+          transExp e
     extendVars [(v,tau)] $ do
     k $ LetD v tau e' l
 
   | otherwise = do
-    c <- withSummaryContext decl $ transComp e
+    c <- withSummaryContext decl $
+         withFvContext e $
+         inSTScope tau $
+         inLocalScope $
+         transComp e
     extendVars [(v,tau)] $ do
     k $ LetCompD v tau c l
 
@@ -220,6 +89,8 @@ transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
           withFvContext e $
           extendIVars (iotas `zip` repeat IotaK) $
           extendVars vbs $
+          inSTScope tau_ret $
+          inLocalScope $
           transExp e
     k $ LetFunD f iotas vbs tau_ret e' l
   | otherwise = do
@@ -228,6 +99,8 @@ transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
          withFvContext e $
          extendIVars (iotas `zip` repeat IotaK) $
          extendVars vbs $
+         inSTScope tau_ret $
+         inLocalScope $
          transComp e
     k $ LetFunCompD f iotas vbs tau_ret c l
   where
@@ -259,7 +132,7 @@ transDecl (C.LetStructD s flds l) k =
 transLocalDecl :: C.Decl -> (LocalDecl -> T a) -> T a
 transLocalDecl decl@(C.LetD v tau e l) k | isPureishT tau = do
     e' <- withSummaryContext decl $ transExp e
-    extendVars [(v,tau)] $ do
+    extendVars [(v, tau)] $ do
     k $ LetLD v tau e' l
 
 transLocalDecl (C.LetRefD v tau Nothing l) k =
@@ -275,7 +148,16 @@ transLocalDecl decl@(C.LetRefD v tau (Just e) l) k = do
 
 transLocalDecl decl _ =
     withSummaryContext decl $
-    faildoc $ text "Local declarations must be let's or letref's."
+    faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
+  where
+    pprDeclType :: C.Decl -> Doc
+    pprDeclType (C.LetD _ tau _ _)
+        | isCompT tau             = text "letcomp"
+        | otherwise               = text "let"
+    pprDeclType (C.LetFunD {})    = text "letfun"
+    pprDeclType (C.LetExtFunD {}) = text "letextfun"
+    pprDeclType (C.LetRefD {})    = text "letref"
+    pprDeclType (C.LetStructD {}) = text "letstruct"
 
 transExp :: C.Exp -> T Exp
 transExp (C.ConstE c l) =
@@ -309,8 +191,13 @@ transExp (C.AssignE e1 e2 l) =
 transExp (C.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (C.ForE ann v tau e1 e2 e3 l) =
-    ForE ann v tau <$> transExp e1 <*> transExp e2 <*> transExp e3 <*> pure l
+transExp (C.ForE ann v tau e1 e2 e3 l) = do
+    e1' <- withFvContext e1 $ transExp e1
+    e2' <- withFvContext e2 $ transExp e2
+    e3' <- withFvContext e3 $
+           extendVars [(v, tau)] $
+           transExp e3
+    return $ ForE ann v tau e1' e2' e3' l
 
 transExp (C.ArrayE es l) =
     ArrayE <$> mapM transExp es <*> pure l
@@ -336,8 +223,11 @@ transExp (C.ErrorE tau s l) =
 transExp (C.ReturnE ann e l) =
     ReturnE ann <$> transExp e <*> pure l
 
-transExp (C.BindE bv e1 e2 l) =
-    BindE bv <$> transExp e1 <*> transExp e2 <*> pure l
+transExp (C.BindE bv e1 e2 l) = do
+    e1' <- transExp e1
+    e2' <- extendBindVars [bv] $
+           transExp e2
+    return $ BindE bv e1' e2' l
 
 transExp e@(C.TakeE {}) =
     withSummaryContext e $
@@ -385,28 +275,34 @@ transComp (C.WhileE e1 e2 l) = do
     test    <- transExp e1
     l_start <- genLabel "whilek"
     body    <- transComp e2 .>>. gotoC l_start l
-    done    <- returnC unitE l .>>=. endC l
+    done    <- returnC unitE l .>>=. doneC l
     return $ ifC' l_start test body done l
 
-transComp (C.ForE _ v v_tau e_start e_len e_body l) =
-    transLocalDecl (C.LetRefD v v_tau (Just e_start) l) $ \decl -> do
+transComp e0@(C.ForE _ v v_tau e_start e_len e_body l) =
+    withFvContext e0 $ do
+    i <- mkUniqVar (namedString v) l
+    transLocalDecl (C.LetRefD i v_tau (Just e_start) l) $ \decl -> do
+    l_deref    <- genLabel "for_deref"
     l_start    <- genLabel "for_start"
     l_test     <- genLabel "for_test"
     e_start'   <- transExp e_start
     e_len'     <- transExp e_len
     let e_test =  varE v .<. e_start' + e_len'
-    body       <- transComp e_body .>>.
-                  returnC (v .:=. varE v + 1) l .>>.
-                  gotoC l_test l
-    done       <-  returnC unitE l .>>=. endC l
-    return $ letC' l_start decl l >> ifC' l_test e_test body done l
+    deref      <- transComp (C.DerefE (C.VarE i l) l)
+    body       <- extendVars [(v, v_tau)] $
+                  (transComp e_body .>>. liftC (i .:=. varE v + castE v_tau 1) l .>>. gotoC l_test l)
+    done       <- returnC unitE l .>>=. doneC l
+    return $ do void $ letC' l_start decl l
+                ce <- deref
+                void $ bindC' l_deref (BindV v v_tau) l ce
+                ifC' l_test e_test body done l
 
 transComp (C.ReturnE _ e l) = do
     e <- transExp e
     returnC e l .>>=. return return
 
 transComp (C.BindE bv e1 e2 l) =
-    transComp e1 .>>=. bindC bv l .>>. transComp e2
+    transComp e1 .>>=. bindC bv l .>>. (extendBindVars [bv] $ transComp e2)
 
 transComp (C.TakeE tau l) =
     takeC tau l
@@ -420,18 +316,26 @@ transComp (C.EmitE e l) = do
 
 transComp (C.EmitsE e l) = do
     e' <- transExp e
-    emitC e' l
+    emitsC e' l
 
 transComp (C.RepeatE _ e l) = do
     c        <- transComp e
     l_repeat <- compLabel c
-    return c .>>. gotoC l_repeat l
+    return c .>>. repeatC l_repeat l
 
 transComp (C.ParE ann b e1 e2 l) = do
-    c1 <- transComp e1
-    c2 <- transComp e2
+    (s, a, c) <- askSTIndTypes
+    c1        <- withFvContext e1 $
+                 localSTIndTypes (Just (s, a, b)) $
+                 transComp e1
+    c2        <- withFvContext e2 $
+                 localSTIndTypes (Just (b, b, c)) $
+                 transComp e2
     parC ann b c1 c2 l
 
 transComp e = do
-    e' <- transExp e
-    returnC e' e
+    tau <- inferExp e
+    e'  <- transExp e
+    if isCompT tau
+      then liftC e' e
+      else returnC e' e

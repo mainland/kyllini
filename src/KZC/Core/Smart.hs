@@ -26,6 +26,9 @@ mkVar s = Var (mkName s noLoc)
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
 
+castE :: Type -> Exp -> Exp
+castE tau e = UnopE (Cast tau) e (srclocOf e)
+
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 

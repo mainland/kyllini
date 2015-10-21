@@ -14,11 +14,17 @@ module KZC.Auto.Lint (
 
     checkProgram,
 
+    inferComp,
+    inferComp01,
+
     inferExp,
     checkExp,
 
     inferKind,
-    checkKind
+    checkKind,
+
+    checkArrT,
+    checkST
   ) where
 
 import Control.Monad (when,
@@ -65,6 +71,9 @@ checkProgram :: Pretty l
              -> Tc r s ()
 checkProgram (Program decls comp tau) =
     checkDecls decls $
+    localLocContext comp (text "In definition of main:") $
+    inSTScope tau $
+    inLocalScope $
     checkComp comp tau
 
 checkDecls :: forall l c r s a . Pretty l
@@ -583,33 +592,40 @@ inferComp (Pure _) =
 inferComp (Free comp0) =
     inferComp0 comp0
 
-inferComp0 :: forall l c r s . Pretty l
-           => Comp0 l c (Free (Comp0 l c) c)
-           -> Tc r s Type
-inferComp0 comp0 = go comp0
+-- | Infer the type of the first step of a 'Comp0'.
+inferComp01 :: forall l c r s . Pretty l
+            => Comp0 l c (Free (Comp0 l c) c)
+            -> Tc r s Type
+inferComp01 comp0 = go comp0
   where
     go :: Comp0 l c (Comp l c) -> Tc r s Type
-    go comp0@(VarC _ v k _) = do
-        tau <- lookupVar v
-        inferBind comp0 tau (k undefined)
+    go (VarC _ v _ _) =
+        lookupVar v
 
-    go comp0@(CallC _ f ies es k _) = do
-        tau <- inferCall f ies es
-        inferBind comp0 tau (k undefined)
+    go (CallC _ f ies es _ _) =
+        inferCall f ies es
 
-    go comp0@(IfC _ e1 e2 e3 k _) = do
-        checkExp e1 boolT
+    go (IfC _ e1 e2 e3 _ _) = do
+        tau1 <- inferExp e1
+        if isCompT tau1
+          then do (tau1', _, _, _) <- checkSTC tau1
+                  checkTypeEquality tau1' boolT
+          else checkTypeEquality tau1 boolT
         tau <- withFvContext e2 $ inferComp e2
         withFvContext e3 $ checkComp e3 tau
-        inferBind comp0 tau (k undefined)
+        return tau
 
-    go (LetC _ decl k _) = do
-        checkLocalDecl decl $ inferComp k
+    go comp0@(LetC {}) =
+        withSummaryContext comp0 $
+        faildoc $ text "Let computation step does not have a type."
 
-    go (ReturnC _ e k _) = do
-        tau  <- inferExp e
+    go (LiftC _ e _ _) =
+        inferExp e
+
+    go (ReturnC _ e _ _) = do
+        tau <- inferExp e
         tau' <- appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
-        inferBind e tau' (k undefined)
+        return tau'
       where
         s, a, b :: TyVar
         s = "s"
@@ -618,10 +634,7 @@ inferComp0 comp0 = go comp0
 
     go comp0@(BindC {}) =
         withSummaryContext comp0 $
-        faildoc $ text "Bind occurred when there as nothing to bind!"
-
-    go (LabelC _ k _) = do
-        inferComp k
+        faildoc $ text "Bind computation step does not have a type."
 
     go (GotoC _ l) =
         appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
@@ -631,32 +644,45 @@ inferComp0 comp0 = go comp0
         a = "a"
         b = "b"
 
-    go comp0@(TakeC _ tau k l) = do
+    go (RepeatC _ l) =
+        appSTScope $ ST [s,a,b] T (tyVarT s) (tyVarT a) (tyVarT b) l
+      where
+        s, a, b :: TyVar
+        s = "s"
+        a = "a"
+        b = "b"
+
+    go (TakeC _ tau _ l) = do
         checkKind tau TauK
-        tau' <- appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
-        inferBind comp0 tau' (k undefined)
+        appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
       where
         b :: TyVar
         b = "b"
 
-    go comp0@(TakesC _ i tau k l) = do
+    go (TakesC _ i tau _ l) = do
         checkKind tau TauK
-        tau' <- appSTScope $ ST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
-        inferBind comp0 tau' (k undefined)
+        appSTScope $ ST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
       where
         b :: TyVar
         b = "b"
 
-    go comp0@(EmitC _ e k l) = do
-        tau  <- withFvContext e $ inferExp e
-        tau' <- appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
-        inferBind comp0 tau' k
+    go (EmitC _ e _ l) = do
+        tau <- withFvContext e $ inferExp e
+        appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
       where
         s, a :: TyVar
         s = "s"
         a = "a"
 
-    go comp0@(ParC _ b e1 e2 k l) = do
+    go (EmitsC _ e _ l) = do
+        (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
+        appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+      where
+        s, a :: TyVar
+        s = "s"
+        a = "a"
+
+    go (ParC _ b e1 e2 _ l) = do
         (s, a, c) <- askSTIndTypes
         (omega1, s', a',    b') <- withFvContext e1 $
                                    localSTIndTypes (Just (s, a, b)) $
@@ -670,7 +696,7 @@ inferComp0 comp0 = go comp0
             checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
         omega <- withFvContext comp0 $
                  joinOmega omega1 omega2
-        inferBind comp0 (ST [] omega s a c l) (k undefined)
+        return $ ST [] omega s a c l
       where
         joinOmega :: Omega -> Omega -> Tc r s Omega
         joinOmega omega1@(C {}) (T {})        = return omega1
@@ -680,8 +706,68 @@ inferComp0 comp0 = go comp0
         joinOmega omega1 omega2 =
             faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
-    go (EndC {}) =
-        faildoc $ text "EndC occurred when there was nothing to return!"
+    go comp0@(DoneC {}) =
+        withSummaryContext comp0 $
+        faildoc $ text "Done computation step does not have a type."
+
+inferComp0 :: forall l c r s . Pretty l
+           => Comp0 l c (Free (Comp0 l c) c)
+           -> Tc r s Type
+inferComp0 comp0 = go comp0
+  where
+    go :: Comp0 l c (Comp l c) -> Tc r s Type
+    go comp0@(VarC _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
+
+    go comp0@(CallC _ _ _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
+
+    go comp0@(IfC _ _ _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
+
+    go (LetC _ decl k _) = do
+        checkLocalDecl decl $ inferComp k
+
+    go comp0@(LiftC _ e k _) = do
+        tau <- inferComp01 comp0
+        inferBind e tau (k undefined)
+
+    go comp0@(ReturnC _ e k _) = do
+        tau <- inferComp01 comp0
+        inferBind e tau (k undefined)
+
+    go comp0@(BindC {}) =
+        withSummaryContext comp0 $
+        faildoc $ text "Bind occurred when there as nothing to bind!"
+
+    go comp0@(GotoC {}) =
+        inferComp01 comp0
+
+    go comp0@(RepeatC {}) =
+        inferComp01 comp0
+
+    go comp0@(TakeC _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
+
+    go comp0@(TakesC _ _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
+
+    go comp0@(EmitC _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau k
+
+    go comp0@(EmitsC _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau k
+
+    go comp0@(ParC _ _ _ _ k _) = do
+        tau <- inferComp01 comp0
+        inferBind comp0 tau (k undefined)
 
     go (DoneC {}) =
         faildoc $ text "Done occurred when there was nothing to return!"
@@ -694,29 +780,23 @@ inferComp0 comp0 = go comp0
     inferBind _ tau0 (Pure _) =
         return tau0
 
-    inferBind _ tau0 (Free (EndC {})) =
-        return tau0
-
     inferBind _ tau0 (Free (DoneC {})) =
         return tau0
 
-    inferBind e tau0 (Free (BindC _ bv _ comp _)) = do
-        (tau', s,  a,  b) <- withFvContext e $
-                             checkSTC tau0
+    inferBind _ tau0 (Free (BindC _ bv _ comp _)) = withFvContext comp $ do
+        (tau', s,  a,  b) <- appSTScope tau0 >>= checkSTC
         case bv of
           WildV       -> return ()
           BindV _ tau -> checkTypeEquality tau' tau
-        (omega,  s', a', b') <- withFvContext comp $
-                                extendBindVars [bv] $
+        (omega,  s', a', b') <- extendBindVars [bv] $
                                 inferComp comp >>= appSTScope >>= checkST
-        withFvContext comp $ do
         checkTypeEquality s' s
         checkTypeEquality a' a
         checkTypeEquality b' b
         return $ stT omega s a b
 
-    inferBind e tau comp = do
-        void $ withFvContext e $ checkSTC tau
+    inferBind _ tau comp = withFvContext comp $ do
+        void $ checkSTC tau
         inferComp comp
 
 checkComp :: Pretty l

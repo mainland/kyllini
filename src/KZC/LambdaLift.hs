@@ -40,7 +40,8 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
-liftDecl decl@(LetD v tau e l) k = do
+liftDecl decl@(LetD v tau e l) k | isPureishT tau = do
+    extendFunFvs [(v, (v, []))] $ do
     e' <- withSummaryContext decl $
           withFvContext e $
           inSTScope tau $
@@ -48,6 +49,21 @@ liftDecl decl@(LetD v tau e l) k = do
           liftExp e
     extendVars [(v, tau)] $ do
     withDecl (LetD v tau e' l) k
+
+liftDecl decl@(LetD v tau e l) k = do
+    v'   <- uniquify v
+    fvbs <- nonFunFvs decl
+    extendFunFvs [(v, (v', map fst fvbs))] $ do
+    e'   <- withSummaryContext decl $
+            withFvContext e $
+            inSTScope tau $
+            inLocalScope $
+            liftExp e
+    extendVars [(v, tau)] $ do
+    if (null fvbs)
+      then appendTopDecl $ LetD v' tau e' l
+      else appendTopDecl $ LetFunD v' [] fvbs tau e' l
+    k Nothing
 
 liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
@@ -67,22 +83,6 @@ liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-    nonFunFvs :: Decl -> Lift [(Var, Type)]
-    nonFunFvs decl = do
-        vs        <- (fvs decl <\\>) <$> askTopVars
-        recurFvs  <- mapM lookupFvs (Set.toList vs)
-        let allVs =  Set.toList $ Set.unions (vs : recurFvs)
-        tau_allVs <- mapM lookupVar allVs
-        return $ [(v, tau) | (v, tau) <- allVs `zip` tau_allVs, not (isFunT tau)]
-
-    uniquify :: Var -> Lift Var
-    uniquify f@(Var n) = do
-        atTop <- isInTopScope
-        if atTop
-          then return f
-          else do u <- newUnique
-                  return $ Var $ n { nameSort = Internal u }
-
 liftDecl (LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $ do
     extendFunFvs [(f, (f, []))] $ do
@@ -101,15 +101,35 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
     withDecl (LetRefD v tau maybe_e' l) k
 
 liftDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    withDecl (LetStructD s flds l) k
+    extendStructs [StructDef s flds l] $ do
+    appendTopDecl $ LetStructD s flds l
+    k Nothing
+
+nonFunFvs :: Decl -> Lift [(Var, Type)]
+nonFunFvs decl = do
+    vs        <- (fvs decl <\\>) <$> askTopVars
+    recurFvs  <- mapM lookupFvs (Set.toList vs)
+    let allVs =  Set.toList $ Set.unions (vs : recurFvs)
+    tau_allVs <- mapM lookupVar allVs
+    return $ [(v, tau) | (v, tau) <- allVs `zip` tau_allVs, not (isFunT tau)]
+
+uniquify :: Var -> Lift Var
+uniquify f@(Var n) = do
+    atTop <- isInTopScope
+    if atTop
+      then return f
+      else do u <- newUnique
+              return $ Var $ n { nameSort = Internal u }
 
 liftExp :: Exp -> Lift Exp
 liftExp e@(ConstE {}) =
     pure e
 
-liftExp e@(VarE {}) =
-    pure e
+liftExp (VarE v l) = do
+    (v', fvs) <- lookupFunFvs v
+    if null fvs
+      then return $ VarE v' l
+      else return $ CallE v' [] (map varE fvs) l
 
 liftExp e@(UnopE {}) =
     pure e

@@ -57,7 +57,9 @@ import Control.Monad.Free
 import Data.Foldable (Foldable(..), foldMap)
 import Data.Loc
 import Data.Monoid
+import Data.String (IsString(..))
 import Data.Symbol
+import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax (Var(..),
@@ -143,15 +145,15 @@ data Exp = ConstE Const !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | A 'Comp0 l c a' represents a  computation with a continuation; we tie the
--- not to make a free monad via the 'Comp' data type. The type parameter @l@ is
+-- knot to make a free monad via the 'Comp' data type. The type parameter @l@ is
 -- for labels, and the type parameter @a@ is for the continuation.  The type
 -- parameter @c@ represents "compiled" expressions; the idea is that binding the
 -- result of a computation involves binding compiled values, /not/
 -- expressions. We are agnostic to the actual representation of compiled values,
 -- as indeed we should be, since different back ends may use different
 -- representations. Note that the only thing one can really do with a value of
--- type @c@ is bind it using the 'BindC', 'EndC', or 'DoneC' data
--- constructors. That is by design!
+-- type @c@ is use it as an argument to either the 'BindC' or 'DoneC' data
+-- constructor. That is by design!
 --
 -- This free monad construction is a bit funny because it contains both
 -- expressions (of type 'Exp') and "compiled" expressions, of type @c@. This is
@@ -165,6 +167,11 @@ data Comp0 l c a = VarC l Var (c -> a) !SrcLoc
                  | IfC l Exp a a (c -> a) !SrcLoc
                  | LetC l LocalDecl a !SrcLoc
 
+                 -- | Lift an expression of type
+                 -- @forall s a b . ST (C tau) s a b@ into the monad. 'LiftC'
+                 -- and 'ReturnC' differ only for the purposes of type checking.
+                 | LiftC l Exp (c -> a) !SrcLoc
+
                  -- | A return. The continuation receives the /compiled/
                  -- representation of the expression.
                  | ReturnC l Exp (c -> a) !SrcLoc
@@ -172,28 +179,35 @@ data Comp0 l c a = VarC l Var (c -> a) !SrcLoc
                  -- value.
                  | BindC l BindVar c a !SrcLoc
 
-                 | LabelC l a !SrcLoc
                  | GotoC l !SrcLoc
+                 -- | A goto that is part of a repeat construct. This is
+                 -- separate from 'GotoC' only for the purposes of type
+                 -- checking.
+                 | RepeatC l !SrcLoc
 
                  | TakeC l Type (c -> a) !SrcLoc
                  | TakesC l Int Type (c -> a) !SrcLoc
                  | EmitC l Exp a !SrcLoc
+                 | EmitsC l Exp a !SrcLoc
                  | ParC PipelineAnn Type a a (c -> a) !SrcLoc
 
-                 -- | The end of a branch of computation. This is used for join
-                 -- points, as in the branches of an if, where we don't want,
-                 -- e.g., @'(>>=)'@ to be applied to both branches of the if as
-                 -- well as the if's continuation!
-                 | EndC l c !SrcLoc
-                 -- | Then end of a branch of a /par/ computation. This says we
-                 -- need to make sure the entire par construct calls the done
-                 -- continuation.
+                 -- | Then end of a branch of a computation. This is used for join
+                 -- points, as in the branches of an if, and in the branches of
+                 -- a par. In both cases, we don't want @'(>>=)'@ to be applied
+                 -- to these branches, only to the continuation.
                  | DoneC l c !SrcLoc
   deriving (Functor)
 
 type Comp l c = Free (Comp0 l c) c
 
 newtype Label = Label { unLabel :: Symbol }
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString Label where
+    fromString s = Label (fromString s)
+
+instance C.ToIdent Label where
+    toIdent lbl = C.Id (unintern (unLabel lbl))
 
 type LProgram c = Program Label c
 
@@ -466,6 +480,10 @@ pprComp (Free comp0) =
             pprBind k $
             ppr decl
 
+        go (LiftC _ e k _) =
+            pprBind (k undefined) $
+            ppr e
+
         go (ReturnC _ e k _) =
             pprBind (k undefined) $
             text "return" <+> pprPrec appPrec1 e
@@ -473,11 +491,11 @@ pprComp (Free comp0) =
         go (BindC {}) =
             error "bind occurred without a preceding computation."
 
-        go (LabelC _ k _) =
-            pprComp k
-
         go (GotoC l _) =
             [text "goto" <+> ppr l]
+
+        go (RepeatC l _) =
+            [text "repeat" <+> ppr l]
 
         go (TakeC _ tau k _) =
             pprBind (k undefined) $
@@ -491,14 +509,15 @@ pprComp (Free comp0) =
             pprBind k $
             text "emit" <+> pprPrec appPrec1 e
 
+        go (EmitsC _ e k _) =
+            pprBind k $
+            text "emits" <+> pprPrec appPrec1 e
+
         go (ParC ann tau e1 e2 k _) =
             pprBind (k undefined) $
             pprPrec arrPrec e1 <+>
             ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
             pprPrec arrPrec e2
-
-        go (EndC {}) =
-            []
 
         go (DoneC {}) =
             []
@@ -581,16 +600,17 @@ instance Fvs (Comp0 l c (Free (Comp0 l c) c)) Var where
     fvs (CallC _ f _ es k _)        = singleton f <> fvs es <> fvs (k undefined)
     fvs (IfC _ e1 e2 e3 k _)        = fvs e1 <> fvs e2 <> fvs e3 <> fvs (k undefined)
     fvs (LetC _ decl k _)           = fvs decl <> (fvs k <\\> binders decl)
+    fvs (LiftC _ e k _)             = fvs e <> fvs (k undefined)
     fvs (ReturnC _ e k _)           = fvs e <> fvs (k undefined)
     fvs (BindC _ WildV _ k _)       = fvs k
     fvs (BindC _ (BindV v _) _ k _) = delete v (fvs k)
-    fvs (LabelC _ k _)              = fvs k
     fvs (GotoC {})                  = mempty
+    fvs (RepeatC {})                = mempty
     fvs (TakeC _ _ k _)             = fvs (k undefined)
     fvs (TakesC _ _ _ k _)          = fvs (k undefined)
     fvs (EmitC _ e k _)             = fvs e <> fvs k
+    fvs (EmitsC _ e k _)            = fvs e <> fvs k
     fvs (ParC _ _ e1 e2 k _)        = fvs e1 <> fvs e2 <> fvs (k undefined)
-    fvs (EndC {})                   = mempty
     fvs (DoneC {})                  = mempty
 
 instance Fvs Exp v => Fvs [Exp] v where
@@ -643,15 +663,16 @@ instance Located (Comp0 l c a) where
     locOf (CallC _ _ _ _ _ l)   = locOf l
     locOf (IfC _ _ _ _ _ l)     = locOf l
     locOf (LetC _ _ _ l)        = locOf l
+    locOf (LiftC _ _ _ l)       = locOf l
     locOf (ReturnC _ _ _ l)     = locOf l
     locOf (BindC _ _ _ _ l)     = locOf l
-    locOf (LabelC _ _ l)        = locOf l
     locOf (GotoC _ l)           = locOf l
+    locOf (RepeatC _ l)         = locOf l
     locOf (TakeC _ _ _ l)       = locOf l
     locOf (TakesC _ _ _ _ l)    = locOf l
     locOf (EmitC _ _ _ l)       = locOf l
+    locOf (EmitsC _ _ _ l)      = locOf l
     locOf (ParC _ _ _ _ _ l)    = locOf l
-    locOf (EndC _ _ l)          = locOf l
     locOf (DoneC _ _ l)         = locOf l
 
 #endif /* !defined(ONLY_TYPEDEFS) */

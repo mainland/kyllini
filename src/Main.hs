@@ -32,7 +32,8 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
-import qualified KZC.Auto.Lint as Auto
+import qualified KZC.Auto.Cg as A
+import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Auto.Transform
 import KZC.Cg
@@ -83,7 +84,6 @@ runPipeline filepath = do
         lintCore >=>
         lambdaLiftPhase >=>
         lintCore >=>
-        stopIf (testDynFlag StopAfterCheck) >=>
         iteFlag (testDynFlag Auto) autoCompilePhase compilePhase
 
     renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
@@ -96,16 +96,16 @@ runPipeline filepath = do
     lambdaLiftPhase = lift . runLift . liftProgram >=> dumpPass DumpLift "core" "ll"
 
     compilePhase :: [C.Decl] -> MaybeT KZC ()
-    compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
+    compilePhase = stopIf (testDynFlag StopAfterCheck) >=>
+                   lift . evalCg . compileProgram >=> lift . writeOutput
 
     autoCompilePhase :: [C.Decl] -> MaybeT KZC ()
-    autoCompilePhase = lift . runT . transformProgram    >=>
-                       dumpPass DumpLift "acore" "trans" >=>
-                       lintAuto                          >=>
-                       sink
-
-    sink :: a -> MaybeT KZC ()
-    sink _ = return ()
+    autoCompilePhase = lift . runT . transformProgram      >=>
+                       dumpPass DumpLift "acore" "trans"   >=>
+                       lintAuto                            >=>
+                       stopIf (testDynFlag StopAfterCheck) >=>
+                       lift . A.evalCg . A.compileProgram  >=>
+                       lift . writeOutput
 
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
@@ -118,7 +118,7 @@ runPipeline filepath = do
              -> MaybeT KZC (A.Program l c)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
-            Auto.withTc () () (Auto.checkProgram p)
+            A.withTc () () (A.checkProgram p)
         return p
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
