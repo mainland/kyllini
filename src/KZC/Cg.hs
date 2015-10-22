@@ -1482,7 +1482,6 @@ cgCComp takek emitk donek ccomp =
         emitk' cleftk crightk cbuf cbufp l (ArrT iota tau _) ce ccomp k = do
             cn    <- cgIota iota
             loopl <- genLabel "emitsk_next"
-            void $ useLabel l
             void $ useLabel loopl
             cgWithLabel l $ do
                 appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
