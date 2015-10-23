@@ -16,7 +16,6 @@ module KZC.Auto.Transform (
   ) where
 
 import Control.Applicative ((<$>), (<*>), pure)
-import Control.Monad (void)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
@@ -36,24 +35,24 @@ type T a = Tc () () a
 runT :: T a -> KZC a
 runT m = withTc () () m
 
-transformProgram :: [C.Decl] -> T (LProgram c)
+transformProgram :: [C.Decl] -> T LProgram
 transformProgram cdecls = do
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
   where
-    findMain :: [LDecl c] -> T (LComp c, Type)
+    findMain :: [LDecl] -> T (LComp, Type)
     findMain decls =
         case filter isMain decls of
           [] -> faildoc $ text "Cannot find main computation."
           [LetCompD _ tau comp _] -> return (comp, tau)
           _ -> faildoc $ text "More than one main computation!"
 
-    isMain :: LDecl c -> Bool
+    isMain :: LDecl -> Bool
     isMain (LetCompD v _ _ _) = v == "main"
     isMain _                  = False
 
-transDecls :: forall a c . [C.Decl] -> ([LDecl c] -> T a) -> T a
+transDecls :: [C.Decl] -> ([LDecl] -> T a) -> T a
 transDecls [] k =
     k []
 
@@ -62,7 +61,7 @@ transDecls (cdecl:cdecls) k =
     transDecls cdecls $ \decls ->
     k (decl:decls)
 
-transDecl :: C.Decl -> (LDecl c -> T a) -> T a
+transDecl :: C.Decl -> (LDecl -> T a) -> T a
 transDecl decl@(C.LetD v tau e l) k
   | isPureishT tau = do
     e' <- withSummaryContext decl $
@@ -152,8 +151,8 @@ transLocalDecl decl _ =
   where
     pprDeclType :: C.Decl -> Doc
     pprDeclType (C.LetD _ tau _ _)
-        | isCompT tau             = text "letcomp"
-        | otherwise               = text "let"
+        | isPureishT tau          = text "let"
+        | otherwise               = text "letcomp"
     pprDeclType (C.LetFunD {})    = text "letfun"
     pprDeclType (C.LetExtFunD {}) = text "letextfun"
     pprDeclType (C.LetRefD {})    = text "letref"
@@ -253,9 +252,20 @@ transExp e@(C.ParE {}) =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
-transComp :: C.Exp -> T (LComp c)
-transComp (C.VarE v l) =
-    varC v l
+infixl 1 .>>.
+(.>>.) :: T LComp -> T LComp -> T LComp
+m1 .>>. m2 = do
+    m1' <- m1
+    m2' <- m2
+    return $ m1' <> m2'
+
+transComp :: C.Exp -> T LComp
+transComp e@(C.VarE v l) = do
+    tau <- lookupVar v
+    if isPureishT tau
+      then do e' <- transExp e
+              liftC e' l
+      else varC v l
 
 transComp (C.IfE e1 e2 e3 l) = do
     e1' <- transExp e1
@@ -265,44 +275,47 @@ transComp (C.IfE e1 e2 e3 l) = do
 
 transComp (C.LetE cdecl e l) =
     transLocalDecl cdecl $ \decl ->
-    letC decl l .>>. transComp e
+    letC decl l.>>. transComp e
 
-transComp (C.CallE f iotas es l) = do
-    es' <- mapM transExp es
-    callC f iotas es' l
+transComp e@(C.CallE f iotas es l) = do
+    (_, _, tau_res) <- lookupVar f >>= checkFunT
+    if isPureishT tau_res
+      then do e' <- transExp e
+              liftC e' l
+      else do es' <- mapM transExp es
+              callC f iotas es' l
 
 transComp (C.WhileE e1 e2 l) = do
     test    <- transExp e1
-    l_start <- genLabel "whilek"
-    body    <- transComp e2 .>>. gotoC l_start l
-    done    <- returnC unitE l .>>=. doneC l
-    return $ ifC' l_start test body done l
+    l_head <- genLabel "while_head"
+    body    <- transComp e2 .>>. gotoC l_head l
+    done    <- returnC unitE l
+    return $ ifC' l_head test body done l
 
 transComp e0@(C.ForE _ v v_tau e_start e_len e_body l) =
     withFvContext e0 $ do
     i <- mkUniqVar (namedString v) l
     transLocalDecl (C.LetRefD i v_tau (Just e_start) l) $ \decl -> do
-    l_deref    <- genLabel "for_deref"
-    l_start    <- genLabel "for_start"
-    l_test     <- genLabel "for_test"
     e_start'   <- transExp e_start
     e_len'     <- transExp e_len
     let e_test =  varE v .<. e_start' + e_len'
-    deref      <- transComp (C.DerefE (C.VarE i l) l)
+    head       <- letC decl l .>>.
+                  transComp (C.DerefE (C.VarE i l) l) .>>.
+                  bindC (BindV v v_tau) l
+    l_head     <- compLabel head
     body       <- extendVars [(v, v_tau)] $
-                  (transComp e_body .>>. liftC (i .:=. varE v + castE v_tau 1) l .>>. gotoC l_test l)
-    done       <- returnC unitE l .>>=. doneC l
-    return $ do void $ letC' l_start decl l
-                ce <- deref
-                void $ bindC' l_deref (BindV v v_tau) l ce
-                ifC' l_test e_test body done l
+                  transComp e_body .>>.
+                  liftC (i .:=. varE v + castE v_tau 1) l .>>.
+                  gotoC l_head l
+    done       <- returnC unitE l
+    return head .>>. ifC e_test body done l
 
 transComp (C.ReturnE _ e l) = do
     e <- transExp e
-    returnC e l .>>=. return return
+    returnC e l
 
 transComp (C.BindE bv e1 e2 l) =
-    transComp e1 .>>=. bindC bv l .>>. (extendBindVars [bv] $ transComp e2)
+    transComp e1 .>>. bindC bv l .>>. (extendBindVars [bv] $ transComp e2)
 
 transComp (C.TakeE tau l) =
     takeC tau l

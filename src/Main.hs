@@ -114,8 +114,8 @@ runPipeline filepath = do
         return decls
 
     lintAuto :: Pretty l
-             => A.Program l c
-             -> MaybeT KZC (A.Program l c)
+             => A.Program l
+             -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
             A.withTc () () (A.checkProgram p)

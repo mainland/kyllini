@@ -9,9 +9,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Comp (
-    (.>>.),
-    (.>>=.),
-
     varC,
     callC,
     ifC,
@@ -29,141 +26,125 @@ module KZC.Auto.Comp (
     emitC,
     emitsC,
     parC,
-    doneC,
 
     compLabel,
+    compUsedLabels,
 
     genLabel
   ) where
 
-import Control.Monad.Free
 import Data.Loc
 import Data.Symbol
+import qualified Data.Set as Set
+import Data.Set (Set)
 
 import KZC.Auto.Syntax
 import KZC.Lint.Monad
 import KZC.Uniq
 
-infixl 1 .>>., .>>=.
-
-(.>>.) :: Tc r s (LComp c) -> Tc r s (LComp c) -> Tc r s (LComp c)
-m1 .>>. m2 = do
-    m1' <- m1
-    m2' <- m2
-    return $ m1' >> m2'
-
-(.>>=.) :: Tc r s (LComp c) -> Tc r s (c -> LComp c) -> Tc r s (LComp c)
-m .>>=. k = do
-    m' <- m
-    k' <- k
-    return $ m' >>= k'
-
-varC :: Located a => Var -> a -> Tc r s (LComp c)
+varC :: Located a => Var -> a -> Tc r s LComp
 varC v a = do
     l <- genLabel "vark"
-    return $ liftF $ VarC l v id (srclocOf a)
+    return $ Comp [VarC l v (srclocOf a)]
 
-callC :: Located a => Var -> [Iota] -> [Exp] -> a -> Tc r s (LComp c)
+callC :: Located a => Var -> [Iota] -> [Exp] -> a -> Tc r s LComp
 callC f is es a = do
     l <- genLabel "callk"
-    return $ liftF $ CallC l f is es id (srclocOf a)
+    return $ Comp [CallC l f is es (srclocOf a)]
 
-ifC :: Located a => Exp -> LComp c -> LComp c -> a -> Tc r s (LComp c)
-ifC ce thenc elsec a = do
-    l       <- genLabel "ifk"
-    done_th <- doneC a
-    done_el <- doneC a
-    return $ wrap $ IfC l ce (thenc >>= done_th) (elsec >>= done_el) return (srclocOf a)
+ifC :: Located a => Exp -> LComp -> LComp -> a -> Tc r s LComp
+ifC e thenc elsec a = do
+    l <- genLabel "ifk"
+    return $ ifC' l e thenc elsec a
 
-ifC' :: Located a => Label -> Exp -> LComp c -> LComp c -> a -> LComp c
-ifC' l ce thenc elsec a =
-    wrap $ IfC l ce thenc elsec return (srclocOf a)
+ifC' :: Located a => Label -> Exp -> LComp -> LComp -> a -> LComp
+ifC' l e thenc elsec a = Comp [IfC l e thenc elsec (srclocOf a)]
 
-letC :: Located a => LocalDecl -> a -> Tc r s (LComp c)
+letC :: Located a => LocalDecl -> a -> Tc r s LComp
 letC decl a = do
     l <- genLabel "letk"
-    return $ liftF $ LetC l decl undefined (srclocOf a)
+    return $ Comp [LetC l decl (srclocOf a)]
 
-letC' :: Located a => Label -> LocalDecl -> a -> LComp c
-letC' l decl a = liftF $ LetC l decl undefined (srclocOf a)
+letC' :: Located a => Label -> LocalDecl -> a -> LComp
+letC' l decl a = Comp [LetC l decl (srclocOf a)]
 
-liftC :: Located a => Exp -> a -> Tc r s (LComp c)
+liftC :: Located a => Exp -> a -> Tc r s LComp
 liftC e a = do
     l <- genLabel "liftk"
-    return $ liftF $ LiftC l e id (srclocOf a)
+    return $ Comp [LiftC l e (srclocOf a)]
 
-returnC :: Located a => Exp -> a -> Tc r s (LComp c)
+returnC :: Located a => Exp -> a -> Tc r s LComp
 returnC e a = do
     l <- genLabel "returnk"
-    return $ liftF $ ReturnC l e id (srclocOf a)
+    return $ Comp [ReturnC l e (srclocOf a)]
 
-bindC :: Located a => BindVar -> a -> Tc r s (c -> LComp c)
+bindC :: Located a => BindVar -> a -> Tc r s LComp
 bindC bv a = do
     l <- genLabel "bindk"
-    return $ \c -> liftF $ BindC l bv c undefined (srclocOf a)
+    return $ Comp [BindC l bv (srclocOf a)]
 
-bindC' :: Located a => Label -> BindVar -> a -> (c -> LComp c)
-bindC' l bv a = \c -> liftF $ BindC l bv c undefined (srclocOf a)
+bindC' :: Located a => Label -> BindVar -> a -> LComp
+bindC' l bv a = Comp [BindC l bv (srclocOf a)]
 
-gotoC :: Located a => Label -> a -> Tc r s (LComp c)
-gotoC l a =
-    return $ wrap $ GotoC l (srclocOf a)
+gotoC :: Located a => Label -> a -> Tc r s LComp
+gotoC l a = return $ Comp [GotoC l (srclocOf a)]
 
-repeatC :: Located a => Label -> a -> Tc r s (LComp c)
-repeatC l a =
-    return $ wrap $ RepeatC l (srclocOf a)
+repeatC :: Located a => Label -> a -> Tc r s LComp
+repeatC l a = return $ Comp [RepeatC l (srclocOf a)]
 
-takeC :: Located a => Type -> a -> Tc r s (LComp c)
+takeC :: Located a => Type -> a -> Tc r s LComp
 takeC tau a = do
     l <- genLabel "takek"
-    return $ liftF $ TakeC l tau id (srclocOf a)
+    return $ Comp [TakeC l tau (srclocOf a)]
 
-takesC :: Located a => Int -> Type -> a -> Tc r s (LComp c)
+takesC :: Located a => Int -> Type -> a -> Tc r s LComp
 takesC i tau a = do
     l <- genLabel "takesk"
-    return $ liftF $ TakesC l i tau id (srclocOf a)
+    return $ Comp [TakesC l i tau (srclocOf a)]
 
-emitC :: Located a => Exp -> a -> Tc r s (LComp c)
+emitC :: Located a => Exp -> a -> Tc r s LComp
 emitC e a = do
     l <- genLabel "emitk"
-    return $ liftF $ EmitC l e undefined (srclocOf a)
+    return $ Comp [EmitC l e (srclocOf a)]
 
-emitsC :: Located a => Exp -> a -> Tc r s (LComp c)
+emitsC :: Located a => Exp -> a -> Tc r s LComp
 emitsC e a = do
     l <- genLabel "emitk"
-    return $ liftF $ EmitsC l e undefined (srclocOf a)
+    return $ Comp [EmitsC l e (srclocOf a)]
 
-parC :: Located a => PipelineAnn -> Type -> LComp c -> LComp c -> a -> Tc r s (LComp c)
-parC ann tau c1 c2 a = do
-    done_left  <- doneC a
-    done_right <- doneC a
-    return $ wrap $ ParC ann tau (c1 >>= done_left) (c2 >>= done_right) return (srclocOf a)
+parC :: Located a => PipelineAnn -> Type -> LComp -> LComp -> a -> Tc r s LComp
+parC ann tau c1 c2 a =
+    return $ Comp [ParC ann tau c1 c2 (srclocOf a)]
 
-doneC :: Located a => a -> Tc r s (c -> LComp c)
-doneC a = do
-  l <- genLabel "donek"
-  return $ \c -> liftF $ DoneC l c (srclocOf a)
+compLabel :: Comp l -> Tc r s l
+compLabel (Comp [])       = fail "compLabel: empty computation"
+compLabel (Comp (step:_)) = stepLabel step
 
-compLabel :: forall c r s . LComp c -> Tc r s Label
-compLabel (Pure {})   = fail "compLabel: saw Pure"
-compLabel (Free comp) = comp0Label comp
+compUsedLabels :: forall l . Ord l => Comp l -> Set l
+compUsedLabels comp =
+    go (unComp comp)
   where
-    comp0Label :: Comp0 Label c (Comp Label c) -> Tc r s Label
-    comp0Label (VarC l _ _ _)         = return l
-    comp0Label (CallC l _ _ _ _ _)    = return l
-    comp0Label (IfC l _ _ _ _ _)      = return l
-    comp0Label (LetC l _ _ _)         = return l
-    comp0Label (LiftC l _ _ _)        = return l
-    comp0Label (ReturnC l _ _ _)      = return l
-    comp0Label (BindC l _ _ _ _)      = return l
-    comp0Label (GotoC l _)            = return l
-    comp0Label (RepeatC l _)          = return l
-    comp0Label (TakeC l _ _ _)        = return l
-    comp0Label (TakesC l _ _ _ _)     = return l
-    comp0Label (EmitC l _ _ _)        = return l
-    comp0Label (EmitsC l _ _ _)       = return l
-    comp0Label (ParC _ _ _ right _ _) = compLabel right
-    comp0Label (DoneC l _ _)          = return l
+    go :: [Step l] -> Set l
+    go []                  = Set.empty
+    go (GotoC l _:steps)   = Set.insert l (go steps)
+    go (RepeatC l _:steps) = Set.insert l (go steps)
+    go (_:steps)           = go steps
+
+stepLabel :: Step l -> Tc r s l
+stepLabel (VarC l _ _)         = return l
+stepLabel (CallC l _ _ _ _)    = return l
+stepLabel (IfC l _ _ _ _)      = return l
+stepLabel (LetC l _ _)         = return l
+stepLabel (LiftC l _ _)        = return l
+stepLabel (ReturnC l _ _)      = return l
+stepLabel (BindC l _ _)        = return l
+stepLabel (GotoC l _)          = return l
+stepLabel (RepeatC l _)        = return l
+stepLabel (TakeC l _ _)        = return l
+stepLabel (TakesC l _ _ _)     = return l
+stepLabel (EmitC l _ _)        = return l
+stepLabel (EmitsC l _ _)       = return l
+stepLabel (ParC _ _ _ right _) = compLabel right
 
 genLabel :: String -> Tc r s Label
 genLabel s = do

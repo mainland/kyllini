@@ -1,8 +1,7 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -40,8 +39,8 @@ module KZC.Auto.Syntax (
     Iota(..),
     Kind(..),
 
-    Comp0(..),
-    Comp,
+    Step(..),
+    Comp(..),
 
     Label(..),
     LProgram,
@@ -53,7 +52,6 @@ module KZC.Auto.Syntax (
     Stm(..)
   ) where
 
-import Control.Monad.Free
 import Data.Foldable (Foldable(..), foldMap)
 import Data.Loc
 import Data.Monoid
@@ -102,15 +100,15 @@ import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
 
-data Program l c = Program [Decl l c] (Comp l c) Type
+data Program l = Program [Decl l] (Comp l) Type
 
-data Decl l c = LetD Var Type Exp !SrcLoc
-              | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
-              | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
-              | LetRefD Var Type (Maybe Exp) !SrcLoc
-              | LetStructD Struct [(Field, Type)] !SrcLoc
-              | LetCompD Var Type (Comp l c) !SrcLoc
-              | LetFunCompD Var [IVar] [(Var, Type)] Type (Comp l c) !SrcLoc
+data Decl l = LetD Var Type Exp !SrcLoc
+            | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
+            | LetRefD Var Type (Maybe Exp) !SrcLoc
+            | LetStructD Struct [(Field, Type)] !SrcLoc
+            | LetCompD Var Type (Comp l) !SrcLoc
+            | LetFunCompD Var [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
 
 data LocalDecl = LetLD Var Type Exp !SrcLoc
                | LetRefLD Var Type (Maybe Exp) !SrcLoc
@@ -144,61 +142,34 @@ data Exp = ConstE Const !SrcLoc
          | BindE BindVar Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
--- | A 'Comp0 l c a' represents a  computation with a continuation; we tie the
--- knot to make a free monad via the 'Comp' data type. The type parameter @l@ is
--- for labels, and the type parameter @a@ is for the continuation.  The type
--- parameter @c@ represents "compiled" expressions; the idea is that binding the
--- result of a computation involves binding compiled values, /not/
--- expressions. We are agnostic to the actual representation of compiled values,
--- as indeed we should be, since different back ends may use different
--- representations. Note that the only thing one can really do with a value of
--- type @c@ is use it as an argument to either the 'BindC' or 'DoneC' data
--- constructor. That is by design!
---
--- This free monad construction is a bit funny because it contains both
--- expressions (of type 'Exp') and "compiled" expressions, of type @c@. This is
--- because although our data type needs to embed expressions, it also needs to
--- represent the flow of data through computations, and data may not be
--- represented as expressions. The 'BindC' and 'ReturnC' mediate between the
--- expression and @c@ worlds.
+data Step l = VarC l Var !SrcLoc
+            | CallC l Var [Iota] [Exp] !SrcLoc
+            | IfC l Exp (Comp l) (Comp l) !SrcLoc
+            | LetC l LocalDecl !SrcLoc
 
-data Comp0 l c a = VarC l Var (c -> a) !SrcLoc
-                 | CallC l Var [Iota] [Exp] (c -> a) !SrcLoc
-                 | IfC l Exp a a (c -> a) !SrcLoc
-                 | LetC l LocalDecl a !SrcLoc
+            -- | Lift an expression of type
+            -- @forall s a b . ST (C tau) s a b@ into the monad. 'LiftC' and
+            -- 'ReturnC' differ only for the purpose of type checking.
+            | LiftC l Exp !SrcLoc
+            -- | A return. The continuation receives the /compiled/
+            -- representation of the expression.
+            | ReturnC l Exp !SrcLoc
+            | BindC l BindVar !SrcLoc
 
-                 -- | Lift an expression of type
-                 -- @forall s a b . ST (C tau) s a b@ into the monad. 'LiftC'
-                 -- and 'ReturnC' differ only for the purposes of type checking.
-                 | LiftC l Exp (c -> a) !SrcLoc
+            | GotoC l !SrcLoc
+            -- | A goto that is part of a repeat construct. This is
+            -- separate from 'GotoC' only for the purpose of type checking.
+            | RepeatC l !SrcLoc
 
-                 -- | A return. The continuation receives the /compiled/
-                 -- representation of the expression.
-                 | ReturnC l Exp (c -> a) !SrcLoc
-                 -- | A bind. This binds a variable to a /compiled/ expression
-                 -- value.
-                 | BindC l BindVar c a !SrcLoc
+            | TakeC l Type !SrcLoc
+            | TakesC l Int Type !SrcLoc
+            | EmitC l Exp !SrcLoc
+            | EmitsC l Exp !SrcLoc
+            | ParC PipelineAnn Type (Comp l) (Comp l) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
 
-                 | GotoC l !SrcLoc
-                 -- | A goto that is part of a repeat construct. This is
-                 -- separate from 'GotoC' only for the purposes of type
-                 -- checking.
-                 | RepeatC l !SrcLoc
-
-                 | TakeC l Type (c -> a) !SrcLoc
-                 | TakesC l Int Type (c -> a) !SrcLoc
-                 | EmitC l Exp a !SrcLoc
-                 | EmitsC l Exp a !SrcLoc
-                 | ParC PipelineAnn Type a a (c -> a) !SrcLoc
-
-                 -- | Then end of a branch of a computation. This is used for join
-                 -- points, as in the branches of an if, and in the branches of
-                 -- a par. In both cases, we don't want @'(>>=)'@ to be applied
-                 -- to these branches, only to the continuation.
-                 | DoneC l c !SrcLoc
-  deriving (Functor)
-
-type Comp l c = Free (Comp0 l c) c
+newtype Comp l = Comp { unComp :: [Step l] }
+  deriving (Eq, Ord, Read, Show, Monoid)
 
 newtype Label = Label { unLabel :: Symbol }
   deriving (Eq, Ord, Read, Show)
@@ -209,11 +180,11 @@ instance IsString Label where
 instance C.ToIdent Label where
     toIdent lbl = C.Id (unintern (unLabel lbl))
 
-type LProgram c = Program Label c
+type LProgram = Program Label
 
-type LDecl c = Decl Label c
+type LDecl = Decl Label
 
-type LComp c = Comp Label c
+type LComp = Comp Label
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -233,7 +204,7 @@ expToStms e                  = [ExpS e (srclocOf e)]
  -
  ------------------------------------------------------------------------------}
 
-instance Summary (Decl l c) where
+instance Summary (Decl l) where
     summary (LetD v _ _ _)            = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)     = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _)    = text "definition of" <+> ppr v
@@ -249,11 +220,11 @@ instance Summary LocalDecl where
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
-instance Pretty l => Summary (Comp l c) where
+instance Pretty l => Summary (Comp l) where
     summary c = text "computation:" <+> align (ppr c)
 
-instance Pretty l => Summary (Comp0 l c (Comp l c)) where
-    summary c = summary (Free c)
+instance Pretty l => Summary (Step l) where
+    summary _ = text "computation step"
 
 {------------------------------------------------------------------------------
  -
@@ -264,12 +235,12 @@ instance Pretty l => Summary (Comp0 l c (Comp l c)) where
 instance Pretty Label where
     ppr (Label s) = text (unintern s)
 
-instance Pretty l => Pretty (Program l c) where
+instance Pretty l => Pretty (Program l) where
     ppr (Program decls comp tau) =
         ppr decls </>
         ppr (LetCompD "main" tau comp noLoc)
 
-instance Pretty l => Pretty (Decl l c) where
+instance Pretty l => Pretty (Decl l) where
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
         group (nest 2 (lhs <+/> text "=" </> ppr e))
@@ -445,97 +416,90 @@ pprFunParams ivs vbs =
     pprArg (v, tau) =
         parens $ ppr v <+> text ":" <+> ppr tau
 
-instance Pretty l => Pretty (Comp l c) where
+instance Pretty l => Pretty (Comp l) where
     pprPrec p comp =
         case pprComp comp of
           [stm] -> parensIf (p > appPrec) $ align stm
           stms  -> semiEmbraceWrap stms
 
-pprComp :: forall l c . Pretty l => Comp l c -> [Doc]
-pprComp (Pure _) =
-    []
-
-pprComp (Free comp0) =
-    pprComp0 comp0
+pprComp :: Pretty l => Comp l -> [Doc]
+pprComp comp =
+    pprSteps (unComp comp)
   where
-    pprComp0 :: Pretty l => Comp0 l c (Comp l c) -> [Doc]
-    pprComp0 comp0 = go comp0
-      where
-        go :: Comp0 l c (Comp l c) -> [Doc]
-        go (VarC _ v k _) =
-            pprBind (k undefined) $
+    pprSteps :: Pretty l => [Step l] -> [Doc]
+    pprSteps [] =
+        []
+
+    pprSteps (VarC _ v _ : k) =
+            pprBind k $
             ppr v
 
-        go (CallC _ f is es k _) =
-            pprBind (k undefined) $
-            ppr f <> parens (commasep (map ppr is ++ map ppr es))
+    pprSteps (CallC _ f is es _ : k) =
+        pprBind k $
+        ppr f <> parens (commasep (map ppr is ++ map ppr es))
 
-        go (IfC _ e1 e2 e3 k _) =
-            pprBind (k undefined) $
-            text "if"   <+> pprPrec appPrec1 e1 <+/>
-            text "then" <+> pprPrec appPrec1 e2 <+/>
-            text "else" <+> pprPrec appPrec1 e3
+    pprSteps (IfC _ e1 e2 e3 _ : k) =
+        pprBind k $
+        text "if"   <+> pprPrec appPrec1 e1 <+/>
+        text "then" <+> pprPrec appPrec1 e2 <+/>
+        text "else" <+> pprPrec appPrec1 e3
 
-        go (LetC _ decl k _) =
-            pprBind k $
-            ppr decl
+    pprSteps (LetC _ decl _ : k) =
+        pprBind k $
+        ppr decl
 
-        go (LiftC _ e k _) =
-            pprBind (k undefined) $
-            ppr e
+    pprSteps (LiftC _ e _ : k) =
+        pprBind k $
+        ppr e
 
-        go (ReturnC _ e k _) =
-            pprBind (k undefined) $
-            text "return" <+> pprPrec appPrec1 e
+    pprSteps (ReturnC _ e _ : k) =
+        pprBind k $
+        text "return" <+> pprPrec appPrec1 e
 
-        go (BindC {}) =
-            error "bind occurred without a preceding computation."
+    pprSteps (BindC {} : _) =
+        error "bind occurred without a preceding computation."
 
-        go (GotoC l _) =
-            [text "goto" <+> ppr l]
+    pprSteps (GotoC l _ : _) =
+        [text "goto" <+> ppr l]
 
-        go (RepeatC l _) =
-            [text "repeat" <+> ppr l]
+    pprSteps (RepeatC l _ : _) =
+        [text "repeat" <+> ppr l]
 
-        go (TakeC _ tau k _) =
-            pprBind (k undefined) $
-            text "take" <+> text "@" <> pprPrec tyappPrec1 tau
+    pprSteps (TakeC _ tau _ : k) =
+        pprBind k $
+        text "take" <+> text "@" <> pprPrec tyappPrec1 tau
 
-        go (TakesC _ i tau k _) =
-            pprBind (k undefined) $
-            text "takes" <+> pprPrec appPrec1 i <+> text "@" <> pprPrec appPrec1 tau
+    pprSteps (TakesC _ i tau _ : k) =
+        pprBind k $
+        text "takes" <+> pprPrec appPrec1 i <+> text "@" <> pprPrec appPrec1 tau
 
-        go (EmitC _ e k _) =
-            pprBind k $
-            text "emit" <+> pprPrec appPrec1 e
+    pprSteps (EmitC _ e _ : k) =
+        pprBind k $
+        text "emit" <+> pprPrec appPrec1 e
 
-        go (EmitsC _ e k _) =
-            pprBind k $
-            text "emits" <+> pprPrec appPrec1 e
+    pprSteps (EmitsC _ e _ : k) =
+        pprBind k $
+        text "emits" <+> pprPrec appPrec1 e
 
-        go (ParC ann tau e1 e2 k _) =
-            pprBind (k undefined) $
-            pprPrec arrPrec e1 <+>
-            ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
-            pprPrec arrPrec e2
+    pprSteps (ParC ann tau e1 e2 _ : k) =
+        pprBind k $
+        pprPrec arrPrec e1 <+>
+        ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
+        pprPrec arrPrec e2
 
-        go (DoneC {}) =
-            []
+    pprBind :: Pretty l => [Step l] -> Doc -> [Doc]
+    pprBind (BindC _ WildV _  : k) step =
+        step : pprSteps k
 
-    pprBind :: Comp l c -> Doc -> [Doc]
-    pprBind k ppe =
-        case k of
-          Free (BindC _ WildV _ comp' _) ->
-              ppe : pprComp comp'
+    pprBind (BindC _ (BindV v tau) _ : k) step =
+        step' : pprSteps k
+      where
+        step' :: Doc
+        step' = parens (ppr v <+> colon <+> ppr tau) <+>
+                text "<-" <+> align step
 
-          Free (BindC _ (BindV v tau) _ comp' _) ->
-              let stm = parens (ppr v <+> colon <+> ppr tau) <+>
-                        text "<-" <+> align ppe
-              in
-                stm : pprComp comp'
-
-          comp' ->
-              ppe : pprComp comp'
+    pprBind k step =
+        step : pprSteps k
 
 {------------------------------------------------------------------------------
  -
@@ -543,7 +507,7 @@ pprComp (Free comp0) =
  -
  ------------------------------------------------------------------------------}
 
-instance Fvs (Decl l c) Var where
+instance Fvs (Decl l) Var where
     fvs (LetD v _ e _)             = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _)    = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs (LetExtFunD {})            = mempty
@@ -552,7 +516,7 @@ instance Fvs (Decl l c) Var where
     fvs (LetCompD v _ ccomp _)     = delete v (fvs ccomp)
     fvs (LetFunCompD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
 
-instance Binders (Decl l c) Var where
+instance Binders (Decl l) Var where
     binders (LetD v _ _ _)            = singleton v
     binders (LetFunD v _ _ _ _ _)     = singleton v
     binders (LetExtFunD v _ _ _ _)    = singleton v
@@ -591,27 +555,31 @@ instance Fvs Exp Var where
     fvs (BindE (BindV v _) e1 e2 _) = fvs e1 <> delete v (fvs e2)
     fvs (BindE WildV e1 e2 _)       = fvs e1 <> fvs e2
 
-instance Fvs (Comp l c) Var where
-    fvs (Pure _)    = mempty
-    fvs (Free comp) = fvs comp
+instance Fvs (Comp l) Var where
+    fvs comp = go (unComp comp)
+      where
+        go :: SetLike m Var => [Step l] -> m Var
+        go []                            = mempty
+        go (BindC _ WildV _ : k)         = go k
+        go (BindC _ (BindV v _) _ : k)   = delete v (go k)
+        go (LetC _ decl _ : k)           = fvs decl <> (go k <\\> binders decl)
+        go (step : k)                    = fvs step <> go k
 
-instance Fvs (Comp0 l c (Free (Comp0 l c) c)) Var where
-    fvs (VarC _ v k _)              = singleton v <> fvs (k undefined)
-    fvs (CallC _ f _ es k _)        = singleton f <> fvs es <> fvs (k undefined)
-    fvs (IfC _ e1 e2 e3 k _)        = fvs e1 <> fvs e2 <> fvs e3 <> fvs (k undefined)
-    fvs (LetC _ decl k _)           = fvs decl <> (fvs k <\\> binders decl)
-    fvs (LiftC _ e k _)             = fvs e <> fvs (k undefined)
-    fvs (ReturnC _ e k _)           = fvs e <> fvs (k undefined)
-    fvs (BindC _ WildV _ k _)       = fvs k
-    fvs (BindC _ (BindV v _) _ k _) = delete v (fvs k)
-    fvs (GotoC {})                  = mempty
-    fvs (RepeatC {})                = mempty
-    fvs (TakeC _ _ k _)             = fvs (k undefined)
-    fvs (TakesC _ _ _ k _)          = fvs (k undefined)
-    fvs (EmitC _ e k _)             = fvs e <> fvs k
-    fvs (EmitsC _ e k _)            = fvs e <> fvs k
-    fvs (ParC _ _ e1 e2 k _)        = fvs e1 <> fvs e2 <> fvs (k undefined)
-    fvs (DoneC {})                  = mempty
+instance Fvs (Step l) Var where
+    fvs (VarC _ v _)       = singleton v
+    fvs (CallC _ f _ es _) = singleton f <> fvs es
+    fvs (IfC _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetC _ decl _)    = fvs decl
+    fvs (LiftC _ e _)      = fvs e
+    fvs (ReturnC _ e _)    = fvs e
+    fvs (BindC {})         = mempty
+    fvs (GotoC {})         = mempty
+    fvs (RepeatC {})       = mempty
+    fvs (TakeC {})         = mempty
+    fvs (TakesC {})        = mempty
+    fvs (EmitC _ e _)      = fvs e
+    fvs (EmitsC _ e _)     = fvs e
+    fvs (ParC _ _ e1 e2 _) = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
@@ -645,7 +613,7 @@ instance IsOrd Exp where
 
 #include "KZC/Auto/Syntax-instances.hs"
 
-instance Located (Decl l c) where
+instance Located (Decl l) where
     locOf (LetD _ _ _ l)            = locOf l
     locOf (LetFunD _ _ _ _ _ l)     = locOf l
     locOf (LetExtFunD _ _ _ _ l)    = locOf l
@@ -654,25 +622,24 @@ instance Located (Decl l c) where
     locOf (LetCompD _ _ _ l)        = locOf l
     locOf (LetFunCompD _ _ _ _ _ l) = locOf l
 
-instance Located (Comp l c) where
-    locOf (Pure _)    = NoLoc
-    locOf (Free comp) = locOf comp
+instance Located (Comp l) where
+    locOf (Comp [])       = NoLoc
+    locOf (Comp (step:_)) = locOf step
 
-instance Located (Comp0 l c a) where
-    locOf (VarC _ _ _ l)        = locOf l
-    locOf (CallC _ _ _ _ _ l)   = locOf l
-    locOf (IfC _ _ _ _ _ l)     = locOf l
-    locOf (LetC _ _ _ l)        = locOf l
-    locOf (LiftC _ _ _ l)       = locOf l
-    locOf (ReturnC _ _ _ l)     = locOf l
-    locOf (BindC _ _ _ _ l)     = locOf l
-    locOf (GotoC _ l)           = locOf l
-    locOf (RepeatC _ l)         = locOf l
-    locOf (TakeC _ _ _ l)       = locOf l
-    locOf (TakesC _ _ _ _ l)    = locOf l
-    locOf (EmitC _ _ _ l)       = locOf l
-    locOf (EmitsC _ _ _ l)      = locOf l
-    locOf (ParC _ _ _ _ _ l)    = locOf l
-    locOf (DoneC _ _ l)         = locOf l
+instance Located (Step l) where
+    locOf (VarC _ _ l)        = locOf l
+    locOf (CallC _ _ _ _ l)   = locOf l
+    locOf (IfC _ _ _ _ l)     = locOf l
+    locOf (LetC _ _ l)        = locOf l
+    locOf (LiftC _ _ l)       = locOf l
+    locOf (ReturnC _ _ l)     = locOf l
+    locOf (BindC _ _ l)       = locOf l
+    locOf (GotoC _ l)         = locOf l
+    locOf (RepeatC _ l)       = locOf l
+    locOf (TakeC _ _ l)       = locOf l
+    locOf (TakesC _ _ _ l)    = locOf l
+    locOf (EmitC _ _ l)       = locOf l
+    locOf (EmitsC _ _ l)      = locOf l
+    locOf (ParC _ _ _ _ l)    = locOf l
 
 #endif /* !defined(ONLY_TYPEDEFS) */

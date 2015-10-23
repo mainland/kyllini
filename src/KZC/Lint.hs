@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+ {-# LANGUAGE OverloadedStrings #-}
 
 -- |
 -- Module      :  KZC.Lint

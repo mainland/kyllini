@@ -18,10 +18,6 @@ module KZC.Auto.Cg.Monad (
 
     Code(..),
 
-    CProgram,
-    CDecl,
-    CComp,
-    CComp0,
     CExp(..),
 
     extend,
@@ -63,6 +59,7 @@ module KZC.Auto.Cg.Monad (
     gensym,
 
     useLabel,
+    useLabels,
     isLabelUsed,
 
     cgBitArrayRead,
@@ -72,7 +69,6 @@ module KZC.Auto.Cg.Monad (
 import Prelude hiding (elem)
 
 import Control.Applicative ((<$>))
-import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bits
@@ -130,11 +126,6 @@ instance Monoid Code where
 instance IsString C.Id where
     fromString s = C.Id s noLoc
 
-type CProgram = Program Label CExp
-type CDecl = Decl Label CExp
-type CComp = Comp Label CExp
-type CComp0 a = Comp0 Label CExp a
-
 -- | The type of "compiled" expressions.
 data CExp = CVoid
           | CBool Bool
@@ -150,20 +141,20 @@ data CExp = CVoid
             -- ^ An array slice. The data constructors arguments are the type of
             -- the array's elements, the array, the offset, the length of the
             -- slice.
-          | CComp [IVar] [(Var, Type)] CComp
+          | CComp Var [IVar] [(Var, Type)] Type LComp
             -- ^ A computation, which may take arguments.
 
 instance Located CExp where
-    locOf CVoid               = NoLoc
-    locOf (CBool {})          = NoLoc
-    locOf (CBit {})           = NoLoc
-    locOf (CInt {})           = NoLoc
-    locOf (CFloat {})         = NoLoc
-    locOf (CExp ce)           = locOf ce
-    locOf (CPtr ce)           = locOf ce
-    locOf (CIdx _ _ cidx)     = locOf cidx
-    locOf (CSlice _ _ cidx _) = locOf cidx
-    locOf (CComp _ _ comp)    = locOf comp
+    locOf CVoid                = NoLoc
+    locOf (CBool {})           = NoLoc
+    locOf (CBit {})            = NoLoc
+    locOf (CInt {})            = NoLoc
+    locOf (CFloat {})          = NoLoc
+    locOf (CExp ce)            = locOf ce
+    locOf (CPtr ce)            = locOf ce
+    locOf (CIdx _ _ cidx)      = locOf cidx
+    locOf (CSlice _ _ cidx _)  = locOf cidx
+    locOf (CComp _ _ _ _ comp) = locOf comp
 
 instance IfThenElse CExp CExp where
     ifThenElse (CBool True)  t _ = t
@@ -399,22 +390,22 @@ instance ToExp CExp where
     toExp (CPtr e)                   = toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerCIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerCSlice tau carr cidx len
-    toExp (CComp _ _ (Pure ce))      = toExp ce
     toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
 
 instance Pretty CExp where
-    ppr CVoid                    = text "<void>"
-    ppr (CBool True)             = text "true"
-    ppr (CBool False)            = text "false"
-    ppr (CBit True)              = text "'1"
-    ppr (CBit False)             = text "'0"
-    ppr (CInt i)                 = ppr i
-    ppr (CFloat f)               = ppr f
-    ppr (CExp e)                 = ppr e
-    ppr (CPtr e)                 = ppr [cexp|*$e|]
-    ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
-    ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
-    ppr (CComp {})               = text "<computation>"
+    ppr CVoid                      = text "<void>"
+    ppr (CBool True)               = text "true"
+    ppr (CBool False)              = text "false"
+    ppr (CBit True)                = text "'1"
+    ppr (CBit False)               = text "'0"
+    ppr (CInt i)                   = ppr i
+    ppr (CFloat f)                 = ppr f
+    ppr (CExp e)                   = ppr e
+    ppr (CPtr e)                   = ppr [cexp|*$e|]
+    ppr (CIdx _ carr cidx)         = ppr carr <> brackets (ppr cidx)
+    ppr (CSlice _ carr cidx len)   = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CComp v []  []  tau comp) = ppr (LetCompD v tau comp noLoc)
+    ppr (CComp f ibs vbs tau comp) = ppr (LetFunCompD f ibs vbs tau comp noLoc)
 
 lowerCIdx :: Type -> CExp -> CExp -> C.Exp
 lowerCIdx (BitT _) carr cidx = cgBitArrayRead carr cidx
@@ -648,10 +639,13 @@ gensym s = do
     Uniq u <- newUnique
     return $ C.Id (s ++ "__" ++ show u) noLoc
 
-useLabel :: Label -> Cg Label
-useLabel lbl = do
+useLabel :: Label -> Cg ()
+useLabel lbl =
     modify $ \s -> s { labels = Set.insert lbl (labels s) }
-    return lbl
+
+useLabels :: Set Label -> Cg ()
+useLabels lbls =
+    modify $ \s -> s { labels = labels s `Set.union` lbls }
 
 isLabelUsed :: Label -> Cg Bool
 isLabelUsed lbl =
