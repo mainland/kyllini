@@ -12,6 +12,7 @@ module KZC.Vars (
     Fvs(..),
     HasVars(..),
     FreshVars(..),
+    SubstM,
     Subst(..),
     Freshen(..),
 
@@ -64,11 +65,16 @@ class FreshVars a where
 (/->) :: k -> a -> Map k a
 (/->) = Map.singleton
 
+type SubstM v e a = (Map v e, Set v) -> a
+
 class (Ord v, Fvs e v) => Subst e v a where
     subst :: Map v e -> Set v -> a -> a
+    subst theta phi x = substM x (theta, phi)
+
+    substM :: a -> SubstM v e a
 
 instance (Functor f, Subst e v a) => Subst e v (f a) where
-    subst theta phi a = fmap (subst theta phi) a
+    substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
 
 class Freshen a b c where
     freshen :: a -> Map b c -> Set b -> (a, Map b c, Set b)

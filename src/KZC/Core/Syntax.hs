@@ -51,6 +51,8 @@ module KZC.Core.Syntax (
 #endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
+import Control.Applicative ((<$>), (<*>), pure)
+import Control.Monad.Reader
 import Data.Foldable (foldMap)
 import Data.Loc
 import qualified Data.Map as Map
@@ -835,107 +837,107 @@ instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
 
 instance Subst Type TyVar Type where
-    subst _ _ tau@(UnitT {}) =
-        tau
+    substM tau@(UnitT {}) =
+        pure tau
 
-    subst _ _ tau@(BoolT {}) =
-        tau
+    substM tau@(BoolT {}) =
+        pure tau
 
-    subst _ _ tau@(BitT {}) =
-        tau
+    substM tau@(BitT {}) =
+        pure tau
 
-    subst _ _ tau@(IntT {}) =
-        tau
+    substM tau@(IntT {}) =
+        pure tau
 
-    subst _ _ tau@(FloatT {}) =
-        tau
+    substM tau@(FloatT {}) =
+        pure tau
 
-    subst _ _ tau@(StringT {}) =
-        tau
+    substM tau@(StringT {}) =
+        pure tau
 
-    subst _ _ tau@(StructT {}) =
-        tau
+    substM tau@(StructT {}) =
+        pure tau
 
-    subst theta phi (ArrT iota tau l) =
-        ArrT iota (subst theta phi tau) l
+    substM (ArrT iota tau l) =
+        ArrT iota <$> substM tau <*> pure l
 
-    subst theta phi (ST alphas omega tau1 tau2 tau3 l) =
-        ST alphas' (s omega) (s tau1) (s tau2) (s tau3) l
-      where
-        (alphas', theta', phi') = freshen alphas theta phi
+    substM (ST alphas omega tau1 tau2 tau3 l) = do
+        (theta, phi)                <- ask
+        let (alphas', theta', phi') =  freshen alphas theta phi
+        local (const (theta', phi')) $
+            ST alphas' <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
 
-        s :: Subst Type TyVar a => a -> a
-        s = subst theta' phi'
+    substM (RefT tau l) =
+        RefT <$> substM tau <*> pure l
 
-    subst theta phi (RefT tau l) =
-        RefT (subst theta phi tau) l
+    substM (FunT iotas taus tau l) =
+        FunT iotas <$> substM taus <*> substM tau <*> pure l
 
-    subst theta phi (FunT iotas taus tau l) =
-        FunT iotas (subst theta phi taus) (subst theta phi tau) l
-
-    subst theta _ tau@(TyVarT alpha _) =
-        fromMaybe tau (Map.lookup alpha theta)
+    substM tau@(TyVarT alpha _) = do
+        (theta, _) <- ask
+        return $ fromMaybe tau (Map.lookup alpha theta)
 
 instance Subst Type TyVar Omega where
-    subst theta phi (C tau) =
-        C (subst theta phi tau)
+    substM (C tau) =
+        C <$> substM tau
 
-    subst _ _ T =
-        T
+    substM T =
+        pure T
 
 instance Subst Iota IVar Type where
-    subst _ _ tau@(UnitT {}) =
-        tau
+    substM tau@(UnitT {}) =
+        pure tau
 
-    subst _ _ tau@(BoolT {}) =
-        tau
+    substM tau@(BoolT {}) =
+        pure tau
 
-    subst _ _ tau@(BitT {}) =
-        tau
+    substM tau@(BitT {}) =
+        pure tau
 
-    subst _ _ tau@(IntT {}) =
-        tau
+    substM tau@(IntT {}) =
+        pure tau
 
-    subst _ _ tau@(FloatT {}) =
-        tau
+    substM tau@(FloatT {}) =
+        pure tau
 
-    subst _ _ tau@(StringT {}) =
-        tau
+    substM tau@(StringT {}) =
+        pure tau
 
-    subst _ _ tau@(StructT {}) =
-        tau
+    substM tau@(StructT {}) =
+        pure tau
 
-    subst theta phi (ArrT iota tau l) =
-        ArrT (subst theta phi iota) (subst theta phi tau) l
+    substM (ArrT iota tau l) =
+        ArrT <$> substM iota <*> substM tau <*> pure l
 
-    subst theta phi (ST alphas omega tau1 tau2 tau3 l) =
-        ST alphas (subst theta phi omega) (subst theta phi tau1)
-               (subst theta phi tau2)  (subst theta phi tau3) l
+    substM (ST alphas omega tau1 tau2 tau3 l) =
+        ST alphas <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
 
-    subst theta phi (RefT tau l) =
-        RefT (subst theta phi tau) l
+    substM (RefT tau l) =
+        RefT <$> substM tau <*> pure l
 
-    subst theta phi (FunT iotas taus tau l) =
-        FunT iotas' (subst theta' phi' taus) (subst theta' phi' tau) l
-      where
-        (iotas', theta', phi') = freshen iotas theta phi
+    substM (FunT iotas taus tau l) = do
+        (theta, phi) <- ask
+        let (iotas', theta', phi') = freshen iotas theta phi
+        local (const (theta', phi')) $
+            FunT iotas' <$> substM taus <*> substM tau <*> pure l
 
-    subst _ _ tau@(TyVarT {}) =
-        tau
+    substM tau@(TyVarT {}) =
+        pure tau
 
 instance Subst Iota IVar Omega where
-    subst theta phi (C tau) =
-        C (subst theta phi tau)
+    substM (C tau) =
+        C <$> substM tau
 
-    subst _ _ T =
-        T
+    substM T =
+        pure T
 
 instance Subst Iota IVar Iota where
-    subst _ _ iota@(ConstI {}) =
-        iota
+    substM iota@(ConstI {}) =
+        pure iota
 
-    subst theta _ iota@(VarI iv _) =
-        fromMaybe iota (Map.lookup iv theta)
+    substM iota@(VarI iv _) = do
+        (theta, _) <- ask
+        return $ fromMaybe iota (Map.lookup iv theta)
 
 instance Freshen TyVar TyVar Type where
     freshen alpha@(TyVar n) theta phi | alpha `Set.member` phi =
