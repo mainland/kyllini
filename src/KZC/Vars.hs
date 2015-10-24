@@ -76,18 +76,16 @@ class (Ord v, Fvs e v) => Subst e v a where
 instance (Functor f, Subst e v a) => Subst e v (f a) where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
 
-class Freshen a b c where
-    freshen :: a -> Map b c -> Set b -> (a, Map b c, Set b)
+class Freshen a v e where
+    freshen :: a -> (a -> SubstM v e b) -> SubstM v e b
 
-instance Freshen a b c => Freshen (Maybe a) b c where
-    freshen Nothing  theta phi = (Nothing, theta, phi)
-    freshen (Just x) theta phi = (Just x', theta', phi')
-      where
-        (x', theta', phi') = freshen x theta phi
+instance Freshen a v e => Freshen (Maybe a) v e where
+    freshen Nothing  k = k Nothing
+    freshen (Just x) k = freshen x $ \x -> k (Just x)
 
-instance Freshen a b c => Freshen [a] b c where
-    freshen []     theta phi = ([],     theta,   phi)
-    freshen (v:vs) theta phi = (v':vs', theta'', phi'')
-      where
-        (v',  theta',  phi')  = freshen v theta phi
-        (vs', theta'', phi'') = freshen vs theta' phi'
+instance Freshen a v e => Freshen [a] v e where
+    freshen []     k = k []
+    freshen (v:vs) k = freshen v  $ \v' ->
+                       freshen vs $ \vs' ->
+                       k (v':vs')
+

@@ -534,11 +534,9 @@ instance Subst Type IVar Type where
     substM (RefT tau l) =
         RefT <$> substM tau <*> pure l
 
-    substM (FunT iotas taus tau l) = do
-        (theta, phi)               <- ask
-        let (iotas', theta', phi') =  freshen iotas theta phi
-        local (const (theta', phi')) $
-            FunT iotas' <$> substM taus <*> substM tau <*> pure l
+    substM (FunT iotas taus tau l) =
+        freshen iotas $ \iotas' ->
+        FunT iotas' <$> substM taus <*> substM tau <*> pure l
 
     substM tau@(ConstI {}) =
         pure tau
@@ -584,11 +582,9 @@ instance Subst Type TyVar Type where
     substM tau@(T {}) =
         pure tau
 
-    substM (ST alphas omega tau1 tau2 tau3 l) = do
-        (theta, phi)                <- ask
-        let (alphas', theta', phi') =  freshen alphas theta phi
-        local (const (theta', phi')) $
-            ST alphas' <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
+    substM (ST alphas omega tau1 tau2 tau3 l) =
+        freshen alphas $ \alphas' ->
+        ST alphas' <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
 
     substM (RefT tau l) =
         RefT <$> substM tau <*> pure l
@@ -640,8 +636,8 @@ instance FreshVars IVar where
         simpleTvs = reverse ['l'..'n']
 
 instance Freshen TyVar TyVar Type where
-    freshen alpha@(TyVar n) theta phi | alpha `Set.member` phi =
-        (alpha', theta', phi')
+    freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
+        k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi
         theta'  = Map.insert alpha (tyVarT alpha') theta
@@ -655,15 +651,15 @@ instance Freshen TyVar TyVar Type where
         tyVarT :: TyVar -> Type
         tyVarT tv = TyVarT tv (srclocOf tv)
 
-    freshen alpha theta phi =
-        (alpha, theta', phi')
+    freshen alpha k (theta, phi) =
+        k alpha (theta', phi')
       where
         phi'    = Set.insert alpha phi
         theta'  = Map.delete alpha theta
 
 instance Freshen IVar IVar Type where
-    freshen alpha@(IVar n) theta phi | alpha `Set.member` phi =
-        (alpha', theta', phi')
+    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+        k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi
         theta'  = Map.insert alpha (ivarT alpha') theta
@@ -677,8 +673,8 @@ instance Freshen IVar IVar Type where
         ivarT :: IVar -> Type
         ivarT v = VarI v (srclocOf v)
 
-    freshen alpha theta phi =
-        (alpha, theta', phi')
+    freshen alpha k (theta, phi) =
+        k alpha (theta', phi')
       where
         phi'    = Set.insert alpha phi
         theta'  = Map.delete alpha theta
