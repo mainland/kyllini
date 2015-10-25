@@ -52,9 +52,14 @@ module KZC.Auto.Syntax (
     Stm(..)
   ) where
 
+import Control.Applicative ((<$>), (<*>), pure)
+import Control.Monad.Reader
 import Data.Foldable (Foldable(..), foldMap)
 import Data.Loc
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid
+import qualified Data.Set as Set
 import Data.String (IsString(..))
 import Data.Symbol
 import qualified Language.C.Quote as C
@@ -93,6 +98,7 @@ import KZC.Core.Syntax (Var(..),
                         tyappPrec1
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
+import KZC.Name
 import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
@@ -508,12 +514,12 @@ pprComp comp =
  ------------------------------------------------------------------------------}
 
 instance Fvs (Decl l) Var where
-    fvs (LetD v _ e _)             = delete v (fvs e)
-    fvs (LetFunD v _ vbs _ e _)    = delete v (fvs e) <\\> fromList (map fst vbs)
-    fvs (LetExtFunD {})            = mempty
-    fvs (LetRefD v _ e _)          = delete v (fvs e)
-    fvs (LetStructD {})            = mempty
-    fvs (LetCompD v _ ccomp _)     = delete v (fvs ccomp)
+    fvs (LetD v _ e _)              = delete v (fvs e)
+    fvs (LetFunD v _ vbs _ e _)     = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetExtFunD {})             = mempty
+    fvs (LetRefD v _ e _)           = delete v (fvs e)
+    fvs (LetStructD {})             = mempty
+    fvs (LetCompD v _ ccomp _)      = delete v (fvs ccomp)
     fvs (LetFunCompD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
 
 instance Binders (Decl l) Var where
@@ -552,18 +558,7 @@ instance Fvs Exp Var where
     fvs (PrintE _ es _)             = fvs es
     fvs (ErrorE {})                 = mempty
     fvs (ReturnE _ e _)             = fvs e
-    fvs (BindE (BindV v _) e1 e2 _) = fvs e1 <> delete v (fvs e2)
-    fvs (BindE WildV e1 e2 _)       = fvs e1 <> fvs e2
-
-instance Fvs (Comp l) Var where
-    fvs comp = go (unComp comp)
-      where
-        go :: SetLike m Var => [Step l] -> m Var
-        go []                            = mempty
-        go (BindC _ WildV _ : k)         = go k
-        go (BindC _ (BindV v _) _ : k)   = delete v (go k)
-        go (LetC _ decl _ : k)           = fvs decl <> (go k <\\> binders decl)
-        go (step : k)                    = fvs step <> go k
+    fvs (BindE bv e1 e2 _)          = fvs e1 <> (fvs e2 <\\> binders bv)
 
 instance Fvs (Step l) Var where
     fvs (VarC _ v _)       = singleton v
@@ -581,8 +576,543 @@ instance Fvs (Step l) Var where
     fvs (EmitsC _ e _)     = fvs e
     fvs (ParC _ _ e1 e2 _) = fvs e1 <> fvs e2
 
+instance Fvs (Comp l) Var where
+    fvs comp = go (unComp comp)
+      where
+        go :: SetLike m Var => [Step l] -> m Var
+        go []                          = mempty
+        go (BindC _ bv _ : k)          = go k <\\> binders bv
+        go (LetC _ decl _ : k)         = fvs decl <> (go k <\\> binders decl)
+        go (step : k)                  = fvs step <> go k
+
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
+
+{------------------------------------------------------------------------------
+ -
+ - Polymorphic substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst a b Exp => Subst a b (Field, Exp) where
+    substM (f, e) =
+        (,) <$> pure f <*> substM e
+
+{------------------------------------------------------------------------------
+ -
+ - Iota substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst Iota IVar LocalDecl where
+    substM (LetLD v tau e s) =
+        LetLD v <$> substM tau <*> substM e <*> pure s
+
+    substM (LetRefLD v tau e s) =
+        LetRefLD v <$> substM tau <*> substM e <*> pure s
+
+instance Subst Iota IVar Exp where
+    substM e@(ConstE {}) =
+        return e
+
+    substM e@(VarE {}) =
+        return e
+
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
+
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (LetE decl e l) =
+        LetE <$> substM decl <*> substM e <*> pure l
+
+    substM (CallE v iotas es l) =
+        CallE v <$> substM iotas <*> substM es <*> pure l
+
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
+
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (ForE ann v tau e1 e2 e3 l) =
+        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM (ErrorE tau str s) =
+        ErrorE <$> substM tau <*> pure str <*> pure s
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) = do
+        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+
+instance Subst Iota IVar (Step l) where
+    substM step@(VarC {}) =
+        pure step
+
+    substM (CallC l v iotas es s) =
+        CallC l v <$> substM iotas <*> substM es <*> pure s
+
+    substM (IfC l e c1 c2 s) =
+        IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
+
+    substM (LetC l decl s) =
+        LetC l <$> substM decl <*> pure s
+
+    substM (LiftC l e s) =
+        LiftC l <$> substM e <*> pure s
+
+    substM (ReturnC l e s) =
+        ReturnC l <$> substM e <*> pure s
+
+    substM (BindC l bv s) =
+        BindC l <$> substM bv <*> pure s
+
+    substM step@(GotoC {}) =
+        return step
+
+    substM step@(RepeatC {}) =
+        return step
+
+    substM (TakeC l tau s) =
+        TakeC l <$> substM tau <*> pure s
+
+    substM (TakesC l i tau s) =
+        TakesC l i <$> substM tau <*> pure s
+
+    substM (EmitC l e s) =
+        EmitC l <$> substM e <*> pure s
+
+    substM (EmitsC l e s) =
+        EmitsC l <$> substM e <*> pure s
+
+    substM (ParC ann tau c1 c2 s) =
+        ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
+
+instance Subst Iota IVar (Comp l) where
+    substM (Comp steps) = Comp <$> substM steps
+
+{------------------------------------------------------------------------------
+ -
+ - Type substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst Type TyVar LocalDecl where
+    substM (LetLD v tau e l) =
+        LetLD v <$> substM tau <*> substM e <*> pure l
+
+    substM (LetRefLD v tau e l) =
+        LetRefLD v <$> substM tau <*> substM e <*> pure l
+
+instance Subst Type TyVar Exp where
+    substM e@(ConstE {}) =
+        return e
+
+    substM e@(VarE {}) =
+        return e
+
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
+
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (LetE decl e l) =
+        LetE <$> substM decl <*> substM e <*> pure l
+
+    substM (CallE v iotas es l) =
+        CallE v iotas <$> substM es <*> pure l
+
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
+
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (ForE ann v tau e1 e2 e3 l) =
+        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM (ErrorE tau str s) =
+        ErrorE <$> substM tau <*> pure str <*> pure s
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) =
+        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+
+instance Subst Type TyVar (Step l) where
+    substM step@(VarC {}) =
+        pure step
+
+    substM (CallC l v iotas es s) =
+        CallC l v iotas <$> substM es <*> pure s
+
+    substM (IfC l e c1 c2 s) =
+        IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
+
+    substM (LetC l decl s) =
+        LetC l <$> substM decl <*> pure s
+
+    substM (LiftC l e s) =
+        LiftC l <$> substM e <*> pure s
+
+    substM (ReturnC l e s) =
+        ReturnC l <$> substM e <*> pure s
+
+    substM (BindC l bv s) =
+        BindC l <$> substM bv <*> pure s
+
+    substM step@(GotoC {}) =
+        return step
+
+    substM step@(RepeatC {}) =
+        return step
+
+    substM (TakeC l tau s) =
+        TakeC l <$> substM tau <*> pure s
+
+    substM (TakesC l i tau s) =
+        TakesC l i <$> substM tau <*> pure s
+
+    substM (EmitC l e s) =
+        EmitC l <$> substM e <*> pure s
+
+    substM (EmitsC l e s) =
+        EmitsC l <$> substM e <*> pure s
+
+    substM (ParC ann tau c1 c2 s) =
+        ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
+
+instance Subst Type TyVar (Comp l) where
+    substM (Comp steps) = Comp <$> substM steps
+
+{------------------------------------------------------------------------------
+ -
+ - Expression substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst Exp Var Exp where
+    substM e@(ConstE {}) =
+        return e
+
+    substM e@(VarE v _) = do
+        (theta, _) <- ask
+        return $ fromMaybe e (Map.lookup v theta)
+
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
+
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (LetE decl e l) =
+        freshen decl $ \decl' ->
+        LetE decl' <$> substM e <*> pure l
+
+    substM (CallE v iotas es l) = do
+        (theta, _) <- ask
+        v' <- case Map.lookup v theta of
+                Nothing          -> return v
+                Just (VarE v' _) -> return v'
+                Just e           ->
+                    faildoc $ "Cannot substitute expression" <+>
+                    ppr e <+> text "for variable" <+> ppr v
+        CallE v' iotas <$> substM es <*> pure l
+
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
+
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (ForE ann v tau e1 e2 e3 l) = do
+        e1' <- substM e1
+        e2' <- substM e2
+        freshen v $ \v' -> do
+        ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM e@(ErrorE {}) =
+        pure e
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) = do
+        e1' <- substM e1
+        freshen bv $ \bv' -> do
+        BindE bv' e1' <$> substM e2 <*> pure l
+
+instance Subst Exp Var (Step l) where
+    substM step@(VarC l v s) = do
+        (theta, _) <- ask
+        case Map.lookup v theta of
+          Nothing -> return step
+          Just e  -> return $ LiftC l e s
+
+    substM (CallC l v iotas es s) = do
+        (theta, _) <- ask
+        v' <- case Map.lookup v theta of
+                Nothing          -> return v
+                Just (VarE v' _) -> return v'
+                Just e           ->
+                    faildoc $ "Cannot substitute expression" <+>
+                    ppr e <+> text "for variable" <+> ppr v
+        CallC l v' iotas <$> substM es <*> pure s
+
+    substM (IfC l e c1 c2 s) =
+        IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
+
+    substM (LetC {}) =
+        faildoc $ text "Cannot substitute in a let computation step."
+
+    substM (LiftC l e s) =
+        LiftC l <$> substM e <*> pure s
+
+    substM (ReturnC l e s) =
+        ReturnC l <$> substM e <*> pure s
+
+    substM (BindC {}) =
+        faildoc $ text "Cannot substitute in a bind computation step."
+
+    substM step@(GotoC {}) =
+        return step
+
+    substM step@(RepeatC {}) =
+        return step
+
+    substM step@(TakeC {}) =
+        return step
+
+    substM step@(TakesC {}) =
+        return step
+
+    substM (EmitC l e s) =
+        EmitC l <$> substM e <*> pure s
+
+    substM (EmitsC l e s) =
+        EmitsC l <$> substM e <*> pure s
+
+    substM (ParC ann tau c1 c2 s) =
+        ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+instance Subst Exp Var (Comp l) where
+    substM (Comp steps) =
+        Comp <$> go steps
+      where
+        go :: [Step l] -> SubstM Exp Var [Step l]
+        go [] =
+            return []
+
+        go (LetC l decl s : steps) =
+            freshen decl $ \decl' -> do
+            steps' <- go steps
+            return $ LetC l decl' s : steps'
+
+        go (step@(BindC _ WildV _) : steps) = do
+            steps' <- go steps
+            return $ step : steps'
+
+        go (BindC l (BindV v tau) s : steps) = do
+            freshen v $ \v' -> do
+            steps' <- go steps
+            return $ BindC l (BindV v' tau) s : steps'
+
+        go (step : steps) =
+            (:) <$> substM step <*> go steps
+
+{------------------------------------------------------------------------------
+ -
+ - Freshening I-variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen (Decl l) Iota IVar where
+    freshen (LetD v tau e l) k = do
+        decl' <- LetD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetFunD v ibs vbs tau e l) k =
+        freshen ibs $ \ibs' -> do
+        decl' <- LetFunD v ibs' <$> substM vbs <*> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetExtFunD v ibs vbs tau l) k =
+        freshen ibs $ \ibs' -> do
+        decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
+        k decl'
+
+    freshen (LetRefD v tau e l) k = do
+        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen decl@(LetStructD {}) k =
+        k decl
+
+    freshen (LetCompD v tau comp l) k = do
+        decl' <- LetCompD v <$> substM tau <*> substM comp <*> pure l
+        k decl'
+
+    freshen (LetFunCompD v ibs vbs tau comp l) k =
+        freshen ibs $ \ibs' -> do
+        decl' <- LetFunCompD v ibs' vbs <$> substM tau <*> substM comp <*> pure l
+        k decl'
+
+{------------------------------------------------------------------------------
+ -
+ - Freshening variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen (Decl l) Exp Var where
+    freshen (LetD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetD v' tau e' l)
+
+    freshen (LetFunD v ibs vbs tau e l) k =
+        freshen v   $ \v'   ->
+        freshen vbs $ \vbs' -> do
+        decl' <- LetFunD v' ibs vbs' tau <$> substM e <*> pure l
+        k decl'
+
+    freshen (LetExtFunD v ibs vbs tau l) k =
+        freshen v   $ \v'   ->
+        freshen vbs $ \vbs' -> do
+        decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
+        k decl'
+
+    freshen (LetRefD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetRefD v' tau e' l)
+
+    freshen decl@(LetStructD {}) k =
+        k decl
+
+    freshen (LetCompD v tau comp l) k = do
+        comp' <- substM comp
+        freshen v $ \v' -> do
+        k (LetCompD v' tau comp' l)
+
+    freshen (LetFunCompD v ibs vbs tau comp l) k =
+        freshen v   $ \v'   ->
+        freshen vbs $ \vbs' -> do
+        decl' <- LetFunCompD v' ibs vbs' tau <$> substM comp <*> pure l
+        k decl'
+
+instance Freshen LocalDecl Exp Var where
+    freshen (LetLD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetLD v' tau e' l)
+
+    freshen (LetRefLD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetRefLD v' tau e' l)
+
+instance Freshen Var Exp Var where
+    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+        k v' (theta', phi')
+      where
+        phi'    = Set.insert v' phi
+        theta'  = Map.insert v (varE v') theta
+        v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
+                          , let x = Var n { nameSym = intern (s ++ i) }
+                          , x `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        varE :: Var -> Exp
+        varE v = VarE v (srclocOf v)
+
+    freshen v k (theta, phi) =
+        k v (theta', phi')
+      where
+        phi'   = Set.insert v phi
+        theta' = Map.delete v theta
+
+instance Freshen (Var, Type) Exp Var where
+    freshen (v, tau) k =
+        freshen v $ \v' ->
+        k (v', tau)
+
+instance Freshen BindVar Exp Var where
+    freshen WildV k =
+        k WildV
+
+    freshen (BindV v tau) k =
+        freshen v $ \v' ->
+        k $ BindV v' tau
 
 {------------------------------------------------------------------------------
  -
