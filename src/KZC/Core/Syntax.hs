@@ -742,29 +742,9 @@ instance HasFixity Unop where
 
 {------------------------------------------------------------------------------
  -
- - Free variables
+ - Free I-variables
  -
  ------------------------------------------------------------------------------}
-
-instance Fvs Type TyVar where
-    fvs (UnitT {})                         = mempty
-    fvs (BoolT {})                         = mempty
-    fvs (BitT {})                          = mempty
-    fvs (IntT {})                          = mempty
-    fvs (FloatT {})                        = mempty
-    fvs (StringT {})                       = mempty
-    fvs (StructT _ _)                      = mempty
-    fvs (ArrT _ tau _)                     = fvs tau
-    fvs (ST alphas omega tau1 tau2 tau3 _) = fvs omega <>
-                                             (fvs tau1 <> fvs tau2 <> fvs tau3)
-                                             <\\> fromList alphas
-    fvs (RefT tau _)                       = fvs tau
-    fvs (FunT _ taus tau _)                = fvs taus <> fvs tau
-    fvs (TyVarT tv _)                      = singleton tv
-
-instance Fvs Omega TyVar where
-    fvs (C tau) = fvs tau
-    fvs T       = mempty
 
 instance Fvs Type IVar where
     fvs (UnitT {})                    = mempty
@@ -791,6 +771,38 @@ instance Fvs Iota IVar where
 instance Fvs Type n => Fvs [Type] n where
     fvs taus = foldMap fvs taus
 
+{------------------------------------------------------------------------------
+ -
+ - Free type variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Fvs Type TyVar where
+    fvs (UnitT {})                         = mempty
+    fvs (BoolT {})                         = mempty
+    fvs (BitT {})                          = mempty
+    fvs (IntT {})                          = mempty
+    fvs (FloatT {})                        = mempty
+    fvs (StringT {})                       = mempty
+    fvs (StructT _ _)                      = mempty
+    fvs (ArrT _ tau _)                     = fvs tau
+    fvs (ST alphas omega tau1 tau2 tau3 _) = fvs omega <>
+                                             (fvs tau1 <> fvs tau2 <> fvs tau3)
+                                             <\\> fromList alphas
+    fvs (RefT tau _)                       = fvs tau
+    fvs (FunT _ taus tau _)                = fvs taus <> fvs tau
+    fvs (TyVarT tv _)                      = singleton tv
+
+instance Fvs Omega TyVar where
+    fvs (C tau) = fvs tau
+    fvs T       = mempty
+
+{------------------------------------------------------------------------------
+ -
+ - Free variables
+ -
+ ------------------------------------------------------------------------------}
+
 instance Fvs Decl Var where
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
@@ -806,35 +818,195 @@ instance Binders Decl Var where
     binders (LetStructD {})        = mempty
 
 instance Fvs Exp Var where
-    fvs (ConstE {})                 = mempty
-    fvs (VarE v _)                  = singleton v
-    fvs (UnopE _ e _)               = fvs e
-    fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)            = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE decl body _)          = fvs decl <> (fvs body <\\> binders decl)
-    fvs (CallE f _ es _)            = singleton f <> fvs es
-    fvs (DerefE e _)                = fvs e
-    fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)               = fvs es
-    fvs (IdxE e1 e2 _ _)            = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)          = fvs (map snd flds)
-    fvs (ProjE e _ _)               = fvs e
-    fvs (PrintE _ es _)             = fvs es
-    fvs (ErrorE {})                 = mempty
-    fvs (ReturnE _ e _)             = fvs e
-    fvs (BindE (BindV v _) e1 e2 _) = fvs e1 <> delete v (fvs e2)
-    fvs (BindE WildV e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (TakeE {})                  = mempty
-    fvs (TakesE {})                 = mempty
-    fvs (EmitE e _)                 = fvs e
-    fvs (EmitsE e _)                = fvs e
-    fvs (RepeatE _ e _)             = fvs e
-    fvs (ParE _ _ e1 e2 _)          = fvs e1 <> fvs e2
+    fvs (ConstE {})             = mempty
+    fvs (VarE v _)              = singleton v
+    fvs (UnopE _ e _)           = fvs e
+    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE decl body _)      = fvs decl <> (fvs body <\\> binders decl)
+    fvs (CallE f _ es _)        = singleton f <> fvs es
+    fvs (DerefE e _)            = fvs e
+    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ArrayE es _)           = fvs es
+    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
+    fvs (StructE _ flds _)      = fvs (map snd flds)
+    fvs (ProjE e _ _)           = fvs e
+    fvs (PrintE _ es _)         = fvs es
+    fvs (ErrorE {})             = mempty
+    fvs (ReturnE _ e _)         = fvs e
+    fvs (BindE bv e1 e2 _)      = fvs e1 <> (fvs e2 <\\> binders bv)
+    fvs (TakeE {})              = mempty
+    fvs (TakesE {})             = mempty
+    fvs (EmitE e _)             = fvs e
+    fvs (EmitsE e _)            = fvs e
+    fvs (RepeatE _ e _)         = fvs e
+    fvs (ParE _ _ e1 e2 _)      = fvs e1 <> fvs e2
+
+instance Binders BindVar Var where
+    binders WildV       = mempty
+    binders (BindV v _) = singleton v
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
+
+{------------------------------------------------------------------------------
+ -
+ - Polymorphic substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst a b Exp => Subst a b (Field, Exp) where
+    substM (f, e) =
+        (,) <$> pure f <*> substM e
+
+instance Subst a b Type => Subst a b (Var, Type) where
+    substM (f, e) =
+        (,) <$> pure f <*> substM e
+
+{------------------------------------------------------------------------------
+ -
+ - Iota substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst Iota IVar Type where
+    substM tau@(UnitT {}) =
+        pure tau
+
+    substM tau@(BoolT {}) =
+        pure tau
+
+    substM tau@(BitT {}) =
+        pure tau
+
+    substM tau@(IntT {}) =
+        pure tau
+
+    substM tau@(FloatT {}) =
+        pure tau
+
+    substM tau@(StringT {}) =
+        pure tau
+
+    substM tau@(StructT {}) =
+        pure tau
+
+    substM (ArrT iota tau l) =
+        ArrT <$> substM iota <*> substM tau <*> pure l
+
+    substM (ST alphas omega tau1 tau2 tau3 l) =
+        ST alphas <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
+
+    substM (RefT tau l) =
+        RefT <$> substM tau <*> pure l
+
+    substM (FunT iotas taus tau l) =
+        freshen iotas $ \iotas' ->
+        FunT iotas' <$> substM taus <*> substM tau <*> pure l
+
+    substM tau@(TyVarT {}) =
+        pure tau
+
+instance Subst Iota IVar Omega where
+    substM (C tau) = C <$> substM tau
+    substM T       = pure T
+
+instance Subst Iota IVar Iota where
+    substM iota@(ConstI {}) =
+        pure iota
+
+    substM iota@(VarI iv _) = do
+        (theta, _) <- ask
+        return $ fromMaybe iota (Map.lookup iv theta)
+
+instance Subst Iota IVar BindVar where
+    substM WildV         = pure WildV
+    substM (BindV v tau) = BindV v <$> substM tau
+
+instance Subst Iota IVar Exp where
+    substM e@(ConstE {}) =
+        return e
+
+    substM e@(VarE {}) =
+        return e
+
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
+
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (LetE decl e l) =
+        freshen decl $ \decl' ->
+        LetE decl' <$> substM e <*> pure l
+
+    substM (CallE v iotas es l) =
+        CallE v <$> substM iotas <*> substM es <*> pure l
+
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
+
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (ForE ann v tau e1 e2 e3 l) =
+        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM (ErrorE tau str s) =
+        ErrorE <$> substM tau <*> pure str <*> pure s
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) =
+        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+
+    substM (TakeE tau l) =
+        TakeE <$> substM tau <*> pure l
+
+    substM (TakesE i tau l) =
+        TakesE i <$> substM tau <*> pure l
+
+    substM (EmitE e l) =
+        EmitE <$> substM e <*> pure l
+
+    substM (EmitsE e l) =
+        EmitsE <$> substM e <*> pure l
+
+    substM (RepeatE ann e l) =
+        RepeatE ann <$> substM e <*> pure l
+
+    substM (ParE ann tau e1 e2 l) =
+        ParE ann <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
+
+{------------------------------------------------------------------------------
+ -
+ - Type substitution
+ -
+ ------------------------------------------------------------------------------}
 
 instance Subst Type TyVar Type where
     substM tau@(UnitT {}) =
@@ -876,64 +1048,256 @@ instance Subst Type TyVar Type where
         return $ fromMaybe tau (Map.lookup alpha theta)
 
 instance Subst Type TyVar Omega where
-    substM (C tau) =
-        C <$> substM tau
+    substM (C tau) = C <$> substM tau
+    substM T       = pure T
 
-    substM T =
-        pure T
+instance Subst Type TyVar BindVar where
+    substM WildV         = pure WildV
+    substM (BindV v tau) = BindV v <$> substM tau
 
-instance Subst Iota IVar Type where
-    substM tau@(UnitT {}) =
-        pure tau
+instance Subst Type TyVar Decl where
+    substM (LetD v tau e l) =
+        LetD v <$> substM tau <*> substM e <*> pure l
 
-    substM tau@(BoolT {}) =
-        pure tau
+    substM (LetFunD v ivs vbs tau e l) =
+        LetFunD v ivs <$> substM vbs <*> substM tau <*> substM e <*> pure l
 
-    substM tau@(BitT {}) =
-        pure tau
+    substM (LetExtFunD v ivs vbs tau l) =
+        LetExtFunD v ivs <$> substM vbs <*> substM tau <*> pure l
 
-    substM tau@(IntT {}) =
-        pure tau
+    substM (LetRefD v tau e l) =
+        LetRefD v <$> substM tau <*> substM e <*> pure l
 
-    substM tau@(FloatT {}) =
-        pure tau
+    substM decl@(LetStructD {}) =
+        pure decl
 
-    substM tau@(StringT {}) =
-        pure tau
+instance Subst Type TyVar Exp where
+    substM e@(ConstE {}) =
+        return e
 
-    substM tau@(StructT {}) =
-        pure tau
+    substM e@(VarE {}) =
+        return e
 
-    substM (ArrT iota tau l) =
-        ArrT <$> substM iota <*> substM tau <*> pure l
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
 
-    substM (ST alphas omega tau1 tau2 tau3 l) =
-        ST alphas <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
 
-    substM (RefT tau l) =
-        RefT <$> substM tau <*> pure l
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
 
-    substM (FunT iotas taus tau l) =
-        freshen iotas $ \iotas' ->
-        FunT iotas' <$> substM taus <*> substM tau <*> pure l
+    substM (LetE decl e l) =
+        LetE <$> substM decl <*> substM e <*> pure l
 
-    substM tau@(TyVarT {}) =
-        pure tau
+    substM (CallE v iotas es l) =
+        CallE v iotas <$> substM es <*> pure l
 
-instance Subst Iota IVar Omega where
-    substM (C tau) =
-        C <$> substM tau
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
 
-    substM T =
-        pure T
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
 
-instance Subst Iota IVar Iota where
-    substM iota@(ConstI {}) =
-        pure iota
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
 
-    substM iota@(VarI iv _) = do
+    substM (ForE ann v tau e1 e2 e3 l) =
+        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM (ErrorE tau str s) =
+        ErrorE <$> substM tau <*> pure str <*> pure s
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) =
+        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+
+    substM (TakeE tau l) =
+        TakeE <$> substM tau <*> pure l
+
+    substM (TakesE i tau l) =
+        TakesE i <$> substM tau <*> pure l
+
+    substM (EmitE e l) =
+        EmitE <$> substM e <*> pure l
+
+    substM (EmitsE e l) =
+        EmitsE <$> substM e <*> pure l
+
+    substM (RepeatE ann e l) =
+        RepeatE ann <$> substM e <*> pure l
+
+    substM (ParE ann tau e1 e2 l) =
+        ParE ann tau <$> substM e1 <*> substM e2 <*> pure l
+
+{------------------------------------------------------------------------------
+ -
+ - Expression substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance Subst Exp Var Exp where
+    substM e@(ConstE {}) =
+        return e
+
+    substM e@(VarE v _) = do
         (theta, _) <- ask
-        return $ fromMaybe iota (Map.lookup iv theta)
+        return $ fromMaybe e (Map.lookup v theta)
+
+    substM (UnopE op e l) =
+        UnopE op <$> substM e <*> pure l
+
+    substM (BinopE op e1 e2 l) =
+        BinopE op <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (IfE e1 e2 e3 l) =
+        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+
+    substM (LetE decl e l) =
+        freshen decl $ \decl' ->
+        LetE decl' <$> substM e <*> pure l
+
+    substM (CallE v iotas es l) = do
+        (theta, _) <- ask
+        v' <- case Map.lookup v theta of
+                Nothing          -> return v
+                Just (VarE v' _) -> return v'
+                Just e           ->
+                    faildoc $ "Cannot substitute expression" <+>
+                    ppr e <+> text "for variable" <+> ppr v
+        CallE v' iotas <$> substM es <*> pure l
+
+    substM (DerefE e l) =
+        DerefE <$> substM e <*> pure l
+
+    substM (AssignE e1 e2 l) =
+        AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (WhileE e1 e2 l) =
+        WhileE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (ForE ann v tau e1 e2 e3 l) = do
+        e1' <- substM e1
+        e2' <- substM e2
+        freshen v $ \v' -> do
+        ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+
+    substM (ArrayE es l) =
+        ArrayE <$> substM es <*> pure l
+
+    substM (IdxE e1 e2 i l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+
+    substM (StructE s flds l) =
+        StructE s <$> substM flds <*> pure l
+
+    substM (ProjE e fld l) =
+        ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (PrintE nl es l) =
+        PrintE nl <$> substM es <*> pure l
+
+    substM e@(ErrorE {}) =
+        pure e
+
+    substM (ReturnE ann e l) =
+        ReturnE ann <$> substM e <*> pure l
+
+    substM (BindE bv e1 e2 l) = do
+        e1' <- substM e1
+        freshen bv $ \bv' -> do
+        BindE bv' e1' <$> substM e2 <*> pure l
+
+    substM e@(TakeE {}) =
+        pure e
+
+    substM e@(TakesE {}) =
+        pure e
+
+    substM (EmitE e l) =
+        EmitE <$> substM e <*> pure l
+
+    substM (EmitsE e l) =
+        EmitsE <$> substM e <*> pure l
+
+    substM (RepeatE ann e l) =
+        RepeatE ann <$> substM e <*> pure l
+
+    substM (ParE ann tau e1 e2 l) =
+        ParE ann tau <$> substM e1 <*> substM e2 <*> pure l
+
+{------------------------------------------------------------------------------
+ -
+ - Freshening I-variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen IVar Iota IVar where
+    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+        k alpha' (theta', phi')
+      where
+        phi'    = Set.insert alpha' phi
+        theta'  = Map.insert alpha (ivarT alpha') theta
+        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
+                              , let beta = IVar n { nameSym = intern (s ++ i) }
+                              , beta `Set.notMember` phi]
+          where
+            s :: String
+            s = namedString n
+
+        ivarT :: IVar -> Iota
+        ivarT v = VarI v (srclocOf v)
+
+    freshen alpha k (theta, phi) =
+        k alpha (theta', phi')
+      where
+        phi'    = Set.insert alpha phi
+        theta'  = Map.delete alpha theta
+
+instance Freshen Decl Iota IVar where
+    freshen (LetD v tau e l) k = do
+        decl' <- LetD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetFunD v ibs vbs tau e l) k =
+        freshen ibs $ \ibs' -> do
+        decl' <- LetFunD v ibs' <$> substM vbs <*> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetExtFunD v ibs vbs tau l) k =
+        freshen ibs $ \ibs' -> do
+        decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
+        k decl'
+
+    freshen (LetRefD v tau e l) k = do
+        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen decl@(LetStructD {}) k =
+        k decl
+
+{------------------------------------------------------------------------------
+ -
+ - Freshening type variables
+ -
+ ------------------------------------------------------------------------------}
 
 instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
@@ -957,27 +1321,72 @@ instance Freshen TyVar Type TyVar where
         phi'    = Set.insert alpha phi
         theta'  = Map.delete alpha theta
 
-instance Freshen IVar Iota IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
-        k alpha' (theta', phi')
+{------------------------------------------------------------------------------
+ -
+ - Freshening variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen Decl Exp Var where
+    freshen (LetD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetD v' tau e' l)
+
+    freshen (LetFunD v ibs vbs tau e l) k =
+        freshen v   $ \v'   ->
+        freshen vbs $ \vbs' -> do
+        decl' <- LetFunD v' ibs vbs' tau <$> substM e <*> pure l
+        k decl'
+
+    freshen (LetExtFunD v ibs vbs tau l) k =
+        freshen v   $ \v'   ->
+        freshen vbs $ \vbs' -> do
+        decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
+        k decl'
+
+    freshen (LetRefD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetRefD v' tau e' l)
+
+    freshen decl@(LetStructD {}) k =
+        k decl
+
+instance Freshen Var Exp Var where
+    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+        k v' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
-        theta'  = Map.insert alpha (ivarT alpha') theta
-        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
-                              , let beta = IVar n { nameSym = intern (s ++ i) }
-                              , beta `Set.notMember` phi]
+        phi'    = Set.insert v' phi
+        theta'  = Map.insert v (varE v') theta
+        v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
+                          , let x = Var n { nameSym = intern (s ++ i) }
+                          , x `Set.notMember` phi]
           where
             s :: String
             s = namedString n
 
-        ivarT :: IVar -> Iota
-        ivarT v = VarI v (srclocOf v)
+        varE :: Var -> Exp
+        varE v = VarE v (srclocOf v)
 
-    freshen alpha k (theta, phi) =
-        k alpha (theta', phi')
+    freshen v k (theta, phi) =
+        k v (theta', phi')
       where
-        phi'    = Set.insert alpha phi
-        theta'  = Map.delete alpha theta
+        phi'   = Set.insert v phi
+        theta' = Map.delete v theta
+
+instance Freshen (Var, Type) Exp Var where
+    freshen (v, tau) k =
+        freshen v $ \v' ->
+        k (v', tau)
+
+instance Freshen BindVar Exp Var where
+    freshen WildV k =
+        k WildV
+
+    freshen (BindV v tau) k =
+        freshen v $ \v' ->
+        k $ BindV v' tau
 
 {------------------------------------------------------------------------------
  -
