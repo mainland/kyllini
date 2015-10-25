@@ -65,27 +65,29 @@ class FreshVars a where
 (/->) :: k -> a -> Map k a
 (/->) = Map.singleton
 
-type SubstM v e a = (Map v e, Set v) -> a
+type SubstM e v a = (Map v e, Set v) -> a
 
 class (Ord v, Fvs e v) => Subst e v a where
     subst :: Map v e -> Set v -> a -> a
     subst theta phi x = substM x (theta, phi)
 
-    substM :: a -> SubstM v e a
+    substM :: a -> SubstM e v a
 
-instance (Functor f, Subst e v a) => Subst e v (f a) where
+instance Subst e v a => Subst e v [a] where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
 
-class Freshen a v e where
-    freshen :: a -> (a -> SubstM v e b) -> SubstM v e b
+instance Subst e v a => Subst e v (Maybe a) where
+    substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
 
-instance Freshen a v e => Freshen (Maybe a) v e where
+class Freshen a e v where
+    freshen :: a -> (a -> SubstM e v b) -> SubstM e v b
+
+instance Freshen a e v => Freshen (Maybe a) e v where
     freshen Nothing  k = k Nothing
     freshen (Just x) k = freshen x $ \x -> k (Just x)
 
-instance Freshen a v e => Freshen [a] v e where
+instance Freshen a e v => Freshen [a] e v where
     freshen []     k = k []
     freshen (v:vs) k = freshen v  $ \v' ->
                        freshen vs $ \vs' ->
                        k (v':vs')
-
