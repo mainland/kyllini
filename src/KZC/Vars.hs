@@ -29,7 +29,7 @@ import KZC.Uniq
 import KZC.Util.SetLike
 
 class Ord n => Binders x n where
-    binders :: MultiSetLike m n => x -> m n
+    binders :: SetLike m n => x -> m n
 
 instance (Binders x n) => Binders [x] n where
     binders = foldMap binders
