@@ -169,11 +169,11 @@ instance MonadErr (Tc r s) where
 
 instance MonadFlags (Tc r s) where
     askFlags = liftKZC askFlags
-    localFlags fs m = Tc $ \r s e -> runTc (localFlags fs m) r s e
+    localFlags fs m = Tc $ \r s env -> localFlags fs (unTc m r s env)
 
 instance MonadTrace (Tc r s) where
     asksTraceDepth = liftKZC asksTraceDepth
-    localTraceDepth d m = Tc $ \r s e -> runTc (localTraceDepth d m) r s e
+    localTraceDepth d m = Tc $ \r s env -> localTraceDepth d (unTc m r s env)
 
 askTc :: Tc r s TcEnv
 askTc = Tc $ \_ s e -> return (e, s)
