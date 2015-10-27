@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 -- |
 -- Module      :  KZC.Uniq
 -- Copyright   :  (c) 2014-2015 Drexel University
@@ -9,6 +12,7 @@ module KZC.Uniq (
     MonadUnique(..)
   ) where
 
+import Control.Monad.Reader
 import Text.PrettyPrint.Mainland
 
 newtype Uniq = Uniq Int
@@ -19,3 +23,6 @@ instance Pretty Uniq where
 
 class Monad m => MonadUnique m where
     newUnique :: m Uniq
+
+instance MonadUnique m => MonadUnique (ReaderT r m) where
+    newUnique = lift newUnique
