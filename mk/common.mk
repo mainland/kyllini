@@ -135,7 +135,7 @@ $(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
 TESTDIR = $(TOP)/testsuite
 
 KZC=$(TOP)/kzc
-KZCFLAGS=-I$(TESTDIR)/lib --dlint --ddump-core --ddump-lift --dprint-uniques --dtrace-lint --dtrace-cg --fno-line-pragmas
+KZCFLAGS=-I$(TESTDIR)/lib --dlint --ddump-core --ddump-lift --dprint-uniques --fno-line-pragmas
 
 RUNTIME_SRC=\
 	$(TOP)/libkz/src/driver.c \
