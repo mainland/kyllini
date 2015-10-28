@@ -161,6 +161,7 @@ TESTS = \
 	$(shell ls $(TESTDIR)/tests/parser/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/code/WiFi/sniffer/sniffer_example.blk) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.blk | sort)
@@ -194,6 +195,7 @@ GROUNDFILES= \
 	$(shell ls $(TESTDIR)/tests/backend/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/lut/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/code/WiFi/sniffer/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.outfile.ground | sort)
@@ -209,7 +211,8 @@ test-all :
 	  tests/libs \
 	  code/WiFi/transmitter/tests \
 	  code/WiFi/receiver/tests \
-	  code/WiFi/tests; do \
+	  code/WiFi/tests \
+	  code/WiFi/sniffer; do \
 		(cd $(TESTDIR)/$$DIR && make); \
 	done
 

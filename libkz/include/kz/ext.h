@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+void __kz_hexprint_int8(int n, const int8_t *a, int32_t length);
+
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src);
 void __kz_int8_to_bits(int n, int m, uint8_t *dst, const int8_t *src);
 

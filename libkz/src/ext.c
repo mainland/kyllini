@@ -16,6 +16,14 @@ void __kz_int8_to_bits(int n, int m, uint8_t *dst, const int8_t *src)
     memcpy(dst, src, m);
 }
 
+void __kz_hexprint_int8(int n, const int8_t *a, int32_t len)
+{
+    int i;
+
+    for (i = 0; i < len; i++)
+        printf("%02X ", a[i]);
+}
+
 void __kz_zero_bit(int n, bit_t *x)
 {
     memset(x, 0, n / BIT_ARRAY_ELEM_BITS);
