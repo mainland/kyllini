@@ -15,8 +15,8 @@ clean :
 	      $(patsubst %.outfile.ground, %.outfile, $(TESTS)) \
 	      $(patsubst %.outfile.ground, %.dump*, $(TESTS))
 
-# We remove -p (ignore endings) from tests to detect subtle errors For example,
-# if no packet is detected, there is no output, and -p treats that as correct
-%.test : %.outfile %.outfile.ground
-	@echo "Comparing output for" $*
+test_c_%.test: test_c_%.outfile
 	$(_QUIET)$(BLINKDIFF) -f $< -g $<.ground -d -v -n 0.9 -t 220
+
+%.test: %.outfile
+	$(_QUIET)$(BLINKDIFF) -f $< -g $<.ground -d -v -n 0.9
