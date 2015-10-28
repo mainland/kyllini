@@ -1248,7 +1248,7 @@ cgStorage isTopLevel cv tau =
 
     go (ArrT iota tau _) = do
         ctau <- cgType tau
-        cn <- cgIota iota
+        cn   <- cgIota iota
         case cn of
           CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
           _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
