@@ -37,6 +37,7 @@ import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
+import KZC.Cg.Code
 import KZC.Cg.Util
 import KZC.Error
 import KZC.Lint.Monad

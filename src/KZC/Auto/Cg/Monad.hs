@@ -15,8 +15,6 @@ module KZC.Auto.Cg.Monad (
     Cg,
     evalCg,
 
-    Code(..),
-
     CExp(..),
 
     extend,
@@ -77,7 +75,6 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -86,40 +83,13 @@ import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
+import KZC.Cg.Code
 import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
-
--- | Contains generated code.
-data Code = Code
-    { -- | Top-level definitions
-      codeDefs :: !(Seq C.Definition)
-      -- | Local declarations
-    , codeDecls :: !(Seq C.InitGroup)
-      -- | Local statements
-    , codeStms :: !(Seq C.Stm)
-    }
-  deriving (Eq, Ord, Show)
-
-instance Pretty Code where
-    ppr c = stack $
-            (map ppr . toList . codeDefs)  c ++
-            (map ppr . toList . codeDecls) c ++
-            (map ppr . toList . codeStms) c
-
-instance Monoid Code where
-    mempty = Code { codeDefs  = mempty
-                  , codeDecls = mempty
-                  , codeStms  = mempty
-                  }
-
-    a `mappend` b = Code { codeDefs  = codeDefs a <> codeDefs b
-                         , codeDecls = codeDecls a <> codeDecls b
-                         , codeStms  = codeStms a <> codeStms b
-                         }
 
 instance IsString C.Id where
     fromString s = C.Id s noLoc

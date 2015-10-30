@@ -35,6 +35,7 @@ import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
+import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Core.Smart

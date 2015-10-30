@@ -57,6 +57,7 @@ SOURCE = \
 	KZC/Auto/Syntax.hs \
 	KZC/Auto/Transform.hs \
 	KZC/Cg.hs \
+	KZC/Cg/Code.hs \
 	KZC/Cg/Monad.hs \
 	KZC/Cg/Util.hs \
 	KZC/Check.hs \
