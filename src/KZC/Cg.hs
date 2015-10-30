@@ -31,6 +31,7 @@ import Data.Foldable (toList)
 import Data.String (IsString(..))
 import Data.Loc
 import Data.Monoid (mempty)
+import Data.Symbol
 import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
@@ -41,6 +42,7 @@ import KZC.Cg.Util
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
+import KZC.Label
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Name
@@ -1294,12 +1296,11 @@ cgWithLabel lbl k = do
   where
     -- We need to use the @LABEL@ macro on the label. Gross, but what can ya
     -- do...
-    lblMacro :: Label
-    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") l
+    lblMacro :: C.Id
+    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") noLoc
 
     ident :: String
-    l :: SrcLoc
-    C.Id ident l = lbl
+    ident = unintern (unLabel lbl)
 
 -- | A 'TakeK' continuation takes a label, the number of elements to take, the
 -- type of the elements, a continuation that computes a 'CComp' from the 'CExp'

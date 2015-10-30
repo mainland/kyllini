@@ -40,6 +40,7 @@ import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
+import KZC.Label
 import KZC.LambdaLift
 import qualified KZC.Lint as Lint
 import KZC.Monad
@@ -113,7 +114,7 @@ runPipeline filepath = do
             Lint.withTc () () (Lint.checkDecls decls)
         return decls
 
-    lintAuto :: A.IsLabel l
+    lintAuto :: IsLabel l
              => A.Program l
              -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do

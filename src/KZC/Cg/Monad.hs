@@ -17,7 +17,6 @@ module KZC.Cg.Monad (
 
     CExp(..),
 
-    Label,
     Comp(..),
     CComp,
 
@@ -73,7 +72,6 @@ module KZC.Cg.Monad (
 
     gensym,
 
-    genLabel,
     useLabel,
     isLabelUsed,
 
@@ -102,6 +100,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Cg.Code
 import KZC.Core.Syntax
+import KZC.Label
 import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Platform
@@ -417,9 +416,6 @@ lowerCSlice tau@(BitT _) carr ce len =
 lowerCSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]
 
--- | A code label
-type Label = C.Id
-
 -- | A free monad representation of computations. All computations are labeled,
 -- but not all labels are 'Require'. Any computation that is used as a
 -- continuation /must/ have a required label, which results in a label in the
@@ -714,10 +710,6 @@ gensym :: String -> Cg C.Id
 gensym s = do
     Uniq u <- newUnique
     return $ C.Id (s ++ "__" ++ show u) noLoc
-
-genLabel :: String -> Cg Label
-genLabel s =
-    gensym s
 
 useLabel :: Label -> Cg Label
 useLabel lbl = do

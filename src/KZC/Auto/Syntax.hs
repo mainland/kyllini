@@ -41,7 +41,6 @@ module KZC.Auto.Syntax (
 
     Step(..),
     Comp(..),
-    IsLabel,
 #if !defined(ONLY_TYPEDEFS)
     compLabel,
     compUsedLabels,
@@ -49,7 +48,6 @@ module KZC.Auto.Syntax (
     setStepLabel,
 #endif /* !defined(ONLY_TYPEDEFS) */
 
-    Label(..),
     LProgram,
     LDecl,
     LComp,
@@ -68,9 +66,7 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.String (IsString(..))
 import Data.Symbol
-import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax (Var(..),
@@ -106,6 +102,7 @@ import KZC.Core.Syntax (Var(..),
                         tyappPrec1
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
+import KZC.Label
 import KZC.Name
 import KZC.Platform
 import KZC.Pretty
@@ -185,22 +182,11 @@ data Step l = VarC l Var !SrcLoc
 newtype Comp l = Comp { unComp :: [Step l] }
   deriving (Eq, Ord, Read, Show, Monoid)
 
-newtype Label = Label { unLabel :: Symbol }
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString Label where
-    fromString s = Label (fromString s)
-
-instance C.ToIdent Label where
-    toIdent lbl = C.Id (unintern (unLabel lbl))
-
 type LProgram = Program Label
 
 type LDecl = Decl Label
 
 type LComp = Comp Label
-
-class (Ord l, Pretty l) => IsLabel l where
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -300,11 +286,6 @@ instance IsLabel l => Summary (Step l) where
  - Pretty printing
  -
  ------------------------------------------------------------------------------}
-
-instance Pretty Label where
-    ppr (Label s) = text (unintern s)
-
-instance IsLabel Label where
 
 instance IsLabel l => Pretty (Program l) where
     ppr (Program decls comp tau) =

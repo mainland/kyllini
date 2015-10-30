@@ -71,6 +71,7 @@ SOURCE = \
 	KZC/Flags.hs \
 	KZC/Globals.hs \
 	KZC/Monad.hs \
+	KZC/Label.hs \
 	KZC/LambdaLift.hs \
 	KZC/LambdaLift/Monad.hs \
 	KZC/Lint.hs \

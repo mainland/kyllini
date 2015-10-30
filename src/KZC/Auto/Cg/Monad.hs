@@ -82,6 +82,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
 import KZC.Cg.Code
+import KZC.Label
 import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Platform

@@ -40,6 +40,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
+import KZC.Label
 import KZC.Lint (checkCast,
                  checkTypeEquality,
                  inferKind,
