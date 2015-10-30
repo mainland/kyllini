@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -93,7 +92,6 @@ import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
-import KZC.Vars
 
 -- | Contains generated code.
 data Code = Code
@@ -143,6 +141,7 @@ data CExp = CVoid
             -- slice.
           | CComp Var [IVar] [(Var, Type)] Type LComp
             -- ^ A computation, which may take arguments.
+  deriving (Show)
 
 instance Located CExp where
     locOf CVoid                = NoLoc
@@ -518,10 +517,8 @@ lookupTyVarType alpha =
 
 -- | Return a function that substitutes type variables for their current
 -- instantiation.
-askTyVarTypeSubst :: Cg (Type -> Type)
-askTyVarTypeSubst = do
-    theta <- asks tyvarTypes
-    return $ subst theta mempty
+askTyVarTypeSubst :: Cg (Map TyVar Type)
+askTyVarTypeSubst = asks tyvarTypes
 
 tell :: ToCode a => a -> Cg ()
 tell c = modify $ \s -> s { code = code s <> toCode c }

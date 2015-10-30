@@ -41,6 +41,13 @@ module KZC.Auto.Syntax (
 
     Step(..),
     Comp(..),
+    IsLabel,
+#if !defined(ONLY_TYPEDEFS)
+    compLabel,
+    compUsedLabels,
+    stepLabel,
+    setStepLabel,
+#endif /* !defined(ONLY_TYPEDEFS) */
 
     Label(..),
     LProgram,
@@ -59,6 +66,7 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
 import Data.Symbol
@@ -192,7 +200,62 @@ type LDecl = Decl Label
 
 type LComp = Comp Label
 
+class (Ord l, Pretty l) => IsLabel l where
+
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Computation labels
+ -
+ ------------------------------------------------------------------------------}
+compLabel :: Monad m => Comp l -> m l
+compLabel (Comp [])       = fail "compLabel: empty computation"
+compLabel (Comp (step:_)) = stepLabel step
+
+compUsedLabels :: forall l . Ord l => Comp l -> Set l
+compUsedLabels comp =
+    go (unComp comp)
+  where
+    go :: [Step l] -> Set l
+    go []                     = Set.empty
+    go (IfC _ _ l r _:steps)  = compUsedLabels l <> compUsedLabels r <> go steps
+    go (ParC _ _ l r _:steps) = compUsedLabels l <> compUsedLabels r <> go steps
+    go (GotoC l _:steps)      = Set.insert l (go steps)
+    go (RepeatC l _:steps)    = Set.insert l (go steps)
+    go (_:steps)              = go steps
+
+stepLabel :: Monad m => Step l -> m l
+stepLabel (VarC l _ _)         = return l
+stepLabel (CallC l _ _ _ _)    = return l
+stepLabel (IfC l _ _ _ _)      = return l
+stepLabel (LetC l _ _)         = return l
+stepLabel (LiftC l _ _)        = return l
+stepLabel (ReturnC l _ _)      = return l
+stepLabel (BindC l _ _)        = return l
+stepLabel (GotoC l _)          = return l
+stepLabel (RepeatC l _)        = return l
+stepLabel (TakeC l _ _)        = return l
+stepLabel (TakesC l _ _ _)     = return l
+stepLabel (EmitC l _ _)        = return l
+stepLabel (EmitsC l _ _)       = return l
+stepLabel (ParC _ _ _ right _) = compLabel right
+
+setStepLabel :: l -> Step l -> Step l
+setStepLabel l (VarC _ v s)           = VarC l v s
+setStepLabel l (CallC _ v iotas es s) = CallC l v iotas es s
+setStepLabel l (IfC _ e c1 c2 s)      = IfC l e c1 c2 s
+setStepLabel l (LetC _ decl s)        = LetC l decl s
+setStepLabel l (LiftC _ e s)          = LiftC l e s
+setStepLabel l (ReturnC _ e s)        = ReturnC l e s
+setStepLabel l (BindC _ bv s)         = BindC l bv s
+setStepLabel _ step@(GotoC {})        = step
+setStepLabel _ step@(RepeatC {})      = step
+setStepLabel l (TakeC _ tau s)        = TakeC l tau s
+setStepLabel l (TakesC _ i tau s)     = TakesC l i tau s
+setStepLabel l (EmitC _ e s)          = EmitC l e s
+setStepLabel l (EmitsC _ e s)         = EmitsC l e s
+setStepLabel _ step@(ParC {})         = step
+
 {------------------------------------------------------------------------------
  -
  - Statements
@@ -226,10 +289,10 @@ instance Summary LocalDecl where
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
-instance Pretty l => Summary (Comp l) where
+instance IsLabel l => Summary (Comp l) where
     summary c = text "computation:" <+> align (ppr c)
 
-instance Pretty l => Summary (Step l) where
+instance IsLabel l => Summary (Step l) where
     summary _ = text "computation step"
 
 {------------------------------------------------------------------------------
@@ -241,12 +304,14 @@ instance Pretty l => Summary (Step l) where
 instance Pretty Label where
     ppr (Label s) = text (unintern s)
 
-instance Pretty l => Pretty (Program l) where
+instance IsLabel Label where
+
+instance IsLabel l => Pretty (Program l) where
     ppr (Program decls comp tau) =
         ppr decls </>
         ppr (LetCompD "main" tau comp noLoc)
 
-instance Pretty l => Pretty (Decl l) where
+instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
         group (nest 2 (lhs <+/> text "=" </> ppr e))
@@ -422,44 +487,63 @@ pprFunParams ivs vbs =
     pprArg (v, tau) =
         parens $ ppr v <+> text ":" <+> ppr tau
 
-instance Pretty l => Pretty (Comp l) where
+instance IsLabel l => Pretty (Step l) where
+    ppr step = ppr (Comp [step])
+
+instance IsLabel l => Pretty (Comp l) where
     pprPrec p comp =
         case pprComp comp of
           [stm] -> parensIf (p > appPrec) $ align stm
           stms  -> semiEmbraceWrap stms
 
-pprComp :: Pretty l => Comp l -> [Doc]
+pprComp :: forall l . IsLabel l
+        => Comp l
+        -> [Doc]
 pprComp comp =
     pprSteps (unComp comp)
   where
+    used :: Set l
+    used = compUsedLabels comp
+
+    pprWithLabel :: l -> Doc -> Doc
+    pprWithLabel l d
+        | l `Set.member` used = nest 2 $ ppr l <> colon <+/> d
+        | otherwise           = d
+
     pprSteps :: Pretty l => [Step l] -> [Doc]
     pprSteps [] =
         []
 
-    pprSteps (VarC _ v _ : k) =
-            pprBind k $
-            ppr v
-
-    pprSteps (CallC _ f is es _ : k) =
+    pprSteps (VarC l v _ : k) =
         pprBind k $
+        pprWithLabel l $
+        ppr v
+
+    pprSteps (CallC l f is es _ : k) =
+        pprBind k $
+        pprWithLabel l $
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
 
-    pprSteps (IfC _ e1 e2 e3 _ : k) =
+    pprSteps (IfC l e1 e2 e3 _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "if"   <+> pprPrec appPrec1 e1 <+/>
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
-    pprSteps (LetC _ decl _ : k) =
+    pprSteps (LetC l decl _ : k) =
         pprBind k $
+        pprWithLabel l $
         ppr decl
 
-    pprSteps (LiftC _ e _ : k) =
+    pprSteps (LiftC l e _ : k) =
         pprBind k $
+        pprWithLabel l $
         ppr e
 
-    pprSteps (ReturnC _ e _ : k) =
+    pprSteps (ReturnC l e _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "return" <+> pprPrec appPrec1 e
 
     pprSteps (BindC {} : _) =
@@ -471,20 +555,24 @@ pprComp comp =
     pprSteps (RepeatC l _ : _) =
         [text "repeat" <+> ppr l]
 
-    pprSteps (TakeC _ tau _ : k) =
+    pprSteps (TakeC l tau _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "take" <+> text "@" <> pprPrec tyappPrec1 tau
 
-    pprSteps (TakesC _ i tau _ : k) =
+    pprSteps (TakesC l i tau _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "takes" <+> pprPrec appPrec1 i <+> text "@" <> pprPrec appPrec1 tau
 
-    pprSteps (EmitC _ e _ : k) =
+    pprSteps (EmitC l e _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "emit" <+> pprPrec appPrec1 e
 
-    pprSteps (EmitsC _ e _ : k) =
+    pprSteps (EmitsC l e _ : k) =
         pprBind k $
+        pprWithLabel l $
         text "emits" <+> pprPrec appPrec1 e
 
     pprSteps (ParC ann tau e1 e2 _ : k) =

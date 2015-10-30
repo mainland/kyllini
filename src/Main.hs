@@ -113,7 +113,7 @@ runPipeline filepath = do
             Lint.withTc () () (Lint.checkDecls decls)
         return decls
 
-    lintAuto :: Pretty l
+    lintAuto :: A.IsLabel l
              => A.Program l
              -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do

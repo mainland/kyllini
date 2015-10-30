@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RebindableSyntax #-}
 
@@ -24,6 +25,7 @@ import Data.Bits
 import Data.Char (ord)
 import Data.Foldable (toList)
 import Data.Loc
+import qualified Data.Map as Map
 import Data.Monoid (mempty)
 import Data.String (IsString(..))
 import Data.Symbol
@@ -43,6 +45,7 @@ import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
+import KZC.Vars
 
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
@@ -63,7 +66,10 @@ compileProgram (Program decls comp tau) = do
         -- Generate code for the computation
         cgThread $
           inSTScope tau $
-          cgComp take emit comp >>= cgAssign (resultType tau) cres
+          inLocalScope $ do
+          useLabels (compUsedLabels comp)
+          ce <- cgComp take emit comp
+          cgAssign (resultType tau) cres ce
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels
@@ -106,11 +112,6 @@ void kz_main(const typename kz_params_t* $id:params)
             _            -> return $ CExp [cexp|$cbuf|]
 
     emit :: EmitK Label
-    emit tau@(ArrT iota _ _) ce _k = do
-        cn     <- cgIota iota
-        ceAddr <- cgAddrOf tau ce
-        cgOutput tau (CExp [cexp|$id:out_buf|]) cn ceAddr
-
     emit tau ce _k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
@@ -217,6 +218,7 @@ void kz_main(const typename kz_params_t* $id:params)
         go (FloatT W64 _)          = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
         go (StructT "complex16" _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
         go (StructT "complex32" _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
+        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
         go tau                     = do ctau <- cgType tau
                                         return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
@@ -239,6 +241,7 @@ void kz_main(const typename kz_params_t* $id:params)
         go (FloatT W64 _)          = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
         go (StructT "complex16" _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
         go (StructT "complex32" _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
+        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
@@ -278,8 +281,9 @@ cgDecls (decl:decls) k =
 
 cgDecl :: LDecl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
-    cv <- withSummaryContext decl $ do
-          ce         <- inSTScope tau $ cgExp e
+    cv <- withSummaryContext decl $
+          inSTScope tau $ do
+          ce         <- cgExp e
           isTopLevel <- isInTopScope
           cve        <- cgBinder isTopLevel v tau
           cgAssign tau cve ce
@@ -675,8 +679,8 @@ cgExp (AssignE e1 e2 _) = do
 
 cgExp (WhileE e_test e_body l) = do
     ce_test <- cgExp e_test
-    ce_body <- cgExp e_body
-    appendStm $ rl l [cstm|while ($ce_test) { $ce_body; }|]
+    citems  <- inNewBlock_ $ cgExp e_body
+    appendStm $ rl l [cstm|while ($ce_test) { $items:citems }|]
     return CVoid
 
 cgExp (ForE _ v v_tau e_start e_len e_body l) = do
@@ -845,8 +849,9 @@ checkArrOrRefArrT tau =
     text "Expected array type but got:" <+/> ppr tau
 
 unCComp :: CExp -> Cg ([IVar], [(Var, Type)], LComp)
-unCComp (CComp _ ivs vbs _ comp) =
-    return (ivs, vbs, comp)
+unCComp (CComp _v ivs vbs _tau comp) = do
+    comp' <- reLabel comp
+    return (ivs, vbs, comp')
 
 unCComp ce =
     panicdoc $ nest 2 $ text "unCComp: not a Comp:" </> ppr ce
@@ -912,6 +917,9 @@ cgType (ArrT (ConstI n _) tau _) = do
 
 cgType tau@(ArrT (VarI {}) _ _) =
     panicdoc $ text "cgType: cannot translate array of unknown size:" <+> ppr tau
+
+cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
+    cgType tau'
 
 cgType tau@(ST {}) =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
@@ -991,6 +999,9 @@ cgTemp s tau = do
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
 cgBinder :: Bool -> Var -> Type -> Cg CExp
+cgBinder isTopLevel v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau = do
+    cgBinder isTopLevel v tau'
+
 cgBinder isTopLevel v tau = do
     cv <- cvar v
     cgStorage isTopLevel cv tau
@@ -1074,7 +1085,7 @@ type TakeK l = Int -> Type -> [Step l] -> Cg CExp
 type EmitK l = Type -> CExp -> [Step l] -> Cg ()
 
 cgComp :: TakeK Label -> EmitK Label -> LComp -> Cg CExp
-cgComp takek emitk comp = do
+cgComp takek emitk comp =
     cgSteps (unComp comp)
   where
     cgSteps :: [Step Label] -> Cg CExp
@@ -1097,24 +1108,26 @@ cgComp takek emitk comp = do
         cgWithLabel l $
         cgSteps k
 
-    cgBind (BindC l bv@(BindV v _) _ : k) ce =
-        cgWithLabel l $
-        extendBindVars [bv] $
-        extendVarCExps [(v, ce)] $
+    cgBind (BindC l bv@(BindV v tau) _ : k) ce =
+        cgWithLabel l $ do
+        clow <- cgLower tau ce
+        extendBindVars [bv] $ do
+        extendVarCExps [(v, clow)] $ do
         cgSteps k
 
     cgBind steps _ =
         cgSteps steps
 
     cgStep :: Step Label -> [Step Label] -> Cg CExp
-    cgStep (VarC l v _) _ =
+    cgStep (VarC l v _) _k =
         cgWithLabel l $ do
         (ivs, vbs, comp) <- lookupVarCExp v >>= unCComp
         when (not (null ivs) || not (null vbs)) $
             faildoc $ text "Non-nullary computation" <+> ppr v <+> text "invoked without arguments"
+        useLabels (compUsedLabels comp)
         cgComp takek emitk comp
 
-    cgStep step@(CallC l f iotas es _) _ = do
+    cgStep step@(CallC l f iotas es _) _k = do
         cgWithLabel l $ do
         (ivs, vbs, comp) <- lookupVarCExp f >>= unCComp
         ciotas           <- mapM cgIota iotas
@@ -1124,12 +1137,32 @@ cgComp takek emitk comp = do
         extendIVarCExps (ivs `zip` ciotas) $ do
         extendVarCExps  (map fst vbs `zip` ces) $ do
         instantiateSTScope $ do
-        cgComp takek emitk comp
+        useLabels (compUsedLabels comp)
+        theta <- askTyVarTypeSubst
+        cgComp takek emitk (subst theta mempty comp)
       where
         cgArg :: Exp -> Cg CExp
-        cgArg e = do
+        cgArg e = withFvContext e $ do
             tau <- inferExp e
-            inSTScope tau $ cgExp e
+            go tau e
+          where
+            go :: Type -> Exp -> Cg CExp
+            go tau e | isPureishT tau =
+                cgExp e
+
+            go _tau e@(CallE f iotas es _) = do
+                FunT _ _ tau_res@(ST _ _ s a b _) _ <- lookupVar f
+                ST _ _ s' a' b' _                   <- inferExp e
+                (ivs, vbs, comp) <- lookupVarCExp f >>= unCComp
+                let theta1   = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
+                let theta2   = Map.fromList (ivs `zip` iotas)
+                let theta3   = Map.fromList (map fst vbs `zip` es)
+                let comp'    = (subst theta3 mempty . subst theta2 mempty . subst theta1 mempty) comp
+                let tau_res' = (subst theta2 mempty . subst theta1 mempty) tau_res
+                return $ CComp f [] [] tau_res' comp'
+
+            go _tau e = do
+                cgExp e
 
         instantiateSTScope :: Cg a -> Cg a
         instantiateSTScope m = do
@@ -1146,10 +1179,16 @@ cgComp takek emitk comp = do
         withSummaryContext step $
         faildoc $ text "Cannot compile let computation step."
 
+    -- A 'LiftC' is a monadic value, but it doesn't take or emit. That is, it is
+    -- in ST, so it may have side effects, but those side effects do not include
+    -- taking or emitting. Therefore, we need to lower it to make sure the side
+    -- effect happens.
     cgStep (LiftC l e _) _ =
-        cgWithLabel l $
-        cgExp e
+        cgWithLabel l $ do
+        tau <- inferExp e
+        cgExp e >>= cgLower (resultType tau)
 
+    -- A 'ReturnC' is a pure value, so we do not need to lower it.
     cgStep (ReturnC l e _) _ =
         cgWithLabel l $
         cgExp e
@@ -1183,133 +1222,136 @@ cgComp takek emitk comp = do
 
     cgStep (EmitsC l e _) k =
         cgWithLabel l $ do
-        (_, tau) <- inferExp e >>= checkArrT
-        ce       <- cgExp e
+        tau <- inferExp e
+        ce  <- cgExp e
         emitk tau ce k
         return CVoid
 
-    cgStep step@(ParC _ tau left right _) k = do
+    cgStep step@(ParC _ tau left right _) _ = do
         tau_res <- resultType <$> inferStep step
-        cgParSingleThreaded tau_res tau left right k
+        cgParSingleThreaded takek emitk tau_res tau left right
 
-    cgParSingleThreaded :: Type -> Type -> LComp -> LComp -> [Step Label] -> Cg CExp
-    cgParSingleThreaded tau_res tau_internal left right _k = do
-        -- Generate a temporary to hold the result of the par construct.
-        cres <- cgTemp "par_res" tau_res
-        -- Create the computation that follows the par.
-        l_pardone <- genLabel "par_done"
-        useLabel l_pardone
-        -- donek will generate code to store the result of the par and jump to
-        -- the continuation.
-        let donek :: CExp -> Cg ()
-            donek ce = do cgAssign tau_res cres ce
-                          appendStm [cstm|JUMP($id:l_pardone);|]
-        -- Generate variables to hold the left and right computations'
-        -- continuations.
-        leftl   <- compLabel left
-        useLabel leftl
-        rightl  <- compLabel right
-        useLabel rightl
-        cleftk  <- cgCTemp tau_internal "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
-        crightk <- cgCTemp tau_internal "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
-        -- Generate a pointer to the current element in the buffer.
-        ctau  <- cgType tau_internal
-        cbuf  <- cgCTemp tau_internal "par_buf"  [cty|$ty:ctau|]  Nothing
-        cbufp <- cgCTemp tau_internal "par_bufp" [cty|const $ty:ctau*|] Nothing
-        -- Generate code for the left and right computations.
+cgParSingleThreaded :: TakeK Label -> EmitK Label -> Type -> Type -> LComp -> LComp -> Cg CExp
+cgParSingleThreaded takek emitk tau_res b left right = do
+    (s, a, c) <- askSTIndTypes
+    -- Generate a temporary to hold the result of the par construct.
+    cres <- cgTemp "par_res" tau_res
+    -- Create the computation that follows the par.
+    l_pardone <- genLabel "par_done"
+    useLabel l_pardone
+    -- donek will generate code to store the result of the par and jump to
+    -- the continuation.
+    let donek :: CExp -> Cg ()
+        donek ce = do cgAssign tau_res cres ce
+                      appendStm [cstm|JUMP($id:l_pardone);|]
+    -- Generate variables to hold the left and right computations'
+    -- continuations.
+    leftl   <- compLabel left
+    useLabel leftl
+    rightl  <- compLabel right
+    useLabel rightl
+    cleftk  <- cgCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
+    crightk <- cgCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
+    -- Generate a pointer to the current element in the buffer.
+    ctau  <- cgType b
+    cbuf  <- cgCTemp b "par_buf"  [cty|$ty:ctau|]  Nothing
+    cbufp <- cgCTemp b "par_bufp" [cty|const $ty:ctau*|] Nothing
+    -- Generate code for the left and right computations.
+    localSTIndTypes (Just (b, b, c)) $
         cgComp (takek' cleftk crightk cbuf cbufp) emitk right >>= donek
+    localSTIndTypes (Just (s, a, b)) $
         cgComp takek (emitk' cleftk crightk cbuf cbufp) left  >>= donek
-        cgWithLabel l_pardone $
-            appendStm [cstm|;|]
-        return cres
-      where
-        takek' :: CExp -> CExp -> CExp -> CExp -> TakeK Label
-        -- The one element take is easy. We know the element will be in @cbufp@,
-        -- so we call @k1@ with @cbufp@ as the argument, which generates a
-        -- 'CComp', @ccomp@ that represents the continuation that consumes the
-        -- taken value. We then set the right computation's continuation to the
-        -- label of @ccomp@, since it is the continuation, generate code to jump
-        -- to the left computation's continuation, and then call @k2@ with
-        -- @ccomp@ suitably modified to have a required label.
-        takek' cleftk crightk _cbuf cbufp 1 _tau k = do
-            lbl <- compLabel (Comp k)
-            useLabel lbl
-            appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+    cgWithLabel l_pardone $
+        appendStm [cstm|;|]
+    return cres
+  where
+    takek' :: CExp -> CExp -> CExp -> CExp -> TakeK Label
+    -- The one element take is easy. We know the element will be in @cbufp@,
+    -- so we call @k1@ with @cbufp@ as the argument, which generates a
+    -- 'CComp', @ccomp@ that represents the continuation that consumes the
+    -- taken value. We then set the right computation's continuation to the
+    -- label of @ccomp@, since it is the continuation, generate code to jump
+    -- to the left computation's continuation, and then call @k2@ with
+    -- @ccomp@ suitably modified to have a required label.
+    takek' cleftk crightk _cbuf cbufp 1 _tau k = do
+        lbl <- compLabel (Comp k)
+        useLabel lbl
+        appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+        appendStm [cstm|INDJUMP($cleftk);|]
+        return $ CExp [cexp|*$cbufp|]
+
+    -- The multi-element take is a bit tricker. We allocate a buffer to hold
+    -- all the elements, and then loop, jumping to the left computation's
+    -- continuation repeatedly, until the buffer is full. Then we fall
+    -- through to the next action, which is why we call @k2@ with @ccomp@
+    -- without forcing its label to be required---we don't need the label!
+    takek' cleftk crightk _cbuf cbufp n tau@(BitT {}) _k = do
+        ctau  <- cgType tau
+        carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
+        lbl   <- genLabel "inner_takesk"
+        useLabel lbl
+        appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+        cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
-            return $ CExp [cexp|*$cbufp|]
+            cgWithLabel lbl $
+                cgBitArrayWrite carr ci (CExp [cexp|*$cbufp|])
+        return carr
 
-        -- The multi-element take is a bit tricker. We allocate a buffer to hold
-        -- all the elements, and then loop, jumping to the left computation's
-        -- continuation repeatedly, until the buffer is full. Then we fall
-        -- through to the next action, which is why we call @k2@ with @ccomp@
-        -- without forcing its label to be required---we don't need the label!
-        takek' cleftk crightk _cbuf cbufp n tau@(BitT {}) _k = do
-            ctau  <- cgType tau
-            carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
-            lbl   <- genLabel "inner_takesk"
-            useLabel lbl
-            appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
-            cgFor 0 (fromIntegral n) $ \ci -> do
-                appendStm [cstm|INDJUMP($cleftk);|]
-                cgWithLabel lbl $
-                    cgBitArrayWrite carr ci (CExp [cexp|*$cbufp|])
-            return carr
+    takek' cleftk crightk _cbuf cbufp n tau _k = do
+        ctau  <- cgType tau
+        carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
+        lbl   <- genLabel "inner_takesk"
+        useLabel lbl
+        appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
+        cgFor 0 (fromIntegral n) $ \ci -> do
+            appendStm [cstm|INDJUMP($cleftk);|]
+            cgWithLabel lbl $
+                appendStm [cstm|$carr[$ci] = *$cbufp;|]
+        return carr
 
-        takek' cleftk crightk _cbuf cbufp n tau _k = do
-            ctau  <- cgType tau
-            carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
-            lbl   <- genLabel "inner_takesk"
-            useLabel lbl
-            appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
-            cgFor 0 (fromIntegral n) $ \ci -> do
-                appendStm [cstm|INDJUMP($cleftk);|]
-                cgWithLabel lbl $
-                    appendStm [cstm|$carr[$ci] = *$cbufp;|]
-            return carr
+    emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
+    emitk' cleftk crightk cbuf cbufp (ArrT (ConstI 1 _) tau _) ce k = do
+        lbl <- compLabel (Comp k)
+        useLabel lbl
+        appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
+        cidx <- cgIdx tau ce 0
+        cgAssignBufp tau cbuf cbufp cidx
+        appendStm [cstm|INDJUMP($crightk);|]
 
-        emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
-        emitk' cleftk crightk cbuf cbufp (ArrT (ConstI 1 _) tau _) ce k = do
-            lbl <- compLabel (Comp k)
-            useLabel lbl
-            appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            cidx <- cgIdx tau ce 0
+    emitk' cleftk crightk cbuf cbufp (ArrT iota tau _) ce _k = do
+        cn    <- cgIota iota
+        loopl <- genLabel "emitsk_next"
+        useLabel loopl
+        appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
+        cgFor 0 cn $ \ci -> do
+            cidx <- cgIdx tau ce ci
             cgAssignBufp tau cbuf cbufp cidx
             appendStm [cstm|INDJUMP($crightk);|]
+            -- Because we need a statement to label, but the continuation is
+            -- the next loop iteration...
+            cgWithLabel loopl $
+                appendStm [cstm|;|]
 
-        emitk' cleftk crightk cbuf cbufp (ArrT iota tau _) ce _k = do
-            cn    <- cgIota iota
-            loopl <- genLabel "emitsk_next"
-            useLabel loopl
-            appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
-            cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx tau ce ci
-                cgAssignBufp tau cbuf cbufp cidx
-                appendStm [cstm|INDJUMP($crightk);|]
-                -- Because we need a statement to label, but the continuation is
-                -- the next loop iteration...
-                cgWithLabel loopl $
-                    appendStm [cstm|;|]
+    -- @tau@ must be a base (scalar) type
+    emitk' cleftk crightk cbuf cbufp tau ce k = do
+        lbl <- compLabel (Comp k)
+        useLabel lbl
+        appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
+        cgAssignBufp tau cbuf cbufp ce
+        appendStm [cstm|INDJUMP($crightk);|]
 
-        -- @tau@ must be a base (scalar) type
-        emitk' cleftk crightk cbuf cbufp tau ce k = do
-            lbl <- compLabel (Comp k)
-            useLabel lbl
-            appendStm [cstm|$cleftk = LABELADDR($id:lbl);|]
-            cgAssignBufp tau cbuf cbufp ce
-            appendStm [cstm|INDJUMP($crightk);|]
+    -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
+    -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
+    -- @cbuf@. This ensures that we can always pass buffer elements by
+    -- reference.
+    cgAssignBufp :: Type -> CExp -> CExp -> CExp -> Cg ()
+    cgAssignBufp tau _ cbufp ce | isLvalue ce = do
+        caddr <- cgAddrOf tau ce
+        appendStm [cstm|$cbufp = $caddr;|]
 
-        -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
-        -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
-        -- @cbuf@. This ensures that we can always pass buffer elements by
-        -- reference.
-        cgAssignBufp :: Type -> CExp -> CExp -> CExp -> Cg ()
-        cgAssignBufp tau _ cbufp ce | isLvalue ce = do
-            caddr <- cgAddrOf tau ce
-            appendStm [cstm|$cbufp = $caddr;|]
-
-        cgAssignBufp tau cbuf cbufp ce = do
-            cgAssign tau cbuf ce
-            appendStm [cstm|$cbufp = &$cbuf;|]
+    cgAssignBufp tau cbuf cbufp ce = do
+        cgAssign tau cbuf ce
+        appendStm [cstm|$cbufp = &$cbuf;|]
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp -> Bool
@@ -1422,6 +1464,9 @@ cgAssignBitArray ce1 ce2 clen =
         (carr, 0)
 
 cgIdx :: Type -> CExp -> CExp -> Cg CExp
+cgIdx tau (CSlice _ carr cidx1 _) cidx2 =
+    return $ CIdx tau carr (cidx1 + cidx2)
+
 cgIdx tau carr cidx =
     return $ CIdx tau carr cidx
 
@@ -1480,6 +1525,36 @@ cgFor cfrom cto k = do
     appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) { $items:cbody }|]
     return x
 
+cgLower :: Type -> CExp -> Cg CExp
+cgLower tau ce = go ce
+  where
+    go :: CExp -> Cg CExp
+    go ce@CVoid =
+        return ce
+
+    go ce@(CBool {}) =
+        return ce
+
+    go ce@(CBit {}) =
+        return ce
+
+    go ce@(CInt {}) =
+        return ce
+
+    go ce@(CFloat {}) =
+        return ce
+
+    go (CComp {}) =
+        faildoc $ text "Cannot lower a computation."
+
+    go ce@(CExp (C.Var {})) =
+        return ce
+
+    go ce = do
+        clow <- cgTemp "lower" tau
+        cgAssign tau clow ce
+        return clow
+
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg ()
 appendTopComment doc =
@@ -1510,8 +1585,8 @@ zencode s = concatMap zenc s
     -- https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames
     zenc :: Char -> [Char]
     zenc c | 'a' <= c && c <= 'y' = [c]
-              | 'A' <= c && c <= 'Y' = [c]
-              | '0' <= c && c <= '9' = [c]
+           | 'A' <= c && c <= 'Y' = [c]
+           | '0' <= c && c <= '9' = [c]
     zenc 'z'  = "zz"
     zenc 'Z'  = "ZZ"
     zenc '('  = "ZL"

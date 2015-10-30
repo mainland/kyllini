@@ -299,8 +299,7 @@ transComp e0@(C.ForE _ v v_tau e_start e_len e_body l) =
     e_start'   <- transExp e_start
     e_len'     <- transExp e_len
     let e_test =  varE v .<. e_start' + e_len'
-    head       <- letC decl l .>>.
-                  transComp (C.DerefE (C.VarE i l) l) .>>.
+    head       <- transComp (C.DerefE (C.VarE i l) l) .>>.
                   bindC (BindV v v_tau) l
     l_head     <- compLabel head
     body       <- extendVars [(v, v_tau)] $
@@ -308,7 +307,7 @@ transComp e0@(C.ForE _ v v_tau e_start e_len e_body l) =
                   liftC (i .:=. varE v + castE v_tau 1) l .>>.
                   gotoC l_head l
     done       <- returnC unitE l
-    return head .>>. ifC e_test body done l
+    letC decl l .>>. return head .>>. ifC e_test body done l
 
 transComp (C.ReturnE _ e l) = do
     e <- transExp e

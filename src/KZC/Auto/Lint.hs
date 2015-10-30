@@ -24,7 +24,8 @@ module KZC.Auto.Lint (
     checkKind,
 
     checkArrT,
-    checkST
+    checkST,
+    checkFunT
   ) where
 
 import Control.Monad (when,
@@ -65,7 +66,7 @@ import KZC.Lint.Monad
 import KZC.Summary
 import KZC.Vars
 
-checkProgram :: Pretty l
+checkProgram :: IsLabel l
              => Program l
              -> Tc r s ()
 checkProgram (Program decls comp tau) =
@@ -75,7 +76,7 @@ checkProgram (Program decls comp tau) =
     inLocalScope $
     checkComp comp tau
 
-checkDecls :: forall l r s a . Pretty l
+checkDecls :: forall l r s a . IsLabel l
            => [Decl l] -> Tc r s a -> Tc r s a
 checkDecls decls k =
     go decls
@@ -88,7 +89,7 @@ checkDecls decls k =
         checkDecl decl $
         go decls
 
-checkDecl :: Pretty l
+checkDecl :: IsLabel l
           => Decl l
           -> Tc r s a
           -> Tc r s a
@@ -582,7 +583,7 @@ checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
 
-inferComp :: forall l r s . Pretty l => Comp l -> Tc r s Type
+inferComp :: forall l r s . IsLabel l => Comp l -> Tc r s Type
 inferComp comp =
     inferSteps (unComp comp)
   where
@@ -621,7 +622,7 @@ inferComp comp =
             void $ checkSTC tau
         inferSteps k
 
-inferStep :: Pretty l => Step l -> Tc r s Type
+inferStep :: IsLabel l => Step l -> Tc r s Type
 inferStep (VarC _ v _) =
     lookupVar v
 
@@ -677,7 +678,8 @@ inferStep (RepeatC _ l) =
 
 inferStep (TakeC _ tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
+    tau <- appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
+    return tau
   where
     b :: TyVar
     b = "b"
@@ -729,7 +731,7 @@ inferStep step@(ParC _ b e1 e2 l) = do
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
-checkComp :: Pretty l
+checkComp :: IsLabel l
           => Comp l
           -> Type
           -> Tc r s ()

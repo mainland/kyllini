@@ -27,126 +27,169 @@ module KZC.Auto.Comp (
     emitsC,
     parC,
 
-    compLabel,
-    compUsedLabels,
-
-    genLabel
+    genLabel,
+    reLabel
   ) where
 
+import Control.Applicative (Applicative, (<$>), (<*>), pure)
+import Control.Monad.Reader
 import Data.Loc
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Symbol
-import qualified Data.Set as Set
-import Data.Set (Set)
+import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
-import KZC.Lint.Monad
 import KZC.Uniq
 
-varC :: Located a => Var -> a -> Tc r s LComp
+varC :: (Located a, MonadUnique m)
+     => Var -> a -> m LComp
 varC v a = do
     l <- genLabel "vark"
     return $ Comp [VarC l v (srclocOf a)]
 
-callC :: Located a => Var -> [Iota] -> [Exp] -> a -> Tc r s LComp
+callC :: (Located a, MonadUnique m)
+      => Var -> [Iota] -> [Exp] -> a -> m LComp
 callC f is es a = do
     l <- genLabel "callk"
     return $ Comp [CallC l f is es (srclocOf a)]
 
-ifC :: Located a => Exp -> LComp -> LComp -> a -> Tc r s LComp
+ifC :: (Located a, MonadUnique m)
+    => Exp -> LComp -> LComp -> a -> m LComp
 ifC e thenc elsec a = do
     l <- genLabel "ifk"
     return $ ifC' l e thenc elsec a
 
-ifC' :: Located a => Label -> Exp -> LComp -> LComp -> a -> LComp
+ifC' :: Located a
+     => Label -> Exp -> LComp -> LComp -> a -> LComp
 ifC' l e thenc elsec a = Comp [IfC l e thenc elsec (srclocOf a)]
 
-letC :: Located a => LocalDecl -> a -> Tc r s LComp
+letC :: (Located a, MonadUnique m)
+     => LocalDecl -> a -> m LComp
 letC decl a = do
     l <- genLabel "letk"
     return $ Comp [LetC l decl (srclocOf a)]
 
-letC' :: Located a => Label -> LocalDecl -> a -> LComp
+letC' :: Located a
+      => Label -> LocalDecl -> a -> LComp
 letC' l decl a = Comp [LetC l decl (srclocOf a)]
 
-liftC :: Located a => Exp -> a -> Tc r s LComp
+liftC :: (Located a, MonadUnique m)
+      => Exp -> a -> m LComp
 liftC e a = do
     l <- genLabel "liftk"
     return $ Comp [LiftC l e (srclocOf a)]
 
-returnC :: Located a => Exp -> a -> Tc r s LComp
+returnC :: (Located a, MonadUnique m)
+        => Exp -> a -> m LComp
 returnC e a = do
     l <- genLabel "returnk"
     return $ Comp [ReturnC l e (srclocOf a)]
 
-bindC :: Located a => BindVar -> a -> Tc r s LComp
+bindC :: (Located a, MonadUnique m)
+      => BindVar -> a -> m LComp
 bindC bv a = do
     l <- genLabel "bindk"
     return $ Comp [BindC l bv (srclocOf a)]
 
-bindC' :: Located a => Label -> BindVar -> a -> LComp
+bindC' :: Located a
+       => Label -> BindVar -> a -> LComp
 bindC' l bv a = Comp [BindC l bv (srclocOf a)]
 
-gotoC :: Located a => Label -> a -> Tc r s LComp
+gotoC :: (Located a, MonadUnique m)
+      => Label -> a -> m LComp
 gotoC l a = return $ Comp [GotoC l (srclocOf a)]
 
-repeatC :: Located a => Label -> a -> Tc r s LComp
+repeatC :: (Located a, MonadUnique m)
+        => Label -> a -> m LComp
 repeatC l a = return $ Comp [RepeatC l (srclocOf a)]
 
-takeC :: Located a => Type -> a -> Tc r s LComp
+takeC :: (Located a, MonadUnique m)
+      => Type -> a -> m LComp
 takeC tau a = do
     l <- genLabel "takek"
     return $ Comp [TakeC l tau (srclocOf a)]
 
-takesC :: Located a => Int -> Type -> a -> Tc r s LComp
+takesC :: (Located a, MonadUnique m)
+       => Int -> Type -> a -> m LComp
 takesC i tau a = do
     l <- genLabel "takesk"
     return $ Comp [TakesC l i tau (srclocOf a)]
 
-emitC :: Located a => Exp -> a -> Tc r s LComp
+emitC :: (Located a, MonadUnique m)
+      => Exp -> a -> m LComp
 emitC e a = do
     l <- genLabel "emitk"
     return $ Comp [EmitC l e (srclocOf a)]
 
-emitsC :: Located a => Exp -> a -> Tc r s LComp
+emitsC :: (Located a, MonadUnique m)
+       => Exp -> a -> m LComp
 emitsC e a = do
     l <- genLabel "emitk"
     return $ Comp [EmitsC l e (srclocOf a)]
 
-parC :: Located a => PipelineAnn -> Type -> LComp -> LComp -> a -> Tc r s LComp
+parC :: (Located a, MonadUnique m)
+     => PipelineAnn -> Type -> LComp -> LComp -> a -> m LComp
 parC ann tau c1 c2 a =
     return $ Comp [ParC ann tau c1 c2 (srclocOf a)]
 
-compLabel :: Comp l -> Tc r s l
-compLabel (Comp [])       = fail "compLabel: empty computation"
-compLabel (Comp (step:_)) = stepLabel step
-
-compUsedLabels :: forall l . Ord l => Comp l -> Set l
-compUsedLabels comp =
-    go (unComp comp)
-  where
-    go :: [Step l] -> Set l
-    go []                  = Set.empty
-    go (GotoC l _:steps)   = Set.insert l (go steps)
-    go (RepeatC l _:steps) = Set.insert l (go steps)
-    go (_:steps)           = go steps
-
-stepLabel :: Step l -> Tc r s l
-stepLabel (VarC l _ _)         = return l
-stepLabel (CallC l _ _ _ _)    = return l
-stepLabel (IfC l _ _ _ _)      = return l
-stepLabel (LetC l _ _)         = return l
-stepLabel (LiftC l _ _)        = return l
-stepLabel (ReturnC l _ _)      = return l
-stepLabel (BindC l _ _)        = return l
-stepLabel (GotoC l _)          = return l
-stepLabel (RepeatC l _)        = return l
-stepLabel (TakeC l _ _)        = return l
-stepLabel (TakesC l _ _ _)     = return l
-stepLabel (EmitC l _ _)        = return l
-stepLabel (EmitsC l _ _)       = return l
-stepLabel (ParC _ _ _ right _) = compLabel right
-
-genLabel :: String -> Tc r s Label
+genLabel :: MonadUnique m => String -> m Label
 genLabel s = do
     Uniq u <- newUnique
     return $ Label (intern (s ++ "__" ++ show u))
+
+type Re m a = ReaderT (Map Label Label) m a
+
+reLabel :: forall m . (Applicative m, MonadUnique m)
+        => Comp Label
+        -> m (Comp Label)
+reLabel comp =
+    runReaderT (rlComp comp) Map.empty
+  where
+    rlComp :: Comp Label -> Re m (Comp Label)
+    rlComp (Comp steps) = Comp <$> rlSteps steps
+
+    rlSteps :: [Step Label] -> Re m [Step Label]
+    rlSteps [] =
+        return []
+
+    rlSteps (IfC l e c1 c2 s : steps) =
+        rl l $ \l' -> do
+        step'  <- IfC l' e <$> rlComp c1 <*> rlComp c2 <*> pure s
+        steps' <- rlSteps steps
+        return $ step' : steps'
+
+    rlSteps (ParC ann tau c1 c2 s : steps) = do
+        step'  <- ParC ann tau <$> rlComp c1 <*> rlComp c2 <*> pure s
+        steps' <- rlSteps steps
+        return $ step' : steps'
+
+    rlSteps (GotoC l s : steps) = do
+        theta  <- ask
+        step'  <- case Map.lookup l theta of
+                    Just l' -> return $ GotoC l' s
+                    Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
+        steps' <- rlSteps steps
+        return $ step' : steps'
+
+    rlSteps (RepeatC l s : steps) = do
+        theta  <- ask
+        step'  <- case Map.lookup l theta of
+                    Just l' -> return $ RepeatC l' s
+                    Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
+        steps' <- rlSteps steps
+        return $ step' : steps'
+
+    rlSteps (step : steps) = do
+        l <- stepLabel step
+        rl l $ \l' -> do
+        let step' = setStepLabel l' step
+        steps' <- rlSteps steps
+        return $ step' : steps'
+      where
+
+    rl :: Label -> (Label -> Re m a) -> Re m a
+    rl l@(Label s) k = do
+        Uniq u <- newUnique
+        let l' =  Label (intern (unintern s ++ "__" ++ show u))
+        local (\env -> Map.insert l l' env) $ k l'
