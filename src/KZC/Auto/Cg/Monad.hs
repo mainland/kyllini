@@ -3,7 +3,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
 -- Module      :  KZC.Auto.Cg.Monad
@@ -78,7 +77,6 @@ import Data.Monoid
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.String (IsString(..))
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
@@ -90,9 +88,6 @@ import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
-
-instance IsString C.Id where
-    fromString s = C.Id s noLoc
 
 -- | The type of "compiled" expressions.
 data CExp = CVoid
