@@ -852,7 +852,7 @@ checkArrOrRefArrT tau =
 
 unCComp :: CExp -> Cg ([IVar], [(Var, Type)], LComp)
 unCComp (CComp _v ivs vbs _tau comp) = do
-    comp' <- reLabel comp
+    comp' <- uniquifyCompLabels comp
     return (ivs, vbs, comp')
 
 unCComp ce =

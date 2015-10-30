@@ -27,7 +27,8 @@ module KZC.Auto.Comp (
     emitsC,
     parC,
 
-    reLabel
+    mapCompLabels,
+    uniquifyCompLabels
   ) where
 
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
@@ -132,57 +133,89 @@ parC :: (Located a, MonadUnique m)
 parC ann tau c1 c2 a =
     return $ Comp [ParC ann tau c1 c2 (srclocOf a)]
 
-type Re m a = ReaderT (Map Label Label) m a
+type M l1 l2 m a = ReaderT (Map l1 l2) m a
 
-reLabel :: forall m . (Applicative m, MonadUnique m)
-        => Comp Label
-        -> m (Comp Label)
-reLabel comp =
-    runReaderT (rlComp comp) Map.empty
+mapCompLabels :: forall l1 l2 m . (Applicative m, MonadUnique m, IsLabel l1)
+              => (l1 -> m l2) -> Comp l1 -> m (Comp l2)
+mapCompLabels f comp =
+    runReaderT (mlComp comp) Map.empty
   where
-    rlComp :: Comp Label -> Re m (Comp Label)
-    rlComp (Comp steps) = Comp <$> rlSteps steps
+    mlComp :: Comp l1 -> M l1 l2 m (Comp l2)
+    mlComp (Comp steps) = Comp <$> mlSteps steps
 
-    rlSteps :: [Step Label] -> Re m [Step Label]
-    rlSteps [] =
+    mlSteps :: [Step l1] -> M l1 l2 m [Step l2]
+    mlSteps [] =
         return []
 
-    rlSteps (IfC l e c1 c2 s : steps) =
-        rl l $ \l' -> do
-        step'  <- IfC l' e <$> rlComp c1 <*> rlComp c2 <*> pure s
-        steps' <- rlSteps steps
+    mlSteps (VarC l v s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (VarC l' v s) <*> mlSteps steps
+
+    mlSteps (CallC l v iotas es s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (CallC l' v iotas es s) <*> mlSteps steps
+
+    mlSteps (IfC l e c1 c2 s : steps) =
+        ml l $ \l' -> do
+        c1' <- mlComp c1
+        c2' <- mlComp c2
+        (:) <$> pure (IfC l' e c1' c2' s) <*> mlSteps steps
+
+    mlSteps (LetC l decl s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (LetC l' decl s) <*> mlSteps steps
+
+    mlSteps (LiftC l e s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (LiftC l' e s) <*> mlSteps steps
+
+    mlSteps (ReturnC l e s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (ReturnC l' e s) <*> mlSteps steps
+
+    mlSteps (BindC l bv s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (BindC l' bv s) <*> mlSteps steps
+
+    mlSteps (GotoC l s : steps) = do
+        (:) <$> (GotoC <$> lookupLabel l <*> pure s) <*> mlSteps steps
+
+    mlSteps (RepeatC l s : steps) = do
+        (:) <$> (RepeatC <$> lookupLabel l <*> pure s) <*> mlSteps steps
+
+    mlSteps (TakeC l tau s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (TakeC l' tau s) <*> mlSteps steps
+
+    mlSteps (TakesC l i tau s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (TakesC l' i tau s) <*> mlSteps steps
+
+    mlSteps (EmitC l tau s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (EmitC l' tau s) <*> mlSteps steps
+
+    mlSteps (EmitsC l tau s : steps) =
+        ml l $ \l' ->
+        (:) <$> pure (EmitsC l' tau s) <*> mlSteps steps
+
+    mlSteps (ParC ann tau c1 c2 s : steps) = do
+        step'  <- ParC ann tau <$> mlComp c1 <*> mlComp c2 <*> pure s
+        steps' <- mlSteps steps
         return $ step' : steps'
 
-    rlSteps (ParC ann tau c1 c2 s : steps) = do
-        step'  <- ParC ann tau <$> rlComp c1 <*> rlComp c2 <*> pure s
-        steps' <- rlSteps steps
-        return $ step' : steps'
-
-    rlSteps (GotoC l s : steps) = do
+    lookupLabel :: l1 -> M l1 l2 m l2
+    lookupLabel l = do
         theta  <- ask
-        step'  <- case Map.lookup l theta of
-                    Just l' -> return $ GotoC l' s
-                    Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
-        steps' <- rlSteps steps
-        return $ step' : steps'
+        case Map.lookup l theta of
+          Just l' -> return l'
+          Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
 
-    rlSteps (RepeatC l s : steps) = do
-        theta  <- ask
-        step'  <- case Map.lookup l theta of
-                    Just l' -> return $ RepeatC l' s
-                    Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
-        steps' <- rlSteps steps
-        return $ step' : steps'
-
-    rlSteps (step : steps) = do
-        l <- stepLabel step
-        rl l $ \l' -> do
-        let step' = setStepLabel l' step
-        steps' <- rlSteps steps
-        return $ step' : steps'
-      where
-
-    rl :: Label -> (Label -> Re m a) -> Re m a
-    rl l k = do
-        l' <- uniquifyLabel l
+    ml :: l1 -> (l2 -> M l1 l2 m a) -> M l1 l2 m a
+    ml l k = do
+        l' <- lift $ f l
         local (\env -> Map.insert l l' env) $ k l'
+
+uniquifyCompLabels :: forall m . (Applicative m, MonadUnique m)
+                   => Comp Label -> m (Comp Label)
+uniquifyCompLabels comp = mapCompLabels uniquifyLabel comp
