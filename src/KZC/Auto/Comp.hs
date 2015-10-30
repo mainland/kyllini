@@ -27,7 +27,6 @@ module KZC.Auto.Comp (
     emitsC,
     parC,
 
-    genLabel,
     reLabel
   ) where
 
@@ -36,10 +35,10 @@ import Control.Monad.Reader
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
+import KZC.Label
 import KZC.Uniq
 
 varC :: (Located a, MonadUnique m)
@@ -133,11 +132,6 @@ parC :: (Located a, MonadUnique m)
 parC ann tau c1 c2 a =
     return $ Comp [ParC ann tau c1 c2 (srclocOf a)]
 
-genLabel :: MonadUnique m => String -> m Label
-genLabel s = do
-    Uniq u <- newUnique
-    return $ Label (intern (s ++ "__" ++ show u))
-
 type Re m a = ReaderT (Map Label Label) m a
 
 reLabel :: forall m . (Applicative m, MonadUnique m)
@@ -189,7 +183,6 @@ reLabel comp =
       where
 
     rl :: Label -> (Label -> Re m a) -> Re m a
-    rl l@(Label s) k = do
-        Uniq u <- newUnique
-        let l' =  Label (intern (unintern s ++ "__" ++ show u))
+    rl l k = do
+        l' <- uniquifyLabel l
         local (\env -> Map.insert l l' env) $ k l'

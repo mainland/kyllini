@@ -31,7 +31,6 @@ import Data.Foldable (toList)
 import Data.String (IsString(..))
 import Data.Loc
 import Data.Monoid (mempty)
-import Data.Symbol
 import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
@@ -1297,10 +1296,11 @@ cgWithLabel lbl k = do
     -- We need to use the @LABEL@ macro on the label. Gross, but what can ya
     -- do...
     lblMacro :: C.Id
-    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") noLoc
+    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") l
 
     ident :: String
-    ident = unintern (unLabel lbl)
+    l :: SrcLoc
+    C.Id ident l = toIdent lbl noLoc
 
 -- | A 'TakeK' continuation takes a label, the number of elements to take, the
 -- type of the elements, a continuation that computes a 'CComp' from the 'CExp'

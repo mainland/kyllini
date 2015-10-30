@@ -22,6 +22,7 @@ import KZC.Auto.Comp
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import qualified KZC.Core.Syntax as C
+import KZC.Label
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Monad

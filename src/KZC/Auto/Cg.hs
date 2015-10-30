@@ -27,7 +27,6 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid (mempty)
 import Data.String (IsString(..))
-import Data.Symbol
 import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
@@ -41,6 +40,7 @@ import KZC.Auto.Syntax
 import KZC.Cg.Code
 import KZC.Cg.Util
 import KZC.Error
+import KZC.Label
 import KZC.Lint.Monad
 import KZC.Name
 import KZC.Platform
@@ -1077,10 +1077,11 @@ cgWithLabel lbl k = do
     -- We need to use the @LABEL@ macro on the label. Gross, but what can ya
     -- do...
     lblMacro :: C.Id
-    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") noLoc
+    lblMacro = C.Id ("LABEL(" ++ ident ++ ")") l
 
     ident :: String
-    ident = unintern (unLabel lbl)
+    l :: SrcLoc
+    C.Id ident l = toIdent lbl noLoc
 
 type TakeK l = Int -> Type -> [Step l] -> Cg CExp
 
