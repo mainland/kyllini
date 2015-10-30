@@ -1,18 +1,23 @@
 -- |
--- Module      : KZC.Core.Smart
+-- Module      : KZC.Auto.Smart
 -- Copyright   : (c) 2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Core.Smart where
+module KZC.Auto.Smart (
+    module KZC.Auto.Smart,
+    isCompT,
+    isPureishT
+  ) where
 
 import Control.Applicative
-import Data.List (sort)
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Syntax
+import KZC.Auto.Syntax
+import KZC.Core.Smart (isCompT,
+                       isPureishT)
 import KZC.Name
 import KZC.Platform
 import KZC.Uniq
@@ -38,7 +43,7 @@ intE i = ConstE (IntC dEFAULT_INT_WIDTH Signed i) noLoc
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
-letE :: Decl -> Exp -> Exp
+letE :: LocalDecl -> Exp -> Exp
 letE d e = LetE d e (d `srcspan` e)
 
 callE :: Var -> [Exp] -> Exp
@@ -56,20 +61,10 @@ bindE v tau e1 e2 = BindE (BindV v tau) e1 e2 (v `srcspan` e1 `srcspan` e2)
 seqE :: Exp -> Exp -> Exp
 seqE e1 e2 = BindE WildV e1 e2 (e1 `srcspan` e2)
 
-takeE :: Type -> Exp
-takeE tau = TakeE tau (srclocOf tau)
+infixr 1 .:=.
 
-takesE :: Int -> Type -> Exp
-takesE n tau = TakesE n tau (srclocOf tau)
-
-emitE :: Exp -> Exp
-emitE e = EmitE e (srclocOf e)
-
-emitsE :: Exp -> Exp
-emitsE e = EmitsE e (srclocOf e)
-
-repeatE :: Exp -> Exp
-repeatE e = RepeatE AutoVect e (srclocOf e)
+(.:=.) :: Var -> Exp -> Exp
+v .:=. e = AssignE (varE v) e (v `srcspan` e)
 
 unitT :: Type
 unitT = UnitT noLoc
@@ -125,24 +120,6 @@ isFunT _         = False
 isSTUnitT :: Type -> Bool
 isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
 isSTUnitT _                              = False
-
--- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
-isCompT :: Type -> Bool
-isCompT (ST {}) = True
-isCompT _       = False
-
--- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
--- otherwise. A pureish computation may use references, but it may not take or
--- emit, so it has type @forall s a b . ST omega s a b@.
-isPureishT :: Type -> Bool
-isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
-
-isPureishT (ST {}) =
-    False
-
-isPureishT _ =
-    True
 
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s

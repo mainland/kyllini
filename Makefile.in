@@ -49,6 +49,13 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	KZC/Auto/Cg.hs \
+	KZC/Auto/Cg/Monad.hs \
+	KZC/Auto/Comp.hs \
+	KZC/Auto/Lint.hs \
+	KZC/Auto/Smart.hs \
+	KZC/Auto/Syntax.hs \
+	KZC/Auto/Transform.hs \
 	KZC/Cg.hs \
 	KZC/Cg/Monad.hs \
 	KZC/Check.hs \
@@ -90,6 +97,7 @@ SOURCE = \
 	Opts.hs
 
 GENERATED = \
+	KZC/Auto/Syntax-instances.hs \
 	KZC/Check/Types-instances.hs \
 	KZC/Core/Syntax-instances.hs \
 	Language/Ziria/Parser/Lexer.hs \
@@ -141,6 +149,9 @@ $(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/D
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+
+$(SRCDIR)KZC/Auto/Syntax-instances.hs : bin/gen-auto-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Auto/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #
