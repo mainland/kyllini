@@ -50,6 +50,7 @@ GHCFLAGS+=-Iinclude
 
 SOURCE = \
 	KZC/Auto/Cg.hs \
+	KZC/Auto/Cg/CExp.hs \
 	KZC/Auto/Cg/Monad.hs \
 	KZC/Auto/Comp.hs \
 	KZC/Auto/Lint.hs \

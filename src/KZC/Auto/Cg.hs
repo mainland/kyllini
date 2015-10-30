@@ -32,6 +32,7 @@ import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Cg.CExp
 import KZC.Auto.Cg.Monad
 import KZC.Auto.Comp
 import KZC.Auto.Lint
