@@ -58,6 +58,7 @@ SOURCE = \
 	KZC/Auto/Transform.hs \
 	KZC/Cg.hs \
 	KZC/Cg/Monad.hs \
+	KZC/Cg/Util.hs \
 	KZC/Check.hs \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \
