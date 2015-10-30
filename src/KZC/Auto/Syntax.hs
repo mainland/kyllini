@@ -162,8 +162,6 @@ data Step l = VarC l Var !SrcLoc
             -- @forall s a b . ST (C tau) s a b@ into the monad. 'LiftC' and
             -- 'ReturnC' differ only for the purpose of type checking.
             | LiftC l Exp !SrcLoc
-            -- | A return. The continuation receives the /compiled/
-            -- representation of the expression.
             | ReturnC l Exp !SrcLoc
             | BindC l BindVar !SrcLoc
 
