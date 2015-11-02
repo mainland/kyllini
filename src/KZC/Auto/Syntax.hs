@@ -51,6 +51,7 @@ module KZC.Auto.Syntax (
     LProgram,
     LDecl,
     LComp,
+    LStep,
 
     isComplexStruct,
 
@@ -185,6 +186,8 @@ type LProgram = Program Label
 type LDecl = Decl Label
 
 type LComp = Comp Label
+
+type LStep = Step Label
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
