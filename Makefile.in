@@ -53,6 +53,7 @@ SOURCE = \
 	KZC/Auto/Cg/CExp.hs \
 	KZC/Auto/Cg/Monad.hs \
 	KZC/Auto/Comp.hs \
+	KZC/Auto/Flatten.hs \
 	KZC/Auto/Lint.hs \
 	KZC/Auto/Smart.hs \
 	KZC/Auto/Syntax.hs \

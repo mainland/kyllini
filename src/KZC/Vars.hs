@@ -38,6 +38,9 @@ class Ord n => Fvs x n where
     fvs :: SetLike m n => x -> m n
     fvs _ = mempty
 
+instance Ord a => Fvs a a where
+    fvs x = singleton x
+
 instance Fvs x n => Fvs (Maybe x) n where
     fvs = foldMap fvs
 

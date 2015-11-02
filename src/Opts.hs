@@ -98,6 +98,7 @@ fDynFlagOpts :: [(DynFlag, String, String)]
 fDynFlagOpts =
   [ (PrettyPrint, "pprint",       "pretty-print file")
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
+  , (Flatten,     "flatten",      "run the flattener")
   , (Auto,        "auto",         "use the auto compiler")
   ]
 
@@ -115,11 +116,12 @@ dDynFlagOpts =
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
 dDumpFlagOpts =
-  [ (DumpCPP,    "cpp",  "dump CPP output")
-  , (DumpRename, "rn",   "dump renamer output")
-  , (DumpLift,   "lift", "dump lambda lifter output")
-  , (DumpCore,   "core", "dump core")
-  , (DumpAuto,   "auto", "dump automata")
+  [ (DumpCPP,     "cpp",     "dump CPP output")
+  , (DumpRename,  "rn",      "dump renamer output")
+  , (DumpLift,    "lift",    "dump lambda lifter output")
+  , (DumpFlatten, "flatten", "dump flattener output")
+  , (DumpCore,    "core",    "dump core")
+  , (DumpAuto,    "auto",    "dump automata")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -133,6 +135,7 @@ dTraceFlagOpts =
   , (TraceLint,     "lint",      "trace linter")
   , (TraceAuto,     "auto",      "trace auto")
   , (TraceAutoLint, "auto-lint", "trace auto linter")
+  , (TraceFlatten,  "flatten",   "trace flattener")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

@@ -51,6 +51,7 @@ data DynFlag = Quiet
              | ExpertTypes
              | LinePragmas
              | Auto
+             | Flatten
              | AutoLint
   deriving (Eq, Ord, Enum, Show)
 
@@ -60,6 +61,7 @@ data WarnFlag = WarnError
 data DumpFlag = DumpCPP
               | DumpRename
               | DumpLift
+              | DumpFlatten
               | DumpCore
               | DumpAuto
   deriving (Eq, Ord, Enum, Show)
@@ -73,6 +75,7 @@ data TraceFlag = TraceLexer
                | TraceLint
                | TraceAuto
                | TraceAutoLint
+               | TraceFlatten
   deriving (Eq, Ord, Enum, Show)
 
 data Flags = Flags

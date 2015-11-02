@@ -33,6 +33,7 @@ import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
 import qualified KZC.Auto.Cg as A
+import qualified KZC.Auto.Flatten as A
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Auto.Transform
@@ -96,13 +97,20 @@ runPipeline filepath = do
     lambdaLiftPhase :: [C.Decl] -> MaybeT KZC [C.Decl]
     lambdaLiftPhase = lift . runLift . liftProgram >=> dumpPass DumpLift "core" "ll"
 
+    transformPhase :: [C.Decl] -> MaybeT KZC A.LProgram
+    transformPhase = lift . runT . transformProgram >=> dumpPass DumpLift "acore" "trans"
+
+    flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    flattenPhase = lift . A.evalFl . A.flattenProgram >=> dumpPass DumpFlatten "acore" "flatten"
+
     compilePhase :: [C.Decl] -> MaybeT KZC ()
     compilePhase = stopIf (testDynFlag StopAfterCheck) >=>
                    lift . evalCg . compileProgram >=> lift . writeOutput
 
     autoCompilePhase :: [C.Decl] -> MaybeT KZC ()
-    autoCompilePhase = lift . runT . transformProgram      >=>
-                       dumpPass DumpLift "acore" "trans"   >=>
+    autoCompilePhase = transformPhase                      >=>
+                       lintAuto                            >=>
+                       runIf (testDynFlag Flatten ) flattenPhase >=>
                        lintAuto                            >=>
                        stopIf (testDynFlag StopAfterCheck) >=>
                        lift . A.evalCg . A.compileProgram  >=>
@@ -126,6 +134,11 @@ runPipeline filepath = do
     stopIf f x = do
         stop <- asksFlags f
         if stop then MaybeT (return Nothing) else return x
+
+    runIf :: (Flags -> Bool) -> (a -> MaybeT KZC a) -> a -> MaybeT KZC a
+    runIf f g x = do
+        run <- asksFlags f
+        if run then g x else return x
 
     iteFlag :: (Flags -> Bool) -> (a -> MaybeT KZC b) -> (a -> MaybeT KZC b) -> a -> MaybeT KZC b
     iteFlag f th el x = do
