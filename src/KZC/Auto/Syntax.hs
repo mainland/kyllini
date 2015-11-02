@@ -670,6 +670,58 @@ instance Subst a b Exp => Subst a b (Field, Exp) where
 
 {------------------------------------------------------------------------------
  -
+ - Label substitution
+ -
+ ------------------------------------------------------------------------------}
+
+instance IsLabel l => Subst l l (Step l) where
+    substM (VarC l v s) =
+        VarC <$> substM l <*> pure v <*> pure s
+
+    substM (CallC l v iotas es s) =
+        CallC <$> substM l <*> pure v <*> pure iotas <*> pure es <*> pure s
+
+    substM (IfC l e c1 c2 s) =
+        IfC <$> substM l <*> pure e <*> substM c1 <*> substM c2 <*> pure s
+
+    substM (LetC l decl s) =
+        LetC <$> substM l <*> pure decl <*> pure s
+
+    substM (LiftC l e s) =
+        LiftC <$> substM l <*> pure e <*> pure s
+
+    substM (ReturnC l e s) =
+        ReturnC <$> substM l <*> pure e <*> pure s
+
+    substM (BindC l bv s) =
+        BindC <$> substM l <*> pure bv <*> pure s
+
+    substM (GotoC l s) =
+        GotoC <$> substM l <*> pure s
+
+    substM (RepeatC l s) =
+        RepeatC <$> substM l <*> pure s
+
+    substM (TakeC l tau s) =
+        TakeC <$> substM l <*> pure tau <*> pure s
+
+    substM (TakesC l i tau s) =
+        TakesC <$> substM l <*> pure i <*> pure tau <*> pure s
+
+    substM (EmitC l e s) =
+        EmitC <$> substM l <*> pure e <*> pure s
+
+    substM (EmitsC l e s) =
+        EmitsC <$> substM l <*> pure e <*> pure s
+
+    substM (ParC ann tau c1 c2 s) =
+        ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+instance IsLabel l => Subst l l (Comp l) where
+    substM comp = Comp <$> substM (unComp comp)
+
+{------------------------------------------------------------------------------
+ -
  - Iota substitution
  -
  ------------------------------------------------------------------------------}
