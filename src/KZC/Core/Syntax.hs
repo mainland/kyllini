@@ -852,6 +852,50 @@ instance Fvs Exp v => Fvs [Exp] v where
 
 {------------------------------------------------------------------------------
  -
+ - All variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance HasVars Decl Var where
+    allVars (LetD v _ e _)           = singleton v <> allVars e
+    allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
+    allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
+    allVars (LetRefD v _ e _)        = singleton v <> allVars e
+    allVars (LetStructD {})          = mempty
+
+instance HasVars Exp Var where
+    allVars (ConstE {})             = mempty
+    allVars (VarE v _)              = singleton v
+    allVars (UnopE _ e _)           = allVars e
+    allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)        = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)      = allVars decl <> allVars body
+    allVars (CallE f _ es _)        = singleton f <> allVars es
+    allVars (DerefE e _)            = allVars e
+    allVars (AssignE e1 e2 _)       = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)        = allVars e1 <> allVars e2
+    allVars (ForE _ v _ e1 e2 e3 _) = singleton v <> allVars e1 <> allVars e2 <> allVars e3
+    allVars (ArrayE es _)           = allVars es
+    allVars (IdxE e1 e2 _ _)        = allVars e1 <> allVars e2
+    allVars (StructE _ flds _)      = allVars (map snd flds)
+    allVars (ProjE e _ _)           = allVars e
+    allVars (PrintE _ es _)         = allVars es
+    allVars (ErrorE {})             = mempty
+    allVars (ReturnE _ e _)         = allVars e
+    allVars (BindE bv e1 e2 _)      = allVars bv <> allVars e1 <> allVars e2
+    allVars (TakeE {})              = mempty
+    allVars (TakesE {})             = mempty
+    allVars (EmitE e _)             = allVars e
+    allVars (EmitsE e _)            = allVars e
+    allVars (RepeatE _ e _)         = allVars e
+    allVars (ParE _ _ e1 e2 _)      = allVars e1 <> allVars e2
+
+instance HasVars BindVar Var where
+    allVars WildV       = mempty
+    allVars (BindV v _) = singleton v
+
+{------------------------------------------------------------------------------
+ -
  - Polymorphic substitution
  -
  ------------------------------------------------------------------------------}

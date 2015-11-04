@@ -49,7 +49,13 @@ class Ord n => HasVars x n where
     allVars :: SetLike m n => x -> m n
     allVars _ = mempty
 
-instance (Foldable f, HasVars x n) => HasVars (f x) n where
+instance Ord a => HasVars a a where
+    allVars x = singleton x
+
+instance HasVars x n => HasVars (Maybe x) n where
+    allVars = foldMap allVars
+
+instance HasVars x n => HasVars [x] n where
     allVars = foldMap allVars
 
 class FreshVars a where
