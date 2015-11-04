@@ -58,6 +58,7 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State
+import Data.Foldable (toList)
 import Data.IORef
 import Data.List (foldl')
 import Data.Loc
