@@ -22,6 +22,7 @@ module KZC.Vars (
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 
@@ -81,6 +82,9 @@ instance Subst e v a => Subst e v [a] where
 
 instance Subst e v a => Subst e v (Maybe a) where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
+
+instance Ord a => Subst a a a where
+    substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
 class Freshen a e v where
     freshen :: a -> (a -> SubstM e v b) -> SubstM e v b
