@@ -1205,11 +1205,11 @@ instance Freshen Var Exp Var where
     freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
-        phi'    = Set.insert v' phi
+        phi'    = insert v' phi
         theta'  = Map.insert v (varE v') theta
         v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
                           , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `Set.notMember` phi]
+                          , x `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1220,7 +1220,7 @@ instance Freshen Var Exp Var where
     freshen v k (theta, phi) =
         k v (theta', phi')
       where
-        phi'   = Set.insert v phi
+        phi'   = insert v phi
         theta' = Map.delete v theta
 
 instance Freshen (Var, Type) Exp Var where

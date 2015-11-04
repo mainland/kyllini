@@ -58,7 +58,6 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import qualified Data.Set as Set
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
@@ -1253,11 +1252,11 @@ instance Freshen IVar Iota IVar where
     freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (ivarT alpha') theta
         alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
                               , let beta = IVar n { nameSym = intern (s ++ i) }
-                              , beta `Set.notMember` phi]
+                              , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1268,7 +1267,7 @@ instance Freshen IVar Iota IVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 instance Freshen Decl Iota IVar where
@@ -1303,11 +1302,11 @@ instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (tyVarT alpha') theta
         alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
                               , let beta = TyVar n { nameSym = intern (s ++ i) }
-                              , beta `Set.notMember` phi]
+                              , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1318,7 +1317,7 @@ instance Freshen TyVar Type TyVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 {------------------------------------------------------------------------------
@@ -1357,11 +1356,11 @@ instance Freshen Var Exp Var where
     freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
-        phi'    = Set.insert v' phi
+        phi'    = insert v' phi
         theta'  = Map.insert v (varE v') theta
         v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
                           , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `Set.notMember` phi]
+                          , x `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1372,7 +1371,7 @@ instance Freshen Var Exp Var where
     freshen v k (theta, phi) =
         k v (theta', phi')
       where
-        phi'   = Set.insert v phi
+        phi'   = insert v phi
         theta' = Map.delete v theta
 
 instance Freshen (Var, Type) Exp Var where
