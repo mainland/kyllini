@@ -636,7 +636,7 @@ instance FreshVars IVar where
         simpleTvs = reverse ['l'..'n']
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi
@@ -658,7 +658,7 @@ instance Freshen TyVar Type TyVar where
         theta'  = Map.delete alpha theta
 
 instance Freshen IVar Type IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi

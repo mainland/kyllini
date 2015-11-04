@@ -1202,7 +1202,7 @@ instance Freshen LocalDecl Exp Var where
         k (LetRefLD v' tau e' l)
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+    freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
         phi'    = Set.insert v' phi

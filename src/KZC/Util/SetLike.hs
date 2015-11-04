@@ -26,7 +26,14 @@ import qualified Data.Set as Set
 infixl 9 <\\>
 
 class (Foldable f, Monoid (f a), Ord a) => SetLike f a where
+    member :: a -> f a -> Bool
+
+    notMember :: a -> f a -> Bool
+    notMember x ys = not (x `member` ys)
+
     singleton :: a -> f a
+
+    insert :: a -> f a -> f a
 
     (<\\>) :: f a -> f a -> f a
 
@@ -40,7 +47,9 @@ class SetLike f a => MultiSetLike f a where
     unique :: f a -> f a
 
 instance Ord a => SetLike [] a where
+    member x xs = x `List.elem` xs
     singleton x = [x]
+    insert x xs = x:xs
     xs <\\> ys  = xs List.\\ ys
     delete x xs = List.delete x xs
     fromList xs = xs
@@ -49,7 +58,9 @@ instance Ord a => MultiSetLike [] a where
     unique xs = Set.toList (Set.fromList xs)
 
 instance Ord a => SetLike Set a where
+    member x xs = Set.member x xs
     singleton x = Set.singleton x
+    insert x xs = Set.insert x xs
     xs <\\> ys  = xs Set.\\ ys
     delete x xs = Set.delete x xs
     fromList xs = Set.fromList xs
@@ -72,7 +83,11 @@ instance Ord a => Monoid (OrderedSet a) where
     OS xs xs' `mappend` OS ys _ = mkOrderedSet xs xs' ys
 
 instance Ord a => SetLike OrderedSet a where
+    member x (OS _ ys) = Set.member x ys
+
     singleton x = OS (singleton x) (singleton x)
+
+    insert x (OS xs ys) = OS (xs ++ [x]) (Set.insert x ys)
 
     OS xs xs' <\\> OS ys ys' = OS (xs <\\> ys) (xs' <\\> ys')
 

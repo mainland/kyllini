@@ -1250,7 +1250,7 @@ instance Subst Exp Var Exp where
  ------------------------------------------------------------------------------}
 
 instance Freshen IVar Iota IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi
@@ -1300,7 +1300,7 @@ instance Freshen Decl Iota IVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
         phi'    = Set.insert alpha' phi
@@ -1354,7 +1354,7 @@ instance Freshen Decl Exp Var where
         k decl
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+    freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
         phi'    = Set.insert v' phi
