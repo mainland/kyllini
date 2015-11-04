@@ -1142,7 +1142,7 @@ cgComp takek emitk comp =
         instantiateSTScope $ do
         useLabels (compUsedLabels comp)
         theta <- askTyVarTypeSubst
-        cgComp takek emitk (subst theta mempty comp)
+        cgComp takek emitk (subst1 theta comp)
       where
         cgArg :: Exp -> Cg CExp
         cgArg e = withFvContext e $ do
@@ -1160,8 +1160,8 @@ cgComp takek emitk comp =
                 let theta1   = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
                 let theta2   = Map.fromList (ivs `zip` iotas)
                 let theta3   = Map.fromList (map fst vbs `zip` es)
-                let comp'    = (subst theta3 mempty . subst theta2 mempty . subst theta1 mempty) comp
-                let tau_res' = (subst theta2 mempty . subst theta1 mempty) tau_res
+                let comp'    = (subst1 theta3 . subst1 theta2 . subst1 theta1) comp
+                let tau_res' = (subst1 theta2 . subst1 theta1) tau_res
                 return $ CComp f [] [] tau_res' comp'
 
             go _tau e = do

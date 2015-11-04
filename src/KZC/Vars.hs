@@ -16,7 +16,8 @@ module KZC.Vars (
     Subst(..),
     Freshen(..),
 
-    (/->)
+    (/->),
+    subst1
   ) where
 
 import Data.Foldable
@@ -25,6 +26,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
+import qualified Data.Set as Set
 
 import KZC.Uniq
 import KZC.Util.SetLike
@@ -82,6 +84,10 @@ class (Ord v, Fvs e v) => Subst e v a where
     subst theta phi x = substM x (theta, phi)
 
     substM :: a -> SubstM e v a
+
+-- | Substitute without freshening.
+subst1 :: Subst e v a => Map v e -> a -> a
+subst1 m x = subst m Set.empty x
 
 instance Subst e v a => Subst e v [a] where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
