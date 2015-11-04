@@ -52,10 +52,16 @@ module KZC.Lint.Monad (
   ) where
 
 import Control.Applicative
-import Control.Monad.Exception
-import Control.Monad.Reader
-import Control.Monad.Ref
-import Control.Monad.State
+import Control.Monad (liftM)
+import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Reader (MonadReader(..),
+                             ReaderT(..),
+                             asks)
+import Control.Monad.Ref (MonadRef(..),
+                          MonadAtomicRef(..))
+import Control.Monad.State (StateT(..))
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans (lift)
 import Data.IORef
 import Data.List (foldl')
 import Data.Loc (Located)
@@ -77,20 +83,27 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-newtype Tc r s a = Tc { unTc :: r -> s -> TcEnv -> KZC (a, s) }
+newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadRef IORef, MonadAtomicRef IORef,
+              MonadReader TcEnv,
+              MonadException,
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace)
 
-runTc :: Tc r s a -> r -> s -> TcEnv -> KZC (a, s)
-runTc m r s e = unTc m r s e
+runTc :: Tc a -> TcEnv -> KZC a
+runTc m r = (runReaderT . unTc) m r
 
 -- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
-liftTc :: forall r s a . r -> s -> Tc r s a -> KZC a
-liftTc r s m = do
-    eref   <- asks tcenvref
-    env    <- readRef eref
-    (a, _) <- runTc (m' eref) r s env
-    return a
+liftTc :: forall a . Tc a -> KZC a
+liftTc m = do
+    eref <- asks tcenvref
+    env  <- readRef eref
+    runTc (m' eref) env
   where
-    m' :: IORef TcEnv -> Tc r s a
+    m' :: IORef TcEnv -> Tc a
     m' eref = do
         x <- m
         askTc >>= writeRef eref
@@ -98,85 +111,11 @@ liftTc r s m = do
 
 -- | Run a @Tc@ computation in the @KZC@ monad without updating the
 -- @Tc@ environment.
-withTc :: forall r s a . r -> s -> Tc r s a -> KZC a
-withTc r s m = do
-    eref   <- asks tcenvref
-    env    <- readRef eref
-    (a, _) <- runTc m r s env
-    return a
-
-instance Functor (Tc r s) where
-    fmap f x = x >>= return . f
-
-instance Applicative (Tc r s) where
-    pure  = return
-    (<*>) = ap
-
-instance Monad (Tc r s) where
-    {-# INLINE return #-}
-    return a = Tc $ \_ s _ -> return (a, s)
-
-    {-# INLINE (>>=) #-}
-    m >>= f  = Tc $ \r s e -> do
-               (x, s') <- runTc m r s e
-               runTc (f x) r s' e
-
-    {-# INLINE (>>) #-}
-    m1 >> m2 = Tc $ \r s e -> do
-               (_, s') <- runTc m1 r s e
-               runTc m2 r s' e
-
-    fail msg = throw (FailException (string msg))
-
-instance MonadReader r (Tc r s) where
-    ask = Tc $ \r s _ -> return (r, s)
-
-    local f m = Tc $ \r s e -> runTc m (f r) s e
-
-instance MonadState s (Tc r s) where
-    get   = Tc $ \_ s _ -> return (s, s)
-    put s = Tc $ \_ _ _ -> return ((), s)
-
-instance MonadRef IORef (Tc r s) where
-    newRef x     = liftIO $ newRef x
-    readRef r    = liftIO $ readRef r
-    writeRef r x = liftIO $ writeRef r x
-
-instance MonadIO (Tc r s) where
-    liftIO = liftKZC . liftIO
-
-instance MonadUnique (Tc r s) where
-    newUnique = liftKZC newUnique
-
-instance MonadKZC (Tc r s) where
-    liftKZC m = Tc $ \_ s _ -> do
-                a <- m
-                return (a, s)
-
-instance MonadException (Tc r s) where
-    throw e =
-        throwContextException (liftKZC . throw) e
-
-    m `catch` h = Tc $ \r s env ->
-      unTc m r s env `catchContextException` \e -> unTc (h e) r s env
-
-instance MonadErr (Tc r s) where
-    {-# INLINE askErrCtx #-}
-    askErrCtx = liftKZC askErrCtx
-
-    {-# INLINE localErrCtx #-}
-    localErrCtx ctx m = Tc $ \r s env -> localErrCtx ctx (unTc m r s env)
-
-    {-# INLINE warnIsError #-}
-    warnIsError = asksFlags (testWarnFlag WarnError)
-
-instance MonadFlags (Tc r s) where
-    askFlags = liftKZC askFlags
-    localFlags fs m = Tc $ \r s env -> localFlags fs (unTc m r s env)
-
-instance MonadTrace (Tc r s) where
-    asksTraceDepth = liftKZC asksTraceDepth
-    localTraceDepth d m = Tc $ \r s env -> localTraceDepth d (unTc m r s env)
+withTc :: Tc a -> KZC a
+withTc m = do
+    eref <- asks tcenvref
+    env  <- readRef eref
+    runTc m env
 
 class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
@@ -185,9 +124,17 @@ class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUn
 asksTc :: MonadTc m => (TcEnv -> a) -> m a
 asksTc f = liftM f askTc
 
-instance MonadTc (Tc r s) where
-    askTc       = Tc $ \_ s e -> return (e, s)
-    localTc f m = Tc $ \r s e -> runTc m r s (f e)
+instance MonadTc Tc where
+    askTc       = Tc $ ask
+    localTc f m = Tc $ local f (unTc m)
+
+instance MonadTc m => MonadTc (ReaderT r m) where
+    askTc       = lift askTc
+    localTc f m = ReaderT $ \r -> localTc f (runReaderT m r)
+
+instance MonadTc m => MonadTc (StateT r m) where
+    askTc       = lift askTc
+    localTc f m = StateT $ \s -> localTc f (runStateT m s)
 
 extend :: forall k v a m . (Ord k, MonadTc m)
        => (TcEnv -> Map k v)

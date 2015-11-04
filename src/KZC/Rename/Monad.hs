@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -9,6 +12,7 @@
 
 module KZC.Rename.Monad (
     RnEnv(..),
+
     Rn(..),
     runRn,
 
@@ -27,7 +31,6 @@ import Data.IORef
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Text.PrettyPrint.Mainland
 
 import Language.Ziria.Syntax
 
@@ -45,82 +48,23 @@ data RnEnv = RnEnv
 
 defaultRnEnv :: RnEnv
 defaultRnEnv = RnEnv
-    { vars      = Map.empty
-    , compVars  = Map.empty
-    , compScope = False
+    { vars       = Map.empty
+    , compVars   = Map.empty
+    , compScope  = False
     }
 
-newtype Rn a = Rn { unRn :: RnEnv -> KZC a }
+newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadRef IORef, MonadAtomicRef IORef,
+              MonadReader RnEnv,
+              MonadException,
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace)
 
 runRn :: Rn a -> KZC a
-runRn m = unRn m defaultRnEnv
-
-instance Functor Rn where
-    fmap f x = x >>= return . f
-
-instance Applicative Rn where
-    pure  = return
-    (<*>) = ap
-
-instance Monad Rn where
-    {-# INLINE return #-}
-    return a = Rn $ \_ -> return a
-
-    {-# INLINE (>>=) #-}
-    m >>= f  = Rn $ \r -> do
-               x <- unRn m r
-               unRn (f x) r
-
-    {-# INLINE (>>) #-}
-    m1 >> m2 = Rn $ \r -> do
-               _ <- unRn m1 r
-               unRn m2 r
-
-    fail msg = throw (FailException (string msg))
-
-instance MonadReader RnEnv Rn where
-    ask = Rn $ \r -> return r
-
-    local f m = Rn $ \r -> unRn m (f r)
-
-instance MonadRef IORef Rn where
-    newRef x     = liftIO $ newRef x
-    readRef r    = liftIO $ readRef r
-    writeRef r x = liftIO $ writeRef r x
-
-instance MonadIO Rn where
-    liftIO = liftKZC . liftIO
-
-instance MonadUnique Rn where
-    newUnique = liftKZC newUnique
-
-instance MonadKZC Rn where
-    liftKZC m = Rn $ \_ -> m
-
-instance MonadException Rn where
-    throw e =
-        throwContextException (liftKZC . throw) e
-
-    m `catch` h = Rn $ \r ->
-      unRn m r `catchContextException` \e -> unRn (h e) r
-
-instance MonadErr Rn where
-    {-# INLINE askErrCtx #-}
-    askErrCtx = liftKZC askErrCtx
-
-    {-# INLINE localErrCtx #-}
-    localErrCtx ctx m = Rn $ \r -> localErrCtx ctx (unRn m r)
-
-    {-# INLINE warnIsError #-}
-    warnIsError = asksFlags (testWarnFlag WarnError)
-
-instance MonadFlags Rn where
-    askFlags = liftKZC askFlags
-    localFlags fs m = Rn $ \r -> unRn (localFlags fs m) r
-
-instance MonadTrace Rn where
-    asksTraceDepth = liftKZC asksTraceDepth
-    localTraceDepth d m = Rn $ \r -> unRn (localTraceDepth d m) r
+runRn m = runReaderT (unRn m) defaultRnEnv
 
 extend :: forall k v a . Ord k
        => (RnEnv -> Map k v)

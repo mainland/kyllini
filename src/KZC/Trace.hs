@@ -23,6 +23,7 @@ module KZC.Trace (
   ) where
 
 import Control.Monad.Reader
+import Control.Monad.State
 import System.IO (hPutStrLn,
                   stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -33,6 +34,14 @@ import KZC.Flags
 class MonadFlags m => MonadTrace m where
     asksTraceDepth :: m Int
     localTraceDepth :: Int -> m a -> m a
+
+instance MonadTrace m => MonadTrace (ReaderT r m) where
+    asksTraceDepth      = lift asksTraceDepth
+    localTraceDepth d m = ReaderT $ \r -> localTraceDepth d (runReaderT m r)
+
+instance MonadTrace m => MonadTrace (StateT s m) where
+    asksTraceDepth      = lift asksTraceDepth
+    localTraceDepth d m = StateT $ \s -> localTraceDepth d (runStateT m s)
 
 traceNest :: MonadTrace m => m a -> m a
 traceNest m = do

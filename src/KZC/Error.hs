@@ -30,6 +30,8 @@ module KZC.Error (
 import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Monad.Exception
 import Control.Monad.IO.Class
+import Control.Monad.Reader
+import Control.Monad.State
 import Data.List (sortBy)
 import Data.Loc
 import Data.Ord (comparing)
@@ -68,6 +70,24 @@ class (Applicative m, MonadIO m , MonadException m) => MonadErr m where
       where
         e_warn :: WarnException
         e_warn = WarnException (toException e)
+
+instance MonadErr m => MonadErr (ReaderT r m) where
+    getMaxContext     = lift getMaxContext
+    warnIsError       = lift warnIsError
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = ReaderT $ \r -> localErrCtx ctx (runReaderT m r)
+    panic             = lift . panic
+    err               = lift . err
+    warn              = lift . warn
+
+instance MonadErr m => MonadErr (StateT r m) where
+    getMaxContext     = lift getMaxContext
+    warnIsError       = lift warnIsError
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = StateT $ \s -> localErrCtx ctx (runStateT m s)
+    panic             = lift . panic
+    err               = lift . err
+    warn              = lift . warn
 
 localLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
 localLocContext a doc m =

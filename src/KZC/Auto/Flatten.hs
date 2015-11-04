@@ -34,7 +34,7 @@ import KZC.Name
 import KZC.Trace
 import KZC.Vars
 
-type Fl a = Tc FlEnv () a
+type Fl a = ReaderT FlEnv Tc a
 
 data CompBinding = CompB Var [IVar] [(Var, Type)] Type LComp
 
@@ -46,7 +46,7 @@ defaultFlEnv = FlEnv
     { compBindings = mempty }
 
 evalFl :: Fl a -> KZC a
-evalFl m = liftTc defaultFlEnv () m
+evalFl m = withTc $ runReaderT m defaultFlEnv
 
 extend :: forall k v a . Ord k
        => (FlEnv -> Map k v)

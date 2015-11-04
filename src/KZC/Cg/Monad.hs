@@ -501,7 +501,7 @@ ccompLabel (Free comp) = compLabel comp
     compLabel (GotoC l)              = useLabel l
 
 -- | The 'Cg' monad.
-type Cg a = Tc CgEnv CgState a
+type Cg a = ReaderT CgEnv (StateT CgState Tc) a
 
 data CgEnv = CgEnv
     { varCExps   :: Map Var CExp
@@ -530,7 +530,7 @@ defaultCgState = CgState
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
 evalCg :: Cg () -> KZC [C.Definition]
 evalCg m = do
-    s <- liftTc defaultCgEnv defaultCgState (m >> get)
+    s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
 
 extend :: forall k v a . Ord k

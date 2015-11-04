@@ -35,7 +35,7 @@ import KZC.Core.Syntax
 import KZC.Lint.Monad
 import KZC.Monad
 
-type Lift a = Tc LiftEnv LiftState a
+type Lift a = ReaderT LiftEnv (StateT LiftState Tc) a
 
 data LiftEnv = LiftEnv
     { funFvs :: Map Var (Var, [Var]) }
@@ -53,7 +53,7 @@ defaultLiftState = LiftState
 
 -- | Evaluate a 'Lift' action and return a list of 'C.Definition's.
 runLift :: Lift a -> KZC a
-runLift m = liftTc defaultLiftEnv defaultLiftState m
+runLift m = liftTc $ evalStateT (runReaderT m defaultLiftEnv) defaultLiftState
 
 extend :: forall k v a . Ord k
        => (LiftEnv -> Map k v)
