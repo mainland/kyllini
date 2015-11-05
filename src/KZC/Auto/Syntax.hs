@@ -472,6 +472,8 @@ pprFunParams ivs vbs =
 instance IsLabel l => Pretty (Step l) where
     ppr step = ppr (Comp [step])
 
+    pprList steps = ppr (Comp steps)
+
 instance IsLabel l => Pretty (Comp l) where
     pprPrec p comp =
         case pprComp comp of
