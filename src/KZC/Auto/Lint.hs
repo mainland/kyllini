@@ -15,6 +15,8 @@ module KZC.Auto.Lint (
     checkProgram,
 
     inferComp,
+    checkComp,
+
     inferStep,
 
     inferExp,
