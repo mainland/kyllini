@@ -588,6 +588,7 @@ checkExp e tau = do
 
 inferComp :: forall l r s . IsLabel l => Comp l -> Tc r s Type
 inferComp comp =
+    withSummaryContext comp $
     inferSteps (unComp comp)
   where
     inferSteps :: [Step l] -> Tc r s Type
@@ -642,8 +643,7 @@ inferStep (IfC _ e1 e2 e3 _) = do
     withFvContext e3 $ checkComp e3 tau
     return tau
 
-inferStep step@(LetC {}) =
-    withSummaryContext step $
+inferStep (LetC {}) =
     faildoc $ text "Let computation step does not have a type."
 
 inferStep (LiftC _ e _) =
@@ -659,8 +659,7 @@ inferStep (ReturnC _ e _) = do
     a = "a"
     b = "b"
 
-inferStep step@(BindC {}) =
-    withSummaryContext step $
+inferStep (BindC {}) =
     faildoc $ text "Bind computation step does not have a type."
 
 inferStep (GotoC _ l) =

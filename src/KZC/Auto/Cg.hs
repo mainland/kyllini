@@ -1178,8 +1178,7 @@ cgComp takek emitk comp =
         tau <- inferComp thenk
         cgIf tau e (cgComp takek emitk thenk) (cgComp takek emitk elsek)
 
-    cgStep step@(LetC {}) _ =
-        withSummaryContext step $
+    cgStep (LetC {}) _ =
         faildoc $ text "Cannot compile let computation step."
 
     -- A 'LiftC' is a monadic value, but it doesn't take or emit. That is, it is
@@ -1196,8 +1195,7 @@ cgComp takek emitk comp =
         cgWithLabel l $
         cgExp e
 
-    cgStep step@(BindC {}) _ =
-        withSummaryContext step $
+    cgStep (BindC {}) _ =
         faildoc $ text "Cannot compile bind computation step."
 
     cgStep (GotoC l _) _ = do
