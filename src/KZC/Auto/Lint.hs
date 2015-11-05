@@ -613,12 +613,12 @@ inferComp comp =
                              appSTScope tau0 >>= checkSTC
         case bv of
           WildV       -> return ()
-          BindV _ tau -> checkTypeEquality tau' tau
+          BindV _ tau -> withFvContext step $ checkTypeEquality tau' tau
         (omega,  s', a', b') <- extendBindVars [bv] $
                                 inferSteps k >>= appSTScope >>= checkST
-        checkTypeEquality s' s
-        checkTypeEquality a' a
-        checkTypeEquality b' b
+        extendBindVars [bv] $
+            withFvContext (Comp k) $
+            checkTypeEquality (ST [] omega s' a' b' noLoc) (ST [] omega s a b noLoc)
         return $ stT omega s a b
 
     inferBind step k tau = do
