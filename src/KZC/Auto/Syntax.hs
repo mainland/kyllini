@@ -329,7 +329,7 @@ instance IsLabel l => Pretty (Decl l) where
 
     pprPrec p (LetCompD v tau ccomp _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr ccomp))
+        nest 2 (lhs <+/> text "=" </> ppr ccomp)
       where
         lhs = text "letcomp" <+> ppr v <+> text ":" <+> ppr tau
 
