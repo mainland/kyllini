@@ -660,6 +660,65 @@ instance Fvs Exp v => Fvs [Exp] v where
 
 {------------------------------------------------------------------------------
  -
+ - All variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance HasVars (Decl l) Var where
+    allVars (LetD v _ e _)              = singleton v <> allVars e
+    allVars (LetFunD v _ vbs _ e _)     = singleton v <> fromList (map fst vbs) <> allVars e
+    allVars (LetExtFunD v _ vbs _ _)    = singleton v <> fromList (map fst vbs)
+    allVars (LetRefD v _ e _)           = singleton v <> allVars e
+    allVars (LetStructD {})             = mempty
+    allVars (LetCompD v _ ccomp _)      = singleton v <> allVars ccomp
+    allVars (LetFunCompD v _ vbs _ e _) = singleton v <> fromList (map fst vbs) <> allVars e
+
+instance HasVars LocalDecl Var where
+    allVars (LetLD v _ e _)    = singleton v <> allVars e
+    allVars (LetRefLD v _ e _) = singleton v <> allVars e
+
+instance HasVars Exp Var where
+    allVars (ConstE {})                 = mempty
+    allVars (VarE v _)                  = singleton v
+    allVars (UnopE _ e _)               = allVars e
+    allVars (BinopE _ e1 e2 _)          = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)            = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)          = allVars decl <> allVars decl <> allVars body
+    allVars (CallE f _ es _)            = singleton f <> allVars es
+    allVars (DerefE e _)                = allVars e
+    allVars (AssignE e1 e2 _)           = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)            = allVars e1 <> allVars e2
+    allVars (ForE _ v _ e1 e2 e3 _)     = singleton v <> allVars e1 <> allVars e2 <> allVars e3
+    allVars (ArrayE es _)               = allVars es
+    allVars (IdxE e1 e2 _ _)            = allVars e1 <> allVars e2
+    allVars (StructE _ flds _)          = allVars (map snd flds)
+    allVars (ProjE e _ _)               = allVars e
+    allVars (PrintE _ es _)             = allVars es
+    allVars (ErrorE {})                 = mempty
+    allVars (ReturnE _ e _)             = allVars e
+    allVars (BindE bv e1 e2 _)          = allVars bv <> allVars e1 <> allVars e2
+
+instance HasVars (Step l) Var where
+    allVars (VarC _ v _)       = singleton v
+    allVars (CallC _ f _ es _) = singleton f <> allVars es
+    allVars (IfC _ e1 e2 e3 _) = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetC _ decl _)    = allVars decl
+    allVars (LiftC _ e _)      = allVars e
+    allVars (ReturnC _ e _)    = allVars e
+    allVars (BindC {})         = mempty
+    allVars (GotoC {})         = mempty
+    allVars (RepeatC {})       = mempty
+    allVars (TakeC {})         = mempty
+    allVars (TakesC {})        = mempty
+    allVars (EmitC _ e _)      = allVars e
+    allVars (EmitsC _ e _)     = allVars e
+    allVars (ParC _ _ e1 e2 _) = allVars e1 <> allVars e2
+
+instance HasVars (Comp l) Var where
+    allVars comp = allVars (unComp comp)
+
+{------------------------------------------------------------------------------
+ -
  - Polymorphic substitution
  -
  ------------------------------------------------------------------------------}
@@ -1202,14 +1261,14 @@ instance Freshen LocalDecl Exp Var where
         k (LetRefLD v' tau e' l)
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+    freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
-        phi'    = Set.insert v' phi
+        phi'    = insert v' phi
         theta'  = Map.insert v (varE v') theta
         v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
                           , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `Set.notMember` phi]
+                          , x `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1220,7 +1279,7 @@ instance Freshen Var Exp Var where
     freshen v k (theta, phi) =
         k v (theta', phi')
       where
-        phi'   = Set.insert v phi
+        phi'   = insert v phi
         theta' = Map.delete v theta
 
 instance Freshen (Var, Type) Exp Var where

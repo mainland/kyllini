@@ -168,12 +168,12 @@ flattenStep :: LStep -> Fl [LStep]
 flattenStep (VarC l' v _) = do
     (step:steps) <- flattenVarC v
     l            <- stepLabel step
-    return $ setStepLabel l' step : subst (l /-> l') mempty steps
+    return $ setStepLabel l' step : subst1 (l /-> l') steps
 
 flattenStep (CallC l' f iotas es _) = do
     (step:steps) <- flattenCallC f iotas es
     l            <- stepLabel step
-    return $ setStepLabel l' step : subst (l /-> l') mempty steps
+    return $ setStepLabel l' step : subst1 (l /-> l') steps
 
 flattenStep (IfC l e c1 c2 s) = do
     step <- IfC l e <$> flattenComp c1 <*> flattenComp c2 <*> pure s
@@ -217,7 +217,7 @@ flattenVarC :: Var -> Fl [LStep]
 flattenVarC v = do
     CompB _ _ _ _ comp <- lookupCompBinding v
     theta              <- instantiateSTScope
-    let steps          =  (subst theta mempty) (unComp comp)
+    let steps          =  (subst1 theta) (unComp comp)
     flattenSteps steps
   where
     instantiateSTScope :: Fl (Map TyVar Type)
@@ -235,7 +235,7 @@ flattenCallC f iotas es = do
     traceFlatten $ text "flattenCallC:" <+> ppr vbs
     let theta1 =  Map.fromList (ivs `zip` iotas)
     theta2     <- instantiateSTScope
-    let steps  =  (subst theta2 mempty . subst theta1 mempty) (unComp comp)
+    let steps  =  (subst1 theta2 . subst1 theta1) (unComp comp)
     flattenArgs (map fst vbs `zip` es) $
       localLocContext comp (text "In definition of" <+> ppr f) $
       flattenSteps steps
@@ -266,7 +266,7 @@ flattenArg (v, e) k = do
         l1    <- genLabel "arg_return"
         l2    <- genLabel "arg_bind"
         steps <- k
-        return $ unComp $ Comp [ReturnC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst (v /-> varE v') mempty (Comp steps)
+        return $ unComp $ Comp [ReturnC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst1 (v /-> varE v') (Comp steps)
 
     go tau (CallE f iotas es _) = do
         comp <- Comp <$> flattenCallC f iotas es
@@ -281,4 +281,4 @@ flattenArg (v, e) k = do
         l1    <- genLabel "arg_lift"
         l2    <- genLabel "arg_bind"
         steps <- k
-        return $ unComp $ Comp [LiftC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst (v /-> varE v') mempty (Comp steps)
+        return $ unComp $ Comp [LiftC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst1 (v /-> varE v') (Comp steps)

@@ -23,7 +23,6 @@ import Data.List ((\\))
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import qualified Data.Set as Set
 import Data.String
 import Data.Symbol
 import System.IO.Unsafe (unsafePerformIO)
@@ -636,14 +635,14 @@ instance FreshVars IVar where
         simpleTvs = reverse ['l'..'n']
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (tyVarT alpha') theta
         alpha'  = head [beta | i <- [show i | i <- [(1::Integer)..]]
                              , let beta = TyVar n { nameSym = intern (s ++ i) }
-                             , beta `Set.notMember` phi]
+                             , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -654,18 +653,18 @@ instance Freshen TyVar Type TyVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 instance Freshen IVar Type IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (ivarT alpha') theta
         alpha'  = head [beta | i <- [show i | i <- [(1::Integer)..]]
                              , let beta = IVar n { nameSym = intern (s ++ i) }
-                             , beta `Set.notMember` phi]
+                             , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -676,7 +675,7 @@ instance Freshen IVar Type IVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 #include "KZC/Check/Types-instances.hs"

@@ -16,14 +16,17 @@ module KZC.Vars (
     Subst(..),
     Freshen(..),
 
-    (/->)
+    (/->),
+    subst1
   ) where
 
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
+import qualified Data.Set as Set
 
 import KZC.Uniq
 import KZC.Util.SetLike
@@ -48,7 +51,13 @@ class Ord n => HasVars x n where
     allVars :: SetLike m n => x -> m n
     allVars _ = mempty
 
-instance (Foldable f, HasVars x n) => HasVars (f x) n where
+instance Ord a => HasVars a a where
+    allVars x = singleton x
+
+instance HasVars x n => HasVars (Maybe x) n where
+    allVars = foldMap allVars
+
+instance HasVars x n => HasVars [x] n where
     allVars = foldMap allVars
 
 class FreshVars a where
@@ -76,11 +85,18 @@ class (Ord v, Fvs e v) => Subst e v a where
 
     substM :: a -> SubstM e v a
 
+-- | Substitute without freshening.
+subst1 :: Subst e v a => Map v e -> a -> a
+subst1 m x = subst m Set.empty x
+
 instance Subst e v a => Subst e v [a] where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
 
 instance Subst e v a => Subst e v (Maybe a) where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
+
+instance Ord a => Subst a a a where
+    substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
 class Freshen a e v where
     freshen :: a -> (a -> SubstM e v b) -> SubstM e v b

@@ -593,7 +593,7 @@ lookupTyVarType alpha =
 askTyVarTypeSubst :: Cg (Type -> Type)
 askTyVarTypeSubst = do
     theta <- asks tyvarTypes
-    return $ subst theta mempty
+    return $ subst1 theta
 
 tell :: ToCode a => a -> Cg ()
 tell c = modify $ \s -> s { code = code s <> toCode c }

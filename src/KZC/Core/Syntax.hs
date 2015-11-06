@@ -58,7 +58,6 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import qualified Data.Set as Set
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
@@ -853,6 +852,50 @@ instance Fvs Exp v => Fvs [Exp] v where
 
 {------------------------------------------------------------------------------
  -
+ - All variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance HasVars Decl Var where
+    allVars (LetD v _ e _)           = singleton v <> allVars e
+    allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
+    allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
+    allVars (LetRefD v _ e _)        = singleton v <> allVars e
+    allVars (LetStructD {})          = mempty
+
+instance HasVars Exp Var where
+    allVars (ConstE {})             = mempty
+    allVars (VarE v _)              = singleton v
+    allVars (UnopE _ e _)           = allVars e
+    allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)        = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)      = allVars decl <> allVars body
+    allVars (CallE f _ es _)        = singleton f <> allVars es
+    allVars (DerefE e _)            = allVars e
+    allVars (AssignE e1 e2 _)       = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)        = allVars e1 <> allVars e2
+    allVars (ForE _ v _ e1 e2 e3 _) = singleton v <> allVars e1 <> allVars e2 <> allVars e3
+    allVars (ArrayE es _)           = allVars es
+    allVars (IdxE e1 e2 _ _)        = allVars e1 <> allVars e2
+    allVars (StructE _ flds _)      = allVars (map snd flds)
+    allVars (ProjE e _ _)           = allVars e
+    allVars (PrintE _ es _)         = allVars es
+    allVars (ErrorE {})             = mempty
+    allVars (ReturnE _ e _)         = allVars e
+    allVars (BindE bv e1 e2 _)      = allVars bv <> allVars e1 <> allVars e2
+    allVars (TakeE {})              = mempty
+    allVars (TakesE {})             = mempty
+    allVars (EmitE e _)             = allVars e
+    allVars (EmitsE e _)            = allVars e
+    allVars (RepeatE _ e _)         = allVars e
+    allVars (ParE _ _ e1 e2 _)      = allVars e1 <> allVars e2
+
+instance HasVars BindVar Var where
+    allVars WildV       = mempty
+    allVars (BindV v _) = singleton v
+
+{------------------------------------------------------------------------------
+ -
  - Polymorphic substitution
  -
  ------------------------------------------------------------------------------}
@@ -1250,14 +1293,14 @@ instance Subst Exp Var Exp where
  ------------------------------------------------------------------------------}
 
 instance Freshen IVar Iota IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (ivarT alpha') theta
         alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
                               , let beta = IVar n { nameSym = intern (s ++ i) }
-                              , beta `Set.notMember` phi]
+                              , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1268,7 +1311,7 @@ instance Freshen IVar Iota IVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 instance Freshen Decl Iota IVar where
@@ -1300,14 +1343,14 @@ instance Freshen Decl Iota IVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `Set.member` phi =
+    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
         k alpha' (theta', phi')
       where
-        phi'    = Set.insert alpha' phi
+        phi'    = insert alpha' phi
         theta'  = Map.insert alpha (tyVarT alpha') theta
         alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
                               , let beta = TyVar n { nameSym = intern (s ++ i) }
-                              , beta `Set.notMember` phi]
+                              , beta `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1318,7 +1361,7 @@ instance Freshen TyVar Type TyVar where
     freshen alpha k (theta, phi) =
         k alpha (theta', phi')
       where
-        phi'    = Set.insert alpha phi
+        phi'    = insert alpha phi
         theta'  = Map.delete alpha theta
 
 {------------------------------------------------------------------------------
@@ -1354,14 +1397,14 @@ instance Freshen Decl Exp Var where
         k decl
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `Set.member` phi =
+    freshen v@(Var n) k (theta, phi) | v `member` phi =
         k v' (theta', phi')
       where
-        phi'    = Set.insert v' phi
+        phi'    = insert v' phi
         theta'  = Map.insert v (varE v') theta
         v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
                           , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `Set.notMember` phi]
+                          , x `notMember` phi]
           where
             s :: String
             s = namedString n
@@ -1372,7 +1415,7 @@ instance Freshen Var Exp Var where
     freshen v k (theta, phi) =
         k v (theta', phi')
       where
-        phi'   = Set.insert v phi
+        phi'   = insert v phi
         theta' = Map.delete v theta
 
 instance Freshen (Var, Type) Exp Var where
