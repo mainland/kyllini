@@ -74,7 +74,7 @@ checkProgram :: (IsLabel l, MonadTc m)
              -> m ()
 checkProgram (Program decls comp tau) =
     checkDecls decls $
-    localLocContext comp (text "In definition of main") $
+    withLocContext comp (text "In definition of main") $
     inSTScope tau $
     inLocalScope $
     checkComp comp tau

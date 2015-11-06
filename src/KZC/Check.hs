@@ -491,7 +491,7 @@ tcExp (Z.CallE f es l) exp_ty = do
                    -> m b
                    -> m b
     withArgContext e act =
-        localLocContext e doc act
+        withLocContext e doc act
       where
         doc = text "In argument:" <+> ppr e
 
@@ -890,7 +890,7 @@ tcExp (Z.ParE ann e1 e2 l) tau_exp = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         let doc = text "When pipelining a computation of type:" <+> ppr tau1' </>
                   text "             to a computation of type:" <+> ppr tau2'
-        localLocContext (tau1 <--> tau2) doc m
+        withLocContext (tau1 <--> tau2) doc m
 
 tcExp e@(Z.ReadE {}) _ =
     withSummaryContext e $

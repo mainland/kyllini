@@ -23,6 +23,7 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.State (TiEnv,
@@ -103,9 +104,12 @@ instance MonadUnique KZC where
               u' `seq` (Uniq u', Uniq u)
 
 instance MonadErr KZC where
-    askErrCtx         = asks errctx
-    localErrCtx ctx m = local (\env -> env { errctx = ctx : errctx env }) m
-    warnIsError       = asksFlags (testWarnFlag WarnError)
+    askErrCtx       = asks errctx
+    localErrCtx f m = local (\env -> env { errctx = f (errctx env) }) m
+
+    warnIsError = asksFlags (testWarnFlag WarnError)
+
+    displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
 
 instance MonadFlags KZC where
     askFlags        = asks flags

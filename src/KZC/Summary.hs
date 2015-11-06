@@ -22,6 +22,6 @@ withSummaryContext :: (Located a, Summary a, MonadErr m)
                    -> m b
                    -> m b
 withSummaryContext a act =
-    localLocContext a doc act
+    withLocContext a doc act
   where
     doc = text "In" <+> summary a

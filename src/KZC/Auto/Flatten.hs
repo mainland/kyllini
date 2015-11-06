@@ -93,7 +93,7 @@ flattenProgram (Program decls comp tau) =
   flattenDecls decls $
   inSTScope tau $
   inLocalScope $ do
-  comp' <- localLocContext comp (text "In definition of main") $
+  comp' <- withLocContext comp (text "In definition of main") $
            flattenComp comp
   return $ Program decls comp' tau
 
@@ -237,7 +237,7 @@ flattenCallC f iotas es = do
     theta2     <- instantiateSTScope
     let steps  =  (subst1 theta2 . subst1 theta1) (unComp comp)
     flattenArgs (map fst vbs `zip` es) $
-      localLocContext comp (text "In definition of" <+> ppr f) $
+      withLocContext comp (text "In definition of" <+> ppr f) $
       flattenSteps steps
   where
     instantiateSTScope :: Fl (Map TyVar Type)
