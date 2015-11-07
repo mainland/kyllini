@@ -21,6 +21,7 @@ GHCFLAGS += \
 	-package filepath \
         -package free \
 	-package language-c-quote \
+	-package logict \
 	-package mainland-pretty \
 	-package mtl \
 	-package process \
@@ -73,6 +74,7 @@ SOURCE = \
 	KZC/Flags.hs \
 	KZC/Globals.hs \
 	KZC/Monad.hs \
+	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/LambdaLift.hs \
 	KZC/LambdaLift/Monad.hs \
