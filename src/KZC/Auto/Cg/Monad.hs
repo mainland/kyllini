@@ -31,11 +31,15 @@ module KZC.Auto.Cg.Monad (
     collect,
     collectDefinitions,
     collectDefinitions_,
+    collectThreadDecls,
+    collectThreadDecls_,
     collectDecls,
     collectDecls_,
     collectStms,
     collectStms_,
 
+    inNewThreadBlock,
+    inNewThreadBlock_,
     inNewBlock,
     inNewBlock_,
 
@@ -45,6 +49,8 @@ module KZC.Auto.Cg.Monad (
     appendTopDefs,
     appendTopDecl,
     appendTopDecls,
+    appendThreadDecl,
+    appendThreadDecls,
     appendDecl,
     appendDecls,
     appendStm,
@@ -227,6 +233,17 @@ collectDefinitions_ m = do
     (defs, _) <- collectDefinitions m
     return defs
 
+collectThreadDecls :: Cg a -> Cg ([C.InitGroup], a)
+collectThreadDecls m = do
+    (x, c) <- collect m
+    tell c { codeThreadDecls = mempty }
+    return (toList (codeThreadDecls c), x)
+
+collectThreadDecls_ :: Cg () -> Cg ([C.InitGroup])
+collectThreadDecls_ m = do
+    (decls, _) <- collectThreadDecls m
+    return decls
+
 collectDecls :: Cg a -> Cg ([C.InitGroup], a)
 collectDecls m = do
     (x, c) <- collect m
@@ -248,6 +265,18 @@ collectStms_ :: Cg () -> Cg ([C.Stm])
 collectStms_ m = do
     (stms, _) <- collectStms m
     return stms
+
+inNewThreadBlock :: Cg a -> Cg ([C.BlockItem], a)
+inNewThreadBlock m = do
+    (x, c) <- collect m
+    tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms  = mempty }
+    return ((map C.BlockDecl . toList . codeThreadDecls) c ++
+            (map C.BlockDecl . toList . codeDecls) c ++
+            (map C.BlockStm .  toList . codeStms) c, x)
+
+inNewThreadBlock_ :: Cg a -> Cg [C.BlockItem]
+inNewThreadBlock_ m =
+    fst <$> inNewThreadBlock m
 
 inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
 inNewBlock m = do
@@ -278,6 +307,12 @@ appendTopDecl cdecl =
 appendTopDecls :: [C.InitGroup] -> Cg ()
 appendTopDecls cdecls =
   tell mempty { codeDefs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
+
+appendThreadDecl :: C.InitGroup -> Cg ()
+appendThreadDecl cdecl = tell mempty { codeThreadDecls = Seq.singleton cdecl }
+
+appendThreadDecls :: [C.InitGroup] -> Cg ()
+appendThreadDecls cdecls = tell mempty { codeThreadDecls = Seq.fromList cdecls }
 
 appendDecl :: C.InitGroup -> Cg ()
 appendDecl cdecl = tell cdecl
