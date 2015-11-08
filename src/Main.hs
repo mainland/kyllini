@@ -119,7 +119,7 @@ runPipeline filepath = do
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            Lint.withTc () () (Lint.checkDecls decls)
+            Lint.withTc (Lint.checkDecls decls)
         return decls
 
     lintAuto :: IsLabel l
@@ -127,7 +127,7 @@ runPipeline filepath = do
              -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
-            A.withTc () () (A.checkProgram p)
+            A.withTc (A.checkProgram p)
         return p
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a

@@ -12,6 +12,9 @@ module KZC.Flags (
     TraceFlag(..),
     Flags(..),
 
+    MonadFlags(..),
+    asksFlags,
+
     setMode,
     testDynFlag,
     setDynFlag,
@@ -24,16 +27,17 @@ module KZC.Flags (
     testTraceFlag,
     setTraceFlag,
 
-    MonadFlags(..),
-    asksFlags,
     whenDynFlag,
     whenWarnFlag,
     whenDumpFlag
   ) where
 
-import Control.Monad (when)
-import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
+import Control.Monad (liftM,
+                      when)
+import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.State (StateT(..))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.Bits
 import Data.Int
 import Data.Monoid
@@ -128,6 +132,25 @@ instance Monoid Flags where
         , dumpDir = dumpDir f1 <> dumpDir f2
         }
 
+class Monad m => MonadFlags m where
+    askFlags   :: m Flags
+    localFlags :: (Flags -> Flags) -> m a -> m a
+
+asksFlags :: MonadFlags m => (Flags -> a) -> m a
+asksFlags f = liftM f askFlags
+
+instance MonadFlags m => MonadFlags (MaybeT m) where
+    askFlags       = lift askFlags
+    localFlags f m = MaybeT $ localFlags f (runMaybeT m)
+
+instance MonadFlags m => MonadFlags (ReaderT r m) where
+    askFlags       = lift askFlags
+    localFlags f m = ReaderT $ \r -> localFlags f (runReaderT m r)
+
+instance MonadFlags m => MonadFlags (StateT s m) where
+    askFlags       = lift askFlags
+    localFlags f m = StateT $ \s -> localFlags f (runStateT m s)
+
 setMode :: ModeFlag -> Flags -> Flags
 setMode f flags = flags { mode = f }
 
@@ -170,19 +193,6 @@ testTraceFlag f flags =
 setTraceFlag :: TraceFlag -> Flags -> Flags
 setTraceFlag f flags =
     flags { traceFlags = traceFlags flags `setBit` fromEnum f }
-
-class Monad m => MonadFlags m where
-    askFlags    :: m Flags
-    localFlags  :: Flags -> m a -> m a
-
-instance MonadFlags m => MonadFlags (MaybeT m) where
-    askFlags       = lift askFlags
-    localFlags f k = MaybeT $ localFlags f (runMaybeT k)
-
-asksFlags :: MonadFlags m => (Flags -> a) -> m a
-asksFlags f = do
-    fs <- askFlags
-    return $ f fs
 
 whenDynFlag :: MonadFlags m => DynFlag -> m () -> m ()
 whenDynFlag f act = do

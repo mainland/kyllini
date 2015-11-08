@@ -13,6 +13,7 @@ module KZC.Uniq (
   ) where
 
 import Control.Monad.Reader
+import Control.Monad.State
 import Text.PrettyPrint.Mainland
 
 newtype Uniq = Uniq Int
@@ -25,4 +26,7 @@ class Monad m => MonadUnique m where
     newUnique :: m Uniq
 
 instance MonadUnique m => MonadUnique (ReaderT r m) where
+    newUnique = lift newUnique
+
+instance MonadUnique m => MonadUnique (StateT s m) where
     newUnique = lift newUnique

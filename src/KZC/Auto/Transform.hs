@@ -31,10 +31,10 @@ import KZC.Summary
 import KZC.Staged
 
 -- | The 'T' monad.
-type T a = Tc () () a
+type T a = Tc a
 
 runT :: T a -> KZC a
-runT m = withTc () () m
+runT m = withTc m
 
 transformProgram :: [C.Decl] -> T LProgram
 transformProgram cdecls = do

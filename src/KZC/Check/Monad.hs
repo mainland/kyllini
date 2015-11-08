@@ -84,10 +84,19 @@ import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
-newtype Ti a = Ti { unTi :: TiEnv -> TiState -> KZC (a, TiState) }
+newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadRef IORef, MonadAtomicRef IORef,
+              MonadReader TiEnv,
+              MonadState TiState,
+              MonadException,
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)
-runTi m r s = unTi m r s
+runTi m r s = runStateT (runReaderT (unTi m) r) s
 
 -- | Run a @Ti@ computation in the @KZC@ monad and update the @Ti@ environment.
 liftTi :: forall a . Ti a -> KZC a
@@ -122,79 +131,6 @@ withTi m = do
         x <- m
         get >>= writeRef sref
         return x
-
-instance Functor Ti where
-    fmap f x = x >>= return . f
-
-instance Applicative Ti where
-    pure  = return
-    (<*>) = ap
-
-instance Monad Ti where
-    {-# INLINE return #-}
-    return a = Ti $ \_ s -> return (a, s)
-
-    {-# INLINE (>>=) #-}
-    m >>= f  = Ti $ \r s -> do
-               (x, s') <- runTi m r s
-               runTi (f x) r s'
-
-    {-# INLINE (>>) #-}
-    m1 >> m2 = Ti $ \r s -> do
-               (_, s') <- runTi m1 r s
-               runTi m2 r s'
-
-    fail msg = throw (FailException (string msg))
-
-instance MonadReader TiEnv Ti where
-    ask = Ti $ \r s -> return (r, s)
-
-    local f m = Ti $ \r s -> runTi m (f r) s
-
-instance MonadState TiState Ti where
-    get   = Ti $ \_ s -> return (s, s)
-    put s = Ti $ \_ _ -> return ((), s)
-
-instance MonadRef IORef Ti where
-    newRef x     = liftIO $ newRef x
-    readRef r    = liftIO $ readRef r
-    writeRef r x = liftIO $ writeRef r x
-
-instance MonadIO Ti where
-    liftIO = liftKZC . liftIO
-
-instance MonadUnique Ti where
-    newUnique = liftKZC newUnique
-
-instance MonadKZC Ti where
-    liftKZC m = Ti $ \_ s -> do
-                a <- m
-                return (a, s)
-
-instance MonadException Ti where
-    throw e =
-        throwContextException (liftKZC . throw) e
-
-    m `catch` h = Ti $ \r s ->
-      unTi m r s `catchContextException` \e -> unTi (h e) r s
-
-instance MonadErr Ti where
-    {-# INLINE askErrCtx #-}
-    askErrCtx = liftKZC askErrCtx
-
-    {-# INLINE localErrCtx #-}
-    localErrCtx ctx m = Ti $ \r s -> localErrCtx ctx (unTi m r s)
-
-    {-# INLINE warnIsError #-}
-    warnIsError = asksFlags (testWarnFlag WarnError)
-
-instance MonadFlags Ti where
-    askFlags        = liftKZC askFlags
-    localFlags fs m = Ti $ \r s -> runTi (localFlags fs m) r s
-
-instance MonadTrace Ti where
-    asksTraceDepth      = liftKZC asksTraceDepth
-    localTraceDepth d m = Ti $ \r s -> runTi (localTraceDepth d m) r s
 
 extend :: forall k v a . Ord k
        => (TiEnv -> Map k v)

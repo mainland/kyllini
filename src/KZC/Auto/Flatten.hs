@@ -34,7 +34,7 @@ import KZC.Name
 import KZC.Trace
 import KZC.Vars
 
-type Fl a = Tc FlEnv () a
+type Fl a = ReaderT FlEnv Tc a
 
 data CompBinding = CompB Var [IVar] [(Var, Type)] Type LComp
 
@@ -46,7 +46,7 @@ defaultFlEnv = FlEnv
     { compBindings = mempty }
 
 evalFl :: Fl a -> KZC a
-evalFl m = liftTc defaultFlEnv () m
+evalFl m = withTc $ runReaderT m defaultFlEnv
 
 extend :: forall k v a . Ord k
        => (FlEnv -> Map k v)
@@ -93,7 +93,7 @@ flattenProgram (Program decls comp tau) =
   flattenDecls decls $
   inSTScope tau $
   inLocalScope $ do
-  comp' <- localLocContext comp (text "In definition of main") $
+  comp' <- withLocContext comp (text "In definition of main") $
            flattenComp comp
   return $ Program decls comp' tau
 
@@ -237,7 +237,7 @@ flattenCallC f iotas es = do
     theta2     <- instantiateSTScope
     let steps  =  (subst1 theta2 . subst1 theta1) (unComp comp)
     flattenArgs (map fst vbs `zip` es) $
-      localLocContext comp (text "In definition of" <+> ppr f) $
+      withLocContext comp (text "In definition of" <+> ppr f) $
       flattenSteps steps
   where
     instantiateSTScope :: Fl (Map TyVar Type)

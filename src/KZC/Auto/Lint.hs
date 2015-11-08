@@ -69,22 +69,22 @@ import KZC.Lint.Monad
 import KZC.Summary
 import KZC.Vars
 
-checkProgram :: IsLabel l
+checkProgram :: (IsLabel l, MonadTc m)
              => Program l
-             -> Tc r s ()
+             -> m ()
 checkProgram (Program decls comp tau) =
     checkDecls decls $
-    localLocContext comp (text "In definition of main") $
+    withLocContext comp (text "In definition of main") $
     inSTScope tau $
     inLocalScope $
     checkComp comp tau
 
-checkDecls :: forall l r s a . IsLabel l
-           => [Decl l] -> Tc r s a -> Tc r s a
+checkDecls :: forall l m a . (IsLabel l, MonadTc m)
+           => [Decl l] -> m a -> m a
 checkDecls decls k =
     go decls
   where
-    go :: [Decl l] -> Tc r s a
+    go :: [Decl l] -> m a
     go [] =
         k
 
@@ -92,10 +92,10 @@ checkDecls decls k =
         checkDecl decl $
         go decls
 
-checkDecl :: IsLabel l
+checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
-          -> Tc r s a
-          -> Tc r s a
+          -> m a
+          -> m a
 checkDecl decl@(LetD v tau e _) k = do
     withSummaryContext decl $ do
         void $ inferKind tau
@@ -154,7 +154,7 @@ checkDecl decl@(LetStructD s flds l) k = do
   where
     (fnames, taus) = unzip flds
 
-    checkStructNotRedefined :: Struct -> Tc r s ()
+    checkStructNotRedefined :: Struct -> m ()
     checkStructNotRedefined s = do
       maybe_sdef <- maybeLookupStruct s
       case maybe_sdef of
@@ -193,7 +193,7 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k = do
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-checkLocalDecl :: LocalDecl -> Tc r s a -> Tc r s a
+checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do
     withSummaryContext decl $ do
         void $ inferKind tau
@@ -215,11 +215,11 @@ checkLocalDecl decl@(LetRefLD v tau (Just e) _) k = do
         checkExp e tau
     extendVars [(v, refT tau)] k
 
-inferExp :: Exp -> Tc r s Type
+inferExp :: forall m . MonadTc m => Exp -> m Type
 inferExp (ConstE c l) =
     checkConst c
   where
-    checkConst :: Const -> Tc r s Type
+    checkConst :: Const -> m Type
     checkConst UnitC       = return (UnitT l)
     checkConst(BoolC {})   = return (BoolT l)
     checkConst(BitC {})    = return (BitT l)
@@ -241,7 +241,7 @@ inferExp (UnopE op e1 _) = do
     tau1 <- inferExp e1
     unop op tau1
   where
-    unop :: Unop -> Type -> Tc r s Type
+    unop :: Unop -> Type -> m Type
     unop Lnot tau = do
         checkBoolT tau
         return tau
@@ -271,7 +271,7 @@ inferExp (BinopE op e1 e2 _) = do
     tau2 <- inferExp e2
     binop op tau1 tau2
   where
-    binop :: Binop -> Type -> Type -> Tc r s Type
+    binop :: Binop -> Type -> Type -> m Type
     binop Lt tau1 tau2 =
         checkOrdBinop tau1 tau2
 
@@ -332,37 +332,37 @@ inferExp (BinopE op e1 e2 _) = do
     binop Pow tau1 tau2 =
         checkNumBinop tau1 tau2
 
-    checkEqBinop :: Type -> Type -> Tc r s Type
+    checkEqBinop :: Type -> Type -> m Type
     checkEqBinop tau1 tau2 = do
         checkEqT tau1
         checkTypeEquality tau2 tau1
         return boolT
 
-    checkOrdBinop :: Type -> Type -> Tc r s Type
+    checkOrdBinop :: Type -> Type -> m Type
     checkOrdBinop tau1 tau2 = do
         checkOrdT tau1
         checkTypeEquality tau2 tau1
         return boolT
 
-    checkBoolBinop :: Type -> Type -> Tc r s Type
+    checkBoolBinop :: Type -> Type -> m Type
     checkBoolBinop tau1 tau2 = do
         checkBoolT tau1
         checkTypeEquality tau2 tau1
         return tau1
 
-    checkNumBinop :: Type -> Type -> Tc r s Type
+    checkNumBinop :: Type -> Type -> m Type
     checkNumBinop tau1 tau2 = do
         checkNumT tau1
         checkTypeEquality tau2 tau1
         return tau1
 
-    checkBitBinop :: Type -> Type -> Tc r s Type
+    checkBitBinop :: Type -> Type -> m Type
     checkBitBinop tau1 tau2 = do
         checkBitT tau1
         checkTypeEquality tau2 tau1
         return tau1
 
-    checkBitShiftBinop :: Type -> Type -> Tc r s Type
+    checkBitShiftBinop :: Type -> Type -> m Type
     checkBitShiftBinop tau1 tau2 = do
         checkBitT tau1
         checkIntT tau2
@@ -433,7 +433,7 @@ inferExp (IdxE e1 e2 len l) = do
     withFvContext e2 $ inferExp e2 >>= checkIntT
     go tau
   where
-    go :: Type -> Tc r s Type
+    go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l
 
@@ -452,7 +452,7 @@ inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
     go tau
   where
-    go :: Type -> Tc r s Type
+    go :: Type -> m Type
     go (RefT tau _) = do
         sdef  <- checkStructT tau >>= lookupStruct
         tau_f <- checkStructFieldT sdef f
@@ -471,14 +471,14 @@ inferExp e0@(StructE s flds l) =
     mapM_ (checkField fldDefs) flds
     return $ StructT s l
   where
-    checkField :: [(Field, Type)] -> (Field, Exp) -> Tc r s ()
+    checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
                Nothing  -> panicdoc $ "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
 
-    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc r s ()
+    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
     checkMissingFields flds fldDefs =
         when (not (Set.null missing)) $
           faildoc $
@@ -490,7 +490,7 @@ inferExp e0@(StructE s flds l) =
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         missing = fs Set.\\ fs'
 
-    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> Tc r s ()
+    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
     checkExtraFields flds fldDefs =
         when (not (Set.null extra)) $
           faildoc $
@@ -543,7 +543,7 @@ inferExp (BindE bv e1 e2 _) = do
     checkTypeEquality b' b
     return $ stT omega s a b
 
-inferCall :: Var -> [Iota] -> [Exp] -> Tc r s Type
+inferCall :: forall m . MonadTc m => Var -> [Iota] -> [Exp] -> m Type
 inferCall f ies es = do
     (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
     checkNumIotas (length ies) (length ivs)
@@ -555,43 +555,43 @@ inferCall f ies es = do
     zipWithM_ checkArg es (subst theta phi taus)
     appSTScope $ subst theta phi tau_ret
   where
-    checkIotaArg :: Iota -> Tc r s ()
+    checkIotaArg :: Iota -> m ()
     checkIotaArg (ConstI {}) =
         return ()
 
     checkIotaArg (VarI iv _) =
         void $ lookupIVar iv
 
-    checkArg :: Exp -> Type -> Tc r s ()
+    checkArg :: Exp -> Type -> m ()
     checkArg e tau =
         withFvContext e $
         checkExp e tau
 
-    checkNumIotas :: Int -> Int -> Tc r s ()
+    checkNumIotas :: Int -> Int -> m ()
     checkNumIotas n nexp =
         when (n /= nexp) $
              faildoc $
              text "Expected" <+> ppr nexp <+>
              text "index expression arguments but got" <+> ppr n
 
-    checkNumArgs :: Int -> Int -> Tc r s ()
+    checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
         when (n /= nexp) $
              faildoc $
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
 
-checkExp :: Exp -> Type -> Tc r s ()
+checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
 
-inferComp :: forall l r s . IsLabel l => Comp l -> Tc r s Type
+inferComp :: forall l m . (IsLabel l, MonadTc m) => Comp l -> m Type
 inferComp comp =
     withSummaryContext comp $
     inferSteps (unComp comp)
   where
-    inferSteps :: [Step l] -> Tc r s Type
+    inferSteps :: [Step l] -> m Type
     inferSteps [] =
         faildoc $ text "No computational steps to type check!"
 
@@ -602,7 +602,7 @@ inferComp comp =
     inferSteps (step:k) =
         inferStep step >>= inferBind step k
 
-    inferBind :: Step l -> [Step l] -> Type -> Tc r s Type
+    inferBind :: Step l -> [Step l] -> Type -> m Type
     inferBind step [] tau = do
         withFvContext step $
             void $ checkST tau
@@ -626,7 +626,7 @@ inferComp comp =
             void $ checkSTC tau
         inferSteps k
 
-inferStep :: IsLabel l => Step l -> Tc r s Type
+inferStep :: forall l m . (IsLabel l, MonadTc m) => Step l -> m Type
 inferStep (VarC _ v _) =
     lookupVar v
 
@@ -725,7 +725,7 @@ inferStep step@(ParC _ b e1 e2 l) = do
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
   where
-    joinOmega :: Omega -> Omega -> Tc r s Omega
+    joinOmega :: Omega -> Omega -> m Omega
     joinOmega omega1@(C {}) (T {})        = return omega1
     joinOmega (T {})        omega2@(C {}) = return omega2
     joinOmega omega1@(T {}) (T {})        = return omega1
@@ -733,10 +733,10 @@ inferStep step@(ParC _ b e1 e2 l) = do
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
-checkComp :: IsLabel l
+checkComp :: (IsLabel l, MonadTc m)
           => Comp l
           -> Type
-          -> Tc r s ()
+          -> m ()
 checkComp comp tau = do
     tau' <- inferComp comp
     checkTypeEquality tau' tau

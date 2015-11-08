@@ -4,13 +4,13 @@
 
 -- |
 -- Module      :  KZC.Error
--- Copyright   :  (c) Drexel University 2014
+-- Copyright   :  (c) Drexel University 2014-2015
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Error (
     MonadErr(..),
-    localLocContext,
+    withLocContext,
     panicdoc,
     errdoc,
     warndoc,
@@ -27,51 +27,76 @@ module KZC.Error (
     checkDuplicates
   ) where
 
-import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Monad.Exception
-import Control.Monad.IO.Class
+import Control.Monad.Reader
+import Control.Monad.State
 import Data.List (sortBy)
 import Data.Loc
 import Data.Ord (comparing)
 import Data.Typeable
-import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
 import KZC.Pretty
 
-class (Applicative m, MonadIO m , MonadException m) => MonadErr m where
-    {-# INLINE getMaxContext #-}
-    getMaxContext :: m Int
-    getMaxContext = return 4
-
-    warnIsError :: m Bool
-
+class MonadException m => MonadErr m where
     askErrCtx    :: m [ErrorContext]
-    localErrCtx  :: ErrorContext -> m a -> m a
+    localErrCtx  :: ([ErrorContext] -> [ErrorContext]) -> m a -> m a
 
-    panic :: (Exception e) => e -> m a
-    {-# INLINE panic #-}
-    panic = throw
+    warnIsError  :: m Bool
+
+    displayWarning :: ContextException -> m ()
+
+    panic :: Exception e => e -> m a
+    panic ex = do
+        ctx <- askErrCtx
+        throw $ toException (toContextException ctx ex)
 
     err :: Exception e => e -> m ()
-    err e = do
-        ctx <- take <$> getMaxContext <*> askErrCtx
-        throw $ toException (toContextException ctx e)
+    err ex = do
+        ctx <- askErrCtx
+        throw $ toException (toContextException ctx ex)
 
     warn :: Exception e => e -> m ()
-    warn e = do
+    warn ex = do
         werror <- warnIsError
         if werror
-          then err e_warn
-          else do ctx <- take <$> getMaxContext <*> askErrCtx
-                  liftIO $ hPutDocLn stderr $ ppr (toContextException ctx e_warn)
+          then err ex_warn
+          else do ctx <- askErrCtx
+                  displayWarning (toContextException ctx ex_warn)
       where
-        e_warn :: WarnException
-        e_warn = WarnException (toException e)
+        ex_warn :: WarnException
+        ex_warn = WarnException (toException ex)
 
-localLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
-localLocContext a doc m =
-    localErrCtx (ErrorContext loc doc) m
+instance MonadErr m => MonadErr (ReaderT r m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = ReaderT $ \r -> localErrCtx ctx (runReaderT m r)
+
+    warnIsError = lift warnIsError
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+
+instance MonadErr m => MonadErr (StateT r m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = StateT $ \s -> localErrCtx ctx (runStateT m s)
+
+    warnIsError = lift warnIsError
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+
+withErrCtx :: MonadErr m => ErrorContext -> m a -> m a
+withErrCtx ctx m = localErrCtx (ctx :) m
+
+withLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
+withLocContext a doc m =
+    withErrCtx (ErrorContext loc doc) m
   where
     loc :: Loc
     loc = locOf a
@@ -105,7 +130,7 @@ throwContextException :: (Exception e, MonadErr m)
 throwContextException throw' e =
     case (fromException . toException) e of
       Just (e' :: ContextException) -> throw' e'
-      Nothing -> do ctx <- take <$> getMaxContext <*> askErrCtx
+      Nothing -> do ctx <- askErrCtx
                     throw' (toException (toContextException ctx e))
 
 catchContextException :: (Exception e, MonadException m)
@@ -125,15 +150,18 @@ m `catchContextException` h =
 
 instance Pretty ContextException where
     ppr (ContextException ctx e) =
-        case [loc | ErrorContext loc@(Loc {}) _ <- ctx] of
+        case [loc | ErrorContext loc@(Loc {}) _ <- ctx'] of
           loc : _  ->  nest 4 $
                        ppr loc <> text ":" </>
-                       (string . show) e <> pprDocs (map ctxDoc ctx)
-          _        -> (string . show) e <> pprDocs (map ctxDoc ctx)
+                       (string . show) e <> pprDocs (map ctxDoc ctx')
+          _        -> (string . show) e <> pprDocs (map ctxDoc ctx')
       where
         pprDocs :: [Doc] -> Doc
         pprDocs []    = empty
         pprDocs docs  = line <> stack docs
+
+        ctx' :: [ErrorContext]
+        ctx' = take 4 ctx
 
 instance Show ContextException where
     show = pretty 80 . ppr

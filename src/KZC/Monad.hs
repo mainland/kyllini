@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -13,11 +15,7 @@ module KZC.Monad (
     defaultKZCEnv,
 
     KZC(..),
-    MonadKZC(..),
-    evalKZC,
-    mapKZC,
-    kzcToIO,
-    ioToKZC
+    evalKZC
   ) where
 
 import Control.Applicative
@@ -25,20 +23,25 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
+import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
-import KZC.Check.State
+import KZC.Check.State (TiEnv,
+                        TiState,
+                        defaultTiEnv,
+                        defaultTiState)
 import KZC.Error
 import KZC.Flags
-import KZC.Lint.State
+import KZC.Lint.State (TcEnv,
+                       defaultTcEnv)
 import KZC.Trace
 import KZC.Uniq
 
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
-    , flags      :: !Flags
     , tracedepth :: !Int
     , errctx     :: ![ErrorContext]
+    , flags      :: !Flags
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
@@ -53,88 +56,43 @@ defaultKZCEnv fs = do
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
     return KZCEnv { uniq       = u
-                  , flags      = fs
                   , tracedepth = 0
                   , errctx     = []
+                  , flags      = fs
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
                   }
 
-newtype KZC a = KZC { runKZC :: KZCEnv -> IO a }
+newtype KZC a = KZC { unKZC :: ReaderT KZCEnv IO a }
+    deriving (Functor, Applicative, MonadIO,
+              MonadRef IORef, MonadAtomicRef IORef,
+              MonadReader KZCEnv)
+
+runKZC :: KZC a -> KZCEnv -> IO a
+runKZC = runReaderT . unKZC
 
 evalKZC :: Flags -> KZC a -> IO a
 evalKZC fs m = do
     env <- defaultKZCEnv fs
     runKZC m env
 
-mapKZC :: forall a . (IO a -> IO a)
-        -> KZC a
-        -> KZC a
-mapKZC f m = KZC $ \env -> f $ runKZC m env
-
-kzcToIO :: KZC a -> KZCEnv -> IO a
-kzcToIO m env = runKZC m env
-
-ioToKZC :: IO a -> KZC a
-ioToKZC m = KZC $ \_ -> m
-
-class (MonadException m, MonadIO m) => MonadKZC m where
-    liftKZC :: KZC a -> m a
-
-instance Functor KZC where
-    {-# INLINE fmap #-}
-    fmap f x = x >>= return . f
-
-instance Applicative KZC where
-    {-# INLINE pure #-}
-    pure = return
-    {-# INLINE (<*>) #-}
-    (<*>) = ap
-
 instance Monad KZC where
+    {-# INLINE return #-}
+    return a = KZC $ return a
+
     {-# INLINE (>>=) #-}
-    m >>= k = KZC $ \env -> do
-        a <- runKZC m env
-        runKZC (k a) env
+    m >>= f  = KZC $ unKZC m >>= unKZC  . f
 
     {-# INLINE (>>) #-}
-    m1 >> m2 = KZC $ \env -> do
-        _ <- runKZC m1 env
-        runKZC m2 env
+    m1 >> m2 = KZC $ unKZC m1 >> unKZC m2
 
-    {-# INLINE return #-}
-    return a = KZC $ \_ -> return a
-
-    fail msg = throw (toException (FailException (string msg)))
-
-instance MonadIO KZC where
-    liftIO m = ioToKZC m
-
-instance MonadRef IORef KZC where
-    newRef a       = liftIO $ newIORef a
-    readRef r      = liftIO $ readIORef r
-    writeRef r a   = liftIO $ writeIORef r a
-    modifyRef f r  = liftIO $ modifyIORef f r
-
-instance MonadAtomicRef IORef KZC where
-    {-# INLINE atomicModifyRef #-}
-    atomicModifyRef r f = liftIO $ atomicModifyIORef r f
-
-instance MonadReader KZCEnv KZC where
-    ask        = KZC $ \env -> return env
-    local f m  = KZC $ \env -> runKZC m (f env)
-    reader f   = KZC $ \env -> return (f env)
+    fail msg = throw (FailException (string msg))
 
 instance MonadException KZC where
-    throw e = liftIO $ throw e
+    throw e = throwContextException (KZC . throw) e
 
-    m `catch` h = KZC $ \s ->
-      runKZC m s `catchContextException` \e -> runKZC (h e) s
-
-instance MonadAsyncException KZC where
-    mask act = KZC $ \s -> mask $ \restore ->
-               runKZC (act (mapKZC restore)) s
+    m `catch` h = KZC $ unKZC m `catchContextException` \e -> unKZC (h e)
 
 instance MonadUnique KZC where
     {-# INLINE newUnique #-}
@@ -145,21 +103,18 @@ instance MonadUnique KZC where
             in
               u' `seq` (Uniq u', Uniq u)
 
+instance MonadErr KZC where
+    askErrCtx       = asks errctx
+    localErrCtx f m = local (\env -> env { errctx = f (errctx env) }) m
+
+    warnIsError = asksFlags (testWarnFlag WarnError)
+
+    displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
+
 instance MonadFlags KZC where
-    askFlags = asks flags
-    localFlags fs = local (\env -> env { flags = fs })
+    askFlags       = asks flags
+    localFlags f m = local (\env -> env { flags = f (flags env) }) m
 
 instance MonadTrace KZC where
-    asksTraceDepth    = asks tracedepth
-    localTraceDepth d = local (\env -> env { tracedepth = d })
-
-instance MonadErr KZC where
-    {-# INLINE askErrCtx #-}
-    askErrCtx = asks errctx
-
-    {-# INLINE localErrCtx #-}
-    localErrCtx ctx m =
-        local (\env -> env { errctx = ctx : errctx env }) m
-
-    {-# INLINE warnIsError #-}
-    warnIsError = asksFlags (testWarnFlag WarnError)
+    askTraceDepth     = asks tracedepth
+    localTraceDepth f = local (\env -> env { tracedepth = f (tracedepth env) })
