@@ -32,25 +32,23 @@ import Text.PrettyPrint.Mainland
 import KZC.Flags
 
 class MonadFlags m => MonadTrace m where
-    asksTraceDepth :: m Int
-    localTraceDepth :: Int -> m a -> m a
+    askTraceDepth   :: m Int
+    localTraceDepth :: (Int -> Int) -> m a -> m a
 
 instance MonadTrace m => MonadTrace (ReaderT r m) where
-    asksTraceDepth      = lift asksTraceDepth
-    localTraceDepth d m = ReaderT $ \r -> localTraceDepth d (runReaderT m r)
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = ReaderT $ \r -> localTraceDepth f (runReaderT m r)
 
 instance MonadTrace m => MonadTrace (StateT s m) where
-    asksTraceDepth      = lift asksTraceDepth
-    localTraceDepth d m = StateT $ \s -> localTraceDepth d (runStateT m s)
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = StateT $ \s -> localTraceDepth f (runStateT m s)
 
 traceNest :: MonadTrace m => m a -> m a
-traceNest m = do
-    d <- asksTraceDepth
-    localTraceDepth (d+1) m
+traceNest m = localTraceDepth (+1) m
 
 trace :: MonadTrace m => String -> Doc -> m ()
 trace prefix doc = do
-    d <- asksTraceDepth
+    d <- askTraceDepth
     let d'    = length prefix + 1 + 2*d
     let doc'  = spaces (2*d) <> nest d' doc
     return $!

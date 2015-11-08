@@ -116,5 +116,5 @@ instance MonadFlags KZC where
     localFlags f m = local (\env -> env { flags = f (flags env) }) m
 
 instance MonadTrace KZC where
-    asksTraceDepth    = asks tracedepth
-    localTraceDepth d = local (\env -> env { tracedepth = d })
+    askTraceDepth     = asks tracedepth
+    localTraceDepth f = local (\env -> env { tracedepth = f (tracedepth env) })
