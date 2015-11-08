@@ -134,22 +134,22 @@ instance Monoid Flags where
 
 class Monad m => MonadFlags m where
     askFlags   :: m Flags
-    localFlags :: Flags -> m a -> m a
+    localFlags :: (Flags -> Flags) -> m a -> m a
 
 asksFlags :: MonadFlags m => (Flags -> a) -> m a
 asksFlags f = liftM f askFlags
 
 instance MonadFlags m => MonadFlags (MaybeT m) where
-    askFlags        = lift askFlags
-    localFlags fs m = MaybeT $ localFlags fs (runMaybeT m)
+    askFlags       = lift askFlags
+    localFlags f m = MaybeT $ localFlags f (runMaybeT m)
 
 instance MonadFlags m => MonadFlags (ReaderT r m) where
-    askFlags        = lift askFlags
-    localFlags fs m = ReaderT $ \r -> localFlags fs (runReaderT m r)
+    askFlags       = lift askFlags
+    localFlags f m = ReaderT $ \r -> localFlags f (runReaderT m r)
 
 instance MonadFlags m => MonadFlags (StateT s m) where
-    askFlags        = lift askFlags
-    localFlags fs m = StateT $ \s -> localFlags fs (runStateT m s)
+    askFlags       = lift askFlags
+    localFlags f m = StateT $ \s -> localFlags f (runStateT m s)
 
 setMode :: ModeFlag -> Flags -> Flags
 setMode f flags = flags { mode = f }

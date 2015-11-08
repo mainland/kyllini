@@ -112,8 +112,8 @@ instance MonadErr KZC where
     displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
 
 instance MonadFlags KZC where
-    askFlags        = asks flags
-    localFlags fs m = local (\env -> env { flags = fs }) m
+    askFlags       = asks flags
+    localFlags f m = local (\env -> env { flags = f (flags env) }) m
 
 instance MonadTrace KZC where
     asksTraceDepth    = asks tracedepth
