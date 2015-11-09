@@ -381,7 +381,7 @@ inferExp (CallE f ies es _) =
     inferCall f ies es
 
 inferExp (DerefE e l) = do
-    tau <- inferExp e >>= checkRefT
+    tau <- withFvContext e $ inferExp e >>= checkRefT
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -390,7 +390,7 @@ inferExp (DerefE e l) = do
     b = "b"
 
 inferExp (AssignE e1 e2 l) = do
-    tau  <- inferExp e1 >>= checkRefT
+    tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
     appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
