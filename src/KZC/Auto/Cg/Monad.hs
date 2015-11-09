@@ -88,13 +88,14 @@ import KZC.Cg.Code
 import KZC.Label
 import KZC.Lint.Monad
 import KZC.Monad
+import KZC.Monad.SEFKT
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
 
 -- | The 'Cg' monad.
-type Cg a = ReaderT CgEnv (StateT CgState Tc) a
+type Cg a = SEFKT (ReaderT CgEnv (StateT CgState Tc)) a
 
 data CgEnv = CgEnv
     { varCExps   :: Map Var CExp
@@ -123,7 +124,7 @@ defaultCgState = CgState
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
 evalCg :: Cg () -> KZC [C.Definition]
 evalCg m = do
-    s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
+    s <- liftTc $ execStateT (runReaderT (runSEFKT m) defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
 
 extend :: forall k v a . Ord k

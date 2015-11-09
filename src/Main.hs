@@ -34,6 +34,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import qualified KZC.Auto.Cg as A
 import qualified KZC.Auto.Flatten as A
+import qualified KZC.Auto.Fusion as A
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Auto.Transform
@@ -45,6 +46,7 @@ import KZC.Label
 import KZC.LambdaLift
 import qualified KZC.Lint as Lint
 import KZC.Monad
+import KZC.Monad.SEFKT as SEFKT
 import KZC.Rename
 import KZC.SysTools
 
@@ -103,17 +105,22 @@ runPipeline filepath = do
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
     flattenPhase = lift . A.evalFl . A.flattenProgram >=> dumpPass DumpFlatten "acore" "flatten"
 
+    fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    fusionPhase = lift . A.withTc . SEFKT.runSEFKT . A.fuseProgram >=> dumpPass DumpFusion "acore" "fusion"
+
     compilePhase :: [C.Decl] -> MaybeT KZC ()
     compilePhase = stopIf (testDynFlag StopAfterCheck) >=>
                    lift . evalCg . compileProgram >=> lift . writeOutput
 
     autoCompilePhase :: [C.Decl] -> MaybeT KZC ()
-    autoCompilePhase = transformPhase                      >=>
-                       lintAuto                            >=>
-                       runIf (testDynFlag Flatten ) flattenPhase >=>
-                       lintAuto                            >=>
-                       stopIf (testDynFlag StopAfterCheck) >=>
-                       lift . A.evalCg . A.compileProgram  >=>
+    autoCompilePhase = transformPhase                           >=>
+                       lintAuto                                 >=>
+                       runIf (testDynFlag Flatten) flattenPhase >=>
+                       lintAuto                                 >=>
+                       runIf (testDynFlag Fuse) fusionPhase     >=>
+                       lintAuto                                 >=>
+                       stopIf (testDynFlag StopAfterCheck)      >=>
+                       lift . A.evalCg . A.compileProgram       >=>
                        lift . writeOutput
 
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]

@@ -19,6 +19,7 @@ import Prelude
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM_,
+                      mplus,
                       void,
                       when)
 import Data.Bits
@@ -34,6 +35,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Auto.Cg.CExp
 import KZC.Auto.Cg.Monad
 import KZC.Auto.Comp
+import KZC.Auto.Fusion
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
@@ -47,6 +49,7 @@ import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
+import KZC.Trace
 import KZC.Vars
 
 compileProgram :: LProgram -> Cg ()
@@ -1265,9 +1268,19 @@ cgComp takek emitk comp k =
         appendStm $ rl sloc [cstm|for (;;) { $items:citems }|]
         return CVoid
 
-    cgStep step@(ParC _ tau left right _) k = do
-        tau_res <- resultType <$> inferStep step
-        cgParSingleThreaded takek emitk tau_res tau left right k
+    cgStep step@(ParC _ b left right _) _ =
+        do (s, a, c) <- askSTIndTypes
+           tau       <- inferStep step
+           comp      <- fusePar s a b c left right
+           useLabels (compUsedLabels comp)
+           checkComp comp tau
+           cgComp takek emitk comp k
+      `mplus`
+        do traceFusion $ text "Failed to fuse" <+>
+               (nest 2 $ text "producer:" </> ppr left) </>
+               (nest 2 $ text "and consumer:" </> ppr right)
+           tau_res <- resultType <$> inferStep step
+           cgParSingleThreaded takek emitk tau_res b left right k
 
     cgStep (LoopC {}) _ =
         faildoc $ text "cgStep: saw LoopC"
