@@ -219,6 +219,9 @@ flattenStep (ParC ann tau c1 c2 s) = do
     step <- ParC ann tau <$> flattenComp c1 <*> flattenComp c2 <*> pure s
     return [step]
 
+flattenStep (LoopC {}) =
+    faildoc $ text "flattenStep: saw LoopC"
+
 flattenVarC :: Var -> Fl [LStep]
 flattenVarC v = do
     CompB _ _ _ _ comp <- lookupCompBinding v

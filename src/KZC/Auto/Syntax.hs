@@ -175,6 +175,10 @@ data Step l = VarC l Var !SrcLoc
             | EmitsC l Exp !SrcLoc
             | RepeatC l VectAnn (Comp l) !SrcLoc
             | ParC PipelineAnn Type (Comp l) (Comp l) !SrcLoc
+
+            -- | This is a special "administrative" step that we use to indicate
+            -- a jump to a loop header.
+            | LoopC l
   deriving (Eq, Ord, Read, Show)
 
 newtype Comp l = Comp { unComp :: [Step l] }
@@ -227,6 +231,7 @@ stepLabel (EmitC l _ _)          = return l
 stepLabel (EmitsC l _ _)         = return l
 stepLabel (RepeatC l _ _ _)      = return l
 stepLabel (ParC _ _ _ right _)   = compLabel right
+stepLabel (LoopC l)              = return l
 
 setStepLabel :: l -> Step l -> Step l
 setStepLabel l (VarC _ v s)                 = VarC l v s
@@ -244,6 +249,7 @@ setStepLabel l (EmitC _ e s)                = EmitC l e s
 setStepLabel l (EmitsC _ e s)               = EmitsC l e s
 setStepLabel l (RepeatC _ ann c s)          = RepeatC l ann c s
 setStepLabel _ step@(ParC {})               = step
+setStepLabel _ step@(LoopC {})              = step
 
 {------------------------------------------------------------------------------
  -
@@ -568,6 +574,9 @@ pprComp comp =
         ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
 
+    pprSteps (LoopC l : _) =
+        [text "loop" <+> ppr l]
+
     pprBind :: [Step l] -> Doc -> [Doc]
     pprBind (BindC _ WildV _  : k) step =
         step : pprSteps k
@@ -651,6 +660,7 @@ instance Fvs (Step l) Var where
     fvs (EmitsC _ e _)           = fvs e
     fvs (RepeatC _ _ c _)        = fvs c
     fvs (ParC _ _ e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (LoopC {})               = mempty
 
 instance Fvs (Comp l) Var where
     fvs comp = go (unComp comp)
@@ -720,6 +730,7 @@ instance HasVars (Step l) Var where
     allVars (EmitsC _ e _)           = allVars e
     allVars (RepeatC _ _ c _)        = allVars c
     allVars (ParC _ _ e1 e2 _)       = allVars e1 <> allVars e2
+    allVars (LoopC {})               = mempty
 
 instance HasVars (Comp l) Var where
     allVars comp = allVars (unComp comp)
@@ -785,6 +796,9 @@ instance IsLabel l => Subst l l (Step l) where
 
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance IsLabel l => Subst l l (Comp l) where
     substM comp = Comp <$> substM (unComp comp)
@@ -906,6 +920,9 @@ instance Subst Iota IVar (Step l) where
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
 
+    substM step@(LoopC {}) =
+        return step
+
 instance Subst Iota IVar (Comp l) where
     substM (Comp steps) = Comp <$> substM steps
 
@@ -1025,6 +1042,9 @@ instance Subst Type TyVar (Step l) where
 
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance Subst Type TyVar (Comp l) where
     substM (Comp steps) = Comp <$> substM steps
@@ -1165,6 +1185,9 @@ instance Subst Exp Var (Step l) where
 
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance Subst Exp Var (Comp l) where
     substM (Comp steps) =
@@ -1375,5 +1398,6 @@ instance Located (Step l) where
     locOf (EmitsC _ _ l)         = locOf l
     locOf (RepeatC _ _ _ l)      = locOf l
     locOf (ParC _ _ _ _ l)       = locOf l
+    locOf (LoopC {})             = NoLoc
 
 #endif /* !defined(ONLY_TYPEDEFS) */

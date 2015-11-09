@@ -226,6 +226,9 @@ mapCompLabels f comp =
         steps' <- mlSteps steps
         return $ step' : steps'
 
+    mlSteps (LoopC {} : _) =
+        fail "mapCompLabels: saw LoopC"
+
     ml :: l1 -> (l2 -> M l1 l2 m a) -> M l1 l2 m a
     ml l k = do
         l' <- lift $ f l

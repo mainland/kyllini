@@ -1269,6 +1269,9 @@ cgComp takek emitk comp k =
         tau_res <- resultType <$> inferStep step
         cgParSingleThreaded takek emitk tau_res tau left right k
 
+    cgStep (LoopC {}) _ =
+        faildoc $ text "cgStep: saw LoopC"
+
 cgParSingleThreaded :: TakeK Label -> EmitK Label -> Type -> Type -> LComp -> LComp -> Label -> Cg CExp
 cgParSingleThreaded takek emitk tau_res b left right k = do
     (s, a, c) <- askSTIndTypes

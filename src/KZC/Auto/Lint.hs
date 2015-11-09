@@ -742,6 +742,9 @@ inferStep step@(ParC _ b e1 e2 l) = do
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
+inferStep (LoopC {}) =
+    faildoc $ text "inferStep: saw LoopC"
+
 checkComp :: (IsLabel l, MonadTc m)
           => Comp l
           -> Type
