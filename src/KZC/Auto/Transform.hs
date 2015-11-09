@@ -22,13 +22,10 @@ import KZC.Auto.Comp
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import qualified KZC.Core.Syntax as C
-import KZC.Label
 import KZC.Lint
 import KZC.Lint.Monad
 import KZC.Monad
-import KZC.Name
 import KZC.Summary
-import KZC.Staged
 
 -- | The 'T' monad.
 type T a = Tc a
@@ -279,29 +276,18 @@ transComp e@(C.CallE f iotas es l) = do
       else do es' <- mapM transExp es
               callC f iotas es' l
 
-transComp (C.WhileE e1 e2 l) = do
-    test    <- transExp e1
-    l_head <- genLabel "while_head"
-    body    <- transComp e2 .>>. gotoC l_head l
-    done    <- returnC unitE l
-    return $ ifC' l_head test body done l
+transComp (C.WhileE e c l) = do
+    e' <- transExp e
+    c' <- transComp c
+    whileC e' c' l
 
-transComp e0@(C.ForE _ v v_tau e_start e_len e_body l) =
-    withFvContext e0 $ do
-    i <- mkUniqVar (namedString v) l
-    transLocalDecl (C.LetRefD i v_tau (Just e_start) l) $ \decl -> do
-    e_start'   <- transExp e_start
-    e_len'     <- transExp e_len
-    let e_test =  varE v .<. e_start' + e_len'
-    head       <- transComp (C.DerefE (C.VarE i l) l) .>>.
-                  bindC (BindV v v_tau) l
-    l_head     <- compLabel head
-    body       <- extendVars [(v, v_tau)] $
-                  transComp e_body .>>.
-                  liftC (i .:=. varE v + castE v_tau 1) l .>>.
-                  gotoC l_head l
-    done       <- returnC unitE l
-    letC decl l .>>. return head .>>. ifC e_test body done l
+transComp (C.ForE ann v tau e1 e2 e3 l) = do
+    e1' <- withFvContext e1 $ transExp e1
+    e2' <- withFvContext e2 $ transExp e2
+    c'  <- withFvContext e3 $
+           extendVars [(v, tau)] $
+           transComp e3
+    forC ann v tau e1' e2' c' l
 
 transComp (C.ReturnE _ e l) = do
     e <- transExp e
@@ -324,10 +310,9 @@ transComp (C.EmitsE e l) = do
     e' <- transExp e
     emitsC e' l
 
-transComp (C.RepeatE _ e l) = do
-    c        <- transComp e
-    l_repeat <- compLabel c
-    return c .>>. repeatC l_repeat l
+transComp (C.RepeatE ann e l) = do
+    c <- transComp e
+    repeatC ann c l
 
 transComp (C.ParE ann b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes

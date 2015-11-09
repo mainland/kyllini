@@ -646,6 +646,27 @@ inferStep (IfC _ e1 e2 e3 _) = do
 inferStep (LetC {}) =
     faildoc $ text "Let computation step does not have a type."
 
+inferStep (WhileC _ e c _) = do
+    withFvContext e $ do
+        (tau, _, _, _) <- inferExp e >>= checkSTC
+        checkTypeEquality tau boolT
+    withFvContext c $ do
+        tau <- inferComp c
+        void $ checkSTCUnit tau
+        return tau
+
+inferStep (ForC _ _ v tau e1 e2 c _) = do
+    checkIntT tau
+    withFvContext e1 $
+        checkExp e1 tau
+    withFvContext e2 $
+        checkExp e2 tau
+    extendVars [(v, tau)] $
+        withFvContext c $ do
+        tau_body <- inferComp c
+        void $ checkSTCUnit tau_body
+        return tau_body
+
 inferStep (LiftC _ e _) =
     inferExp e
 
@@ -661,22 +682,6 @@ inferStep (ReturnC _ e _) = do
 
 inferStep (BindC {}) =
     faildoc $ text "Bind computation step does not have a type."
-
-inferStep (GotoC _ l) =
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s, a, b :: TyVar
-    s = "s"
-    a = "a"
-    b = "b"
-
-inferStep (RepeatC _ l) =
-    appSTScope $ ST [s,a,b] T (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s, a, b :: TyVar
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferStep (TakeC _ tau l) = do
     checkKind tau TauK
@@ -708,6 +713,10 @@ inferStep (EmitsC _ e l) = do
     s, a :: TyVar
     s = "s"
     a = "a"
+
+inferStep (RepeatC _ _ c l) = do
+    (s, a, b) <- withFvContext c $ inferComp c >>= appSTScope >>= checkSTCUnit
+    return $ ST [] T s a b l
 
 inferStep step@(ParC _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
