@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 -- |
 -- Module      :  KZC.Label
 -- Copyright   :  (c) 2015 Drexel University
@@ -40,6 +42,11 @@ instance C.ToIdent Label where
     toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
 
 instance IsLabel Label where
+
+instance IsLabel (Label, Label) where
+
+instance C.ToIdent (Label, Label) where
+    toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
 
 genLabel :: MonadUnique m => String -> m Label
 genLabel s = do
