@@ -59,8 +59,8 @@ callE f es = CallE f [] es (f `srcspan` es)
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 
-idxE :: Exp -> Int -> Exp
-idxE e i = IdxE e (fromIntegral i) Nothing (srclocOf e)
+idxE :: Exp -> Exp -> Exp
+idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
 
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
