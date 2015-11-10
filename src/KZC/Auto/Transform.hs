@@ -253,13 +253,6 @@ transExp e@(C.ParE {}) =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
-infixl 1 .>>.
-(.>>.) :: T LComp -> T LComp -> T LComp
-m1 .>>. m2 = do
-    m1' <- m1
-    m2' <- m2
-    return $ m1' <> m2'
-
 transComp :: C.Exp -> T LComp
 transComp e@(C.VarE v l) = do
     tau <- lookupVar v
