@@ -182,6 +182,14 @@ flattenStep (IfC l e c1 c2 s) = do
 flattenStep (LetC {}) =
     faildoc $ text "Cannot flatten let step."
 
+flattenStep (WhileC l e c s) = do
+    step <- WhileC l e <$> flattenComp c <*> pure s
+    return [step]
+
+flattenStep (ForC l ann v tau e1 e2 c s) = do
+    step <- ForC l ann v tau e1 e2 <$> flattenComp c <*> pure s
+    return [step]
+
 flattenStep step@(LiftC {}) =
     return [step]
 
@@ -190,12 +198,6 @@ flattenStep step@(ReturnC {}) =
 
 flattenStep (BindC {}) =
     faildoc $ text "Cannot flatten bind step."
-
-flattenStep step@(GotoC {}) =
-    return [step]
-
-flattenStep step@(RepeatC {}) =
-    return [step]
 
 flattenStep step@(TakeC {}) =
     return [step]
@@ -209,9 +211,16 @@ flattenStep step@(EmitC {}) =
 flattenStep step@(EmitsC {}) =
     return [step]
 
+flattenStep (RepeatC l ann c s) = do
+    step <- RepeatC l ann <$> flattenComp c <*> pure s
+    return [step]
+
 flattenStep (ParC ann tau c1 c2 s) = do
     step <- ParC ann tau <$> flattenComp c1 <*> flattenComp c2 <*> pure s
     return [step]
+
+flattenStep (LoopC {}) =
+    faildoc $ text "flattenStep: saw LoopC"
 
 flattenVarC :: Var -> Fl [LStep]
 flattenVarC v = do

@@ -15,16 +15,17 @@ module KZC.Auto.Comp (
     ifC',
     letC,
     letC',
+    whileC,
+    forC,
     liftC,
     returnC,
     bindC,
     bindC',
-    gotoC,
-    repeatC,
     takeC,
     takesC,
     emitC,
     emitsC,
+    repeatC,
     parC,
 
     mapCompLabels,
@@ -36,7 +37,6 @@ import Control.Monad.Reader
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
 import KZC.Label
@@ -74,6 +74,18 @@ letC' :: Located a
       => Label -> LocalDecl -> a -> LComp
 letC' l decl a = Comp [LetC l decl (srclocOf a)]
 
+whileC :: (Located a, MonadUnique m)
+       => Exp -> LComp -> a -> m LComp
+whileC e c a = do
+    l <- genLabel "whilek"
+    return $ Comp [WhileC l e c (srclocOf a)]
+
+forC :: (Located a, MonadUnique m)
+     => UnrollAnn -> Var -> Type -> Exp -> Exp -> LComp -> a -> m LComp
+forC ann v tau e1 e2 c a = do
+    l <- genLabel "fork"
+    return $ Comp [ForC l ann v tau e1 e2 c (srclocOf a)]
+
 liftC :: (Located a, MonadUnique m)
       => Exp -> a -> m LComp
 liftC e a = do
@@ -95,14 +107,6 @@ bindC bv a = do
 bindC' :: Located a
        => Label -> BindVar -> a -> LComp
 bindC' l bv a = Comp [BindC l bv (srclocOf a)]
-
-gotoC :: (Located a, MonadUnique m)
-      => Label -> a -> m LComp
-gotoC l a = return $ Comp [GotoC l (srclocOf a)]
-
-repeatC :: (Located a, MonadUnique m)
-        => Label -> a -> m LComp
-repeatC l a = return $ Comp [RepeatC l (srclocOf a)]
 
 takeC :: (Located a, MonadUnique m)
       => Type -> a -> m LComp
@@ -127,6 +131,12 @@ emitsC :: (Located a, MonadUnique m)
 emitsC e a = do
     l <- genLabel "emitk"
     return $ Comp [EmitsC l e (srclocOf a)]
+
+repeatC :: (Located a, MonadUnique m)
+        => VectAnn -> LComp -> a -> m LComp
+repeatC ann c a = do
+    l <- genLabel "repeatk"
+    return $ Comp [RepeatC l ann c (srclocOf a)]
 
 parC :: (Located a, MonadUnique m)
      => PipelineAnn -> Type -> LComp -> LComp -> a -> m LComp
@@ -165,6 +175,18 @@ mapCompLabels f comp =
         ml l $ \l' ->
         (:) <$> pure (LetC l' decl s) <*> mlSteps steps
 
+    mlSteps (WhileC l e c s : steps) =
+        ml l $ \l' -> do
+        step'  <- WhileC l' e <$> mlComp c <*> pure s
+        steps' <- mlSteps steps
+        return $ step' : steps'
+
+    mlSteps (ForC l ann v tau e1 e2 c s : steps) =
+        ml l $ \l' -> do
+        step'  <- ForC l' ann v tau e1 e2 <$> mlComp c <*> pure s
+        steps' <- mlSteps steps
+        return $ step' : steps'
+
     mlSteps (LiftC l e s : steps) =
         ml l $ \l' ->
         (:) <$> pure (LiftC l' e s) <*> mlSteps steps
@@ -176,12 +198,6 @@ mapCompLabels f comp =
     mlSteps (BindC l bv s : steps) =
         ml l $ \l' ->
         (:) <$> pure (BindC l' bv s) <*> mlSteps steps
-
-    mlSteps (GotoC l s : steps) = do
-        (:) <$> (GotoC <$> lookupLabel l <*> pure s) <*> mlSteps steps
-
-    mlSteps (RepeatC l s : steps) = do
-        (:) <$> (RepeatC <$> lookupLabel l <*> pure s) <*> mlSteps steps
 
     mlSteps (TakeC l tau s : steps) =
         ml l $ \l' ->
@@ -199,17 +215,19 @@ mapCompLabels f comp =
         ml l $ \l' ->
         (:) <$> pure (EmitsC l' tau s) <*> mlSteps steps
 
+    mlSteps (RepeatC l ann c s : steps) =
+        ml l $ \l' -> do
+        step'  <- RepeatC l' ann <$> mlComp c <*> pure s
+        steps' <- mlSteps steps
+        return $ step' : steps'
+
     mlSteps (ParC ann tau c1 c2 s : steps) = do
         step'  <- ParC ann tau <$> mlComp c1 <*> mlComp c2 <*> pure s
         steps' <- mlSteps steps
         return $ step' : steps'
 
-    lookupLabel :: l1 -> M l1 l2 m l2
-    lookupLabel l = do
-        theta  <- ask
-        case Map.lookup l theta of
-          Just l' -> return l'
-          Nothing -> faildoc $ text "Label" <+> ppr l <+> text "not in scope"
+    mlSteps (LoopC {} : _) =
+        fail "mapCompLabels: saw LoopC"
 
     ml :: l1 -> (l2 -> M l1 l2 m a) -> M l1 l2 m a
     ml l k = do

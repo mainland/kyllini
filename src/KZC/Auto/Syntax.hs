@@ -159,6 +159,9 @@ data Step l = VarC l Var !SrcLoc
             | IfC l Exp (Comp l) (Comp l) !SrcLoc
             | LetC l LocalDecl !SrcLoc
 
+            | WhileC l Exp (Comp l) !SrcLoc
+            | ForC l UnrollAnn Var Type Exp Exp (Comp l) !SrcLoc
+
             -- | Lift an expression of type
             -- @forall s a b . ST (C tau) s a b@ into the monad. 'LiftC' and
             -- 'ReturnC' differ only for the purpose of type checking.
@@ -166,16 +169,16 @@ data Step l = VarC l Var !SrcLoc
             | ReturnC l Exp !SrcLoc
             | BindC l BindVar !SrcLoc
 
-            | GotoC l !SrcLoc
-            -- | A goto that is part of a repeat construct. This is
-            -- separate from 'GotoC' only for the purpose of type checking.
-            | RepeatC l !SrcLoc
-
             | TakeC l Type !SrcLoc
             | TakesC l Int Type !SrcLoc
             | EmitC l Exp !SrcLoc
             | EmitsC l Exp !SrcLoc
+            | RepeatC l VectAnn (Comp l) !SrcLoc
             | ParC PipelineAnn Type (Comp l) (Comp l) !SrcLoc
+
+            -- | This is a special "administrative" step that we use to indicate
+            -- a jump to a loop header.
+            | LoopC l
   deriving (Eq, Ord, Read, Show)
 
 newtype Comp l = Comp { unComp :: [Step l] }
@@ -204,44 +207,49 @@ compUsedLabels comp =
     go (unComp comp)
   where
     go :: [Step l] -> Set l
-    go []                     = Set.empty
-    go (IfC _ _ l r _:steps)  = compUsedLabels l <> compUsedLabels r <> go steps
-    go (ParC _ _ l r _:steps) = compUsedLabels l <> compUsedLabels r <> go steps
-    go (GotoC l _:steps)      = Set.insert l (go steps)
-    go (RepeatC l _:steps)    = Set.insert l (go steps)
-    go (_:steps)              = go steps
+    go []                           = Set.empty
+    go (IfC _ _ l r _:steps)        = compUsedLabels l <> compUsedLabels r <> go steps
+    go (WhileC _ _ c _:steps)       = compUsedLabels c <> go steps
+    go (ForC _ _ _ _ _ _ c _:steps) = compUsedLabels c <> go steps
+    go (RepeatC _ _ c _:steps)      = compUsedLabels c <> go steps
+    go (ParC _ _ l r _:steps)       = compUsedLabels l <> compUsedLabels r <> go steps
+    go (_:steps)                    = go steps
 
 stepLabel :: Monad m => Step l -> m l
-stepLabel (VarC l _ _)         = return l
-stepLabel (CallC l _ _ _ _)    = return l
-stepLabel (IfC l _ _ _ _)      = return l
-stepLabel (LetC l _ _)         = return l
-stepLabel (LiftC l _ _)        = return l
-stepLabel (ReturnC l _ _)      = return l
-stepLabel (BindC l _ _)        = return l
-stepLabel (GotoC l _)          = return l
-stepLabel (RepeatC l _)        = return l
-stepLabel (TakeC l _ _)        = return l
-stepLabel (TakesC l _ _ _)     = return l
-stepLabel (EmitC l _ _)        = return l
-stepLabel (EmitsC l _ _)       = return l
-stepLabel (ParC _ _ _ right _) = compLabel right
+stepLabel (VarC l _ _)           = return l
+stepLabel (CallC l _ _ _ _)      = return l
+stepLabel (IfC l _ _ _ _)        = return l
+stepLabel (LetC l _ _)           = return l
+stepLabel (WhileC l _ _ _)       = return l
+stepLabel (ForC l _ _ _ _ _ _ _) = return l
+stepLabel (LiftC l _ _)          = return l
+stepLabel (ReturnC l _ _)        = return l
+stepLabel (BindC l _ _)          = return l
+stepLabel (TakeC l _ _)          = return l
+stepLabel (TakesC l _ _ _)       = return l
+stepLabel (EmitC l _ _)          = return l
+stepLabel (EmitsC l _ _)         = return l
+stepLabel (RepeatC l _ _ _)      = return l
+stepLabel (ParC _ _ _ right _)   = compLabel right
+stepLabel (LoopC l)              = return l
 
 setStepLabel :: l -> Step l -> Step l
-setStepLabel l (VarC _ v s)           = VarC l v s
-setStepLabel l (CallC _ v iotas es s) = CallC l v iotas es s
-setStepLabel l (IfC _ e c1 c2 s)      = IfC l e c1 c2 s
-setStepLabel l (LetC _ decl s)        = LetC l decl s
-setStepLabel l (LiftC _ e s)          = LiftC l e s
-setStepLabel l (ReturnC _ e s)        = ReturnC l e s
-setStepLabel l (BindC _ bv s)         = BindC l bv s
-setStepLabel _ step@(GotoC {})        = step
-setStepLabel _ step@(RepeatC {})      = step
-setStepLabel l (TakeC _ tau s)        = TakeC l tau s
-setStepLabel l (TakesC _ i tau s)     = TakesC l i tau s
-setStepLabel l (EmitC _ e s)          = EmitC l e s
-setStepLabel l (EmitsC _ e s)         = EmitsC l e s
-setStepLabel _ step@(ParC {})         = step
+setStepLabel l (VarC _ v s)                 = VarC l v s
+setStepLabel l (CallC _ v iotas es s)       = CallC l v iotas es s
+setStepLabel l (IfC _ e c1 c2 s)            = IfC l e c1 c2 s
+setStepLabel l (LetC _ decl s)              = LetC l decl s
+setStepLabel l (WhileC _ e c s)             = WhileC l e c s
+setStepLabel l (ForC _ ann v tau e1 e2 c s) = ForC l ann v tau e1 e2 c s
+setStepLabel l (LiftC _ e s)                = LiftC l e s
+setStepLabel l (ReturnC _ e s)              = ReturnC l e s
+setStepLabel l (BindC _ bv s)               = BindC l bv s
+setStepLabel l (TakeC _ tau s)              = TakeC l tau s
+setStepLabel l (TakesC _ i tau s)           = TakesC l i tau s
+setStepLabel l (EmitC _ e s)                = EmitC l e s
+setStepLabel l (EmitsC _ e s)               = EmitsC l e s
+setStepLabel l (RepeatC _ ann c s)          = RepeatC l ann c s
+setStepLabel _ step@(ParC {})               = step
+setStepLabel _ step@(LoopC {})              = step
 
 {------------------------------------------------------------------------------
  -
@@ -486,48 +494,48 @@ pprComp :: forall l . IsLabel l
 pprComp comp =
     pprSteps (unComp comp)
   where
-    used :: Set l
-    used = compUsedLabels comp
-
-    pprWithLabel :: l -> Doc -> Doc
-    pprWithLabel l d
-        | l `Set.member` used = nest 2 $ ppr l <> colon <+/> d
-        | otherwise           = d
-
-    pprSteps :: Pretty l => [Step l] -> [Doc]
+    pprSteps :: [Step l] -> [Doc]
     pprSteps [] =
         []
 
-    pprSteps (VarC l v _ : k) =
+    pprSteps (VarC _ v _ : k) =
         pprBind k $
-        pprWithLabel l $
         ppr v
 
-    pprSteps (CallC l f is es _ : k) =
+    pprSteps (CallC _ f is es _ : k) =
         pprBind k $
-        pprWithLabel l $
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
 
-    pprSteps (IfC l e1 e2 e3 _ : k) =
+    pprSteps (IfC _ e1 e2 e3 _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "if"   <+> pprPrec appPrec1 e1 <+/>
         text "then" <+> pprPrec appPrec1 e2 <+/>
         text "else" <+> pprPrec appPrec1 e3
 
-    pprSteps (LetC l decl _ : k) =
+    pprSteps (LetC _ decl _ : k) =
         pprBind k $
-        pprWithLabel l $
         ppr decl
 
-    pprSteps (LiftC l e _ : k) =
+    pprSteps (WhileC _ e c _ : k) =
         pprBind k $
-        pprWithLabel l $
+        text "while" <+>
+        group (pprPrec appPrec1 e) <+>
+        ppr c
+
+    pprSteps (ForC _ ann v tau e1 e2 c _ : k) =
+        pprBind k $
+        ppr ann <+> text "for" <+>
+        group (parens (ppr v <+> colon <+> ppr tau) <+>
+               text "in" <+>
+               brackets (commasep [ppr e1, ppr e2])) <>
+        ppr c
+
+    pprSteps (LiftC _ e _ : k) =
+        pprBind k $
         ppr e
 
-    pprSteps (ReturnC l e _ : k) =
+    pprSteps (ReturnC _ e _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "return" <+> pprPrec appPrec1 e
 
     pprSteps (BindC _ WildV _  : k) =
@@ -540,31 +548,25 @@ pprComp comp =
         bindDoc = parens (ppr v <+> colon <+> ppr tau) <+>
                   text "<- _"
 
-    pprSteps (GotoC l _ : _) =
-        [text "goto" <+> ppr l]
-
-    pprSteps (RepeatC l _ : _) =
-        [text "repeat" <+> ppr l]
-
-    pprSteps (TakeC l tau _ : k) =
+    pprSteps (TakeC _ tau _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "take" <+> text "@" <> pprPrec tyappPrec1 tau
 
-    pprSteps (TakesC l i tau _ : k) =
+    pprSteps (TakesC _ i tau _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "takes" <+> pprPrec appPrec1 i <+> text "@" <> pprPrec appPrec1 tau
 
-    pprSteps (EmitC l e _ : k) =
+    pprSteps (EmitC _ e _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "emit" <+> pprPrec appPrec1 e
 
-    pprSteps (EmitsC l e _ : k) =
+    pprSteps (EmitsC _ e _ : k) =
         pprBind k $
-        pprWithLabel l $
         text "emits" <+> pprPrec appPrec1 e
+
+    pprSteps (RepeatC _ ann c _ : k) =
+        pprBind k $
+        ppr ann <+> text "repeat" <+> ppr c
 
     pprSteps (ParC ann tau e1 e2 _ : k) =
         pprBind k $
@@ -572,7 +574,10 @@ pprComp comp =
         ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
         pprPrec arrPrec e2
 
-    pprBind :: Pretty l => [Step l] -> Doc -> [Doc]
+    pprSteps (LoopC l : _) =
+        [text "loop" <+> ppr l]
+
+    pprBind :: [Step l] -> Doc -> [Doc]
     pprBind (BindC _ WildV _  : k) step =
         step : pprSteps k
 
@@ -640,20 +645,22 @@ instance Fvs Exp Var where
     fvs (BindE bv e1 e2 _)          = fvs e1 <> (fvs e2 <\\> binders bv)
 
 instance Fvs (Step l) Var where
-    fvs (VarC _ v _)       = singleton v
-    fvs (CallC _ f _ es _) = singleton f <> fvs es
-    fvs (IfC _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetC _ decl _)    = fvs decl
-    fvs (LiftC _ e _)      = fvs e
-    fvs (ReturnC _ e _)    = fvs e
-    fvs (BindC {})         = mempty
-    fvs (GotoC {})         = mempty
-    fvs (RepeatC {})       = mempty
-    fvs (TakeC {})         = mempty
-    fvs (TakesC {})        = mempty
-    fvs (EmitC _ e _)      = fvs e
-    fvs (EmitsC _ e _)     = fvs e
-    fvs (ParC _ _ e1 e2 _) = fvs e1 <> fvs e2
+    fvs (VarC _ v _)             = singleton v
+    fvs (CallC _ f _ es _)       = singleton f <> fvs es
+    fvs (IfC _ e1 e2 e3 _)       = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetC _ decl _)          = fvs decl
+    fvs (WhileC _ e c _)         = fvs e <> fvs c
+    fvs (ForC _ _ v _ e1 e2 c _) = fvs e1 <> fvs e2 <> delete v (fvs c)
+    fvs (LiftC _ e _)            = fvs e
+    fvs (ReturnC _ e _)          = fvs e
+    fvs (BindC {})               = mempty
+    fvs (TakeC {})               = mempty
+    fvs (TakesC {})              = mempty
+    fvs (EmitC _ e _)            = fvs e
+    fvs (EmitsC _ e _)           = fvs e
+    fvs (RepeatC _ _ c _)        = fvs c
+    fvs (ParC _ _ e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (LoopC {})               = mempty
 
 instance Fvs (Comp l) Var where
     fvs comp = go (unComp comp)
@@ -708,20 +715,22 @@ instance HasVars Exp Var where
     allVars (BindE bv e1 e2 _)          = allVars bv <> allVars e1 <> allVars e2
 
 instance HasVars (Step l) Var where
-    allVars (VarC _ v _)       = singleton v
-    allVars (CallC _ f _ es _) = singleton f <> allVars es
-    allVars (IfC _ e1 e2 e3 _) = allVars e1 <> allVars e2 <> allVars e3
-    allVars (LetC _ decl _)    = allVars decl
-    allVars (LiftC _ e _)      = allVars e
-    allVars (ReturnC _ e _)    = allVars e
-    allVars (BindC {})         = mempty
-    allVars (GotoC {})         = mempty
-    allVars (RepeatC {})       = mempty
-    allVars (TakeC {})         = mempty
-    allVars (TakesC {})        = mempty
-    allVars (EmitC _ e _)      = allVars e
-    allVars (EmitsC _ e _)     = allVars e
-    allVars (ParC _ _ e1 e2 _) = allVars e1 <> allVars e2
+    allVars (VarC _ v _)             = singleton v
+    allVars (CallC _ f _ es _)       = singleton f <> allVars es
+    allVars (IfC _ e1 e2 e3 _)       = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetC _ decl _)          = allVars decl
+    allVars (WhileC _ e c _)         = allVars e <> allVars c
+    allVars (ForC _ _ v _ e1 e2 c _) = singleton v <> allVars e1 <> allVars e2 <> allVars c
+    allVars (LiftC _ e _)            = allVars e
+    allVars (ReturnC _ e _)          = allVars e
+    allVars (BindC {})               = mempty
+    allVars (TakeC {})               = mempty
+    allVars (TakesC {})              = mempty
+    allVars (EmitC _ e _)            = allVars e
+    allVars (EmitsC _ e _)           = allVars e
+    allVars (RepeatC _ _ c _)        = allVars c
+    allVars (ParC _ _ e1 e2 _)       = allVars e1 <> allVars e2
+    allVars (LoopC {})               = mempty
 
 instance HasVars (Comp l) Var where
     allVars comp = allVars (unComp comp)
@@ -755,6 +764,12 @@ instance IsLabel l => Subst l l (Step l) where
     substM (LetC l decl s) =
         LetC <$> substM l <*> pure decl <*> pure s
 
+    substM (WhileC l e c s) =
+        WhileC <$> substM l <*> pure e <*> substM c <*> pure s
+
+    substM (ForC l ann v tau e1 e2 c s) =
+        ForC <$> substM l <*> pure ann <*> pure v <*> pure tau <*> pure e1 <*> pure e2 <*> substM c <*> pure s
+
     substM (LiftC l e s) =
         LiftC <$> substM l <*> pure e <*> pure s
 
@@ -763,12 +778,6 @@ instance IsLabel l => Subst l l (Step l) where
 
     substM (BindC l bv s) =
         BindC <$> substM l <*> pure bv <*> pure s
-
-    substM (GotoC l s) =
-        GotoC <$> substM l <*> pure s
-
-    substM (RepeatC l s) =
-        RepeatC <$> substM l <*> pure s
 
     substM (TakeC l tau s) =
         TakeC <$> substM l <*> pure tau <*> pure s
@@ -782,8 +791,14 @@ instance IsLabel l => Subst l l (Step l) where
     substM (EmitsC l e s) =
         EmitsC <$> substM l <*> pure e <*> pure s
 
+    substM (RepeatC l ann c s) =
+        RepeatC <$> substM l <*> pure ann <*> substM c <*> pure s
+
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance IsLabel l => Subst l l (Comp l) where
     substM comp = Comp <$> substM (unComp comp)
@@ -872,6 +887,12 @@ instance Subst Iota IVar (Step l) where
     substM (LetC l decl s) =
         LetC l <$> substM decl <*> pure s
 
+    substM (WhileC l e c s) =
+        WhileC l <$> substM e <*> substM c <*> pure s
+
+    substM (ForC l ann v tau e1 e2 c s) =
+        ForC l ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM c <*> pure s
+
     substM (LiftC l e s) =
         LiftC l <$> substM e <*> pure s
 
@@ -880,12 +901,6 @@ instance Subst Iota IVar (Step l) where
 
     substM (BindC l bv s) =
         BindC l <$> substM bv <*> pure s
-
-    substM step@(GotoC {}) =
-        return step
-
-    substM step@(RepeatC {}) =
-        return step
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -899,8 +914,14 @@ instance Subst Iota IVar (Step l) where
     substM (EmitsC l e s) =
         EmitsC l <$> substM e <*> pure s
 
+    substM (RepeatC l ann c s) =
+        RepeatC l ann <$> substM c <*> pure s
+
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance Subst Iota IVar (Comp l) where
     substM (Comp steps) = Comp <$> substM steps
@@ -989,6 +1010,12 @@ instance Subst Type TyVar (Step l) where
     substM (LetC l decl s) =
         LetC l <$> substM decl <*> pure s
 
+    substM (WhileC l e c s) =
+        WhileC l <$> substM e <*> substM c <*> pure s
+
+    substM (ForC l ann v tau e1 e2 c s) =
+        ForC l ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM c <*> pure s
+
     substM (LiftC l e s) =
         LiftC l <$> substM e <*> pure s
 
@@ -997,12 +1024,6 @@ instance Subst Type TyVar (Step l) where
 
     substM (BindC l bv s) =
         BindC l <$> substM bv <*> pure s
-
-    substM step@(GotoC {}) =
-        return step
-
-    substM step@(RepeatC {}) =
-        return step
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -1016,8 +1037,14 @@ instance Subst Type TyVar (Step l) where
     substM (EmitsC l e s) =
         EmitsC l <$> substM e <*> pure s
 
+    substM (RepeatC l ann c s) =
+        RepeatC l ann <$> substM c <*> pure s
+
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance Subst Type TyVar (Comp l) where
     substM (Comp steps) = Comp <$> substM steps
@@ -1123,6 +1150,15 @@ instance Subst Exp Var (Step l) where
     substM (LetC {}) =
         faildoc $ text "Cannot substitute in a let computation step."
 
+    substM (WhileC l e c s) =
+        WhileC l <$> substM e <*> substM c <*> pure s
+
+    substM (ForC l ann v tau e1 e2 c s) = do
+        e1' <- substM e1
+        e2' <- substM e2
+        freshen v $ \v' -> do
+        ForC l ann v' tau e1' e2' <$> substM c <*> pure s
+
     substM (LiftC l e s) =
         LiftC l <$> substM e <*> pure s
 
@@ -1131,12 +1167,6 @@ instance Subst Exp Var (Step l) where
 
     substM (BindC {}) =
         faildoc $ text "Cannot substitute in a bind computation step."
-
-    substM step@(GotoC {}) =
-        return step
-
-    substM step@(RepeatC {}) =
-        return step
 
     substM step@(TakeC {}) =
         return step
@@ -1150,8 +1180,14 @@ instance Subst Exp Var (Step l) where
     substM (EmitsC l e s) =
         EmitsC l <$> substM e <*> pure s
 
+    substM (RepeatC l ann c s) =
+        RepeatC l ann <$> substM c <*> pure s
+
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
+
+    substM step@(LoopC {}) =
+        return step
 
 instance Subst Exp Var (Comp l) where
     substM (Comp steps) =
@@ -1347,19 +1383,21 @@ instance Located (Comp l) where
     locOf (Comp (step:_)) = locOf step
 
 instance Located (Step l) where
-    locOf (VarC _ _ l)        = locOf l
-    locOf (CallC _ _ _ _ l)   = locOf l
-    locOf (IfC _ _ _ _ l)     = locOf l
-    locOf (LetC _ _ l)        = locOf l
-    locOf (LiftC _ _ l)       = locOf l
-    locOf (ReturnC _ _ l)     = locOf l
-    locOf (BindC _ _ l)       = locOf l
-    locOf (GotoC _ l)         = locOf l
-    locOf (RepeatC _ l)       = locOf l
-    locOf (TakeC _ _ l)       = locOf l
-    locOf (TakesC _ _ _ l)    = locOf l
-    locOf (EmitC _ _ l)       = locOf l
-    locOf (EmitsC _ _ l)      = locOf l
-    locOf (ParC _ _ _ _ l)    = locOf l
+    locOf (VarC _ _ l)           = locOf l
+    locOf (CallC _ _ _ _ l)      = locOf l
+    locOf (IfC _ _ _ _ l)        = locOf l
+    locOf (LetC _ _ l)           = locOf l
+    locOf (WhileC _ _ _ l)       = locOf l
+    locOf (ForC _ _ _ _ _ _ _ l) = locOf l
+    locOf (LiftC _ _ l)          = locOf l
+    locOf (ReturnC _ _ l)        = locOf l
+    locOf (BindC _ _ l)          = locOf l
+    locOf (TakeC _ _ l)          = locOf l
+    locOf (TakesC _ _ _ l)       = locOf l
+    locOf (EmitC _ _ l)          = locOf l
+    locOf (EmitsC _ _ l)         = locOf l
+    locOf (RepeatC _ _ _ l)      = locOf l
+    locOf (ParC _ _ _ _ l)       = locOf l
+    locOf (LoopC {})             = NoLoc
 
 #endif /* !defined(ONLY_TYPEDEFS) */
