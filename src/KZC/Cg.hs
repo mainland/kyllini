@@ -1203,9 +1203,11 @@ cgComp takek emitk comp k =
     cgStep (WhileC l e_test c_body sloc) _ = do
         ce_test <- cgExp e_test
         citems  <- inNewBlock_ $ do
-                   void $ cgComp takek emitk c_body l
-                   cgLabel l
-        appendStm $ rl sloc [cstm|while ($ce_test) { $items:citems }|]
+                   l_inner <- genLabel "inner_whilek"
+                   void $ cgComp takek emitk c_body l_inner
+                   cgLabel l_inner
+        cgWithLabel l $
+            appendStm $ rl sloc [cstm|while ($ce_test) { $items:citems }|]
         return CVoid
 
     cgStep (ForC l _ v v_tau e_start e_len c_body sloc) _ = do
@@ -1217,9 +1219,11 @@ cgComp takek emitk comp k =
         ce_start <- cgExp e_start
         ce_len   <- cgExp e_len
         citems   <- inNewBlock_ $ do
-                    void $ cgComp takek emitk c_body l
-                    cgLabel l
-        appendStm $ rl sloc [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
+                    l_inner <- genLabel "inner_fork"
+                    void $ cgComp takek emitk c_body l_inner
+                    cgLabel l_inner
+        cgWithLabel l $
+            appendStm $ rl sloc [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
         return CVoid
 
     -- A 'LiftC' is a monadic value, but it doesn't take or emit. That is, it is
