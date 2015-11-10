@@ -530,8 +530,15 @@ pprComp comp =
         pprWithLabel l $
         text "return" <+> pprPrec appPrec1 e
 
-    pprSteps (BindC {} : _) =
-        error "bind occurred without a preceding computation."
+    pprSteps (BindC _ WildV _  : k) =
+        text "_ <- _" : pprSteps k
+
+    pprSteps (BindC _ (BindV v tau) _ : k) =
+        bindDoc : pprSteps k
+      where
+        bindDoc :: Doc
+        bindDoc = parens (ppr v <+> colon <+> ppr tau) <+>
+                  text "<- _"
 
     pprSteps (GotoC l _ : _) =
         [text "goto" <+> ppr l]
