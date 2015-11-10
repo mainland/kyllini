@@ -306,8 +306,15 @@ fuse left right = do
     runRight _lss (WhileC {} : _rss) =
         mzero
 
-    runRight _lss (ForC {} : _rss) =
-        mzero
+    -- See the comment in the ForC case for runLeft.
+    runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) = do
+        l' <- jointLabel lss (rs:rss)
+        whenNotBeenThere lss l' $ do
+        (lss', steps) <- runRight lss (unComp c)
+        guard (lss' == lss)
+        let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+        (lss', steps) <- runRight lss rss
+        return (lss', step:steps)
 
     runRight lss rss@(TakeC {} : _) =
         runLeft lss rss
