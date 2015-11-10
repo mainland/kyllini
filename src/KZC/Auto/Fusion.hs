@@ -361,8 +361,19 @@ fuse left right = do
     runLeft (WhileC {} : _lss) _rss =
         mzero
 
-    runLeft (ForC {} : _lss) _rss =
-        mzero
+    -- We attempt to fuse a for loop by running the body of the for with the
+    -- consumer. If we end up back where we started in the consumer's
+    -- computation, that means we can easily construct a new for loop whose body
+    -- is the body of the producer's for loop merged with the consumer. This
+    -- typically works when the consumer is a repeated computation.
+    runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss = do
+        l' <- jointLabel (ls:lss) rss
+        whenNotBeenThere rss l' $ do
+        (rss', steps) <- runLeft (unComp c) rss
+        guard (rss' == rss)
+        let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+        (rss', steps) <- runRight lss rss
+        return (rss', step:steps)
 
     runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
@@ -379,15 +390,37 @@ fuse left right = do
     runLeft (EmitC {} : _) _ =
         faildoc $ text "emit paired with non-take."
 
-    runLeft (EmitsC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
+    runLeft (EmitsC l_left e s1 : lss) (rs@(TakeC l_right _tau _s2) : rss) =
         whenNotBeenThere rss l' $ do
+        -- We can only fuse an emits and a take when we statically know the size
+        -- of the array being emitted.
         n <- inferExp e >>= knownArraySize
-        when (n /= 1)
-            mzero
-        let step      =  ReturnC l' (idxE e 0) s1
-        (rss', steps) <- runRight lss rss
-        return (rss', step:steps)
+        if n == 1
+          then emits1Take
+          else emitsNTake n
       where
+        -- If we are emitting an array with only one element, fusion is trivial.
+        emits1Take :: F m ([LStep], [Step (Label, Label)])
+        emits1Take = do
+            (rss', steps) <- runRight lss rss
+            return (rss', step:steps)
+          where
+            step :: Step (Label,Label)
+            step = ReturnC l' (idxE e 0) s1
+
+        -- If we are emitting an array with more than one element, we rewrite
+        -- the emits as a for loop that yields each element of the array one by
+        -- one and try to fuse the rewritten computation.
+        emitsNTake :: Int -> F m ([LStep], [Step (Label, Label)])
+        emitsNTake n = do
+            i    <- mkUniqVar "i" s1
+            -- XXX We need the empty return so that the emit has a
+            -- continuation...so that we can take its label to find a joint
+            -- label.
+            body <- emitC (idxE e (varE i)) s1 .>>. returnC unitE s1
+            fori <- forC AutoUnroll i intT 0 (fromIntegral n) body s1
+            runLeft (unComp fori ++ lss) (rs : rss)
+
         l' :: (Label, Label)
         l' = (l_left, l_right)
 
