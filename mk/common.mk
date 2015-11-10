@@ -3,7 +3,7 @@ MAKEFLAGS:=--no-print-directory
 _QUIET=@
 
 CC=gcc
-CFLAGS=-msse4 -O0 -g
+CFLAGS+=-msse4 -O0 -g
 
 CXX=g++
 CXXFLAGS=$(CFLAGS) -std=c++11

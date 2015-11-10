@@ -10,8 +10,6 @@
 #include <kz/driver.h>
 #include <kz/rt.h>
 
-#define FIRSTCLASSLABELS
-
 #if defined(FIRSTCLASSLABELS)
 typedef void* KONT;
 
