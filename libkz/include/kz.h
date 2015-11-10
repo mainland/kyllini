@@ -30,10 +30,10 @@ typedef int KONT;
 #define LABELADDR(k) k
 #define JUMP(l) curk = l; goto dispatch
 #define INDJUMP(k) curk = k; goto dispatch
-#define BREAK break
+#define BREAK goto done
 
 #define BEGIN_DISPATCH dispatch: switch(curk) {
-#define END_DISPATCH }
+#define END_DISPATCH } done:
 #endif /* !defined(FIRSTCLASSLABELS) */
 
 #ifdef __cplusplus
