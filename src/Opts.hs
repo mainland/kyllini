@@ -100,7 +100,6 @@ fDynFlagOpts =
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
   , (Flatten,     "flatten",      "run the flattener")
   , (Fuse,        "fuse",         "run the par fuser")
-  , (Auto,        "auto",         "use the auto compiler")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]

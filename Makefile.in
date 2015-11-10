@@ -19,7 +19,6 @@ GHCFLAGS += \
 	-package exception-mtl \
 	-package exception-transformers \
 	-package filepath \
-        -package free \
 	-package language-c-quote \
 	-package logict \
 	-package mainland-pretty \
@@ -50,9 +49,6 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
-	KZC/Auto/Cg.hs \
-	KZC/Auto/Cg/CExp.hs \
-	KZC/Auto/Cg/Monad.hs \
 	KZC/Auto/Comp.hs \
 	KZC/Auto/Flatten.hs \
 	KZC/Auto/Fusion.hs \
@@ -61,6 +57,7 @@ SOURCE = \
 	KZC/Auto/Syntax.hs \
 	KZC/Auto/Transform.hs \
 	KZC/Cg.hs \
+	KZC/Cg/CExp.hs \
 	KZC/Cg/Code.hs \
 	KZC/Cg/Monad.hs \
 	KZC/Cg/Util.hs \

@@ -32,7 +32,6 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
-import qualified KZC.Auto.Cg as A
 import qualified KZC.Auto.Flatten as A
 import qualified KZC.Auto.Fusion as A
 import qualified KZC.Auto.Lint as A
@@ -86,9 +85,16 @@ runPipeline filepath = do
         renamePhase >=>
         checkPhase >=>
         lintCore >=>
+        stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=>
         lintCore >=>
-        iteFlag (testDynFlag Auto) autoCompilePhase compilePhase
+        transformPhase >=>
+        lintAuto >=>
+        runIf (testDynFlag Flatten) flattenPhase >=>
+        lintAuto >=>
+        runIf (testDynFlag Fuse) fusionPhase >=>
+        lintAuto >=>
+        compilePhase
 
     renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
     renamePhase = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
@@ -108,20 +114,8 @@ runPipeline filepath = do
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase = lift . A.withTc . SEFKT.runSEFKT . A.fuseProgram >=> dumpPass DumpFusion "acore" "fusion"
 
-    compilePhase :: [C.Decl] -> MaybeT KZC ()
-    compilePhase = stopIf (testDynFlag StopAfterCheck) >=>
-                   lift . evalCg . compileProgram >=> lift . writeOutput
-
-    autoCompilePhase :: [C.Decl] -> MaybeT KZC ()
-    autoCompilePhase = transformPhase                           >=>
-                       lintAuto                                 >=>
-                       runIf (testDynFlag Flatten) flattenPhase >=>
-                       lintAuto                                 >=>
-                       runIf (testDynFlag Fuse) fusionPhase     >=>
-                       lintAuto                                 >=>
-                       stopIf (testDynFlag StopAfterCheck)      >=>
-                       lift . A.evalCg . A.compileProgram       >=>
-                       lift . writeOutput
+    compilePhase :: A.LProgram -> MaybeT KZC ()
+    compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
 
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
@@ -146,11 +140,6 @@ runPipeline filepath = do
     runIf f g x = do
         run <- asksFlags f
         if run then g x else return x
-
-    iteFlag :: (Flags -> Bool) -> (a -> MaybeT KZC b) -> (a -> MaybeT KZC b) -> a -> MaybeT KZC b
-    iteFlag f th el x = do
-        stop <- asksFlags f
-        if stop then th x else el x
 
     writeOutput :: Pretty a
                 => a

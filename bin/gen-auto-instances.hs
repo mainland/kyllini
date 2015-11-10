@@ -6,7 +6,6 @@
 
 module Main where
 
-import Control.Monad.Free
 import Data.Generics
 
 import KZC.Auto.Syntax

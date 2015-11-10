@@ -5,12 +5,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Auto.Cg.CExp
+-- Module      :  KZC.Cg.CExp
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Auto.Cg.CExp (
+module KZC.Cg.CExp (
     CExp(..),
 
     cgBitArrayRead

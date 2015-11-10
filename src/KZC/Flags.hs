@@ -54,7 +54,6 @@ data DynFlag = Quiet
              | PrintUniques
              | ExpertTypes
              | LinePragmas
-             | Auto
              | Flatten
              | Fuse
              | AutoLint
