@@ -13,15 +13,14 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
-import qualified Data.Text.Lazy.IO as TIO
+import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 import System.Directory (createDirectoryIfMissing)
 import System.Environment
 import System.Exit (exitFailure)
-import System.FilePath (addExtension,
-                        replaceExtension,
-                        splitExtension,
-                        takeDirectory)
+import System.FilePath (replaceExtension,
+                        takeDirectory,
+                        takeExtension)
 import System.IO (IOMode(..),
                   hClose,
                   hPutStrLn,
@@ -64,23 +63,21 @@ main = do
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure
 
 runPipeline :: FilePath -> KZC ()
-runPipeline filepath = do
-    text  <- liftIO (E.decodeUtf8 <$> B.readFile filepath)
-    text' <- runCpp filepath text
-    whenDumpFlag DumpCPP $ do
-        liftIO $ TIO.writeFile (addExtension root (".pp" ++ ext)) text'
-    decls <- liftIO $ parseProgram text' start
-    whenDynFlag PrettyPrint $
-      liftIO $ putDocLn $ ppr decls
-    void $ runMaybeT $ pipeline decls
+runPipeline filepath =
+    void $ runMaybeT $ pipeline filepath
   where
-    (root, ext) = splitExtension filepath
+    ext :: String
+    ext = drop 1 (takeExtension filepath)
 
     start :: Pos
     start = startPos filepath
 
-    pipeline :: [Z.CompLet] -> MaybeT KZC ()
+    pipeline :: FilePath -> MaybeT KZC ()
     pipeline =
+        inputPhase >=>
+        cppPhase >=>
+        parsePhase >=>
+        pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         renamePhase >=>
         checkPhase >=>
@@ -96,26 +93,55 @@ runPipeline filepath = do
         lintAuto >=>
         compilePhase
 
+    inputPhase :: FilePath -> MaybeT KZC T.Text
+    inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
+
+    cppPhase :: T.Text -> MaybeT KZC T.Text
+    cppPhase = lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
+
+    parsePhase :: T.Text -> MaybeT KZC [Z.CompLet]
+    parsePhase text = lift $ liftIO $ parseProgram text start
+
+    pprPhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
+    pprPhase decls = do
+        whenDynFlag PrettyPrint $
+            liftIO $ putDocLn $ ppr decls
+        return decls
+
     renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
-    renamePhase = lift . runRn . renameProgram >=> dumpPass DumpRename "zr" "rn"
+    renamePhase =
+        lift . runRn . renameProgram >=>
+        dumpPass DumpRename "zr" "rn"
 
     checkPhase :: [Z.CompLet] -> MaybeT KZC [C.Decl]
-    checkPhase = lift . withTi . checkProgram >=> dumpPass DumpCore "core" "tc"
+    checkPhase =
+        lift . withTi . checkProgram >=>
+        dumpPass DumpCore "core" "tc"
 
     lambdaLiftPhase :: [C.Decl] -> MaybeT KZC [C.Decl]
-    lambdaLiftPhase = lift . runLift . liftProgram >=> dumpPass DumpLift "core" "ll"
+    lambdaLiftPhase =
+        lift . runLift . liftProgram >=>
+        dumpPass DumpLift "core" "ll"
 
     transformPhase :: [C.Decl] -> MaybeT KZC A.LProgram
-    transformPhase = lift . runT . transformProgram >=> dumpPass DumpLift "acore" "trans"
+    transformPhase =
+        lift . runT . transformProgram >=>
+        dumpPass DumpLift "acore" "trans"
 
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    flattenPhase = lift . A.evalFl . A.flattenProgram >=> dumpPass DumpFlatten "acore" "flatten"
+    flattenPhase =
+        lift . A.evalFl . A.flattenProgram >=>
+        dumpPass DumpFlatten "acore" "flatten"
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    fusionPhase = lift . A.withTc . SEFKT.runSEFKT . A.fuseProgram >=> dumpPass DumpFusion "acore" "fusion"
+    fusionPhase =
+        lift . A.withTc . SEFKT.runSEFKT . A.fuseProgram >=>
+        dumpPass DumpFusion "acore" "fusion"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
-    compilePhase = lift . evalCg . compileProgram >=> lift . writeOutput
+    compilePhase =
+        lift . evalCg . compileProgram >=>
+        lift . writeOutput
 
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
