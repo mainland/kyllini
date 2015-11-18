@@ -11,7 +11,18 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Check.Types where
+module KZC.Check.Types (
+    TyVar(..),
+    IVar(..),
+    W(..),
+    Signedness(..),
+    StructDef(..),
+    Type(..),
+    Kind(..),
+    MetaTv(..),
+
+    fromCoreWidth
+  ) where
 
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader
@@ -156,12 +167,6 @@ arrowPrec = 0
 
 arrowPrec1 :: Int
 arrowPrec1 = arrowPrec + 1
-
-tyappPrec :: Int
-tyappPrec = 1
-
-tyappPrec1 :: Int
-tyappPrec1 = tyappPrec + 1
 
 instance Pretty TyVar where
     ppr (TyVar n) = ppr n
