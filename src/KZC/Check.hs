@@ -767,27 +767,27 @@ tcExp (Z.EmitE e l) exp_ty = do
     b       <- newMetaTvT TauK l
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
-    (tau_e, mce)      <- inferVal e
-    ST [] _ _ a' b' _ <- compress tau
-    tau_e'            <- compress tau_e
-    (b_e, co)         <- go a' b' tau_e'
+    (tau_e, mce)          <- inferVal e
+    ST [] omega s a' b' _ <- compress tau
+    tau_e'                <- compress tau_e
+    (b_e, co)             <- go omega s a' b' tau_e'
     unifyTypes b_e b
     return $ co mce
   where
-    go :: Type -> Type -> Type -> Ti (Type, Co)
-    go _ b tau@(ArrT _ _ _) | isArrT b =
+    go :: Type -> Type -> Type -> Type -> Type -> Ti (Type, Co)
+    go _ _ _ b tau@(ArrT _ _ _) | isArrT b =
         return (tau, \mce -> C.EmitE <$> mce <*> pure l)
 
-    go a b tau0@(ArrT _ tau _) | not (couldBeArrT a) || not (couldBeArrT b) = do
+    go omega s a b tau0@(ArrT _ tau _) | not (couldBeArrT a) || not (couldBeArrT b) = do
         [a', b'] <- sanitizeTypes [a, b]
         warndoc $ nest 2 $
           text "emit called with argument of type" <+> ppr tau0 <+/>
           text "on a stream of type" <+>
-          text "ST" <+> pprPrec appPrec1 a' <+> pprPrec appPrec1 b' <>
+          ppr (ST [] omega s a' b' noLoc) <>
           text "; use emits"
         return (tau, \mce -> C.EmitsE <$> mce <*> pure l)
 
-    go _ _ tau =
+    go _ _ _ _ tau =
         return (tau, \mce -> C.EmitE <$> mce <*> pure l)
 
     isArrT :: Type -> Bool
