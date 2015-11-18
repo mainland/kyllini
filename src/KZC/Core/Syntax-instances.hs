@@ -56,8 +56,8 @@ instance Located Type where
   locOf (FunT _ _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
 instance Located Omega where
-  locOf (C _) = noLoc
-  locOf T = noLoc
+  locOf (C _) = NoLoc
+  locOf T = NoLoc
 instance Located Iota where
   locOf (ConstI _ l) = locOf l
   locOf (VarI _ l) = locOf l

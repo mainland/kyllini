@@ -1369,35 +1369,7 @@ instance IsOrd Exp where
 
 #include "KZC/Auto/Syntax-instances.hs"
 
-instance Located (Decl l) where
-    locOf (LetD _ _ _ l)            = locOf l
-    locOf (LetFunD _ _ _ _ _ l)     = locOf l
-    locOf (LetExtFunD _ _ _ _ l)    = locOf l
-    locOf (LetRefD _ _ _ l)         = locOf l
-    locOf (LetStructD _ _ l)        = locOf l
-    locOf (LetCompD _ _ _ l)        = locOf l
-    locOf (LetFunCompD _ _ _ _ _ l) = locOf l
-
 instance Located (Comp l) where
-    locOf (Comp [])       = NoLoc
-    locOf (Comp (step:_)) = locOf step
-
-instance Located (Step l) where
-    locOf (VarC _ _ l)           = locOf l
-    locOf (CallC _ _ _ _ l)      = locOf l
-    locOf (IfC _ _ _ _ l)        = locOf l
-    locOf (LetC _ _ l)           = locOf l
-    locOf (WhileC _ _ _ l)       = locOf l
-    locOf (ForC _ _ _ _ _ _ _ l) = locOf l
-    locOf (LiftC _ _ l)          = locOf l
-    locOf (ReturnC _ _ l)        = locOf l
-    locOf (BindC _ _ l)          = locOf l
-    locOf (TakeC _ _ l)          = locOf l
-    locOf (TakesC _ _ _ l)       = locOf l
-    locOf (EmitC _ _ l)          = locOf l
-    locOf (EmitsC _ _ l)         = locOf l
-    locOf (RepeatC _ _ _ l)      = locOf l
-    locOf (ParC _ _ _ _ l)       = locOf l
-    locOf (LoopC {})             = NoLoc
+    locOf (Comp steps) = locOf steps
 
 #endif /* !defined(ONLY_TYPEDEFS) */

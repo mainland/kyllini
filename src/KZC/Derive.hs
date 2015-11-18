@@ -12,6 +12,7 @@
 
 module KZC.Derive (
     deriveM,
+    deriveInstanceHeader,
     deriveBinary,
     deriveLocated
   ) where
@@ -21,10 +22,35 @@ import Data.Loc
 import Data.Symbol
 import Text.PrettyPrint.Mainland as PP
 
+allLetters :: [Doc]
+allLetters = [char c | c <- ['a'..'z']]
+
 deriveM :: (a -> Doc) -> a -> IO ()
 deriveM derive (_ :: a) = do
     putDoc $ derive (undefined :: a)
     putStrLn ""
+
+deriveInstanceHeader :: forall a . (Typeable a, Data a) => Doc -> a -> (Doc, Doc)
+deriveInstanceHeader className _ =
+    (ctx, inst)
+  where
+    typeName :: TyCon
+    typeChildren :: [TypeRep]
+    (typeName, typeChildren) = splitTyConApp (typeOf (undefined::a))
+
+    nTypeChildren :: Int
+    nTypeChildren = length typeChildren
+
+    typeLetters :: [Doc]
+    typeLetters = take nTypeChildren allLetters
+
+    ctx :: Doc
+    ctx | nTypeChildren > 0 = commasep ([className <+> a | a <- typeLetters]) <+> text "=>" <> space
+        | otherwise         = PP.empty
+
+    inst :: Doc
+    inst = parensIf (nTypeChildren > 0) $
+           sep (text (tyConName typeName) : typeLetters)
 
 deriveBinary :: forall a . (Typeable a, Data a) => a -> Doc
 deriveBinary _ =
@@ -32,18 +58,11 @@ deriveBinary _ =
     text "instance" <+> ctx <> text "Binary" <+> inst <+> text "where" </>
     stack (map putDef constrs) </> getDefs
   where
-    (typeName, typeChildren) = splitTyConApp (typeOf (undefined::a))
-    nTypeChildren = length typeChildren
-    typeLetters = take nTypeChildren allLetters
-    allLetters = [char c | c <- ['a'..'z']]
+    ctx, inst :: Doc
+    (ctx, inst) = deriveInstanceHeader (text "Binary") (undefined :: a)
 
-    ctx :: Doc
-    ctx | nTypeChildren > 0 = commasep ([text "Binary" <+> a | a <- typeLetters]) <+> text "=>" <> space
-        | otherwise         = PP.empty
-
-    inst :: Doc
-    inst = parensIf (nTypeChildren > 0) $
-           sep (text (tyConName typeName) : typeLetters)
+    typeName :: TyCon
+    (typeName, _) = splitTyConApp (typeOf (undefined::a))
 
     constrs :: [(Int, String, Int)]
     constrs = map gen $ zip [0..] $ dataTypeConstrs (dataTypeOf (undefined::a))
@@ -96,10 +115,11 @@ deriveBinary _ =
 deriveLocated :: forall a . (Typeable a, Data a) => a -> Doc
 deriveLocated _ =
     nest 2 $
-    text "instance" <+>  text "Located" <+> text (tyConName typeName) <+> text "where" </>
+    text "instance" <+> text "Located" <+> inst <+> text "where" </>
     stack (map locDef constrs)
   where
-    (typeName, _) = splitTyConApp (typeOf (undefined::a))
+    inst :: Doc
+    (_, inst) = deriveInstanceHeader (text "Binary") (undefined :: a)
 
     constrs :: [(String, [String], Int)]
     constrs = map gen $ dataTypeConstrs (dataTypeOf (undefined::a))
@@ -122,12 +142,17 @@ deriveLocated _ =
         (pats, rhs) = go ks
           where
             go :: [String] -> ([String], String)
-            go []               = ([], "noLoc")
-            go ("Name"   : ks') = ("l" : replicate (length ks') "_", "locOf l")
-            go ("SrcLoc" : ks') = ("l" : replicate (length ks') "_", "locOf l")
-            go (_ : ks')        = ("_" : pats, rhs)
+            go [] = ([], "NoLoc")
+
+            go (con : ks') | hasLoc con = ("l" : replicate (length ks') "_", "locOf l")
+                           | otherwise  = ("_" : pats, rhs)
               where
                 (pats, rhs) = go ks'
+
+            hasLoc :: String -> Bool
+            hasLoc "Name"   = True
+            hasLoc "SrcLoc" = True
+            hasLoc _        = False
 
         pattern = spread (text name : map text pats)
 

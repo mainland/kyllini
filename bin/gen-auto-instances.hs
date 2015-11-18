@@ -17,6 +17,10 @@ import KZC.Uniq
 deriving instance Typeable a; \
 deriving instance Data a
 
+#define DERIVE1(f) \
+deriving instance Typeable f; \
+deriving instance Data a => Data (f a)
+
 DERIVE(Uniq)
 DERIVE(Name)
 DERIVE(NameSort)
@@ -42,9 +46,15 @@ DERIVE(Type)
 DERIVE(Omega)
 DERIVE(Iota)
 
+DERIVE1(Decl)
+DERIVE1(Step)
+DERIVE1(Comp)
+
 main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
+    DERIVE(Decl ())
+    DERIVE(Step ())
     DERIVE(LocalDecl)
     DERIVE(Exp)
