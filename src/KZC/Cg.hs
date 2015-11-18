@@ -129,84 +129,44 @@ void kz_main(const typename kz_params_t* $id:params)
     cUR_KONT = "curk"
 
     cgInitInput :: Type -> CExp -> CExp -> Cg ()
-    cgInitInput tau cp cbuf = go tau
-      where
-        go :: Type -> Cg ()
-        go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|kz_init_input_bit($cp, &$cbuf);|]
-        go (IntT W8  Signed _)     = appendStm [cstm|kz_init_input_int8($cp, &$cbuf);|]
-        go (IntT W16 Signed _)     = appendStm [cstm|kz_init_input_int16($cp, &$cbuf);|]
-        go (IntT W32 Signed _)     = appendStm [cstm|kz_init_input_int32($cp, &$cbuf);|]
-        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_init_input_uint8($cp, &$cbuf);|]
-        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_init_input_uint16($cp, &$cbuf);|]
-        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_init_input_uint32($cp, &$cbuf);|]
-        go (FloatT W8  _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
-        go (FloatT W16 _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
-        go (FloatT W32 _)          = appendStm [cstm|kz_init_input_float($cp, &$cbuf);|]
-        go (FloatT W64 _)          = appendStm [cstm|kz_init_input_double($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_init_input_complex16($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_init_input_complex32($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|kz_init_input_bytes($cp, &$cbuf);|]
+    cgInitInput tau cp cbuf =
+        cgBufferConfig "kz_init_input" tau cp cbuf
 
     cgInitOutput :: Type -> CExp -> CExp -> Cg ()
-    cgInitOutput tau cp cbuf = go tau
-      where
-        go :: Type -> Cg ()
-        go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|kz_init_output_bit($cp, &$cbuf);|]
-        go (IntT W8  Signed _)     = appendStm [cstm|kz_init_output_int8($cp, &$cbuf);|]
-        go (IntT W16 Signed _)     = appendStm [cstm|kz_init_output_int16($cp, &$cbuf);|]
-        go (IntT W32 Signed _)     = appendStm [cstm|kz_init_output_int32($cp, &$cbuf);|]
-        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_init_output_uint8($cp, &$cbuf);|]
-        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_init_output_uint16($cp, &$cbuf);|]
-        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_init_output_uint32($cp, &$cbuf);|]
-        go (FloatT W8  _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
-        go (FloatT W16 _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
-        go (FloatT W32 _)          = appendStm [cstm|kz_init_output_float($cp, &$cbuf);|]
-        go (FloatT W64 _)          = appendStm [cstm|kz_init_output_double($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_init_output_complex16($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_init_output_complex32($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|kz_init_output_bytes($cp, &$cbuf);|]
+    cgInitOutput tau cp cbuf =
+        cgBufferConfig "kz_init_output" tau cp cbuf
 
     cgCleanupInput :: Type -> CExp -> CExp -> Cg ()
-    cgCleanupInput tau cp cbuf = go tau
-      where
-        go :: Type -> Cg ()
-        go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|kz_cleanup_input_bit($cp, &$cbuf);|]
-        go (IntT W8  Signed _)     = appendStm [cstm|kz_cleanup_input_int8($cp, &$cbuf);|]
-        go (IntT W16 Signed _)     = appendStm [cstm|kz_cleanup_input_int16($cp, &$cbuf);|]
-        go (IntT W32 Signed _)     = appendStm [cstm|kz_cleanup_input_int32($cp, &$cbuf);|]
-        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint8($cp, &$cbuf);|]
-        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint16($cp, &$cbuf);|]
-        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_cleanup_input_uint32($cp, &$cbuf);|]
-        go (FloatT W8  _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
-        go (FloatT W16 _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
-        go (FloatT W32 _)          = appendStm [cstm|kz_cleanup_input_float($cp, &$cbuf);|]
-        go (FloatT W64 _)          = appendStm [cstm|kz_cleanup_input_double($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_cleanup_input_complex16($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_cleanup_input_complex32($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|kz_cleanup_input_bytes($cp, &$cbuf);|]
+    cgCleanupInput tau cp cbuf =
+        cgBufferConfig "kz_cleanup_input" tau cp cbuf
 
     cgCleanupOutput :: Type -> CExp -> CExp -> Cg ()
-    cgCleanupOutput tau cp cbuf = go tau
+    cgCleanupOutput tau cp cbuf =
+        cgBufferConfig "kz_cleanup_output" tau cp cbuf
+
+    cgBufferConfig :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferConfig f tau cp cbuf =
+        go tau
       where
         go :: Type -> Cg ()
         go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|kz_cleanup_output_bit($cp, &$cbuf);|]
-        go (IntT W8  Signed _)     = appendStm [cstm|kz_cleanup_output_int8($cp, &$cbuf);|]
-        go (IntT W16 Signed _)     = appendStm [cstm|kz_cleanup_output_int16($cp, &$cbuf);|]
-        go (IntT W32 Signed _)     = appendStm [cstm|kz_cleanup_output_int32($cp, &$cbuf);|]
-        go (IntT W8  Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint8($cp, &$cbuf);|]
-        go (IntT W16 Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint16($cp, &$cbuf);|]
-        go (IntT W32 Unsigned _)   = appendStm [cstm|kz_cleanup_output_uint32($cp, &$cbuf);|]
-        go (FloatT W8  _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
-        go (FloatT W16 _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
-        go (FloatT W32 _)          = appendStm [cstm|kz_cleanup_output_float($cp, &$cbuf);|]
-        go (FloatT W64 _)          = appendStm [cstm|kz_cleanup_output_double($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_cleanup_output_complex16($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_cleanup_output_complex32($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|kz_cleanup_output_bytes($cp, &$cbuf);|]
+        go (BitT {})               = appendStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (IntT W8  Signed _)     = appendStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (IntT W16 Signed _)     = appendStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (IntT W32 Signed _)     = appendStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (IntT W8  Unsigned _)   = appendStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (IntT W16 Unsigned _)   = appendStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (IntT W32 Unsigned _)   = appendStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go (FloatT W8  _)          = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT W16 _)          = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT W32 _)          = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT W64 _)          = appendStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appendStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appendStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+        go _                       = appendStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+
+        fname :: String -> C.Id
+        fname t = fromString (f ++ "_" ++ t)
 
     cgInput :: Type -> CExp -> CExp -> Cg CExp
     cgInput tau cbuf cn = go tau
