@@ -114,15 +114,15 @@ ziria :-
 
   @id { identifier }
 
-  @decimal            { lexConst (TintConst Signed) }
-  0[oO] @octal        { lexConst (TintConst Signed) }
-  0[xX] @hexadecimal  { lexConst (TintConst Signed) }
+  @decimal            { lexConst (TintConst S) }
+  0[oO] @octal        { lexConst (TintConst S) }
+  0[xX] @hexadecimal  { lexConst (TintConst S) }
 
-  @decimal [uU]            { lexConst1 (TintConst Unsigned) }
-  0[oO] @octal [uU]        { lexConst1 (TintConst Unsigned) }
-  0[xX] @hexadecimal [uU]  { lexConst1 (TintConst Unsigned) }
+  @decimal [uU]            { lexConst1 (TintConst U) }
+  0[oO] @octal [uU]        { lexConst1 (TintConst U) }
+  0[xX] @hexadecimal [uU]  { lexConst1 (TintConst U) }
 
-  @decimal (\. @decimal @exponent? | @exponent) { lexConst TfloatConst }
+  @decimal (\. @decimal @exponent? | @exponent) { lexFloat }
 
   @char   { lexConst TcharConst }
   @string { lexConst TstringConst }
@@ -266,6 +266,19 @@ lexConst1 tok beg end = do
 
     end1 :: AlexInput
     end1 = end { alexOff = alexOff end -1 }
+
+lexFloat :: Action P Token
+lexFloat beg end =
+    case i of
+      [n] -> return $ locateTok beg end (TfloatConst (s, n))
+      _   -> fail "bad parse for float"
+  where
+    s :: String
+    s = inputString beg end
+
+    i :: [Rational]
+    i = do (n, _) <- readRational s
+           return n
 
 setLineFromPragma :: Action P Token
 setLineFromPragma beg end = do

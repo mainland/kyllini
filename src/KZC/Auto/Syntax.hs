@@ -19,8 +19,10 @@ module KZC.Auto.Syntax (
     Struct(..),
     TyVar(..),
     IVar(..),
-    W(..),
     Signedness(..),
+    W(..),
+    BP(..),
+    FP(..),
     Const(..),
     Program(..),
     Decl(..),
@@ -75,8 +77,10 @@ import KZC.Core.Syntax (Var(..),
                         Struct(..),
                         TyVar(..),
                         IVar(..),
-                        W(..),
                         Signedness(..),
+                        W(..),
+                        BP(..),
+                        FP(..),
                         Const(..),
                         UnrollAnn(..),
                         InlineAnn(..),
@@ -1352,7 +1356,7 @@ instance Num Exp where
 
     negate e = UnopE Neg e (srclocOf e)
 
-    fromInteger i = ConstE (IntC dEFAULT_INT_WIDTH Signed i) noLoc
+    fromInteger i = ConstE (FixC S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
 
     abs _    = error "Num Exp: abs not implemented"
     signum _ = error "Num Exp: signum not implemented"

@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -17,8 +18,10 @@ module KZC.Core.Syntax (
     Struct(..),
     TyVar(..),
     IVar(..),
-    W(..),
     Signedness(..),
+    W(..),
+    BP(..),
+    FP(..),
     Const(..),
     Decl(..),
     Exp(..),
@@ -114,21 +117,30 @@ instance IsString IVar where
 instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
 
-data W = W8
-       | W16
-       | W32
-       | W64
+-- | Fixed point signedness
+data Signedness = S
+                | U
   deriving (Eq, Ord, Read, Show)
 
-data Signedness = Signed
-                | Unsigned
+-- | Fixed-point width
+newtype W = W Int
+  deriving (Eq, Ord, Read, Show, Num)
+
+-- | Fixed-point binary point
+newtype BP = BP Int
+  deriving (Eq, Ord, Read, Show, Num)
+
+-- | Floating-point width
+data FP = FP16
+        | FP32
+        | FP64
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | IntC W Signedness Integer
-           | FloatC W Rational
+           | FixC Signedness W BP Rational
+           | FloatC FP Rational
            | StringC String
            | ArrayC [Const]
   deriving (Eq, Ord, Read, Show)
@@ -239,8 +251,8 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | IntT W Signedness !SrcLoc
-          | FloatT W !SrcLoc
+          | FixT Signedness W BP !SrcLoc
+          | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
           | ArrT Iota Type !SrcLoc
@@ -317,22 +329,29 @@ instance Pretty IVar where
     ppr (IVar n) = ppr n
 
 instance Pretty W where
-    ppr W8  = text "8"
-    ppr W16 = text "16"
-    ppr W32 = text "32"
-    ppr W64 = text "64"
+    ppr (W w) = ppr w
+
+instance Pretty BP where
+    ppr (BP bp) = ppr bp
+
+instance Pretty FP where
+    ppr FP16 = text "16"
+    ppr FP32 = text "32"
+    ppr FP64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC               = text "()"
-    ppr (BoolC False)       = text "false"
-    ppr (BoolC True)        = text "true"
-    ppr (BitC False)        = text "'0"
-    ppr (BitC True)         = text "'1"
-    ppr (IntC _ Signed i)   = ppr i
-    ppr (IntC _ Unsigned i) = ppr i <> char 'u'
-    ppr (FloatC _ f)        = ppr (fromRational f :: Double)
-    ppr (StringC s)         = text (show s)
-    ppr (ArrayC cs)         = braces $ commasep $ map ppr cs
+    ppr UnitC                = text "()"
+    ppr (BoolC False)        = text "false"
+    ppr (BoolC True)         = text "true"
+    ppr (BitC False)         = text "'0"
+    ppr (BitC True)          = text "'1"
+    ppr (FixC S _ (BP 0)  r) = ppr r
+    ppr (FixC S _ (BP bp) r) = ppr (fromRational (r / 2^bp) :: Double)
+    ppr (FixC U _ (BP 0)  r) = ppr r <> char 'u'
+    ppr (FixC U _ (BP bp) r) = ppr (fromRational (r / 2^bp) :: Double) <> char 'u'
+    ppr (FloatC _ f)         = ppr (fromRational f :: Double)
+    ppr (StringC s)          = text (show s)
+    ppr (ArrayC cs)          = braces $ commasep $ map ppr cs
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
@@ -590,16 +609,22 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w Signed _) =
-        text "int" <> ppr w
+    pprPrec _ (FixT S w bp _) =
+        text "int" <> ppr w <>
+        case bp of
+          BP 0  -> empty
+          BP bp -> char '.' <> ppr bp
 
-    pprPrec _ (IntT w Unsigned _) =
-        text "uint" <> ppr w
+    pprPrec _ (FixT U w bp _) =
+        text "uint" <> ppr w <>
+        case bp of
+          BP 0  -> empty
+          BP bp -> char '.' <> ppr bp
 
-    pprPrec _ (FloatT W32 _) =
+    pprPrec _ (FloatT FP32 _) =
         text "float"
 
-    pprPrec _ (FloatT W64 _) =
+    pprPrec _ (FloatT FP64 _) =
         text "double"
 
     pprPrec _ (FloatT w _) =
@@ -749,7 +774,7 @@ instance Fvs Type IVar where
     fvs (UnitT {})                    = mempty
     fvs (BoolT {})                    = mempty
     fvs (BitT {})                     = mempty
-    fvs (IntT {})                     = mempty
+    fvs (FixT {})                     = mempty
     fvs (FloatT {})                   = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
@@ -780,7 +805,7 @@ instance Fvs Type TyVar where
     fvs (UnitT {})                         = mempty
     fvs (BoolT {})                         = mempty
     fvs (BitT {})                          = mempty
-    fvs (IntT {})                          = mempty
+    fvs (FixT {})                          = mempty
     fvs (FloatT {})                        = mempty
     fvs (StringT {})                       = mempty
     fvs (StructT _ _)                      = mempty
@@ -924,7 +949,7 @@ instance Subst Iota IVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =
@@ -1061,7 +1086,7 @@ instance Subst Type TyVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =

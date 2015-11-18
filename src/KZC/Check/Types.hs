@@ -14,14 +14,14 @@
 module KZC.Check.Types (
     TyVar(..),
     IVar(..),
-    W(..),
     Signedness(..),
+    W(..),
+    BP(..),
+    FP(..),
     StructDef(..),
     Type(..),
     Kind(..),
-    MetaTv(..),
-
-    fromCoreWidth
+    MetaTv(..)
   ) where
 
 import Control.Applicative ((<$>), (<*>), pure)
@@ -41,6 +41,10 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Core.Syntax (Signedness(..),
+                        W(..),
+                        BP(..),
+                        FP(..))
 import qualified KZC.Core.Syntax as C
 import KZC.Globals
 import KZC.Name
@@ -56,22 +60,6 @@ newtype TyVar = TyVar Name
 newtype IVar = IVar Name
   deriving (Eq, Ord, Show)
 
-data W = W8
-       | W16
-       | W32
-       | W64
-  deriving (Eq, Ord, Read, Show)
-
-fromCoreWidth :: C.W -> W
-fromCoreWidth C.W8  = W8
-fromCoreWidth C.W16 = W16
-fromCoreWidth C.W32 = W32
-fromCoreWidth C.W64 = W64
-
-data Signedness = Signed
-                | Unsigned
-  deriving (Eq, Ord, Read, Show)
-
 data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
   deriving (Eq, Ord, Show)
 
@@ -79,8 +67,8 @@ data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | IntT W Signedness !SrcLoc
-          | FloatT W !SrcLoc
+          | FixT Signedness W BP !SrcLoc
+          | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct !SrcLoc
           | ArrT Type Type !SrcLoc
@@ -126,6 +114,12 @@ instance Ord MetaTv where
 
 type TyRef = IORef (Maybe Type)
 
+instance Show a => Show (IORef a) where
+    showsPrec d ref =
+        showParen (d > appPrec) $
+        showString "(unsafePerformIO . newRef) " .
+        showsPrec (appPrec1) ((unsafePerformIO . readRef) ref)
+
 {------------------------------------------------------------------------------
  -
  - IsString and Named instances
@@ -150,18 +144,13 @@ instance Named IVar where
  -
  ------------------------------------------------------------------------------}
 
-instance Show a => Show (IORef a) where
-    showsPrec d ref =
-        showParen (d > appPrec) $
-        showString "(unsafePerformIO . newRef) " .
-        showsPrec (appPrec1) ((unsafePerformIO . readRef) ref)
-
 appPrec :: Int
 appPrec = 10
 
 appPrec1 :: Int
 appPrec1 = appPrec + 1
 
+#if !defined(ONLY_TYPEDEFS)
 arrowPrec :: Int
 arrowPrec = 0
 
@@ -173,12 +162,6 @@ instance Pretty TyVar where
 
 instance Pretty IVar where
     ppr (IVar n) = ppr n
-
-instance Pretty W where
-    ppr W8  = text "8"
-    ppr W16 = text "16"
-    ppr W32 = text "32"
-    ppr W64 = text "64"
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
@@ -194,22 +177,28 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w Signed _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
+    pprPrec _ (FixT S (W w) 0 _) | C.W w == dEFAULT_INT_WIDTH =
         text "int"
 
-    pprPrec _ (IntT w Signed _) =
-        text "int" <> ppr w
+    pprPrec _ (FixT S w bp _) =
+        text "int" <> ppr w <>
+        case bp of
+          BP 0  -> empty
+          BP bp -> char '.' <> ppr bp
 
-    pprPrec _ (IntT w Unsigned _) | w == fromCoreWidth dEFAULT_INT_WIDTH =
+    pprPrec _ (FixT U (W w) 0 _) | C.W w == dEFAULT_INT_WIDTH =
         text "uint"
 
-    pprPrec _ (IntT w Unsigned _) =
-        text "uint" <> ppr w
+    pprPrec _ (FixT U w bp _) =
+        text "uint" <> ppr w <>
+        case bp of
+          BP 0  -> empty
+          BP bp -> char '.' <> ppr bp
 
-    pprPrec _ (FloatT W32 _) =
+    pprPrec _ (FloatT FP32 _) =
         text "float"
 
-    pprPrec _ (FloatT W64 _) =
+    pprPrec _ (FloatT FP64 _) =
         text "double"
 
     pprPrec _ (FloatT w _) =
@@ -311,7 +300,6 @@ instance Pretty Kind where
     ppr PhiK   = text "phi"
     ppr IotaK  = text "iota"
 
-#if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
  -
  - Free variables
@@ -322,7 +310,7 @@ instance Fvs Type TyVar where
     fvs (UnitT {})                         = mempty
     fvs (BoolT {})                         = mempty
     fvs (BitT {})                          = mempty
-    fvs (IntT {})                          = mempty
+    fvs (FixT {})                          = mempty
     fvs (FloatT {})                        = mempty
     fvs (StringT {})                       = mempty
     fvs (StructT _ _)                      = mempty
@@ -343,7 +331,7 @@ instance Fvs Type IVar where
     fvs (UnitT {})                    = mempty
     fvs (BoolT {})                    = mempty
     fvs (BitT {})                     = mempty
-    fvs (IntT {})                     = mempty
+    fvs (FixT {})                     = mempty
     fvs (FloatT {})                   = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
@@ -364,7 +352,7 @@ instance Fvs Type MetaTv where
     fvs (UnitT {})                    = mempty
     fvs (BoolT {})                    = mempty
     fvs (BitT {})                     = mempty
-    fvs (IntT {})                     = mempty
+    fvs (FixT {})                     = mempty
     fvs (FloatT {})                   = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
@@ -387,7 +375,7 @@ instance HasVars Type TyVar where
     allVars (UnitT {})                         = mempty
     allVars (BoolT {})                         = mempty
     allVars (BitT {})                          = mempty
-    allVars (IntT {})                          = mempty
+    allVars (FixT {})                          = mempty
     allVars (FloatT {})                        = mempty
     allVars (StringT {})                       = mempty
     allVars (StructT _ _)                      = mempty
@@ -410,7 +398,7 @@ instance HasVars Type IVar where
     allVars (UnitT {})                    = mempty
     allVars (BoolT {})                    = mempty
     allVars (BitT {})                     = mempty
-    allVars (IntT {})                     = mempty
+    allVars (FixT {})                     = mempty
     allVars (FloatT {})                   = mempty
     allVars (StringT {})                  = mempty
     allVars (StructT _ _)                 = mempty
@@ -431,7 +419,7 @@ instance HasVars Type MetaTv where
     allVars (UnitT {})                    = mempty
     allVars (BoolT {})                    = mempty
     allVars (BitT {})                     = mempty
-    allVars (IntT {})                     = mempty
+    allVars (FixT {})                     = mempty
     allVars (FloatT {})                   = mempty
     allVars (StringT {})                  = mempty
     allVars (StructT _ _)                 = mempty
@@ -458,7 +446,7 @@ instance Subst Type MetaTv Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =
@@ -511,7 +499,7 @@ instance Subst Type IVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =
@@ -565,7 +553,7 @@ instance Subst Type TyVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =
