@@ -1064,11 +1064,27 @@ cgWithLabel lbl k = do
     l :: SrcLoc
     C.Id ident l = toIdent lbl noLoc
 
+-- | Generate code to take the specified number of elements of the specified
+-- type, jumping to the specified label when the take is complete. A 'CExp'
+-- representing the taken value(s) is returned. We assume that the continuation
+-- labels the code that will be generated immediately after the take.
 type TakeK l = Int -> Type -> l -> Cg CExp
 
+-- | Generate code to emit the specified value at the specified type jumping to
+-- the specified label when the take is complete. We assume that the
+-- continuation labels the code that will be generated immediately after the
+-- emit.
 type EmitK l = Type -> CExp -> l -> Cg ()
 
-cgComp :: TakeK Label -> EmitK Label -> LComp -> Label -> Cg CExp
+-- | 'cgComp' compiles a computation and ensures that the continuation label is
+-- jumped to. We assume that the continuation labels the code that will be
+-- generated immediately after the call to 'cgComp', so if the computation
+-- compiles to straight-line code, no @goto@ will be generated.
+cgComp :: TakeK Label -- ^ Code generator for take
+       -> EmitK Label -- ^ Code generator for emit
+       -> LComp       -- ^ Computation to compiled
+       -> Label       -- ^ Label of our continuation
+       -> Cg CExp     -- ^ Value returned by the computation.
 cgComp takek emitk comp k =
     cgSteps (unComp comp)
   where
@@ -1255,7 +1271,17 @@ cgComp takek emitk comp k =
     cgStep (LoopC {}) _ =
         faildoc $ text "cgStep: saw LoopC"
 
-cgParSingleThreaded :: TakeK Label -> EmitK Label -> Type -> Type -> LComp -> LComp -> Label -> Cg CExp
+-- | Compile a par, i.e., a producer/consumer pair, using the simple
+-- single-threaded strategy. The take and emit code generators should generate
+-- code for the par's take and emit.
+cgParSingleThreaded :: TakeK Label -- ^ Code generator for /producer's/ take
+                    -> EmitK Label -- ^ Code generator for /consumer's/ emit
+                    -> Type        -- ^ The type of the result of the par
+                    -> Type        -- ^ The type of the par's internal buffer
+                    -> LComp       -- ^ The producer computation
+                    -> LComp       -- ^ The consumer computation
+                    -> Label       -- ^ The computation's continuation
+                    -> Cg CExp     -- ^ The result of the computation
 cgParSingleThreaded takek emitk tau_res b left right k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the result of the par construct.
