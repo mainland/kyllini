@@ -115,9 +115,13 @@ SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 # all, clean, and distclean targets
 #
 .PHONY : clean
-clean : clean-tests
+clean : clean-tests clean-runtime
 	$(_QUIET)cabal clean
 	$(_QUIET)rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
+
+.PHONY : clean-runtime
+clean-runtime : 
+	$(_QUIET)rm -rf $(RUNTIME_OBJ)
 
 .PHONY : clean-tests
 clean-tests :
