@@ -294,7 +294,7 @@ instance IsLabel l => Summary (Comp l) where
     summary c = text "computation:" <+> align (ppr c)
 
 instance IsLabel l => Summary (Step l) where
-    summary _ = text "computation step"
+    summary s = text "computation:" <+> ppr s
 
 {------------------------------------------------------------------------------
  -
