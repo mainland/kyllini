@@ -152,12 +152,12 @@ void kz_main(const typename kz_params_t* $id:params)
         go :: Type -> Cg ()
         go (ArrT _ tau _)          = go tau
         go (BitT {})               = appendStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT S (W 8)  0 _)     = appendStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT S (W 16) 0 _)     = appendStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT S (W 32) 0 _)     = appendStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT U (W 8)  0 _)     = appendStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT U (W 16) 0 _)     = appendStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT U (W 32) 0 _)     = appendStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go (FixT I S (W 8)  0 _)   = appendStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT I S (W 16) 0 _)   = appendStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT I S (W 32) 0 _)   = appendStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT I U (W 8)  0 _)   = appendStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT I U (W 16) 0 _)   = appendStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT I U (W 32) 0 _)   = appendStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
         go tau@(FixT {})           = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                      text "are not supported."
         go (FloatT FP16 _)         = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
@@ -177,12 +177,12 @@ void kz_main(const typename kz_params_t* $id:params)
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgInput tau cbuf (cn*ci)
         go (BitT {})               = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
-        go (FixT S (W 8)  0 _)     = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
-        go (FixT S (W 16) 0 _)     = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
-        go (FixT S (W 32) 0 _)     = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
-        go (FixT U (W 8)  0 _)     = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
-        go (FixT U (W 16) 0 _)     = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
-        go (FixT U (W 32) 0 _)     = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go (FixT I S (W 8)  0 _)   = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (FixT I S (W 16) 0 _)   = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (FixT I S (W 32) 0 _)   = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (FixT I U (W 8)  0 _)   = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (FixT I U (W 16) 0 _)   = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (FixT I U (W 32) 0 _)   = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
         go tau@(FixT {})           = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                      text "are not supported."
         go (FloatT FP16 _)         = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
@@ -201,12 +201,12 @@ void kz_main(const typename kz_params_t* $id:params)
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgOutput tau cbuf (cn*ci) cval
         go (BitT {})               = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
-        go (FixT S (W 8)  0 _)     = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
-        go (FixT S (W 16) 0 _)     = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
-        go (FixT S (W 32) 0 _)     = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
-        go (FixT U (W 8)  0 _)     = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
-        go (FixT U (W 16) 0 _)     = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
-        go (FixT U (W 32) 0 _)     = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go (FixT I S (W 8)  0 _)   = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (FixT I S (W 16) 0 _)   = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (FixT I S (W 32) 0 _)   = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (FixT I U (W 8)  0 _)   = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (FixT I U (W 16) 0 _)   = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (FixT I U (W 32) 0 _)   = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
         go tau@(FixT {})           = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                      text "are not supported."
         go (FloatT FP16 _)         = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
@@ -456,13 +456,13 @@ cgExp e@(ConstE c _) =
     cgConst c
   where
     cgConst :: Const -> Cg CExp
-    cgConst UnitC          = return CVoid
-    cgConst (BoolC b)      = return $ CBool b
-    cgConst (BitC b)       = return $ CBit b
-    cgConst (FixC _ _ 0 r) = return $ CInt (numerator r)
-    cgConst (FixC {})      = faildoc $ text "Fractional fixed point values are not supported."
-    cgConst (FloatC _ r)   = return $ CFloat r
-    cgConst (StringC s)    = return $ CExp [cexp|$string:s|]
+    cgConst UnitC            = return CVoid
+    cgConst (BoolC b)        = return $ CBool b
+    cgConst (BitC b)         = return $ CBit b
+    cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
+    cgConst (FixC {})        = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
+    cgConst (FloatC _ r)     = return $ CFloat r
+    cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
     cgConst (ArrayC cs) = do
         ArrT _ tau _ <- inferExp e
@@ -723,17 +723,17 @@ cgExp (PrintE nl es l) = do
         cgPrintScalar tau ce
 
     cgPrintScalar :: Type -> CExp -> Cg ()
-    cgPrintScalar (UnitT {})          _  = appendStm $ rl l [cstm|printf("()");|]
-    cgPrintScalar (BoolT {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-    cgPrintScalar (BitT  {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
-    cgPrintScalar (FixT S (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
-    cgPrintScalar (FixT U (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
-    cgPrintScalar (FixT S _ 0 _)      ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
-    cgPrintScalar (FixT U _ 0 _)      ce = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
-    cgPrintScalar tau@(FixT {})       _  = faildoc $ text "Cannot print value of type" <+> ppr tau
-    cgPrintScalar (FloatT {})         ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
-    cgPrintScalar (StringT {})        ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-    cgPrintScalar (ArrT iota tau _)   ce = cgPrintArray iota tau ce
+    cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
+    cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
+    cgPrintScalar (BitT  {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
+    cgPrintScalar (FixT I S (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
+    cgPrintScalar (FixT I U (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
+    cgPrintScalar (FixT I S _ 0 _)      ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
+    cgPrintScalar (FixT I U _ 0 _)      ce = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
+    cgPrintScalar tau@(FixT {})         _  = faildoc $ text "Cannot print value of type" <+> ppr tau
+    cgPrintScalar (FloatT {})           ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
+    cgPrintScalar (StringT {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
+    cgPrintScalar (ArrT iota tau _)     ce = cgPrintArray iota tau ce
 
     cgPrintScalar (StructT s _) ce | isComplexStruct s =
         appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
@@ -841,28 +841,28 @@ cgType (BoolT {}) =
 cgType (BitT {}) =
     return bIT_ARRAY_ELEM_TYPE
 
-cgType (FixT S (W 8) 0 _) =
+cgType (FixT _ S (W 8) _ _) =
     return [cty|typename int8_t|]
 
-cgType (FixT S (W 16) 0 _) =
+cgType (FixT _ S (W 16) _ _) =
     return [cty|typename int16_t|]
 
-cgType (FixT S (W 32) 0 _) =
+cgType (FixT _ S (W 32) _ _) =
     return [cty|typename int32_t|]
 
-cgType (FixT S (W 64) 0 _) =
+cgType (FixT _ S (W 64) _ _) =
     return [cty|typename int64_t|]
 
-cgType (FixT U (W 8) 0 _) =
+cgType (FixT _ U (W 8) _ _) =
     return [cty|typename uint8_t|]
 
-cgType (FixT U (W 16) 0 _) =
+cgType (FixT _ U (W 16) _ _) =
     return [cty|typename uint16_t|]
 
-cgType (FixT U (W 32) 0 _) =
+cgType (FixT _ U (W 32) _ _) =
     return [cty|typename uint32_t|]
 
-cgType (FixT U (W 64) 0 _) =
+cgType (FixT _ U (W 64) _ _) =
     return [cty|typename uint64_t|]
 
 cgType tau@(FixT {}) =

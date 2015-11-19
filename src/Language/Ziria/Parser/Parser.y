@@ -215,8 +215,8 @@ scalar_value :
   | 'false' { L (locOf $1) $ BoolC False }
   | "'0"    { L (locOf $1) $ BitC False }
   | "'1"    { L (locOf $1) $ BitC True }
-  | INT     { L (locOf $1) $ FixC S WDefault 0 (fromIntegral (snd (getINT $1))) }
-  | UINT    { L (locOf $1) $ FixC U WDefault 0 (fromIntegral (snd (getUINT $1))) }
+  | INT     { L (locOf $1) $ FixC I S WDefault 0 (fromIntegral (snd (getINT $1))) }
+  | UINT    { L (locOf $1) $ FixC I U WDefault 0 (fromIntegral (snd (getUINT $1))) }
   | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -486,16 +486,16 @@ gen_interval :
 simple_type :: { Type }
 simple_type :
     'bit'             { BitT (srclocOf $1) }
-  | 'int8'            { FixT S (W 8)    0 (srclocOf $1) }
-  | 'int16'           { FixT S (W 16)   0 (srclocOf $1) }
-  | 'int32'           { FixT S (W 32)   0 (srclocOf $1) }
-  | 'int64'           { FixT S (W 64)   0 (srclocOf $1) }
-  | 'int'             { FixT S WDefault 0 (srclocOf $1) }
-  | 'uint8'           { FixT U (W 8)    0 (srclocOf $1) }
-  | 'uint16'          { FixT U (W 16)   0 (srclocOf $1) }
-  | 'uint32'          { FixT U (W 32)   0 (srclocOf $1) }
-  | 'uint64'          { FixT U (W 64)   0 (srclocOf $1) }
-  | 'uint'            { FixT U WDefault 0 (srclocOf $1) }
+  | 'int8'            { FixT I S (W 8)    0 (srclocOf $1) }
+  | 'int16'           { FixT I S (W 16)   0 (srclocOf $1) }
+  | 'int32'           { FixT I S (W 32)   0 (srclocOf $1) }
+  | 'int64'           { FixT I S (W 64)   0 (srclocOf $1) }
+  | 'int'             { FixT I S WDefault 0 (srclocOf $1) }
+  | 'uint8'           { FixT I U (W 8)    0 (srclocOf $1) }
+  | 'uint16'          { FixT I U (W 16)   0 (srclocOf $1) }
+  | 'uint32'          { FixT I U (W 32)   0 (srclocOf $1) }
+  | 'uint64'          { FixT I U (W 64)   0 (srclocOf $1) }
+  | 'uint'            { FixT I U WDefault 0 (srclocOf $1) }
   | 'float'           { FloatT FP32 (srclocOf $1) }
   | 'double'          { FloatT FP64 (srclocOf $1) }
   | structid          { StructT $1 (srclocOf $1) }
@@ -957,7 +957,7 @@ constIntExp :: Exp -> P Integer
 constIntExp e = go e
   where
     go :: Exp -> P Integer
-    go (ConstE (FixC _ _ 0 r) _) =
+    go (ConstE (FixC I _ _ 0 r) _) =
         return (numerator r)
 
     go (BinopE op e1 e2 _) = do
@@ -976,7 +976,7 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Integer -> SrcLoc -> Exp
-intC i l = ConstE (FixC S WDefault 0 (fromIntegral i)) l
+intC i l = ConstE (FixC I S WDefault 0 (fromIntegral i)) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

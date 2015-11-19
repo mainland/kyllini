@@ -298,15 +298,17 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (BitT l) exp_ty
         return $ C.BitC b
 
-    tcConst(Z.FixC zs zw zbp r) = do
+    tcConst(Z.FixC zsc zs zw zbp r) = do
+        sc  <- fromZ zsc
         s   <- fromZ zs
         w   <- fromZ zw
         bp  <- fromZ zbp
+        csc <- trans sc
         cs  <- trans s
         cw  <- trans w
         cbp <- trans bp
-        instType (FixT s w bp l) exp_ty
-        return $ C.FixC cs cw cbp r
+        instType (FixT sc s w bp l) exp_ty
+        return $ C.FixC csc cs cw cbp r
 
     tcConst(Z.FloatC zw f) = do
         w  <- fromZ zw
@@ -345,8 +347,8 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
         return (mkSigned tau, return C.Neg)
       where
         mkSigned :: Type -> Type
-        mkSigned (FixT _ w bp l) = FixT S w bp l
-        mkSigned tau             = tau
+        mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
+        mkSigned tau                = tau
 
     unop (Z.Cast ztau2) tau1 = do
         tau2 <- fromZ ztau2
@@ -1809,20 +1811,16 @@ unifyTypes tau1 tau2 = do
     go _ _ tau1 tau2@(MetaT mtv _) =
         updateMetaTv mtv tau2 tau1
 
-    go _ _ (UnitT {})         (UnitT {})     = return ()
-    go _ _ (BoolT {})         (BoolT {})     = return ()
-    go _ _ (BitT {})          (BitT {})      = return ()
+    go _ _ (UnitT {}) (UnitT {}) = return ()
+    go _ _ (BoolT {}) (BoolT {}) = return ()
+    go _ _ (BitT {})  (BitT {})  = return ()
 
-    go _ _ (FixT w1 s1 bp1 _) (FixT w2 s2 bp2 _)
-        | w1 == w2 && s1 == s2 && bp1 == bp2 = return ()
+    go _ _ (FixT sc1 w1 s1 bp1 _) (FixT sc2 w2 s2 bp2 _)
+        | sc1 == sc2 && w1 == w2 && s1 == s2 && bp1 == bp2 = return ()
 
-    go _ _ (FloatT w1 _)      (FloatT w2 _)
-        | w1 == w2                           = return ()
-
-    go _ _ (StringT {})       (StringT {})   = return ()
-
-    go _ _ (StructT s1 _)     (StructT s2 _)
-        | s1 == s2                           = return ()
+    go _ _ (FloatT w1 _)  (FloatT w2 _)  | w1 == w2 = return ()
+    go _ _ (StringT {})   (StringT {})              = return ()
+    go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2 = return ()
 
     go theta phi (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
         unify theta phi tau1a tau1b
@@ -1942,16 +1940,16 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
                          return (tau1, mce1, mce2)
 
     lubType :: Type -> Type -> Ti (Maybe Type)
-    lubType (FixT s1 w1 0 l) (FixT s2 w2 0 _) =
-        return $ Just $ FixT (lubSignedness s1 s2) (max w1 w2) 0 l
+    lubType (FixT sc1 s1 w1 0 l) (FixT sc2 s2 w2 0 _) | sc1 == sc2 =
+        return $ Just $ FixT sc1 (lubSignedness s1 s2) (max w1 w2) 0 l
 
     lubType (FloatT w1 l) (FloatT w2 _) =
         return $ Just $ FloatT (max w1 w2) l
 
-    lubType (FixT _ _ _ l) (FloatT w _) =
+    lubType (FixT _ _ _ _ l) (FloatT w _) =
         return $ Just $ FloatT w l
 
-    lubType (FloatT w _) (FixT _ _ _ l) =
+    lubType (FloatT w _) (FixT _ _ _ _ l) =
         return $ Just $ FloatT w l
 
     lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
@@ -1995,6 +1993,10 @@ traceVar v tau = do
 class FromZ a b where
     fromZ :: a -> Ti b
 
+instance FromZ Z.Scale Scale where
+    fromZ Z.I  = pure I
+    fromZ Z.PI = pure PI
+
 instance FromZ Z.Signedness Signedness where
     fromZ Z.S = pure S
     fromZ Z.U = pure U
@@ -2012,15 +2014,15 @@ instance FromZ Z.FP FP where
     fromZ Z.FP64 = pure FP64
 
 instance FromZ Z.Type Type where
-    fromZ (Z.UnitT l)       = pure $ UnitT l
-    fromZ (Z.BoolT l)       = pure $ BoolT l
-    fromZ (Z.BitT l)        = pure $ BitT l
-    fromZ (Z.FixT s w bp l) = FixT <$> fromZ s <*> fromZ w <*> fromZ bp <*> pure l
-    fromZ (Z.FloatT w l)    = FloatT <$> fromZ w <*> pure l
-    fromZ (Z.ArrT i tau l)  = ArrT <$> fromZ i <*> fromZ tau <*> pure l
-    fromZ (Z.StructT s l)   = pure $ StructT s l
-    fromZ (Z.C tau l)       = C <$> fromZ tau <*> pure l
-    fromZ (Z.T l)           = T <$> pure l
+    fromZ (Z.UnitT l)          = pure $ UnitT l
+    fromZ (Z.BoolT l)          = pure $ BoolT l
+    fromZ (Z.BitT l)           = pure $ BitT l
+    fromZ (Z.FixT sc s w bp l) = FixT <$> fromZ sc <*> fromZ s <*> fromZ w <*> fromZ bp <*> pure l
+    fromZ (Z.FloatT w l)       = FloatT <$> fromZ w <*> pure l
+    fromZ (Z.ArrT i tau l)     = ArrT <$> fromZ i <*> fromZ tau <*> pure l
+    fromZ (Z.StructT s l)      = pure $ StructT s l
+    fromZ (Z.C tau l)          = C <$> fromZ tau <*> pure l
+    fromZ (Z.T l)              = T <$> pure l
 
     fromZ (Z.ST omega tau1 tau2 l) =
         ST <$> pure [] <*> fromZ omega <*> newMetaTvT TauK l <*>
@@ -2084,6 +2086,10 @@ instance Trans TyVar C.TyVar where
 instance Trans IVar C.IVar where
     trans (IVar n) = pure $ C.IVar n
 
+instance Trans Scale C.Scale where
+    trans I  = pure C.I
+    trans PI = pure C.PI
+
 instance Trans Signedness C.Signedness where
     trans S = pure C.S
     trans U = pure C.U
@@ -2101,15 +2107,15 @@ instance Trans Type C.Type where
     trans tau = compress tau >>= go
       where
         go :: Type -> Ti C.Type
-        go (UnitT l)       = C.UnitT <$> pure l
-        go (BoolT l)       = C.BoolT <$> pure l
-        go (BitT l)        = C.BitT <$> pure l
-        go (FixT s w bp l) = C.FixT <$> trans s <*> trans w <*> trans bp <*> pure l
-        go (FloatT w l)    = C.FloatT <$> trans w <*> pure l
-        go (StringT l)     = pure $ C.StringT l
-        go (StructT s l)   = C.StructT <$> trans s <*> pure l
-        go (RefT tau l)    = C.RefT <$> go tau <*> pure l
-        go (ArrT i tau l)  = C.ArrT <$> trans i <*> go tau <*> pure l
+        go (UnitT l)          = C.UnitT <$> pure l
+        go (BoolT l)          = C.BoolT <$> pure l
+        go (BitT l)           = C.BitT <$> pure l
+        go (FixT sc s w bp l) = C.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
+        go (FloatT w l)       = C.FloatT <$> trans w <*> pure l
+        go (StringT l)        = pure $ C.StringT l
+        go (StructT s l)      = C.StructT <$> trans s <*> pure l
+        go (RefT tau l)       = C.RefT <$> go tau <*> pure l
+        go (ArrT i tau l)     = C.ArrT <$> trans i <*> go tau <*> pure l
 
         go (ST alphas omega tau1 tau2 tau3 l) =
             extendTyVars (alphas `zip` repeat TauK) $

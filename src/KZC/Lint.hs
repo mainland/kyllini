@@ -137,12 +137,12 @@ inferExp (ConstE c l) =
     checkConst c
   where
     checkConst :: Const -> m Type
-    checkConst UnitC          = return (UnitT l)
-    checkConst(BoolC {})      = return (BoolT l)
-    checkConst(BitC {})       = return (BitT l)
-    checkConst(FixC s w bp _) = return (FixT s w bp l)
-    checkConst(FloatC w _)    = return (FloatT w l)
-    checkConst(StringC _)     = return (StringT l)
+    checkConst UnitC             = return (UnitT l)
+    checkConst(BoolC {})         = return (BoolT l)
+    checkConst(BitC {})          = return (BitT l)
+    checkConst(FixC sc s w bp _) = return (FixT sc s w bp l)
+    checkConst(FloatC w _)       = return (FloatT w l)
+    checkConst(StringC _)        = return (StringT l)
 
     checkConst(ArrayC cs) = do
         taus <- mapM checkConst cs
@@ -172,8 +172,8 @@ inferExp (UnopE op e1 _) = do
         return $ mkSigned tau
       where
         mkSigned :: Type -> Type
-        mkSigned (FixT _ w bp l) = FixT S w bp l
-        mkSigned tau             = tau
+        mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
+        mkSigned tau                = tau
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
@@ -601,8 +601,8 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
     checkT _ _ (BitT {})  (BitT {})  = return ()
 
-    checkT _ _ (FixT s1 w1 bp1 _) (FixT s2 w2 bp2 _)
-        | s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
+    checkT _ _ (FixT sc1 s1 w1 bp1 _) (FixT sc2 s2 w2 bp2 _)
+        | sc1 == sc2 && s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
 
     checkT _ _ (FloatT w1 _)  (FloatT w2 _)
         | w1 == w2 = return ()

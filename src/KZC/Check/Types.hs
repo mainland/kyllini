@@ -14,6 +14,7 @@
 module KZC.Check.Types (
     TyVar(..),
     IVar(..),
+    Scale(..),
     Signedness(..),
     W(..),
     BP(..),
@@ -41,14 +42,13 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
-import KZC.Core.Syntax (Signedness(..),
+import KZC.Core.Syntax (Scale(..),
+                        Signedness(..),
                         W(..),
                         BP(..),
                         FP(..))
-import qualified KZC.Core.Syntax as C
 import KZC.Globals
 import KZC.Name
-import KZC.Platform
 import KZC.Pretty
 import KZC.Uniq
 import KZC.Util.SetLike
@@ -67,7 +67,7 @@ data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | FixT Signedness W BP !SrcLoc
+          | FixT Scale Signedness W BP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct !SrcLoc
@@ -177,23 +177,18 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (FixT S (W w) 0 _) | C.W w == dEFAULT_INT_WIDTH =
-        text "int"
+    pprPrec _ (FixT sc s w bp _) =
+        pprBase sc s <> pprW w bp
+      where
+        pprBase :: Scale -> Signedness -> Doc
+        pprBase I  S = text "int"
+        pprBase I  U = text "uint"
+        pprBase PI S = text "rad"
+        pprBase PI U = text "urad"
 
-    pprPrec _ (FixT S w bp _) =
-        text "int" <> ppr w <>
-        case bp of
-          BP 0  -> empty
-          BP bp -> char '.' <> ppr bp
-
-    pprPrec _ (FixT U (W w) 0 _) | C.W w == dEFAULT_INT_WIDTH =
-        text "uint"
-
-    pprPrec _ (FixT U w bp _) =
-        text "uint" <> ppr w <>
-        case bp of
-          BP 0  -> empty
-          BP bp -> char '.' <> ppr bp
+        pprW :: W -> BP -> Doc
+        pprW (W w) (BP 0)  = ppr w
+        pprW (W w) (BP bp) = parens (commasep [ppr w, ppr bp])
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

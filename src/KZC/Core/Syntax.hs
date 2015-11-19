@@ -18,21 +18,28 @@ module KZC.Core.Syntax (
     Struct(..),
     TyVar(..),
     IVar(..),
+
+    Scale(..),
     Signedness(..),
     W(..),
     BP(..),
     FP(..),
+
     Const(..),
     Decl(..),
     Exp(..),
     Stm(..),
+
     UnrollAnn(..),
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
+
     BindVar(..),
+
     Unop(..),
     Binop(..),
+
     StructDef(..),
     Type(..),
     Omega(..),
@@ -117,6 +124,11 @@ instance IsString IVar where
 instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
 
+-- | Fixed point scale factor
+data Scale = I
+           | PI
+  deriving (Eq, Ord, Read, Show)
+
 -- | Fixed point signedness
 data Signedness = S
                 | U
@@ -139,7 +151,7 @@ data FP = FP16
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | FixC Signedness W BP Rational
+           | FixC Scale Signedness W BP Rational
            | FloatC FP Rational
            | StringC String
            | ArrayC [Const]
@@ -251,7 +263,7 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | FixT Signedness W BP !SrcLoc
+          | FixT Scale Signedness W BP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
@@ -340,18 +352,28 @@ instance Pretty FP where
     ppr FP64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC                = text "()"
-    ppr (BoolC False)        = text "false"
-    ppr (BoolC True)         = text "true"
-    ppr (BitC False)         = text "'0"
-    ppr (BitC True)          = text "'1"
-    ppr (FixC S _ (BP 0)  r) = ppr r
-    ppr (FixC S _ (BP bp) r) = ppr (fromRational (r / 2^bp) :: Double)
-    ppr (FixC U _ (BP 0)  r) = ppr r <> char 'u'
-    ppr (FixC U _ (BP bp) r) = ppr (fromRational (r / 2^bp) :: Double) <> char 'u'
-    ppr (FloatC _ f)         = ppr (fromRational f :: Double)
-    ppr (StringC s)          = text (show s)
-    ppr (ArrayC cs)          = braces $ commasep $ map ppr cs
+    ppr UnitC              = text "()"
+    ppr (BoolC False)      = text "false"
+    ppr (BoolC True)       = text "true"
+    ppr (BitC False)       = text "'0"
+    ppr (BitC True)        = text "'1"
+    ppr (FixC sc s _ bp r) = pprScaled sc s bp r
+    ppr (FloatC _ f)       = ppr (fromRational f :: Double)
+    ppr (StringC s)        = text (show s)
+    ppr (ArrayC cs)        = braces $ commasep $ map ppr cs
+
+pprScaled :: Scale -> Signedness -> BP -> Rational -> Doc
+pprScaled sc s bp r =
+    go sc s bp
+  where
+    go :: Scale -> Signedness -> BP -> Doc
+    go sc S bp      = go sc U bp <> char 'u'
+    go I  U (BP 0)  = ppr r
+    go sc U (BP bp) = ppr (fromRational r * scale sc / 2^bp :: Double)
+      where
+        scale :: Scale -> Double
+        scale I  = 1.0
+        scale PI = pi
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
@@ -609,17 +631,18 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (FixT S w bp _) =
-        text "int" <> ppr w <>
-        case bp of
-          BP 0  -> empty
-          BP bp -> char '.' <> ppr bp
+    pprPrec _ (FixT sc s w bp _) =
+        pprBase sc s <> pprW w bp
+      where
+        pprBase :: Scale -> Signedness -> Doc
+        pprBase I  S = "int"
+        pprBase I  U = "uint"
+        pprBase PI S = "rad"
+        pprBase PI U = "urad"
 
-    pprPrec _ (FixT U w bp _) =
-        text "uint" <> ppr w <>
-        case bp of
-          BP 0  -> empty
-          BP bp -> char '.' <> ppr bp
+        pprW :: W -> BP -> Doc
+        pprW (W w) (BP 0)  = ppr w
+        pprW (W w) (BP bp) = parens (commasep [ppr w, ppr bp])
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

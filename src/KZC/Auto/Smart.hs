@@ -45,7 +45,7 @@ unitE :: Exp
 unitE = ConstE UnitC noLoc
 
 intE :: Integer -> Exp
-intE i = ConstE (FixC S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
+intE i = ConstE (FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
@@ -86,19 +86,19 @@ bitT :: Type
 bitT = BitT noLoc
 
 intT :: Type
-intT = FixT S dEFAULT_INT_WIDTH 0 noLoc
+intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
 
 int8T :: Type
-int8T = FixT S 8 0 noLoc
+int8T = FixT I S 8 0 noLoc
 
 int16T :: Type
-int16T = FixT S 16 0 noLoc
+int16T = FixT I S 16 0 noLoc
 
 int32T :: Type
-int32T = FixT S 32 0 noLoc
+int32T = FixT I S 32 0 noLoc
 
 int64T :: Type
-int64T = FixT S 64 0 noLoc
+int64T = FixT I S 64 0 noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
