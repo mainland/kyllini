@@ -1312,26 +1312,14 @@ instance Freshen LocalDecl Exp Var where
         k (LetRefLD v' tau e' l)
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `member` phi =
-        k v' (theta', phi')
+    freshen v@(Var n) =
+        freshenV (namedString n) mkV mkE v
       where
-        phi'    = insert v' phi
-        theta'  = Map.insert v (varE v') theta
-        v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
-                          , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> Var
+        mkV s = Var n { nameSym = intern s }
 
-        varE :: Var -> Exp
-        varE v = VarE v (srclocOf v)
-
-    freshen v k (theta, phi) =
-        k v (theta', phi')
-      where
-        phi'   = insert v phi
-        theta' = Map.delete v theta
+        mkE :: Var -> Exp
+        mkE v = VarE v (srclocOf v)
 
 instance Freshen (Var, Type) Exp Var where
     freshen (v, tau) k =

@@ -623,48 +623,24 @@ instance FreshVars IVar where
         simpleTvs = reverse ['l'..'n']
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
-        k alpha' (theta', phi')
+    freshen alpha@(TyVar n) =
+        freshenV (namedString n) mkV mkE alpha
       where
-        phi'    = insert alpha' phi
-        theta'  = Map.insert alpha (tyVarT alpha') theta
-        alpha'  = head [beta | i <- [show i | i <- [(1::Integer)..]]
-                             , let beta = TyVar n { nameSym = intern (s ++ i) }
-                             , beta `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> TyVar
+        mkV s = TyVar n { nameSym = intern s }
 
-        tyVarT :: TyVar -> Type
-        tyVarT tv = TyVarT tv (srclocOf tv)
-
-    freshen alpha k (theta, phi) =
-        k alpha (theta', phi')
-      where
-        phi'    = insert alpha phi
-        theta'  = Map.delete alpha theta
+        mkE :: TyVar -> Type
+        mkE alpha = TyVarT alpha (srclocOf alpha)
 
 instance Freshen IVar Type IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
-        k alpha' (theta', phi')
+    freshen alpha@(IVar n) =
+        freshenV (namedString n) mkV mkE alpha
       where
-        phi'    = insert alpha' phi
-        theta'  = Map.insert alpha (ivarT alpha') theta
-        alpha'  = head [beta | i <- [show i | i <- [(1::Integer)..]]
-                             , let beta = IVar n { nameSym = intern (s ++ i) }
-                             , beta `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> IVar
+        mkV s = IVar n { nameSym = intern s }
 
-        ivarT :: IVar -> Type
-        ivarT v = VarI v (srclocOf v)
-
-    freshen alpha k (theta, phi) =
-        k alpha (theta', phi')
-      where
-        phi'    = insert alpha phi
-        theta'  = Map.delete alpha theta
+        mkE :: IVar -> Type
+        mkE alpha = VarI alpha (srclocOf alpha)
 
 #include "KZC/Check/Types-instances.hs"
 

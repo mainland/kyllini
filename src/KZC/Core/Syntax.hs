@@ -1341,26 +1341,14 @@ instance Subst Exp Var Exp where
  ------------------------------------------------------------------------------}
 
 instance Freshen IVar Iota IVar where
-    freshen alpha@(IVar n) k (theta, phi) | alpha `member` phi =
-        k alpha' (theta', phi')
+    freshen alpha@(IVar n) =
+        freshenV (namedString n) mkV mkE alpha
       where
-        phi'    = insert alpha' phi
-        theta'  = Map.insert alpha (ivarT alpha') theta
-        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
-                              , let beta = IVar n { nameSym = intern (s ++ i) }
-                              , beta `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> IVar
+        mkV s = IVar n { nameSym = intern s }
 
-        ivarT :: IVar -> Iota
-        ivarT v = VarI v (srclocOf v)
-
-    freshen alpha k (theta, phi) =
-        k alpha (theta', phi')
-      where
-        phi'    = insert alpha phi
-        theta'  = Map.delete alpha theta
+        mkE :: IVar -> Iota
+        mkE alpha = VarI alpha (srclocOf alpha)
 
 instance Freshen Decl Iota IVar where
     freshen (LetD v tau e l) k = do
@@ -1391,26 +1379,14 @@ instance Freshen Decl Iota IVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen TyVar Type TyVar where
-    freshen alpha@(TyVar n) k (theta, phi) | alpha `member` phi =
-        k alpha' (theta', phi')
+    freshen alpha@(TyVar n) =
+        freshenV (namedString n) mkV mkE alpha
       where
-        phi'    = insert alpha' phi
-        theta'  = Map.insert alpha (tyVarT alpha') theta
-        alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
-                              , let beta = TyVar n { nameSym = intern (s ++ i) }
-                              , beta `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> TyVar
+        mkV s = TyVar n { nameSym = intern s }
 
-        tyVarT :: TyVar -> Type
-        tyVarT tv = TyVarT tv (srclocOf tv)
-
-    freshen alpha k (theta, phi) =
-        k alpha (theta', phi')
-      where
-        phi'    = insert alpha phi
-        theta'  = Map.delete alpha theta
+        mkE :: TyVar -> Type
+        mkE alpha = TyVarT alpha (srclocOf alpha)
 
 {------------------------------------------------------------------------------
  -
@@ -1445,26 +1421,14 @@ instance Freshen Decl Exp Var where
         k decl
 
 instance Freshen Var Exp Var where
-    freshen v@(Var n) k (theta, phi) | v `member` phi =
-        k v' (theta', phi')
+    freshen v@(Var n) =
+        freshenV (namedString n) mkV mkE v
       where
-        phi'    = insert v' phi
-        theta'  = Map.insert v (varE v') theta
-        v'      = head [x | i <- [show i | i <- [(1::Integer)..]]
-                          , let x = Var n { nameSym = intern (s ++ i) }
-                          , x `notMember` phi]
-          where
-            s :: String
-            s = namedString n
+        mkV :: String -> Var
+        mkV s = Var n { nameSym = intern s }
 
-        varE :: Var -> Exp
-        varE v = VarE v (srclocOf v)
-
-    freshen v k (theta, phi) =
-        k v (theta', phi')
-      where
-        phi'   = insert v phi
-        theta' = Map.delete v theta
+        mkE :: Var -> Exp
+        mkE v = VarE v (srclocOf v)
 
 instance Freshen (Var, Type) Exp Var where
     freshen (v, tau) k =

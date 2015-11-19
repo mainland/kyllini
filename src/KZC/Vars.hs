@@ -16,6 +16,8 @@ module KZC.Vars (
     Subst(..),
     Freshen(..),
 
+    freshenV,
+
     (/->),
     subst1
   ) where
@@ -98,8 +100,30 @@ instance Subst e v a => Subst e v (Maybe a) where
 instance Ord a => Subst a a a where
     substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
-class Freshen a e v where
+class Ord v => Freshen a e v where
+    -- | Freshen a value of type @a@ within a substitution that is mapping
+    -- values of type @v@ to values of type @e@.
     freshen :: a -> (a -> SubstM e v b) -> SubstM e v b
+
+freshenV :: Ord v
+         => String
+         -> (String -> v)
+         -> (v -> e)
+         -> v -> (v -> SubstM e v b) -> SubstM e v b
+freshenV s mkV mkE alpha k (theta, phi) | alpha `member` phi =
+    k alpha' (theta', phi')
+  where
+    phi'    = insert alpha' phi
+    theta'  = Map.insert alpha (mkE alpha') theta
+    alpha'  = head [beta  | i <- [show i | i <- [(1::Integer)..]]
+                          , let beta = mkV (s ++ i)
+                          , beta `notMember` phi]
+
+freshenV _ _ _ alpha k (theta, phi) =
+    k alpha (theta', phi')
+  where
+    phi'    = insert alpha phi
+    theta'  = Map.delete alpha theta
 
 instance Freshen a e v => Freshen (Maybe a) e v where
     freshen Nothing  k = k Nothing
