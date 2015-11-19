@@ -2,15 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <kz/rt.h>
-
-void kz_error(const char* s)
-{
-    fflush(stdout);
-    fflush(stderr);
-    fprintf(stderr, "%s\n", s);
-    exit(EXIT_FAILURE);
-}
+#include <kz/bits.h>
 
 void kz_bitarray_print(const bit_t* x, int32_t n)
 {

@@ -37,6 +37,10 @@ typedef struct {
     size_t   idx;
 } kz_buf_t;
 
+void kz_main(const kz_params_t*);
+
+void kz_error(const char*);
+
 void         kz_init_input_bit(const kz_params_t*, kz_buf_t*);
 void         kz_init_output_bit(const kz_params_t*, kz_buf_t*);
 void         kz_cleanup_input_bit(const kz_params_t*, kz_buf_t*);

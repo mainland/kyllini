@@ -138,10 +138,10 @@ KZC=$(TOP)/kzc
 KZCFLAGS+=-I$(TESTDIR)/lib --dlint --dauto-lint --ddump-core --ddump-lift --ddump-auto --ddump-flatten --ddump-fusion --dprint-uniques --fno-line-pragmas
 
 RUNTIME_SRC=\
+	$(TOP)/libkz/src/bits.c \
 	$(TOP)/libkz/src/driver.c \
 	$(TOP)/libkz/src/ext.c \
 	$(TOP)/libkz/src/io.cpp \
-	$(TOP)/libkz/src/rt.c \
 	$(TOP)/libkz/src/sora/kz_sora.cpp
 
 RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))

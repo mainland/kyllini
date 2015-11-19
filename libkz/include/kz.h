@@ -1,3 +1,6 @@
+#if !defined(KZ_H)
+#define KZ_H
+
 #include <alloca.h>
 #include <limits.h>
 #include <stddef.h>
@@ -6,9 +9,9 @@
 #include <string.h>
 
 #include <kz/types.h>
-#include <kz/ext.h>
+#include <kz/bits.h>
 #include <kz/driver.h>
-#include <kz/rt.h>
+#include <kz/ext.h>
 
 #if defined(FIRSTCLASSLABELS)
 typedef void* KONT;
@@ -34,12 +37,4 @@ typedef int KONT;
 #define END_DISPATCH } done:
 #endif /* !defined(FIRSTCLASSLABELS) */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void kz_main(const kz_params_t*);
-
-#ifdef __cplusplus
-}
-#endif
+#endif /* !defined(KZ_H) */

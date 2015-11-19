@@ -6,8 +6,8 @@
 
 #include <type_traits>
 
+#include <kz/bits.h>
 #include <kz/driver.h>
-#include <kz/rt.h>
 
 #define DEFAULT_BUFSIZE 4096
 

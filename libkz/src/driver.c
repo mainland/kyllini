@@ -9,6 +9,14 @@ kz_mode_t parseMode(int argc, char *argv[], const char*);
 kz_dev_t parseDev(int argc, char *argv[], const char* desc);
 void usage(int argc, char *argv[]);
 
+void kz_error(const char* s)
+{
+    fflush(stdout);
+    fflush(stderr);
+    fprintf(stderr, "%s\n", s);
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char *argv[])
 {
     kz_params_t params;
