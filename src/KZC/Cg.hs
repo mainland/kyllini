@@ -78,7 +78,7 @@ compileProgram (Program decls comp tau) = do
           inSTScope tau $
           inLocalScope $ do
           useLabels (compUsedLabels comp)
-          ce <- cgComp take emit comp l_done
+          ce <- cgComp takek emitk comp l_done
           cgWithLabel l_done $ cgAssign (resultType tau) cres ce
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -108,8 +108,8 @@ void kz_main(const typename kz_params_t* $id:params)
     isBlockStm (C.BlockStm {}) = True
     isBlockStm _               = False
 
-    take :: TakeK l
-    take n tau _k = do
+    takek :: TakeK l
+    takek n tau _k = do
         -- Generate a pointer to the current element in the buffer.
         ctau   <- cgType tau
         cbuf   <- cgCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
@@ -121,8 +121,8 @@ void kz_main(const typename kz_params_t* $id:params)
             (_, 1)       -> return $ CExp [cexp|*$cbuf|]
             _            -> return $ CExp [cexp|$cbuf|]
 
-    emit :: EmitK Label
-    emit tau ce _k = do
+    emitk :: EmitK Label
+    emitk tau ce _k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
