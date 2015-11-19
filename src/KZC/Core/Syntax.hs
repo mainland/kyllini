@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -17,19 +18,28 @@ module KZC.Core.Syntax (
     Struct(..),
     TyVar(..),
     IVar(..),
-    W(..),
+
+    Scale(..),
     Signedness(..),
+    W(..),
+    BP(..),
+    FP(..),
+
     Const(..),
     Decl(..),
     Exp(..),
     Stm(..),
+
     UnrollAnn(..),
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
+
     BindVar(..),
+
     Unop(..),
     Binop(..),
+
     StructDef(..),
     Type(..),
     Omega(..),
@@ -114,21 +124,35 @@ instance IsString IVar where
 instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
 
-data W = W8
-       | W16
-       | W32
-       | W64
+-- | Fixed point scale factor
+data Scale = I
+           | PI
   deriving (Eq, Ord, Read, Show)
 
-data Signedness = Signed
-                | Unsigned
+-- | Fixed point signedness
+data Signedness = S
+                | U
+  deriving (Eq, Ord, Read, Show)
+
+-- | Fixed-point width
+newtype W = W Int
+  deriving (Eq, Ord, Read, Show, Num)
+
+-- | Fixed-point binary point
+newtype BP = BP Int
+  deriving (Eq, Ord, Read, Show, Num)
+
+-- | Floating-point width
+data FP = FP16
+        | FP32
+        | FP64
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | IntC W Signedness Integer
-           | FloatC W Rational
+           | FixC Scale Signedness W BP Rational
+           | FloatC FP Rational
            | StringC String
            | ArrayC [Const]
   deriving (Eq, Ord, Read, Show)
@@ -239,8 +263,8 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | BitT !SrcLoc
-          | IntT W Signedness !SrcLoc
-          | FloatT W !SrcLoc
+          | FixT Scale Signedness W BP !SrcLoc
+          | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
           | ArrT Iota Type !SrcLoc
@@ -317,22 +341,39 @@ instance Pretty IVar where
     ppr (IVar n) = ppr n
 
 instance Pretty W where
-    ppr W8  = text "8"
-    ppr W16 = text "16"
-    ppr W32 = text "32"
-    ppr W64 = text "64"
+    ppr (W w) = ppr w
+
+instance Pretty BP where
+    ppr (BP bp) = ppr bp
+
+instance Pretty FP where
+    ppr FP16 = text "16"
+    ppr FP32 = text "32"
+    ppr FP64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC               = text "()"
-    ppr (BoolC False)       = text "false"
-    ppr (BoolC True)        = text "true"
-    ppr (BitC False)        = text "'0"
-    ppr (BitC True)         = text "'1"
-    ppr (IntC _ Signed i)   = ppr i
-    ppr (IntC _ Unsigned i) = ppr i <> char 'u'
-    ppr (FloatC _ f)        = ppr (fromRational f :: Double)
-    ppr (StringC s)         = text (show s)
-    ppr (ArrayC cs)         = braces $ commasep $ map ppr cs
+    ppr UnitC              = text "()"
+    ppr (BoolC False)      = text "false"
+    ppr (BoolC True)       = text "true"
+    ppr (BitC False)       = text "'0"
+    ppr (BitC True)        = text "'1"
+    ppr (FixC sc s _ bp r) = pprScaled sc s bp r
+    ppr (FloatC _ f)       = ppr (fromRational f :: Double)
+    ppr (StringC s)        = text (show s)
+    ppr (ArrayC cs)        = braces $ commasep $ map ppr cs
+
+pprScaled :: Scale -> Signedness -> BP -> Rational -> Doc
+pprScaled sc s bp r =
+    go sc s bp
+  where
+    go :: Scale -> Signedness -> BP -> Doc
+    go sc S bp      = go sc U bp <> char 'u'
+    go I  U (BP 0)  = ppr r
+    go sc U (BP bp) = ppr (fromRational r * scale sc / 2^bp :: Double)
+      where
+        scale :: Scale -> Double
+        scale I  = 1.0
+        scale PI = pi
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
@@ -590,16 +631,23 @@ instance Pretty Type where
     pprPrec _ (BitT _) =
         text "bit"
 
-    pprPrec _ (IntT w Signed _) =
-        text "int" <> ppr w
+    pprPrec _ (FixT sc s w bp _) =
+        pprBase sc s <> pprW w bp
+      where
+        pprBase :: Scale -> Signedness -> Doc
+        pprBase I  S = "int"
+        pprBase I  U = "uint"
+        pprBase PI S = "rad"
+        pprBase PI U = "urad"
 
-    pprPrec _ (IntT w Unsigned _) =
-        text "uint" <> ppr w
+        pprW :: W -> BP -> Doc
+        pprW (W w) (BP 0)  = ppr w
+        pprW (W w) (BP bp) = parens (commasep [ppr w, ppr bp])
 
-    pprPrec _ (FloatT W32 _) =
+    pprPrec _ (FloatT FP32 _) =
         text "float"
 
-    pprPrec _ (FloatT W64 _) =
+    pprPrec _ (FloatT FP64 _) =
         text "double"
 
     pprPrec _ (FloatT w _) =
@@ -749,7 +797,7 @@ instance Fvs Type IVar where
     fvs (UnitT {})                    = mempty
     fvs (BoolT {})                    = mempty
     fvs (BitT {})                     = mempty
-    fvs (IntT {})                     = mempty
+    fvs (FixT {})                     = mempty
     fvs (FloatT {})                   = mempty
     fvs (StringT {})                  = mempty
     fvs (StructT _ _)                 = mempty
@@ -780,7 +828,7 @@ instance Fvs Type TyVar where
     fvs (UnitT {})                         = mempty
     fvs (BoolT {})                         = mempty
     fvs (BitT {})                          = mempty
-    fvs (IntT {})                          = mempty
+    fvs (FixT {})                          = mempty
     fvs (FloatT {})                        = mempty
     fvs (StringT {})                       = mempty
     fvs (StructT _ _)                      = mempty
@@ -924,7 +972,7 @@ instance Subst Iota IVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =
@@ -1061,7 +1109,7 @@ instance Subst Type TyVar Type where
     substM tau@(BitT {}) =
         pure tau
 
-    substM tau@(IntT {}) =
+    substM tau@(FixT {}) =
         pure tau
 
     substM tau@(FloatT {}) =

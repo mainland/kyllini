@@ -336,7 +336,7 @@ instance Compress Type where
     compress tau@(BitT {}) =
         pure tau
 
-    compress tau@(IntT {}) =
+    compress tau@(FixT {}) =
         pure tau
 
     compress tau@(FloatT {}) =

@@ -137,12 +137,12 @@ inferExp (ConstE c l) =
     checkConst c
   where
     checkConst :: Const -> m Type
-    checkConst UnitC       = return (UnitT l)
-    checkConst(BoolC {})   = return (BoolT l)
-    checkConst(BitC {})    = return (BitT l)
-    checkConst(IntC w s _) = return (IntT w s l)
-    checkConst(FloatC w _) = return (FloatT w l)
-    checkConst(StringC _)  = return (StringT l)
+    checkConst UnitC             = return (UnitT l)
+    checkConst(BoolC {})         = return (BoolT l)
+    checkConst(BitC {})          = return (BitT l)
+    checkConst(FixC sc s w bp _) = return (FixT sc s w bp l)
+    checkConst(FloatC w _)       = return (FloatT w l)
+    checkConst(StringC _)        = return (StringT l)
 
     checkConst(ArrayC cs) = do
         taus <- mapM checkConst cs
@@ -172,8 +172,8 @@ inferExp (UnopE op e1 _) = do
         return $ mkSigned tau
       where
         mkSigned :: Type -> Type
-        mkSigned (IntT w _ l) = IntT w Signed l
-        mkSigned tau          = tau
+        mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
+        mkSigned tau                = tau
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
@@ -563,19 +563,19 @@ checkCast :: MonadTc m => Type -> Type -> m ()
 checkCast tau1 tau2 | tau1 == tau2 =
     return ()
 
-checkCast (IntT {}) (IntT {}) =
+checkCast (FixT {}) (FixT {}) =
     return ()
 
-checkCast (IntT {}) (BitT {}) =
+checkCast (FixT {}) (BitT {}) =
     return ()
 
-checkCast (BitT {}) (IntT {}) =
+checkCast (BitT {}) (FixT {}) =
     return ()
 
-checkCast (IntT {}) (FloatT {}) =
+checkCast (FixT {}) (FloatT {}) =
     return ()
 
-checkCast (FloatT {}) (IntT {}) =
+checkCast (FloatT {}) (FixT {}) =
     return ()
 
 checkCast (FloatT {}) (FloatT {}) =
@@ -601,8 +601,8 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
     checkT _ _ (BitT {})  (BitT {})  = return ()
 
-    checkT _ _ (IntT w1 s1 _) (IntT w2 s2 _)
-        | w1 == w2 && s1 == s2 = return ()
+    checkT _ _ (FixT sc1 s1 w1 bp1 _) (FixT sc2 s2 w2 bp2 _)
+        | sc1 == sc2 && s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
 
     checkT _ _ (FloatT w1 _)  (FloatT w2 _)
         | w1 == w2 = return ()
@@ -695,7 +695,7 @@ inferKind tau =
     inferType (UnitT {})   = return TauK
     inferType (BoolT {})   = return TauK
     inferType (BitT {})    = return TauK
-    inferType (IntT {})    = return TauK
+    inferType (FixT {})    = return TauK
     inferType (FloatT {})  = return TauK
     inferType (StringT {}) = return TauK
     inferType (StructT {}) = return TauK
@@ -801,7 +801,7 @@ checkEqT tau =
 
 -- | Check that a type supports ordering.
 checkOrdT :: MonadTc m => Type -> m ()
-checkOrdT (IntT {})   = return ()
+checkOrdT (FixT {})   = return ()
 checkOrdT (FloatT {}) = return ()
 checkOrdT tau =
     faildoc $ nest 2 $ group $
@@ -811,7 +811,7 @@ checkOrdT tau =
 checkBoolT :: MonadTc m => Type -> m ()
 checkBoolT (BitT {})  = return ()
 checkBoolT (BoolT {}) = return ()
-checkBoolT (IntT {})  = return ()
+checkBoolT (FixT {})  = return ()
 checkBoolT tau =
     faildoc $ nest 2 $ group $
     text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+/> ppr tau
@@ -820,21 +820,21 @@ checkBoolT tau =
 checkBitT :: MonadTc m => Type -> m ()
 checkBitT (BitT {})  = return ()
 checkBitT (BoolT {}) = return ()
-checkBitT (IntT {})  = return ()
+checkBitT (FixT {})  = return ()
 checkBitT tau =
     faildoc $ nest 2 $ group $
     text "Expected a bit type, e.g., bit or int, but got:" <+/> ppr tau
 
 -- | Check that a type is an integer type.
 checkIntT :: MonadTc m => Type -> m ()
-checkIntT (IntT {}) = return ()
+checkIntT (FixT {}) = return ()
 checkIntT tau =
     faildoc $ nest 2 $ group $
     text "Expected integer type but got:" <+/> ppr tau
 
 -- | Check that a type is a numerical type.
 checkNumT :: MonadTc m => Type -> m ()
-checkNumT (IntT {})            = return ()
+checkNumT (FixT {})            = return ()
 checkNumT (FloatT {})          = return ()
 checkNumT tau | isComplexT tau = return ()
 checkNumT tau =

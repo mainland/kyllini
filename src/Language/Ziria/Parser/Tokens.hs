@@ -13,13 +13,13 @@ module Language.Ziria.Parser.Tokens (
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
-data Signedness = Signed
-                | Unsigned
+data Signedness = S
+                | U
   deriving (Eq, Ord, Read, Show)
 
 data Token = Teof
            | TintConst Signedness (String, Integer)
-           | TfloatConst (String, Double)
+           | TfloatConst (String, Rational)
            | TcharConst (String, Char)
            | TstringConst (String, String)
            | Tidentifier Symbol

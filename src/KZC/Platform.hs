@@ -23,7 +23,7 @@ import KZC.Core.Syntax
 import KZC.Quote.C
 
 dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W32
+dEFAULT_INT_WIDTH = W 32
 
 -- Change these next three definitions to change the type of bit array elements.
 bIT_ARRAY_ELEM_TYPE :: C.Type

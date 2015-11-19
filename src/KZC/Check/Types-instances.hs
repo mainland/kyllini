@@ -6,7 +6,7 @@ instance Located Type where
   locOf (UnitT l) = locOf l
   locOf (BoolT l) = locOf l
   locOf (BitT l) = locOf l
-  locOf (IntT _ _ l) = locOf l
+  locOf (FixT _ _ _ _ l) = locOf l
   locOf (FloatT _ l) = locOf l
   locOf (StringT l) = locOf l
   locOf (StructT _ l) = locOf l

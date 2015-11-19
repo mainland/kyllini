@@ -25,6 +25,7 @@ import Data.List (foldl1',
 import Data.Loc
 import Data.Maybe (fromMaybe, catMaybes)
 import Data.Monoid
+import Data.Ratio
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
@@ -39,8 +40,8 @@ import KZC.Name
 
 %token
   STRING      { L _ (T.TstringConst _) }
-  INT         { L _ (T.TintConst T.Signed (_, _)) }
-  UINT        { L _ (T.TintConst T.Unsigned (_, _)) }
+  INT         { L _ (T.TintConst T.S (_, _)) }
+  UINT        { L _ (T.TintConst T.U (_, _)) }
   FLOAT       { L _ (T.TfloatConst _) }
   ID          { L _ (T.Tidentifier _) }
   STRUCTID    { L _ (T.TstructIdentifier _) }
@@ -214,9 +215,9 @@ scalar_value :
   | 'false' { L (locOf $1) $ BoolC False }
   | "'0"    { L (locOf $1) $ BitC False }
   | "'1"    { L (locOf $1) $ BitC True }
-  | INT     { L (locOf $1) $ IntC WDefault Signed (snd (getINT $1)) }
-  | UINT    { L (locOf $1) $ IntC WDefault Unsigned (snd (getUINT $1)) }
-  | FLOAT   { L (locOf $1) $ FloatC W64 (snd (getFLOAT $1)) }
+  | INT     { L (locOf $1) $ FixC I S WDefault 0 (fromIntegral (snd (getINT $1))) }
+  | UINT    { L (locOf $1) $ FixC I U WDefault 0 (fromIntegral (snd (getUINT $1))) }
+  | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
 {------------------------------------------------------------------------------
@@ -485,18 +486,18 @@ gen_interval :
 simple_type :: { Type }
 simple_type :
     'bit'             { BitT (srclocOf $1) }
-  | 'int'             { IntT WDefault Signed   (srclocOf $1) }
-  | 'int8'            { IntT W8       Signed   (srclocOf $1) }
-  | 'int16'           { IntT W16      Signed   (srclocOf $1) }
-  | 'int32'           { IntT W32      Signed   (srclocOf $1) }
-  | 'int64'           { IntT W64      Signed   (srclocOf $1) }
-  | 'uint'            { IntT WDefault Unsigned (srclocOf $1) }
-  | 'uint8'           { IntT W8       Unsigned (srclocOf $1) }
-  | 'uint16'          { IntT W16      Unsigned (srclocOf $1) }
-  | 'uint32'          { IntT W32      Unsigned (srclocOf $1) }
-  | 'uint64'          { IntT W64      Unsigned (srclocOf $1) }
-  | 'float'           { FloatT W32 (srclocOf $1) }
-  | 'double'          { FloatT W64 (srclocOf $1) }
+  | 'int8'            { FixT I S (W 8)    0 (srclocOf $1) }
+  | 'int16'           { FixT I S (W 16)   0 (srclocOf $1) }
+  | 'int32'           { FixT I S (W 32)   0 (srclocOf $1) }
+  | 'int64'           { FixT I S (W 64)   0 (srclocOf $1) }
+  | 'int'             { FixT I S WDefault 0 (srclocOf $1) }
+  | 'uint8'           { FixT I U (W 8)    0 (srclocOf $1) }
+  | 'uint16'          { FixT I U (W 16)   0 (srclocOf $1) }
+  | 'uint32'          { FixT I U (W 32)   0 (srclocOf $1) }
+  | 'uint64'          { FixT I U (W 64)   0 (srclocOf $1) }
+  | 'uint'            { FixT I U WDefault 0 (srclocOf $1) }
+  | 'float'           { FloatT FP32 (srclocOf $1) }
+  | 'double'          { FloatT FP64 (srclocOf $1) }
   | structid          { StructT $1 (srclocOf $1) }
   | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
 
@@ -926,8 +927,8 @@ happyError (L loc t) =
     quote :: Doc -> Doc
     quote = enclose (char '`') (char '\'')
 
-getINT         (L _ (T.TintConst T.Signed x))      = x
-getUINT        (L _ (T.TintConst T.Unsigned x))    = x
+getINT         (L _ (T.TintConst T.S x))         = x
+getUINT        (L _ (T.TintConst T.U x))         = x
 getFLOAT       (L _ (T.TfloatConst x))           = x
 getCHAR        (L _ (T.TcharConst x))            = x
 getSTRING      (L _ (T.TstringConst x))          = x
@@ -956,8 +957,8 @@ constIntExp :: Exp -> P Integer
 constIntExp e = go e
   where
     go :: Exp -> P Integer
-    go (ConstE (IntC _ _ i) _) =
-        return i
+    go (ConstE (FixC I _ _ 0 r) _) =
+        return (numerator r)
 
     go (BinopE op e1 e2 _) = do
         x <- go e1
@@ -975,7 +976,7 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Integer -> SrcLoc -> Exp
-intC i l = ConstE (IntC WDefault Signed i) l
+intC i l = ConstE (FixC I S WDefault 0 (fromIntegral i)) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)
