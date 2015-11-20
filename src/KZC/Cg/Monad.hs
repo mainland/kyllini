@@ -214,62 +214,54 @@ instance ToCode C.Stm where
 instance ToCode [C.Stm] where
     toCode cstms = mempty { codeStms = Seq.fromList cstms }
 
-collect :: Cg a -> Cg (a, Code)
+collect :: Cg a -> Cg (Code, a)
 collect m = do
     old_code <- gets code
     modify $ \s -> s { code = mempty }
     x <- m
     c <- gets code
     modify $ \s -> s { code = old_code }
-    return (x, c)
+    return (c, x)
 
 collectDefinitions :: Cg a -> Cg ([C.Definition], a)
 collectDefinitions m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeDefs = mempty }
     return (toList (codeDefs c), x)
 
 collectDefinitions_ :: Cg () -> Cg ([C.Definition])
-collectDefinitions_ m = do
-    (defs, _) <- collectDefinitions m
-    return defs
+collectDefinitions_ m = fst <$> collectDefinitions m
 
 collectThreadDecls :: Cg a -> Cg ([C.InitGroup], a)
 collectThreadDecls m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeThreadDecls = mempty }
     return (toList (codeThreadDecls c), x)
 
 collectThreadDecls_ :: Cg () -> Cg ([C.InitGroup])
-collectThreadDecls_ m = do
-    (decls, _) <- collectThreadDecls m
-    return decls
+collectThreadDecls_ m = fst <$> collectThreadDecls m
 
 collectDecls :: Cg a -> Cg ([C.InitGroup], a)
 collectDecls m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeDecls = mempty }
     return (toList (codeDecls c), x)
 
 collectDecls_ :: Cg () -> Cg ([C.InitGroup])
-collectDecls_ m = do
-    (decls, _) <- collectDecls m
-    return decls
+collectDecls_ m = fst <$> collectDecls m
 
 collectStms :: Cg a -> Cg ([C.Stm], a)
 collectStms m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeStms = mempty }
     return (toList (codeStms c), x)
 
 collectStms_ :: Cg () -> Cg ([C.Stm])
-collectStms_ m = do
-    (stms, _) <- collectStms m
-    return stms
+collectStms_ m = fst <$> collectStms m
 
 inNewThreadBlock :: Cg a -> Cg ([C.BlockItem], a)
 inNewThreadBlock m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms  = mempty }
     return ((map C.BlockDecl . toList . codeThreadDecls) c ++
             (map C.BlockDecl . toList . codeDecls) c ++
@@ -281,7 +273,7 @@ inNewThreadBlock_ m =
 
 inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
 inNewBlock m = do
-    (x, c) <- collect m
+    (c, x) <- collect m
     tell c { codeDecls = mempty, codeStms  = mempty }
     return ((map C.BlockDecl . toList . codeDecls) c ++
             (map C.BlockStm .  toList . codeStms) c, x)
