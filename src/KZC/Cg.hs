@@ -23,7 +23,6 @@ import Control.Monad (forM_,
                       void,
                       when)
 import Data.Bits
-import Data.Foldable (toList)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid (mempty)
@@ -39,7 +38,6 @@ import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
-import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Error
@@ -56,30 +54,13 @@ import KZC.Vars
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
-    (cinit_items, citems) <-
-        inNewThreadBlock $ do
+    cblock <-
+        inNewThreadBlock_ $
         cgDecls decls $ do
-        inNewBlock_ $ do
         (_, _, a, b) <- checkST tau
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
-        -- Keep track of the current continuation. This is only used when
-        -- we do not have first class labels.
-        l_start <- compLabel comp
-        useLabel l_start
-        appendThreadDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:l_start);|]
-        -- Create a label for the end of the computation
-        l_done <- genLabel "done"
-        useLabel l_done
-        -- Create storage for the result
-        cres <- cgTemp "main_res" (resultType tau)
-        -- Generate code for the computation
-        cgThread $
-          inSTScope tau $
-          inLocalScope $ do
-          useLabels (compUsedLabels comp)
-          ce <- cgComp takek emitk comp l_done
-          cgWithLabel l_done $ cgAssign (resultType tau) cres ce
+        cgThread takek emitk tau comp
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels
@@ -89,24 +70,13 @@ void kz_main(const typename kz_params_t* $id:params)
     typename kz_buf_t $id:in_buf;
     typename kz_buf_t $id:out_buf;
 
-    $items:(filter isBlockDecl cinit_items)
-    $items:(filter isBlockDecl citems)
-    $items:(filter isBlockStm cinit_items)
-    $items:(filter isBlockStm citems)
+    $items:cblock
 }|]
   where
     in_buf, out_buf, params :: C.Id
     in_buf  = "in"
     out_buf = "out"
     params = "params"
-
-    isBlockDecl :: C.BlockItem -> Bool
-    isBlockDecl (C.BlockDecl {}) = True
-    isBlockDecl _                = False
-
-    isBlockStm :: C.BlockItem -> Bool
-    isBlockStm (C.BlockStm {}) = True
-    isBlockStm _               = False
 
     takek :: TakeK l
     takek n tau _k = do
@@ -125,9 +95,6 @@ void kz_main(const typename kz_params_t* $id:params)
     emitk tau ce _k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
-
-    cUR_KONT :: C.Id
-    cUR_KONT = "curk"
 
     cgInitInput :: Type -> CExp -> CExp -> Cg ()
     cgInitInput tau cp cbuf =
@@ -235,15 +202,35 @@ cgLabels = do
         cl  = [cenum|$id:l = 0|]
         cls = [ [cenum|$id:l|] | l <- ls]
 
-cgThread :: Cg a -> Cg a
-cgThread k = do
-    (x, code) <- collect k
-    tell code { codeThreadDecls = mempty, codeDecls = mempty, codeStms = mempty }
-    let cds   =  toList $ codeThreadDecls code <> codeDecls code
-    let css   =  (toList . codeStms) code
-    appendDecls cds
-    appendStms [cstms|BEGIN_DISPATCH; $stms:css END_DISPATCH;|]
-    return x
+cgThread :: TakeK Label -- ^ Code generator for take
+         -> EmitK Label -- ^ Code generator for emit
+         -> Type        -- ^ Type of the result of the computation
+         -> LComp       -- ^ Computation to compiled
+         -> Cg ()
+cgThread takek emitk tau comp = do
+    cblock <-
+        inSTScope tau $
+        inLocalScope $
+        inNewThreadBlock_ $ do
+        -- Keep track of the current continuation. This is only used when
+        -- we do not have first class labels.
+        l_start <- compLabel comp
+        useLabel l_start
+        appendThreadDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:l_start);|]
+        -- Create a label for the end of the computation
+        l_done <- genLabel "done"
+        useLabel l_done
+        -- Create storage for the result
+        cres <- cgTemp "main_res" (resultType tau)
+        -- Generate code for the computation
+        useLabels (compUsedLabels comp)
+        ce <- cgComp takek emitk comp l_done
+        cgWithLabel l_done $ cgAssign (resultType tau) cres ce
+    appendDecls [decl | C.BlockDecl decl <- cblock]
+    appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
+  where
+    cUR_KONT :: C.Id
+    cUR_KONT = "curk"
 
 cgDecls :: [LDecl] -> Cg a -> Cg a
 cgDecls [] k =
