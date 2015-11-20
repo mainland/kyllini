@@ -27,6 +27,8 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid (mempty)
 import Data.Ratio
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.String (IsString(..))
 import qualified Language.C.Syntax as C
 import Numeric (showHex)
@@ -54,7 +56,8 @@ import KZC.Vars
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
-    cblock <-
+    (clabels, cblock) <-
+        collectLabels $
         inNewThreadBlock_ $
         cgDecls decls $ do
         (_, _, a, b) <- checkST tau
@@ -63,7 +66,7 @@ compileProgram (Program decls comp tau) = do
         cgThread takek emitk tau comp
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
-    cgLabels
+    cgLabels clabels
     appendTopDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
@@ -185,9 +188,9 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
-cgLabels :: Cg ()
-cgLabels = do
-    getLabels >>= go
+cgLabels :: Set Label -> Cg ()
+cgLabels ls = do
+    go (Set.toList ls)
   where
     go :: [Label] -> Cg ()
     go [] = return ()

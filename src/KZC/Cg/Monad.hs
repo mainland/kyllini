@@ -43,8 +43,6 @@ module KZC.Cg.Monad (
     inNewBlock,
     inNewBlock_,
 
-    getLabels,
-
     appendTopDef,
     appendTopDefs,
     appendTopDecl,
@@ -58,6 +56,7 @@ module KZC.Cg.Monad (
 
     gensym,
 
+    collectLabels,
     useLabel,
     useLabels,
     isLabelUsed,
@@ -282,9 +281,6 @@ inNewBlock_ :: Cg a -> Cg [C.BlockItem]
 inNewBlock_ m =
     fst <$> inNewBlock m
 
-getLabels :: Cg [Label]
-getLabels = gets (Set.toList . labels)
-
 appendTopDef :: C.Definition -> Cg ()
 appendTopDef cdef =
   tell mempty { codeDefs = Seq.singleton cdef }
@@ -323,6 +319,15 @@ gensym :: String -> Cg C.Id
 gensym s = do
     Uniq u <- newUnique
     return $ C.Id (s ++ "__" ++ show u) noLoc
+
+collectLabels :: Cg a -> Cg (Set Label, a)
+collectLabels m = do
+    old_labels <- gets labels
+    modify $ \s -> s { labels = mempty }
+    x    <- m
+    lbls <- gets labels
+    modify $ \s -> s { labels = old_labels }
+    return (lbls, x)
 
 useLabel :: Label -> Cg ()
 useLabel lbl =
