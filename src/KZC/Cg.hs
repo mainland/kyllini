@@ -60,10 +60,13 @@ compileProgram (Program decls comp tau) = do
         collectLabels $
         inNewThreadBlock_ $
         cgDecls decls $ do
+        -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
+        -- Compile the computation
         cgThread takek emitk tau comp
+        -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels clabels
