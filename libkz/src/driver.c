@@ -11,9 +11,9 @@ void usage(int argc, char *argv[]);
 
 void kz_error(const char* s)
 {
+    fprintf(stderr, "%s\n", s);
     fflush(stdout);
     fflush(stderr);
-    fprintf(stderr, "%s\n", s);
     exit(EXIT_FAILURE);
 }
 
