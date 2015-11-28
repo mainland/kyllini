@@ -862,32 +862,19 @@ cgType (BoolT {}) =
 cgType (BitT {}) =
     return bIT_ARRAY_ELEM_TYPE
 
-cgType (FixT _ S (W 8) _ _) =
-    return [cty|typename int8_t|]
+cgType tau@(FixT _ S (W w) _ _)
+    | w <= 8    = return [cty|typename int8_t|]
+    | w <= 16   = return [cty|typename int16_t|]
+    | w <= 32   = return [cty|typename int32_t|]
+    | w <= 64   = return [cty|typename int64_t|]
+    | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
 
-cgType (FixT _ S (W 16) _ _) =
-    return [cty|typename int16_t|]
-
-cgType (FixT _ S (W 32) _ _) =
-    return [cty|typename int32_t|]
-
-cgType (FixT _ S (W 64) _ _) =
-    return [cty|typename int64_t|]
-
-cgType (FixT _ U (W 8) _ _) =
-    return [cty|typename uint8_t|]
-
-cgType (FixT _ U (W 16) _ _) =
-    return [cty|typename uint16_t|]
-
-cgType (FixT _ U (W 32) _ _) =
-    return [cty|typename uint32_t|]
-
-cgType (FixT _ U (W 64) _ _) =
-    return [cty|typename uint64_t|]
-
-cgType tau@(FixT {}) =
-    faildoc $ text "cgType: cannot translate type" <+> ppr tau
+cgType tau@(FixT _ U (W w) _ _)
+    | w <= 8    = return [cty|typename uint8_t|]
+    | w <= 16   = return [cty|typename uint16_t|]
+    | w <= 32   = return [cty|typename uint32_t|]
+    | w <= 64   = return [cty|typename uint64_t|]
+    | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
 
 cgType (FloatT FP16 _) =
     return [cty|float|]
