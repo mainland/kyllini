@@ -66,8 +66,13 @@ compileProgram (Program decls comp tau) = do
         (_, _, a, b) <- checkST tau
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
+        -- Create storage for the result
+        cres <- cgTemp "main_res" (resultType tau)
+        -- The done continuation simply puts the computation's result in cres
+        let donek :: DoneK
+            donek ce = cgAssign (resultType tau) cres ce
         -- Compile the computation
-        cgThread takek emitk tau comp
+        cgThread takek emitk donek tau comp
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -213,12 +218,16 @@ cgLabels ls = do
         cl  = [cenum|$id:l = 0|]
         cls = [ [cenum|$id:l|] | l <- ls]
 
+-- | Generate code to handle the result of a thread's computation.
+type DoneK = CExp -> Cg ()
+
 cgThread :: TakeK Label -- ^ Code generator for take
          -> EmitK Label -- ^ Code generator for emit
+         -> DoneK       -- ^ Code generator to deal with result of computation
          -> Type        -- ^ Type of the result of the computation
          -> LComp       -- ^ Computation to compiled
          -> Cg ()
-cgThread takek emitk tau comp = do
+cgThread takek emitk donek tau comp = do
     cblock <-
         inSTScope tau $
         inLocalScope $
@@ -231,12 +240,10 @@ cgThread takek emitk tau comp = do
         -- Create a label for the end of the computation
         l_done <- genLabel "done"
         useLabel l_done
-        -- Create storage for the result
-        cres <- cgTemp "main_res" (resultType tau)
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
         ce <- cgComp takek emitk comp l_done
-        cgWithLabel l_done $ cgAssign (resultType tau) cres ce
+        cgWithLabel l_done $ donek ce
     appendDecls [decl | C.BlockDecl decl <- cblock]
     appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
   where
