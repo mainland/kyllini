@@ -46,6 +46,7 @@ module KZC.Auto.Syntax (
     Comp(..),
 #if !defined(ONLY_TYPEDEFS)
     compLabel,
+    setCompLabel,
     compUsedLabels,
     stepLabel,
     setStepLabel,
@@ -208,6 +209,10 @@ compLabel :: Monad m => Comp l -> m l
 compLabel (Comp [])       = fail "compLabel: empty computation"
 compLabel (Comp (step:_)) = stepLabel step
 
+setCompLabel :: l -> Comp l -> Comp l
+setCompLabel _ comp@(Comp [])      = comp
+setCompLabel l (Comp (step:steps)) = Comp (setStepLabel l step:steps)
+
 compUsedLabels :: forall l . Ord l => Comp l -> Set l
 compUsedLabels comp =
     go (unComp comp)
@@ -254,7 +259,7 @@ setStepLabel l (TakesC _ i tau s)           = TakesC l i tau s
 setStepLabel l (EmitC _ e s)                = EmitC l e s
 setStepLabel l (EmitsC _ e s)               = EmitsC l e s
 setStepLabel l (RepeatC _ ann c s)          = RepeatC l ann c s
-setStepLabel _ step@(ParC {})               = step
+setStepLabel l (ParC ann tau left right s)  = ParC ann tau left (setCompLabel l right) s
 setStepLabel _ step@(LoopC {})              = step
 
 {------------------------------------------------------------------------------

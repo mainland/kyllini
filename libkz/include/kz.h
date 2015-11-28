@@ -12,6 +12,7 @@
 #include <kz/bits.h>
 #include <kz/driver.h>
 #include <kz/ext.h>
+#include <kz/threads.h>
 
 #if defined(FIRSTCLASSLABELS)
 typedef void* KONT;

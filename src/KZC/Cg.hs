@@ -23,11 +23,12 @@ import Control.Monad (forM_,
                       void,
                       when)
 import Data.Bits
-import Data.Foldable (toList)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid (mempty)
 import Data.Ratio
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.String (IsString(..))
 import qualified Language.C.Syntax as C
 import Numeric (showHex)
@@ -39,7 +40,6 @@ import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
-import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Error
@@ -56,57 +56,37 @@ import KZC.Vars
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
-    (cinit_items, citems) <-
-        inNewThreadBlock $ do
+    appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
+    appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
+    (clabels, cblock) <-
+        collectLabels $
+        inNewMainThreadBlock_ $
         cgDecls decls $ do
-        inNewBlock_ $ do
+        -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
-        -- Keep track of the current continuation. This is only used when
-        -- we do not have first class labels.
-        l_start <- compLabel comp
-        useLabel l_start
-        appendThreadDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:l_start);|]
-        -- Create a label for the end of the computation
-        l_done <- genLabel "done"
-        useLabel l_done
         -- Create storage for the result
         cres <- cgTemp "main_res" (resultType tau)
-        -- Generate code for the computation
-        cgThread $
-          inSTScope tau $
-          inLocalScope $ do
-          useLabels (compUsedLabels comp)
-          ce <- cgComp takek emitk comp l_done
-          cgWithLabel l_done $ cgAssign (resultType tau) cres ce
+        -- The done continuation simply puts the computation's result in cres
+        let donek :: DoneK
+            donek ce = cgAssign (resultType tau) cres ce
+        -- Compile the computation
+        cgThread takek emitk donek tau comp
+        -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
-    cgLabels
+    cgLabels clabels
     appendTopDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
-    typename kz_buf_t $id:in_buf;
-    typename kz_buf_t $id:out_buf;
-
-    $items:(filter isBlockDecl cinit_items)
-    $items:(filter isBlockDecl citems)
-    $items:(filter isBlockStm cinit_items)
-    $items:(filter isBlockStm citems)
+    $items:cblock
 }|]
   where
     in_buf, out_buf, params :: C.Id
     in_buf  = "in"
     out_buf = "out"
     params = "params"
-
-    isBlockDecl :: C.BlockItem -> Bool
-    isBlockDecl (C.BlockDecl {}) = True
-    isBlockDecl _                = False
-
-    isBlockStm :: C.BlockItem -> Bool
-    isBlockStm (C.BlockStm {}) = True
-    isBlockStm _               = False
 
     takek :: TakeK l
     takek n tau _k = do
@@ -126,46 +106,49 @@ void kz_main(const typename kz_params_t* $id:params)
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
-    cUR_KONT :: C.Id
-    cUR_KONT = "curk"
-
     cgInitInput :: Type -> CExp -> CExp -> Cg ()
     cgInitInput tau cp cbuf =
-        cgBufferConfig "kz_init_input" tau cp cbuf
+        cgBufferInit "kz_init_input" tau cp cbuf
 
     cgInitOutput :: Type -> CExp -> CExp -> Cg ()
     cgInitOutput tau cp cbuf =
-        cgBufferConfig "kz_init_output" tau cp cbuf
+        cgBufferInit "kz_init_output" tau cp cbuf
 
     cgCleanupInput :: Type -> CExp -> CExp -> Cg ()
     cgCleanupInput tau cp cbuf =
-        cgBufferConfig "kz_cleanup_input" tau cp cbuf
+        cgBufferCleanup "kz_cleanup_input" tau cp cbuf
 
     cgCleanupOutput :: Type -> CExp -> CExp -> Cg ()
     cgCleanupOutput tau cp cbuf =
-        cgBufferConfig "kz_cleanup_output" tau cp cbuf
+        cgBufferCleanup "kz_cleanup_output" tau cp cbuf
 
-    cgBufferConfig :: String -> Type -> CExp -> CExp -> Cg ()
-    cgBufferConfig f tau cp cbuf =
+    cgBufferInit :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferInit = cgBufferConfig appendInitStm
+
+    cgBufferCleanup :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferCleanup = cgBufferConfig appendCleanupStm
+
+    cgBufferConfig :: (C.Stm -> Cg ()) -> String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferConfig appStm f tau cp cbuf =
         go tau
       where
         go :: Type -> Cg ()
         go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT I S (W 8)  0 _)   = appendStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT I S (W 16) 0 _)   = appendStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT I S (W 32) 0 _)   = appendStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT I U (W 8)  0 _)   = appendStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT I U (W 16) 0 _)   = appendStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT I U (W 32) 0 _)   = appendStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go (BitT {})               = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (FixT I S (W 8)  0 _)   = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT I S (W 16) 0 _)   = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT I S (W 32) 0 _)   = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT I U (W 8)  0 _)   = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT I U (W 16) 0 _)   = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT I U (W 32) 0 _)   = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
         go tau@(FixT {})           = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                      text "are not supported."
-        go (FloatT FP16 _)         = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP32 _)         = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP64 _)         = appendStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+        go (FloatT FP16 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP32 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP64 _)         = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+        go _                       = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
@@ -218,9 +201,9 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
-cgLabels :: Cg ()
-cgLabels = do
-    getLabels >>= go
+cgLabels :: Set Label -> Cg ()
+cgLabels ls = do
+    go (Set.toList ls)
   where
     go :: [Label] -> Cg ()
     go [] = return ()
@@ -235,15 +218,53 @@ cgLabels = do
         cl  = [cenum|$id:l = 0|]
         cls = [ [cenum|$id:l|] | l <- ls]
 
-cgThread :: Cg a -> Cg a
-cgThread k = do
-    (x, code) <- collect k
-    tell code { codeThreadDecls = mempty, codeDecls = mempty, codeStms = mempty }
-    let cds   =  toList $ codeThreadDecls code <> codeDecls code
-    let css   =  (toList . codeStms) code
-    appendDecls cds
-    appendStms [cstms|BEGIN_DISPATCH; $stms:css END_DISPATCH;|]
-    return x
+-- | Generate code to check return value of a function call.
+cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgInitCheckErr ce msg x =
+    appendInitStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
+  where
+    loc :: String
+    loc = displayS (renderCompact (ppr (locOf x))) ""
+
+-- | Generate code to check return value of a function call.
+cgCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgCheckErr ce msg x =
+    appendStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
+  where
+    loc :: String
+    loc = displayS (renderCompact (ppr (locOf x))) ""
+
+-- | Generate code to handle the result of a thread's computation.
+type DoneK = CExp -> Cg ()
+
+cgThread :: TakeK Label -- ^ Code generator for take
+         -> EmitK Label -- ^ Code generator for emit
+         -> DoneK       -- ^ Code generator to deal with result of computation
+         -> Type        -- ^ Type of the result of the computation
+         -> LComp       -- ^ Computation to compiled
+         -> Cg ()
+cgThread takek emitk donek tau comp = do
+    cblock <-
+        inSTScope tau $
+        inLocalScope $
+        inNewThreadBlock_ $ do
+        -- Keep track of the current continuation. This is only used when
+        -- we do not have first class labels.
+        l_start <- compLabel comp
+        useLabel l_start
+        appendThreadDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:l_start);|]
+        -- Create a label for the end of the computation
+        l_done <- genLabel "done"
+        useLabel l_done
+        -- Generate code for the computation
+        useLabels (compUsedLabels comp)
+        ce <- cgComp takek emitk comp l_done
+        cgWithLabel l_done $ donek ce
+    appendDecls [decl | C.BlockDecl decl <- cblock]
+    appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
+  where
+    cUR_KONT :: C.Id
+    cUR_KONT = "curk"
 
 cgDecls :: [LDecl] -> Cg a -> Cg a
 cgDecls [] k =
@@ -1032,6 +1053,17 @@ cgCTemp l s ctau maybe_cinit = do
       Just cinit -> appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
     return $ CExp $ rl l [cexp|$id:cv|]
 
+-- | Generate code for a top-level C temporary with a gensym'd name, based on @s@
+-- and prefixed with @__@, having C type @ctau@, and with the initializer
+-- @maybe_cinit@.
+cgTopCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
+cgTopCTemp l s ctau maybe_cinit = do
+    cv <- gensym ("__" ++ s)
+    case maybe_cinit of
+      Nothing    -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
+      Just cinit -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
+    return $ CExp $ rl l [cexp|$id:cv|]
+
 -- | Generate an empty label statement if the label argument is required.
 cgLabel :: Label -> Cg ()
 cgLabel lbl = do
@@ -1254,6 +1286,11 @@ cgComp takek emitk comp k =
         appendStm $ rl sloc [cstm|for (;;) { $items:citems }|]
         return CVoid
 
+    cgStep step@(ParC Pipeline b left right _) _ =
+        withSummaryContext step $ do
+        tau_res <- resultType <$> inferStep step
+        cgParMultiThreaded takek emitk tau_res b left right k
+
     cgStep step@(ParC _ b left right _) _ =
         do (s, a, c) <- askSTIndTypes
            tau       <- inferStep step
@@ -1397,6 +1434,202 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
     cgAssignBufp tau cbuf cbufp ce = do
         cgAssign tau cbuf ce
         appendStm [cstm|$cbufp = &$cbuf;|]
+
+-- | Generate code that exits from a computation that is part of a par.
+type ExitK = Cg ()
+
+-- | Compile a par, i.e., a producer/consumer pair, using the multi-threaded
+-- strategy. The take and emit code generators passed as arguments to
+-- 'cgParMultiThreaded' should generate code for the outer take and emit---the
+-- inner take and emit is done with a producer-consumer buffer.
+cgParMultiThreaded :: TakeK Label -- ^ Code generator for /producer's/ take
+                   -> EmitK Label -- ^ Code generator for /consumer's/ emit
+                   -> Type        -- ^ The type of the result of the par
+                   -> Type        -- ^ The type of the par's internal buffer
+                   -> LComp       -- ^ The producer computation
+                   -> LComp       -- ^ The consumer computation
+                   -> Label       -- ^ The computation's continuation
+                   -> Cg CExp     -- ^ The result of the computation
+cgParMultiThreaded takek emitk tau_res b left right k = do
+    (s, a, c) <- askSTIndTypes
+    -- Generate a temporary to hold the par buffer.
+    cb   <- cgType b
+    cbuf <- cgTopCTemp b "par_buf" [cty|$ty:cb[KZ_BUFFER_SIZE]|] Nothing
+    -- Generate a name for the producer thread function
+    cf <- gensym "producer"
+    -- Generate a temporary to hold the thread info.
+    ctinfo <- cgCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
+    -- Generate a temporary to hold the thread.
+    cthread <- cgCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
+    -- Generate a temporary to hold the result of the par construct.
+    cres <- cgTemp "par_res" tau_res
+    -- Create a label for the computation that follows the par.
+    l_pardone <- genLabel "par_done"
+    useLabel l_pardone
+    -- Re-label the consumer computation. We have to do this because we need to
+    -- generate code that initializes the par construct, and this initialization
+    -- code needs to have the label of the consumer computation because that is
+    -- the label that will be jumped to to run the consumer computation.
+    l_consumer  <- compLabel right
+    l_consumer' <- genLabel "consumer"
+    let right'  =  setCompLabel l_consumer' right
+    -- Generate to initialize the thread
+    when (not (isUnitT tau_res)) $
+        appendInitStm [cstm|ctinfo.result = &$cres;|]
+    cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
+    -- Generate to start the thread
+    cgWithLabel l_consumer $
+        cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
+    -- Generate code for the consumer
+    localSTIndTypes (Just (b, b, c)) $
+        cgConsumer cthread ctinfo cbuf cres right' l_pardone
+    -- Generate code for the producer
+    localSTIndTypes (Just (s, a, b)) $
+        cgProducer cf cbuf left
+    -- Label the end of the computation
+    cgLabel l_pardone
+    return cres
+  where
+    cgExitWhenDone :: CExp -> ExitK -> Cg ()
+    cgExitWhenDone ctinfo exitk = do
+        cblock <- inNewBlock_ exitk
+        appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
+
+    -- | Insert a memory barrier
+    cgMemoryBarrier :: Cg ()
+    cgMemoryBarrier =
+        appendStm [cstm|kz_memory_barrier();|]
+
+    cgProducer :: C.Id -> CExp -> LComp -> Cg ()
+    cgProducer cf cbuf comp = do
+        tau <- inferComp comp
+        (clabels, cblock) <-
+            collectLabels $
+            inNewThreadBlock_ $
+            cgThread takek' emitk' donek tau comp
+        cgLabels clabels
+        appendTopDef [cedecl|
+void* $id:cf(void* _tinfo)
+{
+    typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
+
+    for (;;) {
+        kz_check_error(kz_thread_wait(tinfo), $string:loc, "Error waiting for thread to start.");
+        {
+            $items:cblock
+        }
+        (*tinfo).done = 1;
+    }
+    return NULL;
+}|]
+      where
+        ctinfo :: CExp
+        ctinfo = CExp [cexp|*tinfo|]
+
+        loc :: String
+        loc = displayS (renderCompact (ppr (locOf comp))) ""
+
+        -- When the producer takes, we need to make sure that the consumer has
+        -- asked for more data than we have given it, so we spin until the
+        -- consumer requests data.
+        takek' :: TakeK Label
+        takek' n tau k = do
+            cgWaitForConsumerRequest ctinfo exitk
+            takek n tau k
+
+        emitk' :: EmitK Label
+        -- Right now we just loop and write the elements one by one---it would
+        -- be better to write them all at once.
+        emitk' (ArrT iota tau _) ce _k = do
+            cn <- cgIota iota
+            cgFor 0 cn $ \ci -> do
+                cidx <- cgIdx tau ce ci
+                cgProduce ctinfo cbuf exitk tau cidx
+
+        -- @tau@ must be a base (scalar) type
+        emitk' tau ce _k =
+            cgProduce ctinfo cbuf exitk tau ce
+
+        exitk :: Cg ()
+        exitk = appendStm [cstm|BREAK;|]
+
+        donek :: DoneK
+        donek ce = do
+            ctau_res <- cgType tau_res
+            cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
+            cgMemoryBarrier
+            appendStm [cstm|$ctinfo.done = 1;|]
+
+        -- | Put a single data element in the buffer.
+        cgProduce :: CExp -> CExp -> ExitK -> Type -> CExp -> Cg ()
+        cgProduce ctinfo cbuf exitk tau ce = do
+            cgWaitWhileBufferFull ctinfo exitk
+            cgAssign tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
+            cgMemoryBarrier
+            appendStm [cstm|++$ctinfo.prod_cnt;|]
+
+        -- | Wait until the consumer requests data
+        cgWaitForConsumerRequest :: CExp -> ExitK -> Cg ()
+        cgWaitForConsumerRequest ctinfo exitk = do
+            appendStm [cstm|while (!$ctinfo.done && $ctinfo.cons_req - $ctinfo.prod_cnt == 0);|]
+            cgExitWhenDone ctinfo exitk
+
+        -- | Wait while the buffer is full
+        cgWaitWhileBufferFull :: CExp -> ExitK -> Cg ()
+        cgWaitWhileBufferFull ctinfo exitk = do
+            appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
+            cgExitWhenDone ctinfo exitk
+
+    cgConsumer :: CExp -> CExp -> CExp -> CExp -> LComp -> Label -> Cg ()
+    cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
+        ce <- cgComp takek' emitk' comp k
+        appendStm [cstm|$ctinfo.done = 1;|]
+        cgAssign tau_res cres ce
+        let loc_s = displayS (renderCompact (ppr (locOf comp))) ""
+        appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:loc_s, "Cannot join on thread.");|]
+        appendStm [cstm|JUMP($id:l_pardone);|]
+      where
+        takek' :: TakeK Label
+        takek' 1 _tau _k = do
+            cgRequestData ctinfo 1
+            cgConsume ctinfo cbuf exitk return
+
+        takek' n tau _k = do
+            ctau  <- cgType tau
+            carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
+            cgRequestData ctinfo (fromIntegral n)
+            cgFor 0 (fromIntegral n) $ \ci -> do
+                cgConsume ctinfo cbuf exitk $ \ce ->
+                    appendStm [cstm|$carr[$ci] = $ce;|]
+            return carr
+
+        emitk' :: EmitK Label
+        emitk' = emitk
+
+        exitk :: Cg ()
+        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
+
+        -- | Consumer a single data element from the buffer. We take a consumption
+        -- continuation, because we must be sure that we insert a memory barrier
+        -- before incrementing the consumer count.
+        cgConsume :: CExp -> CExp -> ExitK -> (CExp -> Cg a) -> Cg a
+        cgConsume ctinfo cbuf exitk consumek = do
+            cgWaitWhileBufferEmpty ctinfo exitk
+            x <- consumek (CExp [cexp|$cbuf[$ctinfo.cons_cnt % KZ_BUFFER_SIZE]|])
+            cgMemoryBarrier
+            appendStm [cstm|++$ctinfo.cons_cnt;|]
+            return x
+
+        -- | Request @cn@ data elements.
+        cgRequestData :: CExp -> CExp -> Cg ()
+        cgRequestData ctinfo cn =
+            appendStm [cstm|$ctinfo.cons_req += $cn;|]
+
+        -- | Wait while the buffer is empty
+        cgWaitWhileBufferEmpty :: CExp -> ExitK -> Cg ()
+        cgWaitWhileBufferEmpty ctinfo exitk = do
+            appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
+            cgExitWhenDone ctinfo exitk
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp -> Bool
