@@ -12,7 +12,7 @@ CPPFLAGS=-I$(TOP)/libkz/include
 
 LD=gcc
 LDFLAGS=
-LIBS=-lm
+LIBS=-lm -lpthread
 
 GHC=ghc
 GHCFLAGS=-O -Wall -fno-warn-name-shadowing -Werror
@@ -142,6 +142,7 @@ RUNTIME_SRC=\
 	$(TOP)/libkz/src/driver.c \
 	$(TOP)/libkz/src/ext.c \
 	$(TOP)/libkz/src/io.cpp \
+	$(TOP)/libkz/src/threads.c \
 	$(TOP)/libkz/src/sora/kz_sora.cpp
 
 RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
