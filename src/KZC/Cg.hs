@@ -58,7 +58,7 @@ compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     (clabels, cblock) <-
         collectLabels $
-        inNewThreadBlock_ $
+        inNewMainThreadBlock_ $
         cgDecls decls $ do
         -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
@@ -104,41 +104,47 @@ void kz_main(const typename kz_params_t* $id:params)
 
     cgInitInput :: Type -> CExp -> CExp -> Cg ()
     cgInitInput tau cp cbuf =
-        cgBufferConfig "kz_init_input" tau cp cbuf
+        cgBufferInit "kz_init_input" tau cp cbuf
 
     cgInitOutput :: Type -> CExp -> CExp -> Cg ()
     cgInitOutput tau cp cbuf =
-        cgBufferConfig "kz_init_output" tau cp cbuf
+        cgBufferInit "kz_init_output" tau cp cbuf
 
     cgCleanupInput :: Type -> CExp -> CExp -> Cg ()
     cgCleanupInput tau cp cbuf =
-        cgBufferConfig "kz_cleanup_input" tau cp cbuf
+        cgBufferCleanup "kz_cleanup_input" tau cp cbuf
 
     cgCleanupOutput :: Type -> CExp -> CExp -> Cg ()
     cgCleanupOutput tau cp cbuf =
-        cgBufferConfig "kz_cleanup_output" tau cp cbuf
+        cgBufferCleanup "kz_cleanup_output" tau cp cbuf
 
-    cgBufferConfig :: String -> Type -> CExp -> CExp -> Cg ()
-    cgBufferConfig f tau cp cbuf =
+    cgBufferInit :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferInit = cgBufferConfig appendInitStm
+
+    cgBufferCleanup :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferCleanup = cgBufferConfig appendCleanupStm
+
+    cgBufferConfig :: (C.Stm -> Cg ()) -> String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferConfig appStm f tau cp cbuf =
         go tau
       where
         go :: Type -> Cg ()
         go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appendStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT I S (W 8)  0 _)   = appendStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT I S (W 16) 0 _)   = appendStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT I S (W 32) 0 _)   = appendStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT I U (W 8)  0 _)   = appendStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT I U (W 16) 0 _)   = appendStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT I U (W 32) 0 _)   = appendStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go (BitT {})               = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (FixT I S (W 8)  0 _)   = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT I S (W 16) 0 _)   = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT I S (W 32) 0 _)   = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT I U (W 8)  0 _)   = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT I U (W 16) 0 _)   = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT I U (W 32) 0 _)   = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
         go tau@(FixT {})           = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                      text "are not supported."
-        go (FloatT FP16 _)         = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP32 _)         = appendStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP64 _)         = appendStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appendStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appendStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
-        go _                       = appendStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+        go (FloatT FP16 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP32 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP64 _)         = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+        go (StructT "complex16" _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+        go (StructT "complex32" _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+        go _                       = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
