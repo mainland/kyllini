@@ -56,6 +56,8 @@ import KZC.Vars
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
+    appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
+    appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
     (clabels, cblock) <-
         collectLabels $
         inNewMainThreadBlock_ $
@@ -73,9 +75,6 @@ compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
-    typename kz_buf_t $id:in_buf;
-    typename kz_buf_t $id:out_buf;
-
     $items:cblock
 }|]
   where
