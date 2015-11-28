@@ -8,6 +8,7 @@ extern "C" {
 #include <kz/types.h>
 
 #include <pthread.h>
+#include <semaphore.h>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -33,6 +34,7 @@ extern "C" {
 
 /* Thread info */
 typedef struct {
+    sem_t sem;
     volatile unsigned int prod_cnt; /* count of items produced */
     volatile unsigned int cons_cnt; /* count of items consumed */
     volatile unsigned int cons_req; /* number of items consumer has requested */
@@ -43,11 +45,11 @@ typedef struct {
 
 typedef pthread_t kz_thread_t;
 
-void kz_tinfo_init(kz_tinfo_t *tinfo);
-int kz_thread_create(kz_thread_t *thread,
-                     void *(*start_routine)(void *),
-                     void *arg);
-int kz_thread_join(kz_thread_t thread, void **retval);
+int kz_thread_init(kz_tinfo_t *tinfo,
+                   kz_thread_t *thread,
+                   void *(*start_routine)(void *));
+int kz_thread_post(kz_tinfo_t *tinfo);
+int kz_thread_wait(kz_tinfo_t *tinfo);
 
 #ifdef __cplusplus
 }

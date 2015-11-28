@@ -4,23 +4,44 @@
 
 #include <kz/threads.h>
 
-void kz_tinfo_init(kz_tinfo_t *tinfo)
+int kz_tinfo_init(kz_tinfo_t *tinfo)
 {
+    int err;
+}
+
+int kz_thread_init(kz_tinfo_t *tinfo,
+                   kz_thread_t *thread,
+                   void *(*start_routine)(void *))
+{
+    pthread_attr_t attr;
+    int err;
+
     tinfo->prod_cnt = 0;
     tinfo->cons_cnt = 0;
     tinfo->cons_req = 0;
     tinfo->done = 0;
     tinfo->result = NULL;
+
+    if ((err = sem_init(&(tinfo->sem), 0, 0)) != 0)
+        return err;
+
+    if ((err = pthread_attr_init(&attr)) != 0)
+        return err;
+
+    if ((err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) != 0)
+        return err;
+
+    return pthread_create(thread, NULL, start_routine, tinfo);
 }
 
-int kz_thread_create(kz_thread_t *thread,
-                     void *(*start_routine)(void *),
-                     void *arg)
+int kz_thread_post(kz_tinfo_t *tinfo)
 {
-    return pthread_create(thread, NULL, start_routine, arg);
+    tinfo->done = 0;
+    kz_memory_barrier();
+    return sem_post(&(tinfo->sem));
 }
 
-int kz_thread_join(kz_thread_t thread, void **retval)
+int kz_thread_wait(kz_tinfo_t *tinfo)
 {
-    return pthread_join(thread, retval);
+    return sem_wait(&(tinfo->sem));
 }

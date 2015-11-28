@@ -218,6 +218,22 @@ cgLabels ls = do
         cl  = [cenum|$id:l = 0|]
         cls = [ [cenum|$id:l|] | l <- ls]
 
+-- | Generate code to check return value of a function call.
+cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgInitCheckErr ce msg x =
+    appendInitStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
+  where
+    loc :: String
+    loc = displayS (renderCompact (ppr (locOf x))) ""
+
+-- | Generate code to check return value of a function call.
+cgCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgCheckErr ce msg x =
+    appendStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
+  where
+    loc :: String
+    loc = displayS (renderCompact (ppr (locOf x))) ""
+
 -- | Generate code to handle the result of a thread's computation.
 type DoneK = CExp -> Cg ()
 
@@ -1457,13 +1473,13 @@ cgParMultiThreaded takek emitk tau_res b left right k = do
     l_consumer  <- compLabel right
     l_consumer' <- genLabel "consumer"
     let right'  =  setCompLabel l_consumer' right
-    -- Generate to initialize thread info and start the thread
-    cgWithLabel l_consumer $ do
-        when (not (isUnitT tau_res)) $
-            appendStm [cstm|ctinfo.result = &$cres;|]
-        appendStm [cstm|kz_tinfo_init(&$ctinfo);|]
-        let loc_s = displayS (renderCompact (ppr (locOf right))) ""
-        appendStm [cstm|kz_check_error(kz_thread_create(&$cthread, $id:cf, &$ctinfo), $string:loc_s, "Cannot create thread.");|]
+    -- Generate to initialize the thread
+    when (not (isUnitT tau_res)) $
+        appendInitStm [cstm|ctinfo.result = &$cres;|]
+    cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
+    -- Generate to start the thread
+    cgWithLabel l_consumer $
+        cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
         cgConsumer cthread ctinfo cbuf cres right' l_pardone
@@ -1497,13 +1513,21 @@ void* $id:cf(void* _tinfo)
 {
     typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
 
-    $items:cblock
-    (*tinfo).done = 1;
+    for (;;) {
+        kz_check_error(kz_thread_wait(tinfo), $string:loc, "Error waiting for thread to start.");
+        {
+            $items:cblock
+        }
+        (*tinfo).done = 1;
+    }
     return NULL;
 }|]
       where
         ctinfo :: CExp
         ctinfo = CExp [cexp|*tinfo|]
+
+        loc :: String
+        loc = displayS (renderCompact (ppr (locOf comp))) ""
 
         -- When the producer takes, we need to make sure that the consumer has
         -- asked for more data than we have given it, so we spin until the
