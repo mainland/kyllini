@@ -542,6 +542,16 @@ cgExp (UnopE op e l) = do
         appendStm $ rl l [cstm|$ctemp.im = $ce;|]
         return ctemp
 
+    cgCast _ tau1@(FixT sc1 _ _ _ _) tau2@(FixT sc2 _ _ _ _) | sc2 /= sc1 =
+        faildoc $
+        text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
+        text "since types have different scales."
+
+    cgCast _ tau1@(FixT _ _ _ bp1 _) tau2@(FixT _ _ _ bp2 _) | bp2 /= bp1 =
+        faildoc $
+        text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
+        text "since types have different binary points."
+
     cgCast ce _ tau_to = do
         ctau_to <- cgType tau_to
         return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
