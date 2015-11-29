@@ -68,6 +68,7 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
+import Data.Ratio (denominator, numerator)
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
@@ -353,28 +354,30 @@ instance Pretty FP where
     ppr FP64 = text "64"
 
 instance Pretty Const where
-    ppr UnitC              = text "()"
-    ppr (BoolC False)      = text "false"
-    ppr (BoolC True)       = text "true"
-    ppr (BitC False)       = text "'0"
-    ppr (BitC True)        = text "'1"
-    ppr (FixC sc s _ bp r) = pprScaled sc s bp r
-    ppr (FloatC _ f)       = ppr (fromRational f :: Double)
-    ppr (StringC s)        = text (show s)
-    ppr (ArrayC cs)        = braces $ commasep $ map ppr cs
+    pprPrec _ UnitC              = text "()"
+    pprPrec _ (BoolC False)      = text "false"
+    pprPrec _ (BoolC True)       = text "true"
+    pprPrec _ (BitC False)       = text "'0"
+    pprPrec _ (BitC True)        = text "'1"
+    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r
+    pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
+    pprPrec _ (StringC s)        = text (show s)
+    pprPrec _ (ArrayC cs)        = braces $ commasep $ map ppr cs
 
-pprScaled :: Scale -> Signedness -> BP -> Rational -> Doc
-pprScaled sc s bp r =
-    go sc s bp
+pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
+pprScaled _ sc S bp r =
+    pprScaled appPrec1 sc U bp r <> char 'u'
+
+pprScaled p I U (BP 0) r
+    | denominator r == 1 = pprPrec p (numerator r)
+    | otherwise          = pprPrec p r
+
+pprScaled p sc U (BP bp) r =
+    pprPrec p (fromRational r * scale sc / 2^bp :: Double)
   where
-    go :: Scale -> Signedness -> BP -> Doc
-    go sc S bp      = go sc U bp <> char 'u'
-    go I  U (BP 0)  = ppr r
-    go sc U (BP bp) = ppr (fromRational r * scale sc / 2^bp :: Double)
-      where
-        scale :: Scale -> Double
-        scale I  = 1.0
-        scale PI = pi
+    scale :: Scale -> Double
+    scale I  = 1.0
+    scale PI = pi
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
