@@ -232,6 +232,7 @@ data Unop = Lnot
           | Bnot
           | Neg
           | Cast Type
+          | Bitcast Type
           | Len
   deriving (Eq, Ord, Read, Show)
 
@@ -420,7 +421,11 @@ instance Pretty Exp where
 
     pprPrec p (UnopE op@(Cast {}) e _) =
         parensIf (p > precOf op) $
-        ppr op <+> pprPrec (precOf op) e
+        ppr op <> parens (ppr e)
+
+    pprPrec p (UnopE op@(Bitcast {}) e _) =
+        parensIf (p > precOf op) $
+        ppr op <> parens (ppr e)
 
     pprPrec p (UnopE op e _) =
         parensIf (p > precOf op) $
@@ -593,11 +598,12 @@ instance Pretty BindVar where
     ppr WildV         = text "_"
 
 instance Pretty Unop where
-    ppr Lnot       = text "not" <> space
-    ppr Bnot       = text "~"
-    ppr Neg        = text "-"
-    ppr Len        = text "length" <> space
-    ppr (Cast tau) = parens (ppr tau)
+    ppr Lnot          = text "not" <> space
+    ppr Bnot          = text "~"
+    ppr Neg           = text "-"
+    ppr Len           = text "length" <> space
+    ppr (Cast tau)    = text "cast" <> langle <> ppr tau <> rangle
+    ppr (Bitcast tau) = text "bitcast" <> langle <> ppr tau <> rangle
 
 instance Pretty Binop where
     ppr Lt   = text "<"
@@ -781,11 +787,12 @@ instance HasFixity Binop where
     fixity Pow  = infixl_ 9
 
 instance HasFixity Unop where
-    fixity Lnot     = infixr_ 10
-    fixity Bnot     = infixr_ 10
-    fixity Neg      = infixr_ 10
-    fixity Len      = infixr_ 10
-    fixity (Cast _) = infixr_ 10
+    fixity Lnot        = infixr_ 10
+    fixity Bnot        = infixr_ 10
+    fixity Neg         = infixr_ 10
+    fixity Len         = infixr_ 10
+    fixity (Cast _)    = infixr_ 10
+    fixity (Bitcast _) = infixr_ 10
 
 {------------------------------------------------------------------------------
  -

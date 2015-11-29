@@ -12,18 +12,20 @@
 module KZC.Auto.Lint (
     withTc,
 
+    typeBitWidth,
+
+    inferKind,
+    checkKind,
+
     checkProgram,
+
+    inferExp,
+    checkExp,
 
     inferComp,
     checkComp,
 
     inferStep,
-
-    inferExp,
-    checkExp,
-
-    inferKind,
-    checkKind,
 
     checkArrT,
     checkST,
@@ -43,10 +45,14 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint (checkCast,
-                 checkTypeEquality,
-                 inferKind,
+import KZC.Lint (inferKind,
                  checkKind,
+
+                 checkCast,
+                 checkBitcast,
+                 typeBitWidth,
+
+                 checkTypeEquality,
 
                  absSTScope,
                  appSTScope,
@@ -260,6 +266,10 @@ inferExp (UnopE op e1 _) = do
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
+        return tau2
+
+    unop (Bitcast tau2) tau1 = do
+        checkBitcast tau1 tau2
         return tau2
 
     unop Len tau = do

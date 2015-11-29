@@ -502,6 +502,9 @@ cgExp (UnopE op e l) = do
     cgUnop tau_from ce (Cast tau_to) =
         cgCast ce tau_from tau_to
 
+    cgUnop tau_from ce (Bitcast tau_to) =
+        cgBitcast ce tau_from tau_to
+
     cgUnop (ArrT iota _ _) _ Len =
         cgIota iota
 
@@ -555,6 +558,12 @@ cgExp (UnopE op e l) = do
     cgCast ce _ tau_to = do
         ctau_to <- cgType tau_to
         return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
+    cgBitcast :: CExp -> Type -> Type -> Cg CExp
+    cgBitcast ce tau_from tau_to = do
+        ctau_from <- cgBitcastType tau_from
+        ctau_to   <- cgType tau_to
+        return $ CExp $ rl l [cexp|*(($ty:ctau_to*) (($ty:ctau_from*) $ce))|]
 
 cgExp (BinopE op e1 e2 l) = do
     tau <- inferExp e1
@@ -862,6 +871,19 @@ unCComp (CComp _v ivs vbs _tau comp) = do
 unCComp ce =
     panicdoc $ nest 2 $ text "unCComp: not a Comp:" </> ppr ce
 
+-- | Return the C type appropriate for bit casting.
+cgBitcastType :: Type -> Cg C.Type
+cgBitcastType tau = do
+    w <- typeBitWidth tau
+    case w of
+      _ | w <= 8  -> return [cty|typename uint8_t|]
+      _ | w <= 16 -> return [cty|typename uint16_t|]
+      _ | w <= 32 -> return [cty|typename uint32_t|]
+      _ | w <= 64 -> return [cty|typename uint64_t|]
+      _ ->
+        faildoc $ text "Cannot compile bitcast type for" <+> ppr tau <+> "(width >64)."
+
+-- | Compile a type to its C representation.
 cgType :: Type -> Cg C.Type
 cgType (UnitT {}) =
     return [cty|void|]

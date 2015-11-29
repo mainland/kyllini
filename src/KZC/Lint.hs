@@ -19,6 +19,8 @@ module KZC.Lint (
     checkKind,
 
     checkCast,
+    checkBitcast,
+    typeBitWidth,
 
     checkTypeEquality,
     checkKindEquality,
@@ -177,6 +179,10 @@ inferExp (UnopE op e1 _) = do
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
+        return tau2
+
+    unop (Bitcast tau2) tau1 = do
+        checkBitcast tau1 tau2
         return tau2
 
     unop Len tau = do
@@ -586,6 +592,30 @@ checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
 
 checkCast tau1 tau2 =
     faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
+
+-- | @checkBitcast tau1 tau2@ checks that a value of type @tau1@ can be bitcast to
+-- a value of type @tau2@.
+checkBitcast :: MonadTc m => Type -> Type -> m ()
+checkBitcast tau1 tau2 = do
+    checkBitT tau1
+    checkBitT tau2
+    w1 <- typeBitWidth tau1
+    w2 <- typeBitWidth tau2
+    when (w2 /= w2) $
+        faildoc $
+        text "Cannot bitcast between types with differing widths" <+>
+        ppr w1 <+> text "and" <+> ppr w2
+
+-- | Calculate the bit width of a type.
+typeBitWidth :: Monad m => Type -> m Int
+typeBitWidth (BoolT {})           = return 1
+typeBitWidth (BitT {})            = return 1
+typeBitWidth (FixT _ _ (W w) _ _) = return w
+typeBitWidth (FloatT FP16 _)      = return 32
+typeBitWidth (FloatT FP32 _)      = return 32
+typeBitWidth (FloatT FP64 _)      = return 64
+typeBitWidth tau =
+    faildoc $ text "Cannot calculate bit width of non-bit type" <+> ppr tau
 
 -- | Check that @tau1@ is equal to @tau2@.
 checkTypeEquality :: forall m . MonadTc m => Type -> Type -> m ()
