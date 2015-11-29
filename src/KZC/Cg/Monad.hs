@@ -89,7 +89,7 @@ import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
 import KZC.Label
-import KZC.Lint.Monad
+import KZC.Lint (Tc, liftTc)
 import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Platform

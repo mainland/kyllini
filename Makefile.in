@@ -78,7 +78,6 @@ SOURCE = \
 	KZC/LambdaLift/Monad.hs \
 	KZC/Lint.hs \
 	KZC/Lint/Monad.hs \
-	KZC/Lint/State.hs \
 	KZC/Name.hs \
 	KZC/Platform.hs \
 	KZC/Pretty.hs \

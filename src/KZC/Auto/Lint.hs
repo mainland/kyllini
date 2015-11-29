@@ -45,7 +45,9 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint (inferKind,
+import KZC.Lint (withTc,
+
+                 inferKind,
                  checkKind,
 
                  checkCast,

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -11,13 +12,11 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Lint.Monad (
+    TcEnv(..),
+    defaultTcEnv,
+
     MonadTc(..),
     asksTc,
-
-    Tc(..),
-    runTc,
-    liftTc,
-    withTc,
 
     localFvs,
     askCurrentFvs,
@@ -53,18 +52,11 @@ module KZC.Lint.Monad (
 
 import Control.Applicative
 import Control.Monad (liftM)
-import Control.Monad.Exception (MonadException(..))
-import Control.Monad.Reader (MonadReader(..),
-                             ReaderT(..),
-                             asks)
-import Control.Monad.Ref (MonadRef(..),
-                          MonadAtomicRef(..))
+import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
-import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans (lift)
-import Data.IORef
 import Data.List (foldl')
-import Data.Loc (Located)
+import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
@@ -76,46 +68,45 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
-import KZC.Lint.State
-import KZC.Monad
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader TcEnv,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadFlags,
-              MonadTrace)
+data TcEnv = TcEnv
+    { curfvs     :: Maybe (Set Var)
+    , structs    :: !(Map Struct StructDef)
+    , topScope   :: Bool
+    , topVars    :: Set Var
+    , varTypes   :: !(Map Var Type)
+    , tyVars     :: !(Map TyVar Kind)
+    , iVars      :: !(Map IVar Kind)
+    , stIndTys   :: !(Maybe (Type, Type, Type))
+    }
 
-runTc :: Tc a -> TcEnv -> KZC a
-runTc m r = (runReaderT . unTc) m r
-
--- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
-liftTc :: forall a . Tc a -> KZC a
-liftTc m = do
-    eref <- asks tcenvref
-    env  <- readRef eref
-    runTc (m' eref) env
+defaultTcEnv :: TcEnv
+defaultTcEnv = TcEnv
+    { curfvs     = Nothing
+    , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
+    , topScope   = True
+    , topVars    = mempty
+    , varTypes   = mempty
+    , tyVars     = mempty
+    , iVars      = mempty
+    , stIndTys   = Nothing
+    }
   where
-    m' :: IORef TcEnv -> Tc a
-    m' eref = do
-        x <- m
-        askTc >>= writeRef eref
-        return x
+    builtinStructs :: [StructDef]
+    builtinStructs =
+        [ complexStruct "complex"   intT
+        , complexStruct "complex8"  int8T
+        , complexStruct "complex16" int16T
+        , complexStruct "complex32" int32T
+        , complexStruct "complex64" int64T ]
 
--- | Run a @Tc@ computation in the @KZC@ monad without updating the
--- @Tc@ environment.
-withTc :: Tc a -> KZC a
-withTc m = do
-    eref <- asks tcenvref
-    env  <- readRef eref
-    runTc m env
+    complexStruct :: Struct -> Type -> StructDef
+    complexStruct s tau =
+        StructDef s [("im", tau), ("re", tau)] noLoc
 
 class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
@@ -123,10 +114,6 @@ class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUn
 
 asksTc :: MonadTc m => (TcEnv -> a) -> m a
 asksTc f = liftM f askTc
-
-instance MonadTc Tc where
-    askTc       = Tc $ ask
-    localTc f m = Tc $ local f (unTc m)
 
 instance MonadTc m => MonadTc (ReaderT r m) where
     askTc       = lift askTc

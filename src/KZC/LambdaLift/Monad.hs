@@ -32,7 +32,8 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import KZC.Core.Syntax
-import KZC.Lint.Monad
+import KZC.Lint (Tc, liftTc)
+import KZC.Lint.Monad (isInTopScope)
 import KZC.Monad
 
 type Lift a = ReaderT LiftEnv (StateT LiftState Tc) a

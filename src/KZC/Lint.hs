@@ -1,5 +1,6 @@
- {-# LANGUAGE OverloadedStrings #-}
- {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Lint
@@ -8,6 +9,9 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Lint (
+    Tc(..),
+    runTc,
+    liftTc,
     withTc,
 
     checkDecls,
@@ -44,9 +48,18 @@ module KZC.Lint (
     checkFunT
   ) where
 
+import Control.Applicative (Applicative)
 import Control.Monad (when,
                       zipWithM_,
                       void)
+import Control.Monad.Exception (MonadException(..))
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Reader (MonadReader(..),
+                             ReaderT(..),
+                             asks)
+import Control.Monad.Ref (MonadRef(..),
+                          MonadAtomicRef(..))
+import Data.IORef
 import Data.List (nub)
 import Data.Loc
 import Data.Map (Map)
@@ -59,9 +72,51 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
+import KZC.Flags
 import KZC.Lint.Monad
+import KZC.Monad
 import KZC.Summary
+import KZC.Trace
+import KZC.Uniq
 import KZC.Vars
+
+newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadRef IORef, MonadAtomicRef IORef,
+              MonadReader TcEnv,
+              MonadException,
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace)
+
+instance MonadTc Tc where
+    askTc       = Tc $ ask
+    localTc f m = Tc $ local f (unTc m)
+
+runTc :: Tc a -> TcEnv -> KZC a
+runTc m r = (runReaderT . unTc) m r
+
+-- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
+liftTc :: forall a . Tc a -> KZC a
+liftTc m = do
+    eref <- asks tcenvref
+    env  <- readRef eref
+    runTc (m' eref) env
+  where
+    m' :: IORef TcEnv -> Tc a
+    m' eref = do
+        x <- m
+        askTc >>= writeRef eref
+        return x
+
+-- | Run a @Tc@ computation in the @KZC@ monad without updating the
+-- @Tc@ environment.
+withTc :: Tc a -> KZC a
+withTc m = do
+    eref <- asks tcenvref
+    env  <- readRef eref
+    runTc m env
 
 checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls [] =
