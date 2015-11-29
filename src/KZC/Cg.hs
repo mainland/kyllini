@@ -43,6 +43,7 @@ import KZC.Cg.CExp
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Error
+import KZC.Flags
 import KZC.Label
 import KZC.Lint.Monad
 import KZC.Name
@@ -1305,24 +1306,31 @@ cgComp takek emitk comp k =
         appendStm $ rl sloc [cstm|for (;;) { $items:citems }|]
         return CVoid
 
-    cgStep step@(ParC Pipeline b left right _) _ =
+    cgStep step@(ParC ann b left right _) _ =
         withSummaryContext step $ do
-        tau_res <- resultType <$> inferStep step
-        cgParMultiThreaded takek emitk tau_res b left right k
+        doFuse <- asksFlags (testDynFlag Fuse)
+        if doFuse then fuse else dontFuse ann
+      where
+        fuse :: Cg CExp
+        fuse = do
+            do (s, a, c) <- askSTIndTypes
+               tau       <- inferStep step
+               comp      <- fusePar s a b c left right
+               useLabels (compUsedLabels comp)
+               checkComp comp tau
+               cgComp takek emitk comp k
+          `mplus`
+            do traceFusion $ text "Failed to fuse" <+>
+                   (nest 2 $ text "producer:" </> ppr left) </>
+                   (nest 2 $ text "and consumer:" </> ppr right)
+               dontFuse ann
 
-    cgStep step@(ParC _ b left right _) _ =
-        do (s, a, c) <- askSTIndTypes
-           tau       <- inferStep step
-           comp      <- fusePar s a b c left right
-           useLabels (compUsedLabels comp)
-           checkComp comp tau
-           cgComp takek emitk comp k
-      `mplus`
-        do traceFusion $ text "Failed to fuse" <+>
-               (nest 2 $ text "producer:" </> ppr left) </>
-               (nest 2 $ text "and consumer:" </> ppr right)
+        dontFuse :: PipelineAnn -> Cg CExp
+        dontFuse ann = do
            tau_res <- resultType <$> inferStep step
-           cgParSingleThreaded takek emitk tau_res b left right k
+           case ann of
+             Pipeline -> cgParMultiThreaded  takek emitk tau_res b left right k
+             _        -> cgParSingleThreaded takek emitk tau_res b left right k
 
     cgStep (LoopC {}) _ =
         faildoc $ text "cgStep: saw LoopC"
