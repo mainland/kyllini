@@ -11,7 +11,7 @@ module KZC.Auto.Smart (
     isPureishT
   ) where
 
-import Control.Applicative
+import Control.Applicative (Applicative, (<$>))
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
@@ -35,6 +35,9 @@ mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
 
+intC :: Integer -> Const
+intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
 
@@ -45,7 +48,7 @@ unitE :: Exp
 unitE = ConstE UnitC noLoc
 
 intE :: Integer -> Exp
-intE i = ConstE (FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
+intE i = ConstE (intC i) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
