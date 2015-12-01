@@ -27,8 +27,19 @@ module KZC.Auto.Lint (
 
     inferStep,
 
+    checkEqT,
+    checkOrdT,
+    checkBoolT,
+    checkBitT,
+    checkIntT,
+    checkNumT,
     checkArrT,
+    checkStructT,
+    checkStructFieldT,
     checkST,
+    checkSTC,
+    checkSTCUnit,
+    checkRefT,
     checkFunT
   ) where
 
