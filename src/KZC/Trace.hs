@@ -23,6 +23,7 @@ module KZC.Trace (
     traceFusion
   ) where
 
+import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import System.IO (hPutStrLn,
@@ -35,6 +36,10 @@ import KZC.Flags
 class MonadFlags m => MonadTrace m where
     askTraceDepth   :: m Int
     localTraceDepth :: (Int -> Int) -> m a -> m a
+
+instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = ErrorT $ localTraceDepth f (runErrorT m)
 
 instance MonadTrace m => MonadTrace (ReaderT r m) where
     askTraceDepth       = lift askTraceDepth

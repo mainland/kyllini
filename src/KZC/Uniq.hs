@@ -12,6 +12,7 @@ module KZC.Uniq (
     MonadUnique(..)
   ) where
 
+import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Text.PrettyPrint.Mainland
@@ -24,6 +25,9 @@ instance Pretty Uniq where
 
 class Monad m => MonadUnique m where
     newUnique :: m Uniq
+
+instance (Error e, MonadUnique m) => MonadUnique (ErrorT e m) where
+    newUnique = lift newUnique
 
 instance MonadUnique m => MonadUnique (ReaderT r m) where
     newUnique = lift newUnique

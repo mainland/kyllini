@@ -34,6 +34,8 @@ module KZC.Flags (
 
 import Control.Monad (liftM,
                       when)
+import Control.Monad.Error (Error,
+                            ErrorT(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
@@ -144,6 +146,10 @@ asksFlags f = liftM f askFlags
 instance MonadFlags m => MonadFlags (MaybeT m) where
     askFlags       = lift askFlags
     localFlags f m = MaybeT $ localFlags f (runMaybeT m)
+
+instance (Error e, MonadFlags m) => MonadFlags (ErrorT e m) where
+    askFlags       = lift askFlags
+    localFlags f m = ErrorT $ localFlags f (runErrorT m)
 
 instance MonadFlags m => MonadFlags (ReaderT r m) where
     askFlags       = lift askFlags

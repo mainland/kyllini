@@ -27,6 +27,7 @@ module KZC.Error (
     checkDuplicates
   ) where
 
+import Control.Monad.Error
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.State
@@ -66,6 +67,18 @@ class MonadException m => MonadErr m where
       where
         ex_warn :: WarnException
         ex_warn = WarnException (toException ex)
+
+instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = ErrorT $ localErrCtx ctx (runErrorT m)
+
+    warnIsError = lift warnIsError
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
 
 instance MonadErr m => MonadErr (ReaderT r m) where
     askErrCtx         = lift askErrCtx
