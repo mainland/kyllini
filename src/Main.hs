@@ -44,6 +44,7 @@ import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Flatten
 import KZC.Optimize.Fuse
+import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
 import KZC.Transform.Auto
@@ -87,6 +88,7 @@ runPipeline filepath =
         runIf (testDynFlag Flatten) (flattenPhase >=> lintAuto) >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         occPhase >=> lintAuto >=>
+        runIf (testDynFlag Simplify) (simplPhase >=> lintAuto) >=>
         compilePhase
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
@@ -128,6 +130,11 @@ runPipeline filepath =
     occPhase =
         lift . A.withTcEnv . runOccM . occProgram >=>
         dumpPass DumpOcc "acore" "occ"
+
+    simplPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    simplPhase =
+        lift . A.withTcEnv . runSimplM . simplProgram >=>
+        dumpPass DumpSimpl "acore" "simpl"
 
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
     flattenPhase =

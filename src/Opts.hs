@@ -100,6 +100,7 @@ fDynFlagOpts =
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
   , (Flatten,     "flatten",      "run the flattener")
   , (Fuse,        "fuse",         "run the par fuser")
+  , (Simplify,    "simpl",        "run the simplifier")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -124,6 +125,7 @@ dDumpFlagOpts =
   , (DumpCore,    "core",    "dump core")
   , (DumpAuto,    "auto",    "dump automata")
   , (DumpOcc,     "occ",     "dump occurrence info")
+  , (DumpSimpl,   "simpl",   "dump simplifier output")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -139,6 +141,7 @@ dTraceFlagOpts =
   , (TraceAutoLint, "auto-lint", "trace auto linter")
   , (TraceFlatten,  "flatten",   "trace flattener")
   , (TraceFusion,   "fusion",    "trace fusion")
+  , (TraceSimplify, "simpl",     "trace simplifier")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

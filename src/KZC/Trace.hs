@@ -20,7 +20,8 @@ module KZC.Trace (
     traceAuto,
     traceAutoLint,
     traceFlatten,
-    traceFusion
+    traceFusion,
+    traceSimpl
   ) where
 
 import Control.Monad.Error
@@ -98,3 +99,6 @@ traceFlatten = traceIfSet TraceFlatten "traceFlatten:"
 
 traceFusion :: MonadTrace m => Doc -> m ()
 traceFusion = traceIfSet TraceFusion "traceFusion:"
+
+traceSimpl :: MonadTrace m => Doc -> m ()
+traceSimpl = traceIfSet TraceSimplify "traceSimplify:"
