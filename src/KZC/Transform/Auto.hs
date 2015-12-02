@@ -68,7 +68,7 @@ transDecl decl@(C.LetD v tau e l) k
           inLocalScope $
           transExp e
     extendVars [(v,tau)] $ do
-    k $ LetD v tau e' l
+    k $ LetD (mkBoundVar v) tau e' l
 
   | otherwise = do
     c <- withSummaryContext decl $
@@ -77,7 +77,7 @@ transDecl decl@(C.LetD v tau e l) k
          inLocalScope $
          transComp e
     extendVars [(v,tau)] $ do
-    k $ LetCompD v tau c l
+    k $ LetCompD (mkBoundVar v) tau c l
 
 transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
   | isPureishT tau_ret = do
@@ -89,7 +89,7 @@ transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
           inSTScope tau_ret $
           inLocalScope $
           transExp e
-    k $ LetFunD f iotas vbs tau_ret e' l
+    k $ LetFunD (mkBoundVar f) iotas vbs tau_ret e' l
   | otherwise = do
     extendVars [(f, tau)] $ do
     c <- withSummaryContext decl $
@@ -99,28 +99,28 @@ transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
          inSTScope tau_ret $
          inLocalScope $
          transComp e
-    k $ LetFunCompD f iotas vbs tau_ret c l
+    k $ LetFunCompD (mkBoundVar f) iotas vbs tau_ret c l
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 transDecl (C.LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(f, tau)] $
-    k $ LetExtFunD f iotas vbs tau_ret l
+    k $ LetExtFunD (mkBoundVar f) iotas vbs tau_ret l
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 transDecl (C.LetRefD v tau Nothing l) k =
     extendVars [(v, refT tau)] $
-    k $ LetRefD v tau Nothing l
+    k $ LetRefD (mkBoundVar v) tau Nothing l
 
 transDecl decl@(C.LetRefD v tau (Just e) l) k = do
     e' <- withSummaryContext decl $
           inLocalScope $
           transExp e
     extendVars [(v, refT tau)] $ do
-    k $ LetRefD v tau (Just e') l
+    k $ LetRefD (mkBoundVar v) tau (Just e') l
 
 transDecl (C.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
@@ -130,18 +130,18 @@ transLocalDecl :: C.Decl -> (LocalDecl -> T a) -> T a
 transLocalDecl decl@(C.LetD v tau e l) k | isPureishT tau = do
     e' <- withSummaryContext decl $ transExp e
     extendVars [(v, tau)] $ do
-    k $ LetLD v tau e' l
+    k $ LetLD (mkBoundVar v) tau e' l
 
 transLocalDecl (C.LetRefD v tau Nothing l) k =
     extendVars [(v, refT tau)] $
-    k $ LetRefLD v tau Nothing l
+    k $ LetRefLD (mkBoundVar v) tau Nothing l
 
 transLocalDecl decl@(C.LetRefD v tau (Just e) l) k = do
     e' <- withSummaryContext decl $
           inLocalScope $
           transExp e
     extendVars [(v, refT tau)] $ do
-    k $ LetRefLD v tau (Just e') l
+    k $ LetRefLD (mkBoundVar v) tau (Just e') l
 
 transLocalDecl decl _ =
     withSummaryContext decl $

@@ -118,41 +118,41 @@ fuseDecls (decl:decls) k =
 
 fuseDecl :: (MonadPlus m, MonadTc m) => LDecl -> m a -> m a
 fuseDecl (LetD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 fuseDecl (LetFunD f iotas vbs tau_ret _ l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 fuseDecl (LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 fuseDecl (LetRefD v tau _ _) k =
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, refT tau)] k
 
 fuseDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] k
 
 fuseDecl (LetCompD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 fuseDecl (LetFunCompD f ivs vbs tau_ret _ l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
 
 fuseLocalDecl :: (MonadPlus m, MonadTc m) => LocalDecl -> m a -> m a
 fuseLocalDecl (LetLD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 fuseLocalDecl (LetRefLD v tau _ _) k =
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, refT tau)] k
 
 fuseComp :: (MonadPlus m, MonadTc m) => LComp -> m LComp
 fuseComp (Comp steps) = Comp <$> fuseSteps steps
@@ -478,11 +478,11 @@ relabelStep _ (CallC {}) _k =
     mzero
 
 relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
-    extendVars [(v, tau)] $
+    extendVars [(bVar v, tau)] $
     k $ LetC l decl s
 
 relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
-    extendVars [(v, refT tau)] $
+    extendVars [(bVar v, refT tau)] $
     k $ LetC l decl s
 
 relabelStep l (LiftC _ e s) k =

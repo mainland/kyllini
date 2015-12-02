@@ -123,6 +123,7 @@ dDumpFlagOpts =
   , (DumpFusion,  "fusion",  "dump fusion output")
   , (DumpCore,    "core",    "dump core")
   , (DumpAuto,    "auto",    "dump automata")
+  , (DumpOcc,     "occ",     "dump occurrence info")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]

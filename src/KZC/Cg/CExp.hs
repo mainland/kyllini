@@ -298,8 +298,8 @@ instance Pretty CExp where
     ppr (CPtr e)                   = ppr [cexp|*$e|]
     ppr (CIdx _ carr cidx)         = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len)   = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
-    ppr (CComp v []  []  tau comp) = ppr (LetCompD v tau comp noLoc)
-    ppr (CComp f ibs vbs tau comp) = ppr (LetFunCompD f ibs vbs tau comp noLoc)
+    ppr (CComp v []  []  tau comp) = ppr (LetCompD (mkBoundVar v) tau comp noLoc)
+    ppr (CComp f ibs vbs tau comp) = ppr (LetFunCompD (mkBoundVar f) ibs vbs tau comp noLoc)
 
 lowerCIdx :: Type -> CExp -> CExp -> C.Exp
 lowerCIdx (BitT _) carr cidx = cgBitArrayRead carr cidx

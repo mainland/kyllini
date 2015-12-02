@@ -31,6 +31,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Analysis.Occ
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Cg
@@ -85,6 +86,7 @@ runPipeline filepath =
         autoPhase >=> lintAuto >=>
         runIf (testDynFlag Flatten) (flattenPhase >=> lintAuto) >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
+        occPhase >=> lintAuto >=>
         compilePhase
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
@@ -121,6 +123,11 @@ runPipeline filepath =
     autoPhase =
         lift . A.withTcEnv . runT . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
+
+    occPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    occPhase =
+        lift . A.withTcEnv . runOccM . occProgram >=>
+        dumpPass DumpOcc "acore" "occ"
 
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
     flattenPhase =

@@ -72,6 +72,7 @@ data DumpFlag = DumpCPP
               | DumpFusion
               | DumpCore
               | DumpAuto
+              | DumpOcc
   deriving (Eq, Ord, Enum, Show)
 
 data TraceFlag = TraceLexer

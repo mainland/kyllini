@@ -28,6 +28,8 @@ module KZC.Auto.Syntax (
     Program(..),
     Decl(..),
     LocalDecl(..),
+    BoundVar(..),
+    OccInfo(..),
     Exp(..),
     UnrollAnn(..),
     InlineAnn(..),
@@ -41,6 +43,8 @@ module KZC.Auto.Syntax (
     Omega(..),
     Iota(..),
     Kind(..),
+
+    mkBoundVar,
 
     Step(..),
     Comp(..),
@@ -62,6 +66,8 @@ module KZC.Auto.Syntax (
     Stm(..)
   ) where
 
+import Prelude hiding ((<=))
+
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader
 import Data.Foldable (Foldable(..), foldMap)
@@ -71,6 +77,7 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String (IsString(..))
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
@@ -116,21 +123,43 @@ import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
+import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
 
 data Program l = Program [Decl l] (Comp l) Type
+  deriving (Eq, Ord, Read, Show)
 
-data Decl l = LetD Var Type Exp !SrcLoc
-            | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
-            | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
-            | LetRefD Var Type (Maybe Exp) !SrcLoc
+data Decl l = LetD BoundVar Type Exp !SrcLoc
+            | LetFunD BoundVar [IVar] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD BoundVar [IVar] [(Var, Type)] Type !SrcLoc
+            | LetRefD BoundVar Type (Maybe Exp) !SrcLoc
             | LetStructD Struct [(Field, Type)] !SrcLoc
-            | LetCompD Var Type (Comp l) !SrcLoc
-            | LetFunCompD Var [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
+            | LetCompD BoundVar Type (Comp l) !SrcLoc
+            | LetFunCompD BoundVar [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
 
-data LocalDecl = LetLD Var Type Exp !SrcLoc
-               | LetRefLD Var Type (Maybe Exp) !SrcLoc
+data LocalDecl = LetLD BoundVar Type Exp !SrcLoc
+               | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data BoundVar = BoundV { bVar :: Var, bOccInfo :: Maybe OccInfo }
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString BoundVar where
+    fromString s = mkBoundVar (fromString s)
+
+instance Named BoundVar where
+    namedSymbol (BoundV v _) = namedSymbol v
+
+mkBoundVar :: Var -> BoundVar
+mkBoundVar v = BoundV v Nothing
+
+data OccInfo = Dead
+             | Once
+             | OnceInFun
+             | ManyBranch
+             | Many
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -200,6 +229,46 @@ type LComp = Comp Label
 type LStep = Step Label
 
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Occurrence info lattice
+ -
+ ------------------------------------------------------------------------------}
+instance Poset OccInfo where
+    Dead       <= _          = True
+    Once       <= Once       = True
+    OnceInFun  <= OnceInFun  = True
+    ManyBranch <= ManyBranch = True
+    _          <= Many       = True
+    _          <= _          = False
+
+instance Lattice OccInfo where
+    Dead `lub` x    = x
+    x    `lub` Dead = x
+    _    `lub` _    = Many
+
+    Dead `glb` _    = Dead
+    _    `glb` Dead = Dead
+    Many `glb` x    = x
+    x    `glb` Many = x
+    x    `glb` y
+        | x <= y    = x
+        | y <= x    = y
+        | otherwise = Dead
+
+instance BoundedLattice OccInfo where
+    bot = Dead
+    top = Many
+
+instance BranchLattice OccInfo where
+    Dead       `bub` x          = x
+    x          `bub` Dead       = x
+    Once       `bub` Once       = ManyBranch
+    Once       `bub` ManyBranch = ManyBranch
+    ManyBranch `bub` Once       = ManyBranch
+    ManyBranch `bub` ManyBranch = ManyBranch
+    _          `bub` _          = Many
+
 {------------------------------------------------------------------------------
  -
  - Computation labels
@@ -306,6 +375,17 @@ instance IsLabel l => Summary (Step l) where
  - Pretty printing
  -
  ------------------------------------------------------------------------------}
+
+instance Pretty BoundVar where
+    ppr (BoundV v Nothing)    = ppr v
+    ppr (BoundV v (Just occ)) = ppr v <> braces (ppr occ)
+
+instance Pretty OccInfo where
+    ppr Dead       = text "0"
+    ppr Once       = text "1"
+    ppr OnceInFun  = text "1fun"
+    ppr ManyBranch = text "*branch"
+    ppr Many       = text "*"
 
 instance IsLabel l => Pretty (Program l) where
     ppr (Program decls comp tau) =
@@ -604,35 +684,46 @@ pprComp comp =
 
 {------------------------------------------------------------------------------
  -
+ - Freshening bound variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen BoundVar Exp Var where
+    freshen (BoundV v occ) k =
+        freshen v $ \v' ->
+        k $ BoundV v' occ
+
+{------------------------------------------------------------------------------
+ -
  - Free variables
  -
  ------------------------------------------------------------------------------}
 
 instance Fvs (Decl l) Var where
-    fvs (LetD v _ e _)              = delete v (fvs e)
-    fvs (LetFunD v _ vbs _ e _)     = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetD v _ e _)              = delete (bVar v) (fvs e)
+    fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
     fvs (LetExtFunD {})             = mempty
-    fvs (LetRefD v _ e _)           = delete v (fvs e)
+    fvs (LetRefD v _ e _)           = delete (bVar v) (fvs e)
     fvs (LetStructD {})             = mempty
-    fvs (LetCompD v _ ccomp _)      = delete v (fvs ccomp)
-    fvs (LetFunCompD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetCompD v _ ccomp _)      = delete (bVar v) (fvs ccomp)
+    fvs (LetFunCompD v _ vbs _ e _) = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
 
 instance Binders (Decl l) Var where
-    binders (LetD v _ _ _)            = singleton v
-    binders (LetFunD v _ _ _ _ _)     = singleton v
-    binders (LetExtFunD v _ _ _ _)    = singleton v
-    binders (LetRefD v _ _ _)         = singleton v
+    binders (LetD v _ _ _)            = singleton (bVar v)
+    binders (LetFunD v _ _ _ _ _)     = singleton (bVar v)
+    binders (LetExtFunD v _ _ _ _)    = singleton (bVar v)
+    binders (LetRefD v _ _ _)         = singleton (bVar v)
     binders (LetStructD {})           = mempty
-    binders (LetCompD v _ _ _)        = singleton v
-    binders (LetFunCompD v _ _ _ _ _) = singleton v
+    binders (LetCompD v _ _ _)        = singleton (bVar v)
+    binders (LetFunCompD v _ _ _ _ _) = singleton (bVar v)
 
 instance Fvs LocalDecl Var where
-    fvs (LetLD v _ e _)    = delete v (fvs e)
-    fvs (LetRefLD v _ e _) = delete v (fvs e)
+    fvs (LetLD v _ e _)    = delete (bVar v) (fvs e)
+    fvs (LetRefLD v _ e _) = delete (bVar v) (fvs e)
 
 instance Binders LocalDecl Var where
-    binders (LetLD v _ _ _)    = singleton v
-    binders (LetRefLD v _ _ _) = singleton v
+    binders (LetLD v _ _ _)    = singleton (bVar v)
+    binders (LetRefLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
     fvs (ConstE {})                 = mempty
@@ -692,17 +783,17 @@ instance Fvs Exp v => Fvs [Exp] v where
  ------------------------------------------------------------------------------}
 
 instance HasVars (Decl l) Var where
-    allVars (LetD v _ e _)              = singleton v <> allVars e
-    allVars (LetFunD v _ vbs _ e _)     = singleton v <> fromList (map fst vbs) <> allVars e
-    allVars (LetExtFunD v _ vbs _ _)    = singleton v <> fromList (map fst vbs)
-    allVars (LetRefD v _ e _)           = singleton v <> allVars e
+    allVars (LetD v _ e _)              = singleton (bVar v) <> allVars e
+    allVars (LetFunD v _ vbs _ e _)     = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
+    allVars (LetExtFunD v _ vbs _ _)    = singleton (bVar v) <> fromList (map fst vbs)
+    allVars (LetRefD v _ e _)           = singleton (bVar v) <> allVars e
     allVars (LetStructD {})             = mempty
-    allVars (LetCompD v _ ccomp _)      = singleton v <> allVars ccomp
-    allVars (LetFunCompD v _ vbs _ e _) = singleton v <> fromList (map fst vbs) <> allVars e
+    allVars (LetCompD v _ ccomp _)      = singleton (bVar v) <> allVars ccomp
+    allVars (LetFunCompD v _ vbs _ e _) = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
 
 instance HasVars LocalDecl Var where
-    allVars (LetLD v _ e _)    = singleton v <> allVars e
-    allVars (LetRefLD v _ e _) = singleton v <> allVars e
+    allVars (LetLD v _ e _)    = singleton (bVar v) <> allVars e
+    allVars (LetRefLD v _ e _) = singleton (bVar v) <> allVars e
 
 instance HasVars Exp Var where
     allVars (ConstE {})                 = mempty
@@ -1367,6 +1458,9 @@ instance IsOrd Exp where
     e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
 
 #include "KZC/Auto/Syntax-instances.hs"
+
+instance Located BoundVar where
+    locOf (BoundV v _) = locOf v
 
 instance Located (Comp l) where
     locOf (Comp steps) = locOf steps

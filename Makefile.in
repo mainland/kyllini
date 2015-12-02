@@ -49,6 +49,7 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	KZC/Analysis/Occ.hs \
 	KZC/Auto/Comp.hs \
 	KZC/Auto/Lint.hs \
 	KZC/Auto/Smart.hs \

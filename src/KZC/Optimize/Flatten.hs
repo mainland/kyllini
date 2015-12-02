@@ -106,34 +106,34 @@ flattenDecls (decl:decls) k =
 
 flattenDecl :: LDecl -> Fl a -> Fl a
 flattenDecl (LetD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 flattenDecl (LetFunD f iotas vbs tau_ret _ l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 flattenDecl (LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 flattenDecl (LetRefD v tau _ _) k =
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, refT tau)] k
 
 flattenDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] k
 
 flattenDecl (LetCompD v tau comp _) k =
-    extendVars [(v, tau)] $
-    extendCompBindings [(v, CompB v [] [] tau comp)] $
+    extendVars [(bVar v, tau)] $
+    extendCompBindings [(bVar v, CompB (bVar v) [] [] tau comp)] $
     k
 
 flattenDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
-    extendVars [(f, tau)] $
-    extendCompBindings [(f, CompB f ivs vbs tau comp)] $
+    extendVars [(bVar f, tau)] $
+    extendCompBindings [(bVar f, CompB (bVar f) ivs vbs tau comp)] $
     k
   where
     tau :: Type
@@ -141,10 +141,10 @@ flattenDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
 
 flattenLocalDecl :: LocalDecl -> Fl a -> Fl a
 flattenLocalDecl (LetLD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 flattenLocalDecl (LetRefLD v tau _ _) k =
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, refT tau)] k
 
 flattenComp :: LComp -> Fl LComp
 flattenComp (Comp steps) = Comp <$> flattenSteps steps
