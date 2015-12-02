@@ -31,6 +31,7 @@ import Control.Monad.Error
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Writer
 import Data.List (sortBy)
 import Data.Loc
 import Data.Ord (comparing)
@@ -95,6 +96,18 @@ instance MonadErr m => MonadErr (ReaderT r m) where
 instance MonadErr m => MonadErr (StateT r m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = StateT $ \s -> localErrCtx ctx (runStateT m s)
+
+    warnIsError = lift warnIsError
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+
+instance (Monoid w, MonadErr m) => MonadErr (WriterT w m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = WriterT $ localErrCtx ctx (runWriterT m)
 
     warnIsError = lift warnIsError
 

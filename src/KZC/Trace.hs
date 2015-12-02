@@ -26,6 +26,7 @@ module KZC.Trace (
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Writer
 import System.IO (hPutStrLn,
                   stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -48,6 +49,10 @@ instance MonadTrace m => MonadTrace (ReaderT r m) where
 instance MonadTrace m => MonadTrace (StateT s m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = StateT $ \s -> localTraceDepth f (runStateT m s)
+
+instance (Monoid w, MonadTrace m) => MonadTrace (WriterT w m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = WriterT $ localTraceDepth f (runWriterT m)
 
 traceNest :: MonadTrace m => m a -> m a
 traceNest m = localTraceDepth (+1) m

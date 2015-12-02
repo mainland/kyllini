@@ -40,6 +40,7 @@ import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Writer (WriterT(..))
 import Data.Bits
 import Data.Int
 import Data.Monoid
@@ -158,6 +159,10 @@ instance MonadFlags m => MonadFlags (ReaderT r m) where
 instance MonadFlags m => MonadFlags (StateT s m) where
     askFlags       = lift askFlags
     localFlags f m = StateT $ \s -> localFlags f (runStateT m s)
+
+instance (Monoid w, MonadFlags m) => MonadFlags (WriterT w m) where
+    askFlags       = lift askFlags
+    localFlags f m = WriterT $ localFlags f (runWriterT m)
 
 setMode :: ModeFlag -> Flags -> Flags
 setMode f flags = flags { mode = f }
