@@ -50,12 +50,9 @@ GHCFLAGS+=-Iinclude
 
 SOURCE = \
 	KZC/Auto/Comp.hs \
-	KZC/Auto/Flatten.hs \
-	KZC/Auto/Fusion.hs \
 	KZC/Auto/Lint.hs \
 	KZC/Auto/Smart.hs \
 	KZC/Auto/Syntax.hs \
-	KZC/Auto/Transform.hs \
 	KZC/Cg.hs \
 	KZC/Cg/CExp.hs \
 	KZC/Cg/Code.hs \
@@ -74,11 +71,11 @@ SOURCE = \
 	KZC/Monad.hs \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
-	KZC/LambdaLift.hs \
-	KZC/LambdaLift/Monad.hs \
 	KZC/Lint.hs \
 	KZC/Lint/Monad.hs \
 	KZC/Name.hs \
+	KZC/Optimize/Flatten.hs \
+	KZC/Optimize/Fuse.hs \
 	KZC/Platform.hs \
 	KZC/Pretty.hs \
 	KZC/Rename.hs \
@@ -86,6 +83,9 @@ SOURCE = \
 	KZC/Summary.hs \
 	KZC/Staged.hs \
 	KZC/SysTools.hs \
+	KZC/Transform/Auto.hs \
+	KZC/Transform/LambdaLift.hs \
+	KZC/Transform/LambdaLift/Monad.hs \
 	KZC/Uniq.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \

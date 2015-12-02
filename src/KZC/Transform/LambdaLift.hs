@@ -1,10 +1,10 @@
 -- |
--- Module      :  KZC.LambdaLift
+-- Module      :  KZC.Transform.LambdaLift
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.LambdaLift (
+module KZC.Transform.LambdaLift (
     runLift,
 
     liftProgram
@@ -15,10 +15,10 @@ import qualified Data.Set as Set
 
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.LambdaLift.Monad
 import KZC.Lint.Monad
 import KZC.Name
 import KZC.Summary
+import KZC.Transform.LambdaLift.Monad
 import KZC.Uniq
 import KZC.Vars
 import KZC.Util.SetLike

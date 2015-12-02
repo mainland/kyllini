@@ -6,7 +6,7 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Auto.Flatten (
+module KZC.Optimize.Flatten (
     Fl,
     evalFl,
 

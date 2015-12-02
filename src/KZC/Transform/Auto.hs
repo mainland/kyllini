@@ -3,16 +3,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Auto.Transform
+-- Module      :  KZC.Transform.Auto
 -- Copyright   :  (c) 2014-2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Auto.Transform (
+module KZC.Transform.Auto (
     T,
     runT,
 
-    transformProgram
+    autoProgram
   ) where
 
 import Control.Applicative ((<$>), (<*>), pure)
@@ -33,8 +33,8 @@ type T a = Tc a
 runT :: T a -> KZC a
 runT m = withTc m
 
-transformProgram :: [C.Decl] -> T LProgram
-transformProgram cdecls = do
+autoProgram :: [C.Decl] -> T LProgram
+autoProgram cdecls = do
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau

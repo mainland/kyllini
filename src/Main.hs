@@ -31,22 +31,22 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
-import qualified KZC.Auto.Flatten as A
-import qualified KZC.Auto.Fusion as A
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
-import KZC.Auto.Transform
 import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
 import KZC.Label
-import KZC.LambdaLift
 import qualified KZC.Lint as Lint
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Optimize.Flatten
+import KZC.Optimize.Fuse
 import KZC.Rename
 import KZC.SysTools
+import KZC.Transform.Auto
+import KZC.Transform.LambdaLift
 
 import Opts
 
@@ -85,7 +85,7 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=>
         lintCore >=>
-        transformPhase >=>
+        autoPhase >=>
         lintAuto >=>
         runIf (testDynFlag Flatten) flattenPhase >=>
         lintAuto >=>
@@ -123,19 +123,19 @@ runPipeline filepath =
         lift . runLift . liftProgram >=>
         dumpPass DumpLift "core" "ll"
 
-    transformPhase :: [C.Decl] -> MaybeT KZC A.LProgram
-    transformPhase =
-        lift . runT . transformProgram >=>
-        dumpPass DumpLift "acore" "trans"
+    autoPhase :: [C.Decl] -> MaybeT KZC A.LProgram
+    autoPhase =
+        lift . runT . autoProgram >=>
+        dumpPass DumpLift "acore" "auto"
 
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
     flattenPhase =
-        lift . A.evalFl . A.flattenProgram >=>
+        lift . evalFl . flattenProgram >=>
         dumpPass DumpFlatten "acore" "flatten"
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =
-        lift . A.withTc . SEFKT.runSEFKT . A.fuseProgram >=>
+        lift . A.withTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()

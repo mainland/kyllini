@@ -35,7 +35,6 @@ import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
-import KZC.Auto.Fusion
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
@@ -47,6 +46,7 @@ import KZC.Flags
 import KZC.Label
 import KZC.Lint.Monad
 import KZC.Name
+import KZC.Optimize.Fuse
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged

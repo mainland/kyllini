@@ -1,12 +1,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.LambdaLift.Monad
+-- Module      :  KZC.Transform.LambdaLift.Monad
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.LambdaLift.Monad (
+module KZC.Transform.LambdaLift.Monad (
     Lift,
     runLift,
 

@@ -3,12 +3,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Auto.Fusion
+-- Module      :  KZC.Optimize.Fuse
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Auto.Fusion (
+module KZC.Optimize.Fuse (
     F,
     runF,
     runF1,
