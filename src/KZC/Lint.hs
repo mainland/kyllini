@@ -12,7 +12,7 @@ module KZC.Lint (
     Tc(..),
     runTc,
     liftTc,
-    withTc,
+    withTcEnv,
 
     checkDecls,
 
@@ -97,7 +97,7 @@ instance MonadTc Tc where
 runTc :: Tc a -> TcEnv -> KZC a
 runTc m r = (runReaderT . unTc) m r
 
--- | Run a @Tc@ computation in the @KZC@ monad and update the @Tc@ environment.
+-- | Run a 'Tc' computation in the 'KZC' monad and update the 'TcEnv'.
 liftTc :: forall a . Tc a -> KZC a
 liftTc m = do
     eref <- asks tcenvref
@@ -110,13 +110,13 @@ liftTc m = do
         askTc >>= writeRef eref
         return x
 
--- | Run a @Tc@ computation in the @KZC@ monad without updating the
--- @Tc@ environment.
-withTc :: Tc a -> KZC a
-withTc m = do
+-- | Run a 'KZC' computation that requires a 'TcEnv' without updating the
+-- 'TcEnv'.
+withTcEnv :: (TcEnv -> KZC a) -> KZC a
+withTcEnv k = do
     eref <- asks tcenvref
     env  <- readRef eref
-    runTc m env
+    k env
 
 checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls [] =

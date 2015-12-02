@@ -28,7 +28,6 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint (Tc)
 import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Name
@@ -46,8 +45,8 @@ defaultFlEnv :: FlEnv
 defaultFlEnv = FlEnv
     { compBindings = mempty }
 
-evalFl :: Fl a -> KZC a
-evalFl m = withTc $ runReaderT m defaultFlEnv
+evalFl :: Fl a -> TcEnv -> KZC a
+evalFl m tcenv = runTc (runReaderT m defaultFlEnv) tcenv
 
 extend :: forall k v a . Ord k
        => (FlEnv -> Map k v)

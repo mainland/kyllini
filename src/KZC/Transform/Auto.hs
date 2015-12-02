@@ -30,8 +30,8 @@ import KZC.Summary
 -- | The 'T' monad.
 type T a = Tc a
 
-runT :: T a -> KZC a
-runT m = withTc m
+runT :: T a -> TcEnv -> KZC a
+runT m tcenv = runTc m tcenv
 
 autoProgram :: [C.Decl] -> T LProgram
 autoProgram cdecls = do

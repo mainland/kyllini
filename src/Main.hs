@@ -119,17 +119,17 @@ runPipeline filepath =
 
     autoPhase :: [C.Decl] -> MaybeT KZC A.LProgram
     autoPhase =
-        lift . runT . autoProgram >=>
+        lift . A.withTcEnv . runT . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
 
     flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
     flattenPhase =
-        lift . evalFl . flattenProgram >=>
+        lift . A.withTcEnv . evalFl . flattenProgram >=>
         dumpPass DumpFlatten "acore" "flatten"
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =
-        lift . A.withTc . SEFKT.runSEFKT . fuseProgram >=>
+        lift . A.withTcEnv . A.runTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
@@ -140,7 +140,7 @@ runPipeline filepath =
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            Lint.withTc (Lint.checkDecls decls)
+            Lint.withTcEnv (Lint.runTc (Lint.checkDecls decls))
         return decls
 
     lintAuto :: IsLabel l
@@ -148,7 +148,7 @@ runPipeline filepath =
              -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
-            A.withTc (A.checkProgram p)
+            A.withTcEnv (A.runTc (A.checkProgram p))
         return p
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a

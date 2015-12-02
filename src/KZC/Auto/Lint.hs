@@ -10,7 +10,10 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Lint (
-    withTc,
+    Tc(..),
+    runTc,
+    liftTc,
+    withTcEnv,
 
     typeBitWidth,
 
@@ -56,7 +59,10 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint (withTc,
+import KZC.Lint (Tc(..),
+                 runTc,
+                 liftTc,
+                 withTcEnv,
 
                  inferKind,
                  checkKind,
