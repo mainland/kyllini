@@ -80,17 +80,12 @@ runPipeline filepath =
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         renamePhase >=>
-        checkPhase >=>
-        lintCore >=>
+        checkPhase >=> lintCore >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        lambdaLiftPhase >=>
-        lintCore >=>
-        autoPhase >=>
-        lintAuto >=>
-        runIf (testDynFlag Flatten) flattenPhase >=>
-        lintAuto >=>
-        runIf (testDynFlag Fuse) fusionPhase >=>
-        lintAuto >=>
+        lambdaLiftPhase >=> lintCore >=>
+        autoPhase >=> lintAuto >=>
+        runIf (testDynFlag Flatten) (flattenPhase >=> lintAuto) >=>
+        runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         compilePhase
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
