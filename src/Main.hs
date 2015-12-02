@@ -55,8 +55,7 @@ main = do
     args <- getArgs
     (fs, files) <- compilerOpts args
     if mode fs == Help
-      then do usage >>= hPutStrLn stderr
-              return ()
+      then usage >>= hPutStrLn stderr
       else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
