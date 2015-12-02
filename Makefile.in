@@ -87,6 +87,7 @@ SOURCE = \
 	KZC/Transform/LambdaLift.hs \
 	KZC/Transform/LambdaLift/Monad.hs \
 	KZC/Uniq.hs \
+	KZC/Util/Lattice.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \
 	Language/Ziria/Parser/Alex.hs \
