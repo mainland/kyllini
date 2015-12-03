@@ -699,8 +699,7 @@ inferStep (LiftC _ e _) =
 
 inferStep (ReturnC _ e _) = do
     tau <- inferExp e
-    tau' <- appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
-    return tau'
+    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
     s, a, b :: TyVar
     s = "s"
