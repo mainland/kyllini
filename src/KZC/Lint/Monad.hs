@@ -74,10 +74,10 @@ import KZC.Uniq
 import KZC.Vars
 
 data TcEnv = TcEnv
-    { curfvs     :: Maybe (Set Var)
+    { curfvs     :: !(Maybe (Set Var))
     , structs    :: !(Map Struct StructDef)
-    , topScope   :: Bool
-    , topVars    :: Set Var
+    , topScope   :: !Bool
+    , topVars    :: !(Set Var)
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
