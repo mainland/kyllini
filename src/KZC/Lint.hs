@@ -29,9 +29,6 @@ module KZC.Lint (
     checkTypeEquality,
     checkKindEquality,
 
-    absSTScope,
-    appSTScope,
-
     checkEqT,
     checkOrdT,
     checkBoolT,
@@ -41,11 +38,17 @@ module KZC.Lint (
     checkArrT,
     checkStructT,
     checkStructFieldT,
+    checkRefT,
+    checkFunT,
+
+    absSTScope,
+    appSTScope,
     checkST,
     checkSTC,
     checkSTCUnit,
-    checkRefT,
-    checkFunT
+    checkPureishST,
+    checkPureishSTC,
+    checkPureishSTCUnit
   ) where
 
 import Control.Applicative (Applicative)
@@ -702,8 +705,8 @@ checkTypeEquality tau1 tau2 =
     checkT theta phi (ST alphas_a omega_a tau1_a tau2_a tau3_a _)
                      (ST alphas_b omega_b tau1_b tau2_b tau3_b _)
         | length alphas_a == length alphas_b = do
-          checkO theta phi omega_a omega_b
-          checkT theta phi tau1_a tau1_b
+          checkO theta  phi omega_a omega_b
+          checkT theta' phi tau1_a tau1_b
           checkT theta' phi tau2_a tau2_b
           checkT theta' phi tau3_a tau3_b
       where
@@ -853,30 +856,6 @@ checkKindEquality kappa1 kappa2 =
     text "Expected kind:" <+> ppr kappa2 </>
     text "but got:      " <+> ppr kappa1
 
-absSTScope :: MonadTc m => Type -> m Type
-absSTScope (ST [] omega s a b l) = do
-    (s',a',b') <- askSTIndTypes
-    let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
-    return $ ST alphas omega s a b l
-
-absSTScope tau =
-    return tau
-
-appSTScope :: MonadTc m => Type -> m Type
-appSTScope tau@(ST alphas omega s a b l) = do
-    (s',a',b') <- askSTIndTypes
-    let theta = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
-                                           , alpha `elem` alphas]
-    let phi   = fvs tau
-    return $ ST [] omega
-                (subst theta phi s)
-                (subst theta phi a)
-                (subst theta phi b)
-                l
-
-appSTScope tau =
-    return tau
-
 -- | Check that a type supports equality.
 checkEqT :: MonadTc m => Type -> m ()
 checkEqT tau =
@@ -952,6 +931,82 @@ checkStructFieldT (StructDef s flds _) f =
           text "Struct" <+> ppr s <+>
           text "does not have a field named" <+> ppr f
 
+checkRefT :: MonadTc m => Type -> m Type
+checkRefT (RefT tau _) =
+    return tau
+
+checkRefT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected ref type but got:" <+/> ppr tau
+
+checkFunT :: MonadTc m => Type -> m ([IVar], [Type], Type)
+checkFunT (FunT iotas taus tau_ret _) =
+    return (iotas, taus, tau_ret)
+
+checkFunT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected function type but got:" <+/> ppr tau
+
+{- Note [The ST type]
+
+The ST type represents unpure computations and has the form forall a ..., ST
+omega tau tau tau. It can distinguish between computations that use references,
+computations that take, and computations that emit. For example
+
+  forall s a b . ST (C ()) s a b
+
+is the type of a computation that may use references but returns unit. We term
+computations that may use references but that do not take or emit "pureish."
+
+  forall a b . ST (C ()) a a b
+
+is the type of a computation that takes something and throws it away but does
+not emit.
+
+  forall s a int . ST (C ()) s a int
+
+is the type of a computation that only emits values of type int.
+
+The omega can be either C tau, for a computation that returns a value of type
+tau, or T, for a transformer.
+
+The ST type provides a very limited form of polymorphism. To avoid type
+abstraction and application, we keep track of the current "ST typing context,"
+which consist of the three ST index types. Whenever we type check a value with
+an ST type, we immediately instantiate it by applying it to the current ST
+context using the function 'appSTScope'.
+
+In the auto language, we differentiate syntactically between expressions, which
+may be pure or pureish, and computations that take and emit. In that language,
+we /do not/ instantiate ST types immediately in the expression
+language. Instead, we must instantiate any ST types when they become part of a
+computation.
+-}
+
+absSTScope :: MonadTc m => Type -> m Type
+absSTScope (ST [] omega s a b l) = do
+    (s',a',b') <- askSTIndTypes
+    let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
+    return $ ST alphas omega s a b l
+
+absSTScope tau =
+    return tau
+
+appSTScope :: MonadTc m => Type -> m Type
+appSTScope tau@(ST alphas omega s a b l) = do
+    (s',a',b') <- askSTIndTypes
+    let theta = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
+                                           , alpha `elem` alphas]
+    let phi   = fvs tau
+    return $ ST [] omega
+                (subst theta phi s)
+                (subst theta phi a)
+                (subst theta phi b)
+                l
+
+appSTScope tau =
+    return tau
+
 checkST :: MonadTc m => Type -> m (Omega, Type, Type, Type)
 checkST (ST [] omega s a b _) =
     return (omega, s, a, b)
@@ -969,25 +1024,33 @@ checkSTC tau =
     text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
 
 checkSTCUnit :: MonadTc m => Type -> m (Type, Type, Type)
-checkSTCUnit (ST _ (C (UnitT _)) s a b _) =
+checkSTCUnit (ST [] (C (UnitT _)) s a b _) =
     return (s, a, b)
 
 checkSTCUnit tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
 
-checkRefT :: MonadTc m => Type -> m Type
-checkRefT (RefT tau _) =
-    return tau
+checkPureishST :: MonadTc m => Type -> m ([TyVar], Omega, Type, Type, Type)
+checkPureishST tau@(ST alphas omega s a b _) | isPureishT tau =
+    return (alphas, omega, s, a, b)
 
-checkRefT tau =
+checkPureishST tau =
     faildoc $ nest 2 $ group $
-    text "Expected ref type but got:" <+/> ppr tau
+    text "Expected type of the form 'forall s a b . ST omega s a b' but got:" <+/> ppr tau
 
-checkFunT :: MonadTc m => Type -> m ([IVar], [Type], Type)
-checkFunT (FunT iotas taus tau_ret _) =
-    return (iotas, taus, tau_ret)
+checkPureishSTC :: MonadTc m => Type -> m ([TyVar], Type, Type, Type, Type)
+checkPureishSTC tau0@(ST alphas (C tau) s a b _) | isPureishT tau0 =
+    return (alphas, tau, s, a, b)
 
-checkFunT tau =
+checkPureishSTC tau =
     faildoc $ nest 2 $ group $
-    text "Expected function type but got:" <+/> ppr tau
+    text "Expected type of the form 'forall s a b . ST (C tau) s a b' but got:" </> ppr tau
+
+checkPureishSTCUnit :: MonadTc m => Type -> m ([TyVar], Type, Type, Type)
+checkPureishSTCUnit tau@(ST alphas (C (UnitT _)) s a b _) | isPureishT tau =
+    return (alphas, s, a, b)
+
+checkPureishSTCUnit tau =
+    faildoc $ nest 2 $ group $
+    text "Expected type of the form 'forall s a b . ST (C ()) s a b' but got:" <+/> ppr tau

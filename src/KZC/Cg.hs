@@ -1154,7 +1154,7 @@ cgComp takek emitk comp k =
 
     cgSteps (step:steps) = do
         k <- stepLabel (head steps)
-        cgStep step k >>= cgBind steps
+        (withFvContext step $ cgStep step k) >>= cgBind steps
 
     cgBind :: [Step Label] -> CExp -> Cg CExp
     cgBind [] ce =
@@ -1206,9 +1206,9 @@ cgComp takek emitk comp k =
             go tau e | isPureishT tau =
                 cgExp e
 
-            go _tau e@(CallE f iotas es _) = do
+            go tau (CallE f iotas es _) = do
                 FunT _ _ tau_res@(ST _ _ s a b _) _ <- lookupVar f
-                ST _ _ s' a' b' _                   <- inferExp e
+                ST _ _ s' a' b' _                   <- appSTScope tau
                 (ivs, vbs, comp) <- lookupVarCExp f >>= unCComp
                 let theta1   = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
                 let theta2   = Map.fromList (ivs `zip` iotas)
