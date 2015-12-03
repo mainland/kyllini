@@ -370,6 +370,9 @@ instance IsLabel l => Summary (Comp l) where
 instance IsLabel l => Summary (Step l) where
     summary s = text "computation:" <+> ppr s
 
+instance IsLabel l => Summary [Step l] where
+    summary s = text "computation:" <+> ppr s
+
 {------------------------------------------------------------------------------
  -
  - Pretty printing
