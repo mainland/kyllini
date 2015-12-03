@@ -152,6 +152,8 @@ instance IsString BoundVar where
 instance Named BoundVar where
     namedSymbol (BoundV v _) = namedSymbol v
 
+    mapName f (BoundV v occ) = BoundV (mapName f v) occ
+
 mkBoundVar :: Var -> BoundVar
 mkBoundVar v = BoundV v Nothing
 

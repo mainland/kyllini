@@ -11,7 +11,8 @@ module KZC.Name (
     Named(..),
     mkName,
     mkSymName,
-    mkUniqName
+    mkUniqName,
+    mkUniq
   ) where
 
 import Data.Loc
@@ -73,8 +74,11 @@ class Named a where
     namedString :: a -> String
     namedString n = unintern (namedSymbol n)
 
+    mapName :: (Name -> Name) -> a -> a
+
 instance Named Name where
     namedSymbol n = nameSym n
+    mapName f n = f n
 
 mkName :: String -> Loc -> Name
 mkName s l = Name Orig (intern s) (SrcLoc l)
@@ -86,3 +90,9 @@ mkUniqName :: MonadUnique m => String -> Loc -> m Name
 mkUniqName s l = do
     u <- newUnique
     return $ Name (Internal u) (intern s) (SrcLoc l)
+
+mkUniq :: (MonadUnique m, Named n)
+       => n -> m n
+mkUniq n = do
+    u <- newUnique
+    return $ mapName (\n -> n { nameSort = Internal u }) n

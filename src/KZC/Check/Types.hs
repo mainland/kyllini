@@ -135,8 +135,12 @@ instance IsString TyVar where
 instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n
 
+    mapName f (TyVar n) = TyVar (f n)
+
 instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
+
+    mapName f (IVar n) = IVar (f n)
 
 {------------------------------------------------------------------------------
  -

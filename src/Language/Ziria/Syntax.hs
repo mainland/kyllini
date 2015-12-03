@@ -64,17 +64,32 @@ newtype Var = Var Name
 instance IsString Var where
     fromString s = Var $ fromString s
 
+instance Named Var where
+    namedSymbol (Var n) = namedSymbol n
+
+    mapName f (Var n) = Var (f n)
+
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
 instance IsString Field where
     fromString s = Field $ fromString s
 
+instance Named Field where
+    namedSymbol (Field n) = namedSymbol n
+
+    mapName f (Field n) = Field (f n)
+
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
 
 instance IsString Struct where
     fromString s = Struct $ fromString s
+
+instance Named Struct where
+    namedSymbol (Struct n) = namedSymbol n
+
+    mapName f (Struct n) = Struct (f n)
 
 -- | Fixed point scale factor
 data Scale = I

@@ -89,6 +89,8 @@ instance IsString Var where
 instance Named Var where
     namedSymbol (Var n) = namedSymbol n
 
+    mapName f (Var n) = Var (f n)
+
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
 
@@ -97,6 +99,8 @@ instance IsString Field where
 
 instance Named Field where
     namedSymbol (Field n) = namedSymbol n
+
+    mapName f (Field n) = Field (f n)
 
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
@@ -107,6 +111,8 @@ instance IsString Struct where
 instance Named Struct where
     namedSymbol (Struct n) = namedSymbol n
 
+    mapName f (Struct n) = Struct (f n)
+
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Read, Show)
 
@@ -116,6 +122,8 @@ instance IsString TyVar where
 instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n
 
+    mapName f (TyVar n) = TyVar (f n)
+
 newtype IVar = IVar Name
   deriving (Eq, Ord, Read, Show)
 
@@ -124,6 +132,8 @@ instance IsString IVar where
 
 instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
+
+    mapName f (IVar n) = IVar (f n)
 
 -- | Fixed point scale factor
 data Scale = I
