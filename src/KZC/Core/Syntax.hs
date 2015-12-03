@@ -359,20 +359,21 @@ instance Pretty Const where
     pprPrec _ (BoolC True)       = text "true"
     pprPrec _ (BitC False)       = text "'0"
     pprPrec _ (BitC True)        = text "'1"
-    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r
+    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r <> pprSign s
     pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
     pprPrec _ (StringC s)        = text (show s)
     pprPrec _ (ArrayC cs)        = braces $ commasep $ map ppr cs
 
-pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
-pprScaled _ sc S bp r =
-    pprScaled appPrec1 sc U bp r <> char 'u'
+pprSign :: Signedness -> Doc
+pprSign S = empty
+pprSign U = char 'u'
 
-pprScaled p I U (BP 0) r
+pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
+pprScaled p I _ (BP 0) r
     | denominator r == 1 = pprPrec p (numerator r)
     | otherwise          = pprPrec p r
 
-pprScaled p sc U (BP bp) r =
+pprScaled p sc _ (BP bp) r =
     pprPrec p (fromRational r * scale sc / 2^bp :: Double)
   where
     scale :: Scale -> Double
