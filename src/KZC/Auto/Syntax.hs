@@ -507,7 +507,7 @@ instance Pretty Exp where
         ppr ann <+> text "for" <+>
         group (parens (ppr v <+> colon <+> ppr tau) <+>
                text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <>
+               brackets (commasep [ppr e1, ppr e2])) <+/>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
@@ -618,7 +618,7 @@ pprComp comp =
         ppr ann <+> text "for" <+>
         group (parens (ppr v <+> colon <+> ppr tau) <+>
                text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <>
+               brackets (commasep [ppr e1, ppr e2])) <+/>
         ppr c
 
     pprSteps (LiftC _ e _ : k) =
