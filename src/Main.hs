@@ -121,7 +121,7 @@ runPipeline filepath =
 
     autoPhase :: [C.Decl] -> MaybeT KZC A.LProgram
     autoPhase =
-        lift . A.withTcEnv . runT . autoProgram >=>
+        lift . A.withTcEnv . runAuto . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
 
     occPhase :: A.LProgram -> MaybeT KZC A.LProgram
