@@ -546,14 +546,12 @@ inferExp (BindE bv e1 e2 _) = do
     case bv of
       WildV       -> return ()
       BindV _ tau -> checkTypeEquality tau' tau
-    (omega,  s', a', b') <- withFvContext e2 $
-                            extendBindVars [bv] $
-                            inferExp e2 >>= appSTScope >>= checkST
-    withFvContext e2 $ do
-    checkTypeEquality s' s
-    checkTypeEquality a' a
-    checkTypeEquality b' b
-    return $ stT omega s a b
+    withFvContext e2 $
+        extendBindVars [bv] $ do
+        tau2             <- inferExp e2 >>= appSTScope
+        (omega, _, _, _) <- checkST tau2
+        checkTypeEquality tau2 (stT omega s a b)
+        return tau2
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
@@ -598,9 +596,9 @@ inferExp e0@(ParE _ b e1 e2 l) = do
                                localSTIndTypes (Just (b, b, c)) $
                                inferExp e2 >>= checkST
     withFvContext e1 $
-        checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
+        checkTypeEquality (stT omega1 s'  a'   b') (stT omega1 s a b)
     withFvContext e2 $
-        checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
+        checkTypeEquality (stT omega2 b'' b''' c') (stT omega2 b b c)
     omega <- withFvContext e0 $
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
