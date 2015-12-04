@@ -30,7 +30,7 @@ module KZC.Core.Lint.Monad (
     askTopVars,
 
     extendVars,
-    extendBindVars,
+    extendWildVars,
     lookupVar,
 
     extendTyVars,
@@ -194,9 +194,9 @@ extendVars vtaus m = do
     extendTopVars False _ k =
         k
 
-extendBindVars :: MonadTc m => [BindVar] -> m a -> m a
-extendBindVars bvs m =
-    extendVars [(v, tau) | BindV v tau <- bvs] m
+extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
+extendWildVars wvs m =
+    extendVars [(v, tau) | (TameV v, tau) <- wvs] m
 
 lookupVar :: MonadTc m => Var -> m Type
 lookupVar v =

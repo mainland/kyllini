@@ -187,8 +187,8 @@ liftExp e@(ErrorE {}) =
 liftExp (ReturnE ann e l) =
     ReturnE ann <$> liftExp e <*> pure l
 
-liftExp (BindE v e1 e2 l) =
-    BindE v <$> liftExp e1 <*> liftExp e2 <*> pure l
+liftExp (BindE v tau e1 e2 l) =
+    BindE v tau <$> liftExp e1 <*> liftExp e2 <*> pure l
 
 liftExp e@(TakeE {}) =
     pure e

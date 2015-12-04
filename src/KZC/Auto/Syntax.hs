@@ -15,6 +15,7 @@
 
 module KZC.Auto.Syntax (
     Var(..),
+    WildVar(..),
     Field(..),
     Struct(..),
     TyVar(..),
@@ -35,7 +36,6 @@ module KZC.Auto.Syntax (
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
-    BindVar(..),
     Unop(..),
     Binop(..),
     StructDef(..),
@@ -82,6 +82,7 @@ import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax (Var(..),
+                        WildVar(..),
                         Field(..),
                         Struct(..),
                         TyVar(..),
@@ -96,7 +97,6 @@ import KZC.Core.Syntax (Var(..),
                         InlineAnn(..),
                         PipelineAnn(..),
                         VectAnn(..),
-                        BindVar(..),
                         Unop(..),
                         Binop(..),
                         StructDef(..),
@@ -189,7 +189,7 @@ data Exp = ConstE Const !SrcLoc
          | ErrorE Type String !SrcLoc
          -- Monadic operations
          | ReturnE InlineAnn Exp !SrcLoc
-         | BindE BindVar Exp Exp !SrcLoc
+         | BindE WildVar Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Step l = VarC l Var !SrcLoc
@@ -205,7 +205,7 @@ data Step l = VarC l Var !SrcLoc
             -- 'ReturnC' differ only for the purpose of type checking.
             | LiftC l Exp !SrcLoc
             | ReturnC l Exp !SrcLoc
-            | BindC l BindVar !SrcLoc
+            | BindC l WildVar Type !SrcLoc
 
             | TakeC l Type !SrcLoc
             | TakesC l Int Type !SrcLoc
@@ -306,7 +306,7 @@ stepLabel (WhileC l _ _ _)       = return l
 stepLabel (ForC l _ _ _ _ _ _ _) = return l
 stepLabel (LiftC l _ _)          = return l
 stepLabel (ReturnC l _ _)        = return l
-stepLabel (BindC l _ _)          = return l
+stepLabel (BindC l _ _ _)        = return l
 stepLabel (TakeC l _ _)          = return l
 stepLabel (TakesC l _ _ _)       = return l
 stepLabel (EmitC l _ _)          = return l
@@ -324,7 +324,7 @@ setStepLabel l (WhileC _ e c s)             = WhileC l e c s
 setStepLabel l (ForC _ ann v tau e1 e2 c s) = ForC l ann v tau e1 e2 c s
 setStepLabel l (LiftC _ e s)                = LiftC l e s
 setStepLabel l (ReturnC _ e s)              = ReturnC l e s
-setStepLabel l (BindC _ bv s)               = BindC l bv s
+setStepLabel l (BindC _ wv tau s)           = BindC l wv tau s
 setStepLabel l (TakeC _ tau s)              = TakeC l tau s
 setStepLabel l (TakesC _ i tau s)           = TakesC l i tau s
 setStepLabel l (EmitC _ e s)                = EmitC l e s
@@ -340,9 +340,9 @@ setStepLabel _ step@(LoopC {})              = step
  ------------------------------------------------------------------------------}
 
 expToStms :: Exp -> [Stm Exp]
-expToStms (ReturnE ann e l)  = [ReturnS ann e l]
-expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
-expToStms e                  = [ExpS e (srclocOf e)]
+expToStms (ReturnE ann e l)      = [ReturnS ann e l]
+expToStms (BindE wv tau e1 e2 l) = BindS wv tau e1 l : expToStms e2
+expToStms e                      = [ExpS e (srclocOf e)]
 
 {------------------------------------------------------------------------------
  -
@@ -634,10 +634,10 @@ pprComp comp =
         pprBind k $
         text "return" <+> pprPrec appPrec1 e
 
-    pprSteps (BindC _ WildV _  : k) =
+    pprSteps (BindC _ WildV _ _  : k) =
         text "_ <- _" : pprSteps k
 
-    pprSteps (BindC _ (BindV v tau) _ : k) =
+    pprSteps (BindC _ (TameV v) tau _ : k) =
         bindDoc : pprSteps k
       where
         bindDoc :: Doc
@@ -674,10 +674,10 @@ pprComp comp =
         [text "loop" <+> ppr l]
 
     pprBind :: [Step l] -> Doc -> [Doc]
-    pprBind (BindC _ WildV _  : k) step =
+    pprBind (BindC _ WildV _ _  : k) step =
         step : pprSteps k
 
-    pprBind (BindC _ (BindV v tau) _ : k) step =
+    pprBind (BindC _ (TameV v) tau _ : k) step =
         step' : pprSteps k
       where
         step' :: Doc
@@ -749,7 +749,7 @@ instance Fvs Exp Var where
     fvs (PrintE _ es _)             = fvs es
     fvs (ErrorE {})                 = mempty
     fvs (ReturnE _ e _)             = fvs e
-    fvs (BindE bv e1 e2 _)          = fvs e1 <> (fvs e2 <\\> binders bv)
+    fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
 
 instance Fvs (Step l) Var where
     fvs (VarC _ v _)             = singleton v
@@ -774,7 +774,7 @@ instance Fvs (Comp l) Var where
       where
         go :: SetLike m Var => [Step l] -> m Var
         go []                          = mempty
-        go (BindC _ bv _ : k)          = go k <\\> binders bv
+        go (BindC _ wv _ _ : k)        = go k <\\> binders wv
         go (LetC _ decl _ : k)         = fvs decl <> (go k <\\> binders decl)
         go (step : k)                  = fvs step <> go k
 
@@ -819,7 +819,7 @@ instance HasVars Exp Var where
     allVars (PrintE _ es _)             = allVars es
     allVars (ErrorE {})                 = mempty
     allVars (ReturnE _ e _)             = allVars e
-    allVars (BindE bv e1 e2 _)          = allVars bv <> allVars e1 <> allVars e2
+    allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
 
 instance HasVars (Step l) Var where
     allVars (VarC _ v _)             = singleton v
@@ -883,8 +883,8 @@ instance IsLabel l => Subst l l (Step l) where
     substM (ReturnC l e s) =
         ReturnC <$> substM l <*> pure e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC <$> substM l <*> pure bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC <$> substM l <*> pure wv <*> pure tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC <$> substM l <*> pure tau <*> pure s
@@ -978,8 +978,8 @@ instance Subst Iota IVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) = do
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) = do
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
 instance Subst Iota IVar (Step l) where
     substM step@(VarC {}) =
@@ -1006,8 +1006,8 @@ instance Subst Iota IVar (Step l) where
     substM (ReturnC l e s) =
         ReturnC l <$> substM e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC l <$> substM bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC l wv <$> substM tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -1101,8 +1101,8 @@ instance Subst Type TyVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) =
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) =
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
 instance Subst Type TyVar (Step l) where
     substM step@(VarC {}) =
@@ -1129,8 +1129,8 @@ instance Subst Type TyVar (Step l) where
     substM (ReturnC l e s) =
         ReturnC l <$> substM e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC l <$> substM bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC l wv <$> substM tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -1229,10 +1229,10 @@ instance Subst Exp Var Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) = do
+    substM (BindE wv tau e1 e2 l) = do
         e1' <- substM e1
-        freshen bv $ \bv' -> do
-        BindE bv' e1' <$> substM e2 <*> pure l
+        freshen wv $ \wv' -> do
+        BindE wv' tau e1' <$> substM e2 <*> pure l
 
 instance Subst Exp Var (Step l) where
     substM step@(VarC l v s) = do
@@ -1309,14 +1309,14 @@ instance Subst Exp Var (Comp l) where
             steps' <- go steps
             return $ LetC l decl' s : steps'
 
-        go (step@(BindC _ WildV _) : steps) = do
+        go (step@(BindC _ WildV _ _) : steps) = do
             steps' <- go steps
             return $ step : steps'
 
-        go (BindC l (BindV v tau) s : steps) = do
+        go (BindC l (TameV v) tau s : steps) = do
             freshen v $ \v' -> do
             steps' <- go steps
-            return $ BindC l (BindV v' tau) s : steps'
+            return $ BindC l (TameV v') tau s : steps'
 
         go (step : steps) =
             (:) <$> substM step <*> go steps
@@ -1427,13 +1427,9 @@ instance Freshen (Var, Type) Exp Var where
         freshen v $ \v' ->
         k (v', tau)
 
-instance Freshen BindVar Exp Var where
-    freshen WildV k =
-        k WildV
-
-    freshen (BindV v tau) k =
-        freshen v $ \v' ->
-        k $ BindV v' tau
+instance Freshen WildVar Exp Var where
+    freshen WildV     k = k WildV
+    freshen (TameV v) k = freshen v $ \v' -> k (TameV v')
 
 {------------------------------------------------------------------------------
  -

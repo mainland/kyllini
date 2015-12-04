@@ -277,18 +277,17 @@ transExp (C.ErrorE tau s l) =
 transExp (C.ReturnE ann e l) =
     ReturnE ann <$> transExp e <*> pure l
 
-transExp (C.BindE bv@WildV e1 e2 l) = do
+transExp (C.BindE WildV tau e1 e2 l) = do
     e1' <- transExp e1
-    e2' <- extendBindVars [bv] $
-           transExp e2
-    return $ BindE bv e1' e2' l
+    e2' <- transExp e2
+    return $ BindE WildV tau e1' e2' l
 
-transExp (C.BindE bv@(BindV v l_v) e1 e2 l) =
+transExp (C.BindE (TameV v) tau e1 e2 l) =
     ensureUnique v $ \v' -> do
     e1' <- transExp e1
-    e2' <- extendBindVars [bv] $
+    e2' <- extendVars [(v, tau)] $
            transExp e2
-    return $ BindE (BindV v' l_v) e1' e2' l
+    return $ BindE (TameV v') tau e1' e2' l
 
 transExp e@(C.TakeE {}) =
     withSummaryContext e $
@@ -360,12 +359,12 @@ transComp (C.ReturnE _ e l) = do
     e <- transExp e
     returnC e l
 
-transComp (C.BindE bv@WildV e1 e2 l) =
-    transComp e1 .>>. bindC bv l .>>. (extendBindVars [bv] $ transComp e2)
+transComp (C.BindE wv@WildV tau e1 e2 l) =
+    transComp e1 .>>. bindC wv tau l .>>. (extendWildVars [(wv, tau)] $ transComp e2)
 
-transComp (C.BindE bv@(BindV v l_v) e1 e2 l) =
+transComp (C.BindE wv@(TameV v) tau e1 e2 l) =
     ensureUnique v $ \v' -> do
-    transComp e1 .>>. bindC (BindV v' l_v) l .>>. (extendBindVars [bv] $ transComp e2)
+    transComp e1 .>>. bindC (TameV v') tau l .>>. (extendWildVars [(wv, tau)] $ transComp e2)
 
 transComp (C.TakeE tau l) =
     takeC tau l

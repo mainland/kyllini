@@ -568,14 +568,12 @@ inferExp (ReturnE _ e l) = do
     a = "a"
     b = "b"
 
-inferExp (BindE bv e1 e2 _) = do
+inferExp (BindE wv tau e1 e2 _) = do
     (alphas, tau', s,  a,  b) <- withFvContext e1 $
                                  inferExp e1 >>= checkPureishSTC
-    case bv of
-      WildV       -> return ()
-      BindV _ tau -> checkTypeEquality tau' tau
+    checkTypeEquality tau' tau
     withFvContext e2 $
-        extendBindVars [bv] $ do
+        extendWildVars [(wv, tau)] $ do
         tau_e2              <- inferExp e2
         (_, omega, _, _, _) <- checkPureishST tau_e2
         checkTypeEquality tau_e2 (ST alphas omega s a b noLoc)
@@ -648,14 +646,13 @@ inferComp comp =
             void $ checkST tau
         return tau
 
-    inferBind step (BindC _ bv _ : k) tau0 = do
+    inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $
                              appSTScope tau0 >>= checkSTC
-        case bv of
-          WildV       -> return ()
-          BindV _ tau -> withFvContext step $ checkTypeEquality tau' tau
+        withFvContext step $
+            checkTypeEquality tau' tau
         withFvContext (Comp k) $
-            extendBindVars [bv] $ do
+            extendWildVars [(wv, tau)] $ do
             tau2             <- inferSteps k >>= appSTScope
             (omega, _, _, _) <- checkST tau2
             checkTypeEquality tau2 (stT omega s a b)

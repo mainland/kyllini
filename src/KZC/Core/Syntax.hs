@@ -14,6 +14,7 @@
 
 module KZC.Core.Syntax (
     Var(..),
+    WildVar(..),
     Field(..),
     Struct(..),
     TyVar(..),
@@ -34,8 +35,6 @@ module KZC.Core.Syntax (
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
-
-    BindVar(..),
 
     Unop(..),
     Binop(..),
@@ -90,6 +89,10 @@ instance Named Var where
     namedSymbol (Var n) = namedSymbol n
 
     mapName f (Var n) = Var (f n)
+
+data WildVar = WildV
+             | TameV Var
+  deriving (Eq, Ord, Read, Show)
 
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)
@@ -200,7 +203,7 @@ data Exp = ConstE Const !SrcLoc
          | ErrorE Type String !SrcLoc
          -- Computations
          | ReturnE InlineAnn Exp !SrcLoc
-         | BindE BindVar Exp Exp !SrcLoc
+         | BindE WildVar Type Exp Exp !SrcLoc
          | TakeE Type !SrcLoc
          | TakesE Int Type !SrcLoc
          | EmitE Exp !SrcLoc
@@ -210,7 +213,7 @@ data Exp = ConstE Const !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Stm e = ReturnS InlineAnn e !SrcLoc
-           | BindS BindVar e !SrcLoc
+           | BindS WildVar Type e !SrcLoc
            | ExpS e !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -233,10 +236,6 @@ data VectAnn = AutoVect
              | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
                                    -- disallow mitigations up
              | UpTo  Bool Int Int
-  deriving (Eq, Ord, Read, Show)
-
-data BindVar = BindV Var Type
-             | WildV
   deriving (Eq, Ord, Read, Show)
 
 data Unop = Lnot
@@ -542,9 +541,9 @@ instance Pretty PipelineAnn where
     ppr _        = text ">>>"
 
 expToStms :: Exp -> [Stm Exp]
-expToStms (ReturnE ann e l)  = [ReturnS ann e l]
-expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
-expToStms e                  = [ExpS e (srclocOf e)]
+expToStms (ReturnE ann e l)      = [ReturnS ann e l]
+expToStms (BindE wv tau e1 e2 l) = BindS wv tau e1 l : expToStms e2
+expToStms e                      = [ExpS e (srclocOf e)]
 
 pprBody :: Exp -> Doc
 pprBody e =
@@ -557,12 +556,12 @@ instance Pretty e => Pretty (Stm e) where
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
 
-    pprPrec _ (BindS (BindV v tau) e _) =
+    pprPrec _ (BindS WildV _ e _) =
+        ppr e
+
+    pprPrec _ (BindS (TameV v) tau e _) =
         parens (ppr v <+> colon <+> ppr tau) <+>
         text "<-" <+> align (ppr e)
-
-    pprPrec _ (BindS WildV e _) =
-        ppr e
 
     pprPrec p (ExpS e _) =
         pprPrec p e
@@ -607,9 +606,9 @@ pprFunParams ivs vbs =
     pprArg (v, tau) =
         parens $ ppr v <+> text ":" <+> ppr tau
 
-instance Pretty BindVar where
-    ppr (BindV v tau) = parens $ ppr v <+> colon <+> ppr tau
-    ppr WildV         = text "_"
+instance Pretty WildVar where
+    ppr WildV     = text "_"
+    ppr (TameV v) = ppr v
 
 instance Pretty Unop where
     ppr Lnot          = text "not" <> space
@@ -871,6 +870,10 @@ instance Fvs Omega TyVar where
  -
  ------------------------------------------------------------------------------}
 
+instance Binders WildVar Var where
+    binders WildV     = mempty
+    binders (TameV v) = singleton v
+
 instance Fvs Decl Var where
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
@@ -904,17 +907,13 @@ instance Fvs Exp Var where
     fvs (PrintE _ es _)         = fvs es
     fvs (ErrorE {})             = mempty
     fvs (ReturnE _ e _)         = fvs e
-    fvs (BindE bv e1 e2 _)      = fvs e1 <> (fvs e2 <\\> binders bv)
+    fvs (BindE wv _ e1 e2 _)    = fvs e1 <> (fvs e2 <\\> binders wv)
     fvs (TakeE {})              = mempty
     fvs (TakesE {})             = mempty
     fvs (EmitE e _)             = fvs e
     fvs (EmitsE e _)            = fvs e
     fvs (RepeatE _ e _)         = fvs e
     fvs (ParE _ _ e1 e2 _)      = fvs e1 <> fvs e2
-
-instance Binders BindVar Var where
-    binders WildV       = mempty
-    binders (BindV v _) = singleton v
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs es = foldMap fvs es
@@ -924,6 +923,10 @@ instance Fvs Exp v => Fvs [Exp] v where
  - All variables
  -
  ------------------------------------------------------------------------------}
+
+instance HasVars WildVar Var where
+    allVars WildV     = mempty
+    allVars (TameV v) = singleton v
 
 instance HasVars Decl Var where
     allVars (LetD v _ e _)           = singleton v <> allVars e
@@ -951,17 +954,13 @@ instance HasVars Exp Var where
     allVars (PrintE _ es _)         = allVars es
     allVars (ErrorE {})             = mempty
     allVars (ReturnE _ e _)         = allVars e
-    allVars (BindE bv e1 e2 _)      = allVars bv <> allVars e1 <> allVars e2
+    allVars (BindE wv _ e1 e2 _)    = allVars wv <> allVars e1 <> allVars e2
     allVars (TakeE {})              = mempty
     allVars (TakesE {})             = mempty
     allVars (EmitE e _)             = allVars e
     allVars (EmitsE e _)            = allVars e
     allVars (RepeatE _ e _)         = allVars e
     allVars (ParE _ _ e1 e2 _)      = allVars e1 <> allVars e2
-
-instance HasVars BindVar Var where
-    allVars WildV       = mempty
-    allVars (BindV v _) = singleton v
 
 {------------------------------------------------------------------------------
  -
@@ -1033,10 +1032,6 @@ instance Subst Iota IVar Iota where
         (theta, _) <- ask
         return $ fromMaybe iota (Map.lookup iv theta)
 
-instance Subst Iota IVar BindVar where
-    substM WildV         = pure WildV
-    substM (BindV v tau) = BindV v <$> substM tau
-
 instance Subst Iota IVar Exp where
     substM e@(ConstE {}) =
         return e
@@ -1093,8 +1088,8 @@ instance Subst Iota IVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) =
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) =
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
     substM (TakeE tau l) =
         TakeE <$> substM tau <*> pure l
@@ -1162,10 +1157,6 @@ instance Subst Type TyVar Type where
 instance Subst Type TyVar Omega where
     substM (C tau) = C <$> substM tau
     substM T       = pure T
-
-instance Subst Type TyVar BindVar where
-    substM WildV         = pure WildV
-    substM (BindV v tau) = BindV v <$> substM tau
 
 instance Subst Type TyVar Decl where
     substM (LetD v tau e l) =
@@ -1238,8 +1229,8 @@ instance Subst Type TyVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) =
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) =
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
     substM (TakeE tau l) =
         TakeE <$> substM tau <*> pure l
@@ -1332,10 +1323,10 @@ instance Subst Exp Var Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) = do
+    substM (BindE wv tau e1 e2 l) = do
         e1' <- substM e1
-        freshen bv $ \bv' -> do
-        BindE bv' e1' <$> substM e2 <*> pure l
+        freshen wv $ \wv' -> do
+        BindE wv' tau e1' <$> substM e2 <*> pure l
 
     substM e@(TakeE {}) =
         pure e
@@ -1456,13 +1447,9 @@ instance Freshen (Var, Type) Exp Var where
         freshen v $ \v' ->
         k (v', tau)
 
-instance Freshen BindVar Exp Var where
-    freshen WildV k =
-        k WildV
-
-    freshen (BindV v tau) k =
-        freshen v $ \v' ->
-        k $ BindV v' tau
+instance Freshen WildVar Exp Var where
+    freshen WildV     k = k WildV
+    freshen (TameV v) k = freshen v $ \v' -> k (TameV v')
 
 {------------------------------------------------------------------------------
  -

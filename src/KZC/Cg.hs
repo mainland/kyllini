@@ -803,14 +803,14 @@ cgExp (ErrorE _ s l) = do
 cgExp (ReturnE _ e _) =
     cgExp e
 
-cgExp (BindE bv@(BindV v _) e1 e2 _) = do
-    ce1 <- cgExp e1
-    extendBindVars [bv] $ do
-    extendVarCExps [(v, ce1)] $ do
+cgExp (BindE WildV _ e1 e2 _) = do
+    void $ cgExp e1
     cgExp e2
 
-cgExp (BindE WildV e1 e2 _) = do
-    void $ cgExp e1
+cgExp (BindE (TameV v) tau e1 e2 _) = do
+    ce1 <- cgExp e1
+    extendVars [(v, tau)] $ do
+    extendVarCExps [(v, ce1)] $ do
     cgExp e2
 
 -- | @'isConstE' e@ returns 'True' only if @e@ compiles to a constant C
@@ -1159,14 +1159,14 @@ cgComp takek emitk comp k =
     cgBind [] ce =
         return ce
 
-    cgBind (BindC l WildV _ : steps) _ =
+    cgBind (BindC l WildV _ _ : steps) _ =
         cgWithLabel l $ do
         cgSteps steps
 
-    cgBind (BindC l bv@(BindV v tau) _ : steps) ce =
+    cgBind (BindC l (TameV v) tau _ : steps) ce =
         cgWithLabel l $ do
         clow <- cgLower tau ce
-        extendBindVars [bv] $ do
+        extendVars [(v, tau)] $ do
         extendVarCExps [(v, clow)] $ do
         cgSteps steps
 

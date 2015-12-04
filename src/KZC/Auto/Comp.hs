@@ -99,14 +99,14 @@ returnC e a = do
     return $ Comp [ReturnC l e (srclocOf a)]
 
 bindC :: (Located a, MonadUnique m)
-      => BindVar -> a -> m LComp
-bindC bv a = do
+      => WildVar -> Type -> a -> m LComp
+bindC wv tau a = do
     l <- genLabel "bindk"
-    return $ Comp [BindC l bv (srclocOf a)]
+    return $ Comp [BindC l wv tau (srclocOf a)]
 
 bindC' :: Located a
-       => Label -> BindVar -> a -> LComp
-bindC' l bv a = Comp [BindC l bv (srclocOf a)]
+       => Label -> WildVar -> Type -> a -> LComp
+bindC' l wv tau a = Comp [BindC l wv tau (srclocOf a)]
 
 takeC :: (Located a, MonadUnique m)
       => Type -> a -> m LComp
@@ -195,9 +195,9 @@ mapCompLabels f comp =
         ml l $ \l' ->
         (:) <$> pure (ReturnC l' e s) <*> mlSteps steps
 
-    mlSteps (BindC l bv s : steps) =
+    mlSteps (BindC l wv tau s : steps) =
         ml l $ \l' ->
-        (:) <$> pure (BindC l' bv s) <*> mlSteps steps
+        (:) <$> pure (BindC l' wv tau s) <*> mlSteps steps
 
     mlSteps (TakeC l tau s : steps) =
         ml l $ \l' ->

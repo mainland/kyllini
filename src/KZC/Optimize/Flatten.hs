@@ -156,8 +156,8 @@ flattenSteps (step@(LetC _ decl _) : steps) =
     flattenLocalDecl decl $
     (:) <$> pure step <*> flattenSteps steps
 
-flattenSteps (step@(BindC _ bv _) : steps) =
-    extendBindVars [bv] $
+flattenSteps (step@(BindC _ wv tau _) : steps) =
+    extendWildVars [(wv, tau)] $
     (:) <$> pure step <*> flattenSteps steps
 
 flattenSteps (step : steps) =
@@ -274,7 +274,7 @@ flattenArg (v, e) k = do
         l1    <- genLabel "arg_return"
         l2    <- genLabel "arg_bind"
         steps <- k
-        return $ unComp $ Comp [ReturnC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst1 (v /-> varE v') (Comp steps)
+        return $ unComp $ Comp [ReturnC l1 e sloc, BindC l2 (TameV v') tau sloc] <> subst1 (v /-> varE v') (Comp steps)
 
     go tau (CallE f iotas es _) = do
         comp <- Comp <$> flattenCallC f iotas es
@@ -289,4 +289,4 @@ flattenArg (v, e) k = do
         l1    <- genLabel "arg_lift"
         l2    <- genLabel "arg_bind"
         steps <- k
-        return $ unComp $ Comp [LiftC l1 e sloc, BindC l2 (BindV v' tau) sloc] <> subst1 (v /-> varE v') (Comp steps)
+        return $ unComp $ Comp [LiftC l1 e sloc, BindC l2 (TameV v') tau sloc] <> subst1 (v /-> varE v') (Comp steps)

@@ -164,8 +164,8 @@ fuseSteps (step@(LetC _ decl _) : steps) =
     fuseLocalDecl decl $
     (:) <$> pure step <*> fuseSteps steps
 
-fuseSteps (step@(BindC _ bv _) : steps) =
-    extendBindVars [bv] $
+fuseSteps (step@(BindC _ wv tau _) : steps) =
+    extendWildVars [(wv, tau)] $
     (:) <$> pure step <*> fuseSteps steps
 
 fuseSteps (step : steps) =
@@ -490,12 +490,9 @@ relabelStep l (LiftC _ e s) k =
 relabelStep l (ReturnC _ e s) k =
     k $ ReturnC l e s
 
-relabelStep l (BindC _ bv@WildV s) k =
-    k $ BindC l bv s
-
-relabelStep l (BindC _ bv@(BindV v tau) s) k =
-    extendVars [(v, tau)] $
-    k $ BindC l bv s
+relabelStep l (BindC _ wv tau s) k =
+    extendWildVars [(wv, tau)] $
+    k $ BindC l wv tau s
 
 relabelStep l (TakeC _ tau s) k =
     k $ TakeC l tau s

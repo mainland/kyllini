@@ -15,7 +15,7 @@ instance Located (Step a) where
   locOf (ForC _ _ _ _ _ _ _ l) = locOf l
   locOf (LiftC _ _ l) = locOf l
   locOf (ReturnC _ _ l) = locOf l
-  locOf (BindC _ _ l) = locOf l
+  locOf (BindC _ _ _ l) = locOf l
   locOf (TakeC _ _ l) = locOf l
   locOf (TakesC _ _ _ l) = locOf l
   locOf (EmitC _ _ l) = locOf l
@@ -45,4 +45,4 @@ instance Located Exp where
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
-  locOf (BindE _ _ _ l) = locOf l
+  locOf (BindE _ _ _ _ l) = locOf l

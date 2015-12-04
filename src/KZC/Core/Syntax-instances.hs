@@ -33,7 +33,7 @@ instance Located Exp where
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
-  locOf (BindE _ _ _ l) = locOf l
+  locOf (BindE _ _ _ _ l) = locOf l
   locOf (TakeE _ l) = locOf l
   locOf (TakesE _ _ l) = locOf l
   locOf (EmitE _ l) = locOf l
