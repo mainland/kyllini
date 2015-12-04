@@ -576,21 +576,13 @@ pprFunParams ivs vbs =
     go ivs vbs
   where
     go :: [IVar] -> [(Var, Type)] -> Doc
-    go [] [] =
-        empty
-
-    go [] [vb] =
-        pprArg vb
-
-    go [] vbs =
-        sep (map pprArg vbs)
-
-    go iotas vbs =
-        sep (map ppr iotas ++ map pprArg vbs)
+    go []    []   = empty
+    go []    [vb] = pprArg vb
+    go []    vbs  = sep (map pprArg vbs)
+    go iotas vbs  = sep (map ppr iotas ++ map pprArg vbs)
 
     pprArg :: (Var, Type) -> Doc
-    pprArg (v, tau) =
-        parens $ ppr v <+> text ":" <+> ppr tau
+    pprArg (v, tau) = parens $ ppr v <+> text ":" <+> ppr tau
 
 instance IsLabel l => Pretty (Step l) where
     ppr step = ppr (Comp [step])
