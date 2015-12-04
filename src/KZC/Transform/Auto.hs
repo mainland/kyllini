@@ -128,6 +128,19 @@ transDecl decl@(C.LetD v tau e l) k
     extendVars [(v,tau)] $ do
     k $ LetCompD (mkBoundVar v') tau c l
 
+transDecl (C.LetRefD v tau Nothing l) k =
+    ensureUnique v $ \v' ->
+    extendVars [(v, refT tau)] $
+    k $ LetRefD (mkBoundVar v') tau Nothing l
+
+transDecl decl@(C.LetRefD v tau (Just e) l) k =
+    ensureUnique v $ \v' -> do
+    e' <- withSummaryContext decl $
+          inLocalScope $
+          transExp e
+    extendVars [(v, refT tau)] $ do
+    k $ LetRefD (mkBoundVar v') tau (Just e') l
+
 transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
   | isPureishT tau_ret = ensureUnique f $ \f' -> do
     extendVars [(f, tau)] $ do
@@ -159,19 +172,6 @@ transDecl (C.LetExtFunD f iotas vbs tau_ret l) k =
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-transDecl (C.LetRefD v tau Nothing l) k =
-    ensureUnique v $ \v' ->
-    extendVars [(v, refT tau)] $
-    k $ LetRefD (mkBoundVar v') tau Nothing l
-
-transDecl decl@(C.LetRefD v tau (Just e) l) k =
-    ensureUnique v $ \v' -> do
-    e' <- withSummaryContext decl $
-          inLocalScope $
-          transExp e
-    extendVars [(v, refT tau)] $ do
-    k $ LetRefD (mkBoundVar v') tau (Just e') l
 
 transDecl (C.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $

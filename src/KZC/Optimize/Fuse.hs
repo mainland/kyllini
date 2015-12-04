@@ -119,6 +119,9 @@ fuseDecl :: (MonadPlus m, MonadTc m) => LDecl -> m a -> m a
 fuseDecl (LetD v tau _ _) k =
     extendVars [(bVar v, tau)] k
 
+fuseDecl (LetRefD v tau _ _) k =
+    extendVars [(bVar v, refT tau)] k
+
 fuseDecl (LetFunD f iotas vbs tau_ret _ l) k =
     extendVars [(bVar f, tau)] k
   where
@@ -130,9 +133,6 @@ fuseDecl (LetExtFunD f iotas vbs tau_ret l) k =
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-fuseDecl (LetRefD v tau _ _) k =
-    extendVars [(bVar v, refT tau)] k
 
 fuseDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] k

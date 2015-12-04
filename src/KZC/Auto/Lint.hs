@@ -150,6 +150,17 @@ checkDecl decl@(LetD v tau e _) k = do
           faildoc $ text "Value" <+> ppr v <+> text "is not pureish but is in a let!"
     extendVars [(bVar v, tau)] k
 
+checkDecl decl@(LetRefD v tau Nothing _) k = do
+    withSummaryContext decl $ checkKind tau TauK
+    extendVars [(bVar v, refT tau)] k
+
+checkDecl decl@(LetRefD v tau (Just e) _) k = do
+    withSummaryContext decl $
+        inLocalScope $ do
+        checkKind tau TauK
+        checkExp e tau
+    extendVars [(bVar v, refT tau)] k
+
 checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     withSummaryContext decl $
         checkKind tau PhiK
@@ -175,17 +186,6 @@ checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-checkDecl decl@(LetRefD v tau Nothing _) k = do
-    withSummaryContext decl $ checkKind tau TauK
-    extendVars [(bVar v, refT tau)] k
-
-checkDecl decl@(LetRefD v tau (Just e) _) k = do
-    withSummaryContext decl $
-        inLocalScope $ do
-        checkKind tau TauK
-        checkExp e tau
-    extendVars [(bVar v, refT tau)] k
 
 checkDecl decl@(LetStructD s flds l) k = do
     withSummaryContext decl $ do

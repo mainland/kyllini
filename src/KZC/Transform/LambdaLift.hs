@@ -65,6 +65,14 @@ liftDecl decl@(LetD v tau e l) k = do
       else appendTopDecl $ LetFunD v' [] fvbs tau e' l
     k Nothing
 
+liftDecl decl@(LetRefD v tau maybe_e l) k = do
+    maybe_e' <-  withSummaryContext decl $
+                 case maybe_e of
+                   Nothing -> return Nothing
+                   Just e -> Just <$> inLocalScope (liftExp e)
+    extendVars [(v, refT tau)] $ do
+    withDecl (LetRefD v tau maybe_e' l) k
+
 liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
     f'   <- uniquify f
@@ -91,14 +99,6 @@ liftDecl (LetExtFunD f iotas vbs tau_ret l) k =
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-liftDecl decl@(LetRefD v tau maybe_e l) k = do
-    maybe_e' <-  withSummaryContext decl $
-                 case maybe_e of
-                   Nothing -> return Nothing
-                   Just e -> Just <$> inLocalScope (liftExp e)
-    extendVars [(v, refT tau)] $ do
-    withDecl (LetRefD v tau maybe_e' l) k
 
 liftDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $ do

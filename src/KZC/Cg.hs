@@ -286,6 +286,19 @@ cgDecl decl@(LetD v tau e _) k = do
     extendVarCExps [(bVar v, cv)] $ do
     k
 
+cgDecl decl@(LetRefD v tau maybe_e _) k = do
+    cve <- withSummaryContext decl $ do
+           isTopLevel <- isInTopScope
+           cgBinder isTopLevel (bVar v) tau
+    withSummaryContext decl $
+        case maybe_e of
+          Nothing -> cgDefaultValue tau cve
+          Just e  -> do ce <- inLocalScope $ cgExp e
+                        cgAssign tau cve ce
+    extendVars [(bVar v, refT tau)] $ do
+    extendVarCExps [(bVar v, cve)] $ do
+    k
+
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     cf <- cvar f
     extendVars [(bVar f, tau)] $ do
@@ -343,19 +356,6 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
 
     cf :: C.Id
     cf = C.Id ("__kz_" ++ namedString f) l
-
-cgDecl decl@(LetRefD v tau maybe_e _) k = do
-    cve <- withSummaryContext decl $ do
-           isTopLevel <- isInTopScope
-           cgBinder isTopLevel (bVar v) tau
-    withSummaryContext decl $
-        case maybe_e of
-          Nothing -> cgDefaultValue tau cve
-          Just e  -> do ce <- inLocalScope $ cgExp e
-                        cgAssign tau cve ce
-    extendVars [(bVar v, refT tau)] $ do
-    extendVarCExps [(bVar v, cve)] $ do
-    k
 
 cgDecl decl@(LetStructD s flds l) k = do
     withSummaryContext decl $ do

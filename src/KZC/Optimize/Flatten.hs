@@ -107,6 +107,9 @@ flattenDecl :: LDecl -> Fl a -> Fl a
 flattenDecl (LetD v tau _ _) k =
     extendVars [(bVar v, tau)] k
 
+flattenDecl (LetRefD v tau _ _) k =
+    extendVars [(bVar v, refT tau)] k
+
 flattenDecl (LetFunD f iotas vbs tau_ret _ l) k =
     extendVars [(bVar f, tau)] k
   where
@@ -118,9 +121,6 @@ flattenDecl (LetExtFunD f iotas vbs tau_ret l) k =
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-flattenDecl (LetRefD v tau _ _) k =
-    extendVars [(bVar v, refT tau)] k
 
 flattenDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] k

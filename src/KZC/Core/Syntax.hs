@@ -172,9 +172,9 @@ data Const = UnitC
   deriving (Eq, Ord, Read, Show)
 
 data Decl = LetD Var Type Exp !SrcLoc
+          | LetRefD Var Type (Maybe Exp) !SrcLoc
           | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
           | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
-          | LetRefD Var Type (Maybe Exp) !SrcLoc
           | LetStructD Struct [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -319,9 +319,9 @@ isComplexStruct _           = False
 
 instance Summary Decl where
     summary (LetD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)  = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
     summary (LetStructD s _ _)     = text "definition of" <+> ppr s
 
 instance Summary Exp where
@@ -396,6 +396,16 @@ instance Pretty Decl where
       where
         lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
 
+    pprPrec p (LetRefD v tau Nothing _) =
+        parensIf (p > appPrec) $
+        text "letref" <+> ppr v <+> text ":" <+> ppr tau
+
+    pprPrec p (LetRefD v tau (Just e) _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr e))
+      where
+        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
+
     pprPrec p (LetFunD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
         text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
@@ -406,16 +416,6 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
-
-    pprPrec p (LetRefD v tau Nothing _) =
-        parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau
-
-    pprPrec p (LetRefD v tau (Just e) _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
@@ -877,16 +877,16 @@ instance Binders WildVar Var where
 
 instance Fvs Decl Var where
     fvs (LetD v _ e _)          = delete v (fvs e)
+    fvs (LetRefD v _ e _)       = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs (LetExtFunD {})         = mempty
-    fvs (LetRefD v _ e _)       = delete v (fvs e)
     fvs (LetStructD {})         = mempty
 
 instance Binders Decl Var where
     binders (LetD v _ _ _)         = singleton v
+    binders (LetRefD v _ _ _)      = singleton v
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
-    binders (LetRefD v _ _ _)      = singleton v
     binders (LetStructD {})        = mempty
 
 instance Fvs Exp Var where
@@ -931,9 +931,9 @@ instance HasVars WildVar Var where
 
 instance HasVars Decl Var where
     allVars (LetD v _ e _)           = singleton v <> allVars e
+    allVars (LetRefD v _ e _)        = singleton v <> allVars e
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
-    allVars (LetRefD v _ e _)        = singleton v <> allVars e
     allVars (LetStructD {})          = mempty
 
 instance HasVars Exp Var where
@@ -1163,14 +1163,14 @@ instance Subst Type TyVar Decl where
     substM (LetD v tau e l) =
         LetD v <$> substM tau <*> substM e <*> pure l
 
+    substM (LetRefD v tau e l) =
+        LetRefD v <$> substM tau <*> substM e <*> pure l
+
     substM (LetFunD v ivs vbs tau e l) =
         LetFunD v ivs <$> substM vbs <*> substM tau <*> substM e <*> pure l
 
     substM (LetExtFunD v ivs vbs tau l) =
         LetExtFunD v ivs <$> substM vbs <*> substM tau <*> pure l
-
-    substM (LetRefD v tau e l) =
-        LetRefD v <$> substM tau <*> substM e <*> pure l
 
     substM decl@(LetStructD {}) =
         pure decl
@@ -1368,6 +1368,10 @@ instance Freshen Decl Iota IVar where
         decl' <- LetD v <$> substM tau <*> substM e <*> pure l
         k decl'
 
+    freshen (LetRefD v tau e l) k = do
+        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen ibs $ \ibs' -> do
         decl' <- LetFunD v ibs' <$> substM vbs <*> substM tau <*> substM e <*> pure l
@@ -1376,10 +1380,6 @@ instance Freshen Decl Iota IVar where
     freshen (LetExtFunD v ibs vbs tau l) k =
         freshen ibs $ \ibs' -> do
         decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
-        k decl'
-
-    freshen (LetRefD v tau e l) k = do
-        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
         k decl'
 
     freshen decl@(LetStructD {}) k =
@@ -1413,6 +1413,11 @@ instance Freshen Decl Exp Var where
         freshen v $ \v' -> do
         k (LetD v' tau e' l)
 
+    freshen (LetRefD v tau e l) k = do
+        e' <- substM e
+        freshen v $ \v' -> do
+        k (LetRefD v' tau e' l)
+
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen v   $ \v'   ->
         freshen vbs $ \vbs' -> do
@@ -1424,11 +1429,6 @@ instance Freshen Decl Exp Var where
         freshen vbs $ \vbs' -> do
         decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
         k decl'
-
-    freshen (LetRefD v tau e l) k = do
-        e' <- substM e
-        freshen v $ \v' -> do
-        k (LetRefD v' tau e' l)
 
     freshen decl@(LetStructD {}) k =
         k decl
