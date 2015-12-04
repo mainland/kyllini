@@ -164,15 +164,11 @@ flattenSteps (step : steps) =
     (++) <$> flattenStep step <*> flattenSteps steps
 
 flattenStep :: LStep -> Fl [LStep]
-flattenStep (VarC l' v _) = do
-    (step:steps) <- flattenVarC v
-    l            <- stepLabel step
-    return $ setStepLabel l' step : subst1 (l /-> l') steps
+flattenStep (VarC l v _) =
+    flattenVarC v >>= rewriteStepsLabel l
 
-flattenStep (CallC l' f iotas es _) = do
-    (step:steps) <- flattenCallC f iotas es
-    l            <- stepLabel step
-    return $ setStepLabel l' step : subst1 (l /-> l') steps
+flattenStep (CallC l f iotas es _) =
+    flattenCallC f iotas es >>= rewriteStepsLabel l
 
 flattenStep (IfC l e c1 c2 s) = do
     step <- IfC l e <$> flattenComp c1 <*> flattenComp c2 <*> pure s

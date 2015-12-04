@@ -51,6 +51,7 @@ module KZC.Auto.Syntax (
 #if !defined(ONLY_TYPEDEFS)
     compLabel,
     setCompLabel,
+    rewriteStepsLabel,
     compUsedLabels,
     stepLabel,
     setStepLabel,
@@ -286,6 +287,16 @@ compLabel (Comp (step:_)) = stepLabel step
 setCompLabel :: l -> Comp l -> Comp l
 setCompLabel _ comp@(Comp [])      = comp
 setCompLabel l (Comp (step:steps)) = Comp (setStepLabel l step:steps)
+
+-- | Rewrite the label of the first step in a computation and ensure that any
+-- references to the old label are rewritten to refer to the new label.
+rewriteStepsLabel :: Monad m => Label -> [LStep] -> m [LStep]
+rewriteStepsLabel _ steps@[] =
+    return steps
+
+rewriteStepsLabel l_new (step:steps) = do
+    l_old <- stepLabel step
+    return $ subst1 (l_old /-> l_new) (step:steps)
 
 compUsedLabels :: forall l . Ord l => Comp l -> Set l
 compUsedLabels comp =
