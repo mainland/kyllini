@@ -38,11 +38,11 @@ data CExp = CVoid
           | CExp C.Exp       -- ^ C expression
           | CPtr CExp        -- ^ A pointer.
           | CIdx Type CExp CExp
-            -- ^ An array element. The data constructors arguments are the type
+            -- ^ An array element. The data constructor's arguments are the type
             -- of the array's elements, the array, and the index.
           | CSlice Type CExp CExp Int
-            -- ^ An array slice. The data constructors arguments are the type of
-            -- the array's elements, the array, the offset, the length of the
+            -- ^ An array slice. The data constructor's arguments are the type
+            -- of the array's elements, the array, the offset, the length of the
             -- slice.
           | CComp Var [IVar] [(Var, Type)] Type LComp
             -- ^ A computation, which may take arguments.
