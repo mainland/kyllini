@@ -36,10 +36,10 @@ import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Cg
 import KZC.Check
+import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
 import KZC.Label
-import qualified KZC.Lint as Lint
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Flatten
@@ -147,7 +147,7 @@ runPipeline filepath =
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            Lint.withTcEnv (Lint.runTc (Lint.checkDecls decls))
+            C.withTcEnv (C.runTc (C.checkDecls decls))
         return decls
 
     lintAuto :: IsLabel l

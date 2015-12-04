@@ -33,10 +33,10 @@ import Text.PrettyPrint.Mainland
 import KZC.Auto.Comp
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
+import KZC.Core.Lint
 import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
-import KZC.Lint
 import KZC.Monad
 import KZC.Name
 import KZC.Summary

@@ -85,11 +85,11 @@ import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Lint (Tc, liftTc)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
 import KZC.Label
-import KZC.Lint (Tc, liftTc)
 import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Platform

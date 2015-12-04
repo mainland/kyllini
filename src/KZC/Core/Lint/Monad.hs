@@ -6,12 +6,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Lint.Monad
+-- Module      :  KZC.Core.Lint.Monad
 -- Copyright   :  (c) 2014-2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Lint.Monad (
+module KZC.Core.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
 

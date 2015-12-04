@@ -3,13 +3,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Lint
+-- Module      :  KZC.Core.Lint
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Lint (
-    module KZC.Lint.Monad,
+module KZC.Core.Lint (
+    module KZC.Core.Lint.Monad,
 
     Tc(..),
     runTc,
@@ -74,11 +74,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
+import KZC.Core.Lint.Monad
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
-import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Summary
 import KZC.Trace

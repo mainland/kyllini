@@ -63,6 +63,8 @@ SOURCE = \
 	KZC/Check/Monad.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
+	KZC/Core/Lint.hs \
+	KZC/Core/Lint/Monad.hs \
 	KZC/Core/Smart.hs \
 	KZC/Core/Syntax.hs \
 	KZC/Derive.hs \
@@ -72,8 +74,6 @@ SOURCE = \
 	KZC/Monad.hs \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
-	KZC/Lint.hs \
-	KZC/Lint/Monad.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Flatten.hs \
 	KZC/Optimize/Fuse.hs \

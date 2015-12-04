@@ -32,11 +32,11 @@ import Data.Monoid
 import Data.Traversable (traverse)
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
-import KZC.Lint
 import KZC.Monad
 import KZC.Trace
 import KZC.Uniq

@@ -10,7 +10,7 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Lint (
-    module KZC.Lint.Monad,
+    module KZC.Core.Lint.Monad,
 
     Tc(..),
     runTc,
@@ -65,43 +65,43 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
+import KZC.Core.Lint (Tc(..),
+                      runTc,
+                      liftTc,
+                      withTcEnv,
+
+                      inferKind,
+                      checkKind,
+
+                      checkCast,
+                      checkBitcast,
+                      typeBitWidth,
+
+                      checkTypeEquality,
+
+                      checkEqT,
+                      checkOrdT,
+                      checkBoolT,
+                      checkBitT,
+                      checkIntT,
+                      checkNumT,
+                      checkArrT,
+                      checkStructT,
+                      checkStructFieldT,
+                      checkRefT,
+                      checkFunT,
+
+                      absSTScope,
+                      appSTScope,
+                      checkST,
+                      checkSTC,
+                      checkSTCUnit,
+                      checkPureishST,
+                      checkPureishSTC,
+                      checkPureishSTCUnit)
+import KZC.Core.Lint.Monad
 import KZC.Error
 import KZC.Label
-import KZC.Lint (Tc(..),
-                 runTc,
-                 liftTc,
-                 withTcEnv,
-
-                 inferKind,
-                 checkKind,
-
-                 checkCast,
-                 checkBitcast,
-                 typeBitWidth,
-
-                 checkTypeEquality,
-
-                 checkEqT,
-                 checkOrdT,
-                 checkBoolT,
-                 checkBitT,
-                 checkIntT,
-                 checkNumT,
-                 checkArrT,
-                 checkStructT,
-                 checkStructFieldT,
-                 checkRefT,
-                 checkFunT,
-
-                 absSTScope,
-                 appSTScope,
-                 checkST,
-                 checkSTC,
-                 checkSTCUnit,
-                 checkPureishST,
-                 checkPureishSTC,
-                 checkPureishSTCUnit)
-import KZC.Lint.Monad
 import KZC.Summary
 import KZC.Vars
 
