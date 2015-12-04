@@ -8,6 +8,7 @@
 module KZC.Auto.Smart (
     module KZC.Auto.Smart,
     isCompT,
+    isPureT,
     isPureishT
   ) where
 
@@ -17,6 +18,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
 import KZC.Core.Smart (isCompT,
+                       isPureT,
                        isPureishT)
 import KZC.Name
 import KZC.Platform

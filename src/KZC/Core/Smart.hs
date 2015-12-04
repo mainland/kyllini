@@ -131,6 +131,11 @@ isCompT :: Type -> Bool
 isCompT (ST {}) = True
 isCompT _       = False
 
+-- | Return 'True' if the type is pure.
+isPureT :: Type -> Bool
+isPureT (ST {}) = False
+isPureT _       = True
+
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
 -- otherwise. A pureish computation may use references, but it may not take or
 -- emit, so it has type @forall s a b . ST omega s a b@.
