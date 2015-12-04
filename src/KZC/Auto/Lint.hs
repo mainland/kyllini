@@ -10,6 +10,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Lint (
+    module KZC.Lint.Monad,
+
     Tc(..),
     runTc,
     liftTc,

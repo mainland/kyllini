@@ -33,7 +33,6 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint.Monad
 import KZC.Monad.SEFKT
 import KZC.Trace
 import KZC.Uniq

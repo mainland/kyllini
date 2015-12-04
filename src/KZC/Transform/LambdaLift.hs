@@ -15,7 +15,7 @@ import qualified Data.Set as Set
 
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Lint.Monad
+import KZC.Lint
 import KZC.Name
 import KZC.Summary
 import KZC.Transform.LambdaLift.Monad

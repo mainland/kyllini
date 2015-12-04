@@ -28,7 +28,6 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Name
 import KZC.Trace

@@ -37,7 +37,6 @@ import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
 import KZC.Lint
-import KZC.Lint.Monad
 import KZC.Monad
 import KZC.Name
 import KZC.Summary
