@@ -11,6 +11,11 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Cg.CExp (
+    TakeK,
+    EmitK,
+    CompC,
+    FunCompC,
+
     CExp(..),
 
     cgBitArrayRead
@@ -25,9 +30,45 @@ import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
+import KZC.Label
+import {-# SOURCE #-} KZC.Cg.Monad
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
+
+-- | Generate code to take the specified number of elements of the specified
+-- type, jumping to the specified label when the take is complete. A 'CExp'
+-- representing the taken value(s) is returned. We assume that the continuation
+-- labels the code that will be generated immediately after the take.
+type TakeK l = Int -> Type -> l -> Cg CExp
+
+-- | Generate code to emit the specified value at the specified type jumping to
+-- the specified label when the take is complete. We assume that the
+-- continuation labels the code that will be generated immediately after the
+-- emit.
+type EmitK l = Type -> CExp -> l -> Cg ()
+
+-- | A computation compiler, which produces a compiled computation when given
+-- the appropriate arguments.
+type CompC =  TakeK Label -- Code generator for take
+           -> EmitK Label -- Code generator for emit
+           -> Label       -- Label of our continuation
+           -> Cg CExp     -- Value returned by the computation.
+
+instance Show CompC where
+    show _ = "<comp>"
+
+-- | A computation function compiler, which produces a compiled call to a
+-- computation function when given the appropriate arguments.
+type FunCompC =  [Iota]      -- Array length arguments
+              -> [Exp]       -- Function arguments
+              -> TakeK Label -- Code generator for take
+              -> EmitK Label -- Code generator for emit
+              -> Label       -- Label of our continuation
+              -> Cg CExp     -- Value returned by the computation.
+
+instance Show FunCompC where
+    show _ = "<funcomp>"
 
 -- | The type of "compiled" expressions.
 data CExp = CVoid
@@ -44,21 +85,24 @@ data CExp = CVoid
             -- ^ An array slice. The data constructor's arguments are the type
             -- of the array's elements, the array, the offset, the length of the
             -- slice.
-          | CComp Var [IVar] [(Var, Type)] Type LComp
-            -- ^ A computation, which may take arguments.
+          | CComp CompC
+            -- ^ A computation.
+          | CFunComp FunCompC
+            -- ^ A computation function.
   deriving (Show)
 
 instance Located CExp where
-    locOf CVoid                = NoLoc
-    locOf (CBool {})           = NoLoc
-    locOf (CBit {})            = NoLoc
-    locOf (CInt {})            = NoLoc
-    locOf (CFloat {})          = NoLoc
-    locOf (CExp ce)            = locOf ce
-    locOf (CPtr ce)            = locOf ce
-    locOf (CIdx _ _ cidx)      = locOf cidx
-    locOf (CSlice _ _ cidx _)  = locOf cidx
-    locOf (CComp _ _ _ _ comp) = locOf comp
+    locOf CVoid               = NoLoc
+    locOf (CBool {})          = NoLoc
+    locOf (CBit {})           = NoLoc
+    locOf (CInt {})           = NoLoc
+    locOf (CFloat {})         = NoLoc
+    locOf (CExp ce)           = locOf ce
+    locOf (CPtr ce)           = locOf ce
+    locOf (CIdx _ _ cidx)     = locOf cidx
+    locOf (CSlice _ _ cidx _) = locOf cidx
+    locOf (CComp {})          = NoLoc
+    locOf (CFunComp {})       = NoLoc
 
 instance IfThenElse CExp CExp where
     ifThenElse (CBool True)  t _ = t
@@ -285,21 +329,22 @@ instance ToExp CExp where
     toExp (CIdx tau carr cidx)       = \_ -> lowerCIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerCSlice tau carr cidx len
     toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
+    toExp (CFunComp {})              = error "toExp: cannot convert CFunComp to a C expression"
 
 instance Pretty CExp where
-    ppr CVoid                      = text "<void>"
-    ppr (CBool True)               = text "true"
-    ppr (CBool False)              = text "false"
-    ppr (CBit True)                = text "'1"
-    ppr (CBit False)               = text "'0"
-    ppr (CInt i)                   = ppr i
-    ppr (CFloat f)                 = ppr f
-    ppr (CExp e)                   = ppr e
-    ppr (CPtr e)                   = ppr [cexp|*$e|]
-    ppr (CIdx _ carr cidx)         = ppr carr <> brackets (ppr cidx)
-    ppr (CSlice _ carr cidx len)   = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
-    ppr (CComp v []  []  tau comp) = ppr (LetCompD (mkBoundVar v) tau comp noLoc)
-    ppr (CComp f ibs vbs tau comp) = ppr (LetFunCompD (mkBoundVar f) ibs vbs tau comp noLoc)
+    ppr CVoid                    = text "<void>"
+    ppr (CBool True)             = text "true"
+    ppr (CBool False)            = text "false"
+    ppr (CBit True)              = text "'1"
+    ppr (CBit False)             = text "'0"
+    ppr (CInt i)                 = ppr i
+    ppr (CFloat f)               = ppr f
+    ppr (CExp e)                 = ppr e
+    ppr (CPtr e)                 = ppr [cexp|*$e|]
+    ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
+    ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CComp {})               = text "<comp>"
+    ppr (CFunComp {})            = text "<fun comp>"
 
 lowerCIdx :: Type -> CExp -> CExp -> C.Exp
 lowerCIdx (BitT _) carr cidx = cgBitArrayRead carr cidx

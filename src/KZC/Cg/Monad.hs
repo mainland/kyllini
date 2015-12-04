@@ -12,6 +12,7 @@
 
 module KZC.Cg.Monad (
     Cg,
+    CgEnv,
     evalCg,
 
     extend,
@@ -105,6 +106,9 @@ data CgEnv = CgEnv
     , ivarCExps  :: Map IVar CExp
     , tyvarTypes :: Map TyVar Type
     }
+
+instance Show CgEnv where
+    show _ = "<Env>"
 
 defaultCgEnv :: CgEnv
 defaultCgEnv = CgEnv

@@ -24,7 +24,6 @@ import Control.Monad (forM_,
                       when)
 import Data.Bits
 import Data.Loc
-import qualified Data.Map as Map
 import Data.Monoid (mempty)
 import Data.Ratio
 import Data.Set (Set)
@@ -51,7 +50,6 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
 import KZC.Trace
-import KZC.Vars
 
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
@@ -360,16 +358,75 @@ cgDecl decl@(LetStructD s flds l) k = do
 
 cgDecl (LetCompD v tau comp _) k =
     extendVars [(bVar v, tau)] $
-    extendVarCExps [(bVar v, CComp (bVar v) [] [] tau comp)] $
+    extendVarCExps [(bVar v, CComp compc)] $
     k
+  where
+    -- Compile a bound computation. This will be called in some future
+    -- context. It may be called multiple times, so we need to create a copy of
+    -- the computation with fresh labels before we compile it.
+    compc :: CompC
+    compc takek emitk k =
+        withInstantiatedTyVars tau $ do
+        comp' <- uniquifyCompLabels comp
+        useLabels (compUsedLabels comp')
+        cgComp takek emitk comp' k
 
-cgDecl (LetFunCompD f iotas vbs tau_ret comp l) k =
+cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
-    extendVarCExps [(bVar f, CComp (bVar f) iotas vbs tau_ret comp)] $
+    extendVarCExps [(bVar f, CFunComp funcompc)] $
     k
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
+
+    -- Compile a bound computation function given its arguments. This will be
+    -- called in some future context. It may be called multiple times, so we
+    -- need to create a copy of the body of the computation function with fresh
+    -- labels before we compile it.
+    funcompc :: FunCompC
+    funcompc iotas es takek emitk k =
+        withInstantiatedTyVars tau_ret $ do
+        comp'  <- uniquifyCompLabels comp
+        ciotas <- mapM cgIota iotas
+        ces    <- mapM cgArg es
+        extendIVars (ivs `zip` repeat IotaK) $ do
+        extendVars  vbs $ do
+        extendIVarCExps (ivs `zip` ciotas) $ do
+        extendVarCExps  (map fst vbs `zip` ces) $ do
+        useLabels (compUsedLabels comp')
+        cgComp takek emitk comp' k
+      where
+        cgArg :: Exp -> Cg CExp
+        cgArg e = withFvContext e $ do
+            tau <- inferExp e
+            go tau e
+          where
+            go :: Type -> Exp -> Cg CExp
+            go tau e | isPureT tau || isPureishT tau =
+                cgExp e
+
+            -- XXX We treat non-pureish calls as calls to computation
+            -- functions. We really should differentiate between the two types
+            -- of arguments to a funcomp.
+            go _ (CallE f iotas es s) = do
+                l <- genLabel "arg"
+                let cg' :: CompC
+                    cg' takek emitk k = cgComp takek emitk (Comp [CallC l f iotas es s]) k
+                return $ CComp cg'
+
+            go _ e =
+                cgExp e
+
+-- | Figure out the type substitution necessary for transforming the given type
+-- to the ST type of the current computational context. We need to do this when
+-- compiling a computation of computation function.
+withInstantiatedTyVars :: Type -> Cg a -> Cg a
+withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
+    ST _ _ s' a' b' _ <- appSTScope tau
+    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
+
+withInstantiatedTyVars _tau k =
+    k
 
 cgLocalDecl :: LocalDecl -> Cg a -> Cg a
 cgLocalDecl decl@(LetLD v tau e _) k = do
@@ -861,13 +918,19 @@ checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
-unCComp :: CExp -> Cg ([IVar], [(Var, Type)], LComp)
-unCComp (CComp _v ivs vbs _tau comp) = do
-    comp' <- uniquifyCompLabels comp
-    return (ivs, vbs, comp')
+unCComp :: CExp -> Cg CompC
+unCComp (CComp compc) =
+    return compc
 
 unCComp ce =
-    panicdoc $ nest 2 $ text "unCComp: not a Comp:" </> ppr ce
+    panicdoc $ nest 2 $ text "unCComp: not a CComp:" </> ppr ce
+
+unCFunComp :: CExp -> Cg FunCompC
+unCFunComp (CFunComp funcompc) =
+    return funcompc
+
+unCFunComp ce =
+    panicdoc $ nest 2 $ text "unCFunComp: not a CFunComp:" </> ppr ce
 
 -- | Return the C type appropriate for bit casting.
 cgBitcastType :: Type -> Cg C.Type
@@ -1113,18 +1176,6 @@ cgWithLabel lbl k = do
     l :: SrcLoc
     C.Id ident l = toIdent lbl noLoc
 
--- | Generate code to take the specified number of elements of the specified
--- type, jumping to the specified label when the take is complete. A 'CExp'
--- representing the taken value(s) is returned. We assume that the continuation
--- labels the code that will be generated immediately after the take.
-type TakeK l = Int -> Type -> l -> Cg CExp
-
--- | Generate code to emit the specified value at the specified type jumping to
--- the specified label when the take is complete. We assume that the
--- continuation labels the code that will be generated immediately after the
--- emit.
-type EmitK l = Type -> CExp -> l -> Cg ()
-
 -- | 'cgComp' compiles a computation and ensures that the continuation label is
 -- jumped to. We assume that the continuation labels the code that will be
 -- generated immediately after the call to 'cgComp', so if the computation
@@ -1174,54 +1225,13 @@ cgComp takek emitk comp k =
     cgStep :: Step Label -> Label -> Cg CExp
     cgStep (VarC l v _) k =
         cgWithLabel l $ do
-        (ivs, vbs, comp) <- lookupVarCExp v >>= unCComp
-        when (not (null ivs) || not (null vbs)) $
-            faildoc $ text "Non-nullary computation" <+> ppr v <+> text "invoked without arguments"
-        useLabels (compUsedLabels comp)
-        cgComp takek emitk comp k
+        compc <- lookupVarCExp v >>= unCComp
+        compc takek emitk k
 
-    cgStep step@(CallC l f iotas es _) k = do
+    cgStep (CallC l f iotas es _) k = do
         cgWithLabel l $ do
-        (ivs, vbs, comp) <- lookupVarCExp f >>= unCComp
-        ciotas           <- mapM cgIota iotas
-        ces              <- mapM cgArg es
-        extendIVars (ivs `zip` repeat IotaK) $ do
-        extendVars  vbs $ do
-        extendIVarCExps (ivs `zip` ciotas) $ do
-        extendVarCExps  (map fst vbs `zip` ces) $ do
-        instantiateSTScope $ do
-        useLabels (compUsedLabels comp)
-        theta <- askTyVarTypeSubst
-        cgComp takek emitk (subst1 theta comp) k
-      where
-        cgArg :: Exp -> Cg CExp
-        cgArg e = withFvContext e $ do
-            tau <- inferExp e
-            go tau e
-          where
-            go :: Type -> Exp -> Cg CExp
-            go tau e | isPureishT tau =
-                cgExp e
-
-            go tau (CallE f iotas es _) = do
-                FunT _ _ tau_res@(ST _ _ s a b _) _ <- lookupVar f
-                ST _ _ s' a' b' _                   <- appSTScope tau
-                (ivs, vbs, comp) <- lookupVarCExp f >>= unCComp
-                let theta1   = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
-                let theta2   = Map.fromList (ivs `zip` iotas)
-                let theta3   = Map.fromList (map fst vbs `zip` es)
-                let comp'    = (subst1 theta3 . subst1 theta2 . subst1 theta1) comp
-                let tau_res' = (subst1 theta2 . subst1 theta1) tau_res
-                return $ CComp f [] [] tau_res' comp'
-
-            go _tau e = do
-                cgExp e
-
-        instantiateSTScope :: Cg a -> Cg a
-        instantiateSTScope m = do
-            FunT _ _ (ST _ _ s a b _) _ <- lookupVar f
-            ST _ _ s' a' b' _           <- inferStep step
-            extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] m
+        funcompc <- lookupVarCExp f >>= unCFunComp
+        funcompc iotas es takek emitk k
 
     cgStep (IfC l e thenk elsek _) k =
         cgWithLabel l $ do
