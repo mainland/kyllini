@@ -16,6 +16,8 @@ module KZC.Core.Lint (
     liftTc,
     withTcEnv,
 
+    extendWildVars,
+
     checkDecls,
 
     inferExp,
@@ -122,6 +124,10 @@ withTcEnv k = do
     eref <- asks tcenvref
     env  <- readRef eref
     k env
+
+extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
+extendWildVars wvs m =
+    extendVars [(v, tau) | (TameV v, tau) <- wvs] m
 
 checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls [] =

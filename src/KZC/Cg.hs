@@ -809,8 +809,8 @@ cgExp (BindE WildV _ e1 e2 _) = do
 
 cgExp (BindE (TameV v) tau e1 e2 _) = do
     ce1 <- cgExp e1
-    extendVars [(v, tau)] $ do
-    extendVarCExps [(v, ce1)] $ do
+    extendVars [(bVar v, tau)] $ do
+    extendVarCExps [(bVar v, ce1)] $ do
     cgExp e2
 
 -- | @'isConstE' e@ returns 'True' only if @e@ compiles to a constant C
@@ -1166,8 +1166,8 @@ cgComp takek emitk comp k =
     cgBind (BindC l (TameV v) tau _ : steps) ce =
         cgWithLabel l $ do
         clow <- cgLower tau ce
-        extendVars [(v, tau)] $ do
-        extendVarCExps [(v, clow)] $ do
+        extendVars [(bVar v, tau)] $ do
+        extendVarCExps [(bVar v, clow)] $ do
         cgSteps steps
 
     cgBind steps _ =

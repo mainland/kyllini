@@ -82,7 +82,6 @@ import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax (Var(..),
-                        WildVar(..),
                         Field(..),
                         Struct(..),
                         TyVar(..),
@@ -127,6 +126,24 @@ import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
 
+data BoundVar = BoundV { bVar :: Var, bOccInfo :: Maybe OccInfo }
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString BoundVar where
+    fromString s = mkBoundVar (fromString s)
+
+instance Named BoundVar where
+    namedSymbol (BoundV v _) = namedSymbol v
+
+    mapName f (BoundV v occ) = BoundV (mapName f v) occ
+
+mkBoundVar :: Var -> BoundVar
+mkBoundVar v = BoundV v Nothing
+
+data WildVar = WildV
+             | TameV BoundVar
+  deriving (Eq, Ord, Read, Show)
+
 data Program l = Program [Decl l] (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
@@ -142,20 +159,6 @@ data Decl l = LetD BoundVar Type Exp !SrcLoc
 data LocalDecl = LetLD BoundVar Type Exp !SrcLoc
                | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
   deriving (Eq, Ord, Read, Show)
-
-data BoundVar = BoundV { bVar :: Var, bOccInfo :: Maybe OccInfo }
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString BoundVar where
-    fromString s = mkBoundVar (fromString s)
-
-instance Named BoundVar where
-    namedSymbol (BoundV v _) = namedSymbol v
-
-    mapName f (BoundV v occ) = BoundV (mapName f v) occ
-
-mkBoundVar :: Var -> BoundVar
-mkBoundVar v = BoundV v Nothing
 
 data OccInfo = Dead
              | Once
@@ -340,9 +343,10 @@ setStepLabel _ step@(LoopC {})              = step
  ------------------------------------------------------------------------------}
 
 expToStms :: Exp -> [Stm Exp]
-expToStms (ReturnE ann e l)      = [ReturnS ann e l]
-expToStms (BindE wv tau e1 e2 l) = BindS wv tau e1 l : expToStms e2
-expToStms e                      = [ExpS e (srclocOf e)]
+expToStms (ReturnE ann e l)             = [ReturnS ann e l]
+expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just (bVar v)) tau e1 l : expToStms e2
+expToStms e                             = [ExpS e (srclocOf e)]
 
 {------------------------------------------------------------------------------
  -
@@ -380,6 +384,10 @@ instance IsLabel l => Summary [Step l] where
  - Pretty printing
  -
  ------------------------------------------------------------------------------}
+
+instance Pretty WildVar where
+    ppr WildV     = text "_"
+    ppr (TameV v) = ppr v
 
 instance Pretty BoundVar where
     ppr (BoundV v Nothing)    = ppr v
@@ -704,6 +712,10 @@ instance Freshen BoundVar Exp Var where
  -
  ------------------------------------------------------------------------------}
 
+instance Binders WildVar Var where
+    binders WildV     = mempty
+    binders (TameV v) = singleton (bVar v)
+
 instance Fvs (Decl l) Var where
     fvs (LetD v _ e _)              = delete (bVar v) (fvs e)
     fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
@@ -786,6 +798,10 @@ instance Fvs Exp v => Fvs [Exp] v where
  - All variables
  -
  ------------------------------------------------------------------------------}
+
+instance HasVars WildVar Var where
+    allVars WildV     = mempty
+    allVars (TameV v) = singleton (bVar v)
 
 instance HasVars (Decl l) Var where
     allVars (LetD v _ e _)              = singleton (bVar v) <> allVars e

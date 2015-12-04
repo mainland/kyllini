@@ -69,7 +69,7 @@ returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
 bindE :: Var -> Type -> Exp -> Exp -> Exp
-bindE v tau e1 e2 = BindE (TameV v) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
+bindE v tau e1 e2 = BindE (TameV (mkBoundVar v)) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
 
 seqE :: Type -> Exp -> Exp -> Exp
 seqE tau e1 e2 = BindE WildV tau e1 e2 (e1 `srcspan` e2)

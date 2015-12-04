@@ -17,6 +17,8 @@ module KZC.Auto.Lint (
     liftTc,
     withTcEnv,
 
+    extendWildVars,
+
     typeBitWidth,
 
     inferKind,
@@ -104,6 +106,10 @@ import KZC.Error
 import KZC.Label
 import KZC.Summary
 import KZC.Vars
+
+extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
+extendWildVars wvs m =
+    extendVars [(bVar v, tau) | (TameV v, tau) <- wvs] m
 
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l

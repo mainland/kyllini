@@ -199,9 +199,14 @@ occSteps (LetC l decl s : steps) = do
     (decl', steps') <- occLocalDecl decl $ occSteps steps
     return $ LetC l decl' s : steps'
 
-occSteps (step@(BindC _ wv tau _) : steps) =
-    extendWildVars [(wv, tau)] $
+occSteps (step@(BindC _ WildV _ _) : steps) =
     (:) <$> pure step <*> occSteps steps
+
+occSteps (BindC l (TameV v) tau s : steps) = do
+    (steps', occ) <- extendVars [(bVar v, tau)] $
+                     withOccInfo v $
+                     occSteps steps
+    return $ BindC l (TameV (updOccInfo v occ)) tau s : steps'
 
 occSteps (step : steps) =
     (:) <$> occStep step <*> occSteps steps
@@ -317,7 +322,14 @@ occExp e@(ErrorE {}) =
 occExp (ReturnE ann e s) =
     ReturnE ann <$> occExp e <*> pure s
 
-occExp (BindE wv tau e1 e2 s) = do
+occExp (BindE WildV tau e1 e2 s) = do
     e1' <- occExp e1
-    e2' <- extendWildVars [(wv, tau)] $ occExp e2
-    return $ BindE wv tau e1' e2' s
+    e2' <- occExp e2
+    return $ BindE WildV tau e1' e2' s
+
+occExp (BindE (TameV v) tau e1 e2 s) = do
+    e1'        <- occExp e1
+    (e2', occ) <- extendVars [(bVar v, tau)] $
+                  withOccInfo v $
+                  occExp e2
+    return $ BindE (TameV (updOccInfo v occ)) tau e1' e2' s

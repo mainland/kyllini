@@ -213,7 +213,7 @@ data Exp = ConstE Const !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Stm e = ReturnS InlineAnn e !SrcLoc
-           | BindS WildVar Type e !SrcLoc
+           | BindS (Maybe Var) Type e !SrcLoc
            | ExpS e !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -541,9 +541,10 @@ instance Pretty PipelineAnn where
     ppr _        = text ">>>"
 
 expToStms :: Exp -> [Stm Exp]
-expToStms (ReturnE ann e l)      = [ReturnS ann e l]
-expToStms (BindE wv tau e1 e2 l) = BindS wv tau e1 l : expToStms e2
-expToStms e                      = [ExpS e (srclocOf e)]
+expToStms (ReturnE ann e l)             = [ReturnS ann e l]
+expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
+expToStms e                             = [ExpS e (srclocOf e)]
 
 pprBody :: Exp -> Doc
 pprBody e =
@@ -556,10 +557,10 @@ instance Pretty e => Pretty (Stm e) where
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
 
-    pprPrec _ (BindS WildV _ e _) =
+    pprPrec _ (BindS Nothing _ e _) =
         ppr e
 
-    pprPrec _ (BindS (TameV v) tau e _) =
+    pprPrec _ (BindS (Just v) tau e _) =
         parens (ppr v <+> colon <+> ppr tau) <+>
         text "<-" <+> align (ppr e)
 
