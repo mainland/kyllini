@@ -275,26 +275,15 @@ cgDecls (decl:decls) k =
 
 cgDecl :: LDecl -> Cg a -> Cg a
 cgDecl decl@(LetD v tau e _) k = do
-    cv <- withSummaryContext decl $
-          inSTScope tau $ do
-          ce         <- cgExp e
-          isTopLevel <- isInTopScope
-          cve        <- cgBinder isTopLevel (bVar v) tau
-          cgAssign tau cve ce
-          return cve
+    cve <- withSummaryContext decl $
+           cgLet v tau e
     extendVars [(bVar v, tau)] $ do
-    extendVarCExps [(bVar v, cv)] $ do
+    extendVarCExps [(bVar v, cve)] $ do
     k
 
 cgDecl decl@(LetRefD v tau maybe_e _) k = do
-    cve <- withSummaryContext decl $ do
-           isTopLevel <- isInTopScope
-           cgBinder isTopLevel (bVar v) tau
-    withSummaryContext decl $
-        case maybe_e of
-          Nothing -> cgDefaultValue tau cve
-          Just e  -> do ce <- inLocalScope $ cgExp e
-                        cgAssign tau cve ce
+    cve <- withSummaryContext decl $
+           cgLetRef v tau maybe_e
     extendVars [(bVar v, refT tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
@@ -384,28 +373,37 @@ cgDecl (LetFunCompD f iotas vbs tau_ret comp l) k =
 
 cgLocalDecl :: LocalDecl -> Cg a -> Cg a
 cgLocalDecl decl@(LetLD v tau e _) k = do
-    cv <- withSummaryContext decl $ do
-          ce         <- inSTScope tau $ cgExp e
-          isTopLevel <- isInTopScope
-          cve        <- cgBinder isTopLevel (bVar v) tau
-          cgAssign tau cve ce
-          return cve
+    cve <- withSummaryContext decl $
+           cgLet v tau e
     extendVars [(bVar v, tau)] $ do
-    extendVarCExps [(bVar v, cv)] $ do
+    extendVarCExps [(bVar v, cve)] $ do
     k
 
 cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
-    cve <- withSummaryContext decl $ do
-           isTopLevel <- isInTopScope
-           cgBinder isTopLevel (bVar v) tau
-    withSummaryContext decl $
-        case maybe_e of
-          Nothing -> cgDefaultValue tau cve
-          Just e  -> do ce <- inLocalScope $ cgExp e
-                        cgAssign tau cve ce
+    cve <- withSummaryContext decl $
+           cgLetRef v tau maybe_e
     extendVars [(bVar v, refT tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
+
+cgLet :: BoundVar -> Type -> Exp -> Cg CExp
+cgLet v tau e = do
+    inSTScope tau $ do
+    ce         <- cgExp e
+    isTopLevel <- isInTopScope
+    cve        <- cgBinder isTopLevel (bVar v) tau
+    cgAssign tau cve ce
+    return cve
+
+cgLetRef :: BoundVar -> Type -> Maybe Exp -> Cg CExp
+cgLetRef v tau maybe_e = do
+    isTopLevel <- isInTopScope
+    cve        <- cgBinder isTopLevel (bVar v) tau
+    case maybe_e of
+      Nothing -> cgDefaultValue tau cve
+      Just e  -> do ce <- inLocalScope $ cgExp e
+                    cgAssign tau cve ce
+    return cve
 
 cgConstArray :: Type -> [CExp] -> Cg CExp
 cgConstArray (BitT {}) ces = do
