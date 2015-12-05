@@ -40,7 +40,7 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
-liftDecl decl@(LetD v tau e l) k | isPureishT tau = do
+liftDecl decl@(LetD v tau e l) k | isPureT tau = do
     extendFunFvs [(v, (v, []))] $ do
     e' <- withSummaryContext decl $
           withFvContext e $

@@ -110,7 +110,7 @@ transDecls (cdecl:cdecls) k =
 
 transDecl :: C.Decl -> (LDecl -> Auto a) -> Auto a
 transDecl decl@(C.LetD v tau e l) k
-  | isPureishT tau = ensureUnique v $ \v' -> do
+  | isPureT tau = ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $
           withFvContext e $
           inSTScope tau $
@@ -178,7 +178,7 @@ transDecl (C.LetStructD s flds l) k =
     k $ LetStructD s flds l
 
 transLocalDecl :: C.Decl -> (LocalDecl -> Auto a) -> Auto a
-transLocalDecl decl@(C.LetD v tau e l) k | isPureishT tau =
+transLocalDecl decl@(C.LetD v tau e l) k | isPureT tau =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $ transExp e
     extendVars [(v, tau)] $ do

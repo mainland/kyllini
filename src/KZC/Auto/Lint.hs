@@ -148,11 +148,10 @@ checkDecl decl@(LetD v tau e _) k =
 checkDecl decl@(LetRefD v tau e _) k =
     checkLetRef v tau e decl k
 
-checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
-    withSummaryContext decl $
-        checkKind tau PhiK
+checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
     withSummaryContext decl $ do
+        checkKind tau PhiK
         tau_ret' <- withFvContext e $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
@@ -160,7 +159,7 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                     inLocalScope $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
-        when (not (isPureishT tau)) $
+        when (not (isPureishT tau_ret)) $
           faildoc $ text "Function" <+> ppr f <+> text "is not pureish but is in a letfun!"
     k
   where
@@ -193,21 +192,18 @@ checkDecl decl@(LetStructD s flds l) k = do
 
 checkDecl decl@(LetCompD v tau comp _) k = do
     withSummaryContext decl $ do
-        void $ inferKind tau
+        checkKind tau MuK
         tau' <- withSummaryContext comp $
                 inSTScope tau $
                 inLocalScope $
                 inferComp comp >>= absSTScope
         checkTypeEquality tau' tau
-        when (isPureishT tau) $
-          faildoc $ text "Value" <+> ppr v <+> text "is pureish but is in a letcomp!"
     extendVars [(bVar v, tau)] k
 
-checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k = do
-    withSummaryContext decl $
-        checkKind tau PhiK
+checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
     withSummaryContext decl $ do
+        checkKind tau PhiK
         tau_ret' <- withFvContext comp $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
@@ -232,28 +228,21 @@ checkLocalDecl decl@(LetRefLD v tau e _) k =
 checkLet :: (Summary b, Located b, MonadTc m)
          => BoundVar -> Type -> Exp -> b -> m a -> m a
 checkLet v tau e decl k = do
-    withSummaryContext decl $ do
-        void $ inferKind tau
-        tau' <- withFvContext e $
-                inSTScope tau $
-                inLocalScope $
-                inferExp e >>= absSTScope
-        checkTypeEquality tau' tau
-        when (not (isPureishT tau)) $
-          faildoc $ text "Value" <+> ppr v <+> text "is not pureish but is in a let!"
-    extendVars [(bVar v, tau)] k
-
-checkLetRef :: (Summary b, Located b, MonadTc m)
-            => BoundVar -> Type -> Maybe Exp -> b -> m a -> m a
-checkLetRef v tau Nothing decl k = do
-    withSummaryContext decl $ checkKind tau TauK
-    extendVars [(bVar v, refT tau)] k
-
-checkLetRef v tau (Just e) decl k = do
     withSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
+    extendVars [(bVar v, tau)] k
+
+checkLetRef :: (Summary b, Located b, MonadTc m)
+            => BoundVar -> Type -> Maybe Exp -> b -> m a -> m a
+checkLetRef v tau maybe_e decl k = do
+    withSummaryContext decl $
+        inLocalScope $ do
+        checkKind tau TauK
+        case maybe_e of
+          Nothing -> return ()
+          Just e  -> checkExp e tau
     extendVars [(bVar v, refT tau)] k
 
 inferExp :: forall m . MonadTc m => Exp -> m Type
