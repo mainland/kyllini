@@ -110,14 +110,9 @@ transDecls (cdecl:cdecls) k =
 
 transDecl :: C.Decl -> (LDecl -> Auto a) -> Auto a
 transDecl decl@(C.LetD v tau e l) k
-  | isPureT tau = ensureUnique v $ \v' -> do
-    e' <- withSummaryContext decl $
-          withFvContext e $
-          inSTScope tau $
-          inLocalScope $
-          transExp e
-    extendVars [(v,tau)] $ do
-    k $ LetD (mkBoundVar v') tau e' l
+  | isPureT tau =
+    transLocalDecl decl $ \decl' ->
+    k $ LetD decl' l
 
   | otherwise = ensureUnique v $ \v' -> do
     c <- withSummaryContext decl $
@@ -128,18 +123,9 @@ transDecl decl@(C.LetD v tau e l) k
     extendVars [(v,tau)] $ do
     k $ LetCompD (mkBoundVar v') tau c l
 
-transDecl (C.LetRefD v tau Nothing l) k =
-    ensureUnique v $ \v' ->
-    extendVars [(v, refT tau)] $
-    k $ LetRefD (mkBoundVar v') tau Nothing l
-
-transDecl decl@(C.LetRefD v tau (Just e) l) k =
-    ensureUnique v $ \v' -> do
-    e' <- withSummaryContext decl $
-          inLocalScope $
-          transExp e
-    extendVars [(v, refT tau)] $ do
-    k $ LetRefD (mkBoundVar v') tau (Just e') l
+transDecl decl@(C.LetRefD _ _ _ l) k =
+    transLocalDecl decl $ \decl' ->
+    k $ LetD decl' l
 
 transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
   | isPureishT tau_ret = ensureUnique f $ \f' -> do

@@ -150,8 +150,7 @@ data WildVar = WildV
 data Program l = Program [Decl l] (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
-data Decl l = LetD BoundVar Type Exp !SrcLoc
-            | LetRefD BoundVar Type (Maybe Exp) !SrcLoc
+data Decl l = LetD LocalDecl !SrcLoc
             | LetFunD BoundVar [IVar] [(Var, Type)] Type Exp !SrcLoc
             | LetExtFunD BoundVar [IVar] [(Var, Type)] Type !SrcLoc
             | LetStructD Struct [(Field, Type)] !SrcLoc
@@ -376,8 +375,7 @@ expToStms e                             = [ExpS e (srclocOf e)]
  ------------------------------------------------------------------------------}
 
 instance Summary (Decl l) where
-    summary (LetD v _ _ _)            = text "definition of" <+> ppr v
-    summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetD decl _)             = summary decl
     summary (LetFunD v _ _ _ _ _)     = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _)    = text "definition of" <+> ppr v
     summary (LetStructD s _ _)        = text "definition of" <+> ppr s
@@ -427,15 +425,8 @@ instance IsLabel l => Pretty (Program l) where
         ppr (LetCompD "main" tau comp noLoc)
 
 instance IsLabel l => Pretty (Decl l) where
-    pprPrec p (LetD v tau e _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
-
-    pprPrec p (LetRefD v tau Nothing _) =
-        parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau
+    pprPrec p (LetD decl _) =
+        pprPrec p decl
 
     pprPrec p (LetFunD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
@@ -447,12 +438,6 @@ instance IsLabel l => Pretty (Decl l) where
         parensIf (p > appPrec) $
         text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
-
-    pprPrec p (LetRefD v tau (Just e) _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
@@ -734,8 +719,7 @@ instance Binders WildVar Var where
     binders (TameV v) = singleton (bVar v)
 
 instance Fvs (Decl l) Var where
-    fvs (LetD v _ e _)              = delete (bVar v) (fvs e)
-    fvs (LetRefD v _ e _)           = delete (bVar v) (fvs e)
+    fvs (LetD decl _)               = fvs decl
     fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
     fvs (LetExtFunD {})             = mempty
     fvs (LetStructD {})             = mempty
@@ -743,8 +727,7 @@ instance Fvs (Decl l) Var where
     fvs (LetFunCompD v _ vbs _ e _) = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
 
 instance Binders (Decl l) Var where
-    binders (LetD v _ _ _)            = singleton (bVar v)
-    binders (LetRefD v _ _ _)         = singleton (bVar v)
+    binders (LetD decl _)             = binders decl
     binders (LetFunD v _ _ _ _ _)     = singleton (bVar v)
     binders (LetExtFunD v _ _ _ _)    = singleton (bVar v)
     binders (LetStructD {})           = mempty
@@ -828,8 +811,7 @@ instance HasVars WildVar Var where
     allVars (TameV v) = singleton (bVar v)
 
 instance HasVars (Decl l) Var where
-    allVars (LetD v _ e _)              = singleton (bVar v) <> allVars e
-    allVars (LetRefD v _ e _)           = singleton (bVar v) <> allVars e
+    allVars (LetD decl _)               = allVars decl
     allVars (LetFunD v _ vbs _ e _)     = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _)    = singleton (bVar v) <> fromList (map fst vbs)
     allVars (LetStructD {})             = mempty
@@ -1384,13 +1366,9 @@ instance Subst Exp Var (Comp l) where
  ------------------------------------------------------------------------------}
 
 instance Freshen (Decl l) Iota IVar where
-    freshen (LetD v tau e l) k = do
-        decl' <- LetD v <$> substM tau <*> substM e <*> pure l
-        k decl'
-
-    freshen (LetRefD v tau e l) k = do
-        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
-        k decl'
+    freshen (LetD decl l) k =
+        freshen decl $ \decl' ->
+        k $ LetD decl' l
 
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen ibs $ \ibs' -> do
@@ -1414,6 +1392,15 @@ instance Freshen (Decl l) Iota IVar where
         decl' <- LetFunCompD v ibs' vbs <$> substM tau <*> substM comp <*> pure l
         k decl'
 
+instance Freshen LocalDecl Iota IVar where
+    freshen (LetLD v tau e l) k = do
+        decl' <- LetLD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetRefLD v tau e l) k = do
+        decl' <- LetRefLD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
 {------------------------------------------------------------------------------
  -
  - Freshening variables
@@ -1421,15 +1408,9 @@ instance Freshen (Decl l) Iota IVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen (Decl l) Exp Var where
-    freshen (LetD v tau e l) k = do
-        e' <- substM e
-        freshen v $ \v' -> do
-        k (LetD v' tau e' l)
-
-    freshen (LetRefD v tau e l) k = do
-        e' <- substM e
-        freshen v $ \v' -> do
-        k (LetRefD v' tau e' l)
+    freshen (LetD decl l) k =
+        freshen decl $ \decl' ->
+        k $ LetD decl' l
 
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen v   $ \v'   ->

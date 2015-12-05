@@ -142,11 +142,8 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
-checkDecl decl@(LetD v tau e _) k =
-    checkLet v tau e decl k
-
-checkDecl decl@(LetRefD v tau e _) k =
-    checkLetRef v tau e decl k
+checkDecl (LetD decl _) k =
+    checkLocalDecl decl k
 
 checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
@@ -219,24 +216,14 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
-checkLocalDecl decl@(LetLD v tau e _) k =
-    checkLet v tau e decl k
-
-checkLocalDecl decl@(LetRefLD v tau e _) k =
-    checkLetRef v tau e decl k
-
-checkLet :: (Summary b, Located b, MonadTc m)
-         => BoundVar -> Type -> Exp -> b -> m a -> m a
-checkLet v tau e decl k = do
+checkLocalDecl decl@(LetLD v tau e _) k = do
     withSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
     extendVars [(bVar v, tau)] k
 
-checkLetRef :: (Summary b, Located b, MonadTc m)
-            => BoundVar -> Type -> Maybe Exp -> b -> m a -> m a
-checkLetRef v tau maybe_e decl k = do
+checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     withSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK

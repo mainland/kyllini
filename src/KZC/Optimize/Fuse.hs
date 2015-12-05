@@ -116,11 +116,8 @@ fuseDecls (decl:decls) k =
     fuseDecl decl $ fuseDecls decls k
 
 fuseDecl :: (MonadPlus m, MonadTc m) => LDecl -> m a -> m a
-fuseDecl (LetD v tau _ _) k =
-    extendVars [(bVar v, tau)] k
-
-fuseDecl (LetRefD v tau _ _) k =
-    extendVars [(bVar v, refT tau)] k
+fuseDecl (LetD decl _) k =
+    fuseLocalDecl decl k
 
 fuseDecl (LetFunD f iotas vbs tau_ret _ l) k =
     extendVars [(bVar f, tau)] k

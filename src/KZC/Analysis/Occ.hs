@@ -116,15 +116,9 @@ occDecls (d:ds) m = do
 occDecl :: LDecl
         -> OccM a
         -> OccM (LDecl, a)
-occDecl (LetD v tau e s) m = do
-    e'       <- occExp e
-    (x, occ) <- extendVars [(bVar v, tau)] $ withOccInfo v m
-    return (LetD (updOccInfo v occ) tau e' s, x)
-
-occDecl (LetRefD v tau e s) m = do
-    e'       <- traverse occExp e
-    (x, occ) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
-    return (LetRefD (updOccInfo v occ) tau e' s, x)
+occDecl (LetD decl s) m = do
+    (decl', x) <- occLocalDecl decl m
+    return (LetD decl' s, x)
 
 occDecl (LetFunD f iotas vbs tau_ret e l) m = do
     (x, e', occ) <-

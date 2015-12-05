@@ -103,11 +103,8 @@ flattenDecls (decl:decls) k =
     flattenDecl decl $ flattenDecls decls k
 
 flattenDecl :: LDecl -> Fl a -> Fl a
-flattenDecl (LetD v tau _ _) k =
-    extendVars [(bVar v, tau)] k
-
-flattenDecl (LetRefD v tau _ _) k =
-    extendVars [(bVar v, refT tau)] k
+flattenDecl (LetD decl _) k =
+    flattenLocalDecl decl k
 
 flattenDecl (LetFunD f iotas vbs tau_ret _ l) k =
     extendVars [(bVar f, tau)] k
