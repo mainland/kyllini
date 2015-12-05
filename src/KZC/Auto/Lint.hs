@@ -138,28 +138,11 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
-checkDecl decl@(LetD v tau e _) k = do
-    withSummaryContext decl $ do
-        void $ inferKind tau
-        tau' <- withFvContext e $
-                inSTScope tau $
-                inLocalScope $
-                inferExp e >>= absSTScope
-        checkTypeEquality tau' tau
-        when (not (isPureishT tau)) $
-          faildoc $ text "Value" <+> ppr v <+> text "is not pureish but is in a let!"
-    extendVars [(bVar v, tau)] k
+checkDecl decl@(LetD v tau e _) k =
+    checkLet v tau e decl k
 
-checkDecl decl@(LetRefD v tau Nothing _) k = do
-    withSummaryContext decl $ checkKind tau TauK
-    extendVars [(bVar v, refT tau)] k
-
-checkDecl decl@(LetRefD v tau (Just e) _) k = do
-    withSummaryContext decl $
-        inLocalScope $ do
-        checkKind tau TauK
-        checkExp e tau
-    extendVars [(bVar v, refT tau)] k
+checkDecl decl@(LetRefD v tau e _) k =
+    checkLetRef v tau e decl k
 
 checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     withSummaryContext decl $
@@ -236,7 +219,15 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
-checkLocalDecl decl@(LetLD v tau e _) k = do
+checkLocalDecl decl@(LetLD v tau e _) k =
+    checkLet v tau e decl k
+
+checkLocalDecl decl@(LetRefLD v tau e _) k =
+    checkLetRef v tau e decl k
+
+checkLet :: (Summary b, Located b, MonadTc m)
+         => BoundVar -> Type -> Exp -> b -> m a -> m a
+checkLet v tau e decl k = do
     withSummaryContext decl $ do
         void $ inferKind tau
         tau' <- withFvContext e $
@@ -244,13 +235,17 @@ checkLocalDecl decl@(LetLD v tau e _) k = do
                 inLocalScope $
                 inferExp e >>= absSTScope
         checkTypeEquality tau' tau
+        when (not (isPureishT tau)) $
+          faildoc $ text "Value" <+> ppr v <+> text "is not pureish but is in a let!"
     extendVars [(bVar v, tau)] k
 
-checkLocalDecl decl@(LetRefLD v tau Nothing _) k = do
+checkLetRef :: (Summary b, Located b, MonadTc m)
+            => BoundVar -> Type -> Maybe Exp -> b -> m a -> m a
+checkLetRef v tau Nothing decl k = do
     withSummaryContext decl $ checkKind tau TauK
     extendVars [(bVar v, refT tau)] k
 
-checkLocalDecl decl@(LetRefLD v tau (Just e) _) k = do
+checkLetRef v tau (Just e) decl k = do
     withSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
