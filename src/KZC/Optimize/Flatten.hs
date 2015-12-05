@@ -30,7 +30,6 @@ import KZC.Error
 import KZC.Label
 import KZC.Monad
 import KZC.Name
-import KZC.Trace
 import KZC.Vars
 
 type Fl a = ReaderT FlEnv Tc a
@@ -132,7 +131,7 @@ flattenDecl (LetCompD v tau comp _) k =
 
 flattenDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
-    extendCompBindings [(bVar f, CompB (bVar f) ivs vbs tau comp)] $
+    extendCompBindings [(bVar f, CompB (bVar f) ivs vbs tau_ret comp)] $
     k
   where
     tau :: Type
@@ -164,11 +163,21 @@ flattenSteps (step : steps) =
     (++) <$> flattenStep step <*> flattenSteps steps
 
 flattenStep :: LStep -> Fl [LStep]
-flattenStep (VarC l v _) =
-    flattenVarC v >>= rewriteStepsLabel l
+flattenStep (VarC l v _) = do
+    CompB _ _ _ tau comp <- lookupCompBinding v
+    theta                <- instantiatedTyVars tau
+    let steps            =  (subst1 theta) (unComp comp)
+    flattenSteps steps >>= rewriteStepsLabel l
 
-flattenStep (CallC l f iotas es _) =
-    flattenCallC f iotas es >>= rewriteStepsLabel l
+flattenStep (CallC l f iotas es _) = do
+    CompB _ ivs vbs tau comp <- lookupCompBinding f
+    extendIVars (ivs `zip` repeat IotaK) $ do
+    extendVars vbs $ do
+    let theta1 =  Map.fromList (ivs `zip` iotas)
+    theta2     <- instantiatedTyVars tau
+    let steps  =  (subst1 theta2 . subst1 theta1) (unComp comp)
+    flattenArgs (map fst vbs `zip` es) $ do
+    flattenSteps steps >>= rewriteStepsLabel l
 
 flattenStep (IfC l e c1 c2 s) = do
     step <- IfC l e <$> flattenComp c1 <*> flattenComp c2 <*> pure s
@@ -217,72 +226,41 @@ flattenStep (ParC ann tau c1 c2 s) = do
 flattenStep (LoopC {}) =
     faildoc $ text "flattenStep: saw LoopC"
 
-flattenVarC :: Var -> Fl [LStep]
-flattenVarC v = do
-    CompB _ _ _ _ comp <- lookupCompBinding v
-    theta              <- instantiateSTScope
-    let steps          =  (subst1 theta) (unComp comp)
-    flattenSteps steps
-  where
-    instantiateSTScope :: Fl (Map TyVar Type)
-    instantiateSTScope = do
-        ST _ _ s  a  b  _ <- lookupVar v
-        (s', a', b')      <- askSTIndTypes
-        return $ Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
+instantiatedTyVars :: Type -> Fl (Map TyVar Type)
+instantiatedTyVars (ST _ _ s a b _) = do
+    (s', a', b')      <- askSTIndTypes
+    return $ Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
 
-flattenCallC :: Var -> [Iota] -> [Exp] -> Fl [LStep]
-flattenCallC f iotas es = do
-    traceFlatten $ text "flattenCallC:" <+> ppr f
-    CompB _ ivs vbs _ comp <- lookupCompBinding f
-    extendIVars (ivs `zip` repeat IotaK) $ do
-    extendVars vbs $ do
-    traceFlatten $ text "flattenCallC:" <+> ppr vbs
-    let theta1 =  Map.fromList (ivs `zip` iotas)
-    theta2     <- instantiateSTScope
-    let steps  =  (subst1 theta2 . subst1 theta1) (unComp comp)
-    flattenArgs (map fst vbs `zip` es) $
-      withLocContext comp (text "In definition of" <+> ppr f) $
-      flattenSteps steps
-  where
-    instantiateSTScope :: Fl (Map TyVar Type)
-    instantiateSTScope = do
-        FunT _ _ (ST _ _ s a b _) _ <- lookupVar f
-        (s', a', b')                <- askSTIndTypes
-        return $ Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']]
+instantiatedTyVars _tau =
+    return mempty
 
-flattenArgs :: [(Var, Exp)] -> Fl [LStep] -> Fl [LStep]
+flattenArgs :: [(Var, LArg)] -> Fl [LStep] -> Fl [LStep]
 flattenArgs [] k =
     k
 
 flattenArgs (arg:args) k =
     flattenArg arg $ flattenArgs args k
 
-flattenArg :: (Var, Exp) -> Fl [LStep] -> Fl [LStep]
-flattenArg (v, e) k = do
+flattenArg :: (Var, LArg) -> Fl [LStep] -> Fl [LStep]
+flattenArg (v, ExpA e) k = do
     tau <- inferExp e
     go tau e
   where
     sloc :: SrcLoc
     sloc = srclocOf e
 
-    go tau e | isPureishT tau = do
-        v'    <- mkUniqVar (namedString v) (locOf v)
-        l1    <- genLabel "arg_return"
-        l2    <- genLabel "arg_bind"
-        steps <- k
-        return $ unComp $ Comp [ReturnC l1 e sloc, BindC l2 (TameV (mkBoundVar v')) tau sloc] <> subst1 (v /-> varE v') (Comp steps)
-
-    go tau (CallE f iotas es _) = do
-        comp <- Comp <$> flattenCallC f iotas es
-        extendCompBindings [(v, CompB v [] [] tau comp)] k
-
-    go tau (VarE v _) = do
-        comp <- Comp <$> flattenVarC v
-        extendCompBindings [(v, CompB v [] [] tau comp)] k
-
+    go :: Type -> Exp -> Fl [LStep]
     go tau e = do
-        v'    <- mkUniqVar (namedString v) (locOf v)
-        l1    <- genLabel "arg_lift"
-        l2    <- genLabel "arg_bind"
-        steps <- k
-        return $ unComp $ Comp [LiftC l1 e sloc, BindC l2 (TameV (mkBoundVar v')) tau sloc] <> subst1 (v /-> varE v') (Comp steps)
+        v'       <- mkUniqVar (namedString v) (locOf v)
+        l1       <- genLabel "arg_return"
+        l2       <- genLabel "arg_bind"
+        let step =  if isPureishT tau
+                    then ReturnC l1 e sloc
+                    else LiftC l1 e sloc
+        steps    <- k
+        return $ unComp $ Comp [step, BindC l2 (TameV (mkBoundVar v')) tau sloc] <> subst1 (v /-> varE v') (Comp steps)
+
+flattenArg (v, CompA c) k = do
+    tau <- inferComp c
+    c'   <- flattenComp c
+    extendCompBindings [(v, CompB v [] [] tau c')] k

@@ -216,10 +216,14 @@ occStep step@(VarC _ v _) = do
     occVar v
     return step
 
-occStep (CallC l f iotas es s) = do
+occStep (CallC l f iotas args s) = do
     occVar f
-    es' <- mapM occExp es
-    return $ CallC l f iotas es' s
+    args' <- mapM occArg args
+    return $ CallC l f iotas args' s
+  where
+    occArg :: LArg -> OccM LArg
+    occArg (ExpA e)  = ExpA  <$> occExp e
+    occArg (CompA c) = CompA <$> occComp c
 
 occStep (IfC l e c1 c2 s) =
     IfC l <$> occExp e <*> occComp c1 <*> occComp c2 <*> pure s

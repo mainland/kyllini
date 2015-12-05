@@ -52,6 +52,7 @@ DERIVE(Omega)
 DERIVE(Iota)
 
 DERIVE1(Decl)
+DERIVE1(Arg)
 DERIVE1(Step)
 DERIVE1(Comp)
 

@@ -61,7 +61,7 @@ instance Show CompC where
 -- | A computation function compiler, which produces a compiled call to a
 -- computation function when given the appropriate arguments.
 type FunCompC =  [Iota]      -- Array length arguments
-              -> [Exp]       -- Function arguments
+              -> [LArg]      -- Function arguments
               -> TakeK Label -- Code generator for take
               -> EmitK Label -- Code generator for emit
               -> Label       -- Label of our continuation

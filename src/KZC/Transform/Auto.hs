@@ -338,8 +338,15 @@ transComp e@(C.CallE f iotas es l) = do
     if isPureishT tau_res
       then do e' <- transExp e
               liftC e' l
-      else do es' <- mapM transExp es
-              callC f' iotas es' l
+      else do args <- mapM transArg es
+              callC f' iotas args l
+  where
+    transArg :: C.Exp -> Auto LArg
+    transArg e = do
+        tau <- inferExp e
+        if isPureT tau
+          then ExpA  <$> transExp e
+          else CompA <$> transComp e
 
 transComp (C.WhileE e c l) = do
     e' <- transExp e

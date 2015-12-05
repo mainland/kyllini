@@ -49,10 +49,10 @@ varC v a = do
     return $ Comp [VarC l v (srclocOf a)]
 
 callC :: (Located a, MonadUnique m)
-      => Var -> [Iota] -> [Exp] -> a -> m LComp
-callC f is es a = do
+      => Var -> [Iota] -> [LArg] -> a -> m LComp
+callC f is args a = do
     l <- genLabel "callk"
-    return $ Comp [CallC l f is es (srclocOf a)]
+    return $ Comp [CallC l f is args (srclocOf a)]
 
 ifC :: (Located a, MonadUnique m)
     => Exp -> LComp -> LComp -> a -> m LComp
@@ -153,6 +153,10 @@ mapCompLabels f comp =
     mlComp :: Comp l1 -> M l1 l2 m (Comp l2)
     mlComp (Comp steps) = Comp <$> mlSteps steps
 
+    mlArg :: Arg l1 -> M l1 l2 m (Arg l2)
+    mlArg (ExpA e)  = pure $ ExpA e
+    mlArg (CompA c) = CompA <$> mlComp c
+
     mlSteps :: [Step l1] -> M l1 l2 m [Step l2]
     mlSteps [] =
         return []
@@ -161,9 +165,9 @@ mapCompLabels f comp =
         ml l $ \l' ->
         (:) <$> pure (VarC l' v s) <*> mlSteps steps
 
-    mlSteps (CallC l v iotas es s : steps) =
+    mlSteps (CallC l v iotas args s : steps) =
         ml l $ \l' ->
-        (:) <$> pure (CallC l' v iotas es s) <*> mlSteps steps
+        (:) <$> (CallC l' v iotas <$> mapM mlArg args <*> pure s) <*> mlSteps steps
 
     mlSteps (IfC l e c1 c2 s : steps) =
         ml l $ \l' -> do

@@ -396,26 +396,16 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         useLabels (compUsedLabels comp')
         cgComp takek emitk comp' k
       where
-        cgArg :: Exp -> Cg CExp
-        cgArg e = withFvContext e $ do
-            tau <- inferExp e
-            go tau e
+        cgArg :: LArg -> Cg CExp
+        cgArg (ExpA e) =
+            withFvContext e $
+            cgExp e
+
+        cgArg (CompA comp) =
+            return $ CComp compc
           where
-            go :: Type -> Exp -> Cg CExp
-            go tau e | isPureT tau || isPureishT tau =
-                cgExp e
-
-            -- XXX We treat non-pureish calls as calls to computation
-            -- functions. We really should differentiate between the two types
-            -- of arguments to a funcomp.
-            go _ (CallE f iotas es s) = do
-                l <- genLabel "arg"
-                let cg' :: CompC
-                    cg' takek emitk k = cgComp takek emitk (Comp [CallC l f iotas es s]) k
-                return $ CComp cg'
-
-            go _ e =
-                cgExp e
+            compc :: CompC
+            compc takek emitk k = cgComp takek emitk comp k
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context. We need to do this when
@@ -1228,10 +1218,10 @@ cgComp takek emitk comp k =
         compc <- lookupVarCExp v >>= unCComp
         compc takek emitk k
 
-    cgStep (CallC l f iotas es _) k = do
+    cgStep (CallC l f iotas args _) k = do
         cgWithLabel l $ do
         funcompc <- lookupVarCExp f >>= unCFunComp
-        funcompc iotas es takek emitk k
+        funcompc iotas args takek emitk k
 
     cgStep (IfC l e thenk elsek _) k =
         cgWithLabel l $ do

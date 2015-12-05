@@ -51,6 +51,8 @@ module KZC.Auto.Lint (
     checkST,
     checkSTC,
     checkSTCUnit,
+    checkPure,
+    checkPureish,
     checkPureishST,
     checkPureishSTC,
     checkPureishSTCUnit
@@ -98,6 +100,8 @@ import KZC.Core.Lint (Tc(..),
                       checkST,
                       checkSTC,
                       checkSTCUnit,
+                      checkPure,
+                      checkPureish,
                       checkPureishST,
                       checkPureishSTC,
                       checkPureishSTCUnit)
@@ -418,8 +422,17 @@ inferExp (IfE e1 e2 e3 _) = do
 inferExp (LetE decl body _) =
     checkLocalDecl decl $ inferExp body
 
-inferExp (CallE f ies es _) =
-    inferCall f ies es return
+inferExp (CallE f ies es _) = do
+    (taus, tau_ret) <- inferCall f ies es
+    zipWithM_ checkArg es taus
+    return tau_ret
+  where
+    checkArg :: Exp -> Type -> m ()
+    checkArg e tau =
+        withFvContext e $ do
+        tau' <- inferExp e
+        checkTypeEquality tau tau'
+        checkPure tau
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
@@ -580,18 +593,17 @@ inferExp (BindE wv tau e1 e2 _) = do
         checkTypeEquality tau_e2 (ST alphas omega s a b noLoc)
         return tau_e2
 
-inferCall :: forall m . MonadTc m
-          => Var -> [Iota] -> [Exp] -> (Type -> m Type) -> m Type
-inferCall f ies es inst = do
+inferCall :: forall m e . MonadTc m
+          => Var -> [Iota] -> [e] -> m ([Type], Type)
+inferCall f ies args = do
     (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
-    checkNumIotas (length ies) (length ivs)
-    checkNumArgs  (length es)  (length taus)
+    checkNumIotas (length ies)  (length ivs)
+    checkNumArgs  (length args) (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do
     mapM_ checkIotaArg ies
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
-    zipWithM_ checkArg es (subst theta phi taus)
-    inst $ subst theta phi tau_ret
+    return (subst theta phi taus, subst theta phi tau_ret)
   where
     checkIotaArg :: Iota -> m ()
     checkIotaArg (ConstI {}) =
@@ -599,12 +611,6 @@ inferCall f ies es inst = do
 
     checkIotaArg (VarI iv _) =
         void $ lookupIVar iv
-
-    checkArg :: Exp -> Type -> m ()
-    checkArg e tau =
-        withFvContext e $ do
-        tau' <- inferExp e >>= inst
-        checkTypeEquality tau tau'
 
     checkNumIotas :: Int -> Int -> m ()
     checkNumIotas n nexp =
@@ -668,8 +674,24 @@ inferStep :: forall l m . (IsLabel l, MonadTc m) => Step l -> m Type
 inferStep (VarC _ v _) =
     lookupVar v >>= appSTScope
 
-inferStep (CallC _ f ies es _) =
-    inferCall f ies es appSTScope
+inferStep (CallC _ f ies args _) = do
+    (taus, tau_ret) <- inferCall f ies args
+    zipWithM_ checkArg args taus
+    appSTScope tau_ret
+  where
+    checkArg :: Arg l -> Type -> m ()
+    checkArg (ExpA e) tau =
+        withFvContext e $ do
+        tau' <- inferExp e
+        checkPure tau'
+        checkTypeEquality tau tau'
+
+    checkArg (CompA c) tau =
+        withFvContext c $ do
+        tau' <- inferComp c
+        void $ checkST tau
+        tau'' <- appSTScope tau'
+        checkTypeEquality tau tau''
 
 inferStep (IfC _ e1 e2 e3 _) = do
     tau1 <- inferExp e1

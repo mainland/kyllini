@@ -46,6 +46,7 @@ module KZC.Auto.Syntax (
 
     mkBoundVar,
 
+    Arg(..),
     Step(..),
     Comp(..),
 #if !defined(ONLY_TYPEDEFS)
@@ -60,6 +61,7 @@ module KZC.Auto.Syntax (
     LProgram,
     LDecl,
     LComp,
+    LArg,
     LStep,
 
     isComplexStruct,
@@ -196,8 +198,14 @@ data Exp = ConstE Const !SrcLoc
          | BindE WildVar Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
+-- | An argument to a call to a computation function. Arguments may be
+-- expressions or computations.
+data Arg l = ExpA  Exp
+           | CompA (Comp l)
+  deriving (Eq, Ord, Read, Show)
+
 data Step l = VarC l Var !SrcLoc
-            | CallC l Var [Iota] [Exp] !SrcLoc
+            | CallC l Var [Iota] [Arg l] !SrcLoc
             | IfC l Exp (Comp l) (Comp l) !SrcLoc
             | LetC l LocalDecl !SrcLoc
 
@@ -231,6 +239,8 @@ type LProgram = Program Label
 type LDecl = Decl Label
 
 type LComp = Comp Label
+
+type LArg = Arg Label
 
 type LStep = Step Label
 
@@ -584,6 +594,10 @@ pprFunParams ivs vbs =
     pprArg :: (Var, Type) -> Doc
     pprArg (v, tau) = parens $ ppr v <+> text ":" <+> ppr tau
 
+instance IsLabel l => Pretty (Arg l) where
+    pprPrec p (ExpA e)  = pprPrec p e
+    pprPrec p (CompA c) = pprPrec p c
+
 instance IsLabel l => Pretty (Step l) where
     ppr step = ppr (Comp [step])
 
@@ -766,6 +780,10 @@ instance Fvs Exp Var where
     fvs (ReturnE _ e _)             = fvs e
     fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
 
+instance Fvs (Arg l) Var where
+    fvs (ExpA e)  = fvs e
+    fvs (CompA c) = fvs c
+
 instance Fvs (Step l) Var where
     fvs (VarC _ v _)             = singleton v
     fvs (CallC _ f _ es _)       = singleton f <> fvs es
@@ -794,6 +812,9 @@ instance Fvs (Comp l) Var where
         go (step : k)                  = fvs step <> go k
 
 instance Fvs Exp v => Fvs [Exp] v where
+    fvs es = foldMap fvs es
+
+instance Fvs (Arg l) v => Fvs [Arg l] v where
     fvs es = foldMap fvs es
 
 {------------------------------------------------------------------------------
@@ -839,6 +860,10 @@ instance HasVars Exp Var where
     allVars (ErrorE {})                 = mempty
     allVars (ReturnE _ e _)             = allVars e
     allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
+
+instance HasVars (Arg l) Var where
+    allVars (ExpA e)  = allVars e
+    allVars (CompA c) = allVars c
 
 instance HasVars (Step l) Var where
     allVars (VarC _ v _)             = singleton v
@@ -1000,6 +1025,10 @@ instance Subst Iota IVar Exp where
     substM (BindE wv tau e1 e2 l) = do
         BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
+instance Subst Iota IVar (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
+
 instance Subst Iota IVar (Step l) where
     substM step@(VarC {}) =
         pure step
@@ -1122,6 +1151,10 @@ instance Subst Type TyVar Exp where
 
     substM (BindE wv tau e1 e2 l) =
         BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
+
+instance Subst Type TyVar (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
 
 instance Subst Type TyVar (Step l) where
     substM step@(VarC {}) =
@@ -1252,6 +1285,10 @@ instance Subst Exp Var Exp where
         e1' <- substM e1
         freshen wv $ \wv' -> do
         BindE wv' tau e1' <$> substM e2 <*> pure l
+
+instance Subst Exp Var (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
 
 instance Subst Exp Var (Step l) where
     substM step@(VarC l v s) = do
@@ -1481,6 +1518,10 @@ instance IsOrd Exp where
 
 instance Located BoundVar where
     locOf (BoundV v _) = locOf v
+
+instance Located (Arg l) where
+    locOf (ExpA e)  = locOf e
+    locOf (CompA c) = locOf c
 
 instance Located (Comp l) where
     locOf (Comp steps) = locOf steps

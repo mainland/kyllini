@@ -50,6 +50,8 @@ module KZC.Core.Lint (
     checkST,
     checkSTC,
     checkSTCUnit,
+    checkPure,
+    checkPureish,
     checkPureishST,
     checkPureishSTC,
     checkPureishSTCUnit
@@ -812,18 +814,23 @@ inferKind tau =
 
     inferType (FunT ivs taus tau_ret _) =
         extendIVars (ivs `zip` repeat IotaK) $ do
-        mapM_ checkArgKind taus
+        mapM_ (checkArgKind (isPureishT tau_ret)) taus
         checkRetKind tau_ret
         return PhiK
       where
-        checkArgKind :: Type -> m ()
-        checkArgKind tau = do
+        -- If a function is pureish, i.e., it performs no takes or emits, then
+        -- it may not take a computation as an argument, i.e., it may have an
+        -- argument that is a computation, but that argument must itself then be
+        -- pureish.
+        checkArgKind :: Bool -> Type -> m ()
+        checkArgKind pureish tau = do
             kappa <- inferType tau
             case kappa of
-              TauK -> return ()
-              RhoK -> return ()
-              MuK  -> return ()
-              _    -> checkKindEquality kappa TauK
+              TauK            -> return ()
+              RhoK            -> return ()
+              MuK | pureish   -> checkPureish tau
+                  | otherwise -> return ()
+              _               -> checkKindEquality kappa TauK
 
         checkRetKind :: Type -> m ()
         checkRetKind tau = do
@@ -1036,6 +1043,18 @@ checkSTCUnit (ST [] (C (UnitT _)) s a b _) =
 checkSTCUnit tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
+
+checkPure :: MonadTc m => Type -> m ()
+checkPure tau@(ST {}) =
+    faildoc $ nest 2 $ group $
+    text "Expected pure type got:" <+/> ppr tau
+
+checkPure _ =
+    return ()
+
+checkPureish :: MonadTc m => Type -> m ()
+checkPureish tau@(ST {}) = void $ checkPureishST tau
+checkPureish _           = return ()
 
 checkPureishST :: MonadTc m => Type -> m ([TyVar], Omega, Type, Type, Type)
 checkPureishST tau@(ST alphas omega s a b _) | isPureishT tau =

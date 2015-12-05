@@ -294,9 +294,9 @@ data Iota = ConstI Int !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Kind = TauK   -- ^ Base types, including arrays of base types
-          | OmegaK -- ^ @C tau@ or @T@
-          | MuK    -- ^ @ST omega tau tau@ types
           | RhoK   -- ^ Reference types
+          | OmegaK -- ^ @C tau@ or @T@
+          | MuK    -- ^ @ST omega tau tau tau@ types
           | PhiK   -- ^ Function types
           | IotaK  -- ^ Array index types
   deriving (Eq, Ord, Read, Show)
@@ -733,9 +733,9 @@ instance Pretty Iota where
 
 instance Pretty Kind where
     ppr TauK   = text "tau"
+    ppr RhoK   = text "rho"
     ppr OmegaK = text "omega"
     ppr MuK    = text "mu"
-    ppr RhoK   = text "rho"
     ppr PhiK   = text "phi"
     ppr IotaK  = text "iota"
 
