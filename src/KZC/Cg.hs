@@ -707,8 +707,11 @@ cgExp (CallE f iotas es l) = do
             cgExp e
 
 cgExp (DerefE e _) = do
-    ce <- cgExp e
-    return $ unPtr ce
+    tau   <- inferExp e >>= checkRefT
+    ce    <- cgExp e
+    ctemp <- cgTemp "deref" tau
+    cgAssign tau ctemp (unPtr ce)
+    return ctemp
 
 cgExp (AssignE e1 e2 _) = do
     tau <- inferExp e1
@@ -717,10 +720,23 @@ cgExp (AssignE e1 e2 _) = do
     cgAssign tau ce1 ce2
     return CVoid
 
+{- Note [Compiling While Loops]
+
+The test for a while loop is a pureish ST expression because to do anything
+useful it will need to dereference variables. Compiling this expression therefor
+produces C statement representing side effects. But how can we generate C code
+for a while loop when the test requires executing C statements? One option would
+be to use GCC's statement expressions, but we'd like to stick with standard
+C. Instead, we execute the test's statements twice, once before entering the
+loop, and once at the end of the body of the loop. This ensures that the
+required side effects are executed before the test expression is evaluated.
+-}
+
 cgExp (WhileE e_test e_body l) = do
-    ce_test <- cgExp e_test
-    citems  <- inNewBlock_ $ cgExp e_body
-    appendStm $ rl l [cstm|while ($ce_test) { $items:citems }|]
+    (citems_test, ce_test) <- inNewBlock $ cgExp e_test
+    citems_body            <- inNewBlock_ $ cgExp e_body
+    appendBlock $ map (rl l) citems_test
+    appendStm $ rl l [cstm|while ($ce_test) { $items:citems_body $items:citems_test }|]
     return CVoid
 
 cgExp (ForE _ v v_tau e_start e_len e_body l) = do
@@ -1213,13 +1229,14 @@ cgComp takek emitk comp k =
         faildoc $ text "Cannot compile let computation step."
 
     cgStep (WhileC l e_test c_body sloc) _ = do
-        ce_test <- cgExp e_test
-        citems  <- inNewBlock_ $ do
-                   l_inner <- genLabel "inner_whilek"
-                   void $ cgComp takek emitk c_body l_inner
-                   cgLabel l_inner
-        cgWithLabel l $
-            appendStm $ rl sloc [cstm|while ($ce_test) { $items:citems }|]
+        (citems_test, ce_test) <- inNewBlock $ cgExp e_test
+        citems_body            <- inNewBlock_ $ do
+                                  l_inner <- genLabel "inner_whilek"
+                                  void $ cgComp takek emitk c_body l_inner
+                                  cgLabel l_inner
+        cgWithLabel l $ do
+            appendBlock $ map (rl sloc) citems_test
+            appendStm $ rl sloc [cstm|while ($ce_test) { $items:citems_body $items:citems_test }|]
         return CVoid
 
     cgStep (ForC l _ v v_tau e_start e_len c_body sloc) _ = do

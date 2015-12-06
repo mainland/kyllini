@@ -58,6 +58,7 @@ module KZC.Cg.Monad (
     appendDecls,
     appendStm,
     appendStms,
+    appendBlock,
 
     gensym,
 
@@ -350,6 +351,15 @@ appendStm cstm = tell cstm
 
 appendStms :: [C.Stm] -> Cg ()
 appendStms cstms = tell cstms
+
+appendBlock :: [C.BlockItem] -> Cg ()
+appendBlock citems
+    | all isBlockStm citems = appendStms [stm | C.BlockStm stm <- citems]
+    | otherwise             = appendStm [cstm|{ $items:citems }|]
+  where
+    isBlockStm :: C.BlockItem -> Bool
+    isBlockStm (C.BlockStm {}) = True
+    isBlockStm _               = False
 
 gensym :: String -> Cg C.Id
 gensym s = do
