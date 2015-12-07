@@ -33,8 +33,8 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
-import KZC.Lint.Monad
 import KZC.Monad.SEFKT
+import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
@@ -93,9 +93,6 @@ whenNotBeenThere ss l k = do
       then return (ss, [LoopC l])
       else recordLabel l >> k
 
--- | 'fuseProgram' fuses the @main@ computation, inlining all
--- calls/invocations of sub-computations. After the fusion phase, we will not
--- see a 'VarC' or 'CallC' computation in @main@.
 fuseProgram :: forall m . (MonadPlus m, MonadTc m) => LProgram -> m LProgram
 fuseProgram prog =
     fuse prog `mplus` return prog
@@ -117,42 +114,39 @@ fuseDecls (decl:decls) k =
     fuseDecl decl $ fuseDecls decls k
 
 fuseDecl :: (MonadPlus m, MonadTc m) => LDecl -> m a -> m a
-fuseDecl (LetD v tau _ _) k =
-    extendVars [(v, tau)] k
+fuseDecl (LetD decl _) k =
+    fuseLocalDecl decl k
 
 fuseDecl (LetFunD f iotas vbs tau_ret _ l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 fuseDecl (LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-fuseDecl (LetRefD v tau _ _) k =
-    extendVars [(v, refT tau)] k
 
 fuseDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] k
 
 fuseDecl (LetCompD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 fuseDecl (LetFunCompD f ivs vbs tau_ret _ l) k =
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
 
 fuseLocalDecl :: (MonadPlus m, MonadTc m) => LocalDecl -> m a -> m a
 fuseLocalDecl (LetLD v tau _ _) k =
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
 fuseLocalDecl (LetRefLD v tau _ _) k =
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, refT tau)] k
 
 fuseComp :: (MonadPlus m, MonadTc m) => LComp -> m LComp
 fuseComp (Comp steps) = Comp <$> fuseSteps steps
@@ -165,8 +159,8 @@ fuseSteps (step@(LetC _ decl _) : steps) =
     fuseLocalDecl decl $
     (:) <$> pure step <*> fuseSteps steps
 
-fuseSteps (step@(BindC _ bv _) : steps) =
-    extendBindVars [bv] $
+fuseSteps (step@(BindC _ wv tau _) : steps) =
+    extendWildVars [(wv, tau)] $
     (:) <$> pure step <*> fuseSteps steps
 
 fuseSteps (step : steps) =
@@ -470,19 +464,25 @@ knownArraySize tau = do
       ConstI n _ -> return n
       _          -> mzero
 
-relabelStep :: (MonadPlus m, MonadTc m) => l2 -> Step l1 -> (Step l2 -> m a) -> m a
-relabelStep _ (VarC {}) _k =
-    mzero
+relabelStep :: (IsLabel l1, MonadPlus m, MonadTc m)
+            => l2
+            -> Step l1
+            -> (Step l2 -> m a)
+            -> m a
+relabelStep _ step@(VarC {}) _k =
+    withSummaryContext step $
+    faildoc $ text "Saw variable bound to a computation during fusion"
 
-relabelStep _ (CallC {}) _k =
-    mzero
+relabelStep _ step@(CallC {}) _k =
+    withSummaryContext step $
+    faildoc $ text "Saw call to a computation function during fusion"
 
 relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
-    extendVars [(v, tau)] $
+    extendVars [(bVar v, tau)] $
     k $ LetC l decl s
 
 relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
-    extendVars [(v, refT tau)] $
+    extendVars [(bVar v, refT tau)] $
     k $ LetC l decl s
 
 relabelStep l (LiftC _ e s) k =
@@ -491,12 +491,9 @@ relabelStep l (LiftC _ e s) k =
 relabelStep l (ReturnC _ e s) k =
     k $ ReturnC l e s
 
-relabelStep l (BindC _ bv@WildV s) k =
-    k $ BindC l bv s
-
-relabelStep l (BindC _ bv@(BindV v tau) s) k =
-    extendVars [(v, tau)] $
-    k $ BindC l bv s
+relabelStep l (BindC _ wv tau s) k =
+    extendWildVars [(wv, tau)] $
+    k $ BindC l wv tau s
 
 relabelStep l (TakeC _ tau s) k =
     k $ TakeC l tau s

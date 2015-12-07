@@ -8,6 +8,7 @@
 module KZC.Auto.Smart (
     module KZC.Auto.Smart,
     isCompT,
+    isPureT,
     isPureishT
   ) where
 
@@ -17,6 +18,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
 import KZC.Core.Smart (isCompT,
+                       isPureT,
                        isPureishT)
 import KZC.Name
 import KZC.Platform
@@ -69,10 +71,10 @@ returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
 bindE :: Var -> Type -> Exp -> Exp -> Exp
-bindE v tau e1 e2 = BindE (BindV v tau) e1 e2 (v `srcspan` e1 `srcspan` e2)
+bindE v tau e1 e2 = BindE (TameV (mkBoundVar v)) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
 
-seqE :: Exp -> Exp -> Exp
-seqE e1 e2 = BindE WildV e1 e2 (e1 `srcspan` e2)
+seqE :: Type -> Exp -> Exp -> Exp
+seqE tau e1 e2 = BindE WildV tau e1 e2 (e1 `srcspan` e2)
 
 infixr 1 .:=.
 

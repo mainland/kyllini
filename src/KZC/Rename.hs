@@ -26,7 +26,6 @@ import KZC.Error
 import KZC.Name
 import KZC.Rename.Monad
 import KZC.Summary
-import KZC.Uniq
 
 renameProgram :: [CompLet] -> Rn [CompLet]
 renameProgram cls = rnCompLets cls
@@ -34,7 +33,7 @@ renameProgram cls = rnCompLets cls
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
     checkDuplicates desc vs
-    vs' <- mapM mkUniq vs
+    vs' <- mapM ensureUniq vs
     extend vars (\env x -> env { vars = x }) (vs `zip` vs') m
 
 lookupVar :: Var -> Rn Var
@@ -46,7 +45,7 @@ lookupVar v =
 extendCompVars :: Doc -> [Var] -> Rn a -> Rn a
 extendCompVars desc vs m = do
     checkDuplicates desc vs
-    vs' <- mapM mkUniq vs
+    vs' <- mapM ensureUniq vs
     extend compVars (\env x -> env { compVars = x }) (vs `zip` vs') m
 
 lookupMaybeCompVar :: Var -> Rn Var
@@ -64,15 +63,10 @@ lookupMaybeCompVar v = do
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
-mkUniq :: Var -> Rn Var
-mkUniq v = do
+ensureUniq :: Var -> Rn Var
+ensureUniq v = do
     ins <- inscope v
-    if ins then uniquify v else return v
-  where
-    uniquify :: Var -> Rn Var
-    uniquify (Var n) = do
-        u <- newUnique
-        return $ Var $ n { nameSort = Internal u }
+    if ins then mkUniq v else return v
 
 inscope :: Var -> Rn Bool
 inscope v = do

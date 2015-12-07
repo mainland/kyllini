@@ -15,6 +15,7 @@
 
 module KZC.Auto.Syntax (
     Var(..),
+    WildVar(..),
     Field(..),
     Struct(..),
     TyVar(..),
@@ -28,12 +29,13 @@ module KZC.Auto.Syntax (
     Program(..),
     Decl(..),
     LocalDecl(..),
+    BoundVar(..),
+    OccInfo(..),
     Exp(..),
     UnrollAnn(..),
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
-    BindVar(..),
     Unop(..),
     Binop(..),
     StructDef(..),
@@ -42,11 +44,15 @@ module KZC.Auto.Syntax (
     Iota(..),
     Kind(..),
 
+    mkBoundVar,
+
+    Arg(..),
     Step(..),
     Comp(..),
 #if !defined(ONLY_TYPEDEFS)
     compLabel,
     setCompLabel,
+    rewriteStepsLabel,
     compUsedLabels,
     stepLabel,
     setStepLabel,
@@ -55,12 +61,15 @@ module KZC.Auto.Syntax (
     LProgram,
     LDecl,
     LComp,
+    LArg,
     LStep,
 
     isComplexStruct,
 
     Stm(..)
   ) where
+
+import Prelude hiding ((<=))
 
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader
@@ -71,6 +80,7 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String (IsString(..))
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
@@ -89,7 +99,6 @@ import KZC.Core.Syntax (Var(..),
                         InlineAnn(..),
                         PipelineAnn(..),
                         VectAnn(..),
-                        BindVar(..),
                         Unop(..),
                         Binop(..),
                         StructDef(..),
@@ -116,21 +125,48 @@ import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
+import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
 
+data BoundVar = BoundV { bVar :: Var, bOccInfo :: Maybe OccInfo }
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString BoundVar where
+    fromString s = mkBoundVar (fromString s)
+
+instance Named BoundVar where
+    namedSymbol (BoundV v _) = namedSymbol v
+
+    mapName f (BoundV v occ) = BoundV (mapName f v) occ
+
+mkBoundVar :: Var -> BoundVar
+mkBoundVar v = BoundV v Nothing
+
+data WildVar = WildV
+             | TameV BoundVar
+  deriving (Eq, Ord, Read, Show)
+
 data Program l = Program [Decl l] (Comp l) Type
+  deriving (Eq, Ord, Read, Show)
 
-data Decl l = LetD Var Type Exp !SrcLoc
-            | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
-            | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
-            | LetRefD Var Type (Maybe Exp) !SrcLoc
+data Decl l = LetD LocalDecl !SrcLoc
+            | LetFunD BoundVar [IVar] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD BoundVar [IVar] [(Var, Type)] Type !SrcLoc
             | LetStructD Struct [(Field, Type)] !SrcLoc
-            | LetCompD Var Type (Comp l) !SrcLoc
-            | LetFunCompD Var [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
+            | LetCompD BoundVar Type (Comp l) !SrcLoc
+            | LetFunCompD BoundVar [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
 
-data LocalDecl = LetLD Var Type Exp !SrcLoc
-               | LetRefLD Var Type (Maybe Exp) !SrcLoc
+data LocalDecl = LetLD BoundVar Type Exp !SrcLoc
+               | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data OccInfo = Dead
+             | Once
+             | OnceInFun
+             | ManyBranch
+             | Many
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -158,11 +194,17 @@ data Exp = ConstE Const !SrcLoc
          | ErrorE Type String !SrcLoc
          -- Monadic operations
          | ReturnE InlineAnn Exp !SrcLoc
-         | BindE BindVar Exp Exp !SrcLoc
+         | BindE WildVar Type Exp Exp !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+-- | An argument to a call to a computation function. Arguments may be
+-- expressions or computations.
+data Arg l = ExpA  Exp
+           | CompA (Comp l)
   deriving (Eq, Ord, Read, Show)
 
 data Step l = VarC l Var !SrcLoc
-            | CallC l Var [Iota] [Exp] !SrcLoc
+            | CallC l Var [Iota] [Arg l] !SrcLoc
             | IfC l Exp (Comp l) (Comp l) !SrcLoc
             | LetC l LocalDecl !SrcLoc
 
@@ -174,7 +216,7 @@ data Step l = VarC l Var !SrcLoc
             -- 'ReturnC' differ only for the purpose of type checking.
             | LiftC l Exp !SrcLoc
             | ReturnC l Exp !SrcLoc
-            | BindC l BindVar !SrcLoc
+            | BindC l WildVar Type !SrcLoc
 
             | TakeC l Type !SrcLoc
             | TakesC l Int Type !SrcLoc
@@ -197,9 +239,51 @@ type LDecl = Decl Label
 
 type LComp = Comp Label
 
+type LArg = Arg Label
+
 type LStep = Step Label
 
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Occurrence info lattice
+ -
+ ------------------------------------------------------------------------------}
+instance Poset OccInfo where
+    Dead       <= _          = True
+    Once       <= Once       = True
+    OnceInFun  <= OnceInFun  = True
+    ManyBranch <= ManyBranch = True
+    _          <= Many       = True
+    _          <= _          = False
+
+instance Lattice OccInfo where
+    Dead `lub` x    = x
+    x    `lub` Dead = x
+    _    `lub` _    = Many
+
+    Dead `glb` _    = Dead
+    _    `glb` Dead = Dead
+    Many `glb` x    = x
+    x    `glb` Many = x
+    x    `glb` y
+        | x <= y    = x
+        | y <= x    = y
+        | otherwise = Dead
+
+instance BoundedLattice OccInfo where
+    bot = Dead
+    top = Many
+
+instance BranchLattice OccInfo where
+    Dead       `bub` x          = x
+    x          `bub` Dead       = x
+    Once       `bub` Once       = ManyBranch
+    Once       `bub` ManyBranch = ManyBranch
+    ManyBranch `bub` Once       = ManyBranch
+    ManyBranch `bub` ManyBranch = ManyBranch
+    _          `bub` _          = Many
+
 {------------------------------------------------------------------------------
  -
  - Computation labels
@@ -212,6 +296,16 @@ compLabel (Comp (step:_)) = stepLabel step
 setCompLabel :: l -> Comp l -> Comp l
 setCompLabel _ comp@(Comp [])      = comp
 setCompLabel l (Comp (step:steps)) = Comp (setStepLabel l step:steps)
+
+-- | Rewrite the label of the first step in a computation and ensure that any
+-- references to the old label are rewritten to refer to the new label.
+rewriteStepsLabel :: Monad m => Label -> [LStep] -> m [LStep]
+rewriteStepsLabel _ steps@[] =
+    return steps
+
+rewriteStepsLabel l_new (step:steps) = do
+    l_old <- stepLabel step
+    return $ subst1 (l_old /-> l_new) (step:steps)
 
 compUsedLabels :: forall l . Ord l => Comp l -> Set l
 compUsedLabels comp =
@@ -235,7 +329,7 @@ stepLabel (WhileC l _ _ _)       = return l
 stepLabel (ForC l _ _ _ _ _ _ _) = return l
 stepLabel (LiftC l _ _)          = return l
 stepLabel (ReturnC l _ _)        = return l
-stepLabel (BindC l _ _)          = return l
+stepLabel (BindC l _ _ _)        = return l
 stepLabel (TakeC l _ _)          = return l
 stepLabel (TakesC l _ _ _)       = return l
 stepLabel (EmitC l _ _)          = return l
@@ -253,7 +347,7 @@ setStepLabel l (WhileC _ e c s)             = WhileC l e c s
 setStepLabel l (ForC _ ann v tau e1 e2 c s) = ForC l ann v tau e1 e2 c s
 setStepLabel l (LiftC _ e s)                = LiftC l e s
 setStepLabel l (ReturnC _ e s)              = ReturnC l e s
-setStepLabel l (BindC _ bv s)               = BindC l bv s
+setStepLabel l (BindC _ wv tau s)           = BindC l wv tau s
 setStepLabel l (TakeC _ tau s)              = TakeC l tau s
 setStepLabel l (TakesC _ i tau s)           = TakesC l i tau s
 setStepLabel l (EmitC _ e s)                = EmitC l e s
@@ -269,9 +363,10 @@ setStepLabel _ step@(LoopC {})              = step
  ------------------------------------------------------------------------------}
 
 expToStms :: Exp -> [Stm Exp]
-expToStms (ReturnE ann e l)  = [ReturnS ann e l]
-expToStms (BindE bv e1 e2 l) = BindS bv e1 l : expToStms e2
-expToStms e                  = [ExpS e (srclocOf e)]
+expToStms (ReturnE ann e l)             = [ReturnS ann e l]
+expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just (bVar v)) tau e1 l : expToStms e2
+expToStms e                             = [ExpS e (srclocOf e)]
 
 {------------------------------------------------------------------------------
  -
@@ -280,10 +375,9 @@ expToStms e                  = [ExpS e (srclocOf e)]
  ------------------------------------------------------------------------------}
 
 instance Summary (Decl l) where
-    summary (LetD v _ _ _)            = text "definition of" <+> ppr v
+    summary (LetD decl _)             = summary decl
     summary (LetFunD v _ _ _ _ _)     = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _)    = text "definition of" <+> ppr v
-    summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
     summary (LetStructD s _ _)        = text "definition of" <+> ppr s
     summary (LetCompD v _ _ _)        = text "definition of" <+> ppr v
     summary (LetFunCompD v _ _ _ _ _) = text "definition of" <+> ppr v
@@ -301,11 +395,29 @@ instance IsLabel l => Summary (Comp l) where
 instance IsLabel l => Summary (Step l) where
     summary s = text "computation:" <+> ppr s
 
+instance IsLabel l => Summary [Step l] where
+    summary s = text "computation:" <+> ppr s
+
 {------------------------------------------------------------------------------
  -
  - Pretty printing
  -
  ------------------------------------------------------------------------------}
+
+instance Pretty WildVar where
+    ppr WildV     = text "_"
+    ppr (TameV v) = ppr v
+
+instance Pretty BoundVar where
+    ppr (BoundV v Nothing)    = ppr v
+    ppr (BoundV v (Just occ)) = ppr v <> braces (ppr occ)
+
+instance Pretty OccInfo where
+    ppr Dead       = text "0"
+    ppr Once       = text "1"
+    ppr OnceInFun  = text "1fun"
+    ppr ManyBranch = text "*branch"
+    ppr Many       = text "*"
 
 instance IsLabel l => Pretty (Program l) where
     ppr (Program decls comp tau) =
@@ -313,11 +425,8 @@ instance IsLabel l => Pretty (Program l) where
         ppr (LetCompD "main" tau comp noLoc)
 
 instance IsLabel l => Pretty (Decl l) where
-    pprPrec p (LetD v tau e _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
+    pprPrec p (LetD decl _) =
+        pprPrec p decl
 
     pprPrec p (LetFunD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
@@ -329,16 +438,6 @@ instance IsLabel l => Pretty (Decl l) where
         parensIf (p > appPrec) $
         text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
         nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
-
-    pprPrec p (LetRefD v tau Nothing _) =
-        parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau
-
-    pprPrec p (LetRefD v tau (Just e) _) =
-        parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
@@ -427,7 +526,7 @@ instance Pretty Exp where
         ppr ann <+> text "for" <+>
         group (parens (ppr v <+> colon <+> ppr tau) <+>
                text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <>
+               brackets (commasep [ppr e1, ppr e2])) <+/>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
@@ -472,21 +571,17 @@ pprFunParams ivs vbs =
     go ivs vbs
   where
     go :: [IVar] -> [(Var, Type)] -> Doc
-    go [] [] =
-        empty
-
-    go [] [vb] =
-        pprArg vb
-
-    go [] vbs =
-        sep (map pprArg vbs)
-
-    go iotas vbs =
-        sep (map ppr iotas ++ map pprArg vbs)
+    go []    []   = empty
+    go []    [vb] = pprArg vb
+    go []    vbs  = sep (map pprArg vbs)
+    go iotas vbs  = sep (map ppr iotas ++ map pprArg vbs)
 
     pprArg :: (Var, Type) -> Doc
-    pprArg (v, tau) =
-        parens $ ppr v <+> text ":" <+> ppr tau
+    pprArg (v, tau) = parens $ ppr v <+> text ":" <+> ppr tau
+
+instance IsLabel l => Pretty (Arg l) where
+    pprPrec p (ExpA e)  = pprPrec p e
+    pprPrec p (CompA c) = pprPrec p c
 
 instance IsLabel l => Pretty (Step l) where
     ppr step = ppr (Comp [step])
@@ -538,7 +633,7 @@ pprComp comp =
         ppr ann <+> text "for" <+>
         group (parens (ppr v <+> colon <+> ppr tau) <+>
                text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <>
+               brackets (commasep [ppr e1, ppr e2])) <+/>
         ppr c
 
     pprSteps (LiftC _ e _ : k) =
@@ -549,10 +644,10 @@ pprComp comp =
         pprBind k $
         text "return" <+> pprPrec appPrec1 e
 
-    pprSteps (BindC _ WildV _  : k) =
+    pprSteps (BindC _ WildV _ _  : k) =
         text "_ <- _" : pprSteps k
 
-    pprSteps (BindC _ (BindV v tau) _ : k) =
+    pprSteps (BindC _ (TameV v) tau _ : k) =
         bindDoc : pprSteps k
       where
         bindDoc :: Doc
@@ -589,10 +684,10 @@ pprComp comp =
         [text "loop" <+> ppr l]
 
     pprBind :: [Step l] -> Doc -> [Doc]
-    pprBind (BindC _ WildV _  : k) step =
+    pprBind (BindC _ WildV _ _  : k) step =
         step : pprSteps k
 
-    pprBind (BindC _ (BindV v tau) _ : k) step =
+    pprBind (BindC _ (TameV v) tau _ : k) step =
         step' : pprSteps k
       where
         step' :: Doc
@@ -604,35 +699,48 @@ pprComp comp =
 
 {------------------------------------------------------------------------------
  -
+ - Freshening bound variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance Freshen BoundVar Exp Var where
+    freshen (BoundV v occ) k =
+        freshen v $ \v' ->
+        k $ BoundV v' occ
+
+{------------------------------------------------------------------------------
+ -
  - Free variables
  -
  ------------------------------------------------------------------------------}
 
+instance Binders WildVar Var where
+    binders WildV     = mempty
+    binders (TameV v) = singleton (bVar v)
+
 instance Fvs (Decl l) Var where
-    fvs (LetD v _ e _)              = delete v (fvs e)
-    fvs (LetFunD v _ vbs _ e _)     = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetD decl _)               = fvs decl
+    fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
     fvs (LetExtFunD {})             = mempty
-    fvs (LetRefD v _ e _)           = delete v (fvs e)
     fvs (LetStructD {})             = mempty
-    fvs (LetCompD v _ ccomp _)      = delete v (fvs ccomp)
-    fvs (LetFunCompD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
+    fvs (LetCompD v _ ccomp _)      = delete (bVar v) (fvs ccomp)
+    fvs (LetFunCompD v _ vbs _ e _) = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
 
 instance Binders (Decl l) Var where
-    binders (LetD v _ _ _)            = singleton v
-    binders (LetFunD v _ _ _ _ _)     = singleton v
-    binders (LetExtFunD v _ _ _ _)    = singleton v
-    binders (LetRefD v _ _ _)         = singleton v
+    binders (LetD decl _)             = binders decl
+    binders (LetFunD v _ _ _ _ _)     = singleton (bVar v)
+    binders (LetExtFunD v _ _ _ _)    = singleton (bVar v)
     binders (LetStructD {})           = mempty
-    binders (LetCompD v _ _ _)        = singleton v
-    binders (LetFunCompD v _ _ _ _ _) = singleton v
+    binders (LetCompD v _ _ _)        = singleton (bVar v)
+    binders (LetFunCompD v _ _ _ _ _) = singleton (bVar v)
 
 instance Fvs LocalDecl Var where
-    fvs (LetLD v _ e _)    = delete v (fvs e)
-    fvs (LetRefLD v _ e _) = delete v (fvs e)
+    fvs (LetLD v _ e _)    = delete (bVar v) (fvs e)
+    fvs (LetRefLD v _ e _) = delete (bVar v) (fvs e)
 
 instance Binders LocalDecl Var where
-    binders (LetLD v _ _ _)    = singleton v
-    binders (LetRefLD v _ _ _) = singleton v
+    binders (LetLD v _ _ _)    = singleton (bVar v)
+    binders (LetRefLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
     fvs (ConstE {})                 = mempty
@@ -653,7 +761,11 @@ instance Fvs Exp Var where
     fvs (PrintE _ es _)             = fvs es
     fvs (ErrorE {})                 = mempty
     fvs (ReturnE _ e _)             = fvs e
-    fvs (BindE bv e1 e2 _)          = fvs e1 <> (fvs e2 <\\> binders bv)
+    fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
+
+instance Fvs (Arg l) Var where
+    fvs (ExpA e)  = fvs e
+    fvs (CompA c) = fvs c
 
 instance Fvs (Step l) Var where
     fvs (VarC _ v _)             = singleton v
@@ -678,11 +790,14 @@ instance Fvs (Comp l) Var where
       where
         go :: SetLike m Var => [Step l] -> m Var
         go []                          = mempty
-        go (BindC _ bv _ : k)          = go k <\\> binders bv
+        go (BindC _ wv _ _ : k)        = go k <\\> binders wv
         go (LetC _ decl _ : k)         = fvs decl <> (go k <\\> binders decl)
         go (step : k)                  = fvs step <> go k
 
 instance Fvs Exp v => Fvs [Exp] v where
+    fvs es = foldMap fvs es
+
+instance Fvs (Arg l) v => Fvs [Arg l] v where
     fvs es = foldMap fvs es
 
 {------------------------------------------------------------------------------
@@ -691,18 +806,21 @@ instance Fvs Exp v => Fvs [Exp] v where
  -
  ------------------------------------------------------------------------------}
 
+instance HasVars WildVar Var where
+    allVars WildV     = mempty
+    allVars (TameV v) = singleton (bVar v)
+
 instance HasVars (Decl l) Var where
-    allVars (LetD v _ e _)              = singleton v <> allVars e
-    allVars (LetFunD v _ vbs _ e _)     = singleton v <> fromList (map fst vbs) <> allVars e
-    allVars (LetExtFunD v _ vbs _ _)    = singleton v <> fromList (map fst vbs)
-    allVars (LetRefD v _ e _)           = singleton v <> allVars e
+    allVars (LetD decl _)               = allVars decl
+    allVars (LetFunD v _ vbs _ e _)     = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
+    allVars (LetExtFunD v _ vbs _ _)    = singleton (bVar v) <> fromList (map fst vbs)
     allVars (LetStructD {})             = mempty
-    allVars (LetCompD v _ ccomp _)      = singleton v <> allVars ccomp
-    allVars (LetFunCompD v _ vbs _ e _) = singleton v <> fromList (map fst vbs) <> allVars e
+    allVars (LetCompD v _ ccomp _)      = singleton (bVar v) <> allVars ccomp
+    allVars (LetFunCompD v _ vbs _ e _) = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
 
 instance HasVars LocalDecl Var where
-    allVars (LetLD v _ e _)    = singleton v <> allVars e
-    allVars (LetRefLD v _ e _) = singleton v <> allVars e
+    allVars (LetLD v _ e _)    = singleton (bVar v) <> allVars e
+    allVars (LetRefLD v _ e _) = singleton (bVar v) <> allVars e
 
 instance HasVars Exp Var where
     allVars (ConstE {})                 = mempty
@@ -723,7 +841,11 @@ instance HasVars Exp Var where
     allVars (PrintE _ es _)             = allVars es
     allVars (ErrorE {})                 = mempty
     allVars (ReturnE _ e _)             = allVars e
-    allVars (BindE bv e1 e2 _)          = allVars bv <> allVars e1 <> allVars e2
+    allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
+
+instance HasVars (Arg l) Var where
+    allVars (ExpA e)  = allVars e
+    allVars (CompA c) = allVars c
 
 instance HasVars (Step l) Var where
     allVars (VarC _ v _)             = singleton v
@@ -787,8 +909,8 @@ instance IsLabel l => Subst l l (Step l) where
     substM (ReturnC l e s) =
         ReturnC <$> substM l <*> pure e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC <$> substM l <*> pure bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC <$> substM l <*> pure wv <*> pure tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC <$> substM l <*> pure tau <*> pure s
@@ -882,8 +1004,12 @@ instance Subst Iota IVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) = do
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) = do
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
+
+instance Subst Iota IVar (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
 
 instance Subst Iota IVar (Step l) where
     substM step@(VarC {}) =
@@ -910,8 +1036,8 @@ instance Subst Iota IVar (Step l) where
     substM (ReturnC l e s) =
         ReturnC l <$> substM e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC l <$> substM bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC l wv <$> substM tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -1005,8 +1131,12 @@ instance Subst Type TyVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) =
-        BindE <$> substM bv <*> substM e1 <*> substM e2 <*> pure l
+    substM (BindE wv tau e1 e2 l) =
+        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
+
+instance Subst Type TyVar (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
 
 instance Subst Type TyVar (Step l) where
     substM step@(VarC {}) =
@@ -1033,8 +1163,8 @@ instance Subst Type TyVar (Step l) where
     substM (ReturnC l e s) =
         ReturnC l <$> substM e <*> pure s
 
-    substM (BindC l bv s) =
-        BindC l <$> substM bv <*> pure s
+    substM (BindC l wv tau s) =
+        BindC l wv <$> substM tau <*> pure s
 
     substM (TakeC l tau s) =
         TakeC l <$> substM tau <*> pure s
@@ -1133,10 +1263,14 @@ instance Subst Exp Var Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE bv e1 e2 l) = do
+    substM (BindE wv tau e1 e2 l) = do
         e1' <- substM e1
-        freshen bv $ \bv' -> do
-        BindE bv' e1' <$> substM e2 <*> pure l
+        freshen wv $ \wv' -> do
+        BindE wv' tau e1' <$> substM e2 <*> pure l
+
+instance Subst Exp Var (Arg l) where
+    substM (ExpA e)  = ExpA <$> substM e
+    substM (CompA c) = CompA <$> substM c
 
 instance Subst Exp Var (Step l) where
     substM step@(VarC l v s) = do
@@ -1213,14 +1347,14 @@ instance Subst Exp Var (Comp l) where
             steps' <- go steps
             return $ LetC l decl' s : steps'
 
-        go (step@(BindC _ WildV _) : steps) = do
+        go (step@(BindC _ WildV _ _) : steps) = do
             steps' <- go steps
             return $ step : steps'
 
-        go (BindC l (BindV v tau) s : steps) = do
+        go (BindC l (TameV v) tau s : steps) = do
             freshen v $ \v' -> do
             steps' <- go steps
-            return $ BindC l (BindV v' tau) s : steps'
+            return $ BindC l (TameV v') tau s : steps'
 
         go (step : steps) =
             (:) <$> substM step <*> go steps
@@ -1232,9 +1366,9 @@ instance Subst Exp Var (Comp l) where
  ------------------------------------------------------------------------------}
 
 instance Freshen (Decl l) Iota IVar where
-    freshen (LetD v tau e l) k = do
-        decl' <- LetD v <$> substM tau <*> substM e <*> pure l
-        k decl'
+    freshen (LetD decl l) k =
+        freshen decl $ \decl' ->
+        k $ LetD decl' l
 
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen ibs $ \ibs' -> do
@@ -1244,10 +1378,6 @@ instance Freshen (Decl l) Iota IVar where
     freshen (LetExtFunD v ibs vbs tau l) k =
         freshen ibs $ \ibs' -> do
         decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
-        k decl'
-
-    freshen (LetRefD v tau e l) k = do
-        decl' <- LetRefD v <$> substM tau <*> substM e <*> pure l
         k decl'
 
     freshen decl@(LetStructD {}) k =
@@ -1262,6 +1392,15 @@ instance Freshen (Decl l) Iota IVar where
         decl' <- LetFunCompD v ibs' vbs <$> substM tau <*> substM comp <*> pure l
         k decl'
 
+instance Freshen LocalDecl Iota IVar where
+    freshen (LetLD v tau e l) k = do
+        decl' <- LetLD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
+    freshen (LetRefLD v tau e l) k = do
+        decl' <- LetRefLD v <$> substM tau <*> substM e <*> pure l
+        k decl'
+
 {------------------------------------------------------------------------------
  -
  - Freshening variables
@@ -1269,10 +1408,9 @@ instance Freshen (Decl l) Iota IVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen (Decl l) Exp Var where
-    freshen (LetD v tau e l) k = do
-        e' <- substM e
-        freshen v $ \v' -> do
-        k (LetD v' tau e' l)
+    freshen (LetD decl l) k =
+        freshen decl $ \decl' ->
+        k $ LetD decl' l
 
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen v   $ \v'   ->
@@ -1285,11 +1423,6 @@ instance Freshen (Decl l) Exp Var where
         freshen vbs $ \vbs' -> do
         decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
         k decl'
-
-    freshen (LetRefD v tau e l) k = do
-        e' <- substM e
-        freshen v $ \v' -> do
-        k (LetRefD v' tau e' l)
 
     freshen decl@(LetStructD {}) k =
         k decl
@@ -1331,13 +1464,9 @@ instance Freshen (Var, Type) Exp Var where
         freshen v $ \v' ->
         k (v', tau)
 
-instance Freshen BindVar Exp Var where
-    freshen WildV k =
-        k WildV
-
-    freshen (BindV v tau) k =
-        freshen v $ \v' ->
-        k $ BindV v' tau
+instance Freshen WildVar Exp Var where
+    freshen WildV     k = k WildV
+    freshen (TameV v) k = freshen v $ \v' -> k (TameV v')
 
 {------------------------------------------------------------------------------
  -
@@ -1367,6 +1496,13 @@ instance IsOrd Exp where
     e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
 
 #include "KZC/Auto/Syntax-instances.hs"
+
+instance Located BoundVar where
+    locOf (BoundV v _) = locOf v
+
+instance Located (Arg l) where
+    locOf (ExpA e)  = locOf e
+    locOf (CompA c) = locOf c
 
 instance Located (Comp l) where
     locOf (Comp steps) = locOf steps

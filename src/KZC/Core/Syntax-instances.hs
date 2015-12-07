@@ -10,9 +10,9 @@ instance Located IVar where
   locOf (IVar l) = locOf l
 instance Located Decl where
   locOf (LetD _ _ _ l) = locOf l
+  locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l
-  locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetStructD _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
@@ -33,7 +33,7 @@ instance Located Exp where
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
-  locOf (BindE _ _ _ l) = locOf l
+  locOf (BindE _ _ _ _ l) = locOf l
   locOf (TakeE _ l) = locOf l
   locOf (TakesE _ _ l) = locOf l
   locOf (EmitE _ l) = locOf l

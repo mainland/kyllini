@@ -1,8 +1,7 @@
 instance Located (Decl a) where
-  locOf (LetD _ _ _ l) = locOf l
+  locOf (LetD _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l
-  locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetStructD _ _ l) = locOf l
   locOf (LetCompD _ _ _ l) = locOf l
   locOf (LetFunCompD _ _ _ _ _ l) = locOf l
@@ -15,7 +14,7 @@ instance Located (Step a) where
   locOf (ForC _ _ _ _ _ _ _ l) = locOf l
   locOf (LiftC _ _ l) = locOf l
   locOf (ReturnC _ _ l) = locOf l
-  locOf (BindC _ _ l) = locOf l
+  locOf (BindC _ _ _ l) = locOf l
   locOf (TakeC _ _ l) = locOf l
   locOf (TakesC _ _ _ l) = locOf l
   locOf (EmitC _ _ l) = locOf l
@@ -45,4 +44,4 @@ instance Located Exp where
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
-  locOf (BindE _ _ _ l) = locOf l
+  locOf (BindE _ _ _ _ l) = locOf l

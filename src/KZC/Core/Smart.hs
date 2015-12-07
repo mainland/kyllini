@@ -51,10 +51,10 @@ returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
 bindE :: Var -> Type -> Exp -> Exp -> Exp
-bindE v tau e1 e2 = BindE (BindV v tau) e1 e2 (v `srcspan` e1 `srcspan` e2)
+bindE v tau e1 e2 = BindE (TameV v) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
 
-seqE :: Exp -> Exp -> Exp
-seqE e1 e2 = BindE WildV e1 e2 (e1 `srcspan` e2)
+seqE :: Type -> Exp -> Exp -> Exp
+seqE tau e1 e2 = BindE WildV tau e1 e2 (e1 `srcspan` e2)
 
 takeE :: Type -> Exp
 takeE tau = TakeE tau (srclocOf tau)
@@ -130,6 +130,11 @@ isSTUnitT _                              = False
 isCompT :: Type -> Bool
 isCompT (ST {}) = True
 isCompT _       = False
+
+-- | Return 'True' if the type is pure.
+isPureT :: Type -> Bool
+isPureT (ST {}) = False
+isPureT _       = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
 -- otherwise. A pureish computation may use references, but it may not take or

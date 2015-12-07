@@ -10,10 +10,14 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Lint (
+    module KZC.Core.Lint.Monad,
+
     Tc(..),
     runTc,
     liftTc,
     withTcEnv,
+
+    extendWildVars,
 
     typeBitWidth,
 
@@ -39,11 +43,19 @@ module KZC.Auto.Lint (
     checkArrT,
     checkStructT,
     checkStructFieldT,
+    checkRefT,
+    checkFunT,
+
+    absSTScope,
+    appSTScope,
     checkST,
     checkSTC,
     checkSTCUnit,
-    checkRefT,
-    checkFunT
+    checkPure,
+    checkPureish,
+    checkPureishST,
+    checkPureishSTC,
+    checkPureishSTCUnit
   ) where
 
 import Control.Monad (when,
@@ -57,42 +69,51 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
+import KZC.Core.Lint (Tc(..),
+                      runTc,
+                      liftTc,
+                      withTcEnv,
+
+                      inferKind,
+                      checkKind,
+
+                      checkCast,
+                      checkBitcast,
+                      typeBitWidth,
+
+                      checkTypeEquality,
+
+                      checkEqT,
+                      checkOrdT,
+                      checkBoolT,
+                      checkBitT,
+                      checkIntT,
+                      checkNumT,
+                      checkArrT,
+                      checkStructT,
+                      checkStructFieldT,
+                      checkRefT,
+                      checkFunT,
+
+                      absSTScope,
+                      appSTScope,
+                      checkST,
+                      checkSTC,
+                      checkSTCUnit,
+                      checkPure,
+                      checkPureish,
+                      checkPureishST,
+                      checkPureishSTC,
+                      checkPureishSTCUnit)
+import KZC.Core.Lint.Monad
 import KZC.Error
 import KZC.Label
-import KZC.Lint (Tc(..),
-                 runTc,
-                 liftTc,
-                 withTcEnv,
-
-                 inferKind,
-                 checkKind,
-
-                 checkCast,
-                 checkBitcast,
-                 typeBitWidth,
-
-                 checkTypeEquality,
-
-                 absSTScope,
-                 appSTScope,
-
-                 checkEqT,
-                 checkOrdT,
-                 checkBoolT,
-                 checkBitT,
-                 checkIntT,
-                 checkNumT,
-                 checkArrT,
-                 checkStructT,
-                 checkStructFieldT,
-                 checkST,
-                 checkSTC,
-                 checkSTCUnit,
-                 checkRefT,
-                 checkFunT)
-import KZC.Lint.Monad
 import KZC.Summary
 import KZC.Vars
+
+extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
+extendWildVars wvs m =
+    extendVars [(bVar v, tau) | (TameV v, tau) <- wvs] m
 
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
@@ -121,23 +142,13 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
-checkDecl decl@(LetD v tau e _) k = do
-    withSummaryContext decl $ do
-        void $ inferKind tau
-        tau' <- withFvContext e $
-                inSTScope tau $
-                inLocalScope $
-                inferExp e >>= absSTScope
-        checkTypeEquality tau' tau
-        when (not (isPureishT tau)) $
-          faildoc $ text "Value" <+> ppr v <+> text "is not pureish but is in a let!"
-    extendVars [(v, tau)] k
+checkDecl (LetD decl _) k =
+    checkLocalDecl decl k
 
-checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
-    withSummaryContext decl $
-        checkKind tau PhiK
-    extendVars [(f, tau)] $ do
+checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
+    extendVars [(bVar f, tau)] $ do
     withSummaryContext decl $ do
+        checkKind tau PhiK
         tau_ret' <- withFvContext e $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
@@ -145,7 +156,7 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                     inLocalScope $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
-        when (not (isPureishT tau)) $
+        when (not (isPureishT tau_ret)) $
           faildoc $ text "Function" <+> ppr f <+> text "is not pureish but is in a letfun!"
     k
   where
@@ -154,21 +165,10 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
 
 checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
     withSummaryContext decl $ checkKind tau PhiK
-    extendVars [(f, tau)] k
+    extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-checkDecl decl@(LetRefD v tau Nothing _) k = do
-    withSummaryContext decl $ checkKind tau TauK
-    extendVars [(v, refT tau)] k
-
-checkDecl decl@(LetRefD v tau (Just e) _) k = do
-    withSummaryContext decl $
-        inLocalScope $ do
-        checkKind tau TauK
-        checkExp e tau
-    extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetStructD s flds l) k = do
     withSummaryContext decl $ do
@@ -189,21 +189,18 @@ checkDecl decl@(LetStructD s flds l) k = do
 
 checkDecl decl@(LetCompD v tau comp _) k = do
     withSummaryContext decl $ do
-        void $ inferKind tau
+        checkKind tau MuK
         tau' <- withSummaryContext comp $
                 inSTScope tau $
                 inLocalScope $
                 inferComp comp >>= absSTScope
         checkTypeEquality tau' tau
-        when (isPureishT tau) $
-          faildoc $ text "Value" <+> ppr v <+> text "is pureish but is in a letcomp!"
-    extendVars [(v, tau)] k
+    extendVars [(bVar v, tau)] k
 
-checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k = do
-    withSummaryContext decl $
-        checkKind tau PhiK
-    extendVars [(f, tau)] $ do
+checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
+    extendVars [(bVar f, tau)] $ do
     withSummaryContext decl $ do
+        checkKind tau PhiK
         tau_ret' <- withFvContext comp $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
@@ -220,25 +217,20 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k = do
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do
-    withSummaryContext decl $ do
-        void $ inferKind tau
-        tau' <- withFvContext e $
-                inSTScope tau $
-                inLocalScope $
-                inferExp e >>= absSTScope
-        checkTypeEquality tau' tau
-    extendVars [(v, tau)] k
-
-checkLocalDecl decl@(LetRefLD v tau Nothing _) k = do
-    withSummaryContext decl $ checkKind tau TauK
-    extendVars [(v, refT tau)] k
-
-checkLocalDecl decl@(LetRefLD v tau (Just e) _) k = do
     withSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
-    extendVars [(v, refT tau)] k
+    extendVars [(bVar v, tau)] k
+
+checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
+    withSummaryContext decl $
+        inLocalScope $ do
+        checkKind tau TauK
+        case maybe_e of
+          Nothing -> return ()
+          Just e  -> checkExp e tau
+    extendVars [(bVar v, refT tau)] k
 
 inferExp :: forall m . MonadTc m => Exp -> m Type
 inferExp (ConstE c l) =
@@ -406,12 +398,21 @@ inferExp (IfE e1 e2 e3 _) = do
 inferExp (LetE decl body _) =
     checkLocalDecl decl $ inferExp body
 
-inferExp (CallE f ies es _) =
-    inferCall f ies es
+inferExp (CallE f ies es _) = do
+    (taus, tau_ret) <- inferCall f ies es
+    zipWithM_ checkArg es taus
+    return tau_ret
+  where
+    checkArg :: Exp -> Type -> m ()
+    checkArg e tau =
+        withFvContext e $ do
+        tau' <- inferExp e
+        checkTypeEquality tau tau'
+        checkPure tau
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
-    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -422,7 +423,7 @@ inferExp (AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -431,11 +432,11 @@ inferExp (AssignE e1 e2 l) = do
 
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
-        (tau, _, _, _) <- inferExp e1 >>= checkSTC
+        (_, tau, _, _, _) <- inferExp e1 >>= checkPureishSTC
         checkTypeEquality tau boolT
     withFvContext e2 $ do
         tau <- inferExp e2
-        void $ checkSTCUnit tau
+        void $ checkPureishSTCUnit tau
         return tau
 
 inferExp (ForE _ v tau e1 e2 e3 _) = do
@@ -447,7 +448,7 @@ inferExp (ForE _ v tau e1 e2 e3 _) = do
     extendVars [(v, tau)] $
         withFvContext e3 $ do
         tau_body <- inferExp e3
-        void $ checkSTCUnit tau_body
+        void $ checkPureishSTCUnit tau_body
         return tau_body
 
 inferExp (ArrayE es l) = do
@@ -533,7 +534,7 @@ inferExp e0@(StructE s flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -541,7 +542,7 @@ inferExp (PrintE _ es l) = do
     b = "b"
 
 inferExp (ErrorE nu _ l) =
-    appSTScope $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -550,39 +551,35 @@ inferExp (ErrorE nu _ l) =
 
 inferExp (ReturnE _ e l) = do
     tau <- inferExp e
-    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
 
-inferExp (BindE bv e1 e2 _) = do
-    (tau', s,  a,  b)  <- withFvContext e1 $ do
-                          inferExp e1 >>= appSTScope >>= checkSTC
-    case bv of
-      WildV       -> return ()
-      BindV _ tau -> checkTypeEquality tau' tau
-    (omega,  s', a', b') <- withFvContext e2 $
-                            extendBindVars [bv] $
-                            inferExp e2 >>= appSTScope >>= checkST
-    withFvContext e2 $ do
-    checkTypeEquality s' s
-    checkTypeEquality a' a
-    checkTypeEquality b' b
-    return $ stT omega s a b
+inferExp (BindE wv tau e1 e2 _) = do
+    (alphas, tau', s,  a,  b) <- withFvContext e1 $
+                                 inferExp e1 >>= checkPureishSTC
+    checkTypeEquality tau' tau
+    withFvContext e2 $
+        extendWildVars [(wv, tau)] $ do
+        tau_e2              <- inferExp e2
+        (_, omega, _, _, _) <- checkPureishST tau_e2
+        checkTypeEquality tau_e2 (ST alphas omega s a b noLoc)
+        return tau_e2
 
-inferCall :: forall m . MonadTc m => Var -> [Iota] -> [Exp] -> m Type
-inferCall f ies es = do
+inferCall :: forall m e . MonadTc m
+          => Var -> [Iota] -> [e] -> m ([Type], Type)
+inferCall f ies args = do
     (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
-    checkNumIotas (length ies) (length ivs)
-    checkNumArgs  (length es)  (length taus)
+    checkNumIotas (length ies)  (length ivs)
+    checkNumArgs  (length args) (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do
     mapM_ checkIotaArg ies
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
-    zipWithM_ checkArg es (subst theta phi taus)
-    appSTScope $ subst theta phi tau_ret
+    return (subst theta phi taus, subst theta phi tau_ret)
   where
     checkIotaArg :: Iota -> m ()
     checkIotaArg (ConstI {}) =
@@ -590,11 +587,6 @@ inferCall f ies es = do
 
     checkIotaArg (VarI iv _) =
         void $ lookupIVar iv
-
-    checkArg :: Exp -> Type -> m ()
-    checkArg e tau =
-        withFvContext e $
-        checkExp e tau
 
     checkNumIotas :: Int -> Int -> m ()
     checkNumIotas n nexp =
@@ -637,18 +629,17 @@ inferComp comp =
             void $ checkST tau
         return tau
 
-    inferBind step (BindC _ bv _ : k) tau0 = do
+    inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $
                              appSTScope tau0 >>= checkSTC
-        case bv of
-          WildV       -> return ()
-          BindV _ tau -> withFvContext step $ checkTypeEquality tau' tau
-        (omega,  s', a', b') <- extendBindVars [bv] $
-                                inferSteps k >>= appSTScope >>= checkST
-        extendBindVars [bv] $
-            withFvContext (Comp k) $
-            checkTypeEquality (ST [] omega s' a' b' noLoc) (ST [] omega s a b noLoc)
-        return $ stT omega s a b
+        withFvContext step $
+            checkTypeEquality tau' tau
+        withFvContext (Comp k) $
+            extendWildVars [(wv, tau)] $ do
+            tau2             <- inferSteps k >>= appSTScope
+            (omega, _, _, _) <- checkST tau2
+            checkTypeEquality tau2 (stT omega s a b)
+            return tau2
 
     inferBind step k tau = do
         withFvContext step $
@@ -657,10 +648,26 @@ inferComp comp =
 
 inferStep :: forall l m . (IsLabel l, MonadTc m) => Step l -> m Type
 inferStep (VarC _ v _) =
-    lookupVar v
+    lookupVar v >>= appSTScope
 
-inferStep (CallC _ f ies es _) =
-    inferCall f ies es
+inferStep (CallC _ f ies args _) = do
+    (taus, tau_ret) <- inferCall f ies args
+    zipWithM_ checkArg args taus
+    appSTScope tau_ret
+  where
+    checkArg :: Arg l -> Type -> m ()
+    checkArg (ExpA e) tau =
+        withFvContext e $ do
+        tau' <- inferExp e
+        checkPure tau'
+        checkTypeEquality tau tau'
+
+    checkArg (CompA c) tau =
+        withFvContext c $ do
+        tau' <- inferComp c
+        void $ checkST tau
+        tau'' <- appSTScope tau'
+        checkTypeEquality tau tau''
 
 inferStep (IfC _ e1 e2 e3 _) = do
     tau1 <- inferExp e1
@@ -677,7 +684,7 @@ inferStep (LetC {}) =
 
 inferStep (WhileC _ e c _) = do
     withFvContext e $ do
-        (tau, _, _, _) <- inferExp e >>= checkSTC
+        (_, tau, _, _, _) <- inferExp e >>= checkPureishSTC
         checkTypeEquality tau boolT
     withFvContext c $ do
         tau <- inferComp c
@@ -696,13 +703,17 @@ inferStep (ForC _ _ v tau e1 e2 c _) = do
         void $ checkSTCUnit tau_body
         return tau_body
 
+-- A lifted expression /must/ be pureish.
 inferStep (LiftC _ e _) =
-    inferExp e
+    withFvContext e $ do
+    tau <- inferExp e
+    when (not (isPureishT tau)) $
+        faildoc $ text "Lifted expression must be pureish but has type" <+> ppr tau
+    appSTScope tau
 
 inferStep (ReturnC _ e _) = do
     tau <- inferExp e
-    tau' <- appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
-    return tau'
+    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
     s, a, b :: TyVar
     s = "s"
@@ -744,7 +755,7 @@ inferStep (EmitsC _ e l) = do
     a = "a"
 
 inferStep (RepeatC _ _ c l) = do
-    (s, a, b) <- withFvContext c $ inferComp c >>= appSTScope >>= checkSTCUnit
+    (s, a, b) <- withFvContext c $ inferComp c >>= checkSTCUnit
     return $ ST [] T s a b l
 
 inferStep step@(ParC _ b e1 e2 l) = do
@@ -756,9 +767,9 @@ inferStep step@(ParC _ b e1 e2 l) = do
                                localSTIndTypes (Just (b, b, c)) $
                                inferComp e2 >>= checkST
     withFvContext e1 $
-        checkTypeEquality (ST [] omega1 s'  a'   b' l) (ST [] omega1 s a b l)
+        checkTypeEquality (stT omega1 s'  a'   b') (stT omega1 s a b)
     withFvContext e2 $
-        checkTypeEquality (ST [] omega2 b'' b''' c' l) (ST [] omega2 b b c l)
+        checkTypeEquality (stT omega2 b'' b''' c') (stT omega2 b b c)
     omega <- withFvContext step $
              joinOmega omega1 omega2
     return $ ST [] omega s a c l

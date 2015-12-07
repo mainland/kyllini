@@ -13,9 +13,9 @@ module KZC.Transform.LambdaLift (
 import Control.Applicative ((<$>), (<*>), pure)
 import qualified Data.Set as Set
 
+import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Lint.Monad
 import KZC.Name
 import KZC.Summary
 import KZC.Transform.LambdaLift.Monad
@@ -40,7 +40,7 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
-liftDecl decl@(LetD v tau e l) k | isPureishT tau = do
+liftDecl decl@(LetD v tau e l) k | isPureT tau = do
     extendFunFvs [(v, (v, []))] $ do
     e' <- withSummaryContext decl $
           withFvContext e $
@@ -64,6 +64,14 @@ liftDecl decl@(LetD v tau e l) k = do
       then appendTopDecl $ LetD v' tau e' l
       else appendTopDecl $ LetFunD v' [] fvbs tau e' l
     k Nothing
+
+liftDecl decl@(LetRefD v tau maybe_e l) k = do
+    maybe_e' <-  withSummaryContext decl $
+                 case maybe_e of
+                   Nothing -> return Nothing
+                   Just e -> Just <$> inLocalScope (liftExp e)
+    extendVars [(v, refT tau)] $ do
+    withDecl (LetRefD v tau maybe_e' l) k
 
 liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
@@ -91,14 +99,6 @@ liftDecl (LetExtFunD f iotas vbs tau_ret l) k =
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
-
-liftDecl decl@(LetRefD v tau maybe_e l) k = do
-    maybe_e' <-  withSummaryContext decl $
-                 case maybe_e of
-                   Nothing -> return Nothing
-                   Just e -> Just <$> inLocalScope (liftExp e)
-    extendVars [(v, refT tau)] $ do
-    withDecl (LetRefD v tau maybe_e' l) k
 
 liftDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $ do
@@ -187,8 +187,8 @@ liftExp e@(ErrorE {}) =
 liftExp (ReturnE ann e l) =
     ReturnE ann <$> liftExp e <*> pure l
 
-liftExp (BindE v e1 e2 l) =
-    BindE v <$> liftExp e1 <*> liftExp e2 <*> pure l
+liftExp (BindE v tau e1 e2 l) =
+    BindE v tau <$> liftExp e1 <*> liftExp e2 <*> pure l
 
 liftExp e@(TakeE {}) =
     pure e

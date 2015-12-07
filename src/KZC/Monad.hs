@@ -30,10 +30,10 @@ import KZC.Check.State (TiEnv,
                         TiState,
                         defaultTiEnv,
                         defaultTiState)
+import KZC.Core.Lint.Monad (TcEnv,
+                            defaultTcEnv)
 import KZC.Error
 import KZC.Flags
-import KZC.Lint.Monad (TcEnv,
-                       defaultTcEnv)
 import KZC.Trace
 import KZC.Uniq
 

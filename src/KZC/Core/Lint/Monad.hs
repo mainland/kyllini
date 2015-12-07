@@ -6,12 +6,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Lint.Monad
+-- Module      :  KZC.Core.Lint.Monad
 -- Copyright   :  (c) 2014-2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Lint.Monad (
+module KZC.Core.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
 
@@ -30,7 +30,6 @@ module KZC.Lint.Monad (
     askTopVars,
 
     extendVars,
-    extendBindVars,
     lookupVar,
 
     extendTyVars,
@@ -74,10 +73,10 @@ import KZC.Uniq
 import KZC.Vars
 
 data TcEnv = TcEnv
-    { curfvs     :: Maybe (Set Var)
+    { curfvs     :: !(Maybe (Set Var))
     , structs    :: !(Map Struct StructDef)
-    , topScope   :: Bool
-    , topVars    :: Set Var
+    , topScope   :: !Bool
+    , topVars    :: !(Set Var)
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
@@ -193,10 +192,6 @@ extendVars vtaus m = do
 
     extendTopVars False _ k =
         k
-
-extendBindVars :: MonadTc m => [BindVar] -> m a -> m a
-extendBindVars bvs m =
-    extendVars [(v, tau) | BindV v tau <- bvs] m
 
 lookupVar :: MonadTc m => Var -> m Type
 lookupVar v =

@@ -31,18 +31,19 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Analysis.Occ
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Cg
 import KZC.Check
+import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
 import KZC.Flags
 import KZC.Label
-import qualified KZC.Lint as Lint
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
-import KZC.Optimize.Flatten
 import KZC.Optimize.Fuse
+import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
 import KZC.Transform.Auto
@@ -83,9 +84,13 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        runIf (testDynFlag Flatten) (flattenPhase >=> lintAuto) >=>
+        occPhase >=> lintAuto >=>
+        runIf simplOrFuse (simplPhase >=> lintAuto) >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         compilePhase
+      where
+        simplOrFuse :: (Flags -> Bool)
+        simplOrFuse fs = testDynFlag Simplify fs || testDynFlag Fuse fs
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
@@ -119,13 +124,18 @@ runPipeline filepath =
 
     autoPhase :: [C.Decl] -> MaybeT KZC A.LProgram
     autoPhase =
-        lift . A.withTcEnv . runT . autoProgram >=>
+        lift . A.withTcEnv . runAuto . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
 
-    flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    flattenPhase =
-        lift . A.withTcEnv . evalFl . flattenProgram >=>
-        dumpPass DumpFlatten "acore" "flatten"
+    occPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    occPhase =
+        lift . A.withTcEnv . runOccM . occProgram >=>
+        dumpPass DumpOcc "acore" "occ"
+
+    simplPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    simplPhase =
+        lift . A.withTcEnv . runSimplM . simplProgram >=>
+        dumpPass DumpSimpl "acore" "simpl"
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =
@@ -140,7 +150,7 @@ runPipeline filepath =
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            Lint.withTcEnv (Lint.runTc (Lint.checkDecls decls))
+            C.withTcEnv (C.runTc (C.checkDecls decls))
         return decls
 
     lintAuto :: IsLabel l

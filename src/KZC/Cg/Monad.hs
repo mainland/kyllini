@@ -12,6 +12,7 @@
 
 module KZC.Cg.Monad (
     Cg,
+    CgEnv,
     evalCg,
 
     extend,
@@ -57,6 +58,7 @@ module KZC.Cg.Monad (
     appendDecls,
     appendStm,
     appendStms,
+    appendBlock,
 
     gensym,
 
@@ -85,11 +87,11 @@ import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Lint (Tc, liftTc)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
 import KZC.Label
-import KZC.Lint (Tc, liftTc)
 import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Platform
@@ -105,6 +107,9 @@ data CgEnv = CgEnv
     , ivarCExps  :: Map IVar CExp
     , tyvarTypes :: Map TyVar Type
     }
+
+instance Show CgEnv where
+    show _ = "<Env>"
 
 defaultCgEnv :: CgEnv
 defaultCgEnv = CgEnv
@@ -346,6 +351,15 @@ appendStm cstm = tell cstm
 
 appendStms :: [C.Stm] -> Cg ()
 appendStms cstms = tell cstms
+
+appendBlock :: [C.BlockItem] -> Cg ()
+appendBlock citems
+    | all isBlockStm citems = appendStms [stm | C.BlockStm stm <- citems]
+    | otherwise             = appendStm [cstm|{ $items:citems }|]
+  where
+    isBlockStm :: C.BlockItem -> Bool
+    isBlockStm (C.BlockStm {}) = True
+    isBlockStm _               = False
 
 gensym :: String -> Cg C.Id
 gensym s = do

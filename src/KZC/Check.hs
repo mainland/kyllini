@@ -1006,8 +1006,9 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
              checkExp e tau1
     mce2  <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm $ mce1
+                cnu <- trans nu
                 ce2 <- mce2
-                return $ C.seqE ce1 ce2
+                return $ C.seqE cnu ce1 ce2
 
 tcStms [] _ =
     panicdoc $ text "Empty statement sequence!"
@@ -1051,7 +1052,7 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
                 ce1 <- withSummaryContext cmd $ mce1
                 cnu <- trans nu
                 ce2 <- mce2
-                return $ C.BindE (C.BindV cv cnu) ce1 ce2 l
+                return $ C.BindE (C.TameV cv) cnu ce1 ce2 l
   where
     checkForUnusedReturn :: Ti ()
     checkForUnusedReturn =
@@ -1080,8 +1081,9 @@ tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
             checkExp e tau1
     mce2 <- checkCmds cmds tau2
     return $ do ce1 <- withSummaryContext cmd $ mce1
+                cnu <- trans nu
                 ce2 <- mce2
-                return $ C.seqE ce1 ce2
+                return $ C.seqE cnu ce1 ce2
 
 tcCmds [] _ =
     panicdoc $ text "Empty command sequence!"
