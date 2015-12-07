@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -9,6 +10,10 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Error (
+    PrettyException(..),
+    prettyToException,
+    prettyFromException,
+
     MonadErr(..),
     withLocContext,
     panicdoc,
@@ -39,6 +44,27 @@ import Data.Typeable
 import Text.PrettyPrint.Mainland
 
 import KZC.Pretty
+
+data PrettyException = forall a . (Pretty a, Exception a) => PrettyException a
+  deriving (Typeable)
+
+instance Pretty PrettyException where
+    ppr (PrettyException e) = ppr e
+
+instance Show PrettyException where
+    show = pretty 80 . ppr
+
+instance Exception PrettyException
+
+prettyToException :: (Pretty a, Exception a)
+                  => a -> SomeException
+prettyToException = toException . PrettyException
+
+prettyFromException :: (Pretty a, Exception a)
+                    => SomeException -> Maybe a
+prettyFromException x = do
+    PrettyException a <- fromException x
+    cast a
 
 class MonadException m => MonadErr m where
     askErrCtx    :: m [ErrorContext]
@@ -144,7 +170,32 @@ data ErrorContext = ErrorContext { ctxLoc :: Loc
 data ContextException = ContextException [ErrorContext] SomeException
   deriving (Typeable)
 
+instance Pretty ContextException where
+    ppr (ContextException ctx e) =
+        case [loc | ErrorContext loc@(Loc {}) _ <- ctx'] of
+          loc : _  -> nest 4 $
+                      ppr loc <> text ":" </>
+                      pprEx <> pprDocs (map ctxDoc ctx')
+          _        -> pprEx <> pprDocs (map ctxDoc ctx')
+      where
+        pprDocs :: [Doc] -> Doc
+        pprDocs []    = empty
+        pprDocs docs  = line <> stack docs
+
+        ctx' :: [ErrorContext]
+        ctx' = take 4 ctx
+
+        pprEx :: Doc
+        pprEx = case fromException e of
+                  Just (PrettyException e') -> ppr e'
+                  _                         -> (string . show) e
+
+instance Show ContextException where
+    show = pretty 80 . ppr
+
 instance Exception ContextException where
+    toException   = prettyToException
+    fromException = prettyFromException
 
 toContextException :: Exception e => [ErrorContext] -> e -> ContextException
 toContextException ctx e = ContextException ctx (toException e)
@@ -174,40 +225,32 @@ m `catchContextException` h =
                            Nothing  -> throw e
                      Nothing -> throw e
 
-instance Pretty ContextException where
-    ppr (ContextException ctx e) =
-        case [loc | ErrorContext loc@(Loc {}) _ <- ctx'] of
-          loc : _  ->  nest 4 $
-                       ppr loc <> text ":" </>
-                       (string . show) e <> pprDocs (map ctxDoc ctx')
-          _        -> (string . show) e <> pprDocs (map ctxDoc ctx')
-      where
-        pprDocs :: [Doc] -> Doc
-        pprDocs []    = empty
-        pprDocs docs  = line <> stack docs
-
-        ctx' :: [ErrorContext]
-        ctx' = take 4 ctx
-
-instance Show ContextException where
-    show = pretty 80 . ppr
-
 data FailException = FailException Doc
   deriving (Typeable)
 
 instance Show FailException where
-    show (FailException msg) = pretty 80 msg
+    show = pretty 80 . ppr
 
-instance Exception FailException
+instance Pretty FailException where
+    ppr (FailException msg) = msg
+
+instance Exception FailException where
+    toException   = prettyToException
+    fromException = prettyFromException
 
 data WarnException = WarnException SomeException
   deriving (Typeable)
 
 instance Exception WarnException where
+    toException   = prettyToException
+    fromException = prettyFromException
 
 instance Pretty WarnException where
     ppr (WarnException e) =
-        text "Warning:" <+> (string . show) e
+        text "Warning:" <+>
+        case fromException e of
+          Just (PrettyException e') -> ppr e'
+          _                         -> (string . show) e
 
 instance Show WarnException where
     show = pretty 80 . ppr
