@@ -16,6 +16,7 @@ module KZC.Error (
 
     MonadErr(..),
     withLocContext,
+    alwaysWithLocContext,
     panicdoc,
     errdoc,
     warndoc,
@@ -43,6 +44,7 @@ import Data.Ord (comparing)
 import Data.Typeable
 import Text.PrettyPrint.Mainland
 
+import KZC.Globals
 import KZC.Pretty
 
 data PrettyException = forall a . (Pretty a, Exception a) => PrettyException a
@@ -148,7 +150,14 @@ withErrCtx ctx m = localErrCtx (ctx :) m
 
 withLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
 withLocContext a doc m =
-    withErrCtx (ErrorContext loc doc) m
+    withErrCtx (ErrorContext False loc doc) m
+  where
+    loc :: Loc
+    loc = locOf a
+
+alwaysWithLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
+alwaysWithLocContext a doc m =
+    withErrCtx (ErrorContext True loc doc) m
   where
     loc :: Loc
     loc = locOf a
@@ -162,8 +171,9 @@ errdoc msg = err (FailException msg)
 warndoc :: MonadErr m => Doc -> m ()
 warndoc msg = warn (FailException msg)
 
-data ErrorContext = ErrorContext { ctxLoc :: Loc
-                                 , ctxDoc :: Doc
+data ErrorContext = ErrorContext { ctxAlways :: Bool
+                                 , ctxLoc    :: Loc
+                                 , ctxDoc    :: Doc
                                  }
   deriving (Typeable)
 
@@ -171,8 +181,8 @@ data ContextException = ContextException [ErrorContext] SomeException
   deriving (Typeable)
 
 instance Pretty ContextException where
-    ppr (ContextException ctx e) =
-        case [loc | ErrorContext loc@(Loc {}) _ <- ctx'] of
+    ppr (ContextException ctx e) = do
+        case [loc | ErrorContext _ loc@(Loc {}) _ <- ctx'] of
           loc : _  -> nest 4 $
                       ppr loc <> text ":" </>
                       pprEx <> pprDocs (map ctxDoc ctx')
@@ -183,7 +193,13 @@ instance Pretty ContextException where
         pprDocs docs  = line <> stack docs
 
         ctx' :: [ErrorContext]
-        ctx' = take 4 ctx
+        ctx' = go maxErrContext ctx
+          where
+            go :: Int -> [ErrorContext] -> [ErrorContext]
+            go _ []                                  = []
+            go n (ctx@(ErrorContext True _ _):ctxs)  = ctx : go n ctxs
+            go 0 (ErrorContext False _ _:ctxs)       = go 0 ctxs
+            go n (ctx@(ErrorContext False _ _):ctxs) = ctx : go (n-1) ctxs
 
         pprEx :: Doc
         pprEx = case fromException e of

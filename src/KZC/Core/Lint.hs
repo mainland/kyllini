@@ -141,7 +141,7 @@ checkDecls (decl:decls) =
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
 checkDecl decl@(LetD v tau e _) k = do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         void $ inferKind tau
         tau' <- withFvContext e $
                 inSTScope tau $
@@ -151,21 +151,21 @@ checkDecl decl@(LetD v tau e _) k = do
     extendVars [(v, tau)] k
 
 checkDecl decl@(LetRefD v tau Nothing _) k = do
-    withSummaryContext decl $ checkKind tau TauK
+    alwaysWithSummaryContext decl $ checkKind tau TauK
     extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetRefD v tau (Just e) _) k = do
-    withSummaryContext decl $
+    alwaysWithSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
     extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
-    withSummaryContext decl $
+    alwaysWithSummaryContext decl $
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         tau_ret' <- withFvContext e $
                     extendIVars (iotas `zip` repeat IotaK) $
                     extendVars vbs $
@@ -179,14 +179,14 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
-    withSummaryContext decl $ checkKind tau PhiK
+    alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendVars [(f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
         mapM_ (\tau -> checkKind tau TauK) taus

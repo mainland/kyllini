@@ -147,7 +147,7 @@ checkDecl (LetD decl _) k =
 
 checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
         tau_ret' <- withFvContext e $
                     extendIVars (iotas `zip` repeat IotaK) $
@@ -164,14 +164,14 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
-    withSummaryContext decl $ checkKind tau PhiK
+    alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendVars [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
         mapM_ (\tau -> checkKind tau TauK) taus
@@ -188,7 +188,7 @@ checkDecl decl@(LetStructD s flds l) k = do
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
 checkDecl decl@(LetCompD v tau comp _) k = do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         checkKind tau MuK
         tau' <- withSummaryContext comp $
                 inSTScope tau $
@@ -199,7 +199,7 @@ checkDecl decl@(LetCompD v tau comp _) k = do
 
 checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
-    withSummaryContext decl $ do
+    alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
         tau_ret' <- withFvContext comp $
                     extendIVars (iotas `zip` repeat IotaK) $
@@ -217,14 +217,14 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do
-    withSummaryContext decl $
+    alwaysWithSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         checkExp e tau
     extendVars [(bVar v, tau)] k
 
 checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
-    withSummaryContext decl $
+    alwaysWithSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
         case maybe_e of

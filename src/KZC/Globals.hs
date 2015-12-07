@@ -6,6 +6,9 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Globals (
+    setMaxErrContext,
+    maxErrContext,
+
     setPrintUniques,
     printUniques,
 
@@ -29,6 +32,19 @@ printUniques :: Bool
 {-# NOINLINE printUniques #-}
 printUniques =
     unsafePerformIO $ readIORef gPrintUniques
+
+gMaxErrContext :: IORef Int
+gMaxErrContext =
+    unsafePerformIO $ newIORef 4
+
+setMaxErrContext :: MonadIO m => Int -> m ()
+setMaxErrContext n =
+    liftIO $ writeIORef gMaxErrContext n
+
+maxErrContext :: Int
+{-# NOINLINE maxErrContext #-}
+maxErrContext =
+    unsafePerformIO $ readIORef gMaxErrContext
 
 gExpertTypes :: IORef Bool
 gExpertTypes =

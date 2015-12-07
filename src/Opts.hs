@@ -36,6 +36,7 @@ options =
         , Option ['I'] []             (ReqArg includePathOpt "DIR")       "include DIR"
         , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")   "define macro"
         , Option ['o'] ["output"]     (ReqArg outOpt "FILE")              "output FILE"
+        , Option []    ["ferrctx"]    (ReqArg maxErrCtxOpt "INT")         "set maximum error context"
         ]
 
     maybeSetVerbLevel :: Maybe String -> Flags -> Flags
@@ -46,6 +47,12 @@ options =
         case reads s of
           [(n, "")]  -> fs { verbLevel = n }
           _          -> error "argument to --verbose must be an integer"
+
+    maxErrCtxOpt :: String -> Flags -> Flags
+    maxErrCtxOpt s fs =
+        case reads s of
+          [(n, "")]  -> fs { maxErrCtx = n }
+          _          -> error "argument to --ferrctx must be an integer"
 
     outOpt :: String -> Flags -> Flags
     outOpt path fs = fs { output = Just path }
@@ -104,14 +111,14 @@ fDynFlagOpts =
 
 dDynFlagOpts :: [(DynFlag, String, String)]
 dDynFlagOpts =
-  [ (Lint,         "lint",
-                   "lint core")
-  , (AutoLint,     "auto-lint",
-                   "lint auto")
-  , (PrintUniques, "print-uniques",
-                   "show uniques when pretty-printing")
-  , (ExpertTypes,  "expert-types",
-                   "show \"expert\" types when pretty-printing")
+  [ (Lint,          "lint",
+                    "lint core")
+  , (AutoLint,      "auto-lint",
+                    "lint auto")
+  , (PrintUniques,  "print-uniques",
+                    "show uniques when pretty-printing")
+  , (ExpertTypes,   "expert-types",
+                    "show \"expert\" types when pretty-printing")
   ]
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
@@ -150,6 +157,7 @@ compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
     case getOpt Permute options argv of
       (fs,n,[] ) -> do let fs' = foldr ($) mempty fs
+                       setMaxErrContext (maxErrCtx fs')
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
                        when (testDynFlag ExpertTypes fs') $

@@ -208,32 +208,32 @@ checkCompLet :: Z.CompLet
              -> (Ti C.Decl -> Ti a)
              -> Ti a
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
-    (tau, mcdecl) <- withSummaryContext cl $ do
+    (tau, mcdecl) <- alwaysWithSummaryContext cl $ do
                      checkLet v ztau TauK e l
-    extendVars [(v, tau)] $ k (withSummaryContext cl mcdecl)
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
 
 checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
-    (tau, mcdecl) <- withSummaryContext cl $
+    (tau, mcdecl) <- alwaysWithSummaryContext cl $
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
 checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
-    (tau, mkLetFun) <- withSummaryContext cl $
+    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
                        checkLetFun f ztau ps e l
-    let mcdecl = withSummaryContext cl $
+    let mcdecl = alwaysWithSummaryContext cl $
                  mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
 checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret l) k = do
-    (tau, mkLetExtFun) <- withSummaryContext cl $
+    (tau, mkLetExtFun) <- alwaysWithSummaryContext cl $
                           checkLetExtFun f ps ztau_ret l
-    let mcdecl = withSummaryContext cl $
+    let mcdecl = alwaysWithSummaryContext cl $
                  mkLetExtFun
     extendVars [(f,tau)] $ k mcdecl
 
 checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
     (taus, mkLetStruct) <-
-        withSummaryContext cl $ do
+        alwaysWithSummaryContext cl $ do
         checkStructNotRedefined zs
         checkDuplicates "field names" zfnames
         taus <- mapM fromZ ztaus
@@ -244,7 +244,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
             ctaus   <- mapM trans taus
             return $ C.LetStructD cs (cfnames `zip` ctaus) l
         return (taus, mkLetStruct)
-    let mcdecl = withSummaryContext cl $ mkLetStruct
+    let mcdecl = alwaysWithSummaryContext cl $ mkLetStruct
     extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
   where
     (zfnames, ztaus) = unzip zflds
@@ -258,14 +258,14 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
 checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
-    (tau, mcdecl) <- withSummaryContext cl $
+    (tau, mcdecl) <- alwaysWithSummaryContext cl $
                      checkLet v ztau MuK e l
-    extendVars [(v, tau)] $ k (withSummaryContext cl mcdecl)
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
 
 checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
-    (tau, mkLetFun) <- withSummaryContext cl $
+    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
                        checkLetFun f ztau ps e l
-    let mcdecl = withSummaryContext cl $
+    let mcdecl = alwaysWithSummaryContext cl $
                  mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 

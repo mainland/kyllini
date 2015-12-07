@@ -6,7 +6,8 @@
 
 module KZC.Summary (
     Summary(..),
-    withSummaryContext
+    withSummaryContext,
+    alwaysWithSummaryContext
   ) where
 
 import Data.Loc
@@ -23,5 +24,14 @@ withSummaryContext :: (Located a, Summary a, MonadErr m)
                    -> m b
 withSummaryContext a act =
     withLocContext a doc act
+  where
+    doc = text "In" <+> summary a
+
+alwaysWithSummaryContext :: (Located a, Summary a, MonadErr m)
+                         => a
+                         -> m b
+                         -> m b
+alwaysWithSummaryContext a act =
+    alwaysWithLocContext a doc act
   where
     doc = text "In" <+> summary a
