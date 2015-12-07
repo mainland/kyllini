@@ -42,7 +42,6 @@ import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
-import KZC.Optimize.Flatten
 import KZC.Optimize.Fuse
 import KZC.Optimize.Simplify
 import KZC.Rename
@@ -85,11 +84,13 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        runIf (testDynFlag Flatten) (flattenPhase >=> lintAuto) >=>
-        runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         occPhase >=> lintAuto >=>
-        runIf (testDynFlag Simplify) (simplPhase >=> lintAuto) >=>
+        runIf simplOrFuse (simplPhase >=> lintAuto) >=>
+        runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         compilePhase
+      where
+        simplOrFuse :: (Flags -> Bool)
+        simplOrFuse fs = testDynFlag Simplify fs || testDynFlag Fuse fs
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
@@ -135,11 +136,6 @@ runPipeline filepath =
     simplPhase =
         lift . A.withTcEnv . runSimplM . simplProgram >=>
         dumpPass DumpSimpl "acore" "simpl"
-
-    flattenPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    flattenPhase =
-        lift . A.withTcEnv . evalFl . flattenProgram >=>
-        dumpPass DumpFlatten "acore" "flatten"
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =

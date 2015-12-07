@@ -75,7 +75,6 @@ SOURCE = \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/Name.hs \
-	KZC/Optimize/Flatten.hs \
 	KZC/Optimize/Fuse.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \

@@ -19,7 +19,6 @@ module KZC.Trace (
     traceLint,
     traceAuto,
     traceAutoLint,
-    traceFlatten,
     traceFusion,
     traceSimpl
   ) where
@@ -93,9 +92,6 @@ traceAuto = traceIfSet TraceAuto "traceAuto:"
 
 traceAutoLint :: MonadTrace m => Doc -> m ()
 traceAutoLint = traceIfSet TraceAutoLint "traceAutoLint:"
-
-traceFlatten :: MonadTrace m => Doc -> m ()
-traceFlatten = traceIfSet TraceFlatten "traceFlatten:"
 
 traceFusion :: MonadTrace m => Doc -> m ()
 traceFusion = traceIfSet TraceFusion "traceFusion:"

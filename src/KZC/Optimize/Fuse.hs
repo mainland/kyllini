@@ -34,6 +34,7 @@ import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Label
 import KZC.Monad.SEFKT
+import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
@@ -92,9 +93,6 @@ whenNotBeenThere ss l k = do
       then return (ss, [LoopC l])
       else recordLabel l >> k
 
--- | 'fuseProgram' fuses the @main@ computation, inlining all
--- calls/invocations of sub-computations. After the fusion phase, we will not
--- see a 'VarC' or 'CallC' computation in @main@.
 fuseProgram :: forall m . (MonadPlus m, MonadTc m) => LProgram -> m LProgram
 fuseProgram prog =
     fuse prog `mplus` return prog
@@ -466,12 +464,18 @@ knownArraySize tau = do
       ConstI n _ -> return n
       _          -> mzero
 
-relabelStep :: (MonadPlus m, MonadTc m) => l2 -> Step l1 -> (Step l2 -> m a) -> m a
-relabelStep _ (VarC {}) _k =
-    mzero
+relabelStep :: (IsLabel l1, MonadPlus m, MonadTc m)
+            => l2
+            -> Step l1
+            -> (Step l2 -> m a)
+            -> m a
+relabelStep _ step@(VarC {}) _k =
+    withSummaryContext step $
+    faildoc $ text "Saw variable bound to a computation during fusion"
 
-relabelStep _ (CallC {}) _k =
-    mzero
+relabelStep _ step@(CallC {}) _k =
+    withSummaryContext step $
+    faildoc $ text "Saw call to a computation function during fusion"
 
 relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
     extendVars [(bVar v, tau)] $

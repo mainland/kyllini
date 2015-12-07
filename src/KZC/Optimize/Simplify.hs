@@ -914,11 +914,31 @@ shouldInlineExpUnconditionally e | isSimple e =
 shouldInlineExpUnconditionally _ =
     return False
 
-shouldInlineFunUnconditionally :: [IVar] -> [(Var, Type)] -> Type -> OutExp -> SimplM Bool
-shouldInlineFunUnconditionally _ _ _ _ = return True
+shouldInlineFunUnconditionally :: [IVar]
+                               -> [(Var, Type)]
+                               -> Type
+                               -> OutExp
+                               -> SimplM Bool
+shouldInlineFunUnconditionally _ _ _ e | isSimple e =
+    return True
+
+shouldInlineFunUnconditionally _ _ _ _ =
+    return False
 
 shouldInlineCompUnconditionally :: InComp -> SimplM Bool
-shouldInlineCompUnconditionally _ = return True
+shouldInlineCompUnconditionally _ = do
+  fuse <- asksFlags (testDynFlag Fuse)
+  if fuse
+    then return True
+    else return False
 
-shouldInlineCompFunUnconditionally :: [IVar] -> [(Var, Type)] -> Type -> OutComp -> SimplM Bool
-shouldInlineCompFunUnconditionally _ _ _ _ = return True
+shouldInlineCompFunUnconditionally :: [IVar]
+                                   -> [(Var, Type)]
+                                   -> Type
+                                   -> OutComp
+                                   -> SimplM Bool
+shouldInlineCompFunUnconditionally _ _ _ _ = do
+  fuse <- asksFlags (testDynFlag Fuse)
+  if fuse
+    then return True
+    else return False
