@@ -40,6 +40,26 @@ mkVar s = Var (mkName s noLoc)
 intC :: Integer -> Const
 intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
+-- | @'isConstE' e@ returns a constant version of @e@ if possible.
+unConstE :: Monad m => Exp -> m Const
+unConstE (ConstE c _) =
+    return c
+
+unConstE (ArrayE es _) = do
+    cs <- mapM unConstE es
+    return $ ArrayC cs
+
+unConstE (StructE s flds _) = do
+    cs <- mapM unConstE es
+    return $ StructC s (fs `zip` cs)
+  where
+    fs :: [Field]
+    es :: [Exp]
+    (fs, es) = unzip flds
+
+unConstE e =
+    faildoc $ text "Expression" <+> ppr e <+> text "is non-constant."
+
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
 
