@@ -459,6 +459,9 @@ cgDefaultValue tau cv = go tau
         caddr <- cgAddrOf tau cv
         appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
+-- | Generate a 'CExp' representing a constant. The 'CExp' produced is
+-- guaranteed to be a legal C initializer, so it can be used in an array or
+-- struct initializer.
 cgConst :: Const -> Cg CExp
 cgConst UnitC            = return CVoid
 cgConst (BoolC b)        = return $ CBool b
@@ -469,13 +472,9 @@ cgConst (FloatC _ r)     = return $ CFloat r
 cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
-    tau           <- inferConst noLoc c
-    (_, tau_elem) <- checkArrT tau
-    ces           <- mapM cgConst cs
-    cv            <- gensym "__const_arr"
-    ctau          <- cgType tau
-    appendTopDecl [cdecl|const $ty:ctau $id:cv = { $inits:(cgArrayConstInits tau_elem ces) };|]
-    return $ CExp [cexp|$id:cv|]
+    (_, tau) <- inferConst noLoc c >>= checkArrT
+    ces      <- mapM cgConst cs
+    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
   where
     cgArrayConstInits :: Type -> [CExp] -> [C.Initializer]
     cgArrayConstInits (BitT {}) ces =
@@ -505,29 +504,36 @@ cgConst c@(ArrayC cs) = do
     cgArrayConstInits _tau ces =
         [[cinit|$ce|] | ce <- ces]
 
-cgConst c@(StructC s flds) = do
-    cv                    <- gensym "__const_struct"
-    ctau                  <- inferConst noLoc c >>= cgType
+cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
     -- We must be careful to generate initializers in the same order as the
     -- struct's fields are declared, which is why we map 'cgField' over the
     -- struct's field definitions rather than mapping it over the values as
     -- declared in @flds@
-    cinits                <- mapM (cgField flds) (map fst fldDefs)
-    appendTopDecl [cdecl|const $ty:ctau $id:cv = { $inits:cinits };|]
-    return $ CExp [cexp|$id:cv|]
+    cinits <- mapM (cgField flds) (map fst fldDefs)
+    return $ CInit [cinit|{ $inits:cinits }|]
   where
     cgField :: [(Field, Const)] -> Field -> Cg C.Initializer
     cgField flds f = do
-        c  <- case lookup f flds of
+        ce <- case lookup f flds of
                 Nothing -> panicdoc $ text "cgField: missing field"
-                Just c -> return c
-        ce <- cgConst c
+                Just c -> cgConst c
         return [cinit|$ce|]
 
+cgConstExp :: Type -> CExp -> Cg CExp
+cgConstExp tau (CInit cinit) = do
+    cv   <- gensym "__const"
+    ctau <- cgType tau
+    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+    return $ CExp [cexp|$id:cv|]
+
+cgConstExp _ ce =
+    return ce
+
 cgExp :: Exp -> Cg CExp
-cgExp (ConstE c _) =
-    cgConst c
+cgExp e@(ConstE c _) = do
+    tau <- inferExp e
+    cgConst c >>= cgConstExp tau
 
 cgExp (VarE v _) =
     lookupVarCExp v
@@ -767,7 +773,7 @@ cgExp (ForE _ v v_tau e_start e_len e_body l) = do
 cgExp e@(ArrayE es l) =
     case unConstE e of
       Nothing -> cgArrayExp
-      Just c  -> cgConst c
+      Just c  -> cgExp (ConstE c l)
   where
     cgArrayExp :: Cg CExp
     cgArrayExp = do
@@ -791,7 +797,7 @@ cgExp (IdxE e1 e2 maybe_len _) = do
 cgExp e@(StructE s flds l) = do
     case unConstE e of
       Nothing -> cgStructExp
-      Just c  -> cgConst c
+      Just c  -> cgExp (ConstE c l)
   where
     cgStructExp :: Cg CExp
     cgStructExp = do

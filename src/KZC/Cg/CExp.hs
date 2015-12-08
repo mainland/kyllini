@@ -78,6 +78,8 @@ data CExp = CVoid
           | CInt Integer     -- ^ Integer constant
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
+          | CInit C.Initializer
+            -- ^ A list of C initializers for a constant
           | CPtr CExp        -- ^ A pointer.
           | CIdx Type CExp CExp
             -- ^ An array element. The data constructor's arguments are the type
@@ -99,6 +101,7 @@ instance Located CExp where
     locOf (CInt {})           = NoLoc
     locOf (CFloat {})         = NoLoc
     locOf (CExp ce)           = locOf ce
+    locOf (CInit cinit)       = locOf cinit
     locOf (CPtr ce)           = locOf ce
     locOf (CIdx _ _ cidx)     = locOf cidx
     locOf (CSlice _ _ cidx _) = locOf cidx
@@ -326,6 +329,7 @@ instance ToExp CExp where
     toExp (CInt i)                   = \_ -> [cexp|$int:i|]
     toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
     toExp (CExp e)                   = \_ -> e
+    toExp (CInit _)                  = error "toExp: cannot convert CInit to a C expression"
     toExp (CPtr e)                   = toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
@@ -341,6 +345,7 @@ instance Pretty CExp where
     ppr (CInt i)                 = ppr i
     ppr (CFloat f)               = ppr f
     ppr (CExp e)                 = ppr e
+    ppr (CInit cinit)            = ppr cinit
     ppr (CPtr e)                 = ppr [cexp|*$e|]
     ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
