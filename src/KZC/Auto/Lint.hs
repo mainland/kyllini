@@ -26,6 +26,9 @@ module KZC.Auto.Lint (
 
     checkProgram,
 
+    checkConst,
+    inferConst,
+
     inferExp,
     checkExp,
 
@@ -73,6 +76,9 @@ import KZC.Core.Lint (Tc(..),
                       runTc,
                       liftTc,
                       withTcEnv,
+
+                      checkConst,
+                      inferConst,
 
                       inferKind,
                       checkKind,
@@ -234,22 +240,7 @@ checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
 
 inferExp :: forall m . MonadTc m => Exp -> m Type
 inferExp (ConstE c l) =
-    checkConst c
-  where
-    checkConst :: Const -> m Type
-    checkConst UnitC             = return (UnitT l)
-    checkConst(BoolC {})         = return (BoolT l)
-    checkConst(BitC {})          = return (BitT l)
-    checkConst(FixC sc s w bp _) = return (FixT sc s w bp l)
-    checkConst(FloatC w _)       = return (FloatT w l)
-    checkConst(StringC _)        = return (StringT l)
-
-    checkConst(ArrayC cs) = do
-        taus <- mapM checkConst cs
-        case taus of
-          [] -> faildoc $ text "Empty array"
-          tau:taus | all (== tau) taus -> return tau
-                   | otherwise -> faildoc $ text "Constant array elements do not all have the same type"
+    inferConst l c
 
 inferExp (VarE v _) =
     lookupVar v

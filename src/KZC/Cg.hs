@@ -433,45 +433,6 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     extendVarCExps [(bVar v, cve)] $ do
     k
 
-cgConstArray :: Type -> [CExp] -> Cg CExp
-cgConstArray (BitT {}) ces = do
-    cv <- gensym "__const_arr"
-    appendTopDecl [cdecl|const $ty:bIT_ARRAY_ELEM_TYPE $id:cv[$int:(bitArrayLen (length ces))] = { $inits:cinits };|]
-    return $ CExp [cexp|$id:cv|]
-  where
-    cinits :: [C.Initializer]
-    cinits = finalizeBits $ foldl mkBits (0,0,[]) ces
-
-    mkBits :: (CExp, Int, [C.Initializer]) -> CExp -> (CExp, Int, [C.Initializer])
-    mkBits (cconst, i, cinits) ce
-        | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
-        | otherwise                    = (cconst', i+1, cinits)
-      where
-        cconst' :: CExp
-        cconst' = cconst .|. (fromBits ce `shiftL` i)
-
-        fromBits :: CExp -> CExp
-        fromBits (CBit True)  = CInt 1
-        fromBits (CBit False) = CInt 0
-        fromBits ce           = ce
-
-    finalizeBits :: (CExp, Int, [C.Initializer]) -> [C.Initializer]
-    finalizeBits (_,      0, cinits) = reverse cinits
-    finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
-
-    const :: CExp -> C.Initializer
-    const (CInt i) = [cinit|$(chexconst i)|]
-    const ce       = [cinit|$ce|]
-
-cgConstArray tau ces = do
-    cv   <- gensym "__const_arr"
-    ctau <- cgType tau
-    appendTopDecl [cdecl|const $ty:ctau $id:cv[$int:(length ces)] = { $inits:cinits };|]
-    return $ CExp [cexp|$id:cv|]
-  where
-    cinits :: [C.Initializer]
-    cinits =  [[cinit|$ce|] | ce <- ces]
-
 cgDefaultValue :: Type -> CExp -> Cg ()
 cgDefaultValue tau cv = go tau
   where
@@ -498,23 +459,75 @@ cgDefaultValue tau cv = go tau
         caddr <- cgAddrOf tau cv
         appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
-cgExp :: Exp -> Cg CExp
-cgExp e@(ConstE c _) =
-    cgConst c
-  where
-    cgConst :: Const -> Cg CExp
-    cgConst UnitC            = return CVoid
-    cgConst (BoolC b)        = return $ CBool b
-    cgConst (BitC b)         = return $ CBit b
-    cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
-    cgConst (FixC {})        = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
-    cgConst (FloatC _ r)     = return $ CFloat r
-    cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
+cgConst :: Const -> Cg CExp
+cgConst UnitC            = return CVoid
+cgConst (BoolC b)        = return $ CBool b
+cgConst (BitC b)         = return $ CBit b
+cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
+cgConst (FixC {})        = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
+cgConst (FloatC _ r)     = return $ CFloat r
+cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
-    cgConst (ArrayC cs) = do
-        (_, tau) <- inferExp e >>= checkArrT
-        ces      <- mapM cgConst cs
-        cgConstArray tau ces
+cgConst c@(ArrayC cs) = do
+    tau           <- inferConst noLoc c
+    (_, tau_elem) <- checkArrT tau
+    ces           <- mapM cgConst cs
+    cv            <- gensym "__const_arr"
+    ctau          <- cgType tau
+    appendTopDecl [cdecl|const $ty:ctau $id:cv = { $inits:(cgArrayConstInits tau_elem ces) };|]
+    return $ CExp [cexp|$id:cv|]
+  where
+    cgArrayConstInits :: Type -> [CExp] -> [C.Initializer]
+    cgArrayConstInits (BitT {}) ces =
+        finalizeBits $ foldl mkBits (0,0,[]) ces
+      where
+        mkBits :: (CExp, Int, [C.Initializer]) -> CExp -> (CExp, Int, [C.Initializer])
+        mkBits (cconst, i, cinits) ce
+            | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
+            | otherwise                    = (cconst', i+1, cinits)
+          where
+            cconst' :: CExp
+            cconst' = cconst .|. (fromBits ce `shiftL` i)
+
+            fromBits :: CExp -> CExp
+            fromBits (CBit True)  = CInt 1
+            fromBits (CBit False) = CInt 0
+            fromBits ce           = ce
+
+        finalizeBits :: (CExp, Int, [C.Initializer]) -> [C.Initializer]
+        finalizeBits (_,      0, cinits) = reverse cinits
+        finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+
+        const :: CExp -> C.Initializer
+        const (CInt i) = [cinit|$(chexconst i)|]
+        const ce       = [cinit|$ce|]
+
+    cgArrayConstInits _tau ces =
+        [[cinit|$ce|] | ce <- ces]
+
+cgConst c@(StructC s flds) = do
+    cv                    <- gensym "__const_struct"
+    ctau                  <- inferConst noLoc c >>= cgType
+    StructDef _ fldDefs _ <- lookupStruct s
+    -- We must be careful to generate initializers in the same order as the
+    -- struct's fields are declared, which is why we map 'cgField' over the
+    -- struct's field definitions rather than mapping it over the values as
+    -- declared in @flds@
+    cinits                <- mapM (cgField flds) (map fst fldDefs)
+    appendTopDecl [cdecl|const $ty:ctau $id:cv = { $inits:cinits };|]
+    return $ CExp [cexp|$id:cv|]
+  where
+    cgField :: [(Field, Const)] -> Field -> Cg C.Initializer
+    cgField flds f = do
+        c  <- case lookup f flds of
+                Nothing -> panicdoc $ text "cgField: missing field"
+                Just c -> return c
+        ce <- cgConst c
+        return [cinit|$ce|]
+
+cgExp :: Exp -> Cg CExp
+cgExp (ConstE c _) =
+    cgConst c
 
 cgExp (VarE v _) =
     lookupVarCExp v
@@ -751,20 +764,21 @@ cgExp (ForE _ v v_tau e_start e_len e_body l) = do
     appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
     return CVoid
 
-cgExp e@(ArrayE es _) | all isConstE es = do
-    (_, tau) <- inferExp e >>= checkArrT
-    ces      <- mapM cgExp es
-    cgConstArray tau ces
-
-cgExp e@(ArrayE es l) = do
-    (_, tau) <- inferExp e >>= checkArrT
-    cv       <- gensym "__arr"
-    ctau     <- cgType tau
-    appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
-    forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
-        ce <- cgExp e
-        appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
-    return $ CExp [cexp|$id:cv|]
+cgExp e@(ArrayE es l) =
+    case unConstE e of
+      Nothing -> cgArrayExp
+      Just c  -> cgConst c
+  where
+    cgArrayExp :: Cg CExp
+    cgArrayExp = do
+        (_, tau) <- inferExp e >>= checkArrT
+        cv       <- gensym "__arr"
+        ctau     <- cgType tau
+        appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
+        forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
+            ce <- cgExp e
+            appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
+        return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 maybe_len _) = do
     (_, tau) <- inferExp e1 >>= checkArrOrRefArrT
@@ -774,11 +788,17 @@ cgExp (IdxE e1 e2 maybe_len _) = do
       Nothing  -> cgIdx tau ce1 ce2
       Just len -> cgSlice tau ce1 ce2 len
 
-cgExp (StructE s flds l) = do
-    cv <- cgTemp "struct" (StructT s l)
-    mapM_ (cgField cv) flds
-    return cv
+cgExp e@(StructE s flds l) = do
+    case unConstE e of
+      Nothing -> cgStructExp
+      Just c  -> cgConst c
   where
+    cgStructExp :: Cg CExp
+    cgStructExp = do
+        cv <- cgTemp "struct" (StructT s l)
+        mapM_ (cgField cv) flds
+        return cv
+
     cgField :: CExp -> (Field, Exp) -> Cg ()
     cgField cv (fld, e) = do
         let cfld =  zencode (namedString fld)
@@ -854,14 +874,6 @@ cgExp (BindE (TameV v) tau e1 e2 _) = do
     extendVars [(bVar v, tau)] $ do
     extendVarCExps [(bVar v, ce1)] $ do
     cgExp e2
-
--- | @'isConstE' e@ returns 'True' only if @e@ compiles to a constant C
--- expression.
-isConstE :: Exp -> Bool
-isConstE (ConstE {})        = True
-isConstE (UnopE _ e _)      = isConstE e
-isConstE (BinopE _ e1 e2 _) = isConstE e1 && isConstE e2
-isConstE _                  = False
 
 cgIVar :: IVar -> Cg (CExp, C.Param)
 cgIVar iv = do

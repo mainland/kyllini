@@ -169,6 +169,7 @@ data Const = UnitC
            | FloatC FP Rational
            | StringC String
            | ArrayC [Const]
+           | StructC Struct [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
 data Decl = LetD Var Type Exp !SrcLoc
@@ -372,6 +373,7 @@ instance Pretty Const where
     pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
     pprPrec _ (StringC s)        = text (show s)
     pprPrec _ (ArrayC cs)        = text "arr" <+> embrace commasep (map ppr cs)
+    pprPrec _ (StructC s flds)   = ppr s <+> pprStruct flds
 
 pprSign :: Signedness -> Doc
 pprSign S = empty

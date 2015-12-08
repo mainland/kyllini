@@ -20,6 +20,9 @@ module KZC.Core.Lint (
 
     checkDecls,
 
+    inferConst,
+    checkConst,
+
     inferExp,
     checkExp,
 
@@ -202,24 +205,41 @@ checkDecl decl@(LetStructD s flds l) k = do
         Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
+inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
+inferConst l UnitC              = return (UnitT l)
+inferConst l (BoolC {})         = return (BoolT l)
+inferConst l (BitC {})          = return (BitT l)
+inferConst l (FixC sc s w bp _) = return (FixT sc s w bp l)
+inferConst l (FloatC w _)       = return (FloatT w l)
+inferConst l (StringC _)        = return (StringT l)
+
+inferConst l (ArrayC cs) = do
+    taus <- mapM (inferConst l) cs
+    case taus of
+      [] -> faildoc $ text "Empty array"
+      tau:taus | all (== tau) taus -> return $ ArrT (ConstI (length cs) l) tau l
+               | otherwise -> faildoc $ text "Constant array elements do not all have the same type"
+
+inferConst l (StructC s flds) = do
+    fldDefs <- checkStructFields s (map fst flds)
+    mapM_ (checkField fldDefs) flds
+    return $ StructT s l
+  where
+    checkField :: [(Field, Type)] -> (Field, Const) -> m ()
+    checkField fldDefs (f, c) = do
+      tau <- case lookup f fldDefs of
+               Nothing  -> panicdoc $ "checkField: missing field!"
+               Just tau -> return tau
+      checkConst l c tau
+
+checkConst :: MonadTc m => SrcLoc -> Const -> Type -> m ()
+checkConst l c tau = do
+    tau' <- inferConst l c
+    checkTypeEquality tau' tau
+
 inferExp :: forall m . MonadTc m => Exp -> m Type
 inferExp (ConstE c l) =
-    checkConst c
-  where
-    checkConst :: Const -> m Type
-    checkConst UnitC             = return (UnitT l)
-    checkConst(BoolC {})         = return (BoolT l)
-    checkConst(BitC {})          = return (BitT l)
-    checkConst(FixC sc s w bp _) = return (FixT sc s w bp l)
-    checkConst(FloatC w _)       = return (FloatT w l)
-    checkConst(StringC _)        = return (StringT l)
-
-    checkConst(ArrayC cs) = do
-        taus <- mapM checkConst cs
-        case taus of
-          [] -> faildoc $ text "Empty array"
-          tau:taus | all (== tau) taus -> return tau
-                   | otherwise -> faildoc $ text "Constant array elements do not all have the same type"
+    inferConst l c
 
 inferExp (VarE v _) =
     lookupVar v
@@ -490,9 +510,7 @@ inferExp (ProjE e f l) = do
 
 inferExp e0@(StructE s flds l) =
     withFvContext e0 $ do
-    StructDef _ fldDefs _ <- lookupStruct s
-    checkMissingFields flds fldDefs
-    checkExtraFields flds fldDefs
+    fldDefs <- checkStructFields s (map fst flds)
     mapM_ (checkField fldDefs) flds
     return $ StructT s l
   where
@@ -502,30 +520,6 @@ inferExp e0@(StructE s flds l) =
                Nothing  -> panicdoc $ "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
-
-    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkMissingFields flds fldDefs =
-        when (not (Set.null missing)) $
-          faildoc $
-            text "Struct definition has missing fields:" <+>
-            (commasep . map ppr . Set.toList) missing
-      where
-        fs, fs', missing :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        missing = fs Set.\\ fs'
-
-    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkExtraFields flds fldDefs =
-        when (not (Set.null extra)) $
-          faildoc $
-            text "Struct definition has extra fields:" <+>
-            (commasep . map ppr . Set.toList) extra
-      where
-        fs, fs', extra :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        extra = fs' Set.\\ fs
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
@@ -626,6 +620,41 @@ checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
+
+-- | Check that a struct has no missing and no extra fields.
+checkStructFields :: forall m . MonadTc m
+                  => Struct
+                  -> [Field]
+                  -> m [(Field, Type)]
+checkStructFields s flds = do
+    StructDef _ fldDefs _ <- lookupStruct s
+    checkMissingFields flds fldDefs
+    checkExtraFields flds fldDefs
+    return fldDefs
+  where
+    checkMissingFields :: [Field] -> [(Field, Type)] -> m ()
+    checkMissingFields flds fldDefs =
+        when (not (Set.null missing)) $
+          faildoc $
+            text "Struct definition has missing fields:" <+>
+            (commasep . map ppr . Set.toList) missing
+      where
+        fs, fs', missing :: Set Field
+        fs  = Set.fromList flds
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        missing = fs Set.\\ fs'
+
+    checkExtraFields :: [Field] -> [(Field, Type)] -> m ()
+    checkExtraFields flds fldDefs =
+        when (not (Set.null extra)) $
+          faildoc $
+            text "Struct definition has extra fields:" <+>
+            (commasep . map ppr . Set.toList) extra
+      where
+        fs, fs', extra :: Set Field
+        fs  = Set.fromList flds
+        fs' = Set.fromList [f | (f,_) <- fldDefs]
+        extra = fs' Set.\\ fs
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
