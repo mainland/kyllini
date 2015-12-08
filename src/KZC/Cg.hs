@@ -777,7 +777,7 @@ cgExp e@(ArrayE es l) =
         appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
         forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
             ce <- cgExp e
-            appendStm $ rl l [cstm|$id:cv[$int:i] = $ce;|]
+            cgArrayWrite tau (CExp [cexp|$id:cv|]) (fromIntegral i) ce
         return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 maybe_len _) = do
@@ -1404,28 +1404,16 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
     -- continuation repeatedly, until the buffer is full. Then we fall
     -- through to the next action, which is why we call @k2@ with @ccomp@
     -- without forcing its label to be required---we don't need the label!
-    takek' cleftk crightk _cbuf cbufp n tau@(BitT {}) _k = do
-        ctau  <- cgType tau
-        carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:(bitArrayLen n)]|] Nothing
-        lbl   <- genLabel "inner_takesk"
-        useLabel lbl
-        appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
-        cgFor 0 (fromIntegral n) $ \ci -> do
-            appendStm [cstm|INDJUMP($cleftk);|]
-            cgWithLabel lbl $
-                cgBitArrayWrite carr ci (CExp [cexp|*$cbufp|])
-        return carr
-
     takek' cleftk crightk _cbuf cbufp n tau _k = do
-        ctau  <- cgType tau
-        carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
-        lbl   <- genLabel "inner_takesk"
+        ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
+        carr     <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
+        lbl      <- genLabel "inner_takesk"
         useLabel lbl
         appendStm [cstm|$crightk = LABELADDR($id:lbl);|]
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel lbl $
-                appendStm [cstm|$carr[$ci] = *$cbufp;|]
+                cgArrayWrite tau carr ci (CExp [cexp|*$cbufp|])
         return carr
 
     emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
@@ -1713,6 +1701,31 @@ isPassByRef _                  = False
 isReturnedByRef :: Type -> Bool
 isReturnedByRef (ArrT {}) = True
 isReturnedByRef _         = False
+
+-- | Write an element to an array.
+cgArrayWrite :: Type -> CExp -> CExp -> CExp -> Cg ()
+cgArrayWrite (BitT {}) carr ci cx = cgBitArrayWrite carr ci cx
+cgArrayWrite _         carr ci cx = appendStm [cstm|$carr[$ci] = $cx;|]
+
+-- XXX: Should use more efficient bit twiddling code here. See:
+--
+--   http://realtimecollisiondetection.net/blog/?p=78
+--   https://graphics.stanford.edu/~seander/bithacks.html
+--   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
+--
+
+-- | Write an element to a bit array.
+cgBitArrayWrite :: CExp -> CExp -> CExp -> Cg ()
+cgBitArrayWrite carr ci cx =
+    if cx
+    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
+    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
+  where
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
+
+    cbitMask :: CExp
+    cbitMask = 1 `shiftL'` cbitOff
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.

@@ -65,9 +65,7 @@ module KZC.Cg.Monad (
     collectLabels,
     useLabel,
     useLabels,
-    isLabelUsed,
-
-    cgBitArrayWrite
+    isLabelUsed
   ) where
 
 import Prelude hiding (elem)
@@ -94,7 +92,6 @@ import KZC.Cg.Code
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT
-import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
@@ -396,22 +393,3 @@ instance IfThenElse CExp (Cg ()) where
        if null celse_items
          then appendStm [cstm|if ($c) { $items:cthen_items }|]
          else appendStm [cstm|if ($c) { $items:cthen_items } else { $items:celse_items }|]
-
--- XXX: Should use more efficient bit twiddling code here. See:
---
---   http://realtimecollisiondetection.net/blog/?p=78
---   https://graphics.stanford.edu/~seander/bithacks.html
---   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
---
--- | Read an element of a bit array.
-cgBitArrayWrite :: CExp -> CExp -> CExp -> Cg ()
-cgBitArrayWrite carr ci cx =
-    if cx
-    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
-    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
-  where
-    cbitIdx, cbitOff :: CExp
-    (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
-
-    cbitMask :: CExp
-    cbitMask = 1 `shiftL'` cbitOff

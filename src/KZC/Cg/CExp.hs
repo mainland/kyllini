@@ -18,7 +18,8 @@ module KZC.Cg.CExp (
 
     CExp(..),
 
-    cgBitArrayRead
+    lowerIdx,
+    lowerBitArrayIdx
   ) where
 
 import Prelude hiding (elem)
@@ -326,8 +327,8 @@ instance ToExp CExp where
     toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
     toExp (CExp e)                   = \_ -> e
     toExp (CPtr e)                   = toExp e
-    toExp (CIdx tau carr cidx)       = \_ -> lowerCIdx tau carr cidx
-    toExp (CSlice tau carr cidx len) = \_ -> lowerCSlice tau carr cidx len
+    toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
+    toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
     toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
     toExp (CFunComp {})              = error "toExp: cannot convert CFunComp to a C expression"
 
@@ -346,30 +347,14 @@ instance Pretty CExp where
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
 
-lowerCIdx :: Type -> CExp -> CExp -> C.Exp
-lowerCIdx (BitT _) carr cidx = cgBitArrayRead carr cidx
-lowerCIdx _        carr cidx = [cexp|$carr[$cidx]|]
+-- | Lower an array indexing operation to a 'C.Exp'
+lowerIdx :: Type -> CExp -> CExp -> C.Exp
+lowerIdx (BitT {}) carr ci = lowerBitArrayIdx carr ci
+lowerIdx _         carr ci = [cexp|$carr[$ci]|]
 
-lowerCSlice :: Type -> CExp -> CExp -> Int -> C.Exp
-lowerCSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
-    [cexp|&$carr[$int:bitIdx]|]
-  where
-    bitIdx, bitOff :: Integer
-    (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
-
-lowerCSlice tau@(BitT _) carr ce len =
-    errordoc $
-    nest 4 $
-    ppr (locOf ce) <> text ":" </>
-    text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
-    ppr (CSlice tau carr ce len)
-
-lowerCSlice _ carr cidx _ =
-    [cexp|&$carr[$cidx]|]
-
--- | Read an element from a bit array.
-cgBitArrayRead :: CExp -> CExp -> C.Exp
-cgBitArrayRead carr ci =
+-- | Lower a bit array indexing operation to a 'C.Exp'
+lowerBitArrayIdx :: CExp -> CExp -> C.Exp
+lowerBitArrayIdx carr ci =
     [cexp|($carr[$cbitIdx] & $cbitMask) ? 1 : 0|]
   where
     cbitIdx, cbitOff :: CExp
@@ -377,3 +362,21 @@ cgBitArrayRead carr ci =
 
     cbitMask :: CExp
     cbitMask = 1 `shiftL'` cbitOff
+
+-- | Lower a slice operation to a 'C.Exp'
+lowerSlice :: Type -> CExp -> CExp -> Int -> C.Exp
+lowerSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
+    [cexp|&$carr[$int:bitIdx]|]
+  where
+    bitIdx, bitOff :: Integer
+    (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
+
+lowerSlice tau@(BitT _) carr ce len =
+    errordoc $
+    nest 4 $
+    ppr (locOf ce) <> text ":" </>
+    text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
+    ppr (CSlice tau carr ce len)
+
+lowerSlice _ carr cidx _ =
+    [cexp|&$carr[$cidx]|]
