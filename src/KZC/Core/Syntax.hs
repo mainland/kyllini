@@ -371,7 +371,7 @@ instance Pretty Const where
     pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r <> pprSign s
     pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
     pprPrec _ (StringC s)        = text (show s)
-    pprPrec _ (ArrayC cs)        = braces $ commasep $ map ppr cs
+    pprPrec _ (ArrayC cs)        = text "arr" <+> embrace commasep (map ppr cs)
 
 pprSign :: Signedness -> Doc
 pprSign S = empty
