@@ -220,7 +220,7 @@ checkLocalDecl decl@(LetLD v tau e _) k = do
     alwaysWithSummaryContext decl $
         inLocalScope $ do
         checkKind tau TauK
-        checkExp e tau
+        withSummaryContext e $ checkExp e tau
     extendVars [(bVar v, tau)] k
 
 checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
@@ -229,7 +229,7 @@ checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
         checkKind tau TauK
         case maybe_e of
           Nothing -> return ()
-          Just e  -> checkExp e tau
+          Just e  -> withSummaryContext e $ checkExp e tau
     extendVars [(bVar v, refT tau)] k
 
 inferExp :: forall m . MonadTc m => Exp -> m Type
