@@ -512,8 +512,8 @@ cgExp e@(ConstE c _) =
     cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
     cgConst (ArrayC cs) = do
-        ArrT _ tau _ <- inferExp e
-        ces          <- mapM cgConst cs
+        (_, tau) <- inferExp e >>= checkArrT
+        ces      <- mapM cgConst cs
         cgConstArray tau ces
 
 cgExp (VarE v _) =
@@ -752,14 +752,14 @@ cgExp (ForE _ v v_tau e_start e_len e_body l) = do
     return CVoid
 
 cgExp e@(ArrayE es _) | all isConstE es = do
-    ArrT _ tau _ <- inferExp e
-    ces          <- mapM cgExp es
+    (_, tau) <- inferExp e >>= checkArrT
+    ces      <- mapM cgExp es
     cgConstArray tau ces
 
 cgExp e@(ArrayE es l) = do
-    ArrT _ tau _ <- inferExp e
-    cv           <- gensym "__arr"
-    ctau         <- cgType tau
+    (_, tau) <- inferExp e >>= checkArrT
+    cv       <- gensym "__arr"
+    ctau     <- cgType tau
     appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
     forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
         ce <- cgExp e
