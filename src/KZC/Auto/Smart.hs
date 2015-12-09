@@ -43,6 +43,9 @@ intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
 arrayC :: [Const] -> Const
 arrayC cs = ArrayC cs
 
+structC :: Struct -> [(Field, Const)] -> Const
+structC s fs = StructC s fs
+
 -- | @'isConstE' e@ returns a constant version of @e@ if possible.
 unConstE :: Monad m => Exp -> m Const
 unConstE (ConstE c _) =
@@ -92,6 +95,9 @@ derefE e = DerefE e (srclocOf e)
 
 arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
+
+structE :: Struct -> [(Field, Exp)] -> Exp
+structE s fs = StructE s fs (srclocOf (map snd fs))
 
 idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
