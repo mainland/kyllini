@@ -18,6 +18,8 @@ module KZC.Core.Lint.Monad (
     MonadTc(..),
     asksTc,
 
+    defaultValueC,
+
     localFvs,
     askCurrentFvs,
 
@@ -161,6 +163,40 @@ lookupBy proj onerr k = do
     case maybe_v of
       Nothing  -> onerr
       Just v   -> return v
+
+-- | Given a type, produce a default (constant) value of that type
+defaultValueC :: MonadTc m => Type -> m Const
+defaultValueC (UnitT {})         = return UnitC
+defaultValueC (BoolT {})         = return $ BoolC False
+defaultValueC (BitT {})          = return $ BitC False
+defaultValueC (FixT sc s w bp _) = return $ FixC sc s w bp 0
+defaultValueC (FloatT fp _)      = return $ FloatC fp 0
+defaultValueC (StringT {})       = return $ StringC ""
+
+defaultValueC (StructT s _) = do
+    StructDef s flds _ <- lookupStruct s
+    let (fs, taus)     =  unzip flds
+    cs                 <- mapM defaultValueC taus
+    return $ StructC s (fs `zip` cs)
+
+defaultValueC (ArrT (ConstI n _) tau _) = do
+    c <- defaultValueC tau
+    return $ ArrayC (replicate n c)
+
+defaultValueC tau@(ArrT {}) =
+    faildoc $ text "Cannot generate default value for type" <+> ppr tau
+
+defaultValueC tau@(ST {}) =
+    faildoc $ text "Cannot generate default value for type" <+> ppr tau
+
+defaultValueC tau@(RefT {}) =
+    faildoc $ text "Cannot generate default value for type" <+> ppr tau
+
+defaultValueC tau@(FunT {}) =
+    faildoc $ text "Cannot generate default value for type" <+> ppr tau
+
+defaultValueC tau@(TyVarT {}) =
+    faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
 localFvs :: (Fvs e Var, MonadTc m)
          => e
