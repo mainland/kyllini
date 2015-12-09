@@ -640,7 +640,7 @@ pprComp comp =
 
     pprSteps (LiftC _ e _ : k) =
         pprBind k $
-        ppr e
+        text "lift" <+> pprPrec appPrec1 e
 
     pprSteps (ReturnC _ e _ : k) =
         pprBind k $
