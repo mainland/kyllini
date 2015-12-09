@@ -502,7 +502,11 @@ cgConst c@(ArrayC cs) = do
         const ce       = [cinit|$ce|]
 
     cgArrayConstInits _tau ces =
-        [[cinit|$ce|] | ce <- ces]
+        map toInit ces
+      where
+        toInit :: CExp -> C.Initializer
+        toInit (CInit cinit) = cinit
+        toInit ce            = [cinit|$ce|]
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
