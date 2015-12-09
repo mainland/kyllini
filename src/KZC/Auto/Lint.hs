@@ -702,8 +702,11 @@ inferStep (LiftC _ e _) =
         faildoc $ text "Lifted expression must be pureish but has type" <+> ppr tau
     appSTScope tau
 
-inferStep (ReturnC _ e _) = do
+inferStep (ReturnC _ e _) =
+    withFvContext e $ do
     tau <- inferExp e
+    when (not (isPureT tau)) $
+        faildoc $ text "Returned expression must be pure but has type" <+> ppr tau
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
     s, a, b :: TyVar
