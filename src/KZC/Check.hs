@@ -74,9 +74,7 @@ readExpected (Check tau) = return tau
 checkProgram :: [Z.CompLet] -> Ti [C.Decl]
 checkProgram cls = checkCompLets cls sequence
 
-{-
-Value Contexts
-==============
+{- Note [Value Contexts]
 
 The core language is a monadic pure language, so it treats assignments and
 dereferences as monadic actions. The surface language does not, so "pure" Zira
@@ -92,13 +90,37 @@ value context, since any Ziria function results in a Core term that is monadic,
 that is, the Core term to which it is elaborated has an @ST@ type to the right
 of the arrow. The body of any @let comp@ variation is also a value context.
 
-2) The body of a @while@, @until@, @times@, or @for@ expression is a value
+2) The branches of an @if@ expression are value contexts if the @if@ expression
+is not pure.
+
+3) The body of a @while@, @until@, @times@, or @for@ expression is a value
 context.
 
-3) The body of a @let comp@ variation is a value context.
+4) The body of a @let comp@ variation is a value context.
 
-4) Any statement or command is a value context.
+5) Any statement or command is a value context.
 -}
+
+-- | Perform the type checking action @k@ in a value context of type @tau@ and
+-- collect the resulting actions. Note that @tau@ has the form @ST (C _) _ _@
+-- because value contexts are all monadic.
+collectCheckValCtx :: Type -> Ti (Ti C.Exp) -> Ti (Ti C.Exp)
+collectCheckValCtx tau k = do
+    mce <- localValCtxType tau k
+    return $ withValCtx mce
+
+-- | Perform the type inference action @k@ in a value context and
+-- collect the resulting actions. Note that @tau@ has the form @ST (C _) _ _@
+-- because value contexts are all monadic.
+collectInferValCtx :: Ti (Type, Ti C.Exp) -> Ti (Type, Ti C.Exp)
+collectInferValCtx k = do
+    tau         <- newMetaTvT MuK NoLoc
+    (tau', mce) <- localValCtxType tau k
+    tau''       <- compress tau'
+    if isPureT tau''
+      then return (tau'', mce)
+      else do unifyTypes tau tau''
+              return (tau'', mce)
 
 checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp -> SrcLoc
          -> Ti (Type, Ti C.Decl)
@@ -118,7 +140,7 @@ checkLet f ztau MuK e l =
     withExpContext e $ do
     tau <- fromZ (ztau, MuK)
     mce <- extendVars [(f, tau)] $
-           collectValCtx tau $
+           collectCheckValCtx tau $
            checkExp e tau
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
@@ -162,7 +184,7 @@ checkLetFun f ztau ps e l = do
     (tau_ret, mce) <-
         extendVars ((f,tau) : ptaus) $ do
         tau_ret           <- newMetaTvT MuK l
-        mce               <- collectValCtx tau_ret $
+        mce               <- collectCheckValCtx tau_ret $
                              checkExp e tau_ret
         (tau_ret_gen, _)  <- generalize tau_ret
         unifyTypes (funT (map snd ptaus) tau_ret_gen) tau
@@ -432,7 +454,7 @@ tcExp (Z.BinopE op e1 e2 l) exp_ty =
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
-    (tau, mce2) <- inferExp e2
+    (tau, mce2) <- collectInferValCtx $ inferExp e2
     void $ checkSTCUnit tau
     instType tau exp_ty
     return $ do ce1 <- mce1
@@ -441,7 +463,9 @@ tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
 
 tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
     mce1              <- checkVal e1 (BoolT l)
-    (tau, mce2, mce3) <- unifyExpTypes e2 e3
+    (tau, mce2, mce3) <- do (tau2, mce2) <- collectInferValCtx $ inferExp e2
+                            (tau3, mce3) <- collectInferValCtx $ inferExp e3
+                            unifyCompiledExpTypes tau2 e2 mce2 tau3 e3 mce3
     instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2
@@ -525,9 +549,9 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- collectValCtx boolT $
+    mce1 <- collectCheckValCtx boolT $
             checkBoolVal e1
-    mce2 <- collectValCtx tau $
+    mce2 <- collectCheckValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
     return $ do ce1 <- mce1
@@ -536,9 +560,9 @@ tcExp (Z.WhileE e1 e2 l) exp_ty = do
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
-    mce1 <- collectValCtx boolT $
+    mce1 <- collectCheckValCtx boolT $
             checkBoolVal e1
-    mce2 <- collectValCtx tau $
+    mce2 <- collectCheckValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
     return $ do ce1       <- mce1
@@ -551,7 +575,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
     checkIntT tau1
     tau  <- mkSTC (UnitT l)
-    mce2 <- collectValCtx tau $
+    mce2 <- collectCheckValCtx tau $
             checkExp e2 tau
     instType tau exp_ty
     return $ do cann <- trans ann
@@ -567,7 +591,7 @@ tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
     mce2 <- castVal tau_i e2
     tau  <- mkSTC (UnitT l)
     mce3 <- extendVars [(i, tau_i)] $
-            collectValCtx tau $
+            collectCheckValCtx tau $
             checkExp e3 tau
     instType tau exp_ty
     return $ do cann   <- trans ann
@@ -929,7 +953,7 @@ tcExp (Z.CompLetE cl e l) exp_ty = do
     checkCompLet cl $ \mcdecl -> do
     tau <- newMetaTvT MuK l
     instType tau exp_ty
-    mce <- collectValCtx tau $ checkExp e tau
+    mce <- collectCheckValCtx tau $ checkExp e tau
     return $ do
         cdecl <- mcdecl
         ce    <- mce
@@ -961,7 +985,7 @@ tcStms (stm@(Z.LetS {}) : []) _ =
 tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
+    collectCheckValCtx tau $ do
     (tau1, mcdecl) <- withSummaryContext stm $
                       checkLet v ztau TauK e l
     mce2           <- extendVars [(v, tau1)] $
@@ -978,7 +1002,7 @@ tcStms (stm@(Z.LetRefS {}) : []) _ =
 tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
+    collectCheckValCtx tau $ do
     (tau1, mcdecl) <- withSummaryContext stm $
                       checkLetRef v ztau e_init l
     mce2           <- extendVars [(v, refT tau1)] $
@@ -992,7 +1016,7 @@ tcStms (stm@(Z.ExpS e _) : []) exp_ty =
     withSummaryContext stm $ do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
+    collectCheckValCtx tau $ do
     checkExp e tau
 
 tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
@@ -1002,7 +1026,7 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
     let tau2               =  ST [] omega2 s a b l
     instType tau2 exp_ty
     mce1  <- withSummaryContext stm $
-             collectValCtx tau1 $
+             collectCheckValCtx tau1 $
              checkExp e tau1
     mce2  <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm $ mce1
@@ -1024,7 +1048,7 @@ tcCmds (cmd@(Z.LetC {}) : []) _ =
 tcCmds (Z.LetC cl l : cmds) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
+    collectCheckValCtx tau $ do
     checkCompLet cl $ \mcdecl -> do
     mce <- checkCmds cmds tau
     return $ do
@@ -1043,7 +1067,7 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
     let tau2               =  ST [] omega2 s a b l
     instType tau2 exp_ty
     mce1 <- withSummaryContext cmd $ do
-            collectValCtx tau1 $ do
+            collectCheckValCtx tau1 $ do
             checkExp e tau1
     mce2 <- extendVars [(v, nu)] $
             checkCmds cmds tau2
@@ -1067,7 +1091,7 @@ tcCmds (cmd@(Z.ExpC e _) : []) exp_ty =
     withSummaryContext cmd $ do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectValCtx tau $ do
+    collectCheckValCtx tau $ do
     checkExp e tau
 
 tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
@@ -1077,7 +1101,7 @@ tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
     let tau2               =  ST [] omega2 s a b l
     instType tau2 exp_ty
     mce1 <- withSummaryContext cmd $
-            collectValCtx tau1 $
+            collectCheckValCtx tau1 $
             checkExp e tau1
     mce2 <- checkCmds cmds tau2
     return $ do ce1 <- withSummaryContext cmd $ mce1
@@ -1883,14 +1907,6 @@ unifyTypes tau1 tau2 = do
               text "Cannot construct the infinite type:" <+/>
               ppr tau1' <+> text "=" <+> ppr tau2'
         kcWriteTv mtv tau2
-
--- | Type check two expressions and attempt to unify their types. This may
--- requires adding casts.
-unifyExpTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
-unifyExpTypes e1 e2 = do
-    (tau1, mce1) <- inferExp e1
-    (tau2, mce2) <- inferExp e2
-    unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2
 
 -- | Type check two expressions, treating them as values, and attempt to unify their types. This may
 -- requires adding casts.

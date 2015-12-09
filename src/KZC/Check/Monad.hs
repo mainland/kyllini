@@ -19,8 +19,9 @@ module KZC.Check.Monad (
     localExp,
     askCurrentExp,
 
+    localValCtxType,
     askValCtxType,
-    collectValCtx,
+    withValCtx,
     tellValCtx,
 
     extendStructs,
@@ -157,25 +158,38 @@ lookupBy proj onerr k = do
       Nothing  -> onerr
       Just v   -> return v
 
+-- | Specify the current expression we are working with.
 localExp :: Z.Exp -> Ti a -> Ti a
 localExp e = local (\env -> env { curexp = Just e })
 
+-- | ASk the current expression we are working with. We use this to list
+-- relevant bindings in error messages.
 askCurrentExp :: Ti (Maybe Z.Exp)
 askCurrentExp = asks curexp
 
+-- | Specify the type of the computational context in which we need to produce a
+-- value.
+localValCtxType :: Type -> Ti a -> Ti a
+localValCtxType tau m = local (\env -> env { valCtxType = tau }) m
+
+-- | Ask the type of the computational context in which we need to produce a
+-- value.
 askValCtxType :: Ti Type
 askValCtxType = asks valCtxType
 
-collectValCtx :: Type -> Ti (Ti C.Exp) -> Ti (Ti C.Exp)
-collectValCtx tau k = do
-    mce <- local (\env -> env { valCtxType = tau }) k
-    return $ do old_valctx <- gets valctx
-                modify $ \s -> s { valctx = id }
-                ce <- mce
-                f  <- gets valctx
-                modify $ \s -> s { valctx = old_valctx }
-                return $ f ce
+-- | Given a computation that produces a 'C.Exp', return a new computation that
+-- produces the same 'C.Exp' modified to incorporate the value context.
+withValCtx :: Ti C.Exp -> Ti C.Exp
+withValCtx mce = do
+    old_valctx <- gets valctx
+    modify $ \s -> s { valctx = id }
+    ce <- mce
+    f  <- gets valctx
+    modify $ \s -> s { valctx = old_valctx }
+    return $ f ce
 
+-- | Specify a function for adding necessary value context to a 'C.Exp'
+-- representing a computation.
 tellValCtx :: (C.Exp -> C.Exp) -> Ti ()
 tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
 
