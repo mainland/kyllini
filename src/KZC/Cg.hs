@@ -520,20 +520,20 @@ cgConst (StructC s flds) = do
                 Just c -> cgConst c
         return [cinit|$ce|]
 
-cgConstExp :: Type -> CExp -> Cg CExp
-cgConstExp tau (CInit cinit) = do
-    cv   <- gensym "__const"
-    ctau <- cgType tau
-    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
-    return $ CExp [cexp|$id:cv|]
-
-cgConstExp _ ce =
-    return ce
-
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) = do
     tau <- inferExp e
     cgConst c >>= cgConstExp tau
+  where
+    cgConstExp :: Type -> CExp -> Cg CExp
+    cgConstExp tau (CInit cinit) = do
+        cv   <- gensym "__const"
+        ctau <- cgType tau
+        appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+        return $ CExp [cexp|$id:cv|]
+
+    cgConstExp _ ce =
+        return ce
 
 cgExp (VarE v _) =
     lookupVarCExp v
