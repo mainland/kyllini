@@ -49,16 +49,19 @@ module KZC.Core.Lint.Monad (
     relevantBindings
   ) where
 
-import Control.Applicative
+import Control.Applicative (Applicative, (<$>))
 import Control.Monad (liftM)
+import Control.Monad.Error (Error, ErrorT(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Writer (WriterT(..))
 import Data.List (foldl')
 import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
+import Data.Monoid (Monoid, mempty)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -114,6 +117,14 @@ class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUn
 asksTc :: MonadTc m => (TcEnv -> a) -> m a
 asksTc f = liftM f askTc
 
+instance MonadTc m => MonadTc (MaybeT m) where
+    askTc       = lift askTc
+    localTc f m = MaybeT $ localTc f (runMaybeT m)
+
+instance (Error e, MonadTc m) => MonadTc (ErrorT e m) where
+    askTc       = lift askTc
+    localTc f m = ErrorT $ localTc f (runErrorT m)
+
 instance MonadTc m => MonadTc (ReaderT r m) where
     askTc       = lift askTc
     localTc f m = ReaderT $ \r -> localTc f (runReaderT m r)
@@ -121,6 +132,10 @@ instance MonadTc m => MonadTc (ReaderT r m) where
 instance MonadTc m => MonadTc (StateT r m) where
     askTc       = lift askTc
     localTc f m = StateT $ \s -> localTc f (runStateT m s)
+
+instance (Monoid w, MonadTc m) => MonadTc (WriterT w m) where
+    askTc       = lift askTc
+    localTc f m = WriterT $ localTc f (runWriterT m)
 
 extend :: forall k v a m . (Ord k, MonadTc m)
        => (TcEnv -> Map k v)

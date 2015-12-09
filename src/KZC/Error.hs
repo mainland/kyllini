@@ -33,15 +33,22 @@ module KZC.Error (
     checkDuplicates
   ) where
 
-import Control.Monad.Error
-import Control.Monad.Exception
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer
+import Control.Monad.Error (Error, ErrorT(..))
+import Control.Monad.Exception (Exception(..),
+                                MonadException,
+                                SomeException,
+                                catch,
+                                throw)
+import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.State (StateT(..))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Writer (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
+import Data.Monoid (Monoid)
 import Data.Ord (comparing)
-import Data.Typeable
+import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
 
 import KZC.Globals
@@ -96,6 +103,18 @@ class MonadException m => MonadErr m where
       where
         ex_warn :: WarnException
         ex_warn = WarnException (toException ex)
+
+instance MonadErr m => MonadErr (MaybeT m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = MaybeT $ localErrCtx ctx (runMaybeT m)
+
+    warnIsError = lift warnIsError
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
 
 instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     askErrCtx         = lift askErrCtx

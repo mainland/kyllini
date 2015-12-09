@@ -23,10 +23,14 @@ module KZC.Trace (
     traceSimpl
   ) where
 
-import Control.Monad.Error
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer
+import Control.Monad (when)
+import Control.Monad.Error (Error, ErrorT(..))
+import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.State (StateT(..))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Writer (WriterT(..))
+import Data.Monoid (Monoid)
 import System.IO (hPutStrLn,
                   stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -37,6 +41,10 @@ import KZC.Flags
 class MonadFlags m => MonadTrace m where
     askTraceDepth   :: m Int
     localTraceDepth :: (Int -> Int) -> m a -> m a
+
+instance MonadTrace m => MonadTrace (MaybeT m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = MaybeT $ localTraceDepth f (runMaybeT m)
 
 instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
     askTraceDepth       = lift askTraceDepth
