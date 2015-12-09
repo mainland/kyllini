@@ -471,15 +471,17 @@ instance Pretty Exp where
         ppr v <+> text ":=" <+> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
+        nest 2 $
         text "while" <+>
-        group (pprPrec appPrec1 e1) <+>
+        group (pprPrec appPrec1 e1) <+/>
         pprBody e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+        nest 2 $
         ppr ann <+> text "for" <+>
         group (parens (ppr v <+> colon <+> ppr tau) <+>
                text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <>
+               brackets (commasep [ppr e1, ppr e2])) <+/>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
