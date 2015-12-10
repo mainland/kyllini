@@ -37,8 +37,11 @@ mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
 
-intC :: Integer -> Const
+intC :: Integral i => i -> Const
 intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+arrayC :: [Const] -> Const
+arrayC cs = ArrayC cs
 
 -- | @'isConstE' e@ returns a constant version of @e@ if possible.
 unConstE :: Monad m => Exp -> m Const
@@ -60,11 +63,8 @@ unConstE (StructE s flds _) = do
 unConstE e =
     faildoc $ text "Expression" <+> ppr e <+> text "is non-constant."
 
-notE :: Exp -> Exp
-notE e = UnopE Lnot e (srclocOf e)
-
-castE :: Type -> Exp -> Exp
-castE tau e = UnopE (Cast tau) e (srclocOf e)
+constE :: Const -> Exp
+constE c = ConstE c noLoc
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
@@ -75,6 +75,12 @@ intE i = ConstE (intC i) noLoc
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
+notE :: Exp -> Exp
+notE e = UnopE Lnot e (srclocOf e)
+
+castE :: Type -> Exp -> Exp
+castE tau e = UnopE (Cast tau) e (srclocOf e)
+
 letE :: LocalDecl -> Exp -> Exp
 letE d e = LetE d e (d `srcspan` e)
 
@@ -83,6 +89,9 @@ callE f es = CallE f [] es (f `srcspan` es)
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
+
+arrayE :: [Exp] -> Exp
+arrayE es = ArrayE es (srclocOf es)
 
 idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
