@@ -42,106 +42,88 @@ import KZC.Auto.Syntax
 import KZC.Label
 import KZC.Uniq
 
-varC :: (Located a, MonadUnique m)
-     => Var -> a -> m LComp
-varC v a = do
+varC :: MonadUnique m => Var -> m LComp
+varC v = do
     l <- genLabel "vark"
-    return $ Comp [VarC l v (srclocOf a)]
+    return $ Comp [VarC l v (srclocOf v)]
 
-callC :: (Located a, MonadUnique m)
-      => Var -> [Iota] -> [LArg] -> a -> m LComp
-callC f is args a = do
+callC :: MonadUnique m => Var -> [Iota] -> [LArg] -> m LComp
+callC f is args = do
     l <- genLabel "callk"
-    return $ Comp [CallC l f is args (srclocOf a)]
+    return $ Comp [CallC l f is args (f `srcspan` is `srcspan` args)]
 
-ifC :: (Located a, MonadUnique m)
-    => Exp -> LComp -> LComp -> a -> m LComp
-ifC e thenc elsec a = do
+ifC :: MonadUnique m => Exp -> LComp -> LComp -> m LComp
+ifC e thenc elsec = do
     l <- genLabel "ifk"
-    return $ ifC' l e thenc elsec a
+    return $ ifC' l e thenc elsec
 
-ifC' :: Located a
-     => Label -> Exp -> LComp -> LComp -> a -> LComp
-ifC' l e thenc elsec a = Comp [IfC l e thenc elsec (srclocOf a)]
+ifC' :: Label -> Exp -> LComp -> LComp -> LComp
+ifC' l e thenc elsec = Comp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
 
-letC :: (Located a, MonadUnique m)
-     => LocalDecl -> a -> m LComp
-letC decl a = do
+letC :: MonadUnique m => LocalDecl ->  m LComp
+letC decl = do
     l <- genLabel "letk"
-    return $ Comp [LetC l decl (srclocOf a)]
+    return $ Comp [LetC l decl (srclocOf decl)]
 
-letC' :: Located a
-      => Label -> LocalDecl -> a -> LComp
-letC' l decl a = Comp [LetC l decl (srclocOf a)]
+letC' :: Label -> LocalDecl -> LComp
+letC' l decl = Comp [LetC l decl (srclocOf decl)]
 
-whileC :: (Located a, MonadUnique m)
-       => Exp -> LComp -> a -> m LComp
-whileC e c a = do
+whileC :: MonadUnique m => Exp -> LComp -> m LComp
+whileC e c  = do
     l <- genLabel "whilek"
-    return $ Comp [WhileC l e c (srclocOf a)]
+    return $ Comp [WhileC l e c (e `srcspan` c)]
 
-forC :: (Located a, MonadUnique m)
-     => UnrollAnn -> Var -> Type -> Exp -> Exp -> LComp -> a -> m LComp
-forC ann v tau e1 e2 c a = do
+forC :: MonadUnique m => UnrollAnn -> Var -> Type -> Exp -> Exp -> LComp -> m LComp
+forC ann v tau e1 e2 c = do
     l <- genLabel "fork"
-    return $ Comp [ForC l ann v tau e1 e2 c (srclocOf a)]
+    return $ Comp [ForC l ann v tau e1 e2 c (v `srcspan` tau `srcspan` e1 `srcspan` e2 `srcspan` c)]
 
-liftC :: (Located a, MonadUnique m)
-      => Exp -> a -> m LComp
-liftC e a = do
+liftC :: MonadUnique m  => Exp -> m LComp
+liftC e = do
     l <- genLabel "liftk"
-    return $ Comp [LiftC l e (srclocOf a)]
+    return $ Comp [LiftC l e (srclocOf e)]
 
-returnC :: (Located a, MonadUnique m)
-        => Exp -> a -> m LComp
-returnC e a = do
+returnC :: MonadUnique m => Exp -> m LComp
+returnC e = do
     l <- genLabel "returnk"
-    return $ Comp [ReturnC l e (srclocOf a)]
+    return $ Comp [ReturnC l e (srclocOf e)]
 
-bindC :: (Located a, MonadUnique m)
-      => WildVar -> Type -> a -> m LComp
-bindC wv tau a = do
+bindC :: MonadUnique m => WildVar -> Type -> m LComp
+bindC wv tau = do
     l <- genLabel "bindk"
-    return $ Comp [BindC l wv tau (srclocOf a)]
+    return $ Comp [BindC l wv tau (srclocOf tau)]
 
-bindC' :: Located a
-       => Label -> WildVar -> Type -> a -> LComp
-bindC' l wv tau a = Comp [BindC l wv tau (srclocOf a)]
+bindC' :: Label -> WildVar -> Type -> LComp
+bindC' l wv tau = Comp [BindC l wv tau (srclocOf tau)]
 
-takeC :: (Located a, MonadUnique m)
-      => Type -> a -> m LComp
-takeC tau a = do
+takeC ::  MonadUnique m => Type -> m LComp
+takeC tau = do
     l <- genLabel "takek"
-    return $ Comp [TakeC l tau (srclocOf a)]
+    return $ Comp [TakeC l tau (srclocOf tau)]
 
-takesC :: (Located a, MonadUnique m)
-       => Int -> Type -> a -> m LComp
-takesC i tau a = do
+takesC :: MonadUnique m => Int -> Type -> m LComp
+takesC i tau = do
     l <- genLabel "takesk"
-    return $ Comp [TakesC l i tau (srclocOf a)]
+    return $ Comp [TakesC l i tau (srclocOf tau)]
 
-emitC :: (Located a, MonadUnique m)
-      => Exp -> a -> m LComp
-emitC e a = do
+emitC :: MonadUnique m => Exp -> m LComp
+emitC e = do
     l <- genLabel "emitk"
-    return $ Comp [EmitC l e (srclocOf a)]
+    return $ Comp [EmitC l e (srclocOf e)]
 
-emitsC :: (Located a, MonadUnique m)
-       => Exp -> a -> m LComp
-emitsC e a = do
+emitsC :: MonadUnique m => Exp -> m LComp
+emitsC e = do
     l <- genLabel "emitk"
-    return $ Comp [EmitsC l e (srclocOf a)]
+    return $ Comp [EmitsC l e (srclocOf e)]
 
-repeatC :: (Located a, MonadUnique m)
-        => VectAnn -> LComp -> a -> m LComp
-repeatC ann c a = do
+repeatC :: MonadUnique m => VectAnn -> LComp -> m LComp
+repeatC ann c = do
     l <- genLabel "repeatk"
-    return $ Comp [RepeatC l ann c (srclocOf a)]
+    return $ Comp [RepeatC l ann c (srclocOf c)]
 
-parC :: (Located a, MonadUnique m)
-     => PipelineAnn -> Type -> LComp -> LComp -> a -> m LComp
-parC ann tau c1 c2 a =
-    return $ Comp [ParC ann tau c1 c2 (srclocOf a)]
+parC :: MonadUnique m => PipelineAnn -> Type -> LComp -> LComp -> m LComp
+parC ann tau c1 c2 =
+    return $ Comp [ParC ann tau c1 c2 (c1 `srcspan` c2)]
 
 type M l1 l2 m a = ReaderT (Map l1 l2) m a
 

@@ -418,8 +418,8 @@ fuse left right = do
             -- XXX We need the empty return so that the emit has a
             -- continuation...so that we can take its label to find a joint
             -- label.
-            body <- emitC (idxE e (varE i)) s1 .>>. returnC unitE s1
-            fori <- forC AutoUnroll i intT 0 (fromIntegral n) body s1
+            body <- emitC (idxE e (varE i)) .>>. returnC unitE
+            fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
             runLeft (unComp fori ++ lss) (rs : rss)
 
         l' :: (Label, Label)

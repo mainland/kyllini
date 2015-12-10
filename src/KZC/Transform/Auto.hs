@@ -300,32 +300,32 @@ transExp e@(C.ParE {}) =
     faildoc $ text "par expression seen in pure-ish computation"
 
 transComp :: C.Exp -> Auto LComp
-transComp e@(C.VarE v l) = do
+transComp e@(C.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
     if isPureishT tau
       then do e' <- transExp e
-              liftC e' l
-      else varC v' l
+              liftC e'
+      else varC v'
 
-transComp (C.IfE e1 e2 e3 l) = do
+transComp (C.IfE e1 e2 e3 _) = do
     e1' <- transExp e1
     e2' <- transComp e2
     e3' <- transComp e3
-    ifC e1' e2' e3' l
+    ifC e1' e2' e3'
 
-transComp (C.LetE cdecl e l) =
+transComp (C.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
-    letC decl l.>>. transComp e
+    letC decl.>>. transComp e
 
-transComp e@(C.CallE f iotas es l) = do
+transComp e@(C.CallE f iotas es _) = do
     f'              <- lookupVarSubst f
     (_, _, tau_res) <- lookupVar f >>= checkFunT
     if isPureishT tau_res
       then do e' <- transExp e
-              liftC e' l
+              liftC e'
       else do args <- mapM transArg es
-              callC f' iotas args l
+              callC f' iotas args
   where
     transArg :: C.Exp -> Auto LArg
     transArg e = do
@@ -334,52 +334,52 @@ transComp e@(C.CallE f iotas es l) = do
           then ExpA  <$> transExp e
           else CompA <$> transComp e
 
-transComp (C.WhileE e c l) = do
+transComp (C.WhileE e c _) = do
     e' <- transExp e
     c' <- transComp c
-    whileC e' c' l
+    whileC e' c'
 
-transComp (C.ForE ann v tau e1 e2 e3 l) =
+transComp (C.ForE ann v tau e1 e2 e3 _) =
     ensureUnique v $ \v' -> do
     e1' <- withFvContext e1 $ transExp e1
     e2' <- withFvContext e2 $ transExp e2
     c'  <- withFvContext e3 $
            extendVars [(v, tau)] $
            transComp e3
-    forC ann v' tau e1' e2' c' l
+    forC ann v' tau e1' e2' c'
 
-transComp (C.ReturnE _ e l) = do
+transComp (C.ReturnE _ e _) = do
     e <- transExp e
-    returnC e l
+    returnC e
 
-transComp (C.BindE C.WildV tau e1 e2 l) =
-    transComp e1 .>>. bindC WildV tau l .>>. transComp e2
+transComp (C.BindE C.WildV tau e1 e2 _) =
+    transComp e1 .>>. bindC WildV tau .>>. transComp e2
 
-transComp (C.BindE (C.TameV v) tau e1 e2 l) =
+transComp (C.BindE (C.TameV v) tau e1 e2 _) =
     ensureUnique v $ \v' -> do
     transComp e1
-        .>>. bindC (TameV (mkBoundVar v')) tau l
+        .>>. bindC (TameV (mkBoundVar v')) tau
         .>>. (extendVars [(v, tau)] $ transComp e2)
 
-transComp (C.TakeE tau l) =
-    takeC tau l
+transComp (C.TakeE tau _) =
+    takeC tau
 
-transComp (C.TakesE i tau l) =
-    takesC i tau l
+transComp (C.TakesE i tau _) =
+    takesC i tau
 
-transComp (C.EmitE e l) = do
+transComp (C.EmitE e _) = do
     e' <- transExp e
-    emitC e' l
+    emitC e'
 
-transComp (C.EmitsE e l) = do
+transComp (C.EmitsE e _) = do
     e' <- transExp e
-    emitsC e' l
+    emitsC e'
 
-transComp (C.RepeatE ann e l) = do
+transComp (C.RepeatE ann e _) = do
     c <- transComp e
-    repeatC ann c l
+    repeatC ann c
 
-transComp (C.ParE ann b e1 e2 l) = do
+transComp (C.ParE ann b e1 e2 _) = do
     (s, a, c) <- askSTIndTypes
     c1        <- withFvContext e1 $
                  localSTIndTypes (Just (s, a, b)) $
@@ -387,11 +387,11 @@ transComp (C.ParE ann b e1 e2 l) = do
     c2        <- withFvContext e2 $
                  localSTIndTypes (Just (b, b, c)) $
                  transComp e2
-    parC ann b c1 c2 l
+    parC ann b c1 c2
 
 transComp e = do
     tau <- inferExp e
     e'  <- transExp e
     if isCompT tau
-      then liftC e' e
-      else returnC e' e
+      then liftC e'
+      else returnC e'
