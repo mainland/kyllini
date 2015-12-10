@@ -16,9 +16,6 @@ module KZC.Rename.Monad (
     Rn(..),
     runRn,
 
-    extend,
-    lookupBy,
-
     inCompScope,
     inPureScope
   ) where
@@ -28,7 +25,6 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
-import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -65,31 +61,6 @@ newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
 
 runRn :: Rn a -> KZC a
 runRn m = runReaderT (unRn m) defaultRnEnv
-
-extend :: forall k v a . Ord k
-       => (RnEnv -> Map k v)
-       -> (RnEnv -> Map k v -> RnEnv)
-       -> [(k, v)]
-       -> Rn a
-       -> Rn a
-extend _ _ [] m = m
-
-extend proj upd kvs m = do
-    local (\env -> upd env (foldl' insert (proj env) kvs)) m
-  where
-    insert :: Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
-lookupBy :: Ord k
-         => (RnEnv -> Map k v)
-         -> Rn v
-         -> k
-         -> Rn v
-lookupBy proj onerr k = do
-    maybe_v <- asks (Map.lookup k . proj)
-    case maybe_v of
-      Nothing  -> onerr
-      Just v   -> return v
 
 inCompScope :: Rn a -> Rn a
 inCompScope m = local (\env -> env { compScope = True }) m

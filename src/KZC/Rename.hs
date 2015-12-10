@@ -26,6 +26,7 @@ import KZC.Error
 import KZC.Name
 import KZC.Rename.Monad
 import KZC.Summary
+import KZC.Util.Env
 
 renameProgram :: [CompLet] -> Rn [CompLet]
 renameProgram cls = rnCompLets cls
@@ -34,11 +35,11 @@ extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
     checkDuplicates desc vs
     vs' <- mapM ensureUniq vs
-    extend vars (\env x -> env { vars = x }) (vs `zip` vs') m
+    extendEnv vars (\env x -> env { vars = x }) (vs `zip` vs') m
 
 lookupVar :: Var -> Rn Var
 lookupVar v =
-    lookupBy vars onerr v
+    lookupEnv vars onerr v
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
@@ -46,7 +47,7 @@ extendCompVars :: Doc -> [Var] -> Rn a -> Rn a
 extendCompVars desc vs m = do
     checkDuplicates desc vs
     vs' <- mapM ensureUniq vs
-    extend compVars (\env x -> env { compVars = x }) (vs `zip` vs') m
+    extendEnv compVars (\env x -> env { compVars = x }) (vs `zip` vs') m
 
 lookupMaybeCompVar :: Var -> Rn Var
 lookupMaybeCompVar v = do

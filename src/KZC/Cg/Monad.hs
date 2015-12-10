@@ -15,9 +15,6 @@ module KZC.Cg.Monad (
     CgEnv,
     evalCg,
 
-    extend,
-    lookupBy,
-
     extendVarCExps,
     lookupVarCExp,
 
@@ -74,10 +71,8 @@ import Control.Applicative ((<$>))
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Foldable (toList)
-import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
@@ -95,6 +90,7 @@ import KZC.Monad.SEFKT
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Uniq
+import KZC.Util.Env
 
 -- | The 'Cg' monad.
 type Cg a = SEFKT (ReaderT CgEnv (StateT CgState Tc)) a
@@ -132,60 +128,40 @@ evalCg m = do
     s <- liftTc $ execStateT (runReaderT (runSEFKT m) defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
 
-extend :: forall k v a . Ord k
-       => (CgEnv -> Map k v)
-       -> (CgEnv -> Map k v -> CgEnv)
-       -> [(k, v)]
-       -> Cg a
-       -> Cg a
-extend _ _ [] m = m
-
-extend proj upd kvs m = do
-    local (\env -> upd env (foldl' insert (proj env) kvs)) m
-  where
-    insert :: Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
-lookupBy :: Ord k
-         => (CgEnv -> Map k v)
-         -> Cg v
-         -> k
-         -> Cg v
-lookupBy proj onerr k = do
-    maybe_v <- asks (Map.lookup k . proj)
-    case maybe_v of
-      Nothing  -> onerr
-      Just v   -> return v
-
 extendVarCExps :: [(Var, CExp)] -> Cg a -> Cg a
 extendVarCExps ves m =
-    extend varCExps (\env x -> env { varCExps = x }) ves m
+    extendEnv varCExps (\env x -> env { varCExps = x }) ves m
 
 lookupVarCExp :: Var -> Cg CExp
 lookupVarCExp v =
-    lookupBy varCExps onerr v
+    lookupEnv varCExps onerr v
   where
-    onerr = faildoc $ text "Compiled variable" <+> ppr v <+> text "not in scope"
+    onerr = faildoc $
+            text "Compiled variable" <+> ppr v <+> text "not in scope"
 
 extendIVarCExps :: [(IVar, CExp)] -> Cg a -> Cg a
 extendIVarCExps ves m =
-    extend ivarCExps (\env x -> env { ivarCExps = x }) ves m
+    extendEnv ivarCExps (\env x -> env { ivarCExps = x }) ves m
 
 lookupIVarCExp :: IVar -> Cg CExp
 lookupIVarCExp v =
-    lookupBy ivarCExps onerr v
+    lookupEnv ivarCExps onerr v
   where
-    onerr = faildoc $ text "Compiled array size variable" <+> ppr v <+> text "not in scope"
+    onerr = faildoc $
+            text "Compiled array size variable" <+> ppr v <+>
+            text "not in scope"
 
 extendTyVarTypes :: [(TyVar, Type)] -> Cg a -> Cg a
 extendTyVarTypes tvtaus m =
-    extend tyvarTypes (\env x -> env { tyvarTypes = x }) tvtaus m
+    extendEnv tyvarTypes (\env x -> env { tyvarTypes = x }) tvtaus m
 
 lookupTyVarType :: TyVar -> Cg Type
 lookupTyVarType alpha =
-    lookupBy tyvarTypes onerr alpha
+    lookupEnv tyvarTypes onerr alpha
   where
-    onerr = faildoc $ text "Instantiated type variable" <+> ppr alpha <+> text "not in scope"
+    onerr = faildoc $
+            text "Instantiated type variable" <+> ppr alpha <+>
+            text "not in scope"
 
 -- | Return a function that substitutes type variables for their current
 -- instantiation.

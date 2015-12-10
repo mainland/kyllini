@@ -61,9 +61,7 @@ import Control.Monad.Ref
 import Control.Monad.State
 import Data.Foldable (toList)
 import Data.IORef
-import Data.List (foldl')
 import Data.Loc
-import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
@@ -82,6 +80,7 @@ import KZC.Monad
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
+import KZC.Util.Env
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -133,31 +132,6 @@ withTi m = do
         get >>= writeRef sref
         return x
 
-extend :: forall k v a . Ord k
-       => (TiEnv -> Map k v)
-       -> (TiEnv -> Map k v -> TiEnv)
-       -> [(k, v)]
-       -> Ti a
-       -> Ti a
-extend _ _ [] m = m
-
-extend proj upd kvs m = do
-    local (\env -> upd env (foldl' insert (proj env) kvs)) m
-  where
-    insert :: Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
-lookupBy :: Ord k
-         => (TiEnv -> Map k v)
-         -> Ti v
-         -> k
-         -> Ti v
-lookupBy proj onerr k = do
-    maybe_v <- asks (Map.lookup k . proj)
-    case maybe_v of
-      Nothing  -> onerr
-      Just v   -> return v
-
 -- | Specify the current expression we are working with.
 localExp :: Z.Exp -> Ti a -> Ti a
 localExp e = local (\env -> env { curexp = Just e })
@@ -195,11 +169,12 @@ tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
 
 extendStructs :: [StructDef] -> Ti a -> Ti a
 extendStructs ss m =
-    extend structs (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+    extendEnv structs
+        (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
 
 lookupStruct :: Z.Struct -> Ti StructDef
 lookupStruct s =
-    lookupBy structs onerr s
+    lookupEnv structs onerr s
   where
     onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
 
@@ -211,11 +186,11 @@ extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do
     mtvs <- fvs <$> compress (map snd vtaus)
     local (\env -> env { envMtvs = mtvs `Set.union` envMtvs env }) $ do
-    extend varTypes (\env x -> env { varTypes = x }) vtaus m
+    extendEnv varTypes (\env x -> env { varTypes = x }) vtaus m
 
 lookupVar :: Z.Var -> Ti Type
 lookupVar v =
-    lookupBy varTypes onerr v
+    lookupEnv varTypes onerr v
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
@@ -232,21 +207,21 @@ askEnvMtvs =
 
 extendTyVars :: [(TyVar, Kind)] -> Ti a -> Ti a
 extendTyVars tvks m =
-    extend tyVars (\env x -> env { tyVars = x }) tvks m
+    extendEnv tyVars (\env x -> env { tyVars = x }) tvks m
 
 lookupTyVar :: TyVar -> Ti Kind
 lookupTyVar tv =
-    lookupBy tyVars onerr tv
+    lookupEnv tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
 extendIVars :: [(IVar, Kind)] -> Ti a -> Ti a
 extendIVars ivks m =
-    extend iVars (\env x -> env { iVars = x }) ivks m
+    extendEnv iVars (\env x -> env { iVars = x }) ivks m
 
 lookupIVar :: IVar -> Ti Kind
 lookupIVar iv =
-    lookupBy iVars onerr iv
+    lookupEnv iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
 

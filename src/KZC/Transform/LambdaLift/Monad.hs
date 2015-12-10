@@ -23,7 +23,6 @@ module KZC.Transform.LambdaLift.Monad (
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Foldable (toList)
-import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid (mempty)
@@ -34,6 +33,7 @@ import qualified Data.Set as Set
 import KZC.Core.Lint (Tc, liftTc, isInTopScope)
 import KZC.Core.Syntax
 import KZC.Monad
+import KZC.Util.Env
 
 type Lift a = ReaderT LiftEnv (StateT LiftState Tc) a
 
@@ -55,33 +55,6 @@ defaultLiftState = LiftState
 runLift :: Lift a -> KZC a
 runLift m = liftTc $ evalStateT (runReaderT m defaultLiftEnv) defaultLiftState
 
-extend :: forall k v a . Ord k
-       => (LiftEnv -> Map k v)
-       -> (LiftEnv -> Map k v -> LiftEnv)
-       -> [(k, v)]
-       -> Lift a
-       -> Lift a
-extend _ _ [] m = m
-
-extend proj upd kvs m = do
-    local (\env -> upd env (foldl' insert (proj env) kvs)) m
-  where
-    insert :: Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
-{-
-lookupBy :: Ord k
-         => (LiftEnv -> Map k v)
-         -> Lift v
-         -> k
-         -> Lift v
-lookupBy proj onerr k = do
-    maybe_v <- asks (Map.lookup k . proj)
-    case maybe_v of
-      Nothing  -> onerr
-      Just v   -> return v
--}
-
 lookupFvs :: Var -> Lift (Set Var)
 lookupFvs v = do
   maybe_fvs <- asks (Map.lookup v . funFvs)
@@ -98,7 +71,7 @@ lookupFunFvs f = do
 
 extendFunFvs :: [(Var, (Var, [Var]))] -> Lift a -> Lift a
 extendFunFvs ves m =
-    extend funFvs (\env x -> env { funFvs = x }) ves m
+    extendEnv funFvs (\env x -> env { funFvs = x }) ves m
 
 withDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
 withDecl decl k = do

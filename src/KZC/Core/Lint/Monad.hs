@@ -139,26 +139,26 @@ instance (Monoid w, MonadTc m) => MonadTc (WriterT w m) where
     askTc       = lift askTc
     localTc f m = WriterT $ localTc f (runWriterT m)
 
-extend :: forall k v a m . (Ord k, MonadTc m)
-       => (TcEnv -> Map k v)
-       -> (TcEnv -> Map k v -> TcEnv)
-       -> [(k, v)]
-       -> m a
-       -> m a
-extend _ _ [] m = m
+extendTcEnv :: forall k v a m . (Ord k, MonadTc m)
+            => (TcEnv -> Map k v)
+            -> (TcEnv -> Map k v -> TcEnv)
+            -> [(k, v)]
+            -> m a
+            -> m a
+extendTcEnv _ _ [] m = m
 
-extend proj upd kvs m = do
+extendTcEnv proj upd kvs m = do
     localTc (\env -> upd env (foldl' insert (proj env) kvs)) m
   where
     insert :: Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
 
-lookupBy :: (Ord k, MonadTc m)
-         => (TcEnv -> Map k v)
-         -> m v
-         -> k
-         -> m v
-lookupBy proj onerr k = do
+lookupTcEnv :: (Ord k, MonadTc m)
+            => (TcEnv -> Map k v)
+            -> m v
+            -> k
+            -> m v
+lookupTcEnv proj onerr k = do
     maybe_v <- asksTc (Map.lookup k . proj)
     case maybe_v of
       Nothing  -> onerr
@@ -209,11 +209,12 @@ askCurrentFvs = asksTc curfvs
 
 extendStructs :: MonadTc m => [StructDef] -> m a -> m a
 extendStructs ss m =
-    extend structs (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+    extendTcEnv structs
+        (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
 
 lookupStruct :: MonadTc m => Struct -> m StructDef
 lookupStruct s =
-    lookupBy structs onerr s
+    lookupTcEnv structs onerr s
   where
     onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
 
@@ -235,7 +236,7 @@ extendVars :: forall m a . MonadTc m => [(Var, Type)] -> m a -> m a
 extendVars vtaus m = do
     topScope <- isInTopScope
     extendTopVars topScope (map fst vtaus) $ do
-    extend varTypes (\env x -> env { varTypes = x }) vtaus m
+    extendTcEnv varTypes (\env x -> env { varTypes = x }) vtaus m
   where
     extendTopVars :: Bool -> [Var] -> m a -> m a
     extendTopVars True vs k =
@@ -246,27 +247,27 @@ extendVars vtaus m = do
 
 lookupVar :: MonadTc m => Var -> m Type
 lookupVar v =
-    lookupBy varTypes onerr v
+    lookupTcEnv varTypes onerr v
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
 extendTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
 extendTyVars tvks m =
-    extend tyVars (\env x -> env { tyVars = x }) tvks m
+    extendTcEnv tyVars (\env x -> env { tyVars = x }) tvks m
 
 lookupTyVar :: MonadTc m => TyVar -> m Kind
 lookupTyVar tv =
-    lookupBy tyVars onerr tv
+    lookupTcEnv tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
 extendIVars :: MonadTc m => [(IVar, Kind)] -> m a -> m a
 extendIVars ivks m =
-    extend iVars (\env x -> env { iVars = x }) ivks m
+    extendTcEnv iVars (\env x -> env { iVars = x }) ivks m
 
 lookupIVar :: MonadTc m => IVar -> m Kind
 lookupIVar iv =
-    lookupBy iVars onerr iv
+    lookupTcEnv iVars onerr iv
   where
     onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
 
