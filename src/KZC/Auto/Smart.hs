@@ -93,6 +93,12 @@ callE f es = CallE f [] es (f `srcspan` es)
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 
+whileE :: Exp -> Exp -> Exp
+whileE e1 e2 = WhileE e1 e2 (e1 `srcspan` e2)
+
+forE :: UnrollAnn -> Var -> Type -> Exp -> Exp -> Exp -> Exp
+forE ann v tau e1 e2 e3 = ForE ann v tau e1 e2 e3 (e1 `srcspan` e2 `srcspan` e3)
+
 arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
 
@@ -108,8 +114,12 @@ returnE e = ReturnE AutoInline e (srclocOf e)
 bindE :: Var -> Type -> Exp -> Exp -> Exp
 bindE v tau e1 e2 = BindE (TameV (mkBoundVar v)) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
 
-seqE :: Type -> Exp -> Exp -> Exp
-seqE tau e1 e2 = BindE WildV tau e1 e2 (e1 `srcspan` e2)
+seqE :: Exp -> Exp -> Exp
+seqE (ReturnE _ (ConstE UnitC _) _) e2 =
+    e2
+
+seqE e1 e2 =
+    BindE WildV unitT e1 e2 (e1 `srcspan` e2)
 
 infixr 1 .:=.
 

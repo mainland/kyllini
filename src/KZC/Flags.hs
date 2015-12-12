@@ -61,6 +61,7 @@ data DynFlag = Quiet
              | AutoLint
              | Simplify
              | BoundsCheck
+             | PartialEval
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError
@@ -74,6 +75,7 @@ data DumpFlag = DumpCPP
               | DumpAuto
               | DumpOcc
               | DumpSimpl
+              | DumpEval
   deriving (Eq, Ord, Enum, Show)
 
 data TraceFlag = TraceLexer
@@ -87,6 +89,7 @@ data TraceFlag = TraceLexer
                | TraceAutoLint
                | TraceFusion
                | TraceSimplify
+               | TraceEval
   deriving (Eq, Ord, Enum, Show)
 
 data Flags = Flags

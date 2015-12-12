@@ -117,6 +117,7 @@ fDynFlagOpts =
   , (Fuse,        "fuse",         "run the par fuser")
   , (Simplify,    "simpl",        "run the simplifier")
   , (BoundsCheck, "bounds-check", "generate bounds checks")
+  , (PartialEval, "peval",        "run the partial evaluator")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -141,6 +142,7 @@ dDumpFlagOpts =
   , (DumpAuto,    "auto",    "dump automata")
   , (DumpOcc,     "occ",     "dump occurrence info")
   , (DumpSimpl,   "simpl",   "dump simplifier output")
+  , (DumpEval,    "peval",   "dump partial evaluator output")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -156,6 +158,7 @@ dTraceFlagOpts =
   , (TraceAutoLint, "auto-lint", "trace auto linter")
   , (TraceFusion,   "fusion",    "trace fusion")
   , (TraceSimplify, "simpl",     "trace simplifier")
+  , (TraceEval,     "eval",      "trace evaluator")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

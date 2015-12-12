@@ -87,6 +87,7 @@ data TcEnv = TcEnv
     , iVars      :: !(Map IVar Kind)
     , stIndTys   :: !(Maybe (Type, Type, Type))
     }
+  deriving (Eq, Ord, Show)
 
 defaultTcEnv :: TcEnv
 defaultTcEnv = TcEnv

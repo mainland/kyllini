@@ -44,6 +44,7 @@ import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.Simplify
 import KZC.Rename
@@ -88,6 +89,7 @@ runPipeline filepath =
         autoPhase >=> lintAuto >=>
         runIf simplOrFuse iterateSimplPhase >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
+        runIf (testDynFlag PartialEval) (evalPhase >=> lintAuto) >=>
         compilePhase
       where
         simplOrFuse :: (Flags -> Bool)
@@ -160,6 +162,11 @@ runPipeline filepath =
     fusionPhase =
         lift . A.withTcEnv . A.runTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
+
+    evalPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    evalPhase =
+        lift . A.withTcEnv . evalEvalM . evalProgram >=>
+        dumpPass DumpEval "acore" "peval"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
     compilePhase =
