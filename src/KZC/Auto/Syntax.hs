@@ -66,7 +66,19 @@ module KZC.Auto.Syntax (
 
     isComplexStruct,
 
-    Stm(..)
+    Stm(..),
+
+#if !defined(ONLY_TYPEDEFS)
+    arrPrec,
+    doPrec,
+    doPrec1,
+    appPrec,
+    appPrec1,
+    arrowPrec,
+    arrowPrec1,
+    tyappPrec,
+    tyappPrec1
+#endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
 import Prelude hiding ((<=))
@@ -113,9 +125,13 @@ import KZC.Core.Syntax (Var(..),
 
 #if !defined(ONLY_TYPEDEFS)
                         arrPrec,
+                        doPrec,
                         doPrec1,
                         appPrec,
                         appPrec1,
+                        arrowPrec,
+                        arrowPrec1,
+                        tyappPrec,
                         tyappPrec1
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
