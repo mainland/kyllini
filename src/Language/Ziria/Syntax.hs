@@ -49,6 +49,7 @@ module Language.Ziria.Syntax (
 import Data.Foldable
 import Data.Loc
 import Data.Monoid
+import Data.Ratio (denominator, numerator)
 import Data.String
 import Text.PrettyPrint.Mainland
 
@@ -405,27 +406,30 @@ instance Pretty BP where
     ppr (BP bp) = ppr bp
 
 instance Pretty Const where
-    ppr UnitC              = text "()"
-    ppr (BoolC False)      = text "false"
-    ppr (BoolC True)       = text "true"
-    ppr (BitC False)       = text "'0"
-    ppr (BitC True)        = text "'1"
-    ppr (FixC sc s _ bp r) = pprScaled sc s bp r
-    ppr (FloatC _ f)       = ppr (fromRational f :: Double)
-    ppr (StringC s)        = text (show s)
+    pprPrec _ UnitC              = text "()"
+    pprPrec _ (BoolC False)      = text "false"
+    pprPrec _ (BoolC True)       = text "true"
+    pprPrec _ (BitC False)       = text "'0"
+    pprPrec _ (BitC True)        = text "'1"
+    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r <> pprSign s
+    pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
+    pprPrec _ (StringC s)        = text (show s)
 
-pprScaled :: Scale -> Signedness -> BP -> Rational -> Doc
-pprScaled sc s bp r =
-    go sc s bp
+pprSign :: Signedness -> Doc
+pprSign S = empty
+pprSign U = char 'u'
+
+pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
+pprScaled p I _ (BP 0) r
+    | denominator r == 1 = pprPrec p (numerator r)
+    | otherwise          = pprPrec p r
+
+pprScaled p sc _ (BP bp) r =
+    pprPrec p (fromRational r * scale sc / 2^bp :: Double)
   where
-    go :: Scale -> Signedness -> BP -> Doc
-    go sc S bp      = go sc U bp <> char 'u'
-    go I  U (BP 0)  = ppr r
-    go sc U (BP bp) = ppr (fromRational r * scale sc / 2^bp :: Double)
-      where
-        scale :: Scale -> Double
-        scale I  = 1.0
-        scale PI = pi
+    scale :: Scale -> Double
+    scale I  = 1.0
+    scale PI = pi
 
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
