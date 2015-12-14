@@ -227,7 +227,7 @@ data Binop = Lt   -- ^ Less-than
 data CompLet = LetCL Var (Maybe Type) Exp !SrcLoc
              | LetRefCL Var Type (Maybe Exp) !SrcLoc
              | LetFunCL Var (Maybe Type) [VarBind] Exp !SrcLoc
-             | LetFunExternalCL Var [VarBind] Type !SrcLoc
+             | LetFunExternalCL Var [VarBind] Type  Bool !SrcLoc
              | LetStructCL StructDef !SrcLoc
              | LetCompCL Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
              | LetFunCompCL Var (Maybe Type) (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
@@ -339,13 +339,13 @@ instance Fvs CompLet Var where
     fvs cl@(LetFunCompCL _ _ _ _ e _) = fvs e <\\> binders cl
 
 instance Binders CompLet Var where
-    binders (LetCL v _ _ _)             = singleton v
-    binders (LetRefCL v _ _ _)          = singleton v
-    binders (LetFunCL v _ ps _ _)       = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetFunExternalCL v ps _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetStructCL {})            = mempty
-    binders (LetCompCL v _ _ _ _)       = singleton v
-    binders (LetFunCompCL v _ _ ps _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetCL v _ _ _)               = singleton v
+    binders (LetRefCL v _ _ _)            = singleton v
+    binders (LetFunCL v _ ps _ _)         = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunExternalCL v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetStructCL {})              = mempty
+    binders (LetCompCL v _ _ _ _)         = singleton v
+    binders (LetFunCompCL v _ _ ps _ _)   = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -360,13 +360,13 @@ instance Summary StructDef where
     summary (StructDef s _ _) = text "struct" <+> ppr s
 
 instance Summary CompLet where
-    summary (LetCL v _ _ _)            = text "definition of" <+> ppr v
-    summary (LetRefCL v _ _ _)         = text "definition of" <+> ppr v
-    summary (LetFunCL v _ _ _ _)       = text "definition of" <+> ppr v
-    summary (LetFunExternalCL v _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructCL s _)          = text "definition of" <+> summary s
-    summary (LetCompCL v _ _ _ _)      = text "definition of" <+> ppr v
-    summary (LetFunCompCL v _ _ _ _ _) = text "definition of" <+> ppr v
+    summary (LetCL v _ _ _)              = text "definition of" <+> ppr v
+    summary (LetRefCL v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunCL v _ _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunExternalCL v _ _ _ _) = text "definition of" <+> ppr v
+    summary (LetStructCL s _)            = text "definition of" <+> summary s
+    summary (LetCompCL v _ _ _ _)        = text "definition of" <+> ppr v
+    summary (LetFunCompCL v _ _ _ _ _)   = text "definition of" <+> ppr v
 
 instance Summary Stm where
     summary (LetS v _ _ _)    = text "definition of" <+> ppr v
@@ -648,9 +648,12 @@ instance Pretty CompLet where
         nest 2 $
         text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+/> ppr e
 
-    ppr (LetFunExternalCL f ps tau _) =
+    ppr (LetFunExternalCL f ps tau isPure _) =
         nest 2 $
-        text "fun" <+> text "external" <+> ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+        text "fun" <+> text "external" <+> pureDoc <+>
+        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+      where
+        pureDoc = if isPure then empty else text "impure"
 
     ppr (LetStructCL def _) =
         ppr def
