@@ -18,6 +18,7 @@ module KZC.Cg.CExp (
 
     CExp(..),
 
+    toInit,
     lowerIdx,
     lowerBitArrayIdx
   ) where
@@ -351,6 +352,10 @@ instance Pretty CExp where
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
+
+toInit :: CExp -> C.Initializer
+toInit (CInit cinit) = cinit
+toInit ce            = [cinit|$ce|]
 
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: Type -> CExp -> CExp -> C.Exp

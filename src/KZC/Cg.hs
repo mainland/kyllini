@@ -499,14 +499,10 @@ cgConst c@(ArrayC cs) = do
 
         const :: CExp -> C.Initializer
         const (CInt i) = [cinit|$(chexconst i)|]
-        const ce       = [cinit|$ce|]
+        const ce       = toInit ce
 
     cgArrayConstInits _tau ces =
         map toInit ces
-      where
-        toInit :: CExp -> C.Initializer
-        toInit (CInit cinit) = cinit
-        toInit ce            = [cinit|$ce|]
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
@@ -522,7 +518,7 @@ cgConst (StructC s flds) = do
         ce <- case lookup f flds of
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
-        return [cinit|$ce|]
+        return $ toInit ce
 
 cgExp :: Exp -> Cg CExp
 cgExp e@(ConstE c _) = do
