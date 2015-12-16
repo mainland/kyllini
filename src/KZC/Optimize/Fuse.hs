@@ -85,6 +85,14 @@ runRepeat l_repeat ss_other ss k
     | last ss == LoopC l_repeat   = k
     | otherwise                   = return (ss_other, ss)
 
+-- | Given a list of computation steps for the "other" side of the
+-- producer/consumer loop and a label, @l@, for the current joint
+-- producer/consumer state, see if we have been in the current state before. If
+-- we have, return the remaining "other" side of the computation and the single
+-- step @'LoopC' l@, which indicates that we have encountered a loop. Otherwise,
+-- record the fact that we have seen the label @l@ and call our
+-- continuation. The function 'whenNotBeenThere' is the only way a 'LoopC' step
+-- can be introduced into a computation.
 whenNotBeenThere :: (MonadPlus m, MonadTc m)
                  => [LStep]
                  -> (Label,Label)
