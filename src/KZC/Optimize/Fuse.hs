@@ -320,8 +320,8 @@ fuse left right = do
         runLeft lss rss
 
     runRight lss rss@(RepeatC _ ann c s : _) = do
-        l        <- jointLabel lss rss
-        l_repeat <- jointRepeatLabel lss rss
+        l          <- jointLabel lss rss
+        l_repeat   <- jointRepeatLabel lss rss
         (lss', ss) <- traceNest $ runRight lss (unComp c ++ rss)
         runRepeat l_repeat lss' ss $
             return (lss', [RepeatC l ann (Comp (init ss)) s])
@@ -444,8 +444,8 @@ fuse left right = do
         faildoc $ text "emits paired with non-take."
 
     runLeft lss@(RepeatC _ ann c s : _) rss = do
-        l        <- jointLabel lss rss
-        l_repeat <- jointRepeatLabel lss rss
+        l          <- jointLabel lss rss
+        l_repeat   <- jointRepeatLabel lss rss
         (rss', ss) <- traceNest $ runLeft (unComp c ++ lss) rss
         runRepeat l_repeat rss' ss $
             return (rss', [RepeatC l ann (Comp (init ss)) s])
