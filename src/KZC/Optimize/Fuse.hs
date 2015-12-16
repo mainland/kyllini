@@ -382,7 +382,7 @@ fuse left right = do
     runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
         let step      =  ReturnC l' e s1
-        (rss', steps) <- runRight lss rss
+        (rss', steps) <- runRight (dropBind lss) rss
         return (rss', step:steps)
       where
         l' :: (Label, Label)
@@ -406,7 +406,7 @@ fuse left right = do
         -- If we are emitting an array with only one element, fusion is trivial.
         emits1Take :: F m ([LStep], [Step (Label, Label)])
         emits1Take = do
-            (rss', steps) <- runRight lss rss
+            (rss', steps) <- runRight (dropBind lss) rss
             return (rss', step:steps)
           where
             step :: Step (Label,Label)
@@ -423,7 +423,7 @@ fuse left right = do
             -- label.
             body <- emitC (idxE e (varE i)) .>>. returnC unitE
             fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
-            runLeft (unComp fori ++ lss) (rs : rss)
+            runLeft (unComp fori ++ dropBind lss) (rs : rss)
 
         l' :: (Label, Label)
         l' = (l_left, l_right)
@@ -434,7 +434,7 @@ fuse left right = do
         when (n_left /= n_right)
             mzero
         let step      =  ReturnC l' e s1
-        (rss', steps) <- runRight lss rss
+        (rss', steps) <- runRight (dropBind lss) rss
         return (rss', step:steps)
       where
         l' :: (Label, Label)
@@ -459,6 +459,10 @@ fuse left right = do
         relabelStep l' ls $ \step -> do
         (rss', steps) <- runLeft lss rss
         return (rss', step:steps)
+
+dropBind :: [LStep] -> [LStep]
+dropBind (BindC {} : ss) = ss
+dropBind ss              = ss
 
 knownArraySize :: (MonadPlus m, MonadTc m) => Type -> m Int
 knownArraySize tau = do
