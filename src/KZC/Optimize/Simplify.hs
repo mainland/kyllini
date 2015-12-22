@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 -- |
 -- Module      :  KZC.Optimize.Simplify
@@ -9,6 +8,7 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.Simplify (
+    SimplStats(..),
     SimplM,
     runSimplM,
 
@@ -25,6 +25,9 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
+import Control.Monad.State (MonadState(..),
+                            StateT(..),
+                            modify)
 import Data.IORef
 import Data.List (foldl')
 import Data.Map (Map)
@@ -82,6 +85,23 @@ type Phi = Map IVar Iota
 
 type Psi = Map TyVar Type
 
+data SimplStats = SimplStats
+    { simplDrop   :: Int
+    , simplInline :: Int
+    }
+  deriving (Eq, Ord, Show)
+
+instance Monoid SimplStats where
+    mempty =
+        SimplStats { simplDrop   = 0
+                   , simplInline = 0
+                   }
+
+    s1 `mappend` s2 =
+        SimplStats { simplDrop   = simplDrop s1 + simplDrop s2
+                   , simplInline = simplInline s1 + simplInline s2
+                   }
+
 data SimplEnv = SimplEnv
     { simplTcEnv   :: !TcEnv
     , simplTheta   :: !Theta
@@ -93,24 +113,46 @@ data SimplEnv = SimplEnv
 defaultSimplEnv :: TcEnv -> SimplEnv
 defaultSimplEnv tcenv = SimplEnv tcenv mempty mempty mempty mempty
 
-newtype SimplM a = SimplM { unSimplM :: ReaderT SimplEnv KZC a }
+data SimplState = SimplState
+    { simplStats :: SimplStats }
+
+defaultSimplState :: SimplState
+defaultSimplState = SimplState
+    { simplStats = mempty }
+
+newtype SimplM a = SimplM { unSimplM :: StateT SimplState (ReaderT SimplEnv KZC) a }
     deriving (Functor, Applicative, Monad, MonadIO,
               MonadRef IORef, MonadAtomicRef IORef,
               MonadReader SimplEnv,
+              MonadState SimplState,
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
               MonadTrace)
 
-runSimplM :: SimplM a -> TcEnv -> KZC a
-runSimplM m tcenv = runReaderT (unSimplM m) (defaultSimplEnv tcenv)
+runSimplM :: SimplM a -> TcEnv -> KZC (a, SimplStats)
+runSimplM m tcenv = do
+    (x, st) <- runReaderT (runStateT (unSimplM m) defaultSimplState) (defaultSimplEnv tcenv)
+    return (x, simplStats st)
 
 instance MonadTc SimplM where
     askTc = SimplM $ asks simplTcEnv
     localTc f m =
         SimplM $ local (\env -> env { simplTcEnv = f (simplTcEnv env) }) $
         unSimplM m
+
+mappendStats :: SimplStats -> SimplM ()
+mappendStats stats =
+    modify $ \s -> s { simplStats = simplStats s <> stats }
+
+dropBinding :: BoundVar -> SimplM ()
+dropBinding _ =
+    mappendStats mempty { simplDrop = 1 }
+
+inlineBinding :: Var -> SimplM ()
+inlineBinding _ =
+    mappendStats mempty { simplInline = 1 }
 
 askSubst :: SimplM Theta
 askSubst = asks simplTheta
@@ -257,10 +299,11 @@ simplDecl decl m =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
     preInlineUnconditionally decl@(LetFunD f ivs vbs tau_ret e _)
-        | isDead    = withoutBinding m
+        | isDead    = dropBinding f >> withoutBinding m
         | isOnce    = do theta <- askSubst
-                         extendSubst (bVar f) (SuspFun theta ivs vbs tau_ret e) $
-                             withoutBinding m
+                         extendSubst (bVar f) (SuspFun theta ivs vbs tau_ret e) $ do
+                         dropBinding f
+                         withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
         isDead, isOnce :: Bool
@@ -268,7 +311,7 @@ simplDecl decl m =
         isOnce = bOccInfo f == Just Once
 
     preInlineUnconditionally decl@(LetExtFunD f _ _ _ _)
-        | isDead    = withoutBinding m
+        | isDead    = dropBinding f >> withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
         isDead :: Bool
@@ -278,10 +321,11 @@ simplDecl decl m =
         postInlineUnconditionally decl
 
     preInlineUnconditionally decl@(LetCompD v _ comp _)
-        | isDead   = withoutBinding m
+        | isDead   = dropBinding v >> withoutBinding m
         | isOnce   = do theta <- askSubst
-                        extendSubst (bVar v) (SuspComp theta comp) $
-                            withoutBinding m
+                        extendSubst (bVar v) (SuspComp theta comp) $ do
+                        dropBinding v
+                        withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
         isDead, isOnce :: Bool
@@ -289,11 +333,12 @@ simplDecl decl m =
         isOnce = bOccInfo v == Just Once
 
     preInlineUnconditionally (LetFunCompD f ivs vbs tau_ret comp _)
-        | isDead    = withoutBinding m
+        | isDead    = dropBinding f >> withoutBinding m
         | isOnce    = do theta <- askSubst
                          extendSubst (bVar f)
-                                     (SuspFunComp theta ivs vbs tau_ret comp) $
-                             withoutBinding m
+                                     (SuspFunComp theta ivs vbs tau_ret comp) $ do
+                         dropBinding f
+                         withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
         isDead, isOnce :: Bool
@@ -322,7 +367,8 @@ simplDecl decl m =
             return (ivs, (vs' `zip` taus), tau_ret', e')
         inlineIt <- shouldInlineFunUnconditionally ivs' vbs' tau_ret' e'
         if inlineIt
-          then extendSubst (bVar f) (DoneFun ivs' vbs' tau_ret' e') $
+          then extendSubst (bVar f) (DoneFun ivs' vbs' tau_ret' e') $ do
+               dropBinding f
                withoutBinding m
           else extendVars [(bVar f, tau)] $
                withUniqBoundVar f $ \f' ->
@@ -357,7 +403,8 @@ simplDecl decl m =
                  simplComp comp
         inlineIt <- shouldInlineCompUnconditionally comp'
         if inlineIt
-          then extendSubst (bVar v) (DoneComp comp') $
+          then extendSubst (bVar v) (DoneComp comp') $ do
+               dropBinding v
                withoutBinding m
           else extendVars [(bVar v, tau)] $
                withUniqBoundVar v $ \v' ->
@@ -379,7 +426,8 @@ simplDecl decl m =
             return (ivs, (vs' `zip` taus), tau_ret', comp')
         inlineIt <- shouldInlineCompFunUnconditionally ivs' vbs' tau_ret' comp'
         if inlineIt
-          then extendSubst (bVar f) (DoneFunComp ivs' vbs' tau_ret' comp') $
+          then extendSubst (bVar f) (DoneFunComp ivs' vbs' tau_ret' comp') $ do
+               dropBinding f
                withoutBinding m
           else extendVars [(bVar f, tau)] $
                withUniqBoundVar f $ \f' ->
@@ -410,9 +458,10 @@ simplLocalDecl decl m =
   where
     preInlineUnconditionally :: LocalDecl -> SimplM (Maybe LocalDecl, a)
     preInlineUnconditionally decl@(LetLD v _ e _)
-        | isDead    = withoutBinding m
+        | isDead    = dropBinding v >> withoutBinding m
         | isOnce    = do theta <- askSubst
                          extendSubst (bVar v) (SuspExp theta e) $ do
+                         dropBinding v
                          withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
@@ -421,7 +470,7 @@ simplLocalDecl decl m =
         isOnce = bOccInfo v == Just Once
 
     preInlineUnconditionally decl@(LetRefLD v _ _ _)
-        | isDead    = withoutBinding m
+        | isDead    = dropBinding v >> withoutBinding m
         | otherwise = postInlineUnconditionally decl
       where
         isDead :: Bool
@@ -433,7 +482,8 @@ simplLocalDecl decl m =
         tau'     <- simplType tau
         inlineIt <- shouldInlineExpUnconditionally e'
         if inlineIt
-          then extendSubst (bVar v) (DoneExp e') $
+          then extendSubst (bVar v) (DoneExp e') $ do
+               dropBinding v
                withoutBinding m
           else extendVars [(bVar v, tau)] $
                withUniqBoundVar v $ \v' ->
@@ -558,7 +608,8 @@ simplStep step@(VarC l v _) =
         lookupDefinition v >>= callSiteInline
 
     go (Just (SuspComp theta comp)) =
-        withSubst theta  $
+        withSubst theta $ do
+        inlineBinding v
         unComp <$> simplComp comp >>= rewriteStepsLabel l
 
     go (Just (DoneComp comp)) =
@@ -581,7 +632,8 @@ simplStep step@(VarC l v _) =
 
     inlineCompRhs :: LComp -> SimplM [LStep]
     inlineCompRhs comp =
-        withSubst mempty $
+        withSubst mempty $ do
+        inlineBinding v
         unComp <$> (simplComp comp >>= uniquifyCompLabels) >>= rewriteStepsLabel l
 
 simplStep (CallC l f0 iotas0 args0 s) = do
@@ -602,7 +654,8 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         withSubst theta $
         extendIVarSubst (ivs `zip` iotas) $
         extendArgs (map fst vbs `zip` args) $
-        withInstantiatedTyVars tau_ret $
+        withInstantiatedTyVars tau_ret $ do
+        inlineBinding f0
         unComp <$> simplComp comp >>= rewriteStepsLabel l
 
     go _ iotas args (Just (DoneFunComp ivs vbs tau_ret comp)) =
@@ -646,7 +699,8 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         withSubst mempty $
         extendIVarSubst (ivs `zip` iotas) $
         extendArgs (map fst vbs `zip` args) $
-        withInstantiatedTyVars tau_ret $
+        withInstantiatedTyVars tau_ret $ do
+        inlineBinding f0
         unComp <$> (simplComp comp >>= uniquifyCompLabels) >>= rewriteStepsLabel l
 
     simplArg :: LArg -> SimplM LArg
@@ -722,12 +776,12 @@ simplExp e0@(VarE v _) =
         lookupDefinition v >>= callSiteInline
 
     go (Just (SuspExp theta e)) =
-        withSubst theta $
+        withSubst theta $ do
+        inlineBinding v
         simplExp e
 
     go (Just (DoneExp e)) =
-        withSubst mempty $
-        simplExp e
+        inlineRhs e
 
     go _ =
         faildoc $
@@ -736,7 +790,7 @@ simplExp e0@(VarE v _) =
 
     callSiteInline :: Maybe Definition -> SimplM Exp
     callSiteInline (Just (BoundToExp occ lvl rhs)) | inline rhs occ lvl =
-        withSubst mempty $ simplExp rhs
+        inlineRhs rhs
 
     callSiteInline _ =
         return e0
@@ -748,6 +802,12 @@ simplExp e0@(VarE v _) =
     inline _rhs (Just OnceInFun)   _lvl = False
     inline _rhs (Just ManyBranch)  _lvl = False
     inline _rhs (Just Many)        _lvl = False
+
+    inlineRhs :: Exp -> SimplM Exp
+    inlineRhs rhs =
+        withSubst mempty $ do
+        inlineBinding v
+        simplExp rhs
 
 simplExp (UnopE op e s) =
     UnopE op <$> simplExp e <*> pure s
@@ -781,7 +841,8 @@ simplExp (CallE f0 iotas0 es0 s) = do
     go _ iotas args (Just (SuspFun theta ivs vbs _tau_ret e)) =
         withSubst theta $
         extendIVarSubst (ivs `zip` iotas) $
-        extendArgs (map fst vbs `zip` args) $
+        extendArgs (map fst vbs `zip` args) $ do
+        inlineBinding f0
         simplExp e
 
     go _ iotas args (Just (DoneFun ivs vbs tau_ret rhs)) =
@@ -820,7 +881,8 @@ simplExp (CallE f0 iotas0 es0 s) = do
     inlineFunRhs iotas args ivs vbs _tau_ret e =
         withSubst mempty $
         extendIVarSubst (ivs `zip` iotas) $
-        extendArgs (map fst vbs `zip` args) $
+        extendArgs (map fst vbs `zip` args) $ do
+        inlineBinding f0
         simplExp e
 
     extendArgs :: [(Var, Exp)] -> SimplM a -> SimplM a

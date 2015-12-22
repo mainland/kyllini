@@ -37,6 +37,9 @@ options =
         , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")   "define macro"
         , Option ['o'] ["output"]     (ReqArg outOpt "FILE")              "output FILE"
         , Option []    ["ferrctx"]    (ReqArg maxErrCtxOpt "INT")         "set maximum error context"
+        , Option [] ["fmax-simplifier-iterations"]
+            (ReqArg maxSimplIterationsOpt "INT")
+            "set maximum simplification iterations"
         ]
 
     maybeSetVerbLevel :: Maybe String -> Flags -> Flags
@@ -53,6 +56,12 @@ options =
         case reads s of
           [(n, "")]  -> fs { maxErrCtx = n }
           _          -> error "argument to --ferrctx must be an integer"
+
+    maxSimplIterationsOpt :: String -> Flags -> Flags
+    maxSimplIterationsOpt s fs =
+        case reads s of
+          [(n, "")]  -> fs { maxSimpl = n }
+          _          -> error "argument to --fmax-simplifier-iterations must be an integer"
 
     outOpt :: String -> Flags -> Flags
     outOpt path fs = fs { output = Just path }

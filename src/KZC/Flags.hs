@@ -92,6 +92,7 @@ data Flags = Flags
     { mode      :: !ModeFlag
     , verbLevel :: !Int
     , maxErrCtx :: !Int
+    , maxSimpl  :: !Int
 
     , dynFlags   :: !Int32
     , warnFlags  :: !Int32
@@ -111,6 +112,7 @@ instance Monoid Flags where
         { mode      = Compile
         , verbLevel = 0
         , maxErrCtx = 1
+        , maxSimpl  = 4
 
         , dynFlags   = bit (fromEnum LinePragmas)
         , warnFlags  = 0
@@ -128,6 +130,7 @@ instance Monoid Flags where
         { mode      = mode f2
         , verbLevel = verbLevel f1 + verbLevel f2
         , maxErrCtx = max (maxErrCtx f1) (maxErrCtx f2)
+        , maxSimpl  = max (maxSimpl f1) (maxSimpl f2)
 
         , dynFlags   = dynFlags f1   .|. dynFlags f2
         , warnFlags  = warnFlags f1  .|. warnFlags f2

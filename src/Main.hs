@@ -13,6 +13,7 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
+import Data.Monoid
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 import System.Directory (createDirectoryIfMissing)
@@ -38,6 +39,7 @@ import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
+import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Monad
@@ -84,8 +86,7 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        occPhase >=> lintAuto >=>
-        runIf simplOrFuse (simplPhase >=> lintAuto) >=>
+        runIf simplOrFuse iterateSimplPhase >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         compilePhase
       where
@@ -129,13 +130,31 @@ runPipeline filepath =
 
     occPhase :: A.LProgram -> MaybeT KZC A.LProgram
     occPhase =
-        lift . A.withTcEnv . runOccM . occProgram >=>
-        dumpPass DumpOcc "acore" "occ"
+        lift . A.withTcEnv . runOccM . occProgram
 
-    simplPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    simplPhase :: A.LProgram -> MaybeT KZC (A.LProgram, SimplStats)
     simplPhase =
-        lift . A.withTcEnv . runSimplM . simplProgram >=>
-        dumpPass DumpSimpl "acore" "simpl"
+        lift . A.withTcEnv . runSimplM . simplProgram
+
+    iterateSimplPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    iterateSimplPhase prog0 = do
+        n <- asksFlags maxSimpl
+        go 0 n prog0
+      where
+        go :: Int -> Int -> A.LProgram -> MaybeT KZC A.LProgram
+        go i n prog | i >= n = do
+            warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
+            return prog
+
+        go i n prog = do
+            prog'           <- occPhase prog >>= lintAuto
+            (prog'', stats) <- simplPhase prog'
+            void $ lintAuto prog'
+            if stats /= mempty
+              then do void $ dumpPassN DumpOcc "acore" "occ" i prog'
+                      void $ dumpPassN DumpSimpl "acore" "simpl" i prog''
+                      go (i+1) n prog''
+              else return prog
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =
@@ -192,6 +211,17 @@ runPipeline filepath =
              -> MaybeT KZC a
     dumpPass f ext suffix x = lift $ do
         dump f filepath ext suffix (ppr x)
+        return x
+
+    dumpPassN :: Pretty a
+              => DumpFlag
+              -> String
+              -> String
+              -> Int
+              -> a
+              -> MaybeT KZC a
+    dumpPassN f ext suffix i x = lift $ do
+        dump f filepath ext (suffix ++ "-" ++ show i) (ppr x)
         return x
 
     dump :: DumpFlag
