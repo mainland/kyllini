@@ -219,18 +219,12 @@ cgLabels ls = do
 -- | Generate code to check return value of a function call.
 cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
 cgInitCheckErr ce msg x =
-    appendInitStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
-  where
-    loc :: String
-    loc = displayS (renderCompact (ppr (locOf x))) ""
+    appendInitStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 -- | Generate code to check return value of a function call.
 cgCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
 cgCheckErr ce msg x =
-    appendStm [cstm|kz_check_error($ce, $string:loc, $string:msg);|]
-  where
-    loc :: String
-    loc = displayS (renderCompact (ppr (locOf x))) ""
+    appendStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 -- | Generate code to handle the result of a thread's computation.
 type DoneK = CExp -> Cg ()
@@ -1542,7 +1536,7 @@ void* $id:cf(void* _tinfo)
     typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
 
     for (;;) {
-        kz_check_error(kz_thread_wait(tinfo), $string:loc, "Error waiting for thread to start.");
+        kz_check_error(kz_thread_wait(tinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
         {
             $items:cblock
         }
@@ -1553,9 +1547,6 @@ void* $id:cf(void* _tinfo)
       where
         ctinfo :: CExp
         ctinfo = CExp [cexp|*tinfo|]
-
-        loc :: String
-        loc = displayS (renderCompact (ppr (locOf comp))) ""
 
         -- When the producer takes, we need to make sure that the consumer has
         -- asked for more data than we have given it, so we spin until the
@@ -1613,8 +1604,7 @@ void* $id:cf(void* _tinfo)
         ce <- cgComp takek' emitk' comp k
         appendStm [cstm|$ctinfo.done = 1;|]
         cgAssign tau_res cres ce
-        let loc_s = displayS (renderCompact (ppr (locOf comp))) ""
-        appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:loc_s, "Cannot join on thread.");|]
+        appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
         appendStm [cstm|JUMP($id:l_pardone);|]
       where
         takek' :: TakeK Label
@@ -1903,6 +1893,10 @@ cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
 cstruct s l = C.Id (namedString s ++ "_t") l
+
+-- | Render a location as a string
+renderLoc :: Located a => a -> String
+renderLoc x = displayS (renderCompact (ppr (locOf x))) ""
 
 rl :: (Located a, Relocatable b) => a -> b -> b
 rl l x = reloc (locOf l) x
