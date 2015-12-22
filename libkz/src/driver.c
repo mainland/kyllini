@@ -12,6 +12,22 @@ kz_mode_t parseMode(int argc, char *argv[], const char*);
 kz_dev_t parseDev(int argc, char *argv[], const char* desc);
 void usage(int argc, char *argv[]);
 
+void kz_assert(int flag, const char* loc, const char *format, ...)
+{
+    if (flag == 0) {
+        va_list args;
+
+        va_start(args, format);
+        fprintf(stderr, "%s:\n  ", loc);
+        vfprintf(stderr, format, args);
+        fprintf(stderr, "\n");
+        va_end(args);
+        fflush(stdout);
+        fflush(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+
 void kz_check_error(int err, const char* loc, const char *format, ...)
 {
     if (err != 0) {

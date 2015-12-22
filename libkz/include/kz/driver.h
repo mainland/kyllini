@@ -39,6 +39,8 @@ typedef struct {
 
 void kz_main(const kz_params_t*);
 
+void kz_assert(int flag, const char* loc, const char *format, ...)
+    __attribute__((format (printf, 3, 4)));
 void kz_check_error(int err, const char* loc, const char *format, ...)
     __attribute__((format (printf, 3, 4)));
 
