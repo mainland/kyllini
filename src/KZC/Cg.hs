@@ -689,20 +689,17 @@ cgExp (LetE decl e _) =
     cgLocalDecl decl $ cgExp e
 
 cgExp (CallE f iotas es l) = do
-    FunT _ _ tau_ret _ <- lookupVar f
-    let tau_res        =  resultType tau_ret
-    cf                 <- lookupVarCExp f
-    FunT ivs _ _ _     <- lookupVar f
-    ciotas             <- mapM cgIota iotas
-    extendIVarCExps (ivs `zip` ciotas) $ do
-    ces <- mapM cgArg es
+    FunT ivs _ tau_ret _ <- lookupVar f
+    let tau_res          =  resultType tau_ret
+    cf                   <- lookupVarCExp f
+    ciotas               <- mapM cgIota iotas
+    ces                  <- mapM cgArg es
+    cres                 <- extendIVarCExps (ivs `zip` ciotas) $
+                            cgTemp "call_res" tau_res
     if isReturnedByRef tau_res
-      then do cres <- cgTemp "call_res" tau_res
-              appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
-              return cres
-      else do cres <- cgTemp "call_res" tau_res
-              cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
-              return cres
+      then appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
+      else cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+    return cres
   where
     cgArg :: Exp -> Cg CExp
     cgArg e = do
