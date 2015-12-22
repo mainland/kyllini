@@ -60,6 +60,7 @@ data DynFlag = Quiet
              | Fuse
              | AutoLint
              | Simplify
+             | BoundsCheck
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError

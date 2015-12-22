@@ -778,12 +778,13 @@ cgExp e@(ArrayE es l) =
         return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 maybe_len _) = do
-    (_, tau) <- inferExp e1 >>= checkArrOrRefArrT
-    ce1      <- cgExp e1
-    ce2      <- cgExp e2
+    (iota, tau) <- inferExp e1 >>= checkArrOrRefArrT
+    cn          <- cgIota iota
+    ce1         <- cgExp e1
+    ce2         <- cgExp e2
     case maybe_len of
-      Nothing  -> cgIdx tau ce1 ce2
-      Just len -> cgSlice tau ce1 ce2 len
+      Nothing  -> cgIdx tau ce1 cn ce2
+      Just len -> cgSlice tau ce1 cn ce2 len
 
 cgExp e@(StructE s flds l) = do
     case unConstE e of
@@ -1417,7 +1418,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
     emitk' cleftk crightk cbuf cbufp (ArrT (ConstI 1 _) tau _) ce k = do
         useLabel k
         appendStm [cstm|$cleftk = LABELADDR($id:k);|]
-        cidx <- cgIdx tau ce 0
+        cidx <- cgIdx tau ce 1 0
         cgAssignBufp tau cbuf cbufp cidx
         appendStm [cstm|INDJUMP($crightk);|]
 
@@ -1427,7 +1428,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
         useLabel loopl
         appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
         cgFor 0 cn $ \ci -> do
-            cidx <- cgIdx tau ce ci
+            cidx <- cgIdx tau ce cn ci
             cgAssignBufp tau cbuf cbufp cidx
             appendStm [cstm|INDJUMP($crightk);|]
             -- Because we need a statement to label, but the continuation is
@@ -1559,7 +1560,7 @@ void* $id:cf(void* _tinfo)
         emitk' (ArrT iota tau _) ce _k = do
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx tau ce ci
+                cidx <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf exitk tau cidx
 
         -- @tau@ must be a base (scalar) type
@@ -1781,15 +1782,36 @@ cgAssignBitArray ce1 ce2 clen =
     unBitSlice carr =
         (carr, 0)
 
-cgIdx :: Type -> CExp -> CExp -> Cg CExp
-cgIdx tau (CSlice _ carr cidx1 _) cidx2 =
+cgBoundsCheck :: CExp -> CExp -> Cg ()
+cgBoundsCheck clen cidx = do
+    boundsCheck <- asksFlags (testDynFlag BoundsCheck)
+    when boundsCheck $ do
+        appendStm [cstm|kz_assert($cidx >= 0 && $cidx < $clen, $string:(renderLoc cidx), "Array index %d out of bounds (%d)", $cidx, $clen);|]
+
+-- | Generate a 'CExp' representing an index into an array.
+cgIdx :: Type    -- ^ Type of the array element
+      -> CExp    -- ^ The array
+      -> CExp    -- ^ The length of the array
+      -> CExp    -- ^ The array index
+      -> Cg CExp
+cgIdx tau (CSlice _ carr cidx1 _) clen cidx2 = do
+    cgBoundsCheck clen cidx2
     return $ CIdx tau carr (cidx1 + cidx2)
 
-cgIdx tau carr cidx =
+cgIdx tau carr clen cidx = do
+    cgBoundsCheck clen cidx
     return $ CIdx tau carr cidx
 
-cgSlice :: Type -> CExp -> CExp -> Int -> Cg CExp
-cgSlice tau carr cidx len =
+-- | Generate a 'CExp' representing a slice of an array.
+cgSlice :: Type    -- ^ Type of the array element
+        -> CExp    -- ^ The array
+        -> CExp    -- ^ The length of the array
+        -> CExp    -- ^ The array index
+        -> Int     -- ^ The length of the slice
+        -> Cg CExp
+cgSlice tau carr clen cidx len = do
+    cgBoundsCheck clen cidx
+    cgBoundsCheck clen (cidx + fromIntegral (len - 1))
     return $ CSlice tau carr cidx len
 
 cgAddrOf :: Type -> CExp -> Cg CExp

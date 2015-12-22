@@ -116,6 +116,7 @@ fDynFlagOpts =
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
   , (Fuse,        "fuse",         "run the par fuser")
   , (Simplify,    "simpl",        "run the simplifier")
+  , (BoundsCheck, "bounds-check", "generate bounds checks")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
