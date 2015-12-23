@@ -519,7 +519,8 @@ simplSteps (LetC l decl s : steps) = do
       Nothing    -> return steps'
       Just decl' -> return $ LetC l decl' s : steps'
 
-simplSteps (BindC l (TameV v) tau s : steps) | bOccInfo v == Just Dead =
+simplSteps (BindC l (TameV v) tau s : steps) | bOccInfo v == Just Dead = do
+    dropBinding v
     simplSteps $ BindC l WildV tau s : steps
 
 simplSteps (BindC l WildV tau s : steps) = do
@@ -541,7 +542,8 @@ simplSteps (step : BindC l wv tau s : steps) = do
     go step' tau' wv
   where
     go :: [LStep] -> Type -> WildVar -> SimplM [LStep]
-    go [step'] tau' (TameV v) | bOccInfo v == Just Dead =
+    go [step'] tau' (TameV v) | bOccInfo v == Just Dead = do
+        dropBinding v
         go [step'] tau' WildV
 
     go [ReturnC {}] _tau' WildV =
@@ -936,7 +938,8 @@ simplExp (BindE wv tau e1 e2 s) = do
     go e1' tau' wv
   where
     go :: Exp -> Type -> WildVar -> SimplM Exp
-    go e tau' (TameV v) | bOccInfo v == Just Dead =
+    go e tau' (TameV v) | bOccInfo v == Just Dead = do
+        dropBinding v
         go e tau' WildV
 
     go (ReturnE {}) _tau' WildV =
