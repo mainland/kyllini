@@ -87,13 +87,18 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        runIf simplOrFuse iterateSimplPhase >=>
+        runIf simplOrFuse (iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         runIf (testDynFlag PartialEval) (evalPhase >=> lintAuto) >=>
+        runIf simplAndPartialEval (iterateSimplPhase "-phase2") >=>
+        dumpFinal >=>
         compilePhase
       where
         simplOrFuse :: (Flags -> Bool)
         simplOrFuse fs = testDynFlag Simplify fs || testDynFlag Fuse fs
+
+        simplAndPartialEval :: (Flags -> Bool)
+        simplAndPartialEval fs = testDynFlag Simplify fs && testDynFlag PartialEval fs
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
@@ -138,8 +143,8 @@ runPipeline filepath =
     simplPhase =
         lift . A.withTcEnv . runSimplM . simplProgram
 
-    iterateSimplPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    iterateSimplPhase prog0 = do
+    iterateSimplPhase :: String -> A.LProgram -> MaybeT KZC A.LProgram
+    iterateSimplPhase desc prog0 = do
         n <- asksFlags maxSimpl
         go 0 n prog0
       where
@@ -153,8 +158,8 @@ runPipeline filepath =
             (prog'', stats) <- simplPhase prog'
             void $ lintAuto prog'
             if stats /= mempty
-              then do void $ dumpPassN DumpOcc "acore" "occ" i prog'
-                      void $ dumpPassN DumpSimpl "acore" "simpl" i prog''
+              then do void $ dumpPassN DumpOcc "acore" ("occ" ++ desc) i prog'
+                      void $ dumpPassN DumpSimpl "acore" ("simpl" ++ desc) i prog''
                       go (i+1) n prog''
               else return prog
 
@@ -209,6 +214,9 @@ runPipeline filepath =
         h <- liftIO $ openFile outpath WriteMode
         liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
+
+    dumpFinal :: A.LProgram -> MaybeT KZC A.LProgram
+    dumpFinal = dumpPass DumpAuto "acore" "final"
 
     dumpPass :: Pretty a
              => DumpFlag
