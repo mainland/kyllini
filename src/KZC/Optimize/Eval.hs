@@ -85,7 +85,6 @@ data Val a where
     StructV :: !Struct -> !(Map Field (Val Exp)) -> Val Exp
     ArrayV  :: !(P.PArray (Val Exp)) -> Val Exp
     RefV    :: Ref -> Val Exp
-    IVarV   :: IVar -> Val Exp
 
     -- | A residual expression.
     ExpV :: Exp -> Val Exp
@@ -299,7 +298,7 @@ lookupVarBind :: Var -> EvalM (Val Exp)
 lookupVarBind v = do
   maybe_val <- asks (Map.lookup v . varBinds)
   case maybe_val of
-    Nothing       -> partialExp $ varE v
+    Nothing       -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
     Just UnknownV -> partialExp $ varE v
     Just val      -> return val
 
@@ -315,7 +314,7 @@ lookupCVarBind :: Var -> EvalM (Val LComp)
 lookupCVarBind v = do
   maybe_val <- asks (Map.lookup v . cvarBinds)
   case maybe_val of
-    Nothing  -> partial $ CompVarV v
+    Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
     Just val -> return val
 
 extendCVarBinds :: [(Var, Val LComp)] -> EvalM a -> EvalM a
@@ -445,6 +444,7 @@ evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
 
 evalDecl (LetExtFunD f iotas vbs tau_ret l) k =
     extendVars [(bVar f, tau)] $
+    extendVarBinds [(bVar f, UnknownV)] $
     k $ const . return $ LetExtFunD f iotas vbs tau_ret l
   where
     tau :: Type
@@ -508,35 +508,21 @@ evalLocalDecl (LetLD v tau e1 s1) k =
 
 evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     extendVars [(bVar v, refT tau)] $ do
-    evalInitExp maybe_e1 >>= evalLetRef
+    withUniqBoundVar v $ \v' -> do
+    tau' <- simplType tau
+    val1 <- case maybe_e1 of
+              Nothing -> defaultValue tau'
+              Just e1 -> withSummaryContext e1 $ evalExp e1
+    -- Allocate heap storage for v and initialize it
+    ptr <- newVarPtr
+    writeVarPtr ptr val1
+    extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
+    k $ HeapDeclVal $ \h ->
+        withSummaryContext decl $ do
+        tau'      <- simplType tau
+        maybe_e1' <- mkInit h ptr val1
+        return $ LetRefLD v' tau' maybe_e1' s1
   where
-    evalLetRef :: Maybe (Val Exp) -> EvalM a
-    evalLetRef Nothing = do
-        killVars (fvs maybe_e1)
-        withUniqBoundVar v $ \v' -> do
-        tau' <- simplType tau
-        k $ DeclVal $ LetRefLD v' tau' maybe_e1 s1
-
-    evalLetRef (Just val1) = do
-        -- Allocate heap storage for v and initialize it
-        ptr <- newVarPtr
-        writeVarPtr ptr val1
-        withUniqBoundVar v $ \v' -> do
-        extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
-        k $ HeapDeclVal $ \h ->
-            withSummaryContext decl $ do
-            tau'      <- simplType tau
-            maybe_e1' <- mkInit h ptr val1
-            return $ LetRefLD v' tau' maybe_e1' s1
-
-    evalInitExp :: Maybe Exp -> EvalM (Maybe (Val Exp))
-    evalInitExp Nothing =
-         maybeDefaultValue tau
-
-    evalInitExp (Just e1) =
-        withSummaryContext e1 $
-        Just <$> evalExp e1
-
     mkInit :: Heap -> VarPtr -> Val Exp -> EvalM (Maybe Exp)
     mkInit h ptr dflt = do
         val      <- heapLookup h ptr
@@ -601,7 +587,8 @@ evalComp (Comp steps) = evalSteps steps
         withUniqWildVar wv $ \wv' -> do
         killVars (fvs steps1')
         tau'    <- simplType tau
-        steps2' <- evalFullSteps k
+        steps2' <- extendWildVarBinds [(wv', UnknownV)] $
+                   evalFullSteps k
         partial $ CompV h1 $ steps1' ++ BindC l wv' tau' s : steps2'
 
     evalBind _step (CompV h1 steps1') k = do
@@ -1074,7 +1061,7 @@ evalExp (BindE wv tau e1 e2 s) = do
                         tau' <- simplType tau
                         e2'  <- case wv' of
                                   WildV    -> evalFullCmd e2
-                                  TameV v' -> extendVarBinds [(bVar v', ExpV (varE (bVar v')))] $
+                                  TameV v' -> extendVarBinds [(bVar v', UnknownV)] $
                                               evalFullCmd e2
                         partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
     ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
@@ -1286,11 +1273,11 @@ evalProj val f =
     partialExp $ ProjE (toExp val) f noLoc
 
 -- | Produce a default value of the given type.
-maybeDefaultValue :: Type -> EvalM (Maybe (Val Exp))
-maybeDefaultValue tau =
-    runMaybeT $ go tau
+defaultValue :: Type -> EvalM (Val Exp)
+defaultValue tau =
+    go tau
   where
-    go :: Type -> MaybeT EvalM (Val Exp)
+    go :: Type -> EvalM (Val Exp)
     go (UnitT {})         = return UnitV
     go (BoolT {})         = return $ BoolV False
     go (BitT {})          = return $ BitV False
@@ -1310,14 +1297,6 @@ maybeDefaultValue tau =
 
     go tau =
         faildoc $ text "Cannot generate default value for type" <+> ppr tau
-
-defaultValue :: Type -> EvalM (Val Exp)
-defaultValue tau = do
-    maybe_val <- maybeDefaultValue tau
-    case maybe_val of
-      Nothing  -> faildoc $
-                  text "Cannot generate default value for type" <+> ppr tau
-      Just val -> return val
 
 -- | Given a type and a value, return 'True' if the value is the
 -- default of that type and 'False' otherwise.
@@ -1353,7 +1332,6 @@ isKnownValue (StructV _ flds) = all isKnownValue (Map.elems flds)
 isKnownValue (ArrayV vals)    = isKnownValue (P.defaultValue vals) &&
                                 all (isKnownValue . snd) (P.nonDefaultValues vals)
 isKnownValue (RefV {})        = True
-isKnownValue (IVarV {})       = True
 isKnownValue (ExpV {})        = True
 isKnownValue _                = False
 
@@ -1446,9 +1424,6 @@ instance ToExp (Val Exp) where
     toExp (RefV r) =
         toExp r
 
-    toExp (IVarV iv) =
-        errordoc $ text "toExp: Cannot convert IVar" <+> ppr iv <+> text "to an expression"
-
     toExp (ReturnV v) =
         returnE (toExp v)
 
@@ -1507,7 +1482,6 @@ instance Pretty (Val a) where
     ppr val@(StructV {}) = ppr (toExp val)
     ppr val@(ArrayV {})  = ppr (toExp val)
     ppr (RefV ref)       = ppr ref
-    ppr (IVarV iv)       = ppr iv
     ppr val@(ExpV {})    = ppr (toExp val)
     ppr val@(ReturnV {}) = ppr (toExp val)
 
