@@ -151,7 +151,7 @@ dropBinding _ =
     mappendStats mempty { simplDrop = 1 }
 
 inlineBinding :: Var -> SimplM ()
-inlineBinding _ =
+inlineBinding _v =
     mappendStats mempty { simplInline = 1 }
 
 askSubst :: SimplM Theta
@@ -289,57 +289,61 @@ simplDecl (LetD decl s) m = do
       Nothing    -> return (Nothing, x)
       Just decl' -> return (Just (LetD decl' s), x)
 
-simplDecl decl m =
-    preInlineUnconditionally decl
+simplDecl decl m = do
+    mayInline <- asksFlags (testDynFlag MayInline)
+    preInlineUnconditionally mayInline decl
   where
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
-    preInlineUnconditionally :: LDecl -> SimplM (Maybe LDecl, a)
-    preInlineUnconditionally (LetD {}) =
+    preInlineUnconditionally :: Bool -> LDecl -> SimplM (Maybe LDecl, a)
+    preInlineUnconditionally _mayInline (LetD {}) =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
-    preInlineUnconditionally decl@(LetFunD f ivs vbs tau_ret e _)
+    preInlineUnconditionally mayInline decl@(LetFunD f ivs vbs tau_ret e _)
         | isDead    = dropBinding f >> withoutBinding m
-        | isOnce    = do theta <- askSubst
+        | isOnce &&
+          mayInline = do theta <- askSubst
                          extendSubst (bVar f) (SuspFun theta ivs vbs tau_ret e) $ do
                          dropBinding f
                          withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead, isOnce :: Bool
         isDead = bOccInfo f == Just Dead
         isOnce = bOccInfo f == Just Once
 
-    preInlineUnconditionally decl@(LetExtFunD f _ _ _ _)
+    preInlineUnconditionally mayInline decl@(LetExtFunD f _ _ _ _)
         | isDead    = dropBinding f >> withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead :: Bool
         isDead = bOccInfo f == Just Dead
 
-    preInlineUnconditionally decl@(LetStructD {}) =
-        postInlineUnconditionally decl
+    preInlineUnconditionally mayInline decl@(LetStructD {}) =
+        postInlineUnconditionally mayInline decl
 
-    preInlineUnconditionally decl@(LetCompD v _ comp _)
-        | isDead   = dropBinding v >> withoutBinding m
-        | isOnce   = do theta <- askSubst
-                        extendSubst (bVar v) (SuspComp theta comp) $ do
-                        dropBinding v
-                        withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+    preInlineUnconditionally mayInline decl@(LetCompD v _ comp _)
+        | isDead    = dropBinding v >> withoutBinding m
+        | isOnce &&
+          mayInline = do theta <- askSubst
+                         extendSubst (bVar v) (SuspComp theta comp) $ do
+                         dropBinding v
+                         withoutBinding m
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead, isOnce :: Bool
         isDead = bOccInfo v == Just Dead
         isOnce = bOccInfo v == Just Once
 
-    preInlineUnconditionally (LetFunCompD f ivs vbs tau_ret comp _)
+    preInlineUnconditionally mayInline (LetFunCompD f ivs vbs tau_ret comp _)
         | isDead    = dropBinding f >> withoutBinding m
-        | isOnce    = do theta <- askSubst
+        | isOnce &&
+          mayInline = do theta <- askSubst
                          extendSubst (bVar f)
                                      (SuspFunComp theta ivs vbs tau_ret comp) $ do
                          dropBinding f
                          withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead, isOnce :: Bool
         isDead = bOccInfo f == Just Dead
@@ -349,11 +353,11 @@ simplDecl decl m =
     -- inline it unconditionally. If so, add it to the current
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
-    postInlineUnconditionally :: LDecl -> SimplM (Maybe LDecl, a)
-    postInlineUnconditionally (LetD {}) =
+    postInlineUnconditionally :: Bool -> LDecl -> SimplM (Maybe LDecl, a)
+    postInlineUnconditionally _mayInline (LetD {}) =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
-    postInlineUnconditionally (LetFunD f ivs vbs tau_ret e l) = do
+    postInlineUnconditionally _mayInline (LetFunD f ivs vbs tau_ret e l) = do
         (ivs', vbs', tau_ret', e') <-
             extendVars [(bVar f, tau)] $
             extendIVars (ivs `zip` repeat IotaK) $
@@ -384,7 +388,7 @@ simplDecl decl m =
         tau :: Type
         tau = FunT ivs (map snd vbs) tau_ret l
 
-    postInlineUnconditionally (LetExtFunD f iotas vbs tau_ret l) =
+    postInlineUnconditionally _mayInline (LetExtFunD f iotas vbs tau_ret l) =
         extendVars [(bVar f, tau)] $
         withBinding (LetExtFunD f iotas vbs tau_ret l) $
         m
@@ -392,12 +396,12 @@ simplDecl decl m =
         tau :: Type
         tau = FunT iotas (map snd vbs) tau_ret l
 
-    postInlineUnconditionally decl@(LetStructD s flds l) =
+    postInlineUnconditionally _mayInline decl@(LetStructD s flds l) =
         extendStructs [StructDef s flds l] $
         withBinding decl $
         m
 
-    postInlineUnconditionally (LetCompD v tau comp l) = do
+    postInlineUnconditionally _mayInline (LetCompD v tau comp l) = do
         comp' <- inSTScope tau $
                  inLocalScope $
                  simplComp comp
@@ -412,7 +416,7 @@ simplDecl decl m =
                withBinding (LetCompD v' tau comp' l) $
                m
 
-    postInlineUnconditionally (LetFunCompD f ivs vbs tau_ret comp l) = do
+    postInlineUnconditionally _mayInline (LetFunCompD f ivs vbs tau_ret comp l) = do
         (ivs', vbs', tau_ret', comp') <-
             extendVars [(bVar f, tau)] $
             extendIVars (ivs `zip` repeat IotaK) $
@@ -453,31 +457,33 @@ simplDecl decl m =
 simplLocalDecl :: forall a . LocalDecl
                -> SimplM a
                -> SimplM (Maybe LocalDecl, a)
-simplLocalDecl decl m =
-    preInlineUnconditionally decl
+simplLocalDecl decl m = do
+    mayInline <- asksFlags (testDynFlag MayInline)
+    preInlineUnconditionally mayInline decl
   where
-    preInlineUnconditionally :: LocalDecl -> SimplM (Maybe LocalDecl, a)
-    preInlineUnconditionally decl@(LetLD v _ e _)
+    preInlineUnconditionally :: Bool -> LocalDecl -> SimplM (Maybe LocalDecl, a)
+    preInlineUnconditionally mayInline decl@(LetLD v _ e _)
         | isDead    = dropBinding v >> withoutBinding m
-        | isOnce    = do theta <- askSubst
+        | isOnce &&
+          mayInline = do theta <- askSubst
                          extendSubst (bVar v) (SuspExp theta e) $ do
                          dropBinding v
                          withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead, isOnce :: Bool
         isDead = bOccInfo v == Just Dead
         isOnce = bOccInfo v == Just Once
 
-    preInlineUnconditionally decl@(LetRefLD v _ _ _)
+    preInlineUnconditionally mayInline decl@(LetRefLD v _ _ _)
         | isDead    = dropBinding v >> withoutBinding m
-        | otherwise = postInlineUnconditionally decl
+        | otherwise = postInlineUnconditionally mayInline decl
       where
         isDead :: Bool
         isDead = bOccInfo v == Just Dead
 
-    postInlineUnconditionally :: LocalDecl -> SimplM (Maybe LocalDecl, a)
-    postInlineUnconditionally (LetLD v tau e s) = do
+    postInlineUnconditionally :: Bool -> LocalDecl -> SimplM (Maybe LocalDecl, a)
+    postInlineUnconditionally _mayInline (LetLD v tau e s) = do
         e'       <- simplExp e
         tau'     <- simplType tau
         inlineIt <- shouldInlineExpUnconditionally e'
@@ -490,7 +496,7 @@ simplLocalDecl decl m =
                extendDefinitions [(bVar v', BoundToExp (bOccInfo v') Top e')] $
                withBinding (LetLD v' tau' e' s) m
 
-    postInlineUnconditionally (LetRefLD v tau e s) = do
+    postInlineUnconditionally _mayInline (LetRefLD v tau e s) = do
         e'   <- traverse simplExp e
         tau' <- simplType tau
         extendVars [(bVar v, refT tau)] $
@@ -606,8 +612,9 @@ simplStep step@(VarC l v _) =
     lookupSubst v >>= go
   where
     go :: Maybe SubstRng -> SimplM [LStep]
-    go Nothing =
-        lookupDefinition v >>= callSiteInline
+    go Nothing = do
+        mayInline <- asksFlags (testDynFlag MayInline)
+        lookupDefinition v >>= callSiteInline mayInline
 
     go (Just (SuspComp theta comp)) =
         withSubst theta $ do
@@ -622,11 +629,11 @@ simplStep step@(VarC l v _) =
         text "Variable" <+> ppr v <+>
         text "substituted with non-computation."
 
-    callSiteInline :: Maybe Definition -> SimplM [LStep]
-    callSiteInline (Just (BoundToComp occ rhs)) | inline occ rhs =
+    callSiteInline :: Bool -> Maybe Definition -> SimplM [LStep]
+    callSiteInline mayInline (Just (BoundToComp occ rhs)) | mayInline && inline occ rhs =
         inlineCompRhs rhs
 
-    callSiteInline _ =
+    callSiteInline _ _ =
         return [step]
 
     inline :: Maybe OccInfo -> OutComp -> Bool
@@ -644,8 +651,9 @@ simplStep (CallC l f0 iotas0 args0 s) = do
     lookupSubst f0 >>= go f0 iotas args
   where
     go :: Var -> [Iota] -> [LArg] -> Maybe SubstRng -> SimplM [LStep]
-    go f iotas args Nothing =
-        lookupDefinition f >>= callSiteInline f iotas args
+    go f iotas args Nothing = do
+        mayInline <- asksFlags (testDynFlag MayInline)
+        lookupDefinition f >>= callSiteInline mayInline f iotas args
 
     -- This can occur when f was in scope, so it was renamed to f'. We need to
     -- recurse because we may still want to inline the call to f', nee f.
@@ -668,16 +676,17 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         text "Computation function" <+> ppr f <+>
         text "substituted with non-computation function."
 
-    callSiteInline :: Var
+    callSiteInline :: Bool
+                   -> Var
                    -> [Iota]
                    -> [LArg]
                    -> Maybe Definition
                    -> SimplM [LStep]
-    callSiteInline _ iotas args (Just (BoundToFunComp occ ivs vbs tau_ret rhs))
-        | inline occ iotas args ivs vbs tau_ret rhs =
+    callSiteInline mayInline _ iotas args (Just (BoundToFunComp occ ivs vbs tau_ret rhs))
+        | mayInline && inline occ iotas args ivs vbs tau_ret rhs =
             inlineFunCompRhs iotas args ivs vbs tau_ret rhs
 
-    callSiteInline f iotas args _ =
+    callSiteInline _mayInline f iotas args _ =
         return1 $ CallC l f iotas args s
 
     inline :: Maybe OccInfo
@@ -774,8 +783,9 @@ simplExp e0@(VarE v _) =
     lookupSubst v >>= go
   where
     go :: Maybe SubstRng -> SimplM Exp
-    go Nothing  =
-        lookupDefinition v >>= callSiteInline
+    go Nothing = do
+        mayInline <- asksFlags (testDynFlag MayInline)
+        lookupDefinition v >>= callSiteInline mayInline
 
     go (Just (SuspExp theta e)) =
         withSubst theta $ do
@@ -790,11 +800,11 @@ simplExp e0@(VarE v _) =
         text "Variable" <+> ppr v <+>
         text "substituted with non-expression."
 
-    callSiteInline :: Maybe Definition -> SimplM Exp
-    callSiteInline (Just (BoundToExp occ lvl rhs)) | inline rhs occ lvl =
+    callSiteInline :: Bool -> Maybe Definition -> SimplM Exp
+    callSiteInline mayInline (Just (BoundToExp occ lvl rhs)) | mayInline && inline rhs occ lvl =
         inlineRhs rhs
 
-    callSiteInline _ =
+    callSiteInline _mayInline _ =
         return e0
 
     inline :: OutExp -> Maybe OccInfo -> Level -> Bool
@@ -832,8 +842,9 @@ simplExp (CallE f0 iotas0 es0 s) = do
     lookupSubst f0 >>= go f0 iotas es
   where
     go :: Var -> [Iota] -> [Exp] -> Maybe SubstRng -> SimplM Exp
-    go f iotas args Nothing =
-        lookupDefinition f >>= callSiteInline f iotas args
+    go f iotas args Nothing = do
+        mayInline <- asksFlags (testDynFlag MayInline)
+        lookupDefinition f >>= callSiteInline mayInline f iotas args
 
     -- This can occur when f was in scope, so it was renamed to f'. We need to
     -- recurse because we may still want to inline the call to f', nee f.
@@ -855,12 +866,12 @@ simplExp (CallE f0 iotas0 es0 s) = do
         text "Function" <+> ppr f <+>
         text "substituted with non-function."
 
-    callSiteInline :: Var -> [Iota] -> [Exp] -> Maybe Definition -> SimplM Exp
-    callSiteInline _ iotas args (Just (BoundToFun occ ivs vbs tau_ret rhs))
-        | inline occ iotas args ivs vbs tau_ret rhs =
+    callSiteInline :: Bool -> Var -> [Iota] -> [Exp] -> Maybe Definition -> SimplM Exp
+    callSiteInline mayInline _ iotas args (Just (BoundToFun occ ivs vbs tau_ret rhs))
+        | mayInline && inline occ iotas args ivs vbs tau_ret rhs =
             inlineFunRhs iotas args ivs vbs tau_ret rhs
 
-    callSiteInline f iotas args _ =
+    callSiteInline _mayInline f iotas args _ =
         return $ CallE f iotas args s
 
     inline :: Maybe OccInfo
@@ -974,7 +985,7 @@ isSimple _           = False
 
 shouldInlineExpUnconditionally :: InExp -> SimplM Bool
 shouldInlineExpUnconditionally e | isSimple e =
-    return True
+    asksFlags (testDynFlag MayInline)
 
 shouldInlineExpUnconditionally _ =
     return False
@@ -985,7 +996,7 @@ shouldInlineFunUnconditionally :: [IVar]
                                -> OutExp
                                -> SimplM Bool
 shouldInlineFunUnconditionally _ _ _ e | isSimple e =
-    return True
+    asksFlags (testDynFlag MayInline)
 
 shouldInlineFunUnconditionally _ _ _ _ =
     return False

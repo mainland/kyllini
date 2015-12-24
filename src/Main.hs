@@ -56,11 +56,12 @@ import Opts
 
 main :: IO ()
 main = do
-    args <- getArgs
+    args        <- getArgs
     (fs, files) <- compilerOpts args
+    let fs'     =  flagImplications fs
     if mode fs == Help
       then usage >>= hPutStrLn stderr
-      else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
+      else evalKZC fs' (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure
@@ -87,18 +88,12 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        runIf simplOrFuse (iterateSimplPhase "-phase1") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
         runIf (testDynFlag PartialEval) (evalPhase >=> lintAuto) >=>
-        runIf simplAndPartialEval (iterateSimplPhase "-phase2") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
         dumpFinal >=>
         compilePhase
-      where
-        simplOrFuse :: (Flags -> Bool)
-        simplOrFuse fs = testDynFlag Simplify fs || testDynFlag Fuse fs
-
-        simplAndPartialEval :: (Flags -> Bool)
-        simplAndPartialEval fs = testDynFlag Simplify fs && testDynFlag PartialEval fs
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath

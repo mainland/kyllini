@@ -116,6 +116,7 @@ fDynFlagOpts =
   , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
   , (Fuse,        "fuse",         "run the par fuser")
   , (Simplify,    "simpl",        "run the simplifier")
+  , (MayInline,   "inline",       "inline when simplifying")
   , (BoundsCheck, "bounds-check", "generate bounds checks")
   , (PartialEval, "peval",        "run the partial evaluator")
   ]

@@ -15,6 +15,8 @@ module KZC.Flags (
     MonadFlags(..),
     asksFlags,
 
+    flagImplications,
+
     setMode,
     testDynFlag,
     setDynFlag,
@@ -60,6 +62,7 @@ data DynFlag = Quiet
              | Fuse
              | AutoLint
              | Simplify
+             | MayInline
              | BoundsCheck
              | PartialEval
   deriving (Eq, Ord, Enum, Show)
@@ -154,6 +157,19 @@ class Monad m => MonadFlags m where
 
 asksFlags :: MonadFlags m => (Flags -> a) -> m a
 asksFlags f = liftM f askFlags
+
+-- | Set all flags implied by other flags
+flagImplications :: Flags -> Flags
+flagImplications fs =
+    if fs' == fs then fs else flagImplications fs'
+  where
+    fs' :: Flags
+    fs' = go fs
+
+    go :: Flags -> Flags
+    go fs | testDynFlag Fuse fs = setDynFlag MayInline $
+                                  setDynFlag Simplify fs
+          | otherwise           = fs
 
 instance MonadFlags m => MonadFlags (MaybeT m) where
     askFlags       = lift askFlags
