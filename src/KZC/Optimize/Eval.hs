@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -41,7 +42,7 @@ import Control.Monad.State (MonadState(..),
                             modify)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
-import Data.Foldable (toList)
+import Data.Foldable (toList, foldMap)
 import Data.IORef (IORef)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
@@ -357,11 +358,11 @@ writeVarPtr :: VarPtr -> Val Exp -> EvalM ()
 writeVarPtr ptr val =
     modify $ \s -> s { heap = IntMap.insert ptr val (heap s) }
 
-killVars :: Set Var -> EvalM ()
-killVars vs = do
-    vs'      <- mapM (\v -> maybe v id <$> lookupSubst v) (toList vs)
+killVars :: ModifiedVars e Var => e -> EvalM ()
+killVars e = do
+    vs       <- mapM (\v -> maybe v id <$> lookupSubst v) (toList (mvs e :: Set Var))
     vbs      <- asks varBinds
-    let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs']]
+    let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs]]
     modify $ \s -> s { heap = foldl' (\m ptr -> IntMap.insert ptr UnknownV m) (heap s) ptrs }
 
 isDefTrue :: Val Exp -> Bool
@@ -585,14 +586,14 @@ evalComp (Comp steps) = evalSteps steps
     evalBind _step (CompV h1 steps1') (BindC l wv tau s : k) =
         extendWildVars [(wv, tau)] $ do
         withUniqWildVar wv $ \wv' -> do
-        killVars (fvs steps1')
+        killVars steps1'
         tau'    <- simplType tau
         steps2' <- extendWildVarBinds [(wv', UnknownV)] $
                    evalFullSteps k
         partial $ CompV h1 $ steps1' ++ BindC l wv' tau' s : steps2'
 
     evalBind _step (CompV h1 steps1') k = do
-        killVars (fvs steps1')
+        killVars steps1'
         steps2' <- evalFullSteps k
         partial $ CompV h1 $ steps1' ++ steps2'
 
@@ -648,7 +649,7 @@ evalStep step@(CallC _ f iotas args _) =
 
     evalArg :: LArg -> EvalM ArgVal
     evalArg (ExpA e)  = ExpAV <$> evalExp e
-    evalArg (CompA c) = do tau <- inferComp c
+    evalArg (CompA c) = do tau   <- inferComp c
                            theta <- askSubst
                            return $ CompAV $ CompClosV theta tau (evalComp c)
 
@@ -671,8 +672,8 @@ evalStep (IfC l e1 c2 c3 s) = do
         | isDefFalse val = evalComp c3
         | otherwise      = do c2' <- savingHeap $ evalFullSteps $ unComp c2
                               c3' <- savingHeap $ evalFullSteps $ unComp c3
-                              killVars (fvs c2')
-                              killVars (fvs c3')
+                              killVars c2'
+                              killVars c3'
                               partial $ CompV h [IfC l (toExp val) (Comp c2') (Comp c3') s]
 
 evalStep (LetC {}) =
@@ -719,7 +720,7 @@ evalStep (EmitsC l e s) = do
 
 evalStep (RepeatC l ann c s) = do
     h <- getHeap
-    killVars (fvs c)
+    killVars c
     val    <- savingHeap $
               withSummaryContext c $
               evalComp c
@@ -844,8 +845,8 @@ evalExp e@(IfE e1 e2 e3 s) = do
                               partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
         | otherwise      = do e2' <- savingHeap $ evalFullCmd e2
                               e3' <- savingHeap $ evalFullCmd e3
-                              killVars (fvs e2')
-                              killVars (fvs e3')
+                              killVars e2'
+                              killVars e3'
                               partial $ CmdV h $ IfE (toExp val) e2' e3' s
 
 evalExp (LetE decl e2 s2) =
@@ -887,9 +888,9 @@ evalExp e@(CallE f iotas es s) = do
     -- arguments, so we can call 'partialCmd' here instead of saving the heap
     -- above and constructing a 'CmdV' from it manually.
     go tau (ExpV (VarE f' _)) iotas' v_es
-       | isPureT tau = do killVars (fvs es)
+       | isPureT tau = do killVars e
                           partialExp $ CallE f' iotas' (map toExp v_es) s
-       | otherwise   = do killVars (fvs es)
+       | otherwise   = do killVars e
                           partialCmd $ CallE f' iotas' (map toExp v_es) s
 
     go _tau val _iotas' _v_es = do
@@ -938,7 +939,7 @@ evalExp (DerefE e s) =
         view' val = do val' <- view val
                        evalProj val' f
 
-evalExp (AssignE e1 e2 s) = do
+evalExp e@(AssignE e1 e2 s) = do
     val1 <- evalExp e1
     val2 <- evalExp e2
     go val1 val2
@@ -949,7 +950,7 @@ evalExp (AssignE e1 e2 s) = do
         old       <- readVarPtr ptr
         maybe_new <- runMaybeT $ update old val2
         case maybe_new of
-          Nothing  -> do killVars (fvs e1)
+          Nothing  -> do killVars e
                          partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
           Just new -> do writeVarPtr ptr new
                          return $ ReturnV UnitV
@@ -1057,7 +1058,7 @@ evalExp (BindE wv tau e1 e2 s) = do
   extendWildVars [(wv, tau)] $ do
   withUniqWildVar wv $ \wv' -> do
   case val1 of
-    CmdV h1 e1'   -> do killVars (fvs e1')
+    CmdV h1 e1'   -> do killVars e1'
                         tau' <- simplType tau
                         e2'  <- case wv' of
                                   WildV    -> evalFullCmd e2
@@ -1106,8 +1107,8 @@ instance Eval Exp where
 
     residualWhile e1 e2 =
         savingHeap $ do
-        killVars (fvs e1)
-        killVars (fvs e2)
+        killVars e1
+        killVars e2
         e1' <- evalFullCmd e1
         e2' <- evalFullCmd e2
         partialCmd $ whileE e1' e2'
@@ -1115,8 +1116,7 @@ instance Eval Exp where
     residualFor ann v tau e1 e2 e3 =
         savingHeap $
         extendVarBinds [(v, UnknownV)] $ do
-        killVars (singleton v)
-        killVars (fvs e3)
+        killVars e3
         e3' <- evalFullCmd e3
         partialCmd $ forE ann v tau e1 e2 e3'
 
@@ -1129,8 +1129,8 @@ instance Eval LComp where
 
     residualWhile e c = do
         savingHeap $ do
-        killVars (fvs e)
-        killVars (fvs c)
+        killVars e
+        killVars c
         e' <- evalFullCmd e
         c' <- evalFullComp c
         whileC e' c' >>= partialComp
@@ -1138,12 +1138,11 @@ instance Eval LComp where
     residualFor ann v tau e1 e2 e3 =
         savingHeap $
         extendVarBinds [(v, UnknownV)] $ do
-        killVars (singleton v)
-        killVars (fvs e3)
+        killVars e3
         e3' <- evalFullComp e3
         forC ann v tau e1 e2 e3' >>= partialComp
 
-evalWhile :: forall a . (Fvs a Var, Eval a)
+evalWhile :: forall a . (ModifiedVars a Var, Eval a)
           => Exp
           -> a
           -> EvalM (Val a)
@@ -1173,7 +1172,7 @@ evalWhile e_cond body = do
     evalBody :: EvalM (Val a)
     evalBody = eval body
 
-evalFor :: forall a . (Fvs a Var, Eval a)
+evalFor :: forall a . (ModifiedVars a Var, Eval a)
         => UnrollAnn
         -> Var
         -> Type
@@ -1224,7 +1223,7 @@ evalFor ann v tau e1 e2 body = do
 --
 -- 3) Return a command consisting of the initial heap and the
 -- partially-evaluated loop.
-evalLoop :: Fvs e Var => e -> EvalM (Val a) -> EvalM (Val a)
+evalLoop :: ModifiedVars e Var => e -> EvalM (Val a) -> EvalM (Val a)
 evalLoop body m = do
     h   <- getHeap
     val <- m
@@ -1232,10 +1231,10 @@ evalLoop body m = do
       ReturnV {}     -> return val
       CompReturnV {} -> return val
       CmdV _ e'      -> do putHeap h
-                           killVars (fvs body)
+                           killVars body
                            partial $ CmdV h e'
       CompV _ c'     -> do putHeap h
-                           killVars (fvs body)
+                           killVars body
                            partial $ CompV h c'
       _              -> faildoc $ text "Bad loop:" <+> ppr val
 
@@ -1461,6 +1460,67 @@ instance ToSteps (Val LComp) where
 
     toSteps val =
         faildoc $ text "toSteps: Cannot convert value to steps:" <+> ppr val
+
+class Ord n => ModifiedVars x n where
+    mvs :: SetLike m n => x -> m n
+    mvs _ = mempty
+
+instance ModifiedVars x n => ModifiedVars (Maybe x) n where
+    mvs = foldMap mvs
+
+instance ModifiedVars Exp Var where
+    mvs (ConstE {})           = mempty
+    mvs (VarE {})             = mempty
+    mvs (UnopE {})            = mempty
+    mvs (BinopE {})           = mempty
+    mvs (IfE _ e2 e3 _)       = mvs e2 <> mvs e3
+    mvs (LetE decl body _)    = mvs body <\\> binders decl
+    mvs (CallE _ _ es _)      = fvs es
+    mvs (DerefE {})           = mempty
+    mvs (AssignE e1 _ _)      = fvs e1
+    mvs (WhileE e1 e2 _)      = mvs e1 <> mvs e2
+    mvs (ForE _ _ _ _ _ e3 _) = mvs e3
+    mvs (ArrayE {})           = mempty
+    mvs (IdxE {})             = mempty
+    mvs (StructE {})          = mempty
+    mvs (ProjE {})            = mempty
+    mvs (PrintE {})           = mempty
+    mvs (ErrorE {})           = mempty
+    mvs (ReturnE {})          = mempty
+    mvs (BindE wv _ e1 e2 _)  = mvs e1 <> (mvs e2 <\\> binders wv)
+
+instance ModifiedVars Exp v => ModifiedVars [Exp] v where
+    mvs es = foldMap mvs es
+
+instance ModifiedVars (Step l) Var where
+    mvs (VarC {})              = mempty
+    mvs (CallC _ _ _ es _)     = fvs es
+    mvs (IfC _ _ e2 e3 _)      = mvs e2 <> mvs e3
+    mvs (LetC {})              = mempty
+    mvs (WhileC _ e c _)       = mvs e <> mvs c
+    mvs (ForC _ _ _ _ _ _ c _) = mvs c
+    mvs (LiftC _ e _)          = mvs e
+    mvs (ReturnC {})           = mempty
+    mvs (BindC {})             = mempty
+    mvs (TakeC {})             = mempty
+    mvs (TakesC {})            = mempty
+    mvs (EmitC {})             = mempty
+    mvs (EmitsC {})            = mempty
+    mvs (RepeatC _ _ c _)      = mvs c
+    mvs (ParC _ _ e1 e2 _)     = mvs e1 <> mvs e2
+    mvs (LoopC {})             = mempty
+
+instance ModifiedVars (Comp l) Var where
+    mvs comp = go (unComp comp)
+      where
+        go :: SetLike m Var => [Step l] -> m Var
+        go []                          = mempty
+        go (BindC _ wv _ _ : k)        = go k <\\> binders wv
+        go (LetC _ decl _ : k)         = go k <\\> binders decl
+        go (step : k)                  = mvs step <> go k
+
+instance ModifiedVars (Comp l) v => ModifiedVars [Step l] v where
+    mvs steps = mvs (Comp steps)
 
 instance Eq (EvalM (Val a)) where
     (==) = error "EvalM incomparable"
