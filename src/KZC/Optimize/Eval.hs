@@ -370,8 +370,8 @@ isDefTrue (BoolV True) = True
 isDefTrue _            = False
 
 isDefFalse :: Val Exp -> Bool
-isDefFalse (BoolV False) = False
-isDefFalse _            = False
+isDefFalse (BoolV False) = True
+isDefFalse _             = False
 
 simplType :: Type -> EvalM Type
 simplType tau = do
