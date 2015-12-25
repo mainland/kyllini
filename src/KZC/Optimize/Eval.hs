@@ -527,7 +527,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     mkInit :: Heap -> VarPtr -> Val Exp -> EvalM (Maybe Exp)
     mkInit h ptr dflt = do
         val      <- heapLookup h ptr
-        let val' =  if isKnownValue val then val else dflt
+        let val' =  if isKnown val then val else dflt
         if isDefaultValue val'
           then return Nothing
           else return $ Just (toExp val')
@@ -902,7 +902,7 @@ evalExp (DerefE e s) =
     go :: Val Exp -> EvalM (Val Exp)
     go (RefV r) = do
         val <- readVarPtr ptr
-        if isKnownValue val
+        if isKnown val
           then ReturnV <$> view val
           else partialCmd $ DerefE (toExp r) s
       where
@@ -1319,20 +1319,20 @@ diffHeapComp h h' comp = do
     comps_diff <- diffHeapExps h h' >>= mapM liftC
     return $ Comp $ concatMap unComp comps_diff ++ unComp comp
 
--- | Return 'True' if a value is completely known, 'False' otherwise.
-isKnownValue :: Val Exp -> Bool
-isKnownValue UnknownV         = False
-isKnownValue (BoolV {})       = True
-isKnownValue (BitV {})        = True
-isKnownValue (FixV {})        = True
-isKnownValue (FloatV {})      = True
-isKnownValue (StringV {})     = True
-isKnownValue (StructV _ flds) = all isKnownValue (Map.elems flds)
-isKnownValue (ArrayV vals)    = isKnownValue (P.defaultValue vals) &&
-                                all (isKnownValue . snd) (P.nonDefaultValues vals)
-isKnownValue (RefV {})        = True
-isKnownValue (ExpV {})        = True
-isKnownValue _                = False
+-- | Return 'True' if a 'Val' is completely known, even if it is a residual,
+-- 'False' otherwise.
+isKnown :: Val Exp -> Bool
+isKnown UnknownV         = False
+isKnown (BoolV {})       = True
+isKnown (BitV {})        = True
+isKnown (FixV {})        = True
+isKnown (FloatV {})      = True
+isKnown (StringV {})     = True
+isKnown (StructV _ flds) = all isKnown (Map.elems flds)
+isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
+                           all (isKnown . snd) (P.nonDefaultValues vals)
+isKnown (ExpV {})        = True
+isKnown _                = False
 
 -- | Generate a list of expressions that captures all the heap changes from @h1@
 -- to @h2@
