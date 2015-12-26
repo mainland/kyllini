@@ -525,22 +525,8 @@ simplSteps (LetC l decl s : steps) = do
       Nothing    -> return steps'
       Just decl' -> return $ LetC l decl' s : steps'
 
-simplSteps (BindC l (TameV v) tau s : steps) | bOccInfo v == Just Dead = do
-    dropBinding v
-    simplSteps $ BindC l WildV tau s : steps
-
-simplSteps (BindC l WildV tau s : steps) = do
-    tau'   <- simplType tau
-    steps' <- simplSteps steps
-    return $ BindC l WildV tau' s : steps'
-
-simplSteps (BindC l (TameV v) tau s : steps) =
-    extendVars [(bVar v, tau)] $
-    withUniqBoundVar v $ \v' ->
-    extendDefinitions [(bVar v', Unknown)] $ do
-    tau'   <- simplType tau
-    steps' <- simplSteps steps
-    return $ BindC l (TameV v') tau' s : steps'
+simplSteps (BindC {} : _) =
+    panicdoc $ text "simplSteps: leading BindC"
 
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
