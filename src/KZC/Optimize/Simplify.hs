@@ -374,8 +374,8 @@ simplDecl decl m = do
           then extendSubst (bVar f) (DoneFun ivs' vbs' tau_ret' e') $ do
                dropBinding f
                withoutBinding m
-          else extendVars [(bVar f, tau)] $
-               withUniqBoundVar f $ \f' ->
+          else withUniqBoundVar f $ \f' ->
+               extendVars [(bVar f', tau)] $
                extendDefinitions
                    [(bVar f', BoundToFun (bOccInfo f') ivs' vbs' tau_ret' e')] $
                withBinding (LetFunD f' ivs' vbs' tau_ret' e' l) $
@@ -410,8 +410,8 @@ simplDecl decl m = do
           then extendSubst (bVar v) (DoneComp comp') $ do
                dropBinding v
                withoutBinding m
-          else extendVars [(bVar v, tau)] $
-               withUniqBoundVar v $ \v' ->
+          else withUniqBoundVar v $ \v' ->
+               extendVars [(bVar v', tau)] $
                extendDefinitions [(bVar v', BoundToComp (bOccInfo v') comp')] $
                withBinding (LetCompD v' tau comp' l) $
                m
@@ -433,8 +433,8 @@ simplDecl decl m = do
           then extendSubst (bVar f) (DoneFunComp ivs' vbs' tau_ret' comp') $ do
                dropBinding f
                withoutBinding m
-          else extendVars [(bVar f, tau)] $
-               withUniqBoundVar f $ \f' ->
+          else withUniqBoundVar f $ \f' ->
+               extendVars [(bVar f', tau)] $
                extendDefinitions
                    [(bVar f',
                      BoundToFunComp (bOccInfo f') ivs' vbs' tau_ret' comp')] $
@@ -491,16 +491,16 @@ simplLocalDecl decl m = do
           then extendSubst (bVar v) (DoneExp e') $ do
                dropBinding v
                withoutBinding m
-          else extendVars [(bVar v, tau)] $
-               withUniqBoundVar v $ \v' ->
+          else withUniqBoundVar v $ \v' ->
+               extendVars [(bVar v', tau)] $
                extendDefinitions [(bVar v', BoundToExp (bOccInfo v') Top e')] $
                withBinding (LetLD v' tau' e' s) m
 
     postInlineUnconditionally _mayInline (LetRefLD v tau e s) = do
         e'   <- traverse simplExp e
         tau' <- simplType tau
-        extendVars [(bVar v, refT tau)] $
-            withUniqBoundVar v $ \v' ->
+        withUniqBoundVar v $ \v' ->
+            extendVars [(bVar v', refT tau)] $
             extendDefinitions [(bVar v', Unknown)] $
             withBinding (LetRefLD v' tau' e' s) m
 
@@ -542,8 +542,8 @@ simplSteps (step : BindC l wv tau s : steps) = do
         simplSteps steps
 
     go [ReturnC l e s] tau' (TameV v) =
-        extendVars [(bVar v, tau)] $
         withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', BoundToExp Nothing Nested e)] $ do
         steps' <- simplSteps steps
         return $ LetC l (LetLD v' tau' e s) s : steps'
@@ -553,8 +553,8 @@ simplSteps (step : BindC l wv tau s : steps) = do
         return $ step' : BindC l WildV tau' s : steps'
 
     go [step'] tau' (TameV v) =
-        extendVars [(bVar v, tau)] $
         withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', Unknown)] $ do
         steps' <- simplSteps steps
         return $ step' : BindC l (TameV v') tau' s : steps'
@@ -725,6 +725,7 @@ simplStep (ForC l ann v tau e1 e2 c s) = do
     e2' <- simplExp e2
     extendVars [(v, tau)] $
         withUniqVar v $ \v' ->
+        extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplComp c
         return1 $ ForC l ann v' tau e1' e2' c' s
@@ -910,6 +911,7 @@ simplExp (ForE ann v tau e1 e2 e3 s) = do
     e2' <- simplExp e2
     extendVars [(v, tau)] $
         withUniqVar v $ \v' ->
+        extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplExp e3
         return $ ForE ann v' tau e1' e2' e3' s
@@ -950,8 +952,8 @@ simplExp (BindE wv tau e1 e2 s) = do
         simplExp e2
 
     go (ReturnE _ e1' _) tau' (TameV v) = do
-        decl <- extendVars [(bVar v, tau)] $
-                withUniqBoundVar v $ \v' ->
+        decl <- withUniqBoundVar v $ \v' ->
+                extendVars [(bVar v', tau)] $
                 extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $
                 return $ LetLD v' tau' e1' s
         e2'  <- simplExp e2
@@ -962,8 +964,8 @@ simplExp (BindE wv tau e1 e2 s) = do
         return $ BindE WildV tau' e1' e2' s
 
     go e1' tau' (TameV v) =
-       extendVars [(bVar v, tau)] $
        withUniqBoundVar v $ \v' ->
+       extendVars [(bVar v', tau)] $
        extendDefinitions [(bVar v', Unknown)] $ do
        e2' <- simplExp e2
        return $ BindE wv tau' e1' e2' s
