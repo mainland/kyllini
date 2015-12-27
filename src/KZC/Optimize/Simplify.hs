@@ -86,20 +86,23 @@ type Phi = Map IVar Iota
 type Psi = Map TyVar Type
 
 data SimplStats = SimplStats
-    { simplDrop   :: Int
-    , simplInline :: Int
+    { simplDrop     :: Int
+    , simplInline   :: Int
+    , simplRewrites :: Int
     }
   deriving (Eq, Ord, Show)
 
 instance Monoid SimplStats where
     mempty =
-        SimplStats { simplDrop   = 0
-                   , simplInline = 0
+        SimplStats { simplDrop     = 0
+                   , simplInline   = 0
+                   , simplRewrites = 0
                    }
 
     s1 `mappend` s2 =
-        SimplStats { simplDrop   = simplDrop s1 + simplDrop s2
-                   , simplInline = simplInline s1 + simplInline s2
+        SimplStats { simplDrop     = simplDrop s1 + simplDrop s2
+                   , simplInline   = simplInline s1 + simplInline s2
+                   , simplRewrites = simplRewrites s1 + simplRewrites s2
                    }
 
 data SimplEnv = SimplEnv
@@ -153,6 +156,10 @@ dropBinding _ =
 inlineBinding :: Var -> SimplM ()
 inlineBinding _v =
     mappendStats mempty { simplInline = 1 }
+
+rewrite :: SimplM ()
+rewrite =
+    mappendStats mempty { simplRewrites = 1 }
 
 askSubst :: SimplM Theta
 askSubst = asks simplTheta
@@ -570,8 +577,12 @@ simplSteps (step : BindC l wv tau s : steps) = do
         hd = init step'
         tl = last step'
 
-simplSteps (step : steps) =
-    (++) <$> simplStep step <*> simplSteps steps
+simplSteps (step : steps) = do
+    step' <- simplStep step
+    (omega, _, _, _) <- inferComp (Comp step') >>= checkST
+    case (omega, steps) of
+      (C (UnitT {}), [ReturnC _ (ConstE UnitC _) _]) -> rewrite >> return step'
+      _ -> (++) <$> pure step' <*> simplSteps steps
 
 {- Note [Inlining Computations]
 
