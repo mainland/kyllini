@@ -755,8 +755,15 @@ simplStep (EmitsC l e s) =
 simplStep (RepeatC l ann c s) =
     RepeatC l ann <$> simplComp c <*> pure s >>= return1
 
-simplStep (ParC ann tau c1 c2 s) = do
-    ParC ann tau <$> simplComp c1 <*> simplComp c2 <*> pure s >>= return1
+simplStep (ParC ann b c1 c2 sloc) = do
+    (s, a, c) <- askSTIndTypes
+    c1'       <- withFvContext c1 $
+                 localSTIndTypes (Just (s, a, b)) $
+                 simplComp c1
+    c2'       <- withFvContext c2 $
+                 localSTIndTypes (Just (b, b, c)) $
+                 simplComp c2
+    return1 $ ParC ann b c1' c2' sloc
 
 simplStep (LoopC {}) =
     faildoc $ text "simplStep: saw LoopC"
