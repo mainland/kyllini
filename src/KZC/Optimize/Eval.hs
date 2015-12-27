@@ -42,6 +42,7 @@ import Control.Monad.State (MonadState(..),
                             modify)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
+import Data.Bits
 import Data.Foldable (toList, foldMap)
 import Data.IORef (IORef)
 import Data.IntMap (IntMap)
@@ -365,13 +366,23 @@ killVars e = do
     let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs]]
     modify $ \s -> s { heap = foldl' (\m ptr -> IntMap.insert ptr UnknownV m) (heap s) ptrs }
 
-isDefTrue :: Val Exp -> Bool
-isDefTrue (BoolV True) = True
-isDefTrue _            = False
+isTrue :: Val Exp -> Bool
+isTrue (BoolV True) = True
+isTrue _            = False
 
-isDefFalse :: Val Exp -> Bool
-isDefFalse (BoolV False) = True
-isDefFalse _             = False
+isFalse :: Val Exp -> Bool
+isFalse (BoolV False) = True
+isFalse _             = False
+
+isZero :: Val Exp -> Bool
+isZero (FixV _ _ _ _ 0) = True
+isZero (FloatV _ 0)     = True
+isZero _                = False
+
+isOne :: Val Exp -> Bool
+isOne (FixV _ _ _ _ 1) = True
+isOne (FloatV _ 1)     = True
+isOne _                = False
 
 simplType :: Type -> EvalM Type
 simplType tau = do
@@ -668,13 +679,13 @@ evalStep (IfC l e1 c2 c3 s) = do
     -- heap.
     evalIfBody :: Heap -> Val Exp -> EvalM (Val LComp)
     evalIfBody h val
-        | isDefTrue  val = evalComp c2
-        | isDefFalse val = evalComp c3
-        | otherwise      = do c2' <- savingHeap $ evalFullSteps $ unComp c2
-                              c3' <- savingHeap $ evalFullSteps $ unComp c3
-                              killVars c2'
-                              killVars c3'
-                              partial $ CompV h [IfC l (toExp val) (Comp c2') (Comp c3') s]
+        | isTrue  val = evalComp c2
+        | isFalse val = evalComp c3
+        | otherwise   = do c2' <- savingHeap $ evalFullSteps $ unComp c2
+                           c3' <- savingHeap $ evalFullSteps $ unComp c3
+                           killVars c2'
+                           killVars c3'
+                           partial $ CompV h [IfC l (toExp val) (Comp c2') (Comp c3') s]
 
 evalStep (LetC {}) =
     panicdoc $ text "evalStep: saw LetC"
@@ -789,18 +800,30 @@ evalExp (UnopE op e s) = do
     unop op val
   where
     unop :: Unop -> Val Exp -> EvalM (Val Exp)
-    unop Lnot (BoolV f) =
-        return $ BoolV (not f)
+    unop Lnot val =
+        maybePartialVal $ liftBool op not val
 
     unop Neg val =
         maybePartialVal $ liftNum op negate val
 
+    unop (Cast (BitT _)) (FixV _ _ _ (BP 0) r) =
+        return $ BitV (r /= 0)
+
     unop (Cast (FixT sc s w (BP 0) _)) (FixV sc' s' _ (BP 0) r) | sc' == sc && s' == s =
         return $ FixV sc s w (BP 0) r
 
-    -- XXX: use the type of the array to figure out its length
-    unop Len (ArrayV vs) =
-        evalConst $ intC (P.length vs)
+    unop (Cast (FixT I s w (BP 0) _)) (FloatV _ r) =
+        return $ FixV I s w (BP 0) (fromIntegral (truncate r :: Integer))
+
+    unop (Cast (FloatT fp _)) (FixV I _ _ (BP 0) r) =
+        return $ FloatV fp r
+
+    unop Len val = do
+        (iota, _) <- inferExp e >>= checkArrT
+        psi       <- askIVarSubst
+        case subst psi mempty iota of
+          ConstI n _ -> evalConst $ intC n
+          _ -> partialExp $ UnopE op (toExp val) s
 
     unop op val =
         partialExp $ UnopE op (toExp val) s
@@ -811,21 +834,75 @@ evalExp (BinopE op e1 e2 s) = do
     binop op val1 val2
   where
     binop :: Binop -> Val Exp -> Val Exp -> EvalM (Val Exp)
-    binop Add val1 val2 =
-        maybePartialVal $ liftNum2 op (+) val1 val2
+    binop Lt val1 val2 =
+        maybePartialVal $ liftOrd op (<) val1 val2
+
+    binop Le val1 val2 =
+        maybePartialVal $ liftOrd op (<=) val1 val2
+
+    binop Eq val1 val2 =
+        maybePartialVal $ liftEq op (==) val1 val2
+
+    binop Ge val1 val2 =
+        maybePartialVal $ liftOrd op (>=) val1 val2
+
+    binop Gt val1 val2 =
+        maybePartialVal $ liftOrd op (>) val1 val2
+
+    binop Ne val1 val2 =
+        maybePartialVal $ liftEq op (/=) val1 val2
+
+    binop Land val1 val2
+        | isTrue  val1 = maybePartialVal val2
+        | isFalse val1 = return $ BoolV False
+        | otherwise    = maybePartialVal $ liftBool2 op (&&) val1 val2
+
+    binop Lor val1 val2
+        | isTrue  val1 = return $ BoolV True
+        | isFalse val1 = maybePartialVal val2
+        | otherwise    = maybePartialVal $ liftBool2 op (||) val1 val2
+
+    binop Band val1 val2 =
+        maybePartialVal $ liftBits2 op (.&.) val1 val2
+
+    binop Bor val1 val2
+        | isZero val1 = maybePartialVal val2
+        | isZero val2 = maybePartialVal val1
+        | otherwise   = maybePartialVal $ liftBits2 op (.|.) val1 val2
+
+    binop Bxor val1 val2
+        | isZero val1 = maybePartialVal val2
+        | isZero val2 = maybePartialVal val1
+        | otherwise   = maybePartialVal $ liftBits2 op xor val1 val2
+
+    binop LshL val1 val2 =
+        maybePartialVal $ liftShift op shiftL val1 val2
+
+    binop AshR val1 val2 =
+        maybePartialVal $ liftShift op shiftR val1 val2
+
+    binop Add val1 val2
+        | isZero val1 = maybePartialVal val2
+        | isZero val2 = maybePartialVal val1
+        | otherwise   = maybePartialVal $ liftNum2 op (+) val1 val2
 
     binop Sub val1 val2 =
         maybePartialVal $ liftNum2 op (-) val1 val2
 
-    binop Mul val1 val2 =
-        maybePartialVal $ liftNum2 op (*) val1 val2
-{-
-    binop Div val1 val2 =
-        maybePartialVal $ liftNum2 op quot val1 val2
+    binop Mul val1 val2
+        | isOne val1 = maybePartialVal val2
+        | isOne val2 = maybePartialVal val1
+        | otherwise  = maybePartialVal $ liftNum2 op (*) val1 val2
 
-    binop Rem val1 val2 =
-        maybePartialVal $ liftNum2 op rem val1 val2
--}
+    binop Div (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
+        return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
+
+    binop Div (FloatV fp x) (FloatV _ y) =
+        return $ FloatV fp (x / y)
+
+    binop Rem (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
+        return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
+
     binop op val1 val2 =
         partialExp $ BinopE op (toExp val1) (toExp val2) s
 
@@ -838,16 +915,16 @@ evalExp e@(IfE e1 e2 e3 s) = do
     -- heap.
     evalIfExp :: Type -> Heap -> Val Exp -> EvalM (Val Exp)
     evalIfExp tau h val
-        | isDefTrue  val = evalExp e2
-        | isDefFalse val = evalExp e3
-        | isPureT tau    = do val2 <- evalExp e2
-                              val3 <- evalExp e3
-                              partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
-        | otherwise      = do e2' <- savingHeap $ evalFullCmd e2
-                              e3' <- savingHeap $ evalFullCmd e3
-                              killVars e2'
-                              killVars e3'
-                              partial $ CmdV h $ IfE (toExp val) e2' e3' s
+        | isTrue  val = evalExp e2
+        | isFalse val = evalExp e3
+        | isPureT tau = do val2 <- evalExp e2
+                           val3 <- evalExp e3
+                           partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
+        | otherwise   = do e2' <- savingHeap $ evalFullCmd e2
+                           e3' <- savingHeap $ evalFullCmd e3
+                           killVars e2'
+                           killVars e3'
+                           partial $ CmdV h $ IfE (toExp val) e2' e3' s
 
 evalExp (LetE decl e2 s2) =
     evalLocalDecl decl go
@@ -1150,14 +1227,15 @@ evalWhile e_cond body = do
     evalLoop body $ evalCond >>= loop
   where
     loop :: Val Exp -> EvalM (Val a)
-    loop (ReturnV val) | isDefTrue val = do
+    loop (ReturnV val) | isTrue val = do
         val2 <- evalBody
         case val2 of
           ReturnV {} -> return val2
           CmdV {}    -> residualWhile e_cond body
+          CompV {}   -> residualWhile e_cond body
           _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
 
-    loop (ReturnV val) | isDefFalse val =
+    loop (ReturnV val) | isFalse val =
         return $ returnUnit
 
     loop (CmdV {}) =
@@ -1319,6 +1397,18 @@ diffHeapComp h h' comp = do
     comps_diff <- diffHeapExps h h' >>= mapM liftC
     return $ Comp $ concatMap unComp comps_diff ++ unComp comp
 
+-- | Return 'True' if a 'Val' is actually a value, 'False' otherwise.
+isValue :: Val Exp -> Bool
+isValue (BoolV {})       = True
+isValue (BitV {})        = True
+isValue (FixV {})        = True
+isValue (FloatV {})      = True
+isValue (StringV {})     = True
+isValue (StructV _ flds) = all isValue (Map.elems flds)
+isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
+                           all (isValue . snd) (P.nonDefaultValues vals)
+isValue _                = False
+
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
 isKnown :: Val Exp -> Bool
@@ -1362,6 +1452,34 @@ diffHeapExps h1 h2 = do
         | val' == val = Nothing
         | otherwise   = Just $ v .:=. toExp val'
 
+liftBool :: Unop -> (Bool -> Bool) -> Val Exp -> Val Exp
+liftBool _ f (BoolV b) =
+    BoolV (f b)
+
+liftBool op _ val =
+    ExpV $ UnopE op (toExp val) noLoc
+
+liftBool2 :: Binop -> (Bool -> Bool -> Bool) -> Val Exp -> Val Exp -> Val Exp
+liftBool2 _ f (BoolV x) (BoolV y) =
+    BoolV (f x y)
+
+liftBool2 op _ val1 val2 =
+    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+liftEq :: Binop -> (forall a . Eq a => a -> a -> Bool) -> Val Exp -> Val Exp -> Val Exp
+liftEq _ f val1 val2 | isValue val1 && isValue val2 =
+    BoolV (f val1 val2)
+
+liftEq op _ val1 val2 =
+    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+liftOrd :: Binop -> (forall a . Ord a => a -> a -> Bool) -> Val Exp -> Val Exp -> Val Exp
+liftOrd _ f val1 val2 | isValue val1 && isValue val2 =
+    BoolV (f val1 val2)
+
+liftOrd op _ val1 val2 =
+    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
 liftNum :: Unop -> (forall a . Num a => a -> a) -> Val Exp -> Val Exp
 liftNum _ f (FixV sc s w bp r) =
     FixV sc s w bp (f r)
@@ -1373,13 +1491,27 @@ liftNum op _ val =
     ExpV $ UnopE op (toExp val) noLoc
 
 liftNum2 :: Binop -> (forall a . Num a => a -> a -> a) -> Val Exp -> Val Exp -> Val Exp
-liftNum2 _ f (FixV sc1 s1 w1 bp1 r1) (FixV sc2 s2 w2 bp2 r2) | (sc1, s1, w1, bp1) == (sc2, s2, w2, bp2) =
-    FixV sc1 s1 w1 bp1 (f r1 r2)
+liftNum2 _ f (FixV sc s w bp r1) (FixV _ _ _ _ r2) =
+    FixV sc s w bp (f r1 r2)
 
-liftNum2 _ f (FloatV fp1 r1) (FloatV fp2 r2) | fp1 == fp2 =
-    FloatV fp1 (f r1 r2)
+liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
+    FloatV fp (f r1 r2)
 
 liftNum2 op _ val1 val2 =
+    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+liftBits2 :: Binop -> (forall a . Bits a => a -> a -> a) -> Val Exp -> Val Exp -> Val Exp
+liftBits2 _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
+    FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
+
+liftBits2 op _ val1 val2 =
+    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+liftShift :: Binop -> (forall a . Bits a => a -> Int -> a) -> Val Exp -> Val Exp -> Val Exp
+liftShift _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
+    FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
+
+liftShift op _ val1 val2 =
     ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 class ToExp a where
