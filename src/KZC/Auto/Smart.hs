@@ -84,8 +84,17 @@ notE e = UnopE Lnot e (srclocOf e)
 castE :: Type -> Exp -> Exp
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
-letE :: LocalDecl -> Exp -> Exp
-letE d e = LetE d e (d `srcspan` e)
+letE :: Var -> Type -> Exp -> Exp -> Exp
+letE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
+  where
+    d :: LocalDecl
+    d = LetLD (mkBoundVar v) tau e1 (v `srcspan` e1)
+
+letrefE :: Var -> Type -> Maybe Exp -> Exp -> Exp
+letrefE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
+  where
+    d :: LocalDecl
+    d = LetRefLD (mkBoundVar v) tau e1 (v `srcspan` e1)
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
