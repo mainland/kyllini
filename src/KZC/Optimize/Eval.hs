@@ -375,11 +375,13 @@ isFalse (BoolV False) = True
 isFalse _             = False
 
 isZero :: Val Exp -> Bool
+isZero (BitV False)     = True
 isZero (FixV _ _ _ _ 0) = True
 isZero (FloatV _ 0)     = True
 isZero _                = False
 
 isOne :: Val Exp -> Bool
+isOne (BitV True)      = True
 isOne (FixV _ _ _ _ 1) = True
 isOne (FloatV _ 1)     = True
 isOne _                = False
