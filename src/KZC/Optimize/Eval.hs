@@ -1156,20 +1156,20 @@ evalExp (ReturnE _ e _) = do
       _      -> return $ ReturnV val
 
 evalExp (BindE wv tau e1 e2 s) = do
-  val1 <- withSummaryContext e1 $ evalExp e1
-  extendWildVars [(wv, tau)] $ do
-  withUniqWildVar wv $ \wv' -> do
-  case val1 of
-    CmdV h1 e1'   -> do killVars e1'
-                        tau' <- simplType tau
-                        e2'  <- extendWildVarBinds [(wv', UnknownV)] $
-                                evalFullCmd e2
-                        partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
-    ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
-                     withSummaryContext e2 $
-                     evalExp e2
-    _             -> withSummaryContext e1 $
-                     faildoc $ text "Command did not return CmdV or ReturnV."
+    val1 <- withSummaryContext e1 $ evalExp e1
+    extendWildVars [(wv, tau)] $ do
+    withUniqWildVar wv $ \wv' -> do
+    case val1 of
+      CmdV h1 e1'   -> do killVars e1'
+                          tau' <- simplType tau
+                          e2'  <- extendWildVarBinds [(wv', UnknownV)] $
+                                  evalFullCmd e2
+                          partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
+      ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
+                       withSummaryContext e2 $
+                       evalExp e2
+      _             -> withSummaryContext e1 $
+                       faildoc $ text "Command did not return CmdV or ReturnV."
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the
