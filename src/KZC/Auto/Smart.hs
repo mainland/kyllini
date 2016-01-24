@@ -117,6 +117,9 @@ structE s fs = StructE s fs (srclocOf (map snd fs))
 idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
 
+sliceE :: Exp -> Exp -> Int -> Exp
+sliceE e1 e2 len = IdxE e1 e2 (Just len) (e1 `srcspan` e2)
+
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
