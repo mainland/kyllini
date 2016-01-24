@@ -87,7 +87,15 @@ data Val a where
     StringV :: !String -> Val Exp
     StructV :: !Struct -> !(Map Field (Val Exp)) -> Val Exp
     ArrayV  :: !(P.PArray (Val Exp)) -> Val Exp
-    RefV    :: Ref -> Val Exp
+
+    -- | An element of an array
+    IdxV :: Val Exp -> Val Exp -> Val Exp
+
+    -- | An array slice
+    SliceV :: Val Exp -> Val Exp -> Int -> Val Exp
+
+    -- | A Reference
+    RefV :: Ref -> Val Exp
 
     -- | A residual expression.
     ExpV :: Exp -> Val Exp
@@ -1351,8 +1359,17 @@ evalIdx (ArrayV vs) (FixV I _ _ (BP 0) r) (Just len) =
     start :: Int
     start = fromIntegral (numerator r)
 
-evalIdx val1 val2 len =
-    partialExp $ IdxE (toExp val1) (toExp val2) len noLoc
+evalIdx (SliceV arr start _len) i Nothing =
+    return $ IdxV arr (start + i)
+
+evalIdx (SliceV arr start0 _len0) start (Just len) =
+    return $ SliceV arr (start0 + start) len
+
+evalIdx v_arr v_start Nothing =
+    return $ IdxV v_arr v_start
+
+evalIdx v_arr v_start (Just len) =
+    return $ SliceV v_arr v_start len
 
 evalProj :: Val Exp -> Field -> EvalM (Val Exp)
 evalProj (RefV r) f =
@@ -1438,6 +1455,8 @@ isKnown (StringV {})     = True
 isKnown (StructV _ flds) = all isKnown (Map.elems flds)
 isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
                            all (isKnown . snd) (P.nonDefaultValues vals)
+isKnown (IdxV arr i)     = isKnown arr && isKnown i
+isKnown (SliceV arr i _) = isKnown arr && isKnown i
 isKnown (ExpV {})        = True
 isKnown _                = False
 
@@ -1569,6 +1588,12 @@ instance ToExp (Val Exp) where
         vals :: [Val Exp]
         vals = P.toList vvals
 
+    toExp (IdxV arr i) =
+        idxE (toExp arr) (toExp i)
+
+    toExp (SliceV arr start len) =
+        sliceE (toExp arr) (toExp start) len
+
     toExp (RefV r) =
         toExp r
 
@@ -1690,6 +1715,8 @@ instance Pretty (Val a) where
     ppr val@(StringV {}) = ppr (toExp val)
     ppr val@(StructV {}) = ppr (toExp val)
     ppr val@(ArrayV {})  = ppr (toExp val)
+    ppr val@(IdxV {})    = ppr (toExp val)
+    ppr val@(SliceV {})  = ppr (toExp val)
     ppr (RefV ref)       = ppr ref
     ppr val@(ExpV {})    = ppr (toExp val)
     ppr val@(ReturnV {}) = ppr (toExp val)
