@@ -1381,6 +1381,20 @@ evalProj (StructV _ kvs) f =
 evalProj val f =
     partialExp $ ProjE (toExp val) f noLoc
 
+-- | Return 'True' if a 'Val Exp' is actually a value and 'False'
+-- otherwise.
+isValue :: Val Exp -> Bool
+isValue UnitV            = True
+isValue (BoolV {})       = True
+isValue (BitV {})        = True
+isValue (FixV {})        = True
+isValue (FloatV {})      = True
+isValue (StringV {})     = True
+isValue (StructV _ flds) = all isValue (Map.elems flds)
+isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
+                           all (isValue . snd) (P.nonDefaultValues vals)
+isValue _                = False
+
 -- | Produce a default value of the given type.
 defaultValue :: Type -> EvalM (Val Exp)
 defaultValue tau =
@@ -1428,18 +1442,6 @@ diffHeapComp :: Heap -> Heap -> LComp -> EvalM LComp
 diffHeapComp h h' comp = do
     comps_diff <- diffHeapExps h h' >>= mapM liftC
     return $ Comp $ concatMap unComp comps_diff ++ unComp comp
-
--- | Return 'True' if a 'Val' is actually a value, 'False' otherwise.
-isValue :: Val Exp -> Bool
-isValue (BoolV {})       = True
-isValue (BitV {})        = True
-isValue (FixV {})        = True
-isValue (FloatV {})      = True
-isValue (StringV {})     = True
-isValue (StructV _ flds) = all isValue (Map.elems flds)
-isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
-                           all (isValue . snd) (P.nonDefaultValues vals)
-isValue _                = False
 
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
