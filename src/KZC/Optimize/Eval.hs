@@ -68,6 +68,7 @@ import KZC.Label
 import KZC.Monad
 import KZC.Name
 import qualified KZC.Optimize.Eval.PArray as P
+import KZC.Platform
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -122,6 +123,27 @@ data Val a where
 deriving instance Eq (Val a)
 deriving instance Ord (Val a)
 deriving instance Show (Val a)
+
+instance Num (Val Exp) where
+    x + y | isZero x  = y
+          | isZero y  = x
+          | otherwise = liftNum2 Add (+) x y
+
+    x - y | isZero x  = - y
+          | isZero y  = x
+          | otherwise = liftNum2 Sub (-) x y
+
+    x * y | isOne x   = y
+          | isOne y   = x
+          | otherwise = liftNum2 Mul (*) x y
+
+    negate x = liftNum Neg negate x
+
+    fromInteger i = FixV I S dEFAULT_INT_WIDTH (BP 0) (fromInteger i)
+
+    abs _ = error "Val: abs undefined"
+
+    signum _ = error "Val: signum undefined"
 
 data Ref = VarR Var VarPtr
          | IdxR Ref (Val Exp) (Maybe Int)
@@ -806,7 +828,7 @@ evalExp (UnopE op e s) = do
         maybePartialVal $ liftBool op not val
 
     unop Neg val =
-        maybePartialVal $ liftNum op negate val
+        maybePartialVal $ negate val
 
     unop (Cast (BitT _)) (FixV _ _ _ (BP 0) r) =
         return $ BitV (r /= 0)
@@ -883,18 +905,11 @@ evalExp (BinopE op e1 e2 s) = do
     binop AshR val1 val2 =
         maybePartialVal $ liftShift op shiftR val1 val2
 
-    binop Add val1 val2
-        | isZero val1 = maybePartialVal val2
-        | isZero val2 = maybePartialVal val1
-        | otherwise   = maybePartialVal $ liftNum2 op (+) val1 val2
+    binop Add val1 val2 = maybePartialVal $ val1 + val2
 
-    binop Sub val1 val2 =
-        maybePartialVal $ liftNum2 op (-) val1 val2
+    binop Sub val1 val2 = maybePartialVal $ val1 - val2
 
-    binop Mul val1 val2
-        | isOne val1 = maybePartialVal val2
-        | isOne val2 = maybePartialVal val1
-        | otherwise  = maybePartialVal $ liftNum2 op (*) val1 val2
+    binop Mul val1 val2 = maybePartialVal $ val1 * val2
 
     binop Div (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
         return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
