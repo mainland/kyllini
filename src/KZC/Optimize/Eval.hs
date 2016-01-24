@@ -1162,10 +1162,8 @@ evalExp (BindE wv tau e1 e2 s) = do
   case val1 of
     CmdV h1 e1'   -> do killVars e1'
                         tau' <- simplType tau
-                        e2'  <- case wv' of
-                                  WildV    -> evalFullCmd e2
-                                  TameV v' -> extendVarBinds [(bVar v', UnknownV)] $
-                                              evalFullCmd e2
+                        e2'  <- extendWildVarBinds [(wv', UnknownV)] $
+                                evalFullCmd e2
                         partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
     ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
                      withSummaryContext e2 $
