@@ -55,6 +55,7 @@ import Data.Maybe (mapMaybe)
 import Data.Monoid
 import Data.Ratio (numerator)
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.String (fromString)
 import Text.PrettyPrint.Mainland
 
@@ -111,7 +112,7 @@ data Val a where
     CmdV :: Heap -> Exp -> Val Exp
 
     -- | A function closure
-    FunClosV :: !Theta -> ![IVar] -> ![Var] -> Type -> !(EvalM (Val Exp)) -> Val Exp
+    FunClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM (Val Exp)) -> Val Exp
 
     -- | A value returned from a computation.
     CompReturnV :: Val Exp -> Val LComp
@@ -468,7 +469,7 @@ evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
-    extendVarBinds [(bVar f', FunClosV theta ivs vs' tau_ret eval)] $ do
+    extendVarBinds [(bVar f', FunClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
     k $ const . return $ LetFunD f' ivs (vs' `zip` taus) tau_ret e l
   where
     tau :: Type
@@ -960,7 +961,18 @@ evalExp (LetE decl e2 s2) =
         case val2 of
           ExpV e2'   -> partial $ ExpV   $ LetE decl e2' s2
           CmdV h e2' -> partial $ CmdV h $ LetE decl e2' s2
-          _          -> return val2
+          _          -> wrapLet val2
+      where
+        wrapLet :: Val Exp -> EvalM (Val Exp)
+        wrapLet val2
+            | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
+            | otherwise             = return val2
+          where
+            e2 :: Exp
+            e2 = toExp val2
+
+            v :: Var
+            [v] = Set.toList (binders decl)
 
     go (HeapDeclVal k) = do
         val2 <- evalExp e2
@@ -980,11 +992,36 @@ evalExp e@(CallE f iotas es s) = do
     go tau v_f iotas' v_es
   where
     go :: Type -> Val Exp -> [Iota] -> [Val Exp] -> EvalM (Val Exp)
-    go _tau (FunClosV theta ivs vs _tau_ret k) iotas' v_es =
+    go _tau (FunClosV theta ivs vbs _tau_ret k) iotas' v_es =
         withSubst theta $
-        extendIVarSubst (ivs `zip` iotas') $
-        extendVarBinds  (vs  `zip` v_es) $
-        k
+        withUniqVars vs $ \vs' -> do
+        extendIVarSubst (ivs `zip` iotas') $ do
+        extendVarBinds  (vs' `zip` v_es) $ do
+        taus' <- mapM simplType taus
+        k >>= wrapLetArgs vs' taus'
+      where
+        vs :: [Var]
+        taus :: [Type]
+        (vs, taus) = unzip vbs
+
+        -- If @val@ uses any of the function's parameter bindings, we need to
+        -- keep them around. This can happen if we decide not to inline a
+        -- variable, e.g., if the variable is bound to an array constant.
+        wrapLetArgs :: [Var] -> [Type] -> Val Exp -> EvalM (Val Exp)
+        wrapLetArgs vs' taus' val =
+            -- We must be careful here not to apply transformExpVal if the list
+            -- of free variables is null, because @transformExpVal id@ is not
+            -- the identify function!
+            case filter isFree (zip3 vs' taus' v_es) of
+              [] -> return val
+              bs -> transformExpVal (\e -> foldr letBind e bs) val
+          where
+            letBind :: (Var, Type, Val Exp) -> Exp -> Exp
+            letBind (_v, RefT {}, _e1) e2 = e2
+            letBind (v,  tau,      e1) e2 = letE v tau (toExp e1) e2
+
+            isFree :: (Var, Type, Val Exp) -> Bool
+            isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
 
     -- Note that the heap cannot change as the result of evaluating function
     -- arguments, so we can call 'partialCmd' here instead of saving the heap
@@ -1159,17 +1196,34 @@ evalExp (BindE wv tau e1 e2 s) = do
     val1 <- withSummaryContext e1 $ evalExp e1
     extendWildVars [(wv, tau)] $ do
     withUniqWildVar wv $ \wv' -> do
+    tau' <- simplType tau
     case val1 of
       CmdV h1 e1'   -> do killVars e1'
-                          tau' <- simplType tau
                           e2'  <- extendWildVarBinds [(wv', UnknownV)] $
                                   evalFullCmd e2
                           partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
       ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
                        withSummaryContext e2 $
-                       evalExp e2
+                       evalExp e2 >>= wrapBind wv' tau' val1'
       _             -> withSummaryContext e1 $
                        faildoc $ text "Command did not return CmdV or ReturnV."
+  where
+    -- If @val2@ uses the binding, we need to keep it around. This can happen if
+    -- we decide not to inline a variable, e.g., if the variable is bound to an
+    -- array constant.
+    wrapBind :: WildVar -> Type -> Val Exp -> Val Exp -> EvalM (Val Exp)
+    wrapBind (TameV bv) tau val1 val2 | v `Set.member` fvs e2 =
+        partialExp $ letE v tau e1 e2
+      where
+        v :: Var
+        v = bVar bv
+
+        e1, e2 :: Exp
+        e1 = toExp val1
+        e2 = toExp val2
+
+    wrapBind _ _ _ val2 =
+        return val2
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the
@@ -1380,6 +1434,21 @@ evalProj (StructV _ kvs) f =
 
 evalProj val f =
     partialExp $ ProjE (toExp val) f noLoc
+
+-- |  @'transformExpVal' f val'@ transforms a value of type @'Val' Exp@ by applying
+-- f. Note that 'transformExpVal' will convert some sub-term of its @Val Exp@ to
+-- an 'ExpV' if it isn't already, so even if @f@ is the identity function,
+-- 'transformExpVal' /is not/ the identity function.
+transformExpVal :: (Exp -> Exp) -> Val Exp -> EvalM (Val Exp)
+transformExpVal f val0 =
+    go val0
+  where
+    go :: Val Exp -> EvalM (Val Exp)
+    go (ReturnV val) = ReturnV <$> go val
+    go (ExpV e)      = partial $ ExpV   $ f e
+    go (CmdV h e)    = partial $ CmdV h $ f e
+    go v | isValue v = return v
+         | otherwise = partial $ ExpV   $ f (toExp v)
 
 -- | Return 'True' if a 'Val Exp' is actually a value and 'False'
 -- otherwise.
