@@ -1165,7 +1165,26 @@ evalExp e@(ArrayE es _) = do
 evalExp (IdxE arr start len _) = do
     v_arr   <- evalExp arr
     v_start <- evalExp start
-    evalIdx v_arr v_start len
+    v       <- evalIdx v_arr v_start len
+    uninlineArrayConstant v arr v_arr v_start len
+  where
+    uninlineArrayConstant :: Val Exp -> Exp -> Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
+    uninlineArrayConstant v _ _ _ _ | isValue v =
+        return v
+
+    uninlineArrayConstant v@(RefV {}) _ _ _ _ =
+        return v
+
+    uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start Nothing | isValue arr = do
+        v' <- maybe v id <$> lookupSubst v
+        return $ IdxV (ExpV $ varE v') v_start
+
+    uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start (Just len) | isValue arr = do
+        v' <- maybe v id <$> lookupSubst v
+        return $ SliceV (ExpV $ varE v') v_start len
+
+    uninlineArrayConstant v _ _ _ _ =
+        return v
 
 evalExp (StructE s flds _) = do
     vals <- mapM evalExp es
