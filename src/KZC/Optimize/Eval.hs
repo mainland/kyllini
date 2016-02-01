@@ -457,12 +457,12 @@ evalDecl :: forall a . LDecl -> ((Heap -> EvalM LDecl) -> EvalM a) -> EvalM a
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
   where
-  go :: LocalLetVal -> EvalM a
-  go (DeclVal decl') =
-      k $ \_h -> return $ LetD decl' s
+    go :: LocalLetVal -> EvalM a
+    go (DeclVal decl') =
+        k $ \_h -> return $ LetD decl' s
 
-  go (HeapDeclVal mkDecl) =
-      k $ \h -> LetD <$> mkDecl h <*> pure s
+    go (HeapDeclVal mkDecl) =
+        k $ \h -> LetD <$> mkDecl h <*> pure s
 
 evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
     extendVars [(bVar f, tau)] $ do
