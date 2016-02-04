@@ -15,7 +15,10 @@ module KZC.Monad (
     defaultKZCEnv,
 
     KZC(..),
-    evalKZC
+    evalKZC,
+
+    getPass,
+    incPass
   ) where
 
 import Control.Applicative
@@ -40,6 +43,7 @@ import KZC.Uniq
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
     , tracedepth :: !Int
+    , pass       :: !(IORef Int)
     , errctx     :: ![ErrorContext]
     , flags      :: !Flags
     , tienvref   :: !(IORef TiEnv)
@@ -52,11 +56,13 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
               -> m KZCEnv
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
+    p      <- newRef 0
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
     return KZCEnv { uniq       = u
                   , tracedepth = 0
+                  , pass       = p
                   , errctx     = []
                   , flags      = fs
                   , tienvref   = tieref
@@ -118,3 +124,11 @@ instance MonadFlags KZC where
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth
     localTraceDepth f = local (\env -> env { tracedepth = f (tracedepth env) })
+
+getPass :: KZC Int
+getPass = asks pass >>= readRef
+
+incPass :: KZC Int
+incPass = do
+    ref <- asks pass
+    atomicModifyRef' ref (\i -> (i + 1, i))

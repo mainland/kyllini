@@ -28,6 +28,7 @@ import System.IO (IOMode(..),
                   openFile,
                   stderr)
 import Text.PrettyPrint.Mainland
+import Text.Printf (printf)
 
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
@@ -153,8 +154,8 @@ runPipeline filepath =
             (prog'', stats) <- simplPhase prog'
             void $ lintAuto prog'
             if stats /= mempty
-              then do void $ dumpPassN DumpOcc "acore" ("occ" ++ desc) i prog'
-                      void $ dumpPassN DumpSimpl "acore" ("simpl" ++ desc) i prog''
+              then do void $ dumpPass DumpOcc "acore" ("occ" ++ desc) prog'
+                      void $ dumpPass DumpSimpl "acore" ("simpl" ++ desc) prog''
                       go (i+1) n prog''
               else return prog
 
@@ -220,18 +221,8 @@ runPipeline filepath =
              -> a
              -> MaybeT KZC a
     dumpPass f ext suffix x = lift $ do
-        dump f filepath ext suffix (ppr x)
-        return x
-
-    dumpPassN :: Pretty a
-              => DumpFlag
-              -> String
-              -> String
-              -> Int
-              -> a
-              -> MaybeT KZC a
-    dumpPassN f ext suffix i x = lift $ do
-        dump f filepath ext (suffix ++ "-" ++ show i) (ppr x)
+        pass <- incPass
+        dump f filepath ext (printf "%02d-%s" pass suffix) (ppr x)
         return x
 
     dump :: DumpFlag
