@@ -45,7 +45,7 @@ instance Located CompLet where
   locOf (LetCL _ _ _ l) = locOf l
   locOf (LetRefCL _ _ _ l) = locOf l
   locOf (LetFunCL _ _ _ _ l) = locOf l
-  locOf (LetFunExternalCL _ _ _ l) = locOf l
+  locOf (LetFunExternalCL _ _ _ _ l) = locOf l
   locOf (LetStructCL _ l) = locOf l
   locOf (LetCompCL _ _ _ _ l) = locOf l
   locOf (LetFunCompCL _ _ _ _ _ l) = locOf l

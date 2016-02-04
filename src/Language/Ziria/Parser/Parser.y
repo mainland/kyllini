@@ -70,6 +70,7 @@ import KZC.Name
   'forceinline' { L _ T.Tforceinline }
   'fun'         { L _ T.Tfun }
   'if'          { L _ T.Tif }
+  'impure'      { L _ T.Timpure }
   'in'          { L _ T.Tin }
   'int'         { L _ T.Tint }
   'int8'        { L _ T.Tint8 }
@@ -200,6 +201,7 @@ identifier :
   | STRUCTID { mkVar $ mkSymName (getSTRUCTID $1) (locOf $1) }
   | 'arr'    { mkVar $ mkName "arr" (locOf $1) }
   | 'fun'    { mkVar $ mkName "fun" (locOf $1) }
+  | 'impure' { mkVar $ mkName "impure" (locOf $1) }
   | 'length' { mkVar $ mkName "length" (locOf $1) }
 
 {------------------------------------------------------------------------------
@@ -663,7 +665,9 @@ comp_let_decl :
   | struct
       { LetStructCL $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type
-      { LetFunExternalCL (mkVar (varid $3)) $4 $6 ($1 `srcspan` $6) }
+      { LetFunExternalCL (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
+  | 'fun' 'external' 'impure' ID params ':' base_type
+      { LetFunExternalCL (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
   | 'fun' 'comp' maybe_comp_range comp_var_bind comp_params '{' commands '}'
       { let { (v, tau) = $4 }
         in

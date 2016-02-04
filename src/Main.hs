@@ -44,6 +44,7 @@ import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.Simplify
 import KZC.Rename
@@ -55,11 +56,12 @@ import Opts
 
 main :: IO ()
 main = do
-    args <- getArgs
+    args        <- getArgs
     (fs, files) <- compilerOpts args
+    let fs'     =  flagImplications fs
     if mode fs == Help
       then usage >>= hPutStrLn stderr
-      else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
+      else evalKZC fs' (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure
@@ -86,12 +88,12 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         lambdaLiftPhase >=> lintCore >=>
         autoPhase >=> lintAuto >=>
-        runIf simplOrFuse iterateSimplPhase >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
+        runIf (testDynFlag PartialEval) (evalPhase >=> lintAuto) >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
+        dumpFinal >=>
         compilePhase
-      where
-        simplOrFuse :: (Flags -> Bool)
-        simplOrFuse fs = testDynFlag Simplify fs || testDynFlag Fuse fs
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
@@ -136,8 +138,8 @@ runPipeline filepath =
     simplPhase =
         lift . A.withTcEnv . runSimplM . simplProgram
 
-    iterateSimplPhase :: A.LProgram -> MaybeT KZC A.LProgram
-    iterateSimplPhase prog0 = do
+    iterateSimplPhase :: String -> A.LProgram -> MaybeT KZC A.LProgram
+    iterateSimplPhase desc prog0 = do
         n <- asksFlags maxSimpl
         go 0 n prog0
       where
@@ -151,8 +153,8 @@ runPipeline filepath =
             (prog'', stats) <- simplPhase prog'
             void $ lintAuto prog'
             if stats /= mempty
-              then do void $ dumpPassN DumpOcc "acore" "occ" i prog'
-                      void $ dumpPassN DumpSimpl "acore" "simpl" i prog''
+              then do void $ dumpPassN DumpOcc "acore" ("occ" ++ desc) i prog'
+                      void $ dumpPassN DumpSimpl "acore" ("simpl" ++ desc) i prog''
                       go (i+1) n prog''
               else return prog
 
@@ -160,6 +162,11 @@ runPipeline filepath =
     fusionPhase =
         lift . A.withTcEnv . A.runTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
+
+    evalPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    evalPhase =
+        lift . A.withTcEnv . evalEvalM . evalProgram >=>
+        dumpPass DumpEval "acore" "peval"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
     compilePhase =
@@ -202,6 +209,9 @@ runPipeline filepath =
         h <- liftIO $ openFile outpath WriteMode
         liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
+
+    dumpFinal :: A.LProgram -> MaybeT KZC A.LProgram
+    dumpFinal = dumpPass DumpAuto "acore" "final"
 
     dumpPass :: Pretty a
              => DumpFlag

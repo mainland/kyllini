@@ -220,11 +220,11 @@ rnCompLet cl@(LetFunCL v tau vbs e l) k =
            LetFunCL <$> rn v <*> pure tau <*> rn vbs <*> rn e <*> pure l
     k cl'
 
-rnCompLet cl@(LetFunExternalCL v vbs tau l) k =
+rnCompLet cl@(LetFunExternalCL v vbs tau isPure l) k =
     extendVars (text "external function") [v] $ do
     cl' <- withSummaryContext cl $
            extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-           LetFunExternalCL <$> rn v <*> rn vbs  <*> pure tau <*> pure l
+           LetFunExternalCL <$> rn v <*> rn vbs  <*> pure tau <*> pure isPure <*> pure l
     k cl'
 
 rnCompLet cl@(LetStructCL s l) k = do

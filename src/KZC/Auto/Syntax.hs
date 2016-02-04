@@ -819,6 +819,9 @@ instance Fvs Exp v => Fvs [Exp] v where
 instance Fvs (Arg l) v => Fvs [Arg l] v where
     fvs es = foldMap fvs es
 
+instance Fvs (Comp l) v => Fvs [Step l] v where
+    fvs steps = fvs (Comp steps)
+
 {------------------------------------------------------------------------------
  -
  - All variables

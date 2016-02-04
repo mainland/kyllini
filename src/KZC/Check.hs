@@ -199,9 +199,19 @@ checkLetFun f ztau ps e l = do
         return $ C.LetFunD cf [] cptaus ctau_ret ce l
     return (tau_gen, mkLetFun)
 
-checkLetExtFun :: Z.Var -> [Z.VarBind] -> Z.Type -> SrcLoc
+{- Note [External Functions]
+
+We assume that a Ziria external function with return type unit is
+impure. Otherwise, we assume an external function is pure /unless/ it is marked
+with the impure keyword.
+
+Really we should mark pure functions as such, but that would require more
+substantial changes to externals.blk, so we go for the minimal change.
+-}
+
+checkLetExtFun :: Z.Var -> [Z.VarBind] -> Z.Type -> Bool -> SrcLoc
                -> Ti (Type, Ti C.Decl)
-checkLetExtFun f ps ztau_ret l = do
+checkLetExtFun f ps ztau_ret isPure l = do
     ptaus         <- fromZ ps
     -- Note that the output type may depend on the parameters because of array
     -- lengths
@@ -224,7 +234,15 @@ checkLetExtFun f ps ztau_ret l = do
         b <- newMetaTvT TauK l
         fst <$> generalize (ST [] (C (UnitT l) l) s a b l)
 
-    checkRetType ztau = fromZ ztau
+    checkRetType ztau | not isPure = do
+        s   <- newMetaTvT TauK l
+        a   <- newMetaTvT TauK l
+        b   <- newMetaTvT TauK l
+        tau <- fromZ ztau
+        fst <$> generalize (ST [] (C tau l) s a b l)
+
+    checkRetType ztau =
+        fromZ ztau
 
 checkCompLet :: Z.CompLet
              -> (Ti C.Decl -> Ti a)
@@ -246,9 +264,9 @@ checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
                  mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret l) k = do
+checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret isPure l) k = do
     (tau, mkLetExtFun) <- alwaysWithSummaryContext cl $
-                          checkLetExtFun f ps ztau_ret l
+                          checkLetExtFun f ps ztau_ret isPure l
     let mcdecl = alwaysWithSummaryContext cl $
                  mkLetExtFun
     extendVars [(f,tau)] $ k mcdecl
