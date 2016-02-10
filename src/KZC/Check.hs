@@ -336,7 +336,7 @@ tcExp (Z.ConstE zc l) exp_ty = do
 
     tcConst(Z.BitC b)  = do
         instType (BitT l) exp_ty
-        return $ C.BitC b
+        return $ C.FixC C.I C.U (C.W 1) 0 (if b then 1 else 0)
 
     tcConst(Z.FixC zsc zs zw zbp r) = do
         sc  <- fromZ zsc
@@ -2145,7 +2145,7 @@ instance Trans Type C.Type where
         go :: Type -> Ti C.Type
         go (UnitT l)          = C.UnitT <$> pure l
         go (BoolT l)          = C.BoolT <$> pure l
-        go (BitT l)           = C.BitT <$> pure l
+        go (BitT l)           = C.FixT C.I C.U (C.W 1) 0 <$> pure l
         go (FixT sc s w bp l) = C.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
         go (FloatT w l)       = C.FloatT <$> trans w <*> pure l
         go (StringT l)        = pure $ C.StringT l

@@ -164,7 +164,6 @@ data FP = FP16
 
 data Const = UnitC
            | BoolC Bool
-           | BitC Bool
            | FixC Scale Signedness W BP Rational
            | FloatC FP Rational
            | StringC String
@@ -274,7 +273,6 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | BitT !SrcLoc
           | FixT Scale Signedness W BP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
@@ -365,15 +363,15 @@ instance Pretty FP where
 
 instance Pretty Const where
     pprPrec _ UnitC              = text "()"
-    pprPrec _ (BoolC False)      = text "false"
-    pprPrec _ (BoolC True)       = text "true"
-    pprPrec _ (BitC False)       = text "'0"
-    pprPrec _ (BitC True)        = text "'1"
-    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r <> pprSign s
-    pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
-    pprPrec _ (StringC s)        = text (show s)
-    pprPrec _ (ArrayC cs)        = text "arr" <+> embrace commasep (map ppr cs)
-    pprPrec _ (StructC s flds)   = ppr s <+> pprStruct flds
+    pprPrec _ (BoolC False)        = text "false"
+    pprPrec _ (BoolC True)         = text "true"
+    pprPrec _ (FixC I U (W 1) 0 0) = text "'0"
+    pprPrec _ (FixC I U (W 1) 0 1) = text "'1"
+    pprPrec p (FixC sc s _ bp r)   = pprScaled p sc s bp r <> pprSign s
+    pprPrec _ (FloatC _ f)         = ppr (fromRational f :: Double)
+    pprPrec _ (StringC s)          = text (show s)
+    pprPrec _ (ArrayC cs)          = text "arr" <+> embrace commasep (map ppr cs)
+    pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
 
 pprSign :: Signedness -> Doc
 pprSign S = empty
@@ -652,7 +650,7 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (BitT _) =
+    pprPrec _ (FixT I U (W 1) (BP 0) _) =
         text "bit"
 
     pprPrec _ (FixT sc s w bp _) =
@@ -821,7 +819,6 @@ instance HasFixity Unop where
 instance Fvs Type IVar where
     fvs (UnitT {})                    = mempty
     fvs (BoolT {})                    = mempty
-    fvs (BitT {})                     = mempty
     fvs (FixT {})                     = mempty
     fvs (FloatT {})                   = mempty
     fvs (StringT {})                  = mempty
@@ -852,7 +849,6 @@ instance Fvs Type n => Fvs [Type] n where
 instance Fvs Type TyVar where
     fvs (UnitT {})                         = mempty
     fvs (BoolT {})                         = mempty
-    fvs (BitT {})                          = mempty
     fvs (FixT {})                          = mempty
     fvs (FloatT {})                        = mempty
     fvs (StringT {})                       = mempty
@@ -994,9 +990,6 @@ instance Subst Iota IVar Type where
     substM tau@(BoolT {}) =
         pure tau
 
-    substM tau@(BitT {}) =
-        pure tau
-
     substM tau@(FixT {}) =
         pure tau
 
@@ -1125,9 +1118,6 @@ instance Subst Type TyVar Type where
         pure tau
 
     substM tau@(BoolT {}) =
-        pure tau
-
-    substM tau@(BitT {}) =
         pure tau
 
     substM tau@(FixT {}) =

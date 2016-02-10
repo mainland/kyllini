@@ -169,7 +169,6 @@ lookupTcEnv proj onerr k = do
 defaultValueC :: MonadTc m => Type -> m Const
 defaultValueC (UnitT {})         = return UnitC
 defaultValueC (BoolT {})         = return $ BoolC False
-defaultValueC (BitT {})          = return $ BitC False
 defaultValueC (FixT sc s w bp _) = return $ FixC sc s w bp 0
 defaultValueC (FloatT fp _)      = return $ FloatC fp 0
 defaultValueC (StringT {})       = return $ StringC ""

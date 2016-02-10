@@ -208,7 +208,6 @@ checkDecl decl@(LetStructD s flds l) k = do
 inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
 inferConst l UnitC              = return (UnitT l)
 inferConst l (BoolC {})         = return (BoolT l)
-inferConst l (BitC {})          = return (BitT l)
 inferConst l (FixC sc s w bp _) = return (FixT sc s w bp l)
 inferConst l (FloatC w _)       = return (FloatT w l)
 inferConst l (StringC _)        = return (StringT l)
@@ -665,12 +664,6 @@ checkCast tau1 tau2 | tau1 == tau2 =
 checkCast (FixT {}) (FixT {}) =
     return ()
 
-checkCast (FixT {}) (BitT {}) =
-    return ()
-
-checkCast (BitT {}) (FixT {}) =
-    return ()
-
 checkCast (FixT {}) (FloatT {}) =
     return ()
 
@@ -702,7 +695,6 @@ checkBitcast tau1 tau2 = do
 -- | Calculate the bit width of a type.
 typeBitWidth :: Monad m => Type -> m Int
 typeBitWidth (BoolT {})           = return 1
-typeBitWidth (BitT {})            = return 1
 typeBitWidth (FixT _ _ (W w) _ _) = return w
 typeBitWidth (FloatT FP16 _)      = return 32
 typeBitWidth (FloatT FP32 _)      = return 32
@@ -722,7 +714,6 @@ checkTypeEquality tau1 tau2 =
            -> m ()
     checkT _ _ (UnitT {}) (UnitT {}) = return ()
     checkT _ _ (BoolT {}) (BoolT {}) = return ()
-    checkT _ _ (BitT {})  (BitT {})  = return ()
 
     checkT _ _ (FixT sc1 s1 w1 bp1 _) (FixT sc2 s2 w2 bp2 _)
         | sc1 == sc2 && s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
@@ -817,7 +808,6 @@ inferKind tau =
     inferType :: Type -> m Kind
     inferType (UnitT {})   = return TauK
     inferType (BoolT {})   = return TauK
-    inferType (BitT {})    = return TauK
     inferType (FixT {})    = return TauK
     inferType (FloatT {})  = return TauK
     inferType (StringT {}) = return TauK
@@ -913,21 +903,19 @@ checkOrdT tau =
 
 -- | Check that a type is a type on which we can perform Boolean operations.
 checkBoolT :: MonadTc m => Type -> m ()
-checkBoolT (BitT {})  = return ()
 checkBoolT (BoolT {}) = return ()
 checkBoolT (FixT {})  = return ()
 checkBoolT tau =
     faildoc $ nest 2 $ group $
-    text "Expected a Boolean type, e.g., bit, bool, or int, but got:" <+/> ppr tau
+    text "Expected a Boolean type, e.g., bool or int, but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform bitwise operations.
 checkBitT :: MonadTc m => Type -> m ()
-checkBitT (BitT {})  = return ()
 checkBitT (BoolT {}) = return ()
 checkBitT (FixT {})  = return ()
 checkBitT tau =
     faildoc $ nest 2 $ group $
-    text "Expected a bit type, e.g., bit or int, but got:" <+/> ppr tau
+    text "Expected a bit type, e.g., bool or int, but got:" <+/> ppr tau
 
 -- | Check that a type is an integer type.
 checkIntT :: MonadTc m => Type -> m ()

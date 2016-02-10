@@ -31,6 +31,7 @@ import Data.Monoid
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Label
 import {-# SOURCE #-} KZC.Cg.Monad
@@ -359,8 +360,9 @@ toInit ce            = [cinit|$ce|]
 
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: Type -> CExp -> CExp -> C.Exp
-lowerIdx (BitT {}) carr ci = lowerBitArrayIdx carr ci
-lowerIdx _         carr ci = [cexp|$carr[$ci]|]
+lowerIdx tau carr ci
+    | isBitT tau = lowerBitArrayIdx carr ci
+    | otherwise  = [cexp|$carr[$ci]|]
 
 -- | Lower a bit array indexing operation to a 'C.Exp'
 lowerBitArrayIdx :: CExp -> CExp -> C.Exp
@@ -375,18 +377,16 @@ lowerBitArrayIdx carr ci =
 
 -- | Lower a slice operation to a 'C.Exp'
 lowerSlice :: Type -> CExp -> CExp -> Int -> C.Exp
-lowerSlice (BitT _) carr (CInt i) _ | bitOff == 0 =
-    [cexp|&$carr[$int:bitIdx]|]
+lowerSlice tau carr ce@(CInt i) len | isBitT tau =
+    if bitOff == 0
+    then [cexp|&$carr[$int:bitIdx]|]
+    else errordoc $ nest 4 $
+         ppr (locOf ce) <> text ":" </>
+         text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
+         ppr (CSlice tau carr ce len)
   where
     bitIdx, bitOff :: Integer
     (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
-
-lowerSlice tau@(BitT _) carr ce len =
-    errordoc $
-    nest 4 $
-    ppr (locOf ce) <> text ":" </>
-    text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
-    ppr (CSlice tau carr ce len)
 
 lowerSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]

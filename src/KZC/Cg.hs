@@ -95,9 +95,9 @@ void kz_main(const typename kz_params_t* $id:params)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if($cbuf == NULL) { BREAK; }|]
         case (tau, n) of
-            (BitT {}, 1) -> return $ CExp [cexp|*$cbuf & 1|]
-            (_, 1)       -> return $ CExp [cexp|*$cbuf|]
-            _            -> return $ CExp [cexp|$cbuf|]
+            (_, 1) | isBitT tau -> return $ CExp [cexp|*$cbuf & 1|]
+                   | otherwise  -> return $ CExp [cexp|*$cbuf|]
+            _                   -> return $ CExp [cexp|$cbuf|]
 
     emitk :: EmitK Label
     emitk tau ce _k = do
@@ -132,7 +132,7 @@ void kz_main(const typename kz_params_t* $id:params)
       where
         go :: Type -> Cg ()
         go (ArrT _ tau _)          = go tau
-        go (BitT {})               = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go tau | isBitT tau        = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
         go (FixT I S (W 8)  0 _)   = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
         go (FixT I S (W 16) 0 _)   = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
         go (FixT I S (W 32) 0 _)   = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
@@ -157,7 +157,7 @@ void kz_main(const typename kz_params_t* $id:params)
         go :: Type -> Cg CExp
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgInput tau cbuf (cn*ci)
-        go (BitT {})               = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
+        go tau | isBitT tau        = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
         go (FixT I S (W 8)  0 _)   = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
         go (FixT I S (W 16) 0 _)   = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
         go (FixT I S (W 32) 0 _)   = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
@@ -181,7 +181,7 @@ void kz_main(const typename kz_params_t* $id:params)
         go :: Type -> Cg ()
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgOutput tau cbuf (cn*ci) cval
-        go (BitT {})               = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
+        go tau | isBitT tau        = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
         go (FixT I S (W 8)  0 _)   = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
         go (FixT I S (W 16) 0 _)   = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
         go (FixT I S (W 32) 0 _)   = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
@@ -432,11 +432,10 @@ cgDefaultValue tau cv = go tau
   where
     go :: Type -> Cg ()
     go (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
-    go (BitT {})   = cgAssign tau cv (CExp [cexp|0|])
     go (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
     go (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
 
-    go (ArrT iota (BitT {}) _) = do
+    go (ArrT iota tau _) | isBitT tau = do
         cn <- cgIota iota
         appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
       where
@@ -459,7 +458,6 @@ cgDefaultValue tau cv = go tau
 cgConst :: Const -> Cg CExp
 cgConst UnitC            = return CVoid
 cgConst (BoolC b)        = return $ CBool b
-cgConst (BitC b)         = return $ CBit b
 cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
 cgConst (FixC {})        = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
 cgConst (FloatC _ r)     = return $ CFloat r
@@ -471,7 +469,7 @@ cgConst c@(ArrayC cs) = do
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
   where
     cgArrayConstInits :: Type -> [CExp] -> [C.Initializer]
-    cgArrayConstInits (BitT {}) ces =
+    cgArrayConstInits tau ces | isBitT tau =
         finalizeBits $ foldl mkBits (0,0,[]) ces
       where
         mkBits :: (CExp, Int, [C.Initializer]) -> CExp -> (CExp, Int, [C.Initializer])
@@ -480,12 +478,7 @@ cgConst c@(ArrayC cs) = do
             | otherwise                    = (cconst', i+1, cinits)
           where
             cconst' :: CExp
-            cconst' = cconst .|. (fromBits ce `shiftL` i)
-
-            fromBits :: CExp -> CExp
-            fromBits (CBit True)  = CInt 1
-            fromBits (CBit False) = CInt 0
-            fromBits ce           = ce
+            cconst' = cconst .|. (ce `shiftL` i)
 
         finalizeBits :: (CExp, Int, [C.Initializer]) -> [C.Initializer]
         finalizeBits (_,      0, cinits) = reverse cinits
@@ -566,10 +559,10 @@ cgExp (UnopE op e l) = do
         go op =
             panicdoc $ text "Illegal operation on complex values:" <+> ppr op
 
-    cgUnop _         ce Lnot = return $ CExp [cexp|!$ce|]
-    cgUnop (BitT {}) ce Bnot = return $ CExp [cexp|!$ce|]
-    cgUnop _         ce Bnot = return $ CExp [cexp|~$ce|]
-    cgUnop _         ce Neg  = return $ CExp [cexp|-$ce|]
+    cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
+    cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
+                       | otherwise  = return $ CExp [cexp|~$ce|]
+    cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
 
     cgCast :: CExp -> Type -> Type -> Cg CExp
     cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
@@ -825,7 +818,7 @@ cgExp (PrintE nl es l) = do
     cgPrintScalar :: Type -> CExp -> Cg ()
     cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
     cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-    cgPrintScalar (BitT  {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "1" : "0");|]
+    cgPrintScalar (FixT I U (W 1)  0 _) ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
     cgPrintScalar (FixT I S (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
     cgPrintScalar (FixT I U (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
     cgPrintScalar (FixT I S _ 0 _)      ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
@@ -842,7 +835,7 @@ cgExp (PrintE nl es l) = do
         faildoc $ text "Cannot print type:" <+> ppr tau
 
     cgPrintArray :: Iota -> Type -> CExp -> Cg ()
-    cgPrintArray iota tau@(BitT {}) ce = do
+    cgPrintArray iota tau ce | isBitT tau = do
         cn    <- cgIota iota
         caddr <- cgAddrOf (ArrT iota tau noLoc) ce
         appendStm $ rl l [cstm|kz_bitarray_print($caddr, $cn);|]
@@ -949,7 +942,7 @@ cgType (UnitT {}) =
 cgType (BoolT {}) =
     return [cty|typename uint8_t|]
 
-cgType (BitT {}) =
+cgType tau | isBitT tau =
     return bIT_ARRAY_ELEM_TYPE
 
 cgType tau@(FixT _ S (W w) _ _)
@@ -981,7 +974,7 @@ cgType (StringT {}) =
 cgType (StructT s l) =
     return [cty|typename $id:(cstruct s l)|]
 
-cgType (ArrT (ConstI n _) (BitT _) _) =
+cgType (ArrT (ConstI n _) tau _) | isBitT tau =
     return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
 cgType (ArrT (ConstI n _) tau _) = do
@@ -1026,7 +1019,7 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg C.Type
-    cgParamType (ArrT (ConstI n _) (BitT _) _) =
+    cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
         return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (ConstI n _) tau _) = do
@@ -1048,7 +1041,7 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg C.Type
-    cgRetParamType (ArrT (ConstI n _) (BitT _) _) =
+    cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
         return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (ConstI n _) tau _) = do
@@ -1090,7 +1083,7 @@ cgStorage isTopLevel cv tau =
     go (UnitT {}) =
         return CVoid
 
-    go (ArrT iota (BitT {}) _) = do
+    go (ArrT iota tau _) | isBitT tau = do
         cn <- cgIota iota
         case cn of
           CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
@@ -1649,16 +1642,16 @@ void* $id:cf(void* _tinfo)
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp -> Bool
-isLvalue (CIdx (BitT {}) _ _) =
+isLvalue (CIdx tau _ _) | isBitT tau =
     False
 
 isLvalue (CIdx _ ce _) =
     isLvalue ce
 
-isLvalue (CSlice (BitT {}) carr (CInt i) _) =
+isLvalue (CSlice tau carr (CInt i) _) | isBitT tau =
     isLvalue carr && i `rem` bIT_ARRAY_ELEM_BITS == 0
 
-isLvalue (CSlice (BitT {}) _ _ _) =
+isLvalue (CSlice tau _ _ _) | isBitT tau =
     False
 
 isLvalue (CSlice _ carr _ _) =
@@ -1698,8 +1691,9 @@ isReturnedByRef _         = False
 
 -- | Write an element to an array.
 cgArrayWrite :: Type -> CExp -> CExp -> CExp -> Cg ()
-cgArrayWrite (BitT {}) carr ci cx = cgBitArrayWrite carr ci cx
-cgArrayWrite _         carr ci cx = appendStm [cstm|$carr[$ci] = $cx;|]
+cgArrayWrite tau carr ci cx
+    | isBitT tau = cgBitArrayWrite carr ci cx
+    | otherwise  = appendStm [cstm|$carr[$ci] = $cx;|]
 
 -- XXX: Should use more efficient bit twiddling code here. See:
 --
@@ -1736,10 +1730,10 @@ cgAssign _ _ CVoid =
 cgAssign (UnitT {}) _ ce =
    appendStm [cstm|$ce;|]
 
-cgAssign (RefT (BitT {}) _) (CIdx _ carr cidx) ce2 =
+cgAssign (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
     cgBitArrayWrite carr cidx ce2
 
-cgAssign tau0 ce1 ce2 | Just (iota, BitT {}) <- checkArrOrRefArrT tau0 = do
+cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
     clen <- cgIota iota
     cgAssignBitArray ce1 ce2 clen
 
@@ -1751,7 +1745,7 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
   where
     cgArrayAddr :: CExp -> Cg CExp
-    cgArrayAddr (CSlice (BitT _) _ _ _) =
+    cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
         panicdoc $ text "cgArrayAddr: the impossible happened!"
 
     cgArrayAddr (CSlice _ carr cidx _) =
@@ -1873,9 +1867,6 @@ cgLower tau ce = go ce
         return ce
 
     go ce@(CBool {}) =
-        return ce
-
-    go ce@(CBit {}) =
         return ce
 
     go ce@(CInt {}) =

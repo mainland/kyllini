@@ -802,7 +802,6 @@ evalFullComp comp = Comp <$> evalFullSteps (unComp comp)
 evalConst :: Const -> EvalM (Val Exp)
 evalConst UnitC              = return UnitV
 evalConst (BoolC f)          = return $ BoolV f
-evalConst (BitC f)           = return $ BitV f
 evalConst (FixC sc s w bp r) = return $ FixV sc s w bp r
 evalConst (FloatC fp r)      = return $ FloatV fp r
 evalConst (StringC s)        = return $ StringV s
@@ -839,8 +838,8 @@ evalExp (UnopE op e s) = do
     unop Neg val =
         maybePartialVal $ negate val
 
-    unop (Cast (BitT _)) (FixV _ _ _ (BP 0) r) =
-        return $ BitV (r /= 0)
+    unop (Cast tau) (FixV _ _ _ (BP 0) r) | isBitT tau =
+        return $ FixV I U (W 1) (BP 0) (if r == 0 then 0 else 1)
 
     unop (Cast (FixT sc s w (BP 0) _)) (FixV sc' s' _ (BP 0) r) | sc' == sc && s' == s =
         return $ FixV sc s w (BP 0) r
@@ -1491,7 +1490,6 @@ defaultValue tau =
     go :: Type -> EvalM (Val Exp)
     go (UnitT {})         = return UnitV
     go (BoolT {})         = return $ BoolV False
-    go (BitT {})          = return $ BitV False
     go (FixT sc s w bp _) = return $ FixV sc s w bp 0
     go (FloatT fp _)      = return $ FloatV fp 0
     go (StringT {})       = return $ StringV ""
@@ -1650,9 +1648,6 @@ instance ToExp (Val Exp) where
 
     toExp (BoolV f) =
         constE $ BoolC f
-
-    toExp (BitV f) =
-        constE $ BitC f
 
     toExp (FixV sc s w bp r) =
         constE $ FixC sc s w bp r

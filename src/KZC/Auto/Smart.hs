@@ -145,7 +145,11 @@ boolT :: Type
 boolT = BoolT noLoc
 
 bitT :: Type
-bitT = BitT noLoc
+bitT = FixT I U (W 1) (BP 0) noLoc
+
+isBitT :: Type -> Bool
+isBitT (FixT I U (W 1) (BP 0) _) = True
+isBitT _                         = False
 
 intT :: Type
 intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
