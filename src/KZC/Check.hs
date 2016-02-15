@@ -401,7 +401,8 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
         _ <- checkArrT tau
         return (intT, return C.Len)
 
-tcExp (Z.BinopE op e1 e2 l) exp_ty =
+tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
+    withExpContext e $
     binop op
   where
     binop :: Z.Binop -> Ti (Ti C.Exp)
