@@ -1668,8 +1668,7 @@ castVal tau2 e = do
             (Z.ArrayE {}, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
                 unifyTypes iota1 iota2
                 mkArrayCast etau1 etau2
-            _ ->
-                mkCast tau1 tau2
+            _ -> mkCast tau1 tau2
     return $ co mce
   where
     mkArrayCast :: Type -> Type -> Ti Co
@@ -1679,7 +1678,6 @@ castVal tau2 e = do
             (ces, l) <- mce >>= checkArrayE
             ces'     <- sequence (map (co . return) ces)
             return $ C.ArrayE ces' l
-
 
     checkArrayE :: C.Exp -> Ti ([C.Exp], SrcLoc)
     checkArrayE (C.ArrayE ces l) =
