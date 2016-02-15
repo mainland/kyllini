@@ -501,7 +501,8 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
         ce2   <- mce2
         return $ C.LetE cdecl ce2 l
 
-tcExp (Z.CallE f es l) exp_ty = do
+tcExp (Z.CallE f es l) exp_ty =
+    withCallContext f $ do
     (taus, tau_ret, co1) <- lookupVar f >>= checkFunT f nargs
     when (length taus /= nargs) $
         faildoc $
@@ -533,12 +534,21 @@ tcExp (Z.CallE f es l) exp_ty = do
         go (ST {})   = checkExp e tau
         go _         = castVal tau e
 
+    withCallContext :: MonadErr m
+                    => Z.Var
+                    -> m b
+                    -> m b
+    withCallContext f act =
+        alwaysWithLocContext f doc act
+      where
+        doc = text "In call to" <+> ppr f
+
     withArgContext :: MonadErr m
                    => Z.Exp
                    -> m b
                    -> m b
     withArgContext e act =
-        withLocContext e doc act
+        alwaysWithLocContext e doc act
       where
         doc = text "In argument:" <+> ppr e
 
