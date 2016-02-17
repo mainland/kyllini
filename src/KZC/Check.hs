@@ -1943,6 +1943,9 @@ unifyValTypes e1 e2 = do
     (tau2, mce2) <- inferVal e2
     unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2
 
+-- | Attempt to unify the types of two Ziria expressions that have already been
+-- type checked and elaborated, inserting appropriate coercions into the
+-- elaborated terms.
 unifyCompiledExpTypes :: Type -> Z.Exp -> Ti C.Exp
                       -> Type -> Z.Exp -> Ti C.Exp
                       -> Ti (Type, Ti C.Exp, Ti C.Exp)
