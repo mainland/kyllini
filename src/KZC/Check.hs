@@ -1134,6 +1134,11 @@ tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
     mce1 <- withSummaryContext cmd $
             collectCheckValCtx tau1 $
             checkExp e tau1
+    nu' <- compress nu
+    when (not (isUnitT nu')) $
+        withSummaryContext cmd $
+        warndocWhen WarnUnusedCommandBind $
+        text "Command discarded a result of type" <+> ppr nu'
     mce2 <- checkCmds cmds tau2
     return $ do ce1 <- withSummaryContext cmd $ mce1
                 cnu <- trans nu

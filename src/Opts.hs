@@ -169,7 +169,8 @@ wWarnFlagOpts =
 
 fWarnFlagOpts :: [(WarnFlag, String, String)]
 fWarnFlagOpts =
-  [ (WarnEmitArray, "warn-emit-array", "warn on an array emit when emits should be used instead")
+  [ (WarnEmitArray,         "warn-emit-array",          "warn on an array emit when emits should be used instead")
+  , (WarnUnusedCommandBind, "warn-unused-command-bind", "warn when a non-unit command result is unused")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])
