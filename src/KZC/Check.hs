@@ -1979,33 +1979,39 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         return (tau1, mce1, co mce2)
 
     go tau1 _ mce1 tau2 _ mce2 = do
-        maybe_tau <- lubType tau1 tau2
-        case maybe_tau of
-          Just tau -> do co1 <- mkCast tau1 tau
-                         co2 <- mkCast tau2 tau
-                         return (tau, co1 mce1, co2 mce2)
-          Nothing  -> do unifyTypes tau1 tau2
-                         return (tau1, mce1, mce2)
+        tau <- lubType tau1 tau2
+        co1 <- mkCast tau1 tau
+        co2 <- mkCast tau2 tau
+        return (tau, co1 mce1, co2 mce2)
 
-    lubType :: Type -> Type -> Ti (Maybe Type)
+    lubType :: Type -> Type -> Ti Type
     lubType (FixT sc1 s1 w1 0 l) (FixT sc2 s2 w2 0 _) | sc1 == sc2 =
-        return $ Just $ FixT sc1 (lubSignedness s1 s2) (max w1 w2) 0 l
+        return $ FixT sc1 (lubSignedness s1 s2) (max w1 w2) 0 l
 
     lubType (FloatT w1 l) (FloatT w2 _) =
-        return $ Just $ FloatT (max w1 w2) l
+        return $ FloatT (max w1 w2) l
 
     lubType (FixT _ _ _ _ l) (FloatT w _) =
-        return $ Just $ FloatT w l
+        return $ FloatT w l
 
     lubType (FloatT w _) (FixT _ _ _ _ l) =
-        return $ Just $ FloatT w l
+        return $ FloatT w l
 
     lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
         s <- lubComplex s1 s2
-        return $ Just $ StructT s l
+        return $ StructT s l
 
-    lubType _ _ =
-        return Nothing
+    lubType tau1@(FixT {}) tau2 = do
+        unifyTypes tau2 tau1
+        return tau1
+
+    lubType tau1@(FloatT {}) tau2 = do
+        unifyTypes tau2 tau1
+        return tau1
+
+    lubType tau1 tau2 = do
+        unifyTypes tau1 tau2
+        return tau1
 
     lubSignedness :: Signedness -> Signedness -> Signedness
     lubSignedness S _ = S
