@@ -12,7 +12,6 @@ module Opts (
 import Control.Monad (when)
 import System.Console.GetOpt
 import System.Environment (getProgName)
-import Data.Monoid
 
 import KZC.Flags
 import KZC.Globals
@@ -170,7 +169,7 @@ wWarnFlagOpts =
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
     case getOpt Permute options argv of
-      (fs,n,[] ) -> do let fs' = foldr ($) mempty fs
+      (fs,n,[] ) -> do let fs' = foldr ($) defaultFlags fs
                        setMaxErrContext (maxErrCtx fs')
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True

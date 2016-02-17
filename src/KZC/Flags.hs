@@ -12,6 +12,8 @@ module KZC.Flags (
     TraceFlag(..),
     Flags(..),
 
+    defaultFlags,
+
     MonadFlags(..),
     asksFlags,
 
@@ -45,6 +47,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import Data.Bits
 import Data.Int
+import Data.List (foldl')
 import Data.Monoid
 
 data ModeFlag = Help
@@ -150,6 +153,24 @@ instance Monoid Flags where
         , output  = output  f1 <> output f2
         , dumpDir = dumpDir f1 <> dumpDir f2
         }
+
+defaultFlags :: Flags
+defaultFlags =
+    setFlags setDynFlag  defaultDynFlags $
+    setFlags setWarnFlag defaultWarnFlags $
+    mempty
+  where
+    setFlags :: (a -> Flags -> Flags)
+             -> [a]
+             -> Flags
+             -> Flags
+    setFlags f xs flags = foldl' (flip f) flags xs
+
+    defaultDynFlags :: [DynFlag]
+    defaultDynFlags = []
+
+    defaultWarnFlags :: [WarnFlag]
+    defaultWarnFlags = []
 
 class Monad m => MonadFlags m where
     askFlags   :: m Flags
