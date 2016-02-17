@@ -100,8 +100,8 @@ mkSetOptFlag :: String
              -> [OptDescr (Flags -> Flags)]
 mkSetOptFlag pfx mfx set unset (f, str, desc) =
     [  Option  [] [pfx ++          mfx ++ str] (NoArg (set f)) desc
-    ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (unset f)) desc
-    ,  Option  [] [pfx ++ "no-" ++ mfx ++ str] (NoArg (unset f)) desc
+    ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (unset f)) ("don't " ++ desc)
+    ,  Option  [] [pfx ++ "no-" ++ mfx ++ str] (NoArg (unset f)) ("don't " ++ desc)
     ]
 
 modeFlagOpts :: [(ModeFlag, [Char], [String], String)]
