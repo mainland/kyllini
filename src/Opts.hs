@@ -21,7 +21,7 @@ options :: [OptDescr (Flags -> Flags)]
 options =
     map mkModeFlag modeFlagOpts ++
     otherOpts ++
-    concatMap (mkSetOptFlag "W" "" setWarnFlag unsetWarnFlag) wWarnFlagOpts ++
+    map (mkOptFlag "W" "" setWarnFlag) wWarnFlagOpts ++
     concatMap (mkSetOptFlag "f" "" setDynFlag unsetDynFlag) fDynFlagOpts ++
     map (mkOptFlag "d" "" setDynFlag) dDynFlagOpts ++
     map (mkOptFlag "d" "dump-" setDumpFlag) dDumpFlagOpts ++
