@@ -179,8 +179,6 @@ instance MonadErr m => MonadErr (SEFKT m) where
                           sk' x ek' fk' = localErrCtx (const ctx) (sk x ek' fk')
                       localErrCtx f (unSEFKT m ek' fk' sk')
 
-    warnIsError = lift warnIsError
-
     displayWarning = lift . displayWarning
 
     panic = lift . panic

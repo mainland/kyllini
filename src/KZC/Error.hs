@@ -51,6 +51,7 @@ import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
 
+import KZC.Flags
 import KZC.Globals
 import KZC.Pretty
 
@@ -75,11 +76,9 @@ prettyFromException x = do
     PrettyException a <- fromException x
     cast a
 
-class MonadException m => MonadErr m where
+class (MonadFlags m, MonadException m) => MonadErr m where
     askErrCtx    :: m [ErrorContext]
     localErrCtx  :: ([ErrorContext] -> [ErrorContext]) -> m a -> m a
-
-    warnIsError  :: m Bool
 
     displayWarning :: ContextException -> m ()
 
@@ -95,7 +94,7 @@ class MonadException m => MonadErr m where
 
     warn :: Exception e => e -> m ()
     warn ex = do
-        werror <- warnIsError
+        werror <- asksFlags (testWarnFlag WarnError)
         if werror
           then err ex_warn
           else do ctx <- askErrCtx
@@ -108,8 +107,6 @@ instance MonadErr m => MonadErr (MaybeT m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = MaybeT $ localErrCtx ctx (runMaybeT m)
 
-    warnIsError = lift warnIsError
-
     displayWarning = lift . displayWarning
 
     panic = lift . panic
@@ -119,8 +116,6 @@ instance MonadErr m => MonadErr (MaybeT m) where
 instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = ErrorT $ localErrCtx ctx (runErrorT m)
-
-    warnIsError = lift warnIsError
 
     displayWarning = lift . displayWarning
 
@@ -132,8 +127,6 @@ instance MonadErr m => MonadErr (ReaderT r m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = ReaderT $ \r -> localErrCtx ctx (runReaderT m r)
 
-    warnIsError = lift warnIsError
-
     displayWarning = lift . displayWarning
 
     panic = lift . panic
@@ -144,8 +137,6 @@ instance MonadErr m => MonadErr (StateT r m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = StateT $ \s -> localErrCtx ctx (runStateT m s)
 
-    warnIsError = lift warnIsError
-
     displayWarning = lift . displayWarning
 
     panic = lift . panic
@@ -155,8 +146,6 @@ instance MonadErr m => MonadErr (StateT r m) where
 instance (Monoid w, MonadErr m) => MonadErr (WriterT w m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = WriterT $ localErrCtx ctx (runWriterT m)
-
-    warnIsError = lift warnIsError
 
     displayWarning = lift . displayWarning
 

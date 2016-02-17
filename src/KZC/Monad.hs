@@ -113,8 +113,6 @@ instance MonadErr KZC where
     askErrCtx       = asks errctx
     localErrCtx f m = local (\env -> env { errctx = f (errctx env) }) m
 
-    warnIsError = asksFlags (testWarnFlag WarnError)
-
     displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
 
 instance MonadFlags KZC where
