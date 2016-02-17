@@ -63,6 +63,10 @@ funT taus tau = FunT [] taus tau (taus `srcspan` tau)
 structName :: StructDef -> Z.Struct
 structName (StructDef s _ _) = s
 
+isUnitT :: Type -> Bool
+isUnitT (UnitT {}) = True
+isUnitT _          = False
+
 isPureT :: Type -> Bool
 isPureT (ST {}) = False
 isPureT _       = True
