@@ -1970,11 +1970,11 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
 
     -- Always cast integer constants /down/. This lets us, for example, treat
     -- @1@ as an @int8@.
-    go tau1@(FixT {}) (Z.ConstE {}) mce1 tau2 _ mce2 = do
+    go tau1@(FixT {}) (Z.ConstE {}) mce1 tau2@(FixT {}) _ mce2 = do
         co <- mkCast tau1 tau2
         return (tau2, co mce1, mce2)
 
-    go tau1 _ mce1 tau2@(FixT {}) (Z.ConstE {}) mce2 = do
+    go tau1@(FixT {}) _ mce1 tau2@(FixT {}) (Z.ConstE {}) mce2 = do
         co <- mkCast tau2 tau1
         return (tau1, mce1, co mce2)
 
