@@ -21,6 +21,9 @@ module KZC.Error (
     errdoc,
     warndoc,
 
+    warnWhen,
+    warndocWhen,
+
     ErrorContext(..),
     ContextException(..),
     toContextException,
@@ -178,6 +181,12 @@ errdoc msg = err (FailException msg)
 
 warndoc :: MonadErr m => Doc -> m ()
 warndoc msg = warn (FailException msg)
+
+warnWhen :: (Exception e, MonadErr m) => WarnFlag -> e -> m ()
+warnWhen f e = whenWarnFlag f $ warn e
+
+warndocWhen :: MonadErr m => WarnFlag -> Doc -> m ()
+warndocWhen f msg = warnWhen f (FailException msg)
 
 data ErrorContext = ErrorContext { ctxAlways :: Bool
                                  , ctxLoc    :: Loc
