@@ -61,6 +61,7 @@ SOURCE = \
 	KZC/Cg/Util.hs \
 	KZC/Check.hs \
 	KZC/Check/Monad.hs \
+	KZC/Check/Smart.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
 	KZC/Core/Lint.hs \
