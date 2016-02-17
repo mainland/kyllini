@@ -21,7 +21,8 @@ options =
     map mkModeFlag modeFlagOpts ++
     otherOpts ++
     map (mkOptFlag "W" "" setWarnFlag) wWarnFlagOpts ++
-    concatMap (mkSetOptFlag "f" "" setDynFlag unsetDynFlag) fDynFlagOpts ++
+    concatMap (mkSetOptFlag "f" "" setWarnFlag unsetWarnFlag) fWarnFlagOpts ++
+    concatMap (mkSetOptFlag "f" "" setDynFlag  unsetDynFlag)  fDynFlagOpts ++
     map (mkOptFlag "d" "" setDynFlag) dDynFlagOpts ++
     map (mkOptFlag "d" "dump-" setDumpFlag) dDumpFlagOpts ++
     map (mkOptFlag "d" "trace-" setTraceFlag) dTraceFlagOpts
@@ -164,6 +165,11 @@ dTraceFlagOpts =
 wWarnFlagOpts :: [(WarnFlag, String, String)]
 wWarnFlagOpts =
   [ (WarnError, "error", "make warnings errors")
+  ]
+
+fWarnFlagOpts :: [(WarnFlag, String, String)]
+fWarnFlagOpts =
+  [ (WarnEmitArray, "warn-emit-array", "warn on an array emit when emits should be used instead")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])

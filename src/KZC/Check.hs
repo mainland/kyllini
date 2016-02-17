@@ -53,6 +53,7 @@ import KZC.Check.Types
 import qualified KZC.Core.Smart as C
 import qualified KZC.Core.Syntax as C
 import KZC.Error
+import KZC.Flags
 import KZC.Platform
 import KZC.Summary
 import KZC.Trace
@@ -818,7 +819,7 @@ tcExp (Z.TakesE i l) exp_ty = do
 -- output type shouldn't be either. This means that a computation that reads
 -- scalars and writes arrays needs an annotation.
 
-tcExp (Z.EmitE e l) exp_ty = do
+tcExp e0@(Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT TauK l
     a       <- newMetaTvT TauK l
     b       <- newMetaTvT TauK l
@@ -837,7 +838,8 @@ tcExp (Z.EmitE e l) exp_ty = do
 
     go omega s a b tau0@(ArrT _ tau _) | not (couldBeArrT a) || not (couldBeArrT b) = do
         [a', b'] <- sanitizeTypes [a, b]
-        warndoc $ nest 2 $
+        withSummaryContext e0 $
+          warndocWhen WarnEmitArray $ nest 2 $
           text "emit called with argument of type" <+> ppr tau0 <+/>
           text "on a stream of type" <+>
           ppr (ST [] omega s a' b' noLoc) <>

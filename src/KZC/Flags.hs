@@ -71,6 +71,7 @@ data DynFlag = Quiet
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError
+              | WarnEmitArray
   deriving (Eq, Ord, Enum, Show)
 
 data DumpFlag = DumpCPP
@@ -170,7 +171,7 @@ defaultFlags =
     defaultDynFlags = []
 
     defaultWarnFlags :: [WarnFlag]
-    defaultWarnFlags = []
+    defaultWarnFlags = [WarnEmitArray]
 
 class Monad m => MonadFlags m where
     askFlags   :: m Flags
