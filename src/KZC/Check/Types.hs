@@ -49,6 +49,7 @@ import KZC.Core.Syntax (Scale(..),
                         FP(..))
 import KZC.Globals
 import KZC.Name
+import KZC.Platform
 import KZC.Pretty
 import KZC.Uniq
 import KZC.Util.SetLike
@@ -191,8 +192,10 @@ instance Pretty Type where
         pprBase PI U = text "urad"
 
         pprW :: W -> BP -> Doc
-        pprW (W w) (BP 0)  = ppr w
-        pprW (W w) (BP bp) = parens (commasep [ppr w, ppr bp])
+        pprW w (BP 0)
+            | w == dEFAULT_INT_WIDTH = empty
+            | otherwise              = ppr w
+        pprW w (BP bp)               = parens (commasep [ppr w, ppr bp])
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
