@@ -393,7 +393,7 @@ tcExp (Z.UnopE op e1 l) exp_ty = do
 
     unop (Z.Cast ztau2) tau1 = do
         tau2 <- fromZ ztau2
-        checkCast tau1 tau2
+        checkLegalCast tau1 tau2
         let mcop = do ctau2 <- trans tau2
                       return $ C.Cast ctau2
         return (tau2, mcop)
@@ -1707,7 +1707,7 @@ castVal tau2 e = do
 
 mkCast :: Type -> Type -> Ti Co
 mkCast tau1 tau2 = do
-    checkCast tau1 tau2
+    checkLegalCast tau1 tau2
     return $ \mce -> do
         tau1' <- compress tau1
         tau2' <- compress tau2
@@ -1758,10 +1758,10 @@ mkCastT tau1 tau2 = do
             faildoc $ nest 2 $
             text "Expected arrow expression, but got:" <+/> ppr e
 
--- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
--- value of type @tau2@.
-checkCast :: Type -> Type -> Ti ()
-checkCast tau1 tau2 = do
+-- | @checkLegalCast tau1 tau2@ checks that a value of type @tau1@ can be
+-- legally cast to a value of type @tau2@.
+checkLegalCast :: Type -> Type -> Ti ()
+checkLegalCast tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' tau2'
