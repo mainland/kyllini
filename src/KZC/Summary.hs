@@ -1,13 +1,14 @@
 -- |
 -- Module      :  KZC.Summary
--- Copyright   :  (c) 2014-2015 Drexel University 2014
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Summary (
     Summary(..),
     withSummaryContext,
-    alwaysWithSummaryContext
+    alwaysWithSummaryContext,
+    maybeWithSummaryContext
   ) where
 
 import Data.Loc
@@ -33,5 +34,17 @@ alwaysWithSummaryContext :: (Located a, Summary a, MonadErr m)
                          -> m b
 alwaysWithSummaryContext a act =
     alwaysWithLocContext a doc act
+  where
+    doc = text "In" <+> summary a
+
+maybeWithSummaryContext :: (Located a, Summary a, MonadErr m)
+                        => Maybe a
+                        -> m b
+                        -> m b
+maybeWithSummaryContext Nothing act =
+    act
+
+maybeWithSummaryContext (Just a) act =
+    withLocContext a doc act
   where
     doc = text "In" <+> summary a
