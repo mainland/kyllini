@@ -331,15 +331,15 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (UnitT l) exp_ty
         return $ C.UnitC
 
-    tcConst(Z.BoolC b) = do
+    tcConst (Z.BoolC b) = do
         instType (BoolT l) exp_ty
         return $ C.BoolC b
 
-    tcConst(Z.BitC b)  = do
+    tcConst (Z.BitC b)  = do
         instType (BitT l) exp_ty
         return $ C.FixC C.I C.U (C.W 1) 0 (if b then 1 else 0)
 
-    tcConst(Z.FixC zsc zs zw zbp r) = do
+    tcConst (Z.FixC zsc zs zw zbp r) = do
         sc  <- fromZ zsc
         s   <- fromZ zs
         w   <- fromZ zw
@@ -351,13 +351,13 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (FixT sc s w bp l) exp_ty
         return $ C.FixC csc cs cw cbp r
 
-    tcConst(Z.FloatC zw f) = do
+    tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
         cw <- trans w
         instType (FloatT w l) exp_ty
         return $ C.FloatC cw (toRational f)
 
-    tcConst(Z.StringC s)  = do
+    tcConst (Z.StringC s)  = do
         instType (StringT l) exp_ty
         return $ C.StringC s
 
