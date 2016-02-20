@@ -9,7 +9,7 @@
 
 -- |
 -- Module      :  KZC.Check
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -908,7 +908,7 @@ tcExp (Z.ParE _ e (Z.WriteE ztau l) _) tau_exp = do
     instType tau tau_exp
     checkExp e tau
 
-tcExp (Z.ParE ann e1 e2 l) tau_exp = do
+tcExp e@(Z.ParE ann e1 e2 l) tau_exp = do
     omega1   <- newMetaTvT OmegaK l
     omega2   <- newMetaTvT OmegaK l
     a        <- newMetaTvT TauK l
@@ -922,7 +922,7 @@ tcExp (Z.ParE ann e1 e2 l) tau_exp = do
     mce2     <- withSummaryContext e2 $
                 checkExp e2 tau2
     co       <- withSTContext tau1 tau2 $
-                withSummaryContext e2 $
+                withSummaryContext e $
                 mkCastT b b'
     omega  <- joinOmega omega1 omega2
     instType (ST [] omega a a c l) tau_exp
