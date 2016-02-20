@@ -40,6 +40,7 @@ import Data.List (sort)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Typeable
@@ -1680,15 +1681,19 @@ mkSTOmega = do
 -- integers that need to be represented as arrays on, say, int8's, and it is
 -- also the only case where we know we can make casting memory efficient.
 castVal :: Type -> Z.Exp -> Ti (Ti C.Exp)
-castVal tau2 e = do
+castVal tau2 e0 = do
     (tau1, mce) <- inferVal e
     co <- case (e, tau1, tau2) of
-            (Z.ArrayE {}, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
+            (Z.ArrayE es _, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
                 unifyTypes iota1 iota2
+                mapM_ (\e -> checkSafeCast WarnUnsafeAutoCast (Just e) etau1 etau2) es
                 mkArrayCast etau1 etau2
-            _ -> mkCast tau1 tau2
+            _ -> mkCheckedSafeCast e tau1 tau2
     return $ co mce
   where
+    e :: Z.Exp
+    e = constFold e0
+
     mkArrayCast :: Type -> Type -> Ti Co
     mkArrayCast tau1 tau2 = do
         co <- mkCast tau1 tau2
@@ -1722,6 +1727,12 @@ mkCast tau1 tau2 = do
         ce   <- mce
         return $ C.UnopE (C.Cast ctau) ce (srclocOf ce)
 
+mkCheckedSafeCast :: Z.Exp -> Type -> Type -> Ti Co
+mkCheckedSafeCast e tau1 tau2 = do
+    co <- mkCast tau1 tau2
+    checkSafeCast WarnUnsafeAutoCast (Just e) tau1 tau2
+    return co
+
 -- | @mkCastT tau1 tau2@ generates a computation of type @ST T tau1 tau2@ that
 -- casts values from @tau1@ to @tau2@.
 mkCastT :: Type -> Type -> Ti Co
@@ -1735,6 +1746,7 @@ mkCastT tau1 tau2 = do
         return id
 
     go tau1 tau2 = do
+        checkSafeCast WarnUnsafeParAutoCast Nothing tau1 tau2
         co <- mkCast tau1 tau2
         let mkPipe = do
             ctau1 <- trans tau1
@@ -1796,6 +1808,84 @@ checkLegalCast tau1 tau2 = do
       `catch` \(_ :: UnificationException) -> do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
+
+-- | Check whether casting the given expression from @tau1@ to @tau2@ is
+-- safe. If it is definitely unsafe, signal an error; if it may be unsafe,
+-- signal a warning if the specified warning flag is set.
+checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
+checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 r) l)) tau1 tau2 =
+    withSummaryContext e $ do
+    tau1' <- fromZ $ Z.FixT sc1 s1 w1 bp1 l
+    when (tau1' /= tau1) $
+        withSummaryContext e $
+        faildoc $ align $
+        text "Expected type:" <+> ppr tau1' </>
+        text "     Got type:" <+> ppr tau1
+    go tau2
+  where
+    go :: Type -> Ti ()
+    go (FixT _ U _ _ _) | r < 0 =
+        return ()
+
+    go (FixT _ U (W w) (BP 0) _) | r > 2^w-1 =
+        faildoc $ align $
+        text "Integer constant" <+> ppr (numerator r) <+>
+        text "cannot be represented as type" <+> ppr tau2
+
+    go (FixT _ S (W w) (BP 0) _) | r > 2^(w-1)-1 =
+        faildoc $ align $
+        text "Integer constant" <+> ppr (numerator r) <+>
+        text "cannot be represented as type" <+> ppr tau2
+
+    go (FixT _ S (W w) (BP 0) _) | r < -2^(w-1) =
+        faildoc $ align $
+        text "Integer constant" <+> ppr (numerator r) <+>
+        text "cannot be represented as type" <+> ppr tau2
+
+    go _ =
+        return ()
+
+checkSafeCast f e tau1@(FixT _ _ (W w1) (BP 0) _) tau2@(FixT _ _ (W w2) (BP 0) _) | w2 < w1 =
+    maybeWithSummaryContext e $
+    warndocWhen f $ align $
+    text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
+
+checkSafeCast f e tau1@(FixT _ s1 _ (BP 0) _) tau2@(FixT _ s2 _ (BP 0) _) | s1 /= s2 =
+    maybeWithSummaryContext e $
+    warndocWhen f $ align $
+    text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
+
+checkSafeCast _f _e _tau1 _tau2 =
+    return ()
+
+-- | Perform constant folding. This does a very limited amount of
+-- "optimization," mainly so that we can give decent errors during implicit
+-- casts regarding integral constants being too large.
+constFold :: Z.Exp -> Z.Exp
+constFold (Z.ArrayE es l) =
+    Z.ArrayE (map constFold es) l
+
+constFold (Z.UnopE Z.Neg (Z.ConstE (Z.FixC sc _ w bp r) l) _) =
+    Z.ConstE (Z.FixC sc Z.S w bp (negate r)) l
+
+constFold (Z.BinopE op e1 e2 l) =
+    constFoldBinopE op (constFold e1) (constFold e2)
+  where
+    constFoldBinopE :: Z.Binop -> Z.Exp -> Z.Exp -> Z.Exp
+    constFoldBinopE op (Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) _) (Z.ConstE (Z.FixC sc2 s2 w2 bp2 y) _)
+        | (sc1, s1, w1, bp1) == (sc2, s2, w2, bp2), Just z <- constFoldBinop op x y =
+           Z.ConstE (Z.FixC sc1 s1 w1 bp1 z) l
+
+    constFoldBinopE op e1 e2 = Z.BinopE op e1 e2 l
+
+    constFoldBinop :: Z.Binop -> Rational -> Rational -> Maybe Rational
+    constFoldBinop Z.Add x y = Just $ x + y
+    constFoldBinop Z.Sub x y = Just $ x - y
+    constFoldBinop Z.Mul x y = Just $ x * y
+    constFoldBinop Z.Pow x y = Just $ x ^ numerator y
+    constFoldBinop _     _ _ = Nothing
+
+constFold e = e
 
 -- | Implement the join operation for types of kind omega
 joinOmega :: Type -> Type -> Ti Type
@@ -1977,18 +2067,18 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
 
     -- Always cast integer constants /down/. This lets us, for example, treat
     -- @1@ as an @int8@.
-    go tau1@(FixT {}) (Z.ConstE {}) mce1 tau2@(FixT {}) _ mce2 = do
-        co <- mkCast tau1 tau2
+    go tau1@(FixT {}) e@(Z.ConstE {}) mce1 tau2@(FixT {}) _ mce2 = do
+        co <- mkCheckedSafeCast e tau1 tau2
         return (tau2, co mce1, mce2)
 
-    go tau1@(FixT {}) _ mce1 tau2@(FixT {}) (Z.ConstE {}) mce2 = do
-        co <- mkCast tau2 tau1
+    go tau1@(FixT {}) _ mce1 tau2@(FixT {}) e@(Z.ConstE {}) mce2 = do
+        co <- mkCheckedSafeCast e tau2 tau1
         return (tau1, mce1, co mce2)
 
-    go tau1 _ mce1 tau2 _ mce2 = do
+    go tau1 e1 mce1 tau2 e2 mce2 = do
         tau <- lubType tau1 tau2
-        co1 <- mkCast tau1 tau
-        co2 <- mkCast tau2 tau
+        co1 <- mkCheckedSafeCast e1 tau1 tau
+        co2 <- mkCheckedSafeCast e2 tau2 tau
         return (tau, co1 mce1, co2 mce2)
 
     lubType :: Type -> Type -> Ti Type
