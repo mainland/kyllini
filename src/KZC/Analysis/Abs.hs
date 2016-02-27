@@ -325,3 +325,6 @@ absEval e = go e
         v_e1 <- go e1
         extendWildVars [(wv, tau)] $ do
         bindDom wv v_e1 (go e2)
+
+    go (LutE e) =
+        go e

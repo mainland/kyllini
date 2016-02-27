@@ -546,6 +546,9 @@ inferExp (ReturnE _ e l) = do
     a = "a"
     b = "b"
 
+inferExp (LutE e) =
+    inferExp e
+
 inferExp (BindE wv tau e1 e2 _) = do
     (alphas, tau', s,  a,  b) <- withFvContext e1 $
                                  inferExp e1 >>= checkPureishSTC

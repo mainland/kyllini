@@ -211,6 +211,8 @@ data Exp = ConstE Const !SrcLoc
          -- Monadic operations
          | ReturnE InlineAnn Exp !SrcLoc
          | BindE WildVar Type Exp Exp !SrcLoc
+         -- LUT
+         | LutE Exp
   deriving (Eq, Ord, Read, Show)
 
 -- | An argument to a call to a computation function. Arguments may be
@@ -579,6 +581,10 @@ instance Pretty Exp where
     pprPrec _ e@(BindE {}) =
         ppr (expToStms e)
 
+    pprPrec p (LutE e) =
+        parensIf (p > appPrec) $
+        text "lut" <+> pprPrec appPrec1 e
+
 pprBody :: Exp -> Doc
 pprBody e =
     case expToStms e of
@@ -781,6 +787,7 @@ instance Fvs Exp Var where
     fvs (ErrorE {})                 = mempty
     fvs (ReturnE _ e _)             = fvs e
     fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
+    fvs (LutE e)                    = fvs e
 
 instance Fvs (Arg l) Var where
     fvs (ExpA e)  = fvs e
@@ -864,6 +871,7 @@ instance HasVars Exp Var where
     allVars (ErrorE {})                 = mempty
     allVars (ReturnE _ e _)             = allVars e
     allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
+    allVars (LutE e)                    = allVars e
 
 instance HasVars (Arg l) Var where
     allVars (ExpA e)  = allVars e
@@ -1029,6 +1037,9 @@ instance Subst Iota IVar Exp where
     substM (BindE wv tau e1 e2 l) =
         BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
+    substM (LutE e) =
+        LutE <$> substM e
+
 instance Subst Iota IVar (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e
     substM (CompA c) = CompA <$> substM c
@@ -1155,6 +1166,9 @@ instance Subst Type TyVar Exp where
 
     substM (BindE wv tau e1 e2 l) =
         BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
+
+    substM (LutE e) =
+        LutE <$> substM e
 
 instance Subst Type TyVar (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e
@@ -1289,6 +1303,9 @@ instance Subst Exp Var Exp where
         e1' <- substM e1
         freshen wv $ \wv' -> do
         BindE wv' tau e1' <$> substM e2 <*> pure l
+
+    substM (LutE e) =
+        LutE <$> substM e
 
 instance Subst Exp Var (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e

@@ -850,6 +850,9 @@ evalExp (BindE wv tau e1 e2 s) = do
     wrapBind _ _ _ val2 =
         return val2
 
+evalExp (LutE e) =
+    evalExp e
+
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the
 -- heap. We use this when we need to sequence two commands and the first command

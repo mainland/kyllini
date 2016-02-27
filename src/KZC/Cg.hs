@@ -896,6 +896,9 @@ cgExp e = do
         extendVarCExps [(bVar v, ce1)] $ do
         cgExp e2
 
+    go (LutE e) =
+        cgExp e
+
 cgIVar :: IVar -> Cg (CExp, C.Param)
 cgIVar iv = do
     civ <- cvar iv
