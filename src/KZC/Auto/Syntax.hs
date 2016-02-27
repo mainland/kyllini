@@ -1026,7 +1026,7 @@ instance Subst Iota IVar Exp where
     substM (ReturnE ann e l) =
         ReturnE ann <$> substM e <*> pure l
 
-    substM (BindE wv tau e1 e2 l) = do
+    substM (BindE wv tau e1 e2 l) =
         BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
 
 instance Subst Iota IVar (Arg l) where
