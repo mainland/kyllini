@@ -1,6 +1,8 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Module      :  Opts
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cdrexel.edu
 
@@ -9,14 +11,15 @@ module Opts (
     usage
   ) where
 
-import Control.Monad (when)
+import Control.Monad ((>=>),
+                      when)
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
 import KZC.Flags
 import KZC.Globals
 
-options :: [OptDescr (Flags -> Flags)]
+options :: forall m . Monad m => [OptDescr (Flags -> m Flags)]
 options =
     map mkModeFlag modeFlagOpts ++
     otherOpts ++
@@ -27,81 +30,87 @@ options =
     map (mkOptFlag "d" "dump-" setDumpFlag) dDumpFlagOpts ++
     map (mkOptFlag "d" "trace-" setTraceFlag) dTraceFlagOpts
   where
-    otherOpts :: [OptDescr (Flags -> Flags)]
+    otherOpts :: [OptDescr (Flags -> m Flags)]
     otherOpts =
-        [ Option ['q'] ["quiet"]      (NoArg (setDynFlag Quiet))          "be quiet"
-        , Option ['v'] ["verbose"]    (OptArg maybeSetVerbLevel "LEVEL")  "be verbose"
-        , Option ['P'] []             (NoArg (setDynFlag StopAfterParse)) "stop after parsing"
-        , Option ['C'] []             (NoArg (setDynFlag StopAfterCheck)) "stop after type checking"
-        , Option ['I'] []             (ReqArg includePathOpt "DIR")       "include DIR"
-        , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")   "define macro"
-        , Option ['o'] ["output"]     (ReqArg outOpt "FILE")              "output FILE"
-        , Option []    ["ferrctx"]    (ReqArg maxErrCtxOpt "INT")         "set maximum error context"
+        [ Option ['q'] ["quiet"]      (NoArg (setDynFlagM Quiet))          "be quiet"
+        , Option ['v'] ["verbose"]    (OptArg maybeSetVerbLevel "LEVEL")   "be verbose"
+        , Option ['P'] []             (NoArg (setDynFlagM StopAfterParse)) "stop after parsing"
+        , Option ['C'] []             (NoArg (setDynFlagM StopAfterCheck)) "stop after type checking"
+        , Option ['I'] []             (ReqArg includePathOpt "DIR")        "include DIR"
+        , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")    "define macro"
+        , Option ['o'] ["output"]     (ReqArg outOpt "FILE")               "output FILE"
+        , Option []    ["ferrctx"]    (ReqArg maxErrCtxOpt "INT")          "set maximum error context"
         , Option [] ["fmax-simplifier-iterations"]
             (ReqArg maxSimplIterationsOpt "INT")
             "set maximum simplification iterations"
         ]
 
-    maybeSetVerbLevel :: Maybe String -> Flags -> Flags
+    setDynFlagM :: DynFlag -> Flags -> m Flags
+    setDynFlagM f fs = return $ setDynFlag f fs
+
+    maybeSetVerbLevel :: Maybe String -> Flags -> m Flags
     maybeSetVerbLevel Nothing fs =
-        fs { verbLevel = verbLevel fs + 1 }
+        return fs { verbLevel = verbLevel fs + 1 }
 
     maybeSetVerbLevel (Just s) fs =
         case reads s of
-          [(n, "")]  -> fs { verbLevel = n }
-          _          -> error "argument to --verbose must be an integer"
+          [(n, "")]  -> return fs { verbLevel = n }
+          _          -> fail "argument to --verbose must be an integer"
 
-    maxErrCtxOpt :: String -> Flags -> Flags
+    maxErrCtxOpt :: String -> Flags -> m Flags
     maxErrCtxOpt s fs =
         case reads s of
-          [(n, "")]  -> fs { maxErrCtx = n }
-          _          -> error "argument to --ferrctx must be an integer"
+          [(n, "")]  -> return fs { maxErrCtx = n }
+          _          -> fail "argument to --ferrctx must be an integer"
 
-    maxSimplIterationsOpt :: String -> Flags -> Flags
+    maxSimplIterationsOpt :: String -> Flags -> m Flags
     maxSimplIterationsOpt s fs =
         case reads s of
-          [(n, "")]  -> fs { maxSimpl = n }
-          _          -> error "argument to --fmax-simplifier-iterations must be an integer"
+          [(n, "")]  -> return fs { maxSimpl = n }
+          _          -> fail "argument to --fmax-simplifier-iterations must be an integer"
 
-    outOpt :: String -> Flags -> Flags
-    outOpt path fs = fs { output = Just path }
+    outOpt :: String -> Flags -> m Flags
+    outOpt path fs = return fs { output = Just path }
 
-    includePathOpt :: String -> Flags -> Flags
-    includePathOpt path fs = fs { includePaths = includePaths fs ++ [path] }
+    includePathOpt :: String -> Flags -> m Flags
+    includePathOpt path fs = return fs { includePaths = includePaths fs ++ [path] }
 
-    defineOpt :: String -> Flags -> Flags
-    defineOpt def fs = fs { defines = defines fs ++ [split (/= '=') def] }
+    defineOpt :: String -> Flags -> m Flags
+    defineOpt def fs = return fs { defines = defines fs ++ [split (/= '=') def] }
 
     split :: (a -> Bool) -> [a] -> ([a], [a])
     split p s = case split p s of
                   (xs, []) -> (xs, [])
                   (xs, ys) -> (xs, drop 1 ys)
 
-mkModeFlag :: (ModeFlag, [Char], [String], String)
-           -> OptDescr (Flags -> Flags)
+mkModeFlag :: Monad m
+           => (ModeFlag, [Char], [String], String)
+           -> OptDescr (Flags -> m Flags)
 mkModeFlag (f, so, lo, desc) =
     Option so lo (NoArg set) desc
   where
-    set fs = fs { mode = f }
+    set fs = return fs { mode = f }
 
-mkOptFlag :: String
+mkOptFlag :: Monad m
+          => String
           -> String
           -> (f -> Flags -> Flags)
           -> (f, String, String)
-          -> OptDescr (Flags -> Flags)
+          -> OptDescr (Flags -> m Flags)
 mkOptFlag pfx mfx set (f, str, desc) =
-    Option  [] [pfx ++ mfx ++ str] (NoArg (set f)) desc
+    Option  [] [pfx ++ mfx ++ str] (NoArg (return . set f)) desc
 
-mkSetOptFlag :: String
+mkSetOptFlag :: Monad m
+             => String
              -> String
              -> (f -> Flags -> Flags)
              -> (f -> Flags -> Flags)
              -> (f, String, String)
-             -> [OptDescr (Flags -> Flags)]
+             -> [OptDescr (Flags -> m Flags)]
 mkSetOptFlag pfx mfx set unset (f, str, desc) =
-    [  Option  [] [pfx ++          mfx ++ str] (NoArg (set f)) desc
-    ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (unset f)) ("don't " ++ desc)
-    ,  Option  [] [pfx ++ "no-" ++ mfx ++ str] (NoArg (unset f)) ("don't " ++ desc)
+    [  Option  [] [pfx ++          mfx ++ str] (NoArg (return . set f)) desc
+    ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (return . unset f)) ("don't " ++ desc)
+    ,  Option  [] [pfx ++ "no-" ++ mfx ++ str] (NoArg (return . unset f)) ("don't " ++ desc)
     ]
 
 modeFlagOpts :: [(ModeFlag, [Char], [String], String)]
@@ -178,7 +187,7 @@ fWarnFlagOpts =
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
     case getOpt Permute options argv of
-      (fs,n,[] ) -> do let fs' = foldr ($) defaultFlags fs
+      (fs,n,[])  -> do fs' <- foldl (>=>) return fs defaultFlags
                        setMaxErrContext (maxErrCtx fs')
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
@@ -192,4 +201,4 @@ usage :: IO String
 usage = do
     progname   <- getProgName
     let header =  "Usage: " ++ progname ++ " [OPTION...] files..."
-    return $ usageInfo header options
+    return $ usageInfo header (options :: [OptDescr (Flags -> IO Flags)])
