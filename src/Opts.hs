@@ -13,6 +13,7 @@ module Opts (
 
 import Control.Monad ((>=>),
                       when)
+import Data.List (foldl')
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
@@ -39,6 +40,7 @@ options =
         , Option ['I'] []             (ReqArg includePathOpt "DIR")        "include DIR"
         , Option ['D'] []             (ReqArg defineOpt "macro[=defn]")    "define macro"
         , Option ['o'] ["output"]     (ReqArg outOpt "FILE")               "output FILE"
+        , Option []    ["ddump-all"]  (NoArg dumpAll)                      "dump all output"
         , Option []    ["ferrctx"]    (ReqArg maxErrCtxOpt "INT")          "set maximum error context"
         , Option [] ["fmax-simplifier-iterations"]
             (ReqArg maxSimplIterationsOpt "INT")
@@ -68,6 +70,10 @@ options =
         case reads s of
           [(n, "")]  -> return fs { maxSimpl = n }
           _          -> fail "argument to --fmax-simplifier-iterations must be an integer"
+
+    dumpAll :: Flags -> m Flags
+    dumpAll fs =
+        return $ foldl' (flip setDumpFlag) fs [minBound..maxBound]
 
     outOpt :: String -> Flags -> m Flags
     outOpt path fs = return fs { output = Just path }
