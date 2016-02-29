@@ -75,7 +75,7 @@ data WarnFlag = WarnError
               | WarnUnusedCommandBind
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data DumpFlag = DumpCPP
               | DumpRename
@@ -86,7 +86,7 @@ data DumpFlag = DumpCPP
               | DumpOcc
               | DumpSimpl
               | DumpEval
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TraceLexer
                | TraceParser
@@ -100,7 +100,7 @@ data TraceFlag = TraceLexer
                | TraceFusion
                | TraceSimplify
                | TraceEval
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data Flags = Flags
     { mode      :: !ModeFlag
