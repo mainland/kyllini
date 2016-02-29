@@ -1,6 +1,6 @@
 -- |
 -- Module      :  Main
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cdrexel.edu
 
@@ -48,6 +48,8 @@ import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Optimize.Autolut (runAutoM,
+                             autolutProgram)
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.Simplify
@@ -94,6 +96,7 @@ runPipeline filepath =
         tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag AutoLUT) (tracePhase "autolut" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag PartialEval) (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         dumpFinal >=>
@@ -184,6 +187,11 @@ runPipeline filepath =
     fusionPhase =
         lift . A.withTcEnv . A.runTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
+
+    autolutPhase :: A.LProgram -> MaybeT KZC A.LProgram
+    autolutPhase =
+        lift . A.withTcEnv . runAutoM . autolutProgram >=>
+        dumpPass DumpAutoLUT "acore" "autolut"
 
     evalPhase :: A.LProgram -> MaybeT KZC A.LProgram
     evalPhase =

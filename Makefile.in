@@ -51,6 +51,7 @@ GHCFLAGS+=-Iinclude
 SOURCE = \
 	KZC/Analysis/Abs.hs \
 	KZC/Analysis/Dataflow.hs \
+	KZC/Analysis/Lut.hs \
 	KZC/Analysis/Occ.hs \
 	KZC/Analysis/Range.hs \
 	KZC/Auto/Comp.hs \
@@ -79,6 +80,7 @@ SOURCE = \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/Name.hs \
+	KZC/Optimize/Autolut.hs \
 	KZC/Optimize/Eval.hs \
 	KZC/Optimize/Eval/Monad.hs \
 	KZC/Optimize/Eval/Monad.hs-boot \

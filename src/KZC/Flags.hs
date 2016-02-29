@@ -71,6 +71,7 @@ data DynFlag = Quiet
              | BoundsCheck
              | PartialEval
              | Timers
+             | AutoLUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError
@@ -88,6 +89,7 @@ data DumpFlag = DumpCPP
               | DumpOcc
               | DumpSimpl
               | DumpEval
+              | DumpAutoLUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -103,6 +105,7 @@ data TraceFlag = TracePhase
                | TraceFusion
                | TraceSimplify
                | TraceEval
+               | TraceAutoLUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32
@@ -131,6 +134,8 @@ data Flags = Flags
     , verbLevel :: !Int
     , maxErrCtx :: !Int
     , maxSimpl  :: !Int
+    , maxLUT    :: !Int
+    , minLUTOps :: !Int
 
     , dynFlags   :: !(FlagSet DynFlag)
     , warnFlags  :: !(FlagSet WarnFlag)
@@ -151,6 +156,9 @@ instance Monoid Flags where
         , verbLevel = 0
         , maxErrCtx = 1
         , maxSimpl  = 4
+        , maxLUT    = 256*1024 -- ^ Default maximum size for LUT is 256K bytes
+        , minLUTOps = 5 -- ^ Minimum number of operations necessary to consider
+                        -- a LUT for an expression
 
         , dynFlags   = mempty
         , warnFlags  = mempty
@@ -169,6 +177,8 @@ instance Monoid Flags where
         , verbLevel = verbLevel f1 + verbLevel f2
         , maxErrCtx = max (maxErrCtx f1) (maxErrCtx f2)
         , maxSimpl  = max (maxSimpl f1) (maxSimpl f2)
+        , maxLUT    = max (maxLUT f1) (maxLUT f2)
+        , minLUTOps = min (minLUTOps f1) (minLUTOps f2)
 
         , dynFlags   = dynFlags f1   <> dynFlags f2
         , warnFlags  = warnFlags f1  <> warnFlags f2
