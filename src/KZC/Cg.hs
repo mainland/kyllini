@@ -1822,6 +1822,12 @@ cgAddrOf tau ce = do
 
 -- | Generate code for an if statement.
 cgIf :: Type -> Exp -> Cg CExp -> Cg CExp -> Cg CExp
+cgIf tau e1 me2 me3 | isPureT tau = do
+    ce1 <- cgExp e1
+    ce2 <- me2
+    ce3 <- me3
+    return $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
+
 cgIf tau e1 me2 me3 = do
     cres        <- cgTemp "if_res" tau_res
     ce1         <- cgExp e1
