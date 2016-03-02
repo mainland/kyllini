@@ -18,9 +18,7 @@ module KZC.Cg.CExp (
 
     CExp(..),
 
-    toInit,
-    lowerIdx,
-    lowerBitArrayIdx
+    toInit
   ) where
 
 import Prelude hiding (elem)
@@ -361,13 +359,8 @@ toInit ce            = [cinit|$ce|]
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: Type -> CExp -> CExp -> C.Exp
 lowerIdx tau carr ci
-    | isBitT tau = lowerBitArrayIdx carr ci
+    | isBitT tau = [cexp|($carr[$cbitIdx] & $cbitMask) ? 1 : 0|]
     | otherwise  = [cexp|$carr[$ci]|]
-
--- | Lower a bit array indexing operation to a 'C.Exp'
-lowerBitArrayIdx :: CExp -> CExp -> C.Exp
-lowerBitArrayIdx carr ci =
-    [cexp|($carr[$cbitIdx] & $cbitMask) ? 1 : 0|]
   where
     cbitIdx, cbitOff :: CExp
     (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
