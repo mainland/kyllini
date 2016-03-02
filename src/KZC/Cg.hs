@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Cg
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -767,7 +767,7 @@ cgExp e@(ArrayE es l) =
         appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
         forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
             ce <- cgExp e
-            cgArrayWrite tau (CExp [cexp|$id:cv|]) (fromIntegral i) ce
+            cgAssign (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
         return $ CExp [cexp|$id:cv|]
 
 cgExp (IdxE e1 e2 maybe_len _) = do
@@ -1404,7 +1404,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel lbl $
-                cgArrayWrite tau carr ci (CExp [cexp|*$cbufp|])
+                cgAssign (refT tau) (CIdx tau carr ci) (CExp [cexp|*$cbufp|])
         return carr
 
     emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
@@ -1689,32 +1689,6 @@ isReturnedByRef :: Type -> Bool
 isReturnedByRef (ArrT {}) = True
 isReturnedByRef _         = False
 
--- | Write an element to an array.
-cgArrayWrite :: Type -> CExp -> CExp -> CExp -> Cg ()
-cgArrayWrite tau carr ci cx
-    | isBitT tau = cgBitArrayWrite carr ci cx
-    | otherwise  = appendStm [cstm|$carr[$ci] = $cx;|]
-
--- XXX: Should use more efficient bit twiddling code here. See:
---
---   http://realtimecollisiondetection.net/blog/?p=78
---   https://graphics.stanford.edu/~seander/bithacks.html
---   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
---
-
--- | Write an element to a bit array.
-cgBitArrayWrite :: CExp -> CExp -> CExp -> Cg ()
-cgBitArrayWrite carr ci cx =
-    if cx
-    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
-    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
-  where
-    cbitIdx, cbitOff :: CExp
-    (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
-
-    cbitMask :: CExp
-    cbitMask = 1 `shiftL'` cbitOff
-
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
 cgAssign :: Type -> CExp -> CExp -> Cg ()
@@ -1730,8 +1704,22 @@ cgAssign _ _ CVoid =
 cgAssign (UnitT {}) _ ce =
    appendStm [cstm|$ce;|]
 
+-- XXX: Should use more efficient bit twiddling code here. See:
+--
+--   http://realtimecollisiondetection.net/blog/?p=78
+--   https://graphics.stanford.edu/~seander/bithacks.html
+--   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
+--
 cgAssign (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
-    cgBitArrayWrite carr cidx ce2
+    if ce2
+    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
+    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
+  where
+    cbitIdx, cbitOff :: CExp
+    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+
+    cbitMask :: CExp
+    cbitMask = 1 `shiftL'` cbitOff
 
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
     clen <- cgIota iota
