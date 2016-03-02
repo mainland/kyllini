@@ -71,7 +71,6 @@ data DynFlag = Quiet
   deriving (Eq, Ord, Enum, Show)
 
 data WarnFlag = WarnError
-              | WarnEmitArray
               | WarnUnusedCommandBind
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
@@ -175,8 +174,7 @@ defaultFlags =
     defaultDynFlags = []
 
     defaultWarnFlags :: [WarnFlag]
-    defaultWarnFlags = [ WarnEmitArray
-                       , WarnUnusedCommandBind
+    defaultWarnFlags = [ WarnUnusedCommandBind
                        , WarnUnsafeAutoCast
                        ]
 

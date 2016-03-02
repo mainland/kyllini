@@ -185,8 +185,7 @@ wWarnFlagOpts =
 
 fWarnFlagOpts :: [(WarnFlag, String, String)]
 fWarnFlagOpts =
-  [ (WarnEmitArray,         "warn-emit-array",           "warn on an array emit when emits should be used instead")
-  , (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
+  [ (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
   ]

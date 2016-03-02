@@ -801,63 +801,14 @@ tcExp (Z.TakesE i l) exp_ty = do
     return $ do ca <- trans a
                 return $ C.takesE (fromIntegral i) ca
 
--- Some Ziria code uses @emit@ with an array argument when it should really use
--- @emits@. How do we know whether to compile this to @emit@ or @emits@ in core?
--- We use a heuristic:
---
---   1) If the output type is an array type, we compile to @emits@.
---
---   2) If either the input or output type of the stream cannot possibly be an
---      array type, i.e., it is neither an array type nor a type meta-variable,
---      we compile to @emits@ and output a warning
---
---   3) Otherwise we compile to @emit@.
---
--- Obviously, if the output type of the stream cannot be an array, we have to
--- compile to @emits@. Often the input type of the stream is known, but the
--- @emit@ we are type checking determines the output type of the stream; our
--- heuristic assumes that if the input type of the stream is not an array, the
--- output type shouldn't be either. This means that a computation that reads
--- scalars and writes arrays needs an annotation.
-
-tcExp e0@(Z.EmitE e l) exp_ty = do
+tcExp (Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT TauK l
     a       <- newMetaTvT TauK l
     b       <- newMetaTvT TauK l
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
-    (tau_e, mce)          <- inferVal e
-    ST [] omega s a' b' _ <- compress tau
-    tau_e'                <- compress tau_e
-    (b_e, co)             <- go omega s a' b' tau_e'
-    unifyTypes b_e b
-    return $ co mce
-  where
-    go :: Type -> Type -> Type -> Type -> Type -> Ti (Type, Co)
-    go _ _ _ b tau@(ArrT _ _ _) | isArrT b =
-        return (tau, \mce -> C.EmitE <$> mce <*> pure l)
-
-    go omega s a b tau0@(ArrT _ tau _) | not (couldBeArrT a) || not (couldBeArrT b) = do
-        [a', b'] <- sanitizeTypes [a, b]
-        withSummaryContext e0 $
-          warndocWhen WarnEmitArray $ nest 2 $
-          text "emit called with argument of type" <+> ppr tau0 <+/>
-          text "on a stream of type" <+>
-          ppr (ST [] omega s a' b' noLoc) <>
-          text "; use emits"
-        return (tau, \mce -> C.EmitsE <$> mce <*> pure l)
-
-    go _ _ _ _ tau =
-        return (tau, \mce -> C.EmitE <$> mce <*> pure l)
-
-    isArrT :: Type -> Bool
-    isArrT (ArrT {}) = True
-    isArrT _         = False
-
-    couldBeArrT :: Type -> Bool
-    couldBeArrT (ArrT {})  = True
-    couldBeArrT (MetaT {}) = True
-    couldBeArrT _          = False
+    mce <- checkVal e b
+    return $ C.EmitE <$> mce <*> pure l
 
 tcExp (Z.EmitsE e l) exp_ty = do
     iota    <- newMetaTvT IotaK l
@@ -867,8 +818,7 @@ tcExp (Z.EmitsE e l) exp_ty = do
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
     mce <- checkVal e (arrT iota b)
-    return $ do ce <- mce
-                return $ C.EmitsE ce l
+    return $ C.EmitsE <$> mce <*> pure l
 
 tcExp (Z.RepeatE ann e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
