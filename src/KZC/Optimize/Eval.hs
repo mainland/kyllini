@@ -1091,10 +1091,12 @@ evalExp e@(AssignE e1 e2 s) = do
         old       <- readVarPtr ptr
         maybe_new <- runMaybeT $ update old val2
         case maybe_new of
-          Nothing  -> do killVars e
-                         partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
-          Just new -> do writeVarPtr ptr new
-                         return $ ReturnV UnitV
+          Just new | isValue new ->
+              do writeVarPtr ptr new
+                 return $ ReturnV UnitV
+          _ ->
+              do killVars e
+                 partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
       where
         (ptr, update) = follow r
 
