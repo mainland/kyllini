@@ -1234,7 +1234,7 @@ evalExp (BindE wv tau e1 e2 s) = do
     -- array constant.
     wrapBind :: WildVar -> Type -> Val Exp -> Val Exp -> EvalM (Val Exp)
     wrapBind (TameV bv) tau val1 val2 | v `Set.member` fvs e2 =
-        partialExp $ letE v tau e1 e2
+        partialCmd $ letE v tau e1 e2
       where
         v :: Var
         v = bVar bv
