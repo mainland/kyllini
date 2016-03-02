@@ -93,8 +93,8 @@ runPipeline filepath =
         tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintCore >=>
         tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase1") >=>
-        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto"lintAuto) >=>
-        runIf (testDynFlag PartialEval) (tracePhase "eval" evalPhase >=> tracePhase "lintAuto"lintAuto) >=>
+        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag PartialEval) (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
