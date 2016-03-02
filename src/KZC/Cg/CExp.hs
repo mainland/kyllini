@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Cg.CExp
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -107,6 +107,20 @@ instance Located CExp where
     locOf (CSlice _ _ cidx _) = locOf cidx
     locOf (CComp {})          = NoLoc
     locOf (CFunComp {})       = NoLoc
+
+instance Relocatable CExp where
+    reloc _ ce@CVoid                   = ce
+    reloc _ ce@(CBool {})              = ce
+    reloc _ ce@(CBit {})               = ce
+    reloc _ ce@(CInt {})               = ce
+    reloc _ ce@(CFloat {})             = ce
+    reloc l (CExp ce)                  = CExp $ reloc l ce
+    reloc l (CInit cinit)              = CInit $ reloc l cinit
+    reloc l (CPtr ce)                  = CPtr $ reloc l ce
+    reloc l (CIdx tau carr cidx)       = CIdx tau (reloc l carr) (reloc l cidx)
+    reloc l (CSlice tau carr cidx len) = CSlice tau (reloc l carr) (reloc l cidx) len
+    reloc _ ce@(CComp {})              = ce
+    reloc _ ce@(CFunComp {})           = ce
 
 instance IfThenElse CExp CExp where
     ifThenElse (CBool True)  t _ = t
