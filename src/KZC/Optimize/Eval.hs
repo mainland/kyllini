@@ -841,8 +841,11 @@ evalExp (UnopE op e s) = do
     unop (Cast tau) (FixV _ _ _ (BP 0) r) | isBitT tau =
         return $ FixV I U (W 1) (BP 0) (if r == 0 then 0 else 1)
 
-    unop (Cast (FixT sc s w (BP 0) _)) (FixV sc' s' _ (BP 0) r) | sc' == sc && s' == s =
-        return $ FixV sc s w (BP 0) r
+    unop (Cast (FixT I U (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r < 2^w - 1 =
+        return $ FixV I U (W w) (BP 0) r
+
+    unop (Cast (FixT I S (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r < 2^(w-1) - 1 && r > -(2^(w-1)) =
+        return $ FixV I S (W w) (BP 0) r
 
     unop (Cast (FixT I s w (BP 0) _)) (FloatV _ r) =
         return $ FixV I s w (BP 0) (fromIntegral (truncate r :: Integer))
