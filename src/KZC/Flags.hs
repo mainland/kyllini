@@ -88,7 +88,8 @@ data DumpFlag = DumpCPP
               | DumpEval
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-data TraceFlag = TraceLexer
+data TraceFlag = TracePhase
+               | TraceLexer
                | TraceParser
                | TraceRn
                | TraceLift

@@ -163,7 +163,8 @@ dDumpFlagOpts =
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
 dTraceFlagOpts =
-  [ (TraceLexer,    "lex",       "trace lexer")
+  [ (TracePhase,    "phase",     "trace compiler phase")
+  , (TraceLexer,    "lex",       "trace lexer")
   , (TraceParser,   "parse",     "trace parser")
   , (TraceRn,       "rn",        "trace renamer")
   , (TraceLift,     "lift",      "trace lambda lifter")

@@ -16,6 +16,7 @@ import Data.Loc
 import Data.Monoid
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
+import System.CPUTime (getCPUTime)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment
 import System.Exit (exitFailure)
@@ -24,9 +25,11 @@ import System.FilePath (replaceExtension,
                         takeExtension)
 import System.IO (IOMode(..),
                   hClose,
+                  hPutStr,
                   hPutStrLn,
                   openFile,
                   stderr)
+import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
 import Text.Printf (printf)
 
@@ -84,17 +87,35 @@ runPipeline filepath =
         parsePhase >=>
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
-        renamePhase >=>
-        checkPhase >=> lintCore >=>
+        tracePhase "rename" renamePhase >=>
+        tracePhase "typecheck" checkPhase >=> tracePhase "lint" lintCore >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        lambdaLiftPhase >=> lintCore >=>
-        autoPhase >=> lintAuto >=>
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase1") >=>
-        runIf (testDynFlag Fuse) (fusionPhase >=> lintAuto) >=>
-        runIf (testDynFlag PartialEval) (evalPhase >=> lintAuto) >=>
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
+        tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintCore >=>
+        tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase1") >=>
+        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto"lintAuto) >=>
+        runIf (testDynFlag PartialEval) (tracePhase "eval" evalPhase >=> tracePhase "lintAuto"lintAuto) >=>
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         dumpFinal >=>
-        compilePhase
+        tracePhase "compile" compilePhase
+
+    tracePhase :: String
+               -> (a -> MaybeT KZC b)
+               -> a
+               -> MaybeT KZC b
+    tracePhase phase act x = do
+        doTrace <- asksFlags (testTraceFlag TracePhase)
+        if doTrace
+          then do pass  <- lift getPass
+                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d" phase pass)
+                  start <- liftIO getCPUTime
+                  y     <- act x
+                  end   <- liftIO getCPUTime
+                  let t :: Double
+                      t = fromIntegral (end - start) / 1e12
+                  return $! unsafePerformIO $ hPutStr stderr (printf "(%f)\n" t)
+                  return y
+          else act x
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
