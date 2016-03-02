@@ -508,363 +508,367 @@ cgConst (StructC s flds) = do
         return $ toInit ce
 
 cgExp :: Exp -> Cg CExp
-cgExp e@(ConstE c _) = do
-    tau <- inferExp e
-    cgConst c >>= cgConstExp tau
+cgExp e = do
+    reloc (locOf e) <$> go e
   where
-    cgConstExp :: Type -> CExp -> Cg CExp
-    cgConstExp tau (CInit cinit) = do
-        cv   <- gensym "__const"
-        ctau <- cgType tau
-        appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
-        return $ CExp [cexp|$id:cv|]
-
-    cgConstExp _ ce =
-        return ce
-
-cgExp (VarE v _) =
-    lookupVarCExp v
-
-cgExp (UnopE op e l) = do
-    tau <- inferExp e
-    ce  <- cgExp e
-    cgUnop tau ce op
-  where
-    cgUnop :: Type -> CExp -> Unop -> Cg CExp
-    cgUnop tau_from ce (Cast tau_to) =
-        cgCast ce tau_from tau_to
-
-    cgUnop tau_from ce (Bitcast tau_to) =
-        cgBitcast ce tau_from tau_to
-
-    cgUnop (ArrT iota _ _) _ Len =
-        cgIota iota
-
-    cgUnop _ _ Len =
-        panicdoc $
-        text "cgUnop: tried to take the length of a non-array type!"
-
-    cgUnop tau ce op | isComplexT tau =
-        go op
-      where
-        go :: Unop -> Cg CExp
-        go Neg = do
-            let a,b :: CExp
-                (a, b) = unComplex ce
-            cv <- cgTemp "binop_complex" tau
-            appendStm $ rl l [cstm|$cv.re = $(-a);|]
-            appendStm $ rl l [cstm|$cv.im = $(-b);|]
-            return cv
-
-        go op =
-            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
-
-    cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
-    cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
-                       | otherwise  = return $ CExp [cexp|~$ce|]
-    cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
-
-    cgCast :: CExp -> Type -> Type -> Cg CExp
-    cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
-        ctemp <- cgTemp "cast_complex" tau_to
-        appendStm $ rl l [cstm|$ctemp.re = $ce.re;|]
-        appendStm $ rl l [cstm|$ctemp.im = $ce.im;|]
-        return ctemp
-
-    cgCast ce _ tau_to | isComplexT tau_to = do
-        ctemp <- cgTemp "cast_complex" tau_to
-        appendStm $ rl l [cstm|$ctemp.re = $ce;|]
-        appendStm $ rl l [cstm|$ctemp.im = $ce;|]
-        return ctemp
-
-    cgCast _ tau1@(FixT sc1 _ _ _ _) tau2@(FixT sc2 _ _ _ _) | sc2 /= sc1 =
-        faildoc $
-        text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
-        text "since types have different scales."
-
-    cgCast _ tau1@(FixT _ _ _ bp1 _) tau2@(FixT _ _ _ bp2 _) | bp2 /= bp1 =
-        faildoc $
-        text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
-        text "since types have different binary points."
-
-    cgCast ce _ tau_to = do
-        ctau_to <- cgType tau_to
-        return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
-
-    cgBitcast :: CExp -> Type -> Type -> Cg CExp
-    cgBitcast ce tau_from tau_to = do
-        ctau_from <- cgBitcastType tau_from
-        ctau_to   <- cgType tau_to
-        return $ CExp $ rl l [cexp|*(($ty:ctau_to*) (($ty:ctau_from*) $ce))|]
-
-cgExp (BinopE op e1 e2 l) = do
-    tau <- inferExp e1
-    ce1 <- cgExp e1
-    ce2 <- cgExp e2
-    cgBinop tau ce1 ce2 op
-  where
-    cgBinop :: Type -> CExp -> CExp -> Binop -> Cg CExp
-    cgBinop tau ce1 ce2 op | isComplexT tau =
-        go op
-      where
-        go :: Binop -> Cg CExp
-        go Eq =
-            return $ CExp $ rl l [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
-
-        go Ne =
-            return $ CExp $ rl l [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
-
-        go Add = do
-            let a,b,c,d :: CExp
-                (a, b) = unComplex ce1
-                (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau
-            appendStm $ rl l [cstm|$cv.re = $(a+c);|]
-            appendStm $ rl l [cstm|$cv.im = $(b+d);|]
-            return cv
-
-        go Sub = do
-            let a,b,c,d :: CExp
-                (a, b) = unComplex ce1
-                (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau
-            appendStm [cstm|$cv.re = $(a-c);|]
-            appendStm [cstm|$cv.im = $(b-d);|]
-            return cv
-
-        go Mul = do
-            let a,b,c,d :: CExp
-                (a, b) = unComplex ce1
-                (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau
-            appendStm $ rl l [cstm|$cv.re = $(a*c - b*d);|]
-            appendStm $ rl l [cstm|$cv.im = $(b*c + a*d);|]
-            return cv
-
-        go Div = do
-            let a,b,c,d :: CExp
-                (a, b) = unComplex ce1
-                (c, d) = unComplex ce2
-            cv <- cgTemp "binop_complex" tau
-            appendStm $ rl l [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
-            appendStm $ rl l [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
-            return cv
-
-        go op =
-            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
-
-    cgBinop _ ce1 ce2 Lt   = return $ CExp $ rl l [cexp|$ce1 <  $ce2|]
-    cgBinop _ ce1 ce2 Le   = return $ CExp $ rl l [cexp|$ce1 <= $ce2|]
-    cgBinop _ ce1 ce2 Eq   = return $ CExp $ rl l [cexp|$ce1 == $ce2|]
-    cgBinop _ ce1 ce2 Ge   = return $ CExp $ rl l [cexp|$ce1 >= $ce2|]
-    cgBinop _ ce1 ce2 Gt   = return $ CExp $ rl l [cexp|$ce1 >  $ce2|]
-    cgBinop _ ce1 ce2 Ne   = return $ CExp $ rl l [cexp|$ce1 != $ce2|]
-    cgBinop _ ce1 ce2 Land = return $ CExp $ rl l [cexp|$ce1 && $ce2|]
-    cgBinop _ ce1 ce2 Lor  = return $ CExp $ rl l [cexp|$ce1 || $ce2|]
-    cgBinop _ ce1 ce2 Band = return $ CExp $ rl l [cexp|$ce1 &  $ce2|]
-    cgBinop _ ce1 ce2 Bor  = return $ CExp $ rl l [cexp|$ce1 |  $ce2|]
-    cgBinop _ ce1 ce2 Bxor = return $ CExp $ rl l [cexp|$ce1 ^  $ce2|]
-    cgBinop _ ce1 ce2 LshL = return $ CExp $ rl l [cexp|$ce1 << $ce2|]
-    cgBinop _ ce1 ce2 LshR = return $ CExp $ rl l [cexp|$ce1 >> $ce2|]
-    cgBinop _ ce1 ce2 AshR = return $ CExp $ rl l [cexp|((unsigned int) $ce1) >> $ce2|]
-    cgBinop _ ce1 ce2 Add  = return $ CExp $ rl l [cexp|$ce1 + $ce2|]
-    cgBinop _ ce1 ce2 Sub  = return $ CExp $ rl l [cexp|$ce1 - $ce2|]
-    cgBinop _ ce1 ce2 Mul  = return $ CExp $ rl l [cexp|$ce1 * $ce2|]
-    cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$ce1 / $ce2|]
-    cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
-    cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
-
-cgExp (IfE e1 e2 e3 _) = do
-    tau <- inferExp e2
-    cgIf tau e1 (cgExp e2) (cgExp e3)
-
-cgExp (LetE decl e _) =
-    cgLocalDecl decl $ cgExp e
-
-cgExp (CallE f iotas es l) = do
-    FunT ivs _ tau_ret _ <- lookupVar f
-    let tau_res          =  resultType tau_ret
-    cf                   <- lookupVarCExp f
-    ciotas               <- mapM cgIota iotas
-    ces                  <- mapM cgArg es
-    cres                 <- extendIVarCExps (ivs `zip` ciotas) $
-                            cgTemp "call_res" tau_res
-    if isReturnedByRef tau_res
-      then appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
-      else cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
-    return cres
-  where
-    cgArg :: Exp -> Cg CExp
-    cgArg e = do
+    go :: Exp -> Cg CExp
+    go e@(ConstE c _) = do
         tau <- inferExp e
-        go tau
+        cgConst c >>= cgConstExp tau
       where
-        go :: Type -> Cg CExp
-        go tau@(ArrT {}) =
-            cgExp e >>= cgAddrOf tau
+        cgConstExp :: Type -> CExp -> Cg CExp
+        cgConstExp tau (CInit cinit) = do
+            cv   <- gensym "__const"
+            ctau <- cgType tau
+            appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+            return $ CExp $ reloc (locOf e) [cexp|$id:cv|]
 
-        go tau | isPassByRef tau =
-            cgExp e >>= cgAddrOf tau
+        cgConstExp _ ce =
+            return ce
 
-        go _ =
-            cgExp e
+    go (VarE v _) =
+        lookupVarCExp v
 
-cgExp (DerefE e _) = do
-    tau   <- inferExp e >>= checkRefT
-    ce    <- cgExp e
-    ctemp <- cgTemp "deref" tau
-    cgAssign tau ctemp (unPtr ce)
-    return ctemp
-
-cgExp (AssignE e1 e2 _) = do
-    tau <- inferExp e1
-    ce1 <- cgExp e1
-    ce2 <- cgExp e2
-    cgAssign tau ce1 ce2
-    return CVoid
-
-{- Note [Compiling While Loops]
-
-The test for a while loop is a pureish ST expression because to do anything
-useful it will need to dereference variables. Compiling this expression therefor
-produces C statement representing side effects. But how can we generate C code
-for a while loop when the test requires executing C statements? One option would
-be to use GCC's statement expressions, but we'd like to stick with standard
-C. Instead, we execute the test's statements twice, once before entering the
-loop, and once at the end of the body of the loop. This ensures that the
-required side effects are executed before the test expression is evaluated.
--}
-
-cgExp (WhileE e_test e_body l) = do
-    (citems_test, ce_test) <- inNewBlock $ cgExp e_test
-    citems_body            <- inNewBlock_ $ cgExp e_body
-    appendBlock $ map (rl l) citems_test
-    appendStm $ rl l [cstm|while ($ce_test) { $items:citems_body $items:citems_test }|]
-    return CVoid
-
-cgExp (ForE _ v v_tau e_start e_len e_body l) = do
-    cv     <- cvar v
-    cv_tau <- cgType v_tau
-    extendVars     [(v, v_tau)] $ do
-    extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
-    appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
-    ce_start <- cgExp e_start
-    ce_len   <- cgExp e_len
-    citems   <- inNewBlock_ $ cgExp e_body
-    appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
-    return CVoid
-
-cgExp e@(ArrayE es l) =
-    case unConstE e of
-      Nothing -> cgArrayExp
-      Just c  -> cgExp (ConstE c l)
-  where
-    cgArrayExp :: Cg CExp
-    cgArrayExp = do
-        (_, tau) <- inferExp e >>= checkArrT
-        cv       <- gensym "__arr"
-        ctau     <- cgType tau
-        appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
-        forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
-            ce <- cgExp e
-            cgAssign (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
-        return $ CExp [cexp|$id:cv|]
-
-cgExp (IdxE e1 e2 maybe_len _) = do
-    (iota, tau) <- inferExp e1 >>= checkArrOrRefArrT
-    cn          <- cgIota iota
-    ce1         <- cgExp e1
-    ce2         <- cgExp e2
-    case maybe_len of
-      Nothing  -> cgIdx tau ce1 cn ce2
-      Just len -> cgSlice tau ce1 cn ce2 len
-
-cgExp e@(StructE s flds l) = do
-    case unConstE e of
-      Nothing -> cgStructExp
-      Just c  -> cgExp (ConstE c l)
-  where
-    cgStructExp :: Cg CExp
-    cgStructExp = do
-        cv <- cgTemp "struct" (StructT s l)
-        mapM_ (cgField cv) flds
-        return cv
-
-    cgField :: CExp -> (Field, Exp) -> Cg ()
-    cgField cv (fld, e) = do
-        let cfld =  zencode (namedString fld)
-        ce       <- cgExp e
-        appendStm $ rl l [cstm|$cv.$id:cfld = $ce;|]
-
-cgExp (ProjE e fld l) = do
-    ce <- cgExp e
-    return $ CExp $ rl l [cexp|$ce.$id:cfld|]
-  where
-    cfld :: C.Id
-    cfld = C.Id (zencode (namedString fld)) l
-
-cgExp (PrintE nl es l) = do
-    mapM_ cgPrint es
-    when nl $
-        appendStm $ rl l [cstm|printf("\n");|]
-    return CVoid
-  where
-    cgPrint :: Exp -> Cg ()
-    cgPrint e = do
+    go (UnopE op e l) = do
         tau <- inferExp e
         ce  <- cgExp e
-        cgPrintScalar tau ce
+        cgUnop tau ce op
+      where
+        cgUnop :: Type -> CExp -> Unop -> Cg CExp
+        cgUnop tau_from ce (Cast tau_to) =
+            cgCast ce tau_from tau_to
 
-    cgPrintScalar :: Type -> CExp -> Cg ()
-    cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
-    cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-    cgPrintScalar (FixT I U (W 1)  0 _) ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
-    cgPrintScalar (FixT I S (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
-    cgPrintScalar (FixT I U (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
-    cgPrintScalar (FixT I S _ 0 _)      ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
-    cgPrintScalar (FixT I U _ 0 _)      ce = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
-    cgPrintScalar tau@(FixT {})         _  = faildoc $ text "Cannot print value of type" <+> ppr tau
-    cgPrintScalar (FloatT {})           ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
-    cgPrintScalar (StringT {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-    cgPrintScalar (ArrT iota tau _)     ce = cgPrintArray iota tau ce
+        cgUnop tau_from ce (Bitcast tau_to) =
+            cgBitcast ce tau_from tau_to
 
-    cgPrintScalar (StructT s _) ce | isComplexStruct s =
-        appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+        cgUnop (ArrT iota _ _) _ Len =
+            cgIota iota
 
-    cgPrintScalar tau _ =
-        faildoc $ text "Cannot print type:" <+> ppr tau
+        cgUnop _ _ Len =
+            panicdoc $
+            text "cgUnop: tried to take the length of a non-array type!"
 
-    cgPrintArray :: Iota -> Type -> CExp -> Cg ()
-    cgPrintArray iota tau ce | isBitT tau = do
-        cn    <- cgIota iota
-        caddr <- cgAddrOf (ArrT iota tau noLoc) ce
-        appendStm $ rl l [cstm|kz_bitarray_print($caddr, $cn);|]
+        cgUnop tau ce op | isComplexT tau =
+            go op
+          where
+            go :: Unop -> Cg CExp
+            go Neg = do
+                let a,b :: CExp
+                    (a, b) = unComplex ce
+                cv <- cgTemp "binop_complex" tau
+                appendStm $ rl l [cstm|$cv.re = $(-a);|]
+                appendStm $ rl l [cstm|$cv.im = $(-b);|]
+                return cv
 
-    cgPrintArray iota tau ce = do
-        cn    <- cgIota iota
-        caddr <- cgAddrOf (ArrT iota tau noLoc) ce
-        cgFor 0 cn $ \ci -> do
-            cgPrintScalar tau (CExp [cexp|$caddr[$ci]|])
-            if cn .==. ci
-              then return ()
-              else appendStm $ rl l [cstm|printf(",");|]
+            go op =
+                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
 
-cgExp (ErrorE _ s l) = do
-    appendStm $ rl l [cstm|kz_error($string:s);|]
-    return CVoid
+        cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
+        cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
+                           | otherwise  = return $ CExp [cexp|~$ce|]
+        cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
 
-cgExp (ReturnE _ e _) =
-    cgExp e
+        cgCast :: CExp -> Type -> Type -> Cg CExp
+        cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
+            ctemp <- cgTemp "cast_complex" tau_to
+            appendStm $ rl l [cstm|$ctemp.re = $ce.re;|]
+            appendStm $ rl l [cstm|$ctemp.im = $ce.im;|]
+            return ctemp
 
-cgExp (BindE WildV _ e1 e2 _) = do
-    void $ cgExp e1
-    cgExp e2
+        cgCast ce _ tau_to | isComplexT tau_to = do
+            ctemp <- cgTemp "cast_complex" tau_to
+            appendStm $ rl l [cstm|$ctemp.re = $ce;|]
+            appendStm $ rl l [cstm|$ctemp.im = $ce;|]
+            return ctemp
 
-cgExp (BindE (TameV v) tau e1 e2 _) = do
-    ce1 <- cgExp e1
-    extendVars [(bVar v, tau)] $ do
-    extendVarCExps [(bVar v, ce1)] $ do
-    cgExp e2
+        cgCast _ tau1@(FixT sc1 _ _ _ _) tau2@(FixT sc2 _ _ _ _) | sc2 /= sc1 =
+            faildoc $
+            text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
+            text "since types have different scales."
+
+        cgCast _ tau1@(FixT _ _ _ bp1 _) tau2@(FixT _ _ _ bp2 _) | bp2 /= bp1 =
+            faildoc $
+            text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
+            text "since types have different binary points."
+
+        cgCast ce _ tau_to = do
+            ctau_to <- cgType tau_to
+            return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
+        cgBitcast :: CExp -> Type -> Type -> Cg CExp
+        cgBitcast ce tau_from tau_to = do
+            ctau_from <- cgBitcastType tau_from
+            ctau_to   <- cgType tau_to
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) (($ty:ctau_from*) $ce))|]
+
+    go (BinopE op e1 e2 l) = do
+        tau <- inferExp e1
+        ce1 <- cgExp e1
+        ce2 <- cgExp e2
+        cgBinop tau ce1 ce2 op
+      where
+        cgBinop :: Type -> CExp -> CExp -> Binop -> Cg CExp
+        cgBinop tau ce1 ce2 op | isComplexT tau =
+            go op
+          where
+            go :: Binop -> Cg CExp
+            go Eq =
+                return $ CExp $ rl l [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
+
+            go Ne =
+                return $ CExp $ rl l [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
+
+            go Add = do
+                let a,b,c,d :: CExp
+                    (a, b) = unComplex ce1
+                    (c, d) = unComplex ce2
+                cv <- cgTemp "binop_complex" tau
+                appendStm $ rl l [cstm|$cv.re = $(a+c);|]
+                appendStm $ rl l [cstm|$cv.im = $(b+d);|]
+                return cv
+
+            go Sub = do
+                let a,b,c,d :: CExp
+                    (a, b) = unComplex ce1
+                    (c, d) = unComplex ce2
+                cv <- cgTemp "binop_complex" tau
+                appendStm [cstm|$cv.re = $(a-c);|]
+                appendStm [cstm|$cv.im = $(b-d);|]
+                return cv
+
+            go Mul = do
+                let a,b,c,d :: CExp
+                    (a, b) = unComplex ce1
+                    (c, d) = unComplex ce2
+                cv <- cgTemp "binop_complex" tau
+                appendStm $ rl l [cstm|$cv.re = $(a*c - b*d);|]
+                appendStm $ rl l [cstm|$cv.im = $(b*c + a*d);|]
+                return cv
+
+            go Div = do
+                let a,b,c,d :: CExp
+                    (a, b) = unComplex ce1
+                    (c, d) = unComplex ce2
+                cv <- cgTemp "binop_complex" tau
+                appendStm $ rl l [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
+                appendStm $ rl l [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
+                return cv
+
+            go op =
+                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
+
+        cgBinop _ ce1 ce2 Lt   = return $ CExp $ rl l [cexp|$ce1 <  $ce2|]
+        cgBinop _ ce1 ce2 Le   = return $ CExp $ rl l [cexp|$ce1 <= $ce2|]
+        cgBinop _ ce1 ce2 Eq   = return $ CExp $ rl l [cexp|$ce1 == $ce2|]
+        cgBinop _ ce1 ce2 Ge   = return $ CExp $ rl l [cexp|$ce1 >= $ce2|]
+        cgBinop _ ce1 ce2 Gt   = return $ CExp $ rl l [cexp|$ce1 >  $ce2|]
+        cgBinop _ ce1 ce2 Ne   = return $ CExp $ rl l [cexp|$ce1 != $ce2|]
+        cgBinop _ ce1 ce2 Land = return $ CExp $ rl l [cexp|$ce1 && $ce2|]
+        cgBinop _ ce1 ce2 Lor  = return $ CExp $ rl l [cexp|$ce1 || $ce2|]
+        cgBinop _ ce1 ce2 Band = return $ CExp $ rl l [cexp|$ce1 &  $ce2|]
+        cgBinop _ ce1 ce2 Bor  = return $ CExp $ rl l [cexp|$ce1 |  $ce2|]
+        cgBinop _ ce1 ce2 Bxor = return $ CExp $ rl l [cexp|$ce1 ^  $ce2|]
+        cgBinop _ ce1 ce2 LshL = return $ CExp $ rl l [cexp|$ce1 << $ce2|]
+        cgBinop _ ce1 ce2 LshR = return $ CExp $ rl l [cexp|$ce1 >> $ce2|]
+        cgBinop _ ce1 ce2 AshR = return $ CExp $ rl l [cexp|((unsigned int) $ce1) >> $ce2|]
+        cgBinop _ ce1 ce2 Add  = return $ CExp $ rl l [cexp|$ce1 + $ce2|]
+        cgBinop _ ce1 ce2 Sub  = return $ CExp $ rl l [cexp|$ce1 - $ce2|]
+        cgBinop _ ce1 ce2 Mul  = return $ CExp $ rl l [cexp|$ce1 * $ce2|]
+        cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$ce1 / $ce2|]
+        cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
+        cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
+
+    go (IfE e1 e2 e3 _) = do
+        tau <- inferExp e2
+        cgIf tau e1 (cgExp e2) (cgExp e3)
+
+    go (LetE decl e _) =
+        cgLocalDecl decl $ cgExp e
+
+    go (CallE f iotas es l) = do
+        FunT ivs _ tau_ret _ <- lookupVar f
+        let tau_res          =  resultType tau_ret
+        cf                   <- lookupVarCExp f
+        ciotas               <- mapM cgIota iotas
+        ces                  <- mapM cgArg es
+        cres                 <- extendIVarCExps (ivs `zip` ciotas) $
+                                cgTemp "call_res" tau_res
+        if isReturnedByRef tau_res
+          then appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
+          else cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+        return cres
+      where
+        cgArg :: Exp -> Cg CExp
+        cgArg e = do
+            tau <- inferExp e
+            go tau
+          where
+            go :: Type -> Cg CExp
+            go tau@(ArrT {}) =
+                cgExp e >>= cgAddrOf tau
+
+            go tau | isPassByRef tau =
+                cgExp e >>= cgAddrOf tau
+
+            go _ =
+                cgExp e
+
+    go (DerefE e _) = do
+        tau   <- inferExp e >>= checkRefT
+        ce    <- cgExp e
+        ctemp <- cgTemp "deref" tau
+        cgAssign tau ctemp (unPtr ce)
+        return ctemp
+
+    go (AssignE e1 e2 _) = do
+        tau <- inferExp e1
+        ce1 <- cgExp e1
+        ce2 <- cgExp e2
+        cgAssign tau ce1 ce2
+        return CVoid
+
+    {- Note [Compiling While Loops]
+
+    The test for a while loop is a pureish ST expression because to do anything
+    useful it will need to dereference variables. Compiling this expression therefor
+    produces C statement representing side effects. But how can we generate C code
+    for a while loop when the test requires executing C statements? One option would
+    be to use GCC's statement expressions, but we'd like to stick with standard
+    C. Instead, we execute the test's statements twice, once before entering the
+    loop, and once at the end of the body of the loop. This ensures that the
+    required side effects are executed before the test expression is evaluated.
+    -}
+
+    go (WhileE e_test e_body l) = do
+        (citems_test, ce_test) <- inNewBlock $ cgExp e_test
+        citems_body            <- inNewBlock_ $ cgExp e_body
+        appendBlock $ map (rl l) citems_test
+        appendStm $ rl l [cstm|while ($ce_test) { $items:citems_body $items:citems_test }|]
+        return CVoid
+
+    go (ForE _ v v_tau e_start e_len e_body l) = do
+        cv     <- cvar v
+        cv_tau <- cgType v_tau
+        extendVars     [(v, v_tau)] $ do
+        extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
+        appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
+        ce_start <- cgExp e_start
+        ce_len   <- cgExp e_len
+        citems   <- inNewBlock_ $ cgExp e_body
+        appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
+        return CVoid
+
+    go e@(ArrayE es l) =
+        case unConstE e of
+          Nothing -> cgArrayExp
+          Just c  -> cgExp (ConstE c l)
+      where
+        cgArrayExp :: Cg CExp
+        cgArrayExp = do
+            (_, tau) <- inferExp e >>= checkArrT
+            cv       <- gensym "__arr"
+            ctau     <- cgType tau
+            appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
+            forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
+                ce <- cgExp e
+                cgAssign (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
+            return $ CExp [cexp|$id:cv|]
+
+    go (IdxE e1 e2 maybe_len _) = do
+        (iota, tau) <- inferExp e1 >>= checkArrOrRefArrT
+        cn          <- cgIota iota
+        ce1         <- cgExp e1
+        ce2         <- cgExp e2
+        case maybe_len of
+          Nothing  -> cgIdx tau ce1 cn ce2
+          Just len -> cgSlice tau ce1 cn ce2 len
+
+    go e@(StructE s flds l) = do
+        case unConstE e of
+          Nothing -> cgStructExp
+          Just c  -> cgExp (ConstE c l)
+      where
+        cgStructExp :: Cg CExp
+        cgStructExp = do
+            cv <- cgTemp "struct" (StructT s l)
+            mapM_ (cgField cv) flds
+            return cv
+
+        cgField :: CExp -> (Field, Exp) -> Cg ()
+        cgField cv (fld, e) = do
+            let cfld =  zencode (namedString fld)
+            ce       <- cgExp e
+            appendStm $ rl l [cstm|$cv.$id:cfld = $ce;|]
+
+    go (ProjE e fld l) = do
+        ce <- cgExp e
+        return $ CExp $ rl l [cexp|$ce.$id:cfld|]
+      where
+        cfld :: C.Id
+        cfld = C.Id (zencode (namedString fld)) l
+
+    go (PrintE nl es l) = do
+        mapM_ cgPrint es
+        when nl $
+            appendStm $ rl l [cstm|printf("\n");|]
+        return CVoid
+      where
+        cgPrint :: Exp -> Cg ()
+        cgPrint e = do
+            tau <- inferExp e
+            ce  <- cgExp e
+            cgPrintScalar tau ce
+
+        cgPrintScalar :: Type -> CExp -> Cg ()
+        cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
+        cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
+        cgPrintScalar (FixT I U (W 1)  0 _) ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
+        cgPrintScalar (FixT I S (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
+        cgPrintScalar (FixT I U (W 64) 0 _) ce = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
+        cgPrintScalar (FixT I S _ 0 _)      ce = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
+        cgPrintScalar (FixT I U _ 0 _)      ce = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
+        cgPrintScalar tau@(FixT {})         _  = faildoc $ text "Cannot print value of type" <+> ppr tau
+        cgPrintScalar (FloatT {})           ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
+        cgPrintScalar (StringT {})          ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
+        cgPrintScalar (ArrT iota tau _)     ce = cgPrintArray iota tau ce
+
+        cgPrintScalar (StructT s _) ce | isComplexStruct s =
+            appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+
+        cgPrintScalar tau _ =
+            faildoc $ text "Cannot print type:" <+> ppr tau
+
+        cgPrintArray :: Iota -> Type -> CExp -> Cg ()
+        cgPrintArray iota tau ce | isBitT tau = do
+            cn    <- cgIota iota
+            caddr <- cgAddrOf (ArrT iota tau noLoc) ce
+            appendStm $ rl l [cstm|kz_bitarray_print($caddr, $cn);|]
+
+        cgPrintArray iota tau ce = do
+            cn    <- cgIota iota
+            caddr <- cgAddrOf (ArrT iota tau noLoc) ce
+            cgFor 0 cn $ \ci -> do
+                cgPrintScalar tau (CExp [cexp|$caddr[$ci]|])
+                if cn .==. ci
+                  then return ()
+                  else appendStm $ rl l [cstm|printf(",");|]
+
+    go (ErrorE _ s l) = do
+        appendStm $ rl l [cstm|kz_error($string:s);|]
+        return CVoid
+
+    go (ReturnE _ e _) =
+        cgExp e
+
+    go (BindE WildV _ e1 e2 _) = do
+        void $ cgExp e1
+        cgExp e2
+
+    go (BindE (TameV v) tau e1 e2 _) = do
+        ce1 <- cgExp e1
+        extendVars [(bVar v, tau)] $ do
+        extendVarCExps [(bVar v, ce1)] $ do
+        cgExp e2
 
 cgIVar :: IVar -> Cg (CExp, C.Param)
 cgIVar iv = do
