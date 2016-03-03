@@ -1,0 +1,15 @@
+fun comp test() {
+  x <- take;
+
+  do {
+    var xs: arr[64] uint8;
+    for i in [0,64] { xs[i] := 1 }
+
+    var zss: arr[2] arr[64] uint8;
+    zss[0] := xs; -- This line fails
+  }
+
+  emit x;
+}
+
+let comp main = read[int] >>> test() >>> write[int]
