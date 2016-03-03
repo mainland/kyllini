@@ -1042,43 +1042,16 @@ evalExp (DerefE e s) =
   where
     go :: Val Exp -> EvalM (Val Exp)
     go (RefV r) = do
-        val <- readVarPtr ptr
+        val <- readVarPtr (refVarPtr r)
         if isKnown val
-          then ReturnV <$> view val
+          then ReturnV <$> refView r val
           else partialCmd $ DerefE (toExp r) s
-      where
-        (ptr, view) = follow r
 
     go (ExpV e') =
         partialCmd $ DerefE e' s
 
     go val =
         faildoc $ text "Cannot dereference" <+> ppr val
-
-    -- Given a 'Ref', follow the reference and return a 'VarPtr' where we can
-    -- find the root value along with a view function that will give us the
-    -- portion of the root value that we want.
-    follow :: Ref -> (VarPtr, Val Exp -> EvalM (Val Exp))
-    follow (VarR _ ptr) =
-        (ptr, return)
-
-    follow (IdxR r i len) =
-        (ptr, view')
-      where
-        (ptr, view) = follow r
-
-        view' :: Val Exp -> EvalM (Val Exp)
-        view' val = do val' <- view val
-                       evalIdx val' i len
-
-    follow (ProjR r f) = do
-        (ptr, view')
-      where
-        (ptr, view) = follow r
-
-        view' :: Val Exp -> EvalM (Val Exp)
-        view' val = do val' <- view val
-                       evalProj val' f
 
 evalExp e@(AssignE e1 e2 s) = do
     val1 <- evalExp e1
@@ -1089,7 +1062,7 @@ evalExp e@(AssignE e1 e2 s) = do
     go (RefV r) val2 = do
         h         <- getHeap
         old       <- readVarPtr ptr
-        maybe_new <- runMaybeT $ update old val2
+        maybe_new <- runMaybeT $ refUpdate r old val2
         case maybe_new of
           Just new | isValue new ->
               do writeVarPtr ptr new
@@ -1098,61 +1071,11 @@ evalExp e@(AssignE e1 e2 s) = do
               do killVars e
                  partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
       where
-        (ptr, update) = follow r
+        ptr :: VarPtr
+        ptr = refVarPtr r
 
     go val1 val2 =
         partialCmd $ AssignE (toExp val1) (toExp val2) s
-
-    -- | Given a reference, an accessor, and a value, set the
-    follow :: Ref -> (VarPtr, Val Exp -> Val Exp -> MaybeT EvalM (Val Exp))
-    follow (VarR _ ptr) =
-        (ptr, update)
-      where
-        update :: Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
-        update _old new = return new
-
-    follow (IdxR r i len) =
-        (ptr, update' i len)
-      where
-        (ptr, update) = follow r
-
-        update' :: Val Exp -> Maybe Int -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
-        update' i@(FixV I _ _ (BP 0) r) len@Nothing old@(ArrayV vs) new = do
-            old' <- lift $ evalIdx old i len
-            new' <- update old' new
-            ArrayV <$> vs P.// [(start, new')]
-          where
-            start :: Int
-            start = fromIntegral (numerator r)
-
-        update' i@(FixV I _ _ (BP 0) r) (Just len) old@(ArrayV vs) new = do
-            old' <- lift $ evalIdx old i (Just len)
-            new' <- update old' new
-            case new' of
-              ArrayV vs' | P.length vs' == len ->
-                  ArrayV <$> vs P.// ([start..start+len-1] `zip` P.toList vs')
-              _ ->
-                  fail "Cannot update slice with non-ArrayV"
-          where
-            start :: Int
-            start = fromIntegral (numerator r)
-
-        update' _ _ _ _ =
-            fail "Cannot take slice of non-ArrayV"
-
-    follow (ProjR r f) =
-        (ptr, update' f)
-      where
-        (ptr, update) = follow r
-
-        update' :: Field -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
-        update' f old@(StructV s flds) new = do
-            old' <- lift $ evalProj old f
-            new' <- update old' new
-            return $ StructV s (Map.insert f new' flds)
-
-        update' _ _ _ =
-            fail "Cannot project non-StructV"
 
 evalExp (WhileE e1 e2 _) =
     evalWhile e1 e2
@@ -1264,6 +1187,58 @@ evalFullCmd e =
                   CmdV h' e' -> return (h', e')
                   _          -> faildoc $ text "Command did not return CmdV or ReturnV." </> ppr val
     diffHeapExp h h' e'
+
+refVarPtr :: Ref -> VarPtr
+refVarPtr (VarR _ ptr) = ptr
+refVarPtr (IdxR r _ _) = refVarPtr r
+refVarPtr (ProjR r _)  = refVarPtr r
+
+refView :: Ref -> Val Exp -> EvalM (Val Exp)
+refView (VarR {})      val = return val
+refView (IdxR r i len) val = do val' <- refView r val
+                                evalIdx val' i len
+refView (ProjR r f)    val = do val' <- refView r val
+                                evalProj val' f
+
+-- | Update a reference to an object given the old value of the entire object
+-- and the new value of the pointed-to part.
+refUpdate :: Ref -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+refUpdate (VarR {}) _ new =
+    return new
+
+refUpdate (IdxR r i len) old new = do
+    old' <- lift $ refView r old
+    go i len old' new
+  where
+    go :: Val Exp -> Maybe Int -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+    go (FixV I _ _ (BP 0) n) Nothing (ArrayV vs) new = do
+        new' <- ArrayV <$> vs P.// [(start, new)]
+        refUpdate r old new'
+      where
+        start :: Int
+        start = fromIntegral (numerator n)
+
+    go (FixV I _ _ (BP 0) n) (Just len) (ArrayV vs) (ArrayV vs') = do
+        new' <- ArrayV <$> vs P.// ([start..start+len-1] `zip` P.toList vs')
+        refUpdate r old new'
+      where
+        start :: Int
+        start = fromIntegral (numerator n)
+
+    go _ _ _ _ =
+        fail "Cannot take slice of non-ArrayV"
+
+refUpdate (ProjR r f) old new = do
+    old' <- lift $ refView r old
+    go f old' new
+  where
+    go :: Field -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+    go f (StructV s flds) new = do
+        let new' = StructV s (Map.insert f new flds)
+        refUpdate r old new'
+
+    go _ _ _ =
+        fail "Cannot project non-StructV"
 
 class Eval a where
     eval :: a -> EvalM (Val a)
