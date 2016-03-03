@@ -835,6 +835,9 @@ evalExp (UnopE op e s) = do
     unop Lnot val =
         maybePartialVal $ liftBool op not val
 
+    unop Bnot val =
+        maybePartialVal $ liftBits op complement val
+
     unop Neg val =
         maybePartialVal $ negate val
 
@@ -1603,6 +1606,13 @@ liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
 
 liftNum2 op _ val1 val2 =
     ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+liftBits :: Unop -> (forall a . Bits a => a -> a) -> Val Exp -> Val Exp
+liftBits _ f (FixV sc s w (BP 0) r) =
+    FixV sc s w (BP 0) (fromIntegral (f (numerator r)))
+
+liftBits op _ val =
+    ExpV $ UnopE op (toExp val) noLoc
 
 liftBits2 :: Binop -> (forall a . Bits a => a -> a -> a) -> Val Exp -> Val Exp -> Val Exp
 liftBits2 _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
