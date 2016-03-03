@@ -1422,7 +1422,9 @@ evalIdx (RefV r) start len =
 
 evalIdx (ArrayV vs) (FixV I _ _ (BP 0) r) Nothing =
     case vs P.!? start of
-      Nothing  -> faildoc $ text "Array index out of bounds"
+      Nothing  -> faildoc $
+                  text "Array index" <+> ppr start <+>
+                  text "out of bounds" <+> parens (ppr (P.length vs))
       Just val -> return val
   where
     start :: Int
