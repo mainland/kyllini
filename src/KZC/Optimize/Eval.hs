@@ -14,7 +14,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Eval
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -1371,10 +1371,7 @@ evalFor ann v tau e1 e2 body = do
         loop (numerator r_start) (numerator (r_start + r_len))
       where
         loop :: Integer -> Integer -> EvalM (Val a)
-        loop !i !end | i == end =
-            return $ returnUnit
-
-        loop !i !end = do
+        loop !i !end | i < end = do
             val3 <- extendVarBinds [(v', toIdxVal i)] $ eval body
             case val3 of
               ReturnV {}     -> loop (i+1) end
@@ -1382,6 +1379,9 @@ evalFor ann v tau e1 e2 body = do
               CmdV {}        -> residualFor ann v' tau (toExp start) (toExp len) body
               CompV {}       -> residualFor ann v' tau (toExp start) (toExp len) body
               _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
+
+        loop _ _ =
+            return $ returnUnit
 
     go v' start len =
         residualFor ann v' tau (toExp start) (toExp len) body
