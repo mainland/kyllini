@@ -994,6 +994,10 @@ cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
 cgType tau@(ST {}) =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
+cgType (RefT (ArrT (ConstI n _) tau _) _) = do
+    ctau <- cgType tau
+    return [cty|$ty:ctau[$int:n]|]
+
 cgType (RefT (ArrT _ tau _) _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau*|]
