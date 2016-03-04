@@ -1,0 +1,19 @@
+#include <abs.blk>
+
+-- Brian Kernighan's algorithm
+fun hammingDistance( n_inp: int ) {
+  var count: int := 0;
+  var n: int := n_inp;
+  while( n != 0 ) {    n := n & (n-1);
+    count := count + 1;
+  }
+  return count;
+}
+
+fun comp test() {
+  x <- take
+
+  emit hammingDistance( 5 ) & 1
+}
+
+let comp main = read[int] >>> test() >>> write[uint]

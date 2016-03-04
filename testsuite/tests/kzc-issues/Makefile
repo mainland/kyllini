@@ -27,3 +27,9 @@ issue04.c : issue04.wpl $(KZC)
 
 issue05.c : issue05.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl $< -o $@
+
+issue07.c : issue07.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval $< -o $@
+
+issue07-simplified.c : issue07-simplified.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval $< -o $@

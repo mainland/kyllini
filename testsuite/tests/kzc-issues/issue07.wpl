@@ -1,0 +1,45 @@
+#include <abs.blk>
+
+-- Brian Kernighan's algorithm
+fun hammingDistance( n_inp: int ) {
+  var count: int := 0;
+  var n: int := n_inp;
+  while( n != 0 ) {
+    n := n & (n-1);
+    count := count + 1;
+  }
+  return count;
+}
+
+-- SORA Viterbi Branch Metric LUT generator
+fun mGen(i: int, inp: int, weight: int, invert: bool) {
+  let mv = int ( ( (inp * 8) + ( ( i /16 ) * 2 ) ) / 8 );
+  -- 1101101 = 109 = o133 backwards
+  -- 1001111 =  79 = o171 backwards
+  var j: int := hammingDistance( weight & i ) & 1;
+  if invert then {
+    j := (~j) & 1;
+  }
+  let ret = abs_int32(14 * j - 2 * mv);
+
+  return uint8(ret);
+}
+
+fun comp test() {
+  x <- take
+
+  var v109: arr[64] uint8;
+  var v79:  arr[64] uint8;
+
+  do {
+    for j in [0, 64] {
+      v109[j] := mGen(j, 0, 109, false);
+      v79[j] := mGen(j, 0, 79, false);
+    }
+  }
+
+  emits v109
+  emits v79
+}
+
+let comp main = read[int] >>> test() >>> write[uint8]
