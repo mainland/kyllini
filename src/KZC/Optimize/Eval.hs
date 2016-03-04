@@ -1301,14 +1301,15 @@ evalWhile :: forall a . (ModifiedVars a Var, Eval a)
           => Exp
           -> a
           -> EvalM (Val a)
-evalWhile e_cond body = do
-    evalLoop body $ evalCond >>= loop
+evalWhile e_cond body =
+    evalLoop body $
+    evalCond >>= loop
   where
     loop :: Val Exp -> EvalM (Val a)
     loop (ReturnV val) | isTrue val = do
         val2 <- evalBody
         case val2 of
-          ReturnV {} -> return val2
+          ReturnV {} -> evalCond >>= loop
           CmdV {}    -> residualWhile e_cond body
           CompV {}   -> residualWhile e_cond body
           _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
