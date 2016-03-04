@@ -467,11 +467,17 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitShiftBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
+        let tau1'    =  mkUnsigned tau1
+        co           <- mkCheckedSafeCast e1 tau1 tau1'
         (tau2, mce2) <- inferVal e2
-        checkBitT tau1
+        checkBitShiftT tau1'
         checkIntT tau2
-        instType tau1 exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        instType tau1' exp_ty
+        return $ C.BinopE cop <$> co mce1 <*> mce2 <*> pure l
+      where
+        mkUnsigned :: Type -> Type
+        mkUnsigned (FixT sc S w bp l) = (FixT sc U w bp l)
+        mkUnsigned tau                = tau
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
@@ -1421,6 +1427,22 @@ checkBitT tau =
     err = do
         [tau'] <- sanitizeTypes [tau]
         faildoc $ text "Expected a bit type, e.g., bit or int, but got:" <+> ppr tau'
+
+-- | Check that a type is a type on which we can perform bit shift operations.
+checkBitShiftT :: Type -> Ti ()
+checkBitShiftT tau =
+    compress tau >>= go
+  where
+    go :: Type -> Ti ()
+    go (BitT {})        = return ()
+    go (FixT _ U _ _ _) = return ()
+    go tau              = unifyTypes tau intT `catch`
+                              \(_ :: UnificationException) -> err
+
+    err :: Ti a
+    err = do
+        [tau'] <- sanitizeTypes [tau]
+        faildoc $ text "Expected a bit shift type, e.g., bit or uint, but got:" <+> ppr tau'
 
 -- | Check that a type is an integral type
 checkIntT :: Type -> Ti ()

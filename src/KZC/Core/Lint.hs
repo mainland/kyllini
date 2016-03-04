@@ -40,6 +40,7 @@ module KZC.Core.Lint (
     checkOrdT,
     checkBoolT,
     checkBitT,
+    checkBitShiftT,
     checkIntT,
     checkNumT,
     checkArrT,
@@ -374,7 +375,7 @@ inferExp (BinopE op e1 e2 _) = do
 
     checkBitShiftBinop :: Type -> Type -> m Type
     checkBitShiftBinop tau1 tau2 = do
-        checkBitT tau1
+        checkBitShiftT tau1
         checkIntT tau2
         return tau1
 
@@ -916,6 +917,14 @@ checkBitT (FixT {})  = return ()
 checkBitT tau =
     faildoc $ nest 2 $ group $
     text "Expected a bit type, e.g., bool or int, but got:" <+/> ppr tau
+
+-- | Check that a type is a type on which we can perform bit shift operations.
+checkBitShiftT :: MonadTc m => Type -> m ()
+checkBitShiftT (BoolT {})        = return ()
+checkBitShiftT (FixT _ U _ _ _)  = return ()
+checkBitShiftT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected a bit shift type, e.g., bool or uint, but got:" <+/> ppr tau
 
 -- | Check that a type is an integer type.
 checkIntT :: MonadTc m => Type -> m ()
