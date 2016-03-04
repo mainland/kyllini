@@ -367,41 +367,45 @@ tcExp (Z.VarE v _) exp_ty = do
     instType tau exp_ty
     return $ co $ C.varE <$> trans v
 
-tcExp (Z.UnopE op e1 l) exp_ty = do
-    (tau1, mce1) <- inferVal e1
-    (tau, mcop)  <- unop op tau1
-    instType tau exp_ty
-    return $ do ce1 <- mce1
-                cop <- mcop
-                return $ C.UnopE cop ce1 l
+tcExp (Z.UnopE op e l) exp_ty =
+    withExpContext e $
+    unop op
   where
-    unop :: Z.Unop -> Type -> Ti (Type, Ti C.Unop)
-    unop Z.Lnot tau = do
+    unop :: Z.Unop -> Ti (Ti C.Exp)
+    unop Z.Lnot = do
+        (tau, mce) <- inferVal e
         checkBoolT tau
-        return (tau, return C.Lnot)
+        instType tau exp_ty
+        return $ C.UnopE C.Lnot <$> mce <*> pure l
 
-    unop Z.Bnot tau = do
+    unop Z.Bnot = do
+        (tau, mce) <- inferVal e
         checkBitT tau
-        return (tau, return C.Bnot)
+        instType tau exp_ty
+        return $ C.UnopE C.Bnot <$> mce <*> pure l
 
-    unop Z.Neg tau = do
+    unop Z.Neg = do
+        (tau, mce) <- inferVal e
         checkNumT tau
-        return (mkSigned tau, return C.Neg)
+        instType (mkSigned tau) exp_ty
+        return $ C.UnopE C.Neg <$> mce <*> pure l
       where
         mkSigned :: Type -> Type
         mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
         mkSigned tau                = tau
 
-    unop (Z.Cast ztau2) tau1 = do
-        tau2 <- fromZ ztau2
+    unop (Z.Cast ztau2) = do
+        (tau1, mce) <- inferVal e
+        tau2        <- fromZ ztau2
         checkLegalCast tau1 tau2
-        let mcop = do ctau2 <- trans tau2
-                      return $ C.Cast ctau2
-        return (tau2, mcop)
+        instType tau2 exp_ty
+        return $ C.UnopE <$> (C.Cast <$> trans tau2) <*> mce <*> pure l
 
-    unop Z.Len tau = do
-        _ <- checkArrT tau
-        return (intT, return C.Len)
+    unop Z.Len = do
+        (tau, mce) <- inferVal e
+        _          <- checkArrT tau
+        instType intT exp_ty
+        return $ C.UnopE C.Len <$> mce <*> pure l
 
 tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     withExpContext e $
