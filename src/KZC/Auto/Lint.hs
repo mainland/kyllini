@@ -41,7 +41,6 @@ module KZC.Auto.Lint (
     checkOrdT,
     checkBoolT,
     checkBitT,
-    checkBitShiftT,
     checkIntT,
     checkNumT,
     checkArrT,
@@ -94,7 +93,6 @@ import KZC.Core.Lint (Tc(..),
                       checkOrdT,
                       checkBoolT,
                       checkBitT,
-                      checkBitShiftT,
                       checkIntT,
                       checkNumT,
                       checkArrT,
@@ -378,7 +376,7 @@ inferExp (BinopE op e1 e2 _) = do
 
     checkBitShiftBinop :: Type -> Type -> m Type
     checkBitShiftBinop tau1 tau2 = do
-        checkBitShiftT tau1
+        checkBitT tau1
         checkIntT tau2
         return tau1
 

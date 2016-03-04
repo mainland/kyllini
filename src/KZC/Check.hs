@@ -322,6 +322,14 @@ checkCompLets (cl:cls) k =
     checkCompLets cls $ \mcdecls -> do
     k (mcdecl:mcdecls)
 
+mkSigned :: Type -> Type
+mkSigned (FixT sc U w bp l) = FixT sc S w bp l
+mkSigned tau                = tau
+
+mkUnsigned :: Type -> Type
+mkUnsigned (FixT sc S w bp l) = FixT sc U w bp l
+mkUnsigned tau                = tau
+
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
     cc <- tcConst zc
@@ -380,19 +388,16 @@ tcExp (Z.UnopE op e l) exp_ty =
 
     unop Z.Bnot = do
         (tau, mce) <- inferVal e
-        checkBitT tau
-        instType tau exp_ty
-        return $ C.UnopE C.Bnot <$> mce <*> pure l
+        (tau', co) <- mkBitCast e tau
+        checkBitT tau'
+        instType tau' exp_ty
+        return $ C.UnopE C.Bnot <$> co mce <*> pure l
 
     unop Z.Neg = do
         (tau, mce) <- inferVal e
         checkNumT tau
         instType (mkSigned tau) exp_ty
         return $ C.UnopE C.Neg <$> mce <*> pure l
-      where
-        mkSigned :: Type -> Type
-        mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
-        mkSigned tau                = tau
 
     unop (Z.Cast ztau2) = do
         (tau1, mce) <- inferVal e
@@ -464,24 +469,20 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
-        checkBitT tau
-        instType tau exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        (tau', co)        <- mkBitCast e1 tau
+        checkBitT tau'
+        instType tau' exp_ty
+        return $ C.BinopE cop <$> co mce1 <*> co mce2 <*> pure l
 
     checkBitShiftBinop :: C.Binop -> Ti (Ti C.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
-        let tau1'    =  mkUnsigned tau1
-        co           <- mkCheckedSafeCast e1 tau1 tau1'
+        (tau1', co)  <- mkBitCast e1 tau1
+        checkBitT tau1'
         (tau2, mce2) <- inferVal e2
-        checkBitShiftT tau1'
         checkIntT tau2
         instType tau1' exp_ty
         return $ C.BinopE cop <$> co mce1 <*> mce2 <*> pure l
-      where
-        mkUnsigned :: Type -> Type
-        mkUnsigned (FixT sc S w bp l) = (FixT sc U w bp l)
-        mkUnsigned tau                = tau
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
@@ -1422,22 +1423,6 @@ checkBitT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go (BitT {}) = return ()
-    go (FixT {}) = return ()
-    go tau       = unifyTypes tau intT `catch`
-                       \(_ :: UnificationException) -> err
-
-    err :: Ti a
-    err = do
-        [tau'] <- sanitizeTypes [tau]
-        faildoc $ text "Expected a bit type, e.g., bit or int, but got:" <+> ppr tau'
-
--- | Check that a type is a type on which we can perform bit shift operations.
-checkBitShiftT :: Type -> Ti ()
-checkBitShiftT tau =
-    compress tau >>= go
-  where
-    go :: Type -> Ti ()
     go (BitT {})        = return ()
     go (FixT _ U _ _ _) = return ()
     go tau              = unifyTypes tau intT `catch`
@@ -1446,7 +1431,7 @@ checkBitShiftT tau =
     err :: Ti a
     err = do
         [tau'] <- sanitizeTypes [tau]
-        faildoc $ text "Expected a bit shift type, e.g., bit or uint, but got:" <+> ppr tau'
+        faildoc $ text "Expected a bit type, e.g., bit or uint, but got:" <+> ppr tau'
 
 -- | Check that a type is an integral type
 checkIntT :: Type -> Ti ()
@@ -1708,6 +1693,14 @@ mkCheckedSafeCast e tau1 tau2 = do
     co <- mkCast tau1 tau2
     checkSafeCast WarnUnsafeAutoCast (Just e) tau1 tau2
     return co
+
+mkBitCast :: Z.Exp -> Type -> Ti (Type, Co)
+mkBitCast e tau = do
+    co <- mkCheckedSafeCast e tau tau'
+    return (tau', co)
+  where
+    tau' :: Type
+    tau' = mkUnsigned tau
 
 -- | @mkCastT tau1 tau2@ generates a computation of type @ST T tau1 tau2@ that
 -- casts values from @tau1@ to @tau2@.
