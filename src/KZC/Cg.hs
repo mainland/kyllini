@@ -1109,6 +1109,11 @@ cgStorage isTopLevel cv tau =
           _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
         return $ CExp $ rl cv [cexp|$id:cv|]
 
+    go tau@(RefT {}) = do
+        ctau <- cgType tau
+        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv;|]
+        return $ CPtr $ CExp $ rl cv [cexp|$id:cv|]
+
     go tau = do
         ctau <- cgType tau
         appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv;|]
