@@ -21,3 +21,6 @@ clean :
 
 issue03.c : issue03.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) --fpeval $< -o $@
+
+issue04.c : issue04.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl $< -o $@

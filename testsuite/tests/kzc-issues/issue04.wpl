@@ -1,0 +1,11 @@
+#include <abs.blk>
+
+fun comp test() {
+  let ret1 = abs_int32(2);
+  let ret2 = abs_int32(-2); -- Codegen error
+
+  emit ret1
+  emit ret2
+}
+
+let comp main = read[int] >>> test() >>> write[int]
