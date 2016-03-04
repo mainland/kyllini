@@ -1,0 +1,13 @@
+fun comp test() {
+  x <- take;
+
+  var branch0 : int := 0;
+  var branch1 : int := 1;
+  var zs: arr[2] int;
+  do { zs[0] := if branch0 < branch1 then branch0 else branch1 };
+  
+  emit zs[0];
+  emit x;
+}
+
+let comp main = read[int] >>> test() >>> write[int]
