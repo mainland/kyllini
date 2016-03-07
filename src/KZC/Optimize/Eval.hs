@@ -821,10 +821,8 @@ evalExp (ConstE c _) =
     evalConst c
 
 evalExp (VarE v _) = do
-    maybe_v' <- lookupSubst v
-    case maybe_v' of
-      Nothing -> lookupVarBind v
-      Just v' -> lookupVarBind v'
+    v' <- maybe v id <$> lookupSubst v
+    lookupVarBind v'
 
 evalExp (UnopE op e s) = do
     val <- evalExp e
