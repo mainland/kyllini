@@ -60,7 +60,7 @@ ifC e thenc elsec = do
 ifC' :: Label -> Exp -> LComp -> LComp -> LComp
 ifC' l e thenc elsec = Comp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
 
-letC :: MonadUnique m => LocalDecl ->  m LComp
+letC :: MonadUnique m => LocalDecl -> m LComp
 letC decl = do
     l <- genLabel "letk"
     return $ Comp [LetC l decl (srclocOf decl)]
