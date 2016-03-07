@@ -1047,11 +1047,8 @@ evalExp (DerefE e s) =
           then ReturnV <$> refView r val
           else partialCmd $ DerefE (toExp r) s
 
-    go (ExpV e') =
-        partialCmd $ DerefE e' s
-
     go val =
-        faildoc $ text "Cannot dereference" <+> ppr val
+        partialCmd $ DerefE (toExp val) s
 
 evalExp e@(AssignE e1 e2 s) = do
     val1 <- evalExp e1
