@@ -996,25 +996,28 @@ evalExp (LetE decl e2 s2) =
         case val2 of
           ExpV e2'   -> partial $ ExpV   $ LetE decl e2' s2
           CmdV h e2' -> partial $ CmdV h $ LetE decl e2' s2
-          _          -> wrapLet val2
-      where
-        wrapLet :: Val Exp -> EvalM (Val Exp)
-        wrapLet val2
-            | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
-            | otherwise             = return val2
-          where
-            e2 :: Exp
-            e2 = toExp val2
-
-            v :: Var
-            [v] = Set.toList (binders decl)
+          _          -> wrapLet decl val2
 
     go (HeapDeclVal k) = do
         val2 <- evalExp e2
         case val2 of
+          ExpV e2'   -> do decl <- getHeap >>= k
+                           partial $ ExpV   $ LetE decl e2' s2
           CmdV h e2' -> do decl <- k h
                            partial $ CmdV h $ LetE decl e2' s2
-          _          -> return val2
+          _          -> do decl <- getHeap >>= k
+                           wrapLet decl val2
+
+    wrapLet :: LocalDecl -> Val Exp -> EvalM (Val Exp)
+    wrapLet decl val2
+        | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
+        | otherwise             = return val2
+      where
+        e2 :: Exp
+        e2 = toExp val2
+
+        v :: Var
+        [v] = Set.toList (binders decl)
 
 evalExp e@(CallE f iotas es s) = do
     maybe_f' <- lookupSubst f
