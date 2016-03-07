@@ -23,7 +23,6 @@ module KZC.Optimize.Eval (
     evalEvalM,
 
     evalProgram,
-    evalExp,
     toExp
   ) where
 
