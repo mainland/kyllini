@@ -14,7 +14,8 @@ module KZC.Auto.Comp (
     ifC,
     ifC',
     letC,
-    letC',
+    letDC,
+    letDC',
     whileC,
     forC,
     liftC,
@@ -60,13 +61,16 @@ ifC e thenc elsec = do
 ifC' :: Label -> Exp -> LComp -> LComp -> LComp
 ifC' l e thenc elsec = Comp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
 
-letC :: MonadUnique m => LocalDecl -> m LComp
-letC decl = do
+letC :: MonadUnique m => Var -> Type -> Exp -> m LComp
+letC v tau e = letDC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
+
+letDC :: MonadUnique m => LocalDecl -> m LComp
+letDC decl = do
     l <- genLabel "letk"
     return $ Comp [LetC l decl (srclocOf decl)]
 
-letC' :: Label -> LocalDecl -> LComp
-letC' l decl = Comp [LetC l decl (srclocOf decl)]
+letDC' :: Label -> LocalDecl -> LComp
+letDC' l decl = Comp [LetC l decl (srclocOf decl)]
 
 whileC :: MonadUnique m => Exp -> LComp -> m LComp
 whileC e c  = do
