@@ -120,7 +120,7 @@ data Val a where
     -- | A residual computation.
     CompV :: Heap -> [LStep] -> Val LComp
 
-    -- | A computation or computation function we nothing about except its name.
+    -- | A computation or computation function we know nothing about except its name.
     CompVarV :: Var -> Val LComp
 
     -- | A computation closure.
