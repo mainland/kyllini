@@ -27,6 +27,7 @@ module KZC.Optimize.Eval (
   ) where
 
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
+import Control.Monad (filterM)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
@@ -126,7 +127,7 @@ data Val a where
     CompClosV :: !Theta -> Type -> !(EvalM (Val LComp)) -> Val LComp
 
     -- | A computation function closure.
-    FunCompClosV :: !Theta -> ![IVar] -> ![Var] -> Type -> !(EvalM (Val LComp)) -> Val LComp
+    FunCompClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM (Val LComp)) -> Val LComp
 
 deriving instance Eq (Val a)
 deriving instance Ord (Val a)
@@ -516,7 +517,7 @@ evalDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
-    extendCVarBinds [(bVar f', FunCompClosV theta ivs vs' tau_ret eval)] $ do
+    extendCVarBinds [(bVar f', FunCompClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
     k $ const . return $ LetFunCompD f' ivs (vs' `zip` taus) tau_ret comp l
   where
     tau :: Type
@@ -681,11 +682,43 @@ evalStep step@(CallC _ f iotas args _) =
     go v_f iotas' v_args
   where
     go :: Val a -> [Iota] -> [ArgVal] -> EvalM (Val LComp)
-    go (FunCompClosV theta ivs vs _tau_ret k) iotas' v_args =
+    go (FunCompClosV theta ivs vbs _tau_ret k) iotas' v_args =
         withSubst theta $
-        extendIVarSubst (ivs `zip` iotas') $
-        extendArgBinds  (vs  `zip` v_args) $
-        k
+        withUniqVars vs $ \vs' -> do
+        extendIVarSubst (ivs `zip` iotas') $ do
+        extendArgBinds  (vs' `zip` v_args) $ do
+        taus' <- mapM simplType taus
+        k >>= wrapLetArgs vs' taus'
+      where
+        vs :: [Var]
+        taus :: [Type]
+        (vs, taus) = unzip vbs
+
+        -- If @val@ uses any of the function's parameter bindings, we need to
+        -- keep them around. This is exactly what we need to do in the @CallE@
+        -- case, but here we need to add bindings to a computation rather than
+        -- to an expression.
+        wrapLetArgs :: [Var] -> [Type] -> Val LComp -> EvalM (Val LComp)
+        wrapLetArgs vs' taus' val = do
+            bs <- filterM isFree (zip3 vs' taus' v_args)
+            if null bs
+              then return val
+              else transformCompVal (letBinds bs) val
+          where
+            letBinds :: [(Var, Type, ArgVal)] -> LComp -> EvalM LComp
+            letBinds bs (Comp steps) = do
+              bindsSteps <- mapM letBind bs
+              return $ Comp $ concat bindsSteps ++ steps
+
+            letBind :: (Var, Type, ArgVal) -> EvalM [LStep]
+            letBind (_v, RefT {}, _e1)      = return []
+            letBind (v,  tau,     ExpAV e1) = unComp <$> letC v tau (toExp e1)
+            letBind (_v, _tau,    _e1)      = return []
+
+            isFree :: (Var, Type, ArgVal) -> EvalM Bool
+            isFree (v, _, _) = do
+                comp <- toComp val
+                return $ v `member` (fvs comp :: Set Var)
 
     go _val _iotas' _v_es = do
       faildoc $ text "Cannot call computation function" <+> ppr f
@@ -1012,12 +1045,15 @@ evalExp e@(CallE f iotas es s) = do
         wrapLetArgs :: [Var] -> [Type] -> Val Exp -> EvalM (Val Exp)
         wrapLetArgs vs' taus' val =
             -- We must be careful here not to apply transformExpVal if the list
-            -- of free variables is null, because @transformExpVal id@ is not
-            -- the identify function!
+            -- of free variables is null because @transformExpVal id@ is not the
+            -- identify function!
             case filter isFree (zip3 vs' taus' v_es) of
               [] -> return val
-              bs -> transformExpVal (\e -> foldr letBind e bs) val
+              bs -> transformExpVal (letBinds bs) val
           where
+            letBinds :: [(Var, Type, Val Exp)] -> Exp -> Exp
+            letBinds bs e = foldr letBind e bs
+
             letBind :: (Var, Type, Val Exp) -> Exp -> Exp
             letBind (_v, RefT {}, _e1) e2 = e2
             letBind (v,  tau,      e1) e2 = letE v tau (toExp e1) e2
@@ -1433,10 +1469,10 @@ evalProj (StructV _ kvs) f =
 evalProj val f =
     partialExp $ ProjE (toExp val) f noLoc
 
--- |  @'transformExpVal' f val'@ transforms a value of type @'Val' Exp@ by applying
--- f. Note that 'transformExpVal' will convert some sub-term of its @Val Exp@ to
--- an 'ExpV' if it isn't already, so even if @f@ is the identity function,
--- 'transformExpVal' /is not/ the identity function.
+-- | @'transformExpVal' f val'@ transforms a value of type @'Val' Exp@ by
+-- applying f. Note that 'transformExpVal' will convert some sub-term of its
+-- @Val Exp@ to an 'ExpV' if it isn't already, so even if @f@ is the identity
+-- function, 'transformExpVal' /is not/ the identity function.
 transformExpVal :: (Exp -> Exp) -> Val Exp -> EvalM (Val Exp)
 transformExpVal f val0 =
     go val0
@@ -1445,8 +1481,15 @@ transformExpVal f val0 =
     go (ReturnV val) = ReturnV <$> go val
     go (ExpV e)      = partial $ ExpV   $ f e
     go (CmdV h e)    = partial $ CmdV h $ f e
-    go v | isValue v = return v
-         | otherwise = partial $ ExpV   $ f (toExp v)
+    go v             = partial $ ExpV   $ f (toExp v)
+
+-- | @'transformCompVal' f val'@ transforms a value of type @'Val' Comp@ by
+-- applying f. Note that 'transformCompVal' will convert some sub-term of its
+-- @Val Comp@ to a 'CompV' if it isn't already, so even if @f@ is the identity
+-- function, 'transformCompVal' /is not/ the identity function.
+transformCompVal :: (LComp -> EvalM LComp) -> Val LComp -> EvalM (Val LComp)
+transformCompVal f val =
+    toComp val >>= f >>= partialComp
 
 -- | Return 'True' if a 'Val Exp' is actually a value and 'False'
 -- otherwise.
