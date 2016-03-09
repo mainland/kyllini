@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Module      :  KZC.Flags
 -- Copyright   :  (c) 2015 Drexel University
@@ -46,9 +48,9 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import Data.Bits
-import Data.Int
 import Data.List (foldl')
 import Data.Monoid
+import Data.Word
 
 data ModeFlag = Help
               | Compile
@@ -68,7 +70,7 @@ data DynFlag = Quiet
              | MayInline
              | BoundsCheck
              | PartialEval
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError
               | WarnUnusedCommandBind
@@ -102,16 +104,37 @@ data TraceFlag = TracePhase
                | TraceEval
   deriving (Eq, Ord, Enum, Bounded, Show)
 
+newtype FlagSet a = FlagSet Word32
+  deriving (Eq, Ord)
+
+testFlag :: Enum a => FlagSet a -> a -> Bool
+testFlag (FlagSet fs) f = fs `testBit` fromEnum f
+
+setFlag :: Enum a => FlagSet a -> a -> FlagSet a
+setFlag (FlagSet fs) f = FlagSet $ fs `setBit` fromEnum f
+
+unsetFlag :: Enum a => FlagSet a -> a -> FlagSet a
+unsetFlag (FlagSet fs) f = FlagSet $ fs `clearBit` fromEnum f
+
+instance Monoid (FlagSet a) where
+    mempty = FlagSet 0
+
+    FlagSet x `mappend` FlagSet y = FlagSet (x .|. y)
+
+instance (Enum a, Bounded a, Show a) => Show (FlagSet a) where
+    show (FlagSet n) = show [f | f <- [minBound..maxBound::a],
+                                 n `testBit` fromEnum f]
+
 data Flags = Flags
     { mode      :: !ModeFlag
     , verbLevel :: !Int
     , maxErrCtx :: !Int
     , maxSimpl  :: !Int
 
-    , dynFlags   :: !Int32
-    , warnFlags  :: !Int32
-    , dumpFlags  :: !Int32
-    , traceFlags :: !Int32
+    , dynFlags   :: !(FlagSet DynFlag)
+    , warnFlags  :: !(FlagSet WarnFlag)
+    , dumpFlags  :: !(FlagSet DumpFlag)
+    , traceFlags :: !(FlagSet TraceFlag)
 
     , includePaths :: ![FilePath]
     , defines      :: ![(String, String)]
@@ -128,10 +151,10 @@ instance Monoid Flags where
         , maxErrCtx = 1
         , maxSimpl  = 4
 
-        , dynFlags   = bit (fromEnum LinePragmas)
-        , warnFlags  = 0
-        , dumpFlags  = 0
-        , traceFlags = 0
+        , dynFlags   = mempty
+        , warnFlags  = mempty
+        , dumpFlags  = mempty
+        , traceFlags = mempty
 
         , includePaths = []
         , defines      = []
@@ -146,10 +169,10 @@ instance Monoid Flags where
         , maxErrCtx = max (maxErrCtx f1) (maxErrCtx f2)
         , maxSimpl  = max (maxSimpl f1) (maxSimpl f2)
 
-        , dynFlags   = dynFlags f1   .|. dynFlags f2
-        , warnFlags  = warnFlags f1  .|. warnFlags f2
-        , dumpFlags  = dumpFlags f1  .|. dumpFlags f2
-        , traceFlags = traceFlags f1 .|. traceFlags f2
+        , dynFlags   = dynFlags f1   <> dynFlags f2
+        , warnFlags  = warnFlags f1  <> warnFlags f2
+        , dumpFlags  = dumpFlags f1  <> dumpFlags f2
+        , traceFlags = traceFlags f1 <> traceFlags f2
 
         , includePaths = includePaths f1 <> includePaths f2
         , defines      = defines f1 <> defines f2
@@ -171,7 +194,7 @@ defaultFlags =
     setFlags f xs flags = foldl' (flip f) flags xs
 
     defaultDynFlags :: [DynFlag]
-    defaultDynFlags = []
+    defaultDynFlags = [LinePragmas]
 
     defaultWarnFlags :: [WarnFlag]
     defaultWarnFlags = [ WarnUnusedCommandBind
@@ -222,44 +245,34 @@ setMode :: ModeFlag -> Flags -> Flags
 setMode f flags = flags { mode = f }
 
 testDynFlag :: DynFlag -> Flags -> Bool
-testDynFlag f flags =
-    dynFlags flags `testBit` fromEnum f
+testDynFlag f flags = dynFlags flags `testFlag` f
 
 setDynFlag :: DynFlag -> Flags -> Flags
-setDynFlag f flags =
-    flags { dynFlags = dynFlags flags `setBit` fromEnum f }
+setDynFlag f flags = flags { dynFlags = setFlag (dynFlags flags) f }
 
 unsetDynFlag :: DynFlag -> Flags -> Flags
-unsetDynFlag f flags =
-    flags { dynFlags = dynFlags flags `clearBit` fromEnum f }
+unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
 
 testWarnFlag :: WarnFlag -> Flags -> Bool
-testWarnFlag f flags =
-    warnFlags flags `testBit` fromEnum f
+testWarnFlag f flags = warnFlags flags `testFlag` f
 
 setWarnFlag :: WarnFlag -> Flags -> Flags
-setWarnFlag f flags =
-    flags { warnFlags = warnFlags flags `setBit` fromEnum f }
+setWarnFlag f flags = flags { warnFlags = setFlag (warnFlags flags) f }
 
 unsetWarnFlag :: WarnFlag -> Flags -> Flags
-unsetWarnFlag f flags =
-    flags { warnFlags = warnFlags flags `clearBit` fromEnum f }
+unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
 
 testDumpFlag :: DumpFlag -> Flags -> Bool
-testDumpFlag f flags =
-    dumpFlags flags `testBit` fromEnum f
+testDumpFlag f flags = dumpFlags flags `testFlag` f
 
 setDumpFlag :: DumpFlag -> Flags -> Flags
-setDumpFlag f flags =
-    flags { dumpFlags = dumpFlags flags `setBit` fromEnum f }
+setDumpFlag f flags = flags { dumpFlags = setFlag (dumpFlags flags) f }
 
 testTraceFlag :: TraceFlag -> Flags -> Bool
-testTraceFlag f flags =
-    traceFlags flags `testBit` fromEnum f
+testTraceFlag f flags = traceFlags flags `testFlag` f
 
 setTraceFlag :: TraceFlag -> Flags -> Flags
-setTraceFlag f flags =
-    flags { traceFlags = traceFlags flags `setBit` fromEnum f }
+setTraceFlag f flags = flags { traceFlags = setFlag (traceFlags flags) f }
 
 whenDynFlag :: MonadFlags m => DynFlag -> m () -> m ()
 whenDynFlag f act = do
