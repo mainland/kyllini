@@ -47,7 +47,8 @@ import Data.Foldable (toList, foldMap)
 import Data.IORef (IORef)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Data.List (foldl')
+import Data.List (foldl',
+                  partition)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -354,6 +355,21 @@ extendCVarBinds :: [(Var, Val LComp)] -> EvalM a -> EvalM a
 extendCVarBinds vbs m =
     extendEnv cvarBinds (\env x -> env { cvarBinds = x }) vbs m
 
+-- | Extend the set of variable bindings. The given variables are all specified
+-- as having unknown values. We use this when partially evaluating function
+-- bodies.
+extendUnknownVarBinds :: [(Var, Type)] -> EvalM a -> EvalM a
+extendUnknownVarBinds vbs m =
+    extendVarBinds  [(v, UnknownV)   | (v, _) <- pvbs] $
+    extendCVarBinds [(v, CompVarV v) | (v, _) <- ipvbs] $
+    m
+  where
+    pvbs, ipvbs :: [(Var, Type)]
+    (pvbs, ipvbs) = partition isPure vbs
+
+    isPure :: (Var, Type) -> Bool
+    isPure (_, tau) = isPureT tau
+
 getHeap :: EvalM Heap
 getHeap = gets heap
 
@@ -396,6 +412,14 @@ killVars e = do
     vbs      <- asks varBinds
     let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs]]
     modify $ \s -> s { heap = foldl' (\m ptr -> IntMap.insert ptr UnknownV m) (heap s) ptrs }
+
+-- | Kill the entire heap. We use this when partially evaluating function
+-- bodies.
+killHeap :: EvalM a -> EvalM a
+killHeap m =
+    savingHeap $ do
+    modify $ \s -> s { heap = IntMap.map (const UnknownV) (heap s) }
+    m
 
 isTrue :: Val Exp -> Bool
 isTrue (BoolV True) = True
@@ -469,8 +493,16 @@ evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
+    e' <- killHeap $
+          extendIVars (ivs `zip` repeat IotaK) $
+          extendVars vbs $
+          extendUnknownVarBinds vbs $
+          inSTScope tau_ret $
+          inLocalScope $
+          withSummaryContext e $
+          toExp <$> evalExp e
     extendVarBinds [(bVar f', FunClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
-    k $ const . return $ LetFunD f' ivs (vs' `zip` taus) tau_ret e l
+    k $ const . return $ LetFunD f' ivs (vs' `zip` taus) tau_ret e' l
   where
     tau :: Type
     tau = FunT ivs taus tau_ret l
@@ -503,8 +535,12 @@ evalDecl (LetCompD v tau comp s) k =
     extendVars [(bVar v, tau)] $ do
     theta <- askSubst
     withUniqBoundVar v $ \v' -> do
+    comp' <- killHeap $
+             inSTScope tau $
+             inLocalScope $
+             evalComp comp >>= toComp
     extendCVarBinds [(bVar v', CompClosV theta tau eval)] $ do
-    k $ const . return $ LetCompD v' tau comp s
+    k $ const . return $ LetCompD v' tau comp' s
   where
     eval :: EvalM (Val LComp)
     eval =
@@ -517,8 +553,15 @@ evalDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
+    comp' <- killHeap $
+             extendIVars (ivs `zip` repeat IotaK) $
+             extendVars vbs $
+             extendUnknownVarBinds vbs $
+             inSTScope tau_ret $
+             inLocalScope $
+             evalComp comp >>= toComp
     extendCVarBinds [(bVar f', FunCompClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
-    k $ const . return $ LetFunCompD f' ivs (vs' `zip` taus) tau_ret comp l
+    k $ const . return $ LetFunCompD f' ivs (vs' `zip` taus) tau_ret comp' l
   where
     tau :: Type
     tau = FunT ivs taus tau_ret l
@@ -555,11 +598,11 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     extendVars [(bVar v, refT tau)] $ do
     withUniqBoundVar v $ \v' -> do
     tau' <- simplType tau
-    val1 <- case maybe_e1 of
-              Nothing -> defaultValue tau'
-              Just e1 -> withSummaryContext e1 $ evalExp e1
     -- Allocate heap storage for v and initialize it
-    ptr <- newVarPtr
+    ptr  <- newVarPtr
+    val1 <- case maybe_e1 of
+              Nothing -> maybe UnknownV id <$> defaultValue tau'
+              Just e1 -> withSummaryContext e1 $ evalExp e1
     writeVarPtr ptr val1
     extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
     k $ HeapDeclVal $ \h ->
@@ -572,9 +615,10 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     mkInit h ptr dflt = do
         val      <- heapLookup h ptr
         let val' =  if isKnown val then val else dflt
-        if isDefaultValue val'
-          then return Nothing
-          else return $ Just (toExp val')
+        case val' of
+          UnknownV                -> return Nothing
+          _ | isDefaultValue val' -> return Nothing
+            | otherwise           -> return $ Just (toExp val')
 
 evalComp :: LComp -> EvalM (Val LComp)
 evalComp (Comp steps) = evalSteps steps
@@ -665,6 +709,9 @@ evalStep (VarC _ v _) =
     go (CompClosV theta _tau k) =
         withSubst theta $
         k
+
+    go val@(CompVarV {}) =
+        return val
 
     go _ =
         faildoc $
@@ -837,9 +884,12 @@ evalConst (BoolC f)          = return $ BoolV f
 evalConst (FixC sc s w bp r) = return $ FixV sc s w bp r
 evalConst (FloatC fp r)      = return $ FloatV fp r
 evalConst (StringC s)        = return $ StringV s
-evalConst c@(ArrayC cs)      = do (_, tau) <- inferConst noLoc c >>= checkArrT
-                                  dflt     <- defaultValue tau
-                                  (ArrayV . P.fromList dflt) <$> mapM evalConst cs
+evalConst c@(ArrayC cs)      = do (_, tau)   <- inferConst noLoc c >>= checkArrT
+                                  vals       <- mapM evalConst cs
+                                  maybe_dflt <- defaultValue tau
+                                  case maybe_dflt of
+                                    Nothing   -> partialExp $ arrayE (map toExp vals)
+                                    Just dflt -> return $ ArrayV $ P.fromList dflt vals
 
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs
@@ -1120,10 +1170,12 @@ evalExp (ForE ann v tau e1 e2 e3 _) =
     evalFor ann v tau e1 e2 e3
 
 evalExp e@(ArrayE es _) = do
-    (_, tau) <- inferExp e >>= checkArrT
-    dflt     <- defaultValue tau
-    vals     <- mapM evalExp es
-    return $ ArrayV $ P.fromList dflt vals
+    (_, tau)   <- inferExp e >>= checkArrT
+    vals       <- mapM evalExp es
+    maybe_dflt <- defaultValue tau
+    case maybe_dflt of
+      Nothing   -> partialExp $ arrayE (map toExp vals)
+      Just dflt -> return $ ArrayV $ P.fromList dflt vals
 
 evalExp (IdxE arr start len _) = do
     v_arr   <- evalExp arr
@@ -1509,11 +1561,11 @@ isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
 isValue _                = False
 
 -- | Produce a default value of the given type.
-defaultValue :: Type -> EvalM (Val Exp)
+defaultValue :: Type -> EvalM (Maybe (Val Exp))
 defaultValue tau =
-    go tau
+    runMaybeT $ go tau
   where
-    go :: Type -> EvalM (Val Exp)
+    go :: Type -> MaybeT EvalM (Val Exp)
     go (UnitT {})         = return UnitV
     go (BoolT {})         = return $ BoolV False
     go (FixT sc s w bp _) = return $ FixV sc s w bp 0
@@ -1521,7 +1573,7 @@ defaultValue tau =
     go (StringT {})       = return $ StringV ""
 
     go (StructT s _) = do
-        StructDef s flds _ <- lookupStruct s
+        StructDef s flds _ <- lift $ lookupStruct s
         let (fs, taus)     =  unzip flds
         vals               <- mapM go taus
         return $ StructV s (Map.fromList (fs `zip` vals))
@@ -1747,6 +1799,9 @@ instance ToSteps (Val LComp) where
 
     toSteps (CompV _ steps) =
         return steps
+
+    toSteps (CompVarV v) =
+        unComp <$> varC v
 
     toSteps val =
         faildoc $ text "toSteps: Cannot convert value to steps:" <+> ppr val
