@@ -1742,7 +1742,7 @@ toComp :: ToSteps a => a -> EvalM LComp
 toComp x = Comp <$> toSteps x
 
 instance ToSteps (Val LComp) where
-    toSteps (CompReturnV val) = do
+    toSteps (CompReturnV val) =
         unComp <$> returnC (toExp val)
 
     toSteps (CompV _ steps) =
