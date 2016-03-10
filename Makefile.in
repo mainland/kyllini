@@ -77,6 +77,7 @@ SOURCE = \
 	KZC/Label.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Eval.hs \
+	KZC/Optimize/Eval/Monad.hs \
 	KZC/Optimize/Eval/PArray.hs \
 	KZC/Optimize/Fuse.hs \
 	KZC/Optimize/Simplify.hs \
