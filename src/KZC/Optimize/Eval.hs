@@ -83,7 +83,6 @@ data Val a where
 
     UnitV   :: Val Exp
     BoolV   :: !Bool -> Val Exp
-    BitV    :: !Bool -> Val Exp
     FixV    :: !Scale -> !Signedness -> !W -> !BP -> !Rational -> Val Exp
     FloatV  :: !FP -> !Rational -> Val Exp
     StringV :: !String -> Val Exp
@@ -430,13 +429,11 @@ isFalse (BoolV False) = True
 isFalse _             = False
 
 isZero :: Val Exp -> Bool
-isZero (BitV False)     = True
 isZero (FixV _ _ _ _ 0) = True
 isZero (FloatV _ 0)     = True
 isZero _                = False
 
 isOne :: Val Exp -> Bool
-isOne (BitV True)      = True
 isOne (FixV _ _ _ _ 1) = True
 isOne (FloatV _ 1)     = True
 isOne _                = False
@@ -1551,7 +1548,6 @@ transformCompVal f val =
 isValue :: Val Exp -> Bool
 isValue UnitV            = True
 isValue (BoolV {})       = True
-isValue (BitV {})        = True
 isValue (FixV {})        = True
 isValue (FloatV {})      = True
 isValue (StringV {})     = True
@@ -1590,7 +1586,6 @@ defaultValue tau =
 isDefaultValue :: Val Exp -> Bool
 isDefaultValue UnitV            = True
 isDefaultValue (BoolV False)    = True
-isDefaultValue (BitV False)     = True
 isDefaultValue (FixV _ _ _ _ 0) = True
 isDefaultValue (FloatV _ 0)     = True
 isDefaultValue (StringV "")     = True
@@ -1612,7 +1607,6 @@ diffHeapComp h h' comp = do
 isKnown :: Val Exp -> Bool
 isKnown UnknownV         = False
 isKnown (BoolV {})       = True
-isKnown (BitV {})        = True
 isKnown (FixV {})        = True
 isKnown (FloatV {})      = True
 isKnown (StringV {})     = True
@@ -1880,7 +1874,6 @@ instance Pretty (Val a) where
     ppr UnknownV         = text "<unknown>"
     ppr val@UnitV        = ppr (toExp val)
     ppr val@(BoolV {})   = ppr (toExp val)
-    ppr val@(BitV {})    = ppr (toExp val)
     ppr val@(FixV {})    = ppr (toExp val)
     ppr val@(FloatV {})  = ppr (toExp val)
     ppr val@(StringV {}) = ppr (toExp val)
