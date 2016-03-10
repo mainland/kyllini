@@ -38,6 +38,7 @@ import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P
+import KZC.Optimize.Eval.Val
 import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
