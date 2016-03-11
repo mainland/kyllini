@@ -3,7 +3,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
+#include <sys/resource.h>
+#include <sys/times.h>
 
 #include <kz.h>
 
@@ -51,6 +54,32 @@ void kz_error(const char* s)
     fflush(stdout);
     fflush(stderr);
     exit(EXIT_FAILURE);
+}
+
+long double kz_get_cpu_time(void)
+{
+    clockid_t clk_id;
+    struct timespec ts;
+
+    clk_id = CLOCK_PROCESS_CPUTIME_ID;
+
+    if (clock_gettime(clk_id, &ts) == 0)
+        return (long double) ts.tv_sec + (long double) ts.tv_nsec / 1e9;
+
+    return -1;
+}
+
+long double kz_get_real_time(void)
+{
+    clockid_t clk_id;
+    struct timespec ts;
+
+    clk_id = CLOCK_MONOTONIC_RAW;
+
+    if (clock_gettime(clk_id, &ts) == 0)
+        return (long double) ts.tv_sec + (long double) ts.tv_nsec / 1e9;
+
+    return -1;
 }
 
 int main(int argc, char *argv[])

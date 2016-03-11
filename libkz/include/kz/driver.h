@@ -46,6 +46,9 @@ void kz_check_error(int err, const char* loc, const char *format, ...)
 
 void kz_error(const char*);
 
+long double kz_get_cpu_time(void);
+long double kz_get_real_time(void);
+
 void         kz_init_input_bit(const kz_params_t*, kz_buf_t*);
 void         kz_init_output_bit(const kz_params_t*, kz_buf_t*);
 void         kz_cleanup_input_bit(const kz_params_t*, kz_buf_t*);

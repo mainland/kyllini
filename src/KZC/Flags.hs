@@ -70,6 +70,7 @@ data DynFlag = Quiet
              | MayInline
              | BoundsCheck
              | PartialEval
+             | Timers
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError

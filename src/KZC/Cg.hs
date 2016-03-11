@@ -2,6 +2,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RebindableSyntax #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Cg
@@ -70,7 +71,7 @@ compileProgram (Program decls comp tau) = do
         let donek :: DoneK
             donek ce = cgAssign (resultType tau) cres ce
         -- Compile the computation
-        cgThread takek emitk donek tau comp
+        cgTimed $ cgThread takek emitk donek tau comp
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -198,6 +199,31 @@ void kz_main(const typename kz_params_t* $id:params)
         go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+
+cgTimed :: forall a . Cg a -> Cg a
+cgTimed m = do
+    flags <- askFlags
+    go flags
+  where
+    go :: Flags -> Cg a
+    go flags | testDynFlag Timers flags = do
+        cpu_time_start  <- gensym "cpu_time_start"
+        cpu_time_end    <- gensym "cpu_time_end"
+        real_time_start <- gensym "real_time_start"
+        real_time_end   <- gensym "real_time_end"
+        appendTopDecl [cdecl|long double $id:cpu_time_start, $id:cpu_time_end;|]
+        appendTopDecl [cdecl|long double $id:real_time_start, $id:real_time_end;|]
+        appendStm [cstm|$id:cpu_time_start = kz_get_cpu_time();|]
+        appendStm [cstm|$id:real_time_start = kz_get_real_time();|]
+        x <- m
+        appendStm [cstm|$id:cpu_time_end = kz_get_cpu_time();|]
+        appendStm [cstm|$id:real_time_end = kz_get_real_time();|]
+        appendStm [cstm|printf("Elapsed cpu time: %Les\n", $id:cpu_time_end - $id:cpu_time_start);|]
+        appendStm [cstm|printf("Elapsed real time: %Les\n", $id:real_time_end - $id:real_time_start);|]
+        return x
+
+    go _flags =
+        m
 
 cgLabels :: Set Label -> Cg ()
 cgLabels ls = do
