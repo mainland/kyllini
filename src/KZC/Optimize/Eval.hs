@@ -21,7 +21,8 @@ module KZC.Optimize.Eval (
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad (filterM)
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Trans.Maybe (MaybeT,
+                                  runMaybeT)
 import Data.Bits
 import Data.Loc
 import qualified Data.Map as Map
@@ -43,6 +44,10 @@ import KZC.Optimize.Eval.Val
 import KZC.Summary
 import KZC.Util.SetLike
 import KZC.Vars
+
+-- | Return 'True' if we should partially-evaluate.
+peval :: Flags -> Bool
+peval = testDynFlag PartialEval
 
 evalProgram :: LProgram -> EvalM LProgram
 evalProgram (Program decls comp tau) =
@@ -497,14 +502,21 @@ evalExp e = do
     eval flags e
   where
     eval :: Flags -> Exp -> EvalM (Val Exp)
-    eval _flags (ConstE c _) =
+    eval flags (ConstE c _) | peval flags =
         evalConst c
 
-    eval _flags (VarE v _) = do
+    eval _flags e@(ConstE {}) =
+        partialExp e
+
+    eval flags (VarE v _) | peval flags = do
         v' <- maybe v id <$> lookupSubst v
         lookupVarBind v'
 
-    eval flags (UnopE op e s) = do
+    eval _flags (VarE v s) = do
+        v' <- maybe v id <$> lookupSubst v
+        partialExp $ VarE v' s
+
+    eval flags (UnopE op e s) | peval flags = do
         val <- eval flags e
         unop op val
       where
@@ -543,7 +555,11 @@ evalExp e = do
         unop op val =
             partialExp $ UnopE op (toExp val) s
 
-    eval flags (BinopE op e1 e2 s) = do
+    eval flags (UnopE op e s) = do
+        val <- eval flags e
+        partialExp $ UnopE op (toExp val) s
+
+    eval flags (BinopE op e1 e2 s) | peval flags = do
         val1 <- eval flags e1
         val2 <- eval flags e2
         binop op val1 val2
@@ -614,6 +630,11 @@ evalExp e = do
         binop op val1 val2 =
             partialExp $ BinopE op (toExp val1) (toExp val2) s
 
+    eval flags (BinopE op e1 e2 s) = do
+        val1 <- eval flags e1
+        val2 <- eval flags e2
+        partialExp $ BinopE op (toExp val1) (toExp val2) s
+
     eval flags e@(IfE e1 e2 e3 s) = do
         tau  <- inferExp e
         h    <- getHeap
@@ -667,7 +688,7 @@ evalExp e = do
             v :: Var
             [v] = Set.toList (binders decl)
 
-    eval flags e@(CallE f iotas es s) = do
+    eval flags e@(CallE f iotas es s) | peval flags = do
         maybe_f' <- lookupSubst f
         v_f      <- case maybe_f' of
                       Nothing -> lookupVarBind f
@@ -723,6 +744,13 @@ evalExp e = do
 
         go _tau val _iotas' _v_es = do
           faildoc $ text "Cannot call function" <+> ppr val
+
+    eval flags e@(CallE f iotas es s) = do
+        tau  <- inferExp e
+        v_es <- mapM (eval flags) es
+        if isPureT tau
+          then partialExp $ CallE f iotas (map toExp v_es) s
+          else partialCmd $ CallE f iotas (map toExp v_es) s
 
     eval flags (DerefE e s) =
         eval flags e >>= go
