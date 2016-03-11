@@ -72,6 +72,7 @@ data DynFlag = Quiet
              | PartialEval
              | Timers
              | AutoLUT
+             | LUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError
@@ -90,6 +91,7 @@ data DumpFlag = DumpCPP
               | DumpSimpl
               | DumpEval
               | DumpAutoLUT
+              | DumpLUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -106,6 +108,7 @@ data TraceFlag = TracePhase
                | TraceSimplify
                | TraceEval
                | TraceAutoLUT
+               | TraceLUT
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32

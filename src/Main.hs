@@ -97,10 +97,13 @@ runPipeline filepath =
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag AutoLUT) (tracePhase "autolut" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
-        runIf (testDynFlag PartialEval) (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
+
+    runEval :: Flags -> Bool
+    runEval flags = testDynFlag PartialEval flags || testDynFlag LUT flags
 
     tracePhase :: String
                -> (a -> MaybeT KZC b)

@@ -158,6 +158,7 @@ fDynFlagOpts =
   , (PartialEval, "peval",        "run the partial evaluator")
   , (Timers,      "timers",       "insert code to track elapsed time")
   , (AutoLUT,     "autolut",      "run the auto-LUTter")
+  , (LUT,         "lut",          "run the LUTter")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -184,6 +185,7 @@ dDumpFlagOpts =
   , (DumpSimpl,   "simpl",   "dump simplifier output")
   , (DumpEval,    "peval",   "dump partial evaluator output")
   , (DumpAutoLUT, "autolut", "dump auto-LUTter")
+  , (DumpLUT,     "lut",     "dump LUTter")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -202,6 +204,7 @@ dTraceFlagOpts =
   , (TraceSimplify, "simpl",     "trace simplifier")
   , (TraceEval,     "eval",      "trace evaluator")
   , (TraceAutoLUT,  "autolut",   "trace auto-LUTter")
+  , (TraceLUT,      "lut",       "trace LUTter")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

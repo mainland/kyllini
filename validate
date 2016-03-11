@@ -9,4 +9,6 @@ make clean-tests && KZCFLAGS="--ffuse" make test-all
 make clean-tests && KZCFLAGS="--fpeval" make test-all
 make clean-tests && KZCFLAGS="--fsimpl --fpeval" make test-all
 make clean-tests && KZCFLAGS="--ffuse --fpeval" make test-all
+make clean-tests && KZCFLAGS="--fautolut --flut" make test-all
+make clean-tests && KZCFLAGS="--fautolut --flut --fpeval" make test-all
 make clean-tests
