@@ -198,7 +198,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     -- Allocate heap storage for v and initialize it
     ptr  <- newVarPtr
     val1 <- case maybe_e1 of
-              Nothing -> maybe UnknownV id <$> defaultValue tau'
+              Nothing -> maybe UnknownV id <$> runMaybeT (defaultValue tau')
               Just e1 -> withSummaryContext e1 $ evalExp e1
     writeVarPtr ptr val1
     extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
@@ -483,7 +483,7 @@ evalConst (FloatC fp r)      = return $ FloatV fp r
 evalConst (StringC s)        = return $ StringV s
 evalConst c@(ArrayC cs)      = do (_, tau)   <- inferConst noLoc c >>= checkArrT
                                   vals       <- mapM evalConst cs
-                                  maybe_dflt <- defaultValue tau
+                                  maybe_dflt <- runMaybeT $ defaultValue tau
                                   case maybe_dflt of
                                     Nothing   -> partialExp $ arrayE (map toExp vals)
                                     Just dflt -> return $ ArrayV $ P.fromList dflt vals
@@ -798,7 +798,7 @@ evalExp e = do
     eval flags e@(ArrayE es _) = do
         (_, tau)   <- inferExp e >>= checkArrT
         vals       <- mapM (eval flags) es
-        maybe_dflt <- defaultValue tau
+        maybe_dflt <- runMaybeT $ defaultValue tau
         case maybe_dflt of
           Nothing   -> partialExp $ arrayE (map toExp vals)
           Just dflt -> return $ ArrayV $ P.fromList dflt vals
@@ -1174,56 +1174,3 @@ transformExpVal f val0 =
 transformCompVal :: (LComp -> EvalM LComp) -> Val LComp -> EvalM (Val LComp)
 transformCompVal f val =
     toComp val >>= f >>= partialComp
-
--- | Produce a default value of the given type.
-defaultValue :: Type -> EvalM (Maybe (Val Exp))
-defaultValue tau =
-    runMaybeT $ go tau
-  where
-    go :: Type -> MaybeT EvalM (Val Exp)
-    go (UnitT {})         = return UnitV
-    go (BoolT {})         = return $ BoolV False
-    go (FixT sc s w bp _) = return $ FixV sc s w bp 0
-    go (FloatT fp _)      = return $ FloatV fp 0
-    go (StringT {})       = return $ StringV ""
-
-    go (StructT s _) = do
-        StructDef s flds _ <- lift $ lookupStruct s
-        let (fs, taus)     =  unzip flds
-        vals               <- mapM go taus
-        return $ StructV s (Map.fromList (fs `zip` vals))
-
-    go (ArrT (ConstI n _) tau _) = do
-        val <- go tau
-        return $ ArrayV (P.replicateDefault n val)
-
-    go tau =
-        faildoc $ text "Cannot generate default value for type" <+> ppr tau
-
--- | Given a type and a value, return 'True' if the value is the
--- default of that type and 'False' otherwise.
-isDefaultValue :: Val Exp -> Bool
-isDefaultValue UnitV            = True
-isDefaultValue (BoolV False)    = True
-isDefaultValue (FixV _ _ _ _ 0) = True
-isDefaultValue (FloatV _ 0)     = True
-isDefaultValue (StringV "")     = True
-isDefaultValue (StructV _ flds) = all isDefaultValue (Map.elems flds)
-isDefaultValue (ArrayV vals)    = all isDefaultValue (P.toList vals)
-isDefaultValue _                = False
-
--- | Return 'True' if a 'Val' is completely known, even if it is a residual,
--- 'False' otherwise.
-isKnown :: Val Exp -> Bool
-isKnown UnknownV         = False
-isKnown (BoolV {})       = True
-isKnown (FixV {})        = True
-isKnown (FloatV {})      = True
-isKnown (StringV {})     = True
-isKnown (StructV _ flds) = all isKnown (Map.elems flds)
-isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
-                           all (isKnown . snd) (P.nonDefaultValues vals)
-isKnown (IdxV arr i)     = isKnown arr && isKnown i
-isKnown (SliceV arr i _) = isKnown arr && isKnown i
-isKnown (ExpV {})        = True
-isKnown _                = False

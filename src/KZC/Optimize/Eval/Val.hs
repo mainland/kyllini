@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 -- |
@@ -24,6 +25,10 @@ module KZC.Optimize.Eval.Val (
     isOne,
 
     isValue,
+    defaultValue,
+    isDefaultValue,
+    isKnown,
+
     liftBool,
     liftBool2,
     liftEq,
@@ -52,6 +57,7 @@ import Data.String (fromString)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
+import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Label
@@ -182,6 +188,60 @@ isValue (StructV _ flds) = all isValue (Map.elems flds)
 isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
                            all (isValue . snd) (P.nonDefaultValues vals)
 isValue _                = False
+
+-- | Produce a default value of the given type.
+defaultValue :: forall m . MonadTc m
+             => Type -> m (Val Exp)
+defaultValue tau =
+    go tau
+  where
+    go :: Type -> m (Val Exp)
+    go (UnitT {})         = return UnitV
+    go (BoolT {})         = return $ BoolV False
+    go (FixT sc s w bp _) = return $ FixV sc s w bp 0
+    go (FloatT fp _)      = return $ FloatV fp 0
+    go (StringT {})       = return $ StringV ""
+
+    go (StructT s _) = do
+        StructDef s flds _ <- lookupStruct s
+        let (fs, taus)     =  unzip flds
+        vals               <- mapM go taus
+        return $ StructV s (Map.fromList (fs `zip` vals))
+
+    go (ArrT (ConstI n _) tau _) = do
+        val <- go tau
+        return $ ArrayV (P.replicateDefault n val)
+
+    go tau =
+        faildoc $ text "Cannot generate default value for type" <+> ppr tau
+
+-- | Given a type and a value, return 'True' if the value is the
+-- default of that type and 'False' otherwise.
+isDefaultValue :: Val Exp -> Bool
+isDefaultValue UnitV            = True
+isDefaultValue (BoolV False)    = True
+isDefaultValue (FixV _ _ _ _ 0) = True
+isDefaultValue (FloatV _ 0)     = True
+isDefaultValue (StringV "")     = True
+isDefaultValue (StructV _ flds) = all isDefaultValue (Map.elems flds)
+isDefaultValue (ArrayV vals)    = all isDefaultValue (P.toList vals)
+isDefaultValue _                = False
+
+-- | Return 'True' if a 'Val' is completely known, even if it is a residual,
+-- 'False' otherwise.
+isKnown :: Val Exp -> Bool
+isKnown UnknownV         = False
+isKnown (BoolV {})       = True
+isKnown (FixV {})        = True
+isKnown (FloatV {})      = True
+isKnown (StringV {})     = True
+isKnown (StructV _ flds) = all isKnown (Map.elems flds)
+isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
+                           all (isKnown . snd) (P.nonDefaultValues vals)
+isKnown (IdxV arr i)     = isKnown arr && isKnown i
+isKnown (SliceV arr i _) = isKnown arr && isKnown i
+isKnown (ExpV {})        = True
+isKnown _                = False
 
 liftBool :: Unop -> (Bool -> Bool) -> Val Exp -> Val Exp
 liftBool _ f (BoolV b) =
