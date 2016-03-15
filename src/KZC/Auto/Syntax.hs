@@ -8,7 +8,7 @@
 
 -- |
 -- Module      : KZC.Auto.Syntax
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
@@ -1533,6 +1533,13 @@ instance IsOrd Exp where
     e1 .<=. e2 = BinopE Le e1 e2 (e1 `srcspan` e2)
     e1 .>=. e2 = BinopE Ge e1 e2 (e1 `srcspan` e2)
     e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
+
+instance IsBits Exp where
+    e1 ..&..  e2 = BinopE Band e1 e2 (e1 `srcspan` e2)
+    e1 ..|..  e2 = BinopE Bor e1 e2 (e1 `srcspan` e2)
+
+    e1 `shiftL'`  e2 = BinopE LshL e1 e2 (e1 `srcspan` e2)
+    e1 `shiftR'`  e2 = BinopE LshR e1 e2 (e1 `srcspan` e2)
 
 #include "KZC/Auto/Syntax-instances.hs"
 

@@ -325,8 +325,11 @@ instance IsBool CExp where
     ce1         .||. ce2 = CExp [cexp|$ce1 || $ce2|]
 
 instance IsBits CExp where
-    bit' (CInt i) = CInt $ bit (fromIntegral i)
-    bit' ci       = CExp [cexp|1 << $ci|]
+    CInt x ..&.. CInt i = CInt (x .&. i)
+    ce     ..&.. i      = CExp [cexp|$ce & $i|]
+
+    CInt x ..|.. CInt i = CInt (x .|. i)
+    ce     ..|.. i      = CExp [cexp|$ce | $i|]
 
     CInt x `shiftL'` CInt i = CInt (x `shiftL` fromIntegral i)
     x      `shiftL'` CInt 0 = x

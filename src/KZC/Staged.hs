@@ -3,7 +3,7 @@
 
 -- |
 -- Module      :  KZC.Staged
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -43,10 +43,13 @@ class IsEq a => IsBool a where
     (.&&.) :: a -> a -> a
     (.||.) :: a -> a -> a
 
+infixl 5 ..|..
+infixl 7 ..&..
 infixl 8 `shiftL'`, `shiftR'`
 
 class Num a => IsBits a where
-    bit' :: a -> a
+    (..&..) :: a -> a -> a
+    (..|..) :: a -> a -> a
 
     shiftL' :: a -> a -> a
     shiftR' :: a -> a -> a
