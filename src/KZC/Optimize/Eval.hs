@@ -1049,12 +1049,12 @@ evalFor ann v tau e1 e2 body = do
 -- | Attempt to execute a loop. If the loop cannot be fully evaluated, we
 -- perform the following steps:
 --
--- 1) Restore the initial heap.
+-- 1. Restore the initial heap.
 --
--- 2) Kill all variables that the loop could have been modified by the loop,
+-- 2. Kill all variables that the loop could have been modified by the loop,
 -- i.e., the free variables of @body@.
 --
--- 3) Return a command consisting of the initial heap and the
+-- 3. Return a command consisting of the initial heap and the
 -- partially-evaluated loop.
 evalLoop :: ModifiedVars e Var => e -> EvalM (Val a) -> EvalM (Val a)
 evalLoop body m = do
