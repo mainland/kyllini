@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -18,6 +19,9 @@ module KZC.Optimize.Eval.Val (
 
     uintV,
     intV,
+
+    complexV,
+    uncomplexV,
 
     isTrue,
     isFalse,
@@ -243,6 +247,17 @@ isKnown (SliceV arr i _) = isKnown arr && isKnown i
 isKnown (ExpV {})        = True
 isKnown _                = False
 
+complexV :: Struct -> Val Exp -> Val Exp -> Val Exp
+complexV sname a b =
+    StructV sname (Map.fromList [("re", a), ("im", b)])
+
+uncomplexV :: Val Exp -> (Val Exp, Val Exp)
+uncomplexV (StructV sname x) | isComplexStruct sname =
+    (x Map.! "re", x Map.! "im")
+
+uncomplexV val =
+    errordoc $ text "Not a complex value:" <+> ppr val
+
 liftBool :: Unop -> (Bool -> Bool) -> Val Exp -> Val Exp
 liftBool _ f (BoolV b) =
     BoolV (f b)
@@ -287,6 +302,27 @@ liftNum2 _ f (FixV sc s w bp r1) (FixV _ _ _ _ r2) =
 
 liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
     FloatV fp (f r1 r2)
+
+liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+    complexV sn (a+c) (b+d)
+  where
+    a, b, c, d :: Val Exp
+    (a, b) = uncomplexV x
+    (c, d) = uncomplexV y
+
+liftNum2 Sub _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+    complexV sn (a-c) (b-d)
+  where
+    a, b, c, d :: Val Exp
+    (a, b) = uncomplexV x
+    (c, d) = uncomplexV y
+
+liftNum2 Mul _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+    complexV sn (a*c - b*d) (b*c + a*d)
+  where
+    a, b, c, d :: Val Exp
+    (a, b) = uncomplexV x
+    (c, d) = uncomplexV y
 
 liftNum2 op _ val1 val2 =
     ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
