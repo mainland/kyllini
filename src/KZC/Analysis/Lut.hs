@@ -57,7 +57,7 @@ shouldLUT e = either (const False) id <$> runErrorT act
         dflags <- askFlags
         info   <- lutInfo e
         stats  <- lutStats e
-        return $ lutBytes info <= maxLUT dflags &&
+        return $ lutBytes info <= fromIntegral (maxLUT dflags) &&
                  lutOutBits info + lutResultBits info > 0 &&
                  (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
                  not (lutHasSideEffect stats)
@@ -102,7 +102,7 @@ data LUTInfo = LUTInfo
     , lutOutBits    :: Int
     , lutResultBits :: Int
 
-    , lutBytes :: Int
+    , lutBytes :: Integer
     }
 
 instance Pretty LUTInfo where
@@ -137,7 +137,7 @@ lutInfo e = do
                      , lutOutBits    = outbits
                      , lutResultBits = resbits
 
-                     , lutBytes      = 2^inbits * (((outbits + resbits) + 7) `div` 8)
+                     , lutBytes      = 2^inbits * fromIntegral (((outbits + resbits) + 7) `div` 8)
                      }
 
 data LUTStats = LUTStats
