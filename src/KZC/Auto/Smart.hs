@@ -2,42 +2,77 @@
 
 -- |
 -- Module      : KZC.Auto.Smart
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Auto.Smart (
-    module KZC.Auto.Smart,
-    isCompT,
-    isPureT,
-    isPureishT
+    module KZC.Core.Smart,
+
+    intC,
+    arrayC,
+    structC,
+
+    unConstE,
+    constE,
+    unitE,
+    intE,
+    varE,
+    notE,
+    castE,
+    letE,
+    letrefE,
+    callE,
+    derefE,
+    whileE,
+    forE,
+    arrayE,
+    structE,
+    idxE,
+    sliceE,
+    returnE,
+    bindE,
+    seqE,
+
+    (.:=.),
+    (.>>.)
   ) where
 
-import Control.Applicative (Applicative, (<$>))
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
-import KZC.Core.Smart (isCompT,
+import KZC.Core.Smart (tyVarT,
+
+                       unitT,
+                       boolT,
+                       bitT,
+                       intT,
+                       int8T,
+                       int16T,
+                       int32T,
+                       int64T,
+                       refT,
+                       arrKnownT,
+                       stT,
+
+                       isUnitT,
+                       isBitT,
+                       isComplexT,
+                       isFunT,
+                       isSTUnitT,
+                       isCompT,
                        isPureT,
-                       isPureishT)
-import KZC.Name
+                       isPureishT,
+
+                       structName,
+
+                       splitArrT,
+
+                       mkUniqVar,
+                       mkVar)
 import KZC.Platform
-import KZC.Uniq
-
-infixl 1 .>>.
-(.>>.) :: Monad m => m (Comp l) -> m (Comp l) -> m (Comp l)
-m1 .>>. m2 = do
-    m1' <- m1
-    m2' <- m2
-    return $ m1' <> m2'
-
-mkUniqVar :: (Located a, Applicative m, MonadUnique m) => String -> a -> m Var
-mkUniqVar s l = Var <$> mkUniqName s (locOf l)
-
-mkVar :: String -> Var
-mkVar s = Var (mkName s noLoc)
 
 intC :: Integral i => i -> Const
 intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
@@ -162,71 +197,10 @@ infixr 1 .:=.
 (.:=.) :: Var -> Exp -> Exp
 v .:=. e = AssignE (varE v) e (v `srcspan` e)
 
-unitT :: Type
-unitT = UnitT noLoc
+infixl 1 .>>.
 
-boolT :: Type
-boolT = BoolT noLoc
-
-bitT :: Type
-bitT = FixT I U (W 1) (BP 0) noLoc
-
-isBitT :: Type -> Bool
-isBitT (FixT I U (W 1) (BP 0) _) = True
-isBitT _                         = False
-
-intT :: Type
-intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
-
-int8T :: Type
-int8T = FixT I S 8 0 noLoc
-
-int16T :: Type
-int16T = FixT I S 16 0 noLoc
-
-int32T :: Type
-int32T = FixT I S 32 0 noLoc
-
-int64T :: Type
-int64T = FixT I S 64 0 noLoc
-
-refT :: Type -> Type
-refT tau = RefT tau noLoc
-
-arrKnownT :: Int -> Type -> Type
-arrKnownT i tau = ArrT (ConstI i l) tau l
-  where
-    l :: SrcLoc
-    l = srclocOf tau
-
-stT :: Omega -> Type -> Type -> Type -> Type
-stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
-
-tyVarT :: TyVar -> Type
-tyVarT alpha = TyVarT alpha noLoc
-
-isComplexT :: Type -> Bool
-isComplexT (StructT s _) = isComplexStruct s
-isComplexT _             = False
-
-isUnitT :: Type -> Bool
-isUnitT (UnitT {}) = True
-isUnitT _          = False
-
-isFunT :: Type -> Bool
-isFunT (FunT {}) = True
-isFunT _         = False
-
-isSTUnitT :: Type -> Bool
-isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
-isSTUnitT _                              = False
-
-structName :: StructDef -> Struct
-structName (StructDef s _ _) = s
-
-splitArrT :: Monad m => Type -> m (Iota, Type)
-splitArrT (ArrT iota tau _) =
-    return (iota, tau)
-
-splitArrT tau =
-    faildoc $ text "Expected array type, but got:" <+> ppr tau
+(.>>.) :: Monad m => m (Comp l) -> m (Comp l) -> m (Comp l)
+m1 .>>. m2 = do
+    m1' <- m1
+    m2' <- m2
+    return $ m1' <> m2'
