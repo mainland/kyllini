@@ -14,6 +14,9 @@ module KZC.Auto.Smart (
     arrayC,
     structC,
 
+    letD,
+    letrefD,
+
     unConstE,
     constE,
     unitE,
@@ -83,6 +86,12 @@ arrayC cs = ArrayC cs
 structC :: Struct -> [(Field, Const)] -> Const
 structC s fs = StructC s fs
 
+letD :: Var -> Type -> Exp -> LocalDecl
+letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
+
+letrefD :: Var -> Type -> Maybe Exp -> LocalDecl
+letrefD v tau e = LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
+
 -- | @'unConstE' e@ returns a constant version of @e@ if possible.
 unConstE :: forall m . Monad m => Exp -> m Const
 unConstE (ConstE c _) =
@@ -144,16 +153,16 @@ castE :: Type -> Exp -> Exp
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 letE :: Var -> Type -> Exp -> Exp -> Exp
-letE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
+letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
   where
     d :: LocalDecl
-    d = LetLD (mkBoundVar v) tau e1 (v `srcspan` e1)
+    d = letD v tau e1
 
 letrefE :: Var -> Type -> Maybe Exp -> Exp -> Exp
 letrefE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
   where
     d :: LocalDecl
-    d = LetRefLD (mkBoundVar v) tau e1 (v `srcspan` e1)
+    d = letrefD v tau e1
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
