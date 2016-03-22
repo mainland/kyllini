@@ -683,8 +683,6 @@ checkCast tau1 tau2 =
 -- a value of type @tau2@.
 checkBitcast :: MonadTc m => Type -> Type -> m ()
 checkBitcast tau1 tau2 = do
-    checkBitT tau1
-    checkBitT tau2
     w1 <- typeBitWidth tau1
     w2 <- typeBitWidth tau2
     when (w2 /= w1) $
