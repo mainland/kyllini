@@ -15,6 +15,9 @@ module KZC.Optimize.Eval.Val (
     VarPtr,
     Heap,
 
+    uintV,
+    intV,
+
     isTrue,
     isFalse,
     isZero,
@@ -127,7 +130,7 @@ instance Num (Val Exp) where
 
     negate x = liftNum Neg negate x
 
-    fromInteger i = FixV I S dEFAULT_INT_WIDTH (BP 0) (fromInteger i)
+    fromInteger i = intV i
 
     abs _ = error "Val: abs undefined"
 
@@ -141,6 +144,12 @@ data Ref = VarR Var VarPtr
 type VarPtr = Int
 
 type Heap = IntMap (Val Exp)
+
+uintV :: Integral a => a -> Val Exp
+uintV i = FixV I U dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
+
+intV :: Integral a => a -> Val Exp
+intV i = FixV I S dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
 
 isTrue :: Val Exp -> Bool
 isTrue (BoolV True) = True
