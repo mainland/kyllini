@@ -370,8 +370,19 @@ instance Pretty Const where
     pprPrec p (FixC sc s _ bp r)   = pprScaled p sc s bp r <> pprSign s
     pprPrec _ (FloatC _ f)         = ppr (fromRational f :: Double)
     pprPrec _ (StringC s)          = text (show s)
-    pprPrec _ (ArrayC cs)          = text "arr" <+> embrace commasep (map ppr cs)
     pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
+    pprPrec _ (ArrayC cs)
+        | not (null cs) && all isBit cs = char '\'' <> cat (map bitDoc (reverse cs))
+        | otherwise                     = text "arr" <+> embrace commasep (map ppr cs)
+      where
+        isBit :: Const -> Bool
+        isBit (FixC I U (W 1) 0 _) = True
+        isBit _                    = False
+
+        bitDoc :: Const -> Doc
+        bitDoc (FixC I U (W 1) 0 0) = char '0'
+        bitDoc (FixC I U (W 1) 0 1) = char '1'
+        bitDoc _                    = error "Not a bit"
 
 pprSign :: Signedness -> Doc
 pprSign S = empty
