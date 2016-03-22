@@ -50,7 +50,7 @@ toList (PArray dflt len m) =
 length :: PArray a -> Int
 length (PArray _ len _) = len
 
-(!?) :: PArray a -> Int -> Maybe a
+(!?) :: Monad m => PArray a -> Int -> m a
 PArray dflt len m !? i
     | i < 0 || i >= len = fail "Array index out of bounds"
     | otherwise         = case IntMap.lookup i m of
