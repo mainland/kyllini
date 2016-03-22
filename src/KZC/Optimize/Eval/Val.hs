@@ -35,7 +35,8 @@ module KZC.Optimize.Eval.Val (
     liftShift,
 
     ToExp(..),
-    ToComp(..)
+    ToComp(..),
+    toConst
   ) where
 
 import Control.Applicative ((<$>))
@@ -251,10 +252,45 @@ liftShift _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
 liftShift op _ val1 val2 =
     ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
+toConst :: Val Exp -> Const
+toConst UnitV =
+    UnitC
+
+toConst (BoolV f) =
+    BoolC f
+
+toConst (FixV sc s w bp r) =
+    FixC sc s w bp r
+
+toConst (FloatV fp r) =
+    FloatC fp r
+
+toConst (StringV s) =
+    StringC s
+
+toConst (StructV s flds) =
+    structC s (fs `zip` map toConst vals)
+  where
+    fs :: [Field]
+    vals :: [Val Exp]
+    (fs, vals) = unzip $ Map.assocs flds
+
+toConst (ArrayV vvals) =
+    arrayC (map toConst vals)
+  where
+    vals :: [Val Exp]
+    vals = P.toList vvals
+
+toConst val =
+    errordoc $ text "toConst: not a constant:" <+> ppr val
+
 class ToExp a where
     toExp :: a -> Exp
 
 instance ToExp (Val Exp) where
+    toExp val | isValue val =
+        constE $ toConst val
+
     toExp UnknownV =
         errordoc $ text "toExp: Cannot convert unknown value to expression"
 
