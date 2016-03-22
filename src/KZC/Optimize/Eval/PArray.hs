@@ -58,6 +58,9 @@ PArray dflt len m !? i
                             Just x  -> return x
 
 (//) :: Monad m => PArray a -> [(Int, a)] -> m (PArray a)
+arr // [] =
+    return arr
+
 PArray dflt len m // ixs = do
     when (minimum is < 0 || maximum is >= len) $
         fail "Array index out of bounds"
