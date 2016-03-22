@@ -19,8 +19,6 @@ module KZC.Auto.Lint (
 
     extendWildVars,
 
-    typeBitWidth,
-
     inferKind,
     checkKind,
 
@@ -85,7 +83,6 @@ import KZC.Core.Lint (Tc(..),
 
                       checkCast,
                       checkBitcast,
-                      typeBitWidth,
 
                       checkTypeEquality,
 

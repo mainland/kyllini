@@ -31,7 +31,6 @@ module KZC.Core.Lint (
 
     checkCast,
     checkBitcast,
-    typeBitWidth,
 
     checkTypeEquality,
     checkKindEquality,
@@ -683,22 +682,12 @@ checkCast tau1 tau2 =
 -- a value of type @tau2@.
 checkBitcast :: MonadTc m => Type -> Type -> m ()
 checkBitcast tau1 tau2 = do
-    w1 <- typeBitWidth tau1
-    w2 <- typeBitWidth tau2
+    w1 <- bitSizeT tau1
+    w2 <- bitSizeT tau2
     when (w2 /= w1) $
         faildoc $
         text "Cannot bitcast between types with differing widths" <+>
         ppr w1 <+> text "and" <+> ppr w2
-
--- | Calculate the bit width of a type.
-typeBitWidth :: Monad m => Type -> m Int
-typeBitWidth (BoolT {})           = return 1
-typeBitWidth (FixT _ _ (W w) _ _) = return w
-typeBitWidth (FloatT FP16 _)      = return 32
-typeBitWidth (FloatT FP32 _)      = return 32
-typeBitWidth (FloatT FP64 _)      = return 64
-typeBitWidth tau =
-    faildoc $ text "Cannot calculate bit width of non-bit type" <+> ppr tau
 
 -- | Check that @tau1@ is equal to @tau2@.
 checkTypeEquality :: forall m . MonadTc m => Type -> Type -> m ()
