@@ -85,7 +85,8 @@ evalDecl (LetD decl s) k =
     go (HeapDeclVal mkDecl) =
         k $ \h -> LetD <$> mkDecl h <*> pure s
 
-evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
+evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
+    withSummaryContext decl $ do
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
@@ -128,7 +129,8 @@ evalDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
     k $ const . return $ LetStructD s flds l
 
-evalDecl (LetCompD v tau comp s) k =
+evalDecl decl@(LetCompD v tau comp s) k =
+    withSummaryContext decl $ do
     extendVars [(bVar v, tau)] $ do
     theta <- askSubst
     withUniqBoundVar v $ \v' -> do
@@ -145,7 +147,8 @@ evalDecl (LetCompD v tau comp s) k =
         withSummaryContext comp $
         uniquifyCompLabels comp >>= evalComp
 
-evalDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
+evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
+    withSummaryContext decl $ do
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
@@ -497,7 +500,8 @@ evalConst (StructC s flds) = do
     (fs, cs) = unzip  flds
 
 evalExp :: Exp -> EvalM (Val Exp)
-evalExp e = do
+evalExp e =
+    withSummaryContext e $ do
     flags <- askFlags
     eval flags e
   where
