@@ -48,6 +48,9 @@ module KZC.Optimize.Eval.Monad (
     extendVarBinds,
     extendWildVarBinds,
 
+    lookupVarValue,
+    extendVarValues,
+
     lookupCVarBind,
     extendCVarBinds,
 
@@ -294,6 +297,46 @@ extendVarBinds vbs m =
 extendWildVarBinds :: [(WildVar, Val Exp)] -> EvalM a -> EvalM a
 extendWildVarBinds wvbs m =
     extendVarBinds [(bVar v, val) | (TameV v, val) <- wvbs] m
+
+lookupVarValue :: Var -> EvalM (Val Exp)
+lookupVarValue v =
+    lookupVarBind v >>= extract
+  where
+    extract :: Val Exp -> EvalM (Val Exp)
+    extract (RefV (VarR _ ptr)) =
+        readVarPtr ptr >>= extract
+
+    extract (ReturnV val) =
+        return val
+
+    extract val =
+        return val
+
+extendVarValues :: [(Var, Type, Val Exp)] -> EvalM a -> EvalM a
+extendVarValues vbs m =
+    savingHeap $ go vbs m
+  where
+    go :: [(Var, Type, Val Exp)] -> EvalM a -> EvalM a
+    go [] m =
+        m
+
+    go ((v, RefT {}, val):vbs) m = do
+        v'  <- maybe v id <$> lookupSubst v
+        old <- lookupVarBind v'
+        case old of
+          RefV (VarR _ ptr) ->
+              do writeVarPtr ptr val
+                 go vbs m
+          _ ->
+              do ptr <- newVarPtr
+                 writeVarPtr ptr val
+                 extendVarBinds [(v', RefV (VarR v ptr))] $ do
+                 go vbs m
+
+    go ((v, _tau, val):vbs) m = do
+        v' <- maybe v id <$> lookupSubst v
+        extendVarBinds [(v', val)] $ do
+        go vbs m
 
 lookupCVarBind :: Var -> EvalM (Val LComp)
 lookupCVarBind v = do
