@@ -687,7 +687,7 @@ checkBitcast tau1 tau2 = do
     checkBitT tau2
     w1 <- typeBitWidth tau1
     w2 <- typeBitWidth tau2
-    when (w2 /= w2) $
+    when (w2 /= w1) $
         faildoc $
         text "Cannot bitcast between types with differing widths" <+>
         ppr w1 <+> text "and" <+> ppr w2
