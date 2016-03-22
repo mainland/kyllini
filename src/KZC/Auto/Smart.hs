@@ -24,10 +24,12 @@ module KZC.Auto.Smart (
     varE,
     notE,
     castE,
+    bitcastE,
     letE,
     letrefE,
     callE,
     derefE,
+    assignE,
     whileE,
     forE,
     arrayE,
@@ -155,6 +157,9 @@ notE e = UnopE Lnot e (srclocOf e)
 castE :: Type -> Exp -> Exp
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
+bitcastE :: Type -> Exp -> Exp
+bitcastE tau e = UnopE (Bitcast tau) e (srclocOf e)
+
 letE :: Var -> Type -> Exp -> Exp -> Exp
 letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
   where
@@ -172,6 +177,9 @@ callE f es = CallE f [] es (f `srcspan` es)
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
+
+assignE :: Exp -> Exp -> Exp
+assignE e1 e2 = AssignE e1 e2 (e1 `srcspan` e2)
 
 whileE :: Exp -> Exp -> Exp
 whileE e1 e2 = WhileE e1 e2 (e1 `srcspan` e2)
