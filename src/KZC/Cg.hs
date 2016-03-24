@@ -622,10 +622,21 @@ cgExp e = do
             return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
         cgBitcast :: CExp -> Type -> Type -> Cg CExp
+        cgBitcast ce tau_from tau_to | tau_to == tau_from =
+            return ce
+
+        cgBitcast (CBits ce) (ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
+            ctau_to <- cgType tau_to
+            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
+        cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
+            ctau_to <- cgBitcastType tau_from
+            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
         cgBitcast ce tau_from tau_to = do
-            ctau_from <- cgBitcastType tau_from
-            ctau_to   <- cgType tau_to
-            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) (($ty:ctau_from*) $ce))|]
+            ctau_to <- cgType tau_to
+            caddr   <- cgAddrOf tau_from ce
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
     go (BinopE op e1 e2 l) = do
         tau <- inferExp e1
