@@ -407,10 +407,10 @@ inferExp (DerefE e l) = do
     a = "a"
     b = "b"
 
-inferExp (AssignE e1 e2 l) = do
+inferExp e@(AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- withFvContext e2 $ inferExp e2
-    withFvContext e2 $ checkTypeEquality tau' tau
+    withFvContext e $ checkTypeEquality tau' tau
     return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
