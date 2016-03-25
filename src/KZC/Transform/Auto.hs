@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Transform.Auto
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -308,11 +308,21 @@ transComp e@(C.VarE v _) = do
               liftC e'
       else varC v'
 
-transComp (C.IfE e1 e2 e3 _) = do
+transComp e@(C.IfE e1 e2 e3 l) = do
+    tau <- inferExp e
     e1' <- transExp e1
-    e2' <- transComp e2
-    e3' <- transComp e3
-    ifC e1' e2' e3'
+    go tau e1'
+  where
+    go :: Type -> Exp -> Auto LComp
+    go tau e1' | isPureishT tau = do
+        e2' <- transExp e2
+        e3' <- transExp e3
+        liftC $ IfE e1' e2' e3' l
+
+    go _tau e1' = do
+        e2' <- transComp e2
+        e3' <- transComp e3
+        ifC e1' e2' e3'
 
 transComp (C.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
