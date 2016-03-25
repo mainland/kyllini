@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Core.Lint.Monad
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -321,19 +321,18 @@ withFvContext e m =
  ------------------------------------------------------------------------------}
 
 relevantBindings :: forall m . MonadTc m => m Doc
-relevantBindings = do
-    maybe_fvs <- fmap Set.toList <$> askCurrentFvs
-    go maybe_fvs
+relevantBindings =
+    fmap Set.toList <$> askCurrentFvs >>= go
   where
     go :: Maybe [Var] -> m Doc
-    go Nothing =
-        return Text.PrettyPrint.Mainland.empty
-
-    go (Just vs) = do
+    go (Just vs@(_:_)) = do
         taus <- mapM lookupVar vs
         return $ line <>
             nest 2 (text "Relevant bindings:" </>
                     stack (map pprBinding (vs `zip` taus)))
+
+    go _ =
+        return Text.PrettyPrint.Mainland.empty
 
     pprBinding :: (Var, Type) -> Doc
     pprBinding (v, tau) = nest 2 $ ppr v <+> text ":" <+> ppr tau
