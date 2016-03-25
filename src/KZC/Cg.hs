@@ -1810,15 +1810,17 @@ cgAssign (UnitT {}) _ ce =
 --   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
 --
 cgAssign (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
-    if ce2
-    then appendStm [cstm|$carr[$cbitIdx] |= $cbitMask;|]
-    else appendStm [cstm|$carr[$cbitIdx] &= ~$cbitMask;|]
+    appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
   where
     cbitIdx, cbitOff :: CExp
     (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
 
-    cbitMask :: CExp
-    cbitMask = 1 `shiftL'` cbitOff
+    cmask, cbit :: CExp
+    cmask = 1 `shiftL'` cbitOff
+    -- Bits are always masked off, so we we can assume ce2 is either 0 or 1. If
+    -- we couldn't make this assumption, we would need to use [cexp|!!$ce2|]
+    -- here.
+    cbit = ce2 `shiftL'` cbitOff
 
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
     clen <- cgIota iota
