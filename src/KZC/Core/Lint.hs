@@ -148,7 +148,7 @@ checkDecl decl@(LetD v tau e _) k = do
         tau' <- withFvContext e $
                 inSTScope tau $
                 inLocalScope $
-                inferExp e >>= absSTScope
+                inferExp e >>= appSTScope >>= absSTScope
         checkTypeEquality tau' tau
     extendVars [(v, tau)] k
 
@@ -390,9 +390,22 @@ inferExp (BinopE op e1 e2 _) = do
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
-    tau <- withFvContext e2 $ inferExp e2
-    withFvContext e3 $ checkExp e3 tau
-    return tau
+    tau2 <- withFvContext e2 $ inferExp e2
+    tau3 <- withFvContext e3 $ inferExp e3
+    go tau2 tau3
+  where
+    -- If both branches are pureish, then we're good. Otherwise we need to make
+    -- sure both branches have fully instantiated ST types.
+    go :: Type -> Type -> m Type
+    go tau2 tau3 | isPureishT tau2 && isPureishT tau3 = do
+        withFvContext e3 $ checkTypeEquality tau3 tau2
+        return tau2
+
+    go tau2 tau3 = do
+        tau2' <- withFvContext e2 $ appSTScope tau2
+        tau3' <- withFvContext e3 $ appSTScope tau3
+        withFvContext e3 $ checkTypeEquality tau3' tau2'
+        return tau2'
 
 inferExp (LetE decl body _) =
     checkDecl decl $ inferExp body
@@ -406,7 +419,7 @@ inferExp (CallE f ies es _) = do
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
     zipWithM_ checkArg es (subst theta phi taus)
-    appSTScope $ subst theta phi tau_ret
+    return $ subst theta phi tau_ret
   where
     checkIotaArg :: Iota -> m ()
     checkIotaArg (ConstI {}) =
@@ -415,10 +428,14 @@ inferExp (CallE f ies es _) = do
     checkIotaArg (VarI iv _) =
         void $ lookupIVar iv
 
+    -- The argument may not have a fully instantiated ST type even though the
+    -- parameter is a fully instantiated ST type.
     checkArg :: Exp -> Type -> m ()
-    checkArg e tau =
-        withFvContext e $
-        checkExp e tau
+    checkArg e tau
+        | isPureishT tau = withFvContext e $ checkExp e tau
+        | otherwise      = withFvContext e $ do
+                           tau' <- inferExp e >>= appSTScope
+                           checkTypeEquality tau tau'
 
     checkNumIotas :: Int -> Int -> m ()
     checkNumIotas n nexp =
@@ -436,7 +453,7 @@ inferExp (CallE f ies es _) = do
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
-    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -447,7 +464,7 @@ inferExp (AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
@@ -456,11 +473,11 @@ inferExp (AssignE e1 e2 l) = do
 
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
-        (tau, _, _, _) <- inferExp e1 >>= checkSTC
+        tau <- inferExp e1 >>= checkForallSTC
         checkTypeEquality tau boolT
     withFvContext e2 $ do
         tau <- inferExp e2
-        void $ checkSTCUnit tau
+        void $ checkForallSTCUnit tau
         return tau
 
 inferExp (ForE _ v tau e1 e2 e3 _) = do
@@ -472,7 +489,7 @@ inferExp (ForE _ v tau e1 e2 e3 _) = do
     extendVars [(v, tau)] $
         withFvContext e3 $ do
         tau_body <- inferExp e3
-        void $ checkSTCUnit tau_body
+        void $ checkForallSTCUnit tau_body
         return tau_body
 
 inferExp (ArrayE es l) = do
@@ -549,23 +566,38 @@ inferExp (ErrorE nu _ l) =
 
 inferExp (ReturnE _ e l) = do
     tau <- inferExp e
-    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
 
-inferExp (BindE wv tau e1 e2 _) = do
-    (tau', s,  a,  b)  <- withFvContext e1 $ do
-                          inferExp e1 >>= appSTScope >>= checkSTC
-    checkTypeEquality tau' tau
-    withFvContext e2 $
-        extendWildVars [(wv, tau)] $ do
-        tau2             <- inferExp e2 >>= appSTScope
-        (omega, _, _, _) <- checkST tau2
-        checkTypeEquality tau2 (stT omega s a b)
+inferExp e@(BindE wv tau e1 e2 _) = do
+    tau1 <- withFvContext e1 $ inferExp e1
+    tau' <- withFvContext e1 $ checkForallSTC tau1
+    withFvContext e $ checkTypeEquality tau' tau
+    tau2 <- withFvContext e2 $
+            extendWildVars [(wv, tau)] $
+            inferExp e2
+    go tau1 tau2
+  where
+    -- If both expressions being sequenced are pureish, then we're
+    -- good. Otherwise we need to make sure they both have fully instantiated ST
+    -- types.
+    go :: Type -> Type -> m Type
+    go tau1 tau2 | isPureishT tau1 && isPureishT tau2 =
         return tau2
+
+    go tau1 tau2 = do
+        tau1' <- withFvContext e1 $ appSTScope tau1
+        tau2' <- withFvContext e2 $ appSTScope tau2
+        (_, s,  a,  b) <- withFvContext e1 $
+                          checkSTC tau1'
+        withFvContext e2 $ do
+            (omega, _, _, _) <- checkST tau2'
+            checkTypeEquality tau2' (stT omega s a b)
+        return tau2'
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
@@ -605,10 +637,10 @@ inferExp e0@(ParE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
     (omega1, s', a',    b') <- withFvContext e1 $
                                localSTIndTypes (Just (s, a, b)) $
-                               inferExp e1 >>= checkST
+                               inferExp e1 >>= appSTScope >>= checkST
     (omega2, b'', b''', c') <- withFvContext e2 $
                                localSTIndTypes (Just (b, b, c)) $
-                               inferExp e2 >>= checkST
+                               inferExp e2 >>= appSTScope >>= checkST
     withFvContext e1 $
         checkTypeEquality (stT omega1 s'  a'   b') (stT omega1 s a b)
     withFvContext e2 $
@@ -1034,6 +1066,22 @@ appSTScope tau@(ST alphas omega s a b l) = do
 
 appSTScope tau =
     return tau
+
+checkForallSTC :: MonadTc m => Type -> m Type
+checkForallSTC (ST _ (C tau) _ _ _ _) =
+    return tau
+
+checkForallSTC tau =
+    faildoc $ nest 2 $ group $
+    text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
+
+checkForallSTCUnit :: MonadTc m => Type -> m ()
+checkForallSTCUnit (ST _ (C (UnitT _)) _ _ _ _) =
+    return ()
+
+checkForallSTCUnit tau =
+    faildoc $ nest 2 $ group $
+    text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
 
 checkST :: MonadTc m => Type -> m (Omega, Type, Type, Type)
 checkST (ST [] omega s a b _) =
