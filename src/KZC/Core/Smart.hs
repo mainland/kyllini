@@ -20,6 +20,7 @@ module KZC.Core.Smart (
     int32T,
     int64T,
     refT,
+    unRefT,
     arrKnownT,
     stT,
 
@@ -99,6 +100,10 @@ int64T = FixT I S 64 0 noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
+
+unRefT :: Type -> Type
+unRefT (RefT tau _) = tau
+unRefT tau          = tau
 
 arrKnownT :: Int -> Type -> Type
 arrKnownT i tau = ArrT (ConstI i l) tau l

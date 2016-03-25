@@ -3,7 +3,7 @@
 
 -- |
 -- Module      :  KZC.Trace
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -21,7 +21,9 @@ module KZC.Trace (
     traceAutoLint,
     traceFusion,
     traceSimpl,
-    traceEval
+    traceEval,
+    traceLUT,
+    traceAutoLUT
   ) where
 
 import Control.Monad (when)
@@ -110,3 +112,9 @@ traceSimpl = traceIfSet TraceSimplify "traceSimplify:"
 
 traceEval :: MonadTrace m => Doc -> m ()
 traceEval = traceIfSet TraceEval "traceEval:"
+
+traceLUT :: MonadTrace m => Doc -> m ()
+traceLUT = traceIfSet TraceLUT "traceLUT:"
+
+traceAutoLUT :: MonadTrace m => Doc -> m ()
+traceAutoLUT = traceIfSet TraceAutoLUT "traceAutoLUT:"

@@ -88,6 +88,8 @@ data CExp = CVoid
             -- ^ An array slice. The data constructor's arguments are the type
             -- of the array's elements, the array, the offset, the length of the
             -- slice.
+          | CBits CExp
+            -- ^ A bit array represented as an integer
           | CComp CompC
             -- ^ A computation.
           | CFunComp FunCompC
@@ -105,6 +107,7 @@ instance Located CExp where
     locOf (CPtr ce)           = locOf ce
     locOf (CIdx _ _ cidx)     = locOf cidx
     locOf (CSlice _ _ cidx _) = locOf cidx
+    locOf (CBits ce)          = locOf ce
     locOf (CComp {})          = NoLoc
     locOf (CFunComp {})       = NoLoc
 
@@ -119,6 +122,7 @@ instance Relocatable CExp where
     reloc l (CPtr ce)                  = CPtr $ reloc l ce
     reloc l (CIdx tau carr cidx)       = CIdx tau (reloc l carr) (reloc l cidx)
     reloc l (CSlice tau carr cidx len) = CSlice tau (reloc l carr) (reloc l cidx) len
+    reloc l (CBits ce)                 = CBits (reloc l ce)
     reloc _ ce@(CComp {})              = ce
     reloc _ ce@(CFunComp {})           = ce
 
@@ -136,6 +140,7 @@ instance Eq CExp where
     CPtr x         == CPtr y         = x == y
     CIdx r s t     == CIdx x y z     = (r,s,t) == (x,y,z)
     CSlice q r s t == CSlice w x y z = (q,r,s,t) == (w,x,y,z)
+    CBits x        == CBits y        = x == y
     _              == _              = error "Eq CExp: incomparable"
 
 instance Ord CExp where
@@ -147,6 +152,7 @@ instance Ord CExp where
     compare (CPtr x)         (CPtr y)         = compare x y
     compare (CIdx r s t)     (CIdx x y z)     = compare (r,s,t) (x,y,z)
     compare (CSlice q r s t) (CSlice w x y z) = compare (q,r,s,t) (w,x,y,z)
+    compare (CBits x)        (CBits y)        = compare x y
     compare _                _                = error "Ord CExp: incomparable"
 
 instance Enum CExp where
@@ -325,8 +331,11 @@ instance IsBool CExp where
     ce1         .||. ce2 = CExp [cexp|$ce1 || $ce2|]
 
 instance IsBits CExp where
-    bit' (CInt i) = CInt $ bit (fromIntegral i)
-    bit' ci       = CExp [cexp|1 << $ci|]
+    CInt x ..&.. CInt i = CInt (x .&. i)
+    ce     ..&.. i      = CExp [cexp|$ce & $i|]
+
+    CInt x ..|.. CInt i = CInt (x .|. i)
+    ce     ..|.. i      = CExp [cexp|$ce | $i|]
 
     CInt x `shiftL'` CInt i = CInt (x `shiftL` fromIntegral i)
     x      `shiftL'` CInt 0 = x
@@ -347,6 +356,7 @@ instance ToExp CExp where
     toExp (CPtr e)                   = toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
+    toExp (CBits ce)                 = toExp ce
     toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
     toExp (CFunComp {})              = error "toExp: cannot convert CFunComp to a C expression"
 
@@ -363,6 +373,7 @@ instance Pretty CExp where
     ppr (CPtr e)                 = ppr [cexp|*$e|]
     ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CBits e)                = ppr e
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
 

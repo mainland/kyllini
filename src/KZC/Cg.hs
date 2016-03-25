@@ -18,7 +18,7 @@ module KZC.Cg (
 
 import Prelude
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM_,
                       mplus,
                       void,
@@ -431,11 +431,13 @@ cgLocalDecl :: LocalDecl -> Cg a -> Cg a
 cgLocalDecl decl@(LetLD v tau e _) k = do
     cve <- withSummaryContext decl $ do
            inSTScope tau $ do
-           ce         <- cgExp e
-           isTopLevel <- isInTopScope
-           cve        <- cgBinder isTopLevel (bVar v) tau
-           cgAssign tau cve ce
-           return cve
+           case unConstE e of
+             Just _  -> cgExp e
+             Nothing -> do ce         <- cgExp e
+                           isTopLevel <- isInTopScope
+                           cve        <- cgBinder isTopLevel (bVar v) tau
+                           cgAssign tau cve ce
+                           return cve
     extendVars [(bVar v, tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
@@ -622,10 +624,22 @@ cgExp e = do
             return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
         cgBitcast :: CExp -> Type -> Type -> Cg CExp
+        cgBitcast ce tau_from tau_to | tau_to == tau_from =
+            return ce
+
+        cgBitcast (CBits ce) tau_from@(ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
+            w       <- bitSizeT tau_from
+            ctau_to <- cgType tau_to
+            return $ CBits $ CExp $ rl l [cexp|(($ty:ctau_to) $ce) & $(chexconst (2^w-1))|]
+
+        cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
+            ctau_to <- cgBitcastType tau_from
+            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
         cgBitcast ce tau_from tau_to = do
-            ctau_from <- cgBitcastType tau_from
-            ctau_to   <- cgType tau_to
-            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) (($ty:ctau_from*) $ce))|]
+            ctau_to <- cgType tau_to
+            caddr   <- cgAddrOf tau_from ce
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
     go (BinopE op e1 e2 l) = do
         tau <- inferExp e1
@@ -703,6 +717,46 @@ cgExp e = do
         cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$ce1 / $ce2|]
         cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
         cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
+
+        cgBinop (ArrT _ tau_elem _) _ _ Cat | isBitT tau_elem =
+            unfoldCat e >>= cgCat
+
+        cgBinop _ _ _ Cat =
+            faildoc $ text "Cannot compile array concatenation"
+
+        unfoldCat :: Exp -> Cg [(Exp, Int)]
+        unfoldCat (BinopE Cat e1 e2 _) =
+            (++) <$> unfoldCat e1 <*> unfoldCat e2
+
+        unfoldCat e = do
+            (iota, _) <- inferExp e >>= checkArrT
+            ciota     <- cgIota iota
+            n         <- case ciota of
+                           CInt n -> return n
+                           _ -> faildoc $ text "Cannot compile array concatenation"
+            return [(e, fromIntegral n)]
+
+        cgCat :: [(Exp, Int)] -> Cg CExp
+        cgCat arrs = do
+            ces <- reverse <$> shiftFields 0 (reverse arrs)
+            return $ CBits $ foldr1 (..|..) ces
+          where
+            shiftFields :: Int -> [(Exp, Int)] -> Cg [CExp]
+            shiftFields _ [] =
+                return []
+
+            shiftFields n ((e, w):flds) = do
+                ce  <- cgExp e
+                ce' <- shiftField ce w n
+                ces <- shiftFields (n+w) flds
+                return $ ce' ++ ces
+
+            shiftField :: CExp -> Int -> Int -> Cg [CExp]
+            shiftField (CBits ce) _ n =
+                return [shiftL ce n]
+
+            shiftField ce w n =
+                return [shiftL (CExp [cexp|$ce[$int:i]|]) (n+i*8) | i <- [0..((w + 7) `div` 8)-1]]
 
     go (IfE e1 e2 e3 _) = do
         tau <- inferExp e2
@@ -896,6 +950,9 @@ cgExp e = do
         extendVarCExps [(bVar v, ce1)] $ do
         cgExp e2
 
+    go (LutE e) =
+        cgExp e
+
 cgIVar :: IVar -> Cg (CExp, C.Param)
 cgIVar iv = do
     civ <- cvar iv
@@ -1019,6 +1076,9 @@ cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
 
 cgType tau@(ST {}) =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
+
+cgType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau = do
+    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
 cgType (RefT (ArrT (ConstI n _) tau _) _) = do
     ctau <- cgType tau

@@ -981,6 +981,9 @@ simplExp (BindE wv tau e1 e2 s) = do
        e2' <- simplExp e2
        return $ BindE wv tau' e1' e2' s
 
+simplExp (LutE e) =
+    LutE <$> simplExp e
+
 return1 :: Monad m => a -> m [a]
 return1 x = return [x]
 

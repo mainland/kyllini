@@ -13,6 +13,7 @@ GHCFLAGS += \
 	-package array \
 	-package base \
 	-package binary \
+        -package data-binary-ieee754 \
 	-package bytestring \
 	-package containers \
 	-package directory \
@@ -49,7 +50,11 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	KZC/Analysis/Abs.hs \
+	KZC/Analysis/Dataflow.hs \
+	KZC/Analysis/Lut.hs \
 	KZC/Analysis/Occ.hs \
+	KZC/Analysis/Range.hs \
 	KZC/Auto/Comp.hs \
 	KZC/Auto/Lint.hs \
 	KZC/Auto/Smart.hs \
@@ -76,6 +81,7 @@ SOURCE = \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/Name.hs \
+	KZC/Optimize/Autolut.hs \
 	KZC/Optimize/Eval.hs \
 	KZC/Optimize/Eval/Monad.hs \
 	KZC/Optimize/Eval/Monad.hs-boot \

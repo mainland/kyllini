@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Auto.Lint
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -341,6 +341,17 @@ inferExp (BinopE op e1 e2 _) = do
     binop Pow tau1 tau2 =
         checkNumBinop tau1 tau2
 
+    binop Cat tau1 tau2 = do
+        (iota1, tau1_elem) <- checkArrT tau1
+        (iota2, tau2_elem) <- checkArrT tau2
+        checkTypeEquality tau2_elem tau1_elem
+        case (iota1, iota2) of
+          (ConstI n _, ConstI m _) -> return $ ArrT (ConstI (n+m) s) tau1_elem s
+          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
+      where
+        s :: SrcLoc
+        s = tau1 `srcspan` tau2
+
     checkEqBinop :: Type -> Type -> m Type
     checkEqBinop tau1 tau2 = do
         checkEqT tau1
@@ -407,10 +418,10 @@ inferExp (DerefE e l) = do
     a = "a"
     b = "b"
 
-inferExp (AssignE e1 e2 l) = do
+inferExp e@(AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- withFvContext e2 $ inferExp e2
-    withFvContext e2 $ checkTypeEquality tau' tau
+    withFvContext e $ checkTypeEquality tau' tau
     return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s, a, b :: TyVar
@@ -545,6 +556,9 @@ inferExp (ReturnE _ e l) = do
     s = "s"
     a = "a"
     b = "b"
+
+inferExp (LutE e) =
+    inferExp e
 
 inferExp (BindE wv tau e1 e2 _) = do
     (alphas, tau', s,  a,  b) <- withFvContext e1 $

@@ -331,3 +331,6 @@ occExp (BindE (TameV v) tau e1 e2 s) = do
                   withOccInfo v $
                   occExp e2
     return $ BindE (TameV (updOccInfo v occ)) tau e1' e2' s
+
+occExp (LutE e) =
+    occExp e

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -21,8 +22,11 @@ module KZC.Optimize.Eval (
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad (filterM)
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Trans.Error (runErrorT)
+import Control.Monad.Trans.Maybe (MaybeT,
+                                  runMaybeT)
 import Data.Bits
+import Data.Foldable (toList)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid
@@ -31,17 +35,25 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Lut
 import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
+import KZC.Flags
+import KZC.Name
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P
 import KZC.Optimize.Eval.Val
 import KZC.Summary
+import KZC.Trace
 import KZC.Util.SetLike
 import KZC.Vars
+
+-- | Return 'True' if we should partially-evaluate.
+peval :: Flags -> Bool
+peval = testDynFlag PartialEval
 
 evalProgram :: LProgram -> EvalM LProgram
 evalProgram (Program decls comp tau) =
@@ -79,7 +91,8 @@ evalDecl (LetD decl s) k =
     go (HeapDeclVal mkDecl) =
         k $ \h -> LetD <$> mkDecl h <*> pure s
 
-evalDecl (LetFunD f ivs vbs tau_ret e l) k = do
+evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
+    withSummaryContext decl $ do
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
@@ -122,7 +135,8 @@ evalDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
     k $ const . return $ LetStructD s flds l
 
-evalDecl (LetCompD v tau comp s) k =
+evalDecl decl@(LetCompD v tau comp s) k =
+    withSummaryContext decl $ do
     extendVars [(bVar v, tau)] $ do
     theta <- askSubst
     withUniqBoundVar v $ \v' -> do
@@ -139,7 +153,8 @@ evalDecl (LetCompD v tau comp s) k =
         withSummaryContext comp $
         uniquifyCompLabels comp >>= evalComp
 
-evalDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
+evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
+    withSummaryContext decl $ do
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' -> do
@@ -192,7 +207,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     -- Allocate heap storage for v and initialize it
     ptr  <- newVarPtr
     val1 <- case maybe_e1 of
-              Nothing -> maybe UnknownV id <$> defaultValue tau'
+              Nothing -> maybe UnknownV id <$> runMaybeT (defaultValue tau')
               Just e1 -> withSummaryContext e1 $ evalExp e1
     writeVarPtr ptr val1
     extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
@@ -477,7 +492,7 @@ evalConst (FloatC fp r)      = return $ FloatV fp r
 evalConst (StringC s)        = return $ StringV s
 evalConst c@(ArrayC cs)      = do (_, tau)   <- inferConst noLoc c >>= checkArrT
                                   vals       <- mapM evalConst cs
-                                  maybe_dflt <- defaultValue tau
+                                  maybe_dflt <- runMaybeT $ defaultValue tau
                                   case maybe_dflt of
                                     Nothing   -> partialExp $ arrayE (map toExp vals)
                                     Just dflt -> return $ ArrayV $ P.fromList dflt vals
@@ -491,364 +506,528 @@ evalConst (StructC s flds) = do
     (fs, cs) = unzip  flds
 
 evalExp :: Exp -> EvalM (Val Exp)
-evalExp (ConstE c _) =
-    evalConst c
-
-evalExp (VarE v _) = do
-    v' <- maybe v id <$> lookupSubst v
-    lookupVarBind v'
-
-evalExp (UnopE op e s) = do
-    val <- evalExp e
-    unop op val
+evalExp e =
+    withSummaryContext e $ do
+    flags <- askFlags
+    eval flags e
   where
-    unop :: Unop -> Val Exp -> EvalM (Val Exp)
-    unop Lnot val =
-        maybePartialVal $ liftBool op not val
+    eval :: Flags -> Exp -> EvalM (Val Exp)
+    eval flags (ConstE c _) | peval flags =
+        evalConst c
 
-    unop Bnot val =
-        maybePartialVal $ liftBits op complement val
+    eval _flags e@(ConstE {}) =
+        partialExp e
 
-    unop Neg val =
-        maybePartialVal $ negate val
+    eval flags (VarE v _) | peval flags = do
+        v' <- maybe v id <$> lookupSubst v
+        lookupVarBind v'
 
-    unop (Cast tau) (FixV _ _ _ (BP 0) r) | isBitT tau =
-        return $ FixV I U (W 1) (BP 0) (if r == 0 then 0 else 1)
+    eval _flags (VarE v s) = do
+        v' <- maybe v id <$> lookupSubst v
+        partialExp $ VarE v' s
 
-    unop (Cast (FixT I U (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^w - 1 =
-        return $ FixV I U (W w) (BP 0) r
+    eval flags (UnopE op e s) | peval flags = do
+        val <- eval flags e
+        unop op val
+      where
+        unop :: Unop -> Val Exp -> EvalM (Val Exp)
+        unop Lnot val =
+            maybePartialVal $ liftBool op not val
 
-    unop (Cast (FixT I S (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^(w-1) - 1 && r >= -(2^(w-1)) =
-        return $ FixV I S (W w) (BP 0) r
+        unop Bnot val =
+            maybePartialVal $ liftBits op complement val
 
-    unop (Cast (FixT I s w (BP 0) _)) (FloatV _ r) =
-        return $ FixV I s w (BP 0) (fromIntegral (truncate r :: Integer))
+        unop Neg val =
+            maybePartialVal $ negate val
 
-    unop (Cast (FloatT fp _)) (FixV I _ _ (BP 0) r) =
-        return $ FloatV fp r
+        unop (Cast tau) (FixV _ _ _ (BP 0) r) | isBitT tau =
+            return $ FixV I U (W 1) (BP 0) (if r == 0 then 0 else 1)
 
-    unop Len val = do
-        (iota, _) <- inferExp e >>= checkArrT
-        psi       <- askIVarSubst
-        case subst psi mempty iota of
-          ConstI n _ -> evalConst $ intC n
-          _ -> partialExp $ UnopE op (toExp val) s
+        unop (Cast (FixT I U (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^w - 1 =
+            return $ FixV I U (W w) (BP 0) r
 
-    unop op val =
+        unop (Cast (FixT I S (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^(w-1) - 1 && r >= -(2^(w-1)) =
+            return $ FixV I S (W w) (BP 0) r
+
+        unop (Cast (FixT I s w (BP 0) _)) (FloatV _ r) =
+            return $ FixV I s w (BP 0) (fromIntegral (truncate r :: Integer))
+
+        unop (Cast (FloatT fp _)) (FixV I _ _ (BP 0) r) =
+            return $ FloatV fp r
+
+        unop Len val = do
+            (iota, _) <- inferExp e >>= checkArrT
+            psi       <- askIVarSubst
+            case subst psi mempty iota of
+              ConstI n _ -> evalConst $ intC n
+              _ -> partialExp $ UnopE op (toExp val) s
+
+        unop op val =
+            partialExp $ UnopE op (toExp val) s
+
+    eval flags (UnopE op e s) = do
+        val <- eval flags e
         partialExp $ UnopE op (toExp val) s
 
-evalExp (BinopE op e1 e2 s) = do
-    val1 <- evalExp e1
-    val2 <- evalExp e2
-    binop op val1 val2
-  where
-    binop :: Binop -> Val Exp -> Val Exp -> EvalM (Val Exp)
-    binop Lt val1 val2 =
-        maybePartialVal $ liftOrd op (<) val1 val2
+    eval flags (BinopE op e1 e2 s) | peval flags = do
+        val1 <- eval flags e1
+        val2 <- eval flags e2
+        binop op val1 val2
+      where
+        binop :: Binop -> Val Exp -> Val Exp -> EvalM (Val Exp)
+        binop Lt val1 val2 =
+            maybePartialVal $ liftOrd op (<) val1 val2
 
-    binop Le val1 val2 =
-        maybePartialVal $ liftOrd op (<=) val1 val2
+        binop Le val1 val2 =
+            maybePartialVal $ liftOrd op (<=) val1 val2
 
-    binop Eq val1 val2 =
-        maybePartialVal $ liftEq op (==) val1 val2
+        binop Eq val1 val2 =
+            maybePartialVal $ liftEq op (==) val1 val2
 
-    binop Ge val1 val2 =
-        maybePartialVal $ liftOrd op (>=) val1 val2
+        binop Ge val1 val2 =
+            maybePartialVal $ liftOrd op (>=) val1 val2
 
-    binop Gt val1 val2 =
-        maybePartialVal $ liftOrd op (>) val1 val2
+        binop Gt val1 val2 =
+            maybePartialVal $ liftOrd op (>) val1 val2
 
-    binop Ne val1 val2 =
-        maybePartialVal $ liftEq op (/=) val1 val2
+        binop Ne val1 val2 =
+            maybePartialVal $ liftEq op (/=) val1 val2
 
-    binop Land val1 val2
-        | isTrue  val1 = maybePartialVal val2
-        | isFalse val1 = return $ BoolV False
-        | otherwise    = maybePartialVal $ liftBool2 op (&&) val1 val2
+        binop Land val1 val2
+            | isTrue  val1 = maybePartialVal val2
+            | isFalse val1 = return $ BoolV False
+            | otherwise    = maybePartialVal $ liftBool2 op (&&) val1 val2
 
-    binop Lor val1 val2
-        | isTrue  val1 = return $ BoolV True
-        | isFalse val1 = maybePartialVal val2
-        | otherwise    = maybePartialVal $ liftBool2 op (||) val1 val2
+        binop Lor val1 val2
+            | isTrue  val1 = return $ BoolV True
+            | isFalse val1 = maybePartialVal val2
+            | otherwise    = maybePartialVal $ liftBool2 op (||) val1 val2
 
-    binop Band val1 val2 =
-        maybePartialVal $ liftBits2 op (.&.) val1 val2
+        binop Band val1 val2 =
+            maybePartialVal $ liftBits2 op (.&.) val1 val2
 
-    binop Bor val1 val2
-        | isZero val1 = maybePartialVal val2
-        | isZero val2 = maybePartialVal val1
-        | otherwise   = maybePartialVal $ liftBits2 op (.|.) val1 val2
+        binop Bor val1 val2
+            | isZero val1 = maybePartialVal val2
+            | isZero val2 = maybePartialVal val1
+            | otherwise   = maybePartialVal $ liftBits2 op (.|.) val1 val2
 
-    binop Bxor val1 val2
-        | isZero val1 = maybePartialVal val2
-        | isZero val2 = maybePartialVal val1
-        | otherwise   = maybePartialVal $ liftBits2 op xor val1 val2
+        binop Bxor val1 val2
+            | isZero val1 = maybePartialVal val2
+            | isZero val2 = maybePartialVal val1
+            | otherwise   = maybePartialVal $ liftBits2 op xor val1 val2
 
-    binop LshL val1 val2 =
-        maybePartialVal $ liftShift op shiftL val1 val2
+        binop LshL val1 val2 =
+            maybePartialVal $ liftShift op shiftL val1 val2
 
-    binop AshR val1 val2 =
-        maybePartialVal $ liftShift op shiftR val1 val2
+        binop AshR val1 val2 =
+            maybePartialVal $ liftShift op shiftR val1 val2
 
-    binop Add val1 val2 = maybePartialVal $ val1 + val2
+        binop Add val1 val2 = maybePartialVal $ val1 + val2
 
-    binop Sub val1 val2 = maybePartialVal $ val1 - val2
+        binop Sub val1 val2 = maybePartialVal $ val1 - val2
 
-    binop Mul val1 val2 = maybePartialVal $ val1 * val2
+        binop Mul val1 val2 = maybePartialVal $ val1 * val2
 
-    binop Div (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
-        return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
+        binop Div (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
+            return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
 
-    binop Div (FloatV fp x) (FloatV _ y) =
-        return $ FloatV fp (x / y)
+        binop Div (FloatV fp x) (FloatV _ y) =
+            return $ FloatV fp (x / y)
 
-    binop Rem (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
-        return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
+        binop Rem (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
+            return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
 
-    binop op val1 val2 =
+        binop op val1 val2 =
+            partialExp $ BinopE op (toExp val1) (toExp val2) s
+
+    eval flags (BinopE op e1 e2 s) = do
+        val1 <- eval flags e1
+        val2 <- eval flags e2
         partialExp $ BinopE op (toExp val1) (toExp val2) s
 
-evalExp e@(IfE e1 e2 e3 s) = do
-    tau <- inferExp e
-    h   <- getHeap
-    evalExp e1 >>= evalIfExp tau h
-  where
-    -- Note that @e1@ is pure, so we don't have to worry about it changing the
-    -- heap.
-    evalIfExp :: Type -> Heap -> Val Exp -> EvalM (Val Exp)
-    evalIfExp tau h val
-        | isTrue  val = evalExp e2
-        | isFalse val = evalExp e3
-        | isPureT tau = do val2 <- evalExp e2
-                           val3 <- evalExp e3
-                           partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
-        | otherwise   = do e2' <- savingHeap $ evalFullCmd e2
-                           e3' <- savingHeap $ evalFullCmd e3
-                           killVars e2'
-                           killVars e3'
-                           partial $ CmdV h $ IfE (toExp val) e2' e3' s
-
-evalExp (LetE decl e2 s2) =
-    evalLocalDecl decl go
-  where
-    go :: LocalLetVal -> EvalM (Val Exp)
-    go (DeclVal decl) = do
-        val2 <- evalExp e2
-        case val2 of
-          ExpV e2'   -> partial $ ExpV   $ LetE decl e2' s2
-          CmdV h e2' -> partial $ CmdV h $ LetE decl e2' s2
-          _          -> wrapLet decl val2
-
-    go (HeapDeclVal k) = do
-        val2 <- evalExp e2
-        case val2 of
-          ExpV e2'   -> do decl <- getHeap >>= k
-                           partial $ ExpV   $ LetE decl e2' s2
-          CmdV h e2' -> do decl <- k h
-                           partial $ CmdV h $ LetE decl e2' s2
-          _          -> do decl <- getHeap >>= k
-                           wrapLet decl val2
-
-    wrapLet :: LocalDecl -> Val Exp -> EvalM (Val Exp)
-    wrapLet decl val2
-        | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
-        | otherwise             = return val2
+    eval flags e@(IfE e1 e2 e3 s) = do
+        tau  <- inferExp e
+        h    <- getHeap
+        val1 <- eval flags e1
+        evalIfExp tau h val1
       where
-        e2 :: Exp
-        e2 = toExp val2
+        -- Note that @e1@ is pure, so we don't have to worry about it changing the
+        -- heap.
+        evalIfExp :: Type -> Heap -> Val Exp -> EvalM (Val Exp)
+        evalIfExp tau h val
+            | isTrue  val = eval flags e2
+            | isFalse val = eval flags e3
+            | isPureT tau = do val2 <- eval flags e2
+                               val3 <- eval flags e3
+                               partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
+            | otherwise   = do e2' <- savingHeap $ evalFullCmd e2
+                               e3' <- savingHeap $ evalFullCmd e3
+                               killVars e2'
+                               killVars e3'
+                               partial $ CmdV h $ IfE (toExp val) e2' e3' s
 
-        v :: Var
-        [v] = Set.toList (binders decl)
-
-evalExp e@(CallE f iotas es s) = do
-    maybe_f' <- lookupSubst f
-    v_f      <- case maybe_f' of
-                  Nothing -> lookupVarBind f
-                  Just f' -> lookupVarBind f'
-    iotas'  <- mapM simplIota iotas
-    v_es    <- mapM evalExp es
-    tau     <- inferExp e
-    go tau v_f iotas' v_es
-  where
-    go :: Type -> Val Exp -> [Iota] -> [Val Exp] -> EvalM (Val Exp)
-    go _tau (FunClosV theta ivs vbs _tau_ret k) iotas' v_es =
-        withSubst theta $
-        withUniqVars vs $ \vs' -> do
-        extendIVarSubst (ivs `zip` iotas') $ do
-        extendVarBinds  (vs' `zip` v_es) $ do
-        taus' <- mapM simplType taus
-        k >>= wrapLetArgs vs' taus'
+    eval _flags (LetE decl e2 s2) =
+        evalLocalDecl decl go
       where
-        vs :: [Var]
-        taus :: [Type]
-        (vs, taus) = unzip vbs
+        go :: LocalLetVal -> EvalM (Val Exp)
+        go (DeclVal decl) = do
+            val2 <- evalExp e2
+            case val2 of
+              ExpV e2'   -> partial $ ExpV   $ LetE decl e2' s2
+              CmdV h e2' -> partial $ CmdV h $ LetE decl e2' s2
+              _          -> wrapLet decl val2
 
-        -- If @val@ uses any of the function's parameter bindings, we need to
-        -- keep them around. This can happen if we decide not to inline a
-        -- variable, e.g., if the variable is bound to an array constant.
-        wrapLetArgs :: [Var] -> [Type] -> Val Exp -> EvalM (Val Exp)
-        wrapLetArgs vs' taus' val =
-            -- We must be careful here not to apply transformExpVal if the list
-            -- of free variables is null because @transformExpVal id@ is not the
-            -- identify function!
-            case filter isFree (zip3 vs' taus' v_es) of
-              [] -> return val
-              bs -> transformExpVal (letBinds bs) val
+        go (HeapDeclVal k) = do
+            val2 <- evalExp e2
+            case val2 of
+              ExpV e2'   -> do decl <- getHeap >>= k
+                               partial $ ExpV   $ LetE decl e2' s2
+              CmdV h e2' -> do decl <- k h
+                               partial $ CmdV h $ LetE decl e2' s2
+              _          -> do decl <- getHeap >>= k
+                               wrapLet decl val2
+
+        wrapLet :: LocalDecl -> Val Exp -> EvalM (Val Exp)
+        wrapLet decl val2
+            | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
+            | otherwise             = return val2
           where
-            letBinds :: [(Var, Type, Val Exp)] -> Exp -> Exp
-            letBinds bs e = foldr letBind e bs
+            e2 :: Exp
+            e2 = toExp val2
 
-            letBind :: (Var, Type, Val Exp) -> Exp -> Exp
-            letBind (_v, RefT {}, _e1) e2 = e2
-            letBind (v,  tau,      e1) e2 = letE v tau (toExp e1) e2
+            v :: Var
+            [v] = Set.toList (binders decl)
 
-            isFree :: (Var, Type, Val Exp) -> Bool
-            isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
-
-    -- Note that the heap cannot change as the result of evaluating function
-    -- arguments, so we can call 'partialCmd' here instead of saving the heap
-    -- above and constructing a 'CmdV' from it manually.
-    go tau (ExpV (VarE f' _)) iotas' v_es
-       | isPureT tau = do killVars e
-                          partialExp $ CallE f' iotas' (map toExp v_es) s
-       | otherwise   = do killVars e
-                          partialCmd $ CallE f' iotas' (map toExp v_es) s
-
-    go _tau val _iotas' _v_es = do
-      faildoc $ text "Cannot call function" <+> ppr val
-
-evalExp (DerefE e s) =
-    evalExp e >>= go
-  where
-    go :: Val Exp -> EvalM (Val Exp)
-    go (RefV r) = do
-        val <- readVarPtr (refVarPtr r)
-        if isKnown val
-          then ReturnV <$> refView r val
-          else partialCmd $ DerefE (toExp r) s
-
-    go val =
-        partialCmd $ DerefE (toExp val) s
-
-evalExp e@(AssignE e1 e2 s) = do
-    val1 <- evalExp e1
-    val2 <- evalExp e2
-    go val1 val2
-  where
-    go :: Val Exp -> Val Exp -> EvalM (Val Exp)
-    go (RefV r) val2 = do
-        h         <- getHeap
-        old       <- readVarPtr ptr
-        maybe_new <- runMaybeT $ refUpdate r old val2
-        case maybe_new of
-          Just new | isValue new ->
-              do writeVarPtr ptr new
-                 return $ ReturnV UnitV
-          _ ->
-              do killVars e
-                 partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
+    eval flags e@(CallE f iotas es s) | peval flags = do
+        maybe_f' <- lookupSubst f
+        v_f      <- case maybe_f' of
+                      Nothing -> lookupVarBind f
+                      Just f' -> lookupVarBind f'
+        iotas'  <- mapM simplIota iotas
+        v_es    <- mapM (eval flags) es
+        tau     <- inferExp e
+        go tau v_f iotas' v_es
       where
-        ptr :: VarPtr
-        ptr = refVarPtr r
+        go :: Type -> Val Exp -> [Iota] -> [Val Exp] -> EvalM (Val Exp)
+        go _tau (FunClosV theta ivs vbs _tau_ret k) iotas' v_es =
+            withSubst theta $
+            withUniqVars vs $ \vs' -> do
+            extendIVarSubst (ivs `zip` iotas') $ do
+            extendVarBinds  (vs' `zip` v_es) $ do
+            taus' <- mapM simplType taus
+            k >>= wrapLetArgs vs' taus'
+          where
+            vs :: [Var]
+            taus :: [Type]
+            (vs, taus) = unzip vbs
 
-    go val1 val2 =
-        partialCmd $ AssignE (toExp val1) (toExp val2) s
+            -- If @val@ uses any of the function's parameter bindings, we need to
+            -- keep them around. This can happen if we decide not to inline a
+            -- variable, e.g., if the variable is bound to an array constant.
+            wrapLetArgs :: [Var] -> [Type] -> Val Exp -> EvalM (Val Exp)
+            wrapLetArgs vs' taus' val =
+                -- We must be careful here not to apply transformExpVal if the list
+                -- of free variables is null because @transformExpVal id@ is not the
+                -- identify function!
+                case filter isFree (zip3 vs' taus' v_es) of
+                  [] -> return val
+                  bs -> transformExpVal (letBinds bs) val
+              where
+                letBinds :: [(Var, Type, Val Exp)] -> Exp -> Exp
+                letBinds bs e = foldr letBind e bs
 
-evalExp (WhileE e1 e2 _) =
-    evalWhile e1 e2
+                letBind :: (Var, Type, Val Exp) -> Exp -> Exp
+                letBind (_v, RefT {}, _e1) e2 = e2
+                letBind (v,  tau,      e1) e2 = letE v tau (toExp e1) e2
 
-evalExp (ForE ann v tau e1 e2 e3 _) =
-    evalFor ann v tau e1 e2 e3
+                isFree :: (Var, Type, Val Exp) -> Bool
+                isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
 
-evalExp e@(ArrayE es _) = do
-    (_, tau)   <- inferExp e >>= checkArrT
-    vals       <- mapM evalExp es
-    maybe_dflt <- defaultValue tau
-    case maybe_dflt of
-      Nothing   -> partialExp $ arrayE (map toExp vals)
-      Just dflt -> return $ ArrayV $ P.fromList dflt vals
+        -- Note that the heap cannot change as the result of evaluating function
+        -- arguments, so we can call 'partialCmd' here instead of saving the heap
+        -- above and constructing a 'CmdV' from it manually.
+        go tau (ExpV (VarE f' _)) iotas' v_es
+           | isPureT tau = do killVars e
+                              partialExp $ CallE f' iotas' (map toExp v_es) s
+           | otherwise   = do killVars e
+                              partialCmd $ CallE f' iotas' (map toExp v_es) s
 
-evalExp (IdxE arr start len _) = do
-    v_arr   <- evalExp arr
-    v_start <- evalExp start
-    v       <- evalIdx v_arr v_start len
-    uninlineArrayConstant v arr v_arr v_start len
-  where
-    uninlineArrayConstant :: Val Exp -> Exp -> Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
-    uninlineArrayConstant v _ _ _ _ | isValue v =
-        return v
+        go _tau val _iotas' _v_es = do
+          faildoc $ text "Cannot call function" <+> ppr val
 
-    uninlineArrayConstant v@(RefV {}) _ _ _ _ =
-        return v
+    eval flags e@(CallE f iotas es s) = do
+        tau  <- inferExp e
+        v_es <- mapM (eval flags) es
+        if isPureT tau
+          then partialExp $ CallE f iotas (map toExp v_es) s
+          else partialCmd $ CallE f iotas (map toExp v_es) s
 
-    uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start Nothing | isValue arr = do
-        v' <- maybe v id <$> lookupSubst v
-        return $ IdxV (ExpV $ varE v') v_start
-
-    uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start (Just len) | isValue arr = do
-        v' <- maybe v id <$> lookupSubst v
-        return $ SliceV (ExpV $ varE v') v_start len
-
-    uninlineArrayConstant v _ _ _ _ =
-        return v
-
-evalExp (StructE s flds _) = do
-    vals <- mapM evalExp es
-    return $ StructV s (Map.fromList (fs `zip` vals))
-  where
-    fs :: [Field]
-    es :: [Exp]
-    (fs, es) = unzip  flds
-
-evalExp (ProjE e f _) = do
-    val <- evalExp e
-    evalProj val f
-
-evalExp (PrintE nl es s) = do
-    vals <- mapM evalExp es
-    partialCmd $ PrintE nl (map toExp vals) s
-
-evalExp e@(ErrorE {}) =
-    partialCmd e
-
-evalExp (ReturnE _ e _) = do
-    val <- evalExp e
-    case val of
-      ExpV e -> partialCmd $ returnE e
-      _      -> return $ ReturnV val
-
-evalExp (BindE wv tau e1 e2 s) = do
-    val1 <- withSummaryContext e1 $ evalExp e1
-    extendWildVars [(wv, tau)] $ do
-    withUniqWildVar wv $ \wv' -> do
-    tau' <- simplType tau
-    case val1 of
-      CmdV h1 e1'   -> do killVars e1'
-                          e2'  <- extendWildVarBinds [(wv', UnknownV)] $
-                                  evalFullCmd e2
-                          partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
-      ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
-                       withSummaryContext e2 $
-                       evalExp e2 >>= wrapBind wv' tau' val1'
-      _             -> withSummaryContext e1 $
-                       faildoc $ text "Command did not return CmdV or ReturnV."
-  where
-    -- If @val2@ uses the binding, we need to keep it around. This can happen if
-    -- we decide not to inline a variable, e.g., if the variable is bound to an
-    -- array constant.
-    wrapBind :: WildVar -> Type -> Val Exp -> Val Exp -> EvalM (Val Exp)
-    wrapBind (TameV bv) tau val1 val2 | v `Set.member` fvs e2 =
-        partialCmd $ letE v tau e1 e2
+    eval flags (DerefE e s) =
+        eval flags e >>= go
       where
-        v :: Var
-        v = bVar bv
+        go :: Val Exp -> EvalM (Val Exp)
+        go (RefV r) = do
+            val <- readVarPtr (refVarPtr r)
+            if isKnown val
+              then ReturnV <$> refView r val
+              else partialCmd $ DerefE (toExp r) s
 
-        e1, e2 :: Exp
-        e1 = toExp val1
-        e2 = toExp val2
+        go val =
+            partialCmd $ DerefE (toExp val) s
 
-    wrapBind _ _ _ val2 =
-        return val2
+    eval flags e@(AssignE e1 e2 s) = do
+        val1 <- eval flags e1
+        val2 <- eval flags e2
+        go val1 val2
+      where
+        go :: Val Exp -> Val Exp -> EvalM (Val Exp)
+        go (RefV r) val2 = do
+            h         <- getHeap
+            old       <- readVarPtr ptr
+            maybe_new <- runMaybeT $ refUpdate r old val2
+            case maybe_new of
+              Just new | isValue new ->
+                  do writeVarPtr ptr new
+                     return $ ReturnV UnitV
+              _ ->
+                  do killVars e
+                     partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
+          where
+            ptr :: VarPtr
+            ptr = refVarPtr r
+
+        go val1 val2 =
+            partialCmd $ AssignE (toExp val1) (toExp val2) s
+
+    eval _flags (WhileE e1 e2 _) =
+        evalWhile e1 e2
+
+    eval _flags (ForE ann v tau e1 e2 e3 _) =
+        evalFor ann v tau e1 e2 e3
+
+    eval flags e@(ArrayE es _) = do
+        (_, tau)   <- inferExp e >>= checkArrT
+        vals       <- mapM (eval flags) es
+        maybe_dflt <- runMaybeT $ defaultValue tau
+        case maybe_dflt of
+          Nothing   -> partialExp $ arrayE (map toExp vals)
+          Just dflt -> return $ ArrayV $ P.fromList dflt vals
+
+    eval flags (IdxE arr start len _) = do
+        v_arr   <- eval flags arr
+        v_start <- eval flags start
+        v       <- evalIdx v_arr v_start len
+        uninlineArrayConstant v arr v_arr v_start len
+      where
+        uninlineArrayConstant :: Val Exp -> Exp -> Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
+        uninlineArrayConstant v _ _ _ _ | isValue v =
+            return v
+
+        uninlineArrayConstant v@(RefV {}) _ _ _ _ =
+            return v
+
+        uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start Nothing | isValue arr = do
+            v' <- maybe v id <$> lookupSubst v
+            return $ IdxV (ExpV $ varE v') v_start
+
+        uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start (Just len) | isValue arr = do
+            v' <- maybe v id <$> lookupSubst v
+            return $ SliceV (ExpV $ varE v') v_start len
+
+        uninlineArrayConstant v _ _ _ _ =
+            return v
+
+    eval flags (StructE s flds _) = do
+        vals <- mapM (eval flags) es
+        return $ StructV s (Map.fromList (fs `zip` vals))
+      where
+        fs :: [Field]
+        es :: [Exp]
+        (fs, es) = unzip  flds
+
+    eval flags (ProjE e f _) = do
+        val <- eval flags e
+        evalProj val f
+
+    eval flags (PrintE nl es s) = do
+        vals <- mapM (eval flags) es
+        partialCmd $ PrintE nl (map toExp vals) s
+
+    eval _flags e@(ErrorE {}) =
+        partialCmd e
+
+    eval flags (ReturnE _ e _) = do
+        val <- eval flags e
+        case val of
+          ExpV e -> partialCmd $ returnE e
+          _      -> return $ ReturnV val
+
+    eval flags (BindE wv tau e1 e2 s) = do
+        val1 <- withSummaryContext e1 $ eval flags e1
+        extendWildVars [(wv, tau)] $ do
+        withUniqWildVar wv $ \wv' -> do
+        tau' <- simplType tau
+        case val1 of
+          CmdV h1 e1'   -> do killVars e1'
+                              e2'  <- extendWildVarBinds [(wv', UnknownV)] $
+                                      evalFullCmd e2
+                              partial $ CmdV h1 $ BindE wv' tau' e1' e2' s
+          ReturnV val1' -> extendWildVarBinds [(wv', val1')] $
+                           withSummaryContext e2 $
+                           eval flags e2 >>= wrapBind wv' tau' val1'
+          _             -> withSummaryContext e1 $
+                           faildoc $ text "Command did not return CmdV or ReturnV."
+      where
+        -- If @val2@ uses the binding, we need to keep it around. This can happen if
+        -- we decide not to inline a variable, e.g., if the variable is bound to an
+        -- array constant.
+        wrapBind :: WildVar -> Type -> Val Exp -> Val Exp -> EvalM (Val Exp)
+        wrapBind (TameV bv) tau val1 val2 | v `Set.member` fvs e2 =
+            partialCmd $ letE v tau e1 e2
+          where
+            v :: Var
+            v = bVar bv
+
+            e1, e2 :: Exp
+            e1 = toExp val1
+            e2 = toExp val2
+
+        wrapBind _ _ _ val2 =
+            return val2
+
+    eval flags (LutE e) | testDynFlag LUT flags = do
+        h <- getHeap
+        CmdV h <$> lutExp e
+
+    eval flags (LutE e) =
+        eval flags e
+
+lutExp :: Exp -> EvalM Exp
+lutExp e = do
+    info       <- checkedLutInfo e
+    let vs_in  =  toList $ lutInVars info
+    taus_in    <- mapM lookupVar vs_in
+    let vs_out =  toList $ lutOutVars info
+    taus_out   <- mapM lookupVar vs_out
+    tau_ret    <- inferExp e
+    e'         <- go (vs_in `zip` taus_in) (vs_out `zip` taus_out) tau_ret (returnedVar e)
+    traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
+    traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
+    tau_ret'   <- inferExp e'
+    traceLUT $ nest 2 $ text "LUTted expression:" <+> ppr tau_ret' </> ppr e'
+    return e'
+  where
+    checkedLutInfo :: Exp -> EvalM LUTInfo
+    checkedLutInfo e = do
+        maybe_info <- runErrorT $ lutInfo e
+        case maybe_info of
+          Left  err  -> fail err
+          Right info -> return info
+
+    unSTC :: Type -> Type
+    unSTC (ST _ (C tau) _ _ _ _) = tau
+    unSTC tau                    = tau
+
+    go :: [(Var, Type)]
+       -> [(Var, Type)]
+       -> Type
+       -> Maybe Var
+       -> EvalM Exp
+    go vtaus_in vtaus_out tau_ret v_ret =
+        localFlags (setDynFlag PartialEval) $ do
+        genLUT genLookup
+      where
+        vs_in :: [Var]
+        taus_in :: [Type]
+        (vs_in, taus_in) = unzip vtaus_in
+
+        vs_out :: [Var]
+        taus_out :: [Type]
+        (vs_out, taus_out) = unzip vtaus_out
+
+        -- If @e@ returns one of the output variables, we don't need to add
+        -- it to the LUT entry because it will already be included.
+        taus_result :: [Type]
+        taus_result | Just v <- v_ret, v `elem` vs_out = map unRefT taus_out
+                    | otherwise                        = map unRefT $ taus_out ++ [unSTC tau_ret]
+
+        genLUT :: (Var -> EvalM Exp)
+               -> EvalM Exp
+        genLUT k = do
+            v_lut         <- mkUniqVar "lut" e
+            w_in          <- sum <$> mapM bitSizeT taus_in
+            w_entry       <- sum <$> mapM bitSizeT taus_result
+            let tau_entry =  arrKnownT w_entry bitT
+            traceLUT $ text "Returned variable:" <+> ppr v_ret
+            traceLUT $ text "LUT entry type:" <+> ppr tau_entry
+            entries <- mapM (genLUTEntry w_in) [0..2^w_in-1]
+            let n   =  length entries
+            e_body  <- k v_lut
+            return $ case n of
+                       1 -> letE v_lut tau_entry (toExp (head entries)) e_body
+                       _ -> letE v_lut (arrKnownT n tau_entry) (arrayE (map toExp entries)) e_body
+          where
+            lutResult :: Val Exp -> EvalM [Val Exp]
+            lutResult _val_out | Just v <- v_ret, v `elem` vs_out =
+                mapM lookupVarValue vs_out
+
+            lutResult val_out = do
+                vals <- mapM lookupVarValue vs_out
+                return $ vals ++ [val_out]
+
+            genLUTEntry :: Int -> Integer -> EvalM (Val Exp)
+            genLUTEntry w_in i = do
+                lut_in <- bitcastV (FixV I U (W w_in) (BP 0) (fromIntegral i))
+                                   (FixT I U (W w_in) (BP 0) noLoc)
+                                   (arrKnownT w_in bitT)
+                vals_in <- unpackValues lut_in taus_in
+                traceLUT $ text "Variables:" <+> (text . show) (zip3 vs_in taus_in vals_in)
+                extendVarValues (zip3 vs_in taus_in vals_in) $ do
+                    val_ret <- evalExp e
+                    traceLUT $ text "Return value:" <+> ppr val_ret
+                    vals_result <- lutResult (unCompV val_ret)
+                    traceLUT $ text "Output variables:" <+> ppr (vs_out `zip` map unRefT taus_out)
+                    traceLUT $ text "Output value:" <+> ppr (vals_result `zip` taus_result)
+                    packValues (vals_result `zip` taus_result)
+
+            unCompV :: Val Exp -> Val Exp
+            unCompV (ReturnV val) = val
+            unCompV val           = val
+
+        genLookup :: Var
+                  -> EvalM Exp
+        genLookup v_lut =
+            lookupInVars vtaus_in $ \vtaus -> do
+            w_in        <- sum <$> mapM bitSizeT taus_in
+            let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
+            idx         <- packValues [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
+            vals        <- if null vs_in
+                           then unpackValues (ExpV $ varE v_lut) taus_result
+                           else unpackValues (ExpV $ idxE (varE v_lut) (bitcastE tau_idx (toExp idx))) taus_result
+            traceLUT $ text "Looked-up values:" <+> ppr vals
+            if isCompT tau_ret
+              then do let e_res = case v_ret of
+                                    Just v | v `elem` vs_out -> derefE (varE v)
+                                    _ -> returnE (bitcastE (unSTC tau_ret) (toExp (last vals)))
+                      return $ foldr seqE e_res [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
+              else return $ bitcastE (unSTC tau_ret) (toExp (last vals))
+
+        lookupInVars :: [(Var, Type)]
+                     -> ([(Var, Type)] -> EvalM Exp)
+                     -> EvalM Exp
+        lookupInVars [] k =
+            k []
+
+        lookupInVars ((v,tau):vtaus) k | isRefT tau = do
+            v'       <- mkUniqVar (namedString v) (locOf v)
+            let tau' =  unRefT tau
+            lookupInVars vtaus $ \vtaus' -> do
+            e <- k ((v', tau'):vtaus')
+            return $ bindE v' tau' (derefE (varE v)) e
+
+        lookupInVars ((v,tau):vtaus) k = do
+            lookupInVars vtaus $ \vtaus' -> do
+            k ((v, tau):vtaus')
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the
@@ -1136,56 +1315,3 @@ transformExpVal f val0 =
 transformCompVal :: (LComp -> EvalM LComp) -> Val LComp -> EvalM (Val LComp)
 transformCompVal f val =
     toComp val >>= f >>= partialComp
-
--- | Produce a default value of the given type.
-defaultValue :: Type -> EvalM (Maybe (Val Exp))
-defaultValue tau =
-    runMaybeT $ go tau
-  where
-    go :: Type -> MaybeT EvalM (Val Exp)
-    go (UnitT {})         = return UnitV
-    go (BoolT {})         = return $ BoolV False
-    go (FixT sc s w bp _) = return $ FixV sc s w bp 0
-    go (FloatT fp _)      = return $ FloatV fp 0
-    go (StringT {})       = return $ StringV ""
-
-    go (StructT s _) = do
-        StructDef s flds _ <- lift $ lookupStruct s
-        let (fs, taus)     =  unzip flds
-        vals               <- mapM go taus
-        return $ StructV s (Map.fromList (fs `zip` vals))
-
-    go (ArrT (ConstI n _) tau _) = do
-        val <- go tau
-        return $ ArrayV (P.replicateDefault n val)
-
-    go tau =
-        faildoc $ text "Cannot generate default value for type" <+> ppr tau
-
--- | Given a type and a value, return 'True' if the value is the
--- default of that type and 'False' otherwise.
-isDefaultValue :: Val Exp -> Bool
-isDefaultValue UnitV            = True
-isDefaultValue (BoolV False)    = True
-isDefaultValue (FixV _ _ _ _ 0) = True
-isDefaultValue (FloatV _ 0)     = True
-isDefaultValue (StringV "")     = True
-isDefaultValue (StructV _ flds) = all isDefaultValue (Map.elems flds)
-isDefaultValue (ArrayV vals)    = all isDefaultValue (P.toList vals)
-isDefaultValue _                = False
-
--- | Return 'True' if a 'Val' is completely known, even if it is a residual,
--- 'False' otherwise.
-isKnown :: Val Exp -> Bool
-isKnown UnknownV         = False
-isKnown (BoolV {})       = True
-isKnown (FixV {})        = True
-isKnown (FloatV {})      = True
-isKnown (StringV {})     = True
-isKnown (StructV _ flds) = all isKnown (Map.elems flds)
-isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
-                           all (isKnown . snd) (P.nonDefaultValues vals)
-isKnown (IdxV arr i)     = isKnown arr && isKnown i
-isKnown (SliceV arr i _) = isKnown arr && isKnown i
-isKnown (ExpV {})        = True
-isKnown _                = False

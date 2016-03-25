@@ -23,6 +23,7 @@ module KZC.Auto.Smart (
     intE,
     varE,
     notE,
+    catE,
     castE,
     bitcastE,
     letE,
@@ -59,6 +60,7 @@ import KZC.Core.Smart (tyVarT,
                        int32T,
                        int64T,
                        refT,
+                       unRefT,
                        arrKnownT,
                        stT,
 
@@ -153,6 +155,9 @@ varE v = VarE v (srclocOf v)
 
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
+
+catE :: Exp -> Exp -> Exp
+catE e1 e2 = BinopE Cat e1 e2 (e1 `srcspan` e2)
 
 castE :: Type -> Exp -> Exp
 castE tau e = UnopE (Cast tau) e (srclocOf e)

@@ -45,6 +45,12 @@ options =
         , Option [] ["fmax-simplifier-iterations"]
             (ReqArg maxSimplIterationsOpt "INT")
             "set maximum simplification iterations"
+        , Option [] ["fmax-lut"]
+            (ReqArg maxLUTOpt "SIZE")
+            "set maximum LUT size in bytes"
+        , Option [] ["fmin-lut-ops"]
+            (ReqArg minLUTOpsOpt "N")
+            "set minimum operation count to consider a LUT"
         ]
 
     setDynFlagM :: DynFlag -> Flags -> m Flags
@@ -74,6 +80,22 @@ options =
     dumpAll :: Flags -> m Flags
     dumpAll fs =
         return $ foldl' (flip setDumpFlag) fs [minBound..maxBound]
+
+    maxLUTOpt :: String -> Flags -> m Flags
+    maxLUTOpt s fs =
+        case reads s of
+          (n, "")  : _ -> return fs { maxLUT = n }
+          (n, "k") : _ -> return fs { maxLUT = (n*1024) }
+          (n, "K") : _ -> return fs { maxLUT = (n*1024) }
+          (n, "m") : _ -> return fs { maxLUT = (n*1024*1024) }
+          (n, "M") : _ -> return fs { maxLUT = (n*1024*1024) }
+          _            -> fail $ "bad argument to --fmax-lut option: " ++ s
+
+    minLUTOpsOpt :: String -> Flags -> m Flags
+    minLUTOpsOpt s fs =
+        case reads s of
+          [(n, "")]  -> return fs { minLUTOps = n }
+          _          -> fail "argument to --fmin-lut-ops must be an integer"
 
     outOpt :: String -> Flags -> m Flags
     outOpt path fs = return fs { output = Just path }
@@ -135,6 +157,8 @@ fDynFlagOpts =
   , (BoundsCheck, "bounds-check", "generate bounds checks")
   , (PartialEval, "peval",        "run the partial evaluator")
   , (Timers,      "timers",       "insert code to track elapsed time")
+  , (AutoLUT,     "autolut",      "run the auto-LUTter")
+  , (LUT,         "lut",          "run the LUTter")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -160,6 +184,8 @@ dDumpFlagOpts =
   , (DumpOcc,     "occ",     "dump occurrence info")
   , (DumpSimpl,   "simpl",   "dump simplifier output")
   , (DumpEval,    "peval",   "dump partial evaluator output")
+  , (DumpAutoLUT, "autolut", "dump auto-LUTter")
+  , (DumpLUT,     "lut",     "dump LUTter")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -177,6 +203,8 @@ dTraceFlagOpts =
   , (TraceFusion,   "fusion",    "trace fusion")
   , (TraceSimplify, "simpl",     "trace simplifier")
   , (TraceEval,     "eval",      "trace evaluator")
+  , (TraceAutoLUT,  "autolut",   "trace auto-LUTter")
+  , (TraceLUT,      "lut",       "trace LUTter")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]
