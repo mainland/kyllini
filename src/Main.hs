@@ -113,13 +113,13 @@ runPipeline filepath =
         doTrace <- asksFlags (testTraceFlag TracePhase)
         if doTrace
           then do pass  <- lift getPass
-                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d" phase pass)
+                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d\n" phase pass)
                   start <- liftIO getCPUTime
                   y     <- act x
                   end   <- liftIO getCPUTime
                   let t :: Double
                       t = fromIntegral (end - start) / 1e12
-                  return $! unsafePerformIO $ hPutStr stderr (printf "(%f)\n" t)
+                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f)\n" phase pass t)
                   return y
           else act x
 
