@@ -2,7 +2,7 @@
 
 -- |
 -- Module      :  KZC.Flags
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -159,7 +159,7 @@ instance Monoid Flags where
         , verbLevel = 0
         , maxErrCtx = 1
         , maxSimpl  = 4
-        , maxLUT    = 256*1024 -- ^ Default maximum size for LUT is 256K bytes
+        , maxLUT    = 32*1024 -- ^ Default maximum size for LUT is 32K bytes
         , minLUTOps = 5 -- ^ Minimum number of operations necessary to consider
                         -- a LUT for an expression
 
