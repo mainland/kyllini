@@ -431,11 +431,13 @@ cgLocalDecl :: LocalDecl -> Cg a -> Cg a
 cgLocalDecl decl@(LetLD v tau e _) k = do
     cve <- withSummaryContext decl $ do
            inSTScope tau $ do
-           ce         <- cgExp e
-           isTopLevel <- isInTopScope
-           cve        <- cgBinder isTopLevel (bVar v) tau
-           cgAssign tau cve ce
-           return cve
+           case unConstE e of
+             Just _  -> cgExp e
+             Nothing -> do ce         <- cgExp e
+                           isTopLevel <- isInTopScope
+                           cve        <- cgBinder isTopLevel (bVar v) tau
+                           cgAssign tau cve ce
+                           return cve
     extendVars [(bVar v, tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
