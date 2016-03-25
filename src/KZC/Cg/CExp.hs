@@ -384,7 +384,7 @@ toInit ce            = [cinit|$ce|]
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: Type -> CExp -> CExp -> C.Exp
 lowerIdx tau carr ci
-    | isBitT tau = [cexp|($carr[$cbitIdx] & $cbitMask) ? 1 : 0|]
+    | isBitT tau = toExp (CExp [cexp|($carr[$cbitIdx] & $cbitMask)|] `shiftR'` cbitOff) l
     | otherwise  = [cexp|$carr[$ci]|]
   where
     cbitIdx, cbitOff :: CExp
@@ -392,6 +392,9 @@ lowerIdx tau carr ci
 
     cbitMask :: CExp
     cbitMask = 1 `shiftL'` cbitOff
+
+    l :: SrcLoc
+    l = carr `srcspan` ci
 
 -- | Lower a slice operation to a 'C.Exp'
 lowerSlice :: Type -> CExp -> CExp -> Int -> C.Exp
