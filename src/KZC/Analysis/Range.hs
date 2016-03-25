@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.Range
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -329,6 +329,7 @@ instance ValDom Val where
     binopDom Div _ _ = top
     binopDom Rem _ _ = top
     binopDom Pow _ _ = top
+    binopDom Cat _ _ = top
 
     arrayDom _vs = ArrayV empty empty
 

@@ -7,7 +7,7 @@
 
 -- |
 -- Module      : KZC.Core.Syntax
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
@@ -266,6 +266,7 @@ data Binop = Lt
            | Div
            | Rem
            | Pow
+           | Cat -- ^ Array concatenation.
   deriving (Eq, Ord, Read, Show)
 
 data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
@@ -653,6 +654,7 @@ instance Pretty Binop where
     ppr Div  = text "/"
     ppr Rem  = text "%"
     ppr Pow  = text "**"
+    ppr Cat  = text "++"
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -812,6 +814,7 @@ instance HasFixity Binop where
     fixity Div  = infixl_ 9
     fixity Rem  = infixl_ 9
     fixity Pow  = infixl_ 9
+    fixity Cat  = infixr_ 2
 
 instance HasFixity Unop where
     fixity Lnot        = infixr_ 10

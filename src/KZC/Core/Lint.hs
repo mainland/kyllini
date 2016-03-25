@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.Core.Lint
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -340,6 +340,17 @@ inferExp (BinopE op e1 e2 _) = do
 
     binop Pow tau1 tau2 =
         checkNumBinop tau1 tau2
+
+    binop Cat tau1 tau2 = do
+        (iota1, tau1_elem) <- checkArrT tau1
+        (iota2, tau2_elem) <- checkArrT tau2
+        checkTypeEquality tau2_elem tau1_elem
+        case (iota1, iota2) of
+          (ConstI n _, ConstI m _) -> return $ ArrT (ConstI (n+m) s) tau1_elem s
+          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
+      where
+        s :: SrcLoc
+        s = tau1 `srcspan` tau2
 
     checkEqBinop :: Type -> Type -> m Type
     checkEqBinop tau1 tau2 = do
