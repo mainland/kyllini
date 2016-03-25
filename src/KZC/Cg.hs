@@ -625,9 +625,10 @@ cgExp e = do
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
-        cgBitcast (CBits ce) (ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
+        cgBitcast (CBits ce) tau_from@(ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
+            w       <- bitSizeT tau_from
             ctau_to <- cgType tau_to
-            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+            return $ CBits $ CExp $ rl l [cexp|(($ty:ctau_to) $ce) & $(chexconst (2^w-1))|]
 
         cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
             ctau_to <- cgBitcastType tau_from
