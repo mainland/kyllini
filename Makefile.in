@@ -13,6 +13,7 @@ GHCFLAGS += \
 	-package array \
 	-package base \
 	-package binary \
+        -package data-binary-ieee754 \
 	-package bytestring \
 	-package containers \
 	-package directory \

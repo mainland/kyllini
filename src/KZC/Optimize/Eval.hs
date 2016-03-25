@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -21,9 +22,11 @@ module KZC.Optimize.Eval (
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad (filterM)
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Error (runErrorT)
 import Control.Monad.Trans.Maybe (MaybeT,
                                   runMaybeT)
 import Data.Bits
+import Data.Foldable (toList)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Monoid
@@ -32,16 +35,19 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Lut
 import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Name
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P
 import KZC.Optimize.Eval.Val
 import KZC.Summary
+import KZC.Trace
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -889,8 +895,139 @@ evalExp e =
         wrapBind _ _ _ val2 =
             return val2
 
+    eval flags (LutE e) | testDynFlag LUT flags = do
+        h <- getHeap
+        CmdV h <$> lutExp e
+
     eval flags (LutE e) =
         eval flags e
+
+lutExp :: Exp -> EvalM Exp
+lutExp e = do
+    info       <- checkedLutInfo e
+    let vs_in  =  toList $ lutInVars info
+    taus_in    <- mapM lookupVar vs_in
+    let vs_out =  toList $ lutOutVars info
+    taus_out   <- mapM lookupVar vs_out
+    tau_ret    <- inferExp e
+    e'         <- go (vs_in `zip` taus_in) (vs_out `zip` taus_out) tau_ret (returnedVar e)
+    traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
+    traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
+    tau_ret'   <- inferExp e'
+    traceLUT $ nest 2 $ text "LUTted expression:" <+> ppr tau_ret' </> ppr e'
+    return e'
+  where
+    checkedLutInfo :: Exp -> EvalM LUTInfo
+    checkedLutInfo e = do
+        maybe_info <- runErrorT $ lutInfo e
+        case maybe_info of
+          Left  err  -> fail err
+          Right info -> return info
+
+    unSTC :: Type -> Type
+    unSTC (ST _ (C tau) _ _ _ _) = tau
+    unSTC tau                    = tau
+
+    go :: [(Var, Type)]
+       -> [(Var, Type)]
+       -> Type
+       -> Maybe Var
+       -> EvalM Exp
+    go vtaus_in vtaus_out tau_ret v_ret =
+        localFlags (setDynFlag PartialEval) $ do
+        genLUT genLookup
+      where
+        vs_in :: [Var]
+        taus_in :: [Type]
+        (vs_in, taus_in) = unzip vtaus_in
+
+        vs_out :: [Var]
+        taus_out :: [Type]
+        (vs_out, taus_out) = unzip vtaus_out
+
+        -- If @e@ returns one of the output variables, we don't need to add
+        -- it to the LUT entry because it will already be included.
+        taus_result :: [Type]
+        taus_result | Just v <- v_ret, v `elem` vs_out = map unRefT taus_out
+                    | otherwise                        = map unRefT $ taus_out ++ [unSTC tau_ret]
+
+        genLUT :: (Var -> EvalM Exp)
+               -> EvalM Exp
+        genLUT k = do
+            v_lut         <- mkUniqVar "lut" e
+            w_in          <- sum <$> mapM bitSizeT taus_in
+            w_entry       <- sum <$> mapM bitSizeT taus_result
+            let tau_entry =  arrKnownT w_entry bitT
+            traceLUT $ text "Returned variable:" <+> ppr v_ret
+            traceLUT $ text "LUT entry type:" <+> ppr tau_entry
+            entries <- mapM (genLUTEntry w_in) [0..2^w_in-1]
+            let n   =  length entries
+            e_body  <- k v_lut
+            return $ case n of
+                       1 -> letE v_lut tau_entry (toExp (head entries)) e_body
+                       _ -> letE v_lut (arrKnownT n tau_entry) (arrayE (map toExp entries)) e_body
+          where
+            lutResult :: Val Exp -> EvalM [Val Exp]
+            lutResult _val_out | Just v <- v_ret, v `elem` vs_out =
+                mapM lookupVarValue vs_out
+
+            lutResult val_out = do
+                vals <- mapM lookupVarValue vs_out
+                return $ vals ++ [val_out]
+
+            genLUTEntry :: Int -> Integer -> EvalM (Val Exp)
+            genLUTEntry w_in i = do
+                lut_in <- bitcastV (FixV I U (W w_in) (BP 0) (fromIntegral i))
+                                   (FixT I U (W w_in) (BP 0) noLoc)
+                                   (arrKnownT w_in bitT)
+                vals_in <- unpackValues lut_in taus_in
+                traceLUT $ text "Variables:" <+> (text . show) (zip3 vs_in taus_in vals_in)
+                extendVarValues (zip3 vs_in taus_in vals_in) $ do
+                    val_ret <- evalExp e
+                    traceLUT $ text "Return value:" <+> ppr val_ret
+                    vals_result <- lutResult (unCompV val_ret)
+                    traceLUT $ text "Output variables:" <+> ppr (vs_out `zip` map unRefT taus_out)
+                    traceLUT $ text "Output value:" <+> ppr (vals_result `zip` taus_result)
+                    packValues (vals_result `zip` taus_result)
+
+            unCompV :: Val Exp -> Val Exp
+            unCompV (ReturnV val) = val
+            unCompV val           = val
+
+        genLookup :: Var
+                  -> EvalM Exp
+        genLookup v_lut =
+            lookupInVars vtaus_in $ \vtaus -> do
+            w_in        <- sum <$> mapM bitSizeT taus_in
+            let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
+            idx         <- packValues [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
+            vals        <- if null vs_in
+                           then unpackValues (ExpV $ varE v_lut) taus_result
+                           else unpackValues (ExpV $ idxE (varE v_lut) (bitcastE tau_idx (toExp idx))) taus_result
+            traceLUT $ text "Looked-up values:" <+> ppr vals
+            if isCompT tau_ret
+              then do let e_res = case v_ret of
+                                    Just v | v `elem` vs_out -> derefE (varE v)
+                                    _ -> returnE (bitcastE (unSTC tau_ret) (toExp (last vals)))
+                      return $ foldr seqE e_res [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
+              else return $ bitcastE (unSTC tau_ret) (toExp (last vals))
+
+        lookupInVars :: [(Var, Type)]
+                     -> ([(Var, Type)] -> EvalM Exp)
+                     -> EvalM Exp
+        lookupInVars [] k =
+            k []
+
+        lookupInVars ((v,tau):vtaus) k | isRefT tau = do
+            v'       <- mkUniqVar (namedString v) (locOf v)
+            let tau' =  unRefT tau
+            lookupInVars vtaus $ \vtaus' -> do
+            e <- k ((v', tau'):vtaus')
+            return $ bindE v' tau' (derefE (varE v)) e
+
+        lookupInVars ((v,tau):vtaus) k = do
+            lookupInVars vtaus $ \vtaus' -> do
+            k ((v, tau):vtaus')
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the

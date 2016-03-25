@@ -20,6 +20,21 @@ module KZC.Optimize.Eval.Val (
     uintV,
     intV,
 
+    zeroBitV,
+    oneBitV,
+
+    catV,
+
+    idxV,
+    sliceV,
+
+    toBitsV,
+    packValues,
+    fromBitsV,
+    unpackValues,
+
+    bitcastV,
+
     complexV,
     uncomplexV,
 
@@ -48,7 +63,12 @@ module KZC.Optimize.Eval.Val (
     toConst
   ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative (Applicative, (<$>))
+import Control.Monad (foldM)
+import Data.Binary.IEEE754 (floatToWord,
+                            wordToFloat,
+                            doubleToWord,
+                            wordToDouble)
 import Data.Bits
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
@@ -162,6 +182,10 @@ uintV i = FixV I U dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
 intV :: Integral a => a -> Val Exp
 intV i = FixV I S dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
 
+zeroBitV, oneBitV :: Val Exp
+zeroBitV = FixV I U (W 1) (BP 0) 0
+oneBitV  = FixV I U (W 1) (BP 0) 1
+
 isTrue :: Val Exp -> Bool
 isTrue (BoolV True) = True
 isTrue _            = False
@@ -246,6 +270,177 @@ isKnown (IdxV arr i)     = isKnown arr && isKnown i
 isKnown (SliceV arr i _) = isKnown arr && isKnown i
 isKnown (ExpV {})        = True
 isKnown _                = False
+
+catV :: Val Exp -> Val Exp -> Val Exp
+catV (ArrayV vs1) (ArrayV vs2) =
+    ArrayV $ P.fromList (P.defaultValue vs1) $
+    P.toList vs2 ++ P.toList vs1
+
+catV (ArrayV vs1) val2 | P.length vs1 == 0 =
+    val2
+
+catV val1 (ArrayV vs2) | P.length vs2 == 0 =
+    val1
+
+catV val1 val2 =
+    ExpV $ catE (toExp val1) (toExp val2)
+
+-- | Extract a slice of an array
+idxV :: (Applicative m, Monad m)
+      => Val Exp -> Int -> m (Val Exp)
+idxV (ArrayV vs) off = vs P.!? off
+idxV val off         = return $ ExpV $ idxE (toExp val) (fromIntegral off)
+
+-- | Extract a slice of an array
+sliceV :: (Applicative m, Monad m)
+       => Val Exp -> Int -> Int -> m (Val Exp)
+sliceV (ArrayV vs) off len = ArrayV <$> P.slice off len vs
+sliceV val off len         = return $ ExpV $ sliceE (toExp val) (fromIntegral off) len
+
+toBitsV :: forall m . MonadTc m
+       => Val Exp -> Type -> m (Val Exp)
+toBitsV val tau =
+    go val tau
+  where
+    go :: Val Exp -> Type -> m (Val Exp)
+    go (UnitV {}) _ =
+        return $ ArrayV $ P.replicateDefault 0 zeroBitV
+
+    go (BoolV f) _ =
+        toBitArr (fromIntegral (fromEnum f)) 1
+
+    go (FixV I U (W w) (BP 0) r) _ =
+        toBitArr (numerator r) w
+
+    go (FixV I S (W w) (BP 0) r) _
+        | r >= 0    = toBitArr (numerator r) w
+        | otherwise = toBitArr (numerator r + 2^w) w
+
+    go (FloatV FP32 r) _ =
+        toBitArr (fromIntegral (floatToWord (fromRational r))) 32
+
+    go (FloatV FP64 r) _ =
+        toBitArr (fromIntegral (doubleToWord (fromRational r))) 64
+
+    go (StructV _ m) (StructT sname _) = do
+        StructDef _ flds _ <- lookupStruct sname
+        packValues [(m Map.! f, tau) | (f, tau) <- flds]
+
+    go (ArrayV arr) (ArrT _ tau _) =
+        packValues (P.toList arr `zip` repeat tau)
+
+    go (ReturnV val) (ST _ (C tau) _ _ _ _) =
+        toBitsV val tau
+
+    go val tau = do
+        w <- bitSizeT tau
+        return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
+
+    toBitArr :: Integer -> Int -> m (Val Exp)
+    toBitArr n w = ArrayV <$> (P.replicateDefault w zeroBitV P.// [(i,oneBitV) | i <- [0..w-1], n `testBit` i])
+
+packValues :: forall m . MonadTc m
+            => [(Val Exp, Type)] -> m (Val Exp)
+packValues vtaus =
+    go emptyBitArr (reverse vtaus)
+  where
+    go :: Val Exp -> [(Val Exp, Type)] -> m (Val Exp)
+    go bits [] =
+        return bits
+
+    go bits ((x, tau):xs) = do
+        x_bits <- toBitsV x tau
+        go (bits `catV` x_bits) xs
+
+    emptyBitArr :: Val Exp
+    emptyBitArr = ArrayV $ P.fromList zeroBitV []
+
+fromBitsV :: forall m . MonadTc m
+          => Val Exp -> Type -> m (Val Exp)
+fromBitsV (ArrayV vs) tau =
+    go vs tau
+  where
+    go :: P.PArray (Val Exp) -> Type -> m (Val Exp)
+    go _ (UnitT {}) =
+        return UnitV
+
+    go vs (BoolT {}) =
+        BoolV . toEnum . fromIntegral <$> fromBitArr vs
+
+    go vs (FixT I U (W w) (BP 0) _) =
+        FixV I U (W w) (BP 0) . fromIntegral <$> fromBitArr vs
+
+    go vs (FixT I S (W w) (BP 0) _) = do
+        i <- fromBitArr vs
+        return $ if i < 2^(w-1)
+                 then FixV I S (W w) (BP 0) (fromIntegral i)
+                 else FixV I S (W w) (BP 0) (fromIntegral (i - 2^w))
+
+    go vs (FloatT FP32 _) =
+        FloatV FP32 . toRational . wordToFloat . fromIntegral <$> fromBitArr vs
+
+    go vs (FloatT FP64 _) =
+        FloatV FP64 . toRational . wordToDouble . fromIntegral <$> fromBitArr vs
+
+    go vs (RefT tau _) =
+        go vs tau
+
+    go vs (StructT sname _) = do
+        StructDef _ flds _ <- lookupStruct sname
+        vals <- unpackValues (ArrayV vs) (map snd flds)
+        return $ StructV sname (Map.fromList (map fst flds `zip` vals))
+
+    go vs (ArrT (ConstI n _) tau _) = do
+        vals <- unpackValues (ArrayV vs) (replicate n tau)
+        dflt <- defaultValue tau
+        return $ ArrayV $ P.fromList dflt vals
+
+    go vs _ =
+        return $ ExpV $ bitcastE tau (toExp (ArrayV vs))
+
+    fromBitArr :: P.PArray (Val Exp) -> m Integer
+    fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
+      where
+        set :: Integer -> Val Exp -> m Integer
+        set i (FixV I U (W 1) (BP 0) 0) = return $ i `shiftL` 1
+        set i (FixV I U (W 1) (BP 0) 1) = return $ i `shiftL` 1 .|. 1
+        set _ val                       = faildoc $ text "Not a bit:" <+> ppr val
+
+fromBitsV val tau = do
+    w <- bitSizeT tau
+    return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
+
+unpackValues :: forall m . MonadTc m
+             => Val Exp -> [Type] -> m [Val Exp]
+unpackValues bits taus = do
+    go 0 taus
+  where
+    go :: Int -> [Type] -> m [Val Exp]
+    go _ [] =
+        return []
+
+    go n (UnitT {}:taus) = do
+        vals <- go n taus
+        return $ UnitV : vals
+
+    go n (tau:taus) = do
+        w    <- bitSizeT tau
+        slc  <- sliceV bits n w
+        val  <- bitcastV slc (arrKnownT w bitT) tau
+        vals <- go (n + w) taus
+        return $ val : vals
+
+-- | Bitcast a value from one type to another
+bitcastV :: forall m . MonadTc m
+         => Val Exp -> Type -> Type -> m (Val Exp)
+bitcastV val tau_from (ArrT (ConstI n _) tau_elem _)
+    | isBitT tau_elem, Just n' <- bitSizeT tau_from, n' == n = toBitsV val tau_from
+
+bitcastV val (ArrT (ConstI n _) tau_elem _) tau
+    | isBitT tau_elem, Just n' <- bitSizeT tau, n' == n = fromBitsV val tau
+
+bitcastV val _ tau =
+    return $ ExpV $ bitcastE tau (toExp val)
 
 complexV :: Struct -> Val Exp -> Val Exp -> Val Exp
 complexV sname a b =
