@@ -12,11 +12,9 @@ module KZC.Platform (
     bIT_ARRAY_ELEM_TYPE,
     bIT_ARRAY_ELEM_BITS,
 
-    BitArrayElemType,
     bitArrayLen
   ) where
 
-import Data.Word
 import qualified Language.C.Syntax as C
 
 import KZC.Core.Syntax
@@ -31,8 +29,6 @@ bIT_ARRAY_ELEM_TYPE = [cty|typename uint8_t|]
 
 bIT_ARRAY_ELEM_LOG_BITS :: Num a => a
 bIT_ARRAY_ELEM_LOG_BITS = 3
-
-type BitArrayElemType = Word8
 
 bIT_ARRAY_ELEM_BITS :: Num a => a
 bIT_ARRAY_ELEM_BITS = 2^(bIT_ARRAY_ELEM_LOG_BITS :: Int)
