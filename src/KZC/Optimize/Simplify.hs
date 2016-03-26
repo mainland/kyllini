@@ -1011,19 +1011,13 @@ shouldInlineFunUnconditionally _ _ _ _ =
     return False
 
 shouldInlineCompUnconditionally :: InComp -> SimplM Bool
-shouldInlineCompUnconditionally _ = do
-  fuse <- asksFlags (testDynFlag Fuse)
-  if fuse
-    then return True
-    else return False
+shouldInlineCompUnconditionally _ =
+  asksFlags (testDynFlag Fuse)
 
 shouldInlineCompFunUnconditionally :: [IVar]
                                    -> [(Var, Type)]
                                    -> Type
                                    -> OutComp
                                    -> SimplM Bool
-shouldInlineCompFunUnconditionally _ _ _ _ = do
-  fuse <- asksFlags (testDynFlag Fuse)
-  if fuse
-    then return True
-    else return False
+shouldInlineCompFunUnconditionally _ _ _ _ =
+  asksFlags (testDynFlag Fuse)
