@@ -225,15 +225,22 @@ asksFlags f = liftM f askFlags
 -- | Set all flags implied by other flags
 flagImplications :: Flags -> Flags
 flagImplications fs =
-    if fs' == fs then fs else flagImplications fs'
+    fixpoint go fs
   where
-    fs' :: Flags
-    fs' = go fs
+    fixpoint :: Eq a => (a -> a) -> a -> a
+    fixpoint f x | x' == x   = x
+                 | otherwise = fixpoint f x'
+      where
+        x' = f x
 
     go :: Flags -> Flags
-    go fs | testDynFlag Fuse fs = setDynFlag MayInline $
-                                  setDynFlag Simplify fs
-          | otherwise           = fs
+    go = imp Fuse (setDynFlag MayInline . setDynFlag Simplify)
+
+    imp :: DynFlag
+         -> (Flags -> Flags)
+         -> Flags -> Flags
+    imp f g fs =
+        if testDynFlag f fs then g fs else fs
 
 instance MonadFlags m => MonadFlags (MaybeT m) where
     askFlags       = lift askFlags

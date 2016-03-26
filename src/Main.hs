@@ -64,10 +64,9 @@ main :: IO ()
 main = do
     args        <- getArgs
     (fs, files) <- compilerOpts args
-    let fs'     =  flagImplications fs
     if mode fs == Help
       then usage >>= hPutStrLn stderr
-      else evalKZC fs' (mapM_ runPipeline files) `catch` printFailure
+      else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = (hPutStrLn stderr . show) e >> exitFailure

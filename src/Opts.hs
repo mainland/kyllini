@@ -11,6 +11,7 @@ module Opts (
     usage
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad ((>=>),
                       when)
 import Data.List (foldl')
@@ -222,7 +223,7 @@ fWarnFlagOpts =
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv = do
     case getOpt Permute options argv of
-      (fs,n,[])  -> do fs' <- foldl (>=>) return fs defaultFlags
+      (fs,n,[])  -> do fs' <- flagImplications <$> foldl (>=>) return fs defaultFlags
                        setMaxErrContext (maxErrCtx fs')
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
