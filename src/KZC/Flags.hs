@@ -234,7 +234,8 @@ flagImplications fs =
         x' = f x
 
     go :: Flags -> Flags
-    go = imp Fuse (setDynFlag MayInline . setDynFlag Simplify)
+    go = (imp Fuse (setDynFlag MayInline)) .
+         (imp MayInline (setDynFlag Simplify))
 
     imp :: DynFlag
          -> (Flags -> Flags)
