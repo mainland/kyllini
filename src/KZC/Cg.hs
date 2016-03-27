@@ -627,10 +627,9 @@ cgExp e = do
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
-        cgBitcast (CBits ce) tau_from@(ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
-            w       <- bitSizeT tau_from
+        cgBitcast (CBits ce) (ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
             ctau_to <- cgType tau_to
-            return $ CBits $ CExp $ rl l [cexp|(($ty:ctau_to) $ce) & $(chexconst (2^w-1))|]
+            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
         cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
             ctau_to <- cgBitcastType tau_from
@@ -755,8 +754,21 @@ cgExp e = do
             shiftField (CBits ce) _ n =
                 return [shiftL ce n]
 
+            -- A bit array may have more bits that are strictly needed, e.g., a
+            -- 6-bit bit array will be represented using 8 bits. These extra
+            -- bits are uninitialized, so we need to mask them off when
+            -- concatenating them into larger bit arrays.
             shiftField ce w n =
-                return [shiftL (CExp [cexp|$ce[$int:i]|]) (n+i*8) | i <- [0..((w + 7) `div` 8)-1]]
+                return [shiftL (extractBits ce i) (n+i*8) | i <- [0..bitArrayLen w-1]]
+              where
+                extractBits :: CExp -> Int -> CExp
+                extractBits ce i
+                    | w < (i+1)*8 = cbits ..&.. cmask
+                    | otherwise   = cbits
+                  where
+                    cbits, cmask :: CExp
+                    cbits = CExp [cexp|$ce[$int:i]|]
+                    cmask = CExp (chexconst (2^(w `rem` bIT_ARRAY_ELEM_BITS)-1))
 
     go (IfE e1 e2 e3 _) = do
         tau <- inferExp e2
