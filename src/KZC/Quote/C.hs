@@ -1,8 +1,21 @@
--- |
--- Module      :  KZC.Quote.C
--- Copyright   :  (c) 2015 Drexel University
--- License     :  BSD-style
--- Maintainer  :  mainland@cdrexel.edu
+{-# LANGUAGE CPP #-}
+
+{-|
+Module      :  KZC.Quote.C
+Copyright   :  (c) 2015-2016 Drexel University
+License     :  BSD-style
+Maintainer  :  mainland@cs.drexel.edu
+
+This module recreates the standard C quasiquoters, but location information is
+only included when the @DEBUG@is defined. By not including location information
+when parsing a quasiquote, all location information in an expression comes from
+whatever the quasioquote consumer attaches to the expressions in
+constructs. This makes it easier to take generated code with, e.g., locations
+from a source code file.
+
+When debugging, sometimes often /do/ want location information to come from the
+source code file where the quasioquote was written. Defining @DEBUG@ enables this.
+-}
 
 module KZC.Quote.C (
     ToIdent(..),
@@ -27,12 +40,21 @@ module KZC.Quote.C (
   ) where
 
 import Control.Monad ((>=>))
+#if defined(DEBUG)
+import Control.Monad (liftM)
+#endif /* defined(DEBUG) */
 import qualified Data.ByteString.Char8 as B
 import Data.Data (Data)
+#if defined(DEBUG)
+import Data.Loc (Pos(..))
+#endif /* defined(DEBUG) */
 import qualified Language.C.Parser as P
 import qualified Language.C.Syntax as C
 import Language.C.Quote.Base (ToIdent(..), ToConst(..), ToExp(..), qqExp, qqPat)
 import Language.Haskell.TH (Q)
+#if defined(DEBUG)
+import Language.Haskell.TH (Loc(..), location)
+#endif /* defined(DEBUG) */
 import Language.Haskell.TH.Quote (QuasiQuoter(..), dataToExpQ, dataToPatQ)
 
 exts :: [C.Extensions]
@@ -66,9 +88,22 @@ parse :: [C.Extensions]
       -> String
       -> Q a
 parse exts typenames p s = do
-    case P.parse (C.Antiquotation : exts) typenames p (B.pack s) Nothing of
+#if defined(DEBUG)
+    loc <- liftM (Just . locToPos )location
+#else /* !defined(DEBUG) */
+    let loc = Nothing
+#endif /* !defined(DEBUG) */
+    case P.parse (C.Antiquotation : exts) typenames p (B.pack s) loc of
       Left err -> fail (show err)
       Right x  -> return x
+#if defined(DEBUG)
+  where
+    locToPos :: Language.Haskell.TH.Loc -> Pos
+    locToPos loc = Pos (loc_filename loc)
+                       ((fst . loc_start) loc)
+                       ((snd . loc_start) loc)
+                       0
+#endif /* defined(DEBUG) */
 
 quasiquote :: Data a
            => [C.Extensions]
