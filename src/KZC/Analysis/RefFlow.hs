@@ -44,6 +44,10 @@ import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 
+data Ref = VarR Var
+         | QueueR
+  deriving (Eq, Ord, Show)
+
 -- | Return the set of variables bound somewhere in the given expression that
 -- are defined using refs that are modified before some use of the defined
 -- variable.
@@ -58,7 +62,7 @@ refFlowModComp c = usedTainted <$> (execRF $ rfComp c)
 
 data RFEnv = RFEnv
     { -- | Maps a variable to the refs used to define the variable
-      varFlowsFrom :: Map Var (Set Var)
+      varFlowsFrom :: Map Var (Set Ref)
     }
 
 defaultRFEnv :: RFEnv
@@ -67,7 +71,7 @@ defaultRFEnv  = RFEnv
 
 data RFState = RFState
     { -- | Maps a reference to the variables it flows to.
-      varsFlowTo :: Map Var (Set Var)
+      varsFlowTo :: Map Ref (Set Var)
     , -- | The set of variables whose ref source has been modified
       tainted :: Set Var
     , -- | The set of tainted variables that have been used
@@ -95,13 +99,13 @@ newtype RF m a = RF { unRF :: ReaderT RFEnv (StateT RFState m) a }
 execRF :: MonadTc m => RF m a -> m RFState
 execRF m = execStateT (runReaderT (unRF m) defaultRFEnv) defaultRFState
 
-extendVarFlowsFrom :: forall m a . MonadTc m => Var -> Set Var -> RF m a -> RF m a
-extendVarFlowsFrom v vs k = do
-    local (\env -> env { varFlowsFrom = Map.insert v vs (varFlowsFrom env) }) $ do
-    mapM_ (\vref -> flowsTo vref v) (toList vs)
+extendVarFlowsFrom :: forall m a . MonadTc m => Var -> Set Ref -> RF m a -> RF m a
+extendVarFlowsFrom v vrefs k = do
+    local (\env -> env { varFlowsFrom = Map.insert v vrefs (varFlowsFrom env) }) $ do
+    mapM_ (\vref -> flowsTo vref v) (toList vrefs)
     k
   where
-    flowsTo :: Var -> Var -> RF m ()
+    flowsTo :: Ref -> Var -> RF m ()
     flowsTo vref v =
         modify $ \s ->
             s { varsFlowTo = Map.insert vref
@@ -109,12 +113,12 @@ extendVarFlowsFrom v vs k = do
                                         (varsFlowTo s)
               }
 
-askVarFlowsFrom :: MonadTc m => Var -> RF m (Set Var)
+askVarFlowsFrom :: MonadTc m => Var -> RF m (Set Ref)
 askVarFlowsFrom v =
     maybe mempty id <$> asks (\env -> Map.lookup v (varFlowsFrom env))
 
 -- | Indicated that a ref was potentially modified.
-refModified :: MonadTc m => Var -> RF m ()
+refModified :: MonadTc m => Ref -> RF m ()
 refModified v = do
     flowsTo <- gets $ \s -> Map.lookup v (varsFlowTo s)
     case flowsTo of
@@ -129,8 +133,8 @@ useVar v = do
 
 -- | Given an expression of type @ref \tau@, return the source variable of type
 -- @ref@.
-refRoot :: Monad m => Exp -> m Var
-refRoot (VarE v _)     = return v
+refRoot :: Monad m => Exp -> m Ref
+refRoot (VarE v _)     = return $ VarR v
 refRoot (IdxE e _ _ _) = refRoot e
 refRoot (ProjE e _ _)  = refRoot e
 refRoot e              = faildoc $ text "Not a reference:" <+> ppr e
@@ -147,7 +151,7 @@ rfLocalDecl (LetRefLD v tau e1 _) k = do
     extendVars [(bVar v, refT tau)] $
       k
 
-rfExp :: forall m . MonadTc m => Exp -> RF m (Set Var)
+rfExp :: forall m . MonadTc m => Exp -> RF m (Set Ref)
 rfExp (ConstE {}) =
     return mempty
 
@@ -155,7 +159,7 @@ rfExp (VarE v _) = do
     useVar v
     tau <- lookupVar v
     if isRefT tau
-      then return $ Set.singleton v
+      then return $ Set.singleton (VarR v)
       else askVarFlowsFrom v
 
 rfExp (UnopE _ e _) =
@@ -174,7 +178,7 @@ rfExp (LetE decl e2 _) =
 rfExp (CallE _ _ es _) = do
     Set.unions <$> mapM rfArg es
   where
-    rfArg :: Exp -> RF m (Set Var)
+    rfArg :: Exp -> RF m (Set Ref)
     rfArg e = do
         tau <- inferExp e
         when (isRefT tau) $
@@ -233,11 +237,11 @@ rfExp (BindE (TameV v) tau e1 e2 _) = do
 rfExp (LutE e) =
     rfExp e
 
-rfComp :: forall l m . MonadTc m => Comp l -> RF m (Set Var)
+rfComp :: forall l m . MonadTc m => Comp l -> RF m (Set Ref)
 rfComp (Comp steps) =
     rfSteps steps mempty
 
-rfSteps :: MonadTc m => [Step l] -> Set Var -> RF m (Set Var)
+rfSteps :: MonadTc m => [Step l] -> Set Ref -> RF m (Set Ref)
 rfSteps [] _ =
     return mempty
 
@@ -256,7 +260,7 @@ rfSteps (BindC _ (TameV v) tau _ : steps) vs =
 rfSteps (step : steps) _ =
     rfStep step >>= rfSteps steps
 
-rfStep :: forall l m . MonadTc m => Step l -> RF m (Set Var)
+rfStep :: forall l m . MonadTc m => Step l -> RF m (Set Ref)
 rfStep (VarC _ v _) = do
     useVar v
     askVarFlowsFrom v
@@ -264,7 +268,7 @@ rfStep (VarC _ v _) = do
 rfStep (CallC _ _ _ args _) =
     Set.unions <$> mapM rfArg args
   where
-    rfArg :: Arg l -> RF m (Set Var)
+    rfArg :: Arg l -> RF m (Set Ref)
     rfArg (CompA comp) = do
         void $ rfComp comp
         return mempty
@@ -298,11 +302,13 @@ rfStep (ReturnC _ e _) =
 rfStep (BindC {}) =
     faildoc $ text "Cannot rf bind step."
 
-rfStep (TakeC {}) =
-    return mempty
+rfStep (TakeC {}) = do
+    refModified QueueR
+    return $ Set.singleton QueueR
 
-rfStep (TakesC {}) =
-    return mempty
+rfStep (TakesC {}) = do
+    refModified QueueR
+    return $ Set.singleton QueueR
 
 rfStep (EmitC _ e _) = do
     void $ rfExp e
