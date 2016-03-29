@@ -593,12 +593,8 @@ cgExp e = do
           where
             go :: Unop -> Cg CExp
             go Neg = do
-                let a,b :: CExp
-                    (a, b) = unComplex ce
-                cv <- cgTemp "binop_complex" tau
-                appendStm $ rl l [cstm|$cv.re = $(-a);|]
-                appendStm $ rl l [cstm|$cv.im = $(-b);|]
-                return cv
+                (a, b) <- unComplex ce
+                cgComplex (-a) (-b)
 
             go op =
                 panicdoc $ text "Illegal operation on complex values:" <+> ppr op
@@ -610,9 +606,10 @@ cgExp e = do
 
         cgCast :: CExp -> Type -> Type -> Cg CExp
         cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
-            ctemp <- cgTemp "cast_complex" tau_to
-            appendStm $ rl l [cstm|$ctemp.re = $ce.re;|]
-            appendStm $ rl l [cstm|$ctemp.im = $ce.im;|]
+            (a, b) <- unComplex ce
+            ctemp  <- cgTemp "cast_complex" tau_to
+            appendStm $ rl l [cstm|$ctemp.re = $a;|]
+            appendStm $ rl l [cstm|$ctemp.im = $b;|]
             return ctemp
 
         cgCast ce _ tau_to | isComplexT tau_to = do
@@ -663,47 +660,35 @@ cgExp e = do
             go op
           where
             go :: Binop -> Cg CExp
-            go Eq =
-                return $ CExp $ rl l [cexp|$ce1.re == $ce2.re && $ce1.im == $ce2.im|]
+            go Eq = do
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                return $ CExp $ rl l [cexp|$a == $c && $b == $d|]
 
-            go Ne =
-                return $ CExp $ rl l [cexp|$ce1.re != $ce2.re || $ce1.im != $ce2.im|]
+            go Ne = do
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                return $ CExp $ rl l [cexp|$a != $c || $b != $d|]
 
             go Add = do
-                let a,b,c,d :: CExp
-                    (a, b) = unComplex ce1
-                    (c, d) = unComplex ce2
-                cv <- cgTemp "binop_complex" tau
-                appendStm $ rl l [cstm|$cv.re = $(a+c);|]
-                appendStm $ rl l [cstm|$cv.im = $(b+d);|]
-                return cv
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                cgComplex (a+c) (b+d)
 
             go Sub = do
-                let a,b,c,d :: CExp
-                    (a, b) = unComplex ce1
-                    (c, d) = unComplex ce2
-                cv <- cgTemp "binop_complex" tau
-                appendStm [cstm|$cv.re = $(a-c);|]
-                appendStm [cstm|$cv.im = $(b-d);|]
-                return cv
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                cgComplex (a-c) (b-d)
 
             go Mul = do
-                let a,b,c,d :: CExp
-                    (a, b) = unComplex ce1
-                    (c, d) = unComplex ce2
-                cv <- cgTemp "binop_complex" tau
-                appendStm $ rl l [cstm|$cv.re = $(a*c - b*d);|]
-                appendStm $ rl l [cstm|$cv.im = $(b*c + a*d);|]
-                return cv
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                cgComplex (a*c - b*d) (b*c + a*d)
 
             go Div = do
-                let a,b,c,d :: CExp
-                    (a, b) = unComplex ce1
-                    (c, d) = unComplex ce2
-                cv <- cgTemp "binop_complex" tau
-                appendStm $ rl l [cstm|$cv.re = $((a*c + b*d)/(c*c + d*d));|]
-                appendStm $ rl l [cstm|$cv.im = $((b*c - a*d)/(c*c + d*d));|]
-                return cv
+                (a, b) <- unComplex ce1
+                (c, d) <- unComplex ce2
+                cgComplex ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
 
             go op =
                 panicdoc $ text "Illegal operation on complex values:" <+> ppr op
@@ -883,29 +868,19 @@ cgExp e = do
           Nothing  -> cgIdx tau ce1 cn ce2
           Just len -> cgSlice tau ce1 cn ce2 len
 
-    go e@(StructE s flds l) = do
+    go e@(StructE _ flds l) = do
         case unConstE e of
-          Nothing -> cgStructExp
+          Nothing -> CStruct <$> mapM cgField flds
           Just c  -> cgExp (ConstE c l)
       where
-        cgStructExp :: Cg CExp
-        cgStructExp = do
-            cv <- cgTemp "struct" (StructT s l)
-            mapM_ (cgField cv) flds
-            return cv
-
-        cgField :: CExp -> (Field, Exp) -> Cg ()
-        cgField cv (fld, e) = do
-            let cfld =  zencode (namedString fld)
-            ce       <- cgExp e
-            appendStm $ rl l [cstm|$cv.$id:cfld = $ce;|]
+        cgField :: (Field, Exp) -> Cg (Field, CExp)
+        cgField (fld, e) = do
+            ce <- cgExp e
+            return (fld, ce)
 
     go (ProjE e fld l) = do
         ce <- cgExp e
-        return $ CExp $ rl l [cexp|$ce.$id:cfld|]
-      where
-        cfld :: C.Id
-        cfld = C.Id (zencode (namedString fld)) l
+        rl l <$> cgProj ce fld
 
     go (PrintE nl es l) = do
         mapM_ cgPrint es
@@ -996,10 +971,15 @@ cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
 
+-- | Compile real and imaginary parts into a complex number
+cgComplex :: CExp -> CExp -> Cg CExp
+cgComplex cre cim =
+    return $ CStruct [("re", cre), ("im", cim)]
+
 -- | Destruct a 'CExp' representing a complex number into its constituent real
 -- and imaginary parts.
-unComplex :: CExp -> (CExp, CExp)
-unComplex ce = (CExp [cexp|$ce.re|], CExp [cexp|$ce.im|])
+unComplex :: CExp -> Cg (CExp, CExp)
+unComplex ce = (,) <$> cgProj ce "re" <*> cgProj ce "im"
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
@@ -1853,6 +1833,16 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     cgArrayAddr ce =
         return ce
 
+cgAssign _ cv (CStruct flds) =
+    mapM_ cgAssignField flds
+  where
+    cgAssignField :: (Field, CExp) -> Cg ()
+    cgAssignField (fld, ce) =
+        appendStm [cstm|$cv.$id:cfld = $ce;|]
+      where
+        cfld :: String
+        cfld = zencode (namedString fld)
+
 -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
 -- may need to be dereferenced.
 cgAssign _ cv ce =
@@ -1907,6 +1897,19 @@ cgSlice tau carr clen cidx len = do
     cgBoundsCheck clen (cidx + fromIntegral (len - 1))
     return $ CSlice tau carr cidx len
 
+-- | Generate a 'CExp' representing a field projected from a struct.
+cgProj :: CExp -> Field -> Cg CExp
+cgProj ce@(CStruct flds) fld =
+    case lookup fld flds of
+      Nothing -> faildoc $ text "Cannot find field" <+> ppr fld <+> text "in" <+> ppr ce
+      Just ce -> return ce
+
+cgProj ce fld =
+    return $ CExp [cexp|$ce.$id:cfld|]
+  where
+    cfld :: C.Id
+    cfld = C.Id (zencode (namedString fld)) (srclocOf ce)
+
 -- | Dereference a 'CExp' representing a value with ref type, which may or may
 -- not be represented as a pointer.
 cgDeref :: CExp -> CExp
@@ -1938,8 +1941,9 @@ cgAddrOf tau ce = do
 cgIf :: Type -> Exp -> Cg CExp -> Cg CExp -> Cg CExp
 cgIf tau e1 me2 me3 | isPureT tau = do
     ce1 <- cgExp e1
-    ce2 <- me2
-    ce3 <- me3
+    -- We need to lower ce2 and ce3 in case they are structs...
+    ce2 <- me2 >>= cgLower tau
+    ce3 <- me3 >>= cgLower tau
     return $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
 
 cgIf tau e1 me2 me3 = do
@@ -1970,6 +1974,20 @@ cgFor cfrom cto k = do
                   k (CExp [cexp|$id:ci|])
     appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) { $items:cbody }|]
     return x
+
+-- | Lower a 'CExp' into a form we can use directly in an antiquotation.
+cgLower :: Type -> CExp -> Cg CExp
+cgLower tau ce =
+    go ce
+  where
+    go :: CExp -> Cg CExp
+    go ce@(CStruct {}) = do
+        cv <- cgTemp "lower" tau
+        cgAssign tau cv ce
+        return cv
+
+    go ce =
+        return ce
 
 -- | Generate code to bind a variable to a value. We do a little abstract
 -- interpretation here as usual to avoid, e.g., creating a new variable whose

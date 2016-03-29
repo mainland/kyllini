@@ -34,6 +34,7 @@ import KZC.Auto.Syntax
 import KZC.Label
 import {-# SOURCE #-} KZC.Cg.Monad
 import KZC.Platform
+import KZC.Pretty
 import KZC.Quote.C
 import KZC.Staged
 
@@ -88,6 +89,8 @@ data CExp = CVoid
             -- ^ An array slice. The data constructor's arguments are the type
             -- of the array's elements, the array, the offset, the length of the
             -- slice.
+          | CStruct [(Field, CExp)]
+            -- ^ A struct
           | CBits CExp
             -- ^ A bit array represented as an integer
           | CComp CompC
@@ -107,6 +110,7 @@ instance Located CExp where
     locOf (CPtr ce)           = locOf ce
     locOf (CIdx _ _ cidx)     = locOf cidx
     locOf (CSlice _ _ cidx _) = locOf cidx
+    locOf (CStruct flds)      = locOf (map snd flds)
     locOf (CBits ce)          = locOf ce
     locOf (CComp {})          = NoLoc
     locOf (CFunComp {})       = NoLoc
@@ -122,6 +126,7 @@ instance Relocatable CExp where
     reloc l (CPtr ce)                  = CPtr $ reloc l ce
     reloc l (CIdx tau carr cidx)       = CIdx tau (reloc l carr) (reloc l cidx)
     reloc l (CSlice tau carr cidx len) = CSlice tau (reloc l carr) (reloc l cidx) len
+    reloc l (CStruct flds)             = CStruct [(f, reloc l ce) | (f, ce) <- flds]
     reloc l (CBits ce)                 = CBits (reloc l ce)
     reloc _ ce@(CComp {})              = ce
     reloc _ ce@(CFunComp {})           = ce
@@ -358,6 +363,8 @@ instance ToExp CExp where
     toExp (CPtr e)                   = toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
+    toExp ce@(CStruct {})            = locatedError $
+                                       text "toExp: cannot convert CStruct to a C expression" </> ppr ce
     toExp (CBits ce)                 = toExp ce
     toExp ce@(CComp {})              = locatedError $
                                        text "toExp: cannot convert CComp to a C expression" </> ppr ce
@@ -381,6 +388,7 @@ instance Pretty CExp where
     ppr (CPtr e)                 = ppr [cexp|*$e|]
     ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
+    ppr (CStruct flds)           = pprStruct flds
     ppr (CBits e)                = ppr e
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
