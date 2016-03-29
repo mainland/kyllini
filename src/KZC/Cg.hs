@@ -1307,24 +1307,24 @@ cgComp takek emitk comp k =
     cgSteps (step:steps) = do
         k <- stepLabel (head steps)
         (withFvContext step $ cgStep step k) >>= cgBind steps
+      where
+        cgBind :: [Step Label] -> CExp -> Cg CExp
+        cgBind [] ce =
+            return ce
 
-    cgBind :: [Step Label] -> CExp -> Cg CExp
-    cgBind [] ce =
-        return ce
+        cgBind (BindC l WildV _ _ : steps) _ =
+            cgWithLabel l $ do
+            cgSteps steps
 
-    cgBind (BindC l WildV _ _ : steps) _ =
-        cgWithLabel l $ do
-        cgSteps steps
+        cgBind (BindC l (TameV v) tau _ : steps) ce =
+            cgWithLabel l $ do
+            cv <- cgLower (bVar v) tau ce
+            extendVars [(bVar v, tau)] $ do
+            extendVarCExps [(bVar v, cv)] $ do
+            cgSteps steps
 
-    cgBind (BindC l (TameV v) tau _ : steps) ce =
-        cgWithLabel l $ do
-        cv <- cgLower (bVar v) tau ce
-        extendVars [(bVar v, tau)] $ do
-        extendVarCExps [(bVar v, cv)] $ do
-        cgSteps steps
-
-    cgBind steps _ =
-        cgSteps steps
+        cgBind steps _ =
+            cgSteps steps
 
     cgStep :: Step Label -> Label -> Cg CExp
     cgStep (VarC l v _) k =
