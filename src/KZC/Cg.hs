@@ -809,7 +809,7 @@ cgExp e = do
         tau   <- inferExp e >>= checkRefT
         ce    <- cgExp e
         ctemp <- cgTemp "deref" tau
-        cgAssign tau ctemp (unPtr ce)
+        cgAssign tau ctemp (cgDeref ce)
         return ctemp
 
     go (AssignE e1 e2 _) = do
@@ -992,11 +992,6 @@ cgIota (VarI iv _)  = lookupIVarCExp iv
 -- and imaginary parts.
 unComplex :: CExp -> (CExp, CExp)
 unComplex ce = (CExp [cexp|$ce.re|], CExp [cexp|$ce.im|])
-
--- | Dereference a ref type, which may or may not be represented as a pointer.
-unPtr :: CExp -> CExp
-unPtr (CPtr ce) = CExp [cexp|*$ce|]
-unPtr ce        = ce
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
@@ -1855,10 +1850,10 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     cgArrayAddr ce =
         return ce
 
--- We call 'unPtr' on @cv@ because the lhs of an assignment is a ref type and
+-- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
 -- may need to be dereferenced.
 cgAssign _ cv ce =
-    appendStm [cstm|$(unPtr cv) = $ce;|]
+    appendStm [cstm|$(cgDeref cv) = $ce;|]
 
 cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
 cgAssignBitArray ce1 ce2 clen =
@@ -1909,6 +1904,13 @@ cgSlice tau carr clen cidx len = do
     cgBoundsCheck clen (cidx + fromIntegral (len - 1))
     return $ CSlice tau carr cidx len
 
+-- | Dereference a 'CExp' representing a value with ref type, which may or may
+-- not be represented as a pointer.
+cgDeref :: CExp -> CExp
+cgDeref (CPtr ce) = CExp [cexp|*$ce|]
+cgDeref ce        = ce
+
+-- | Take the address of a 'CExp' representing a value of the given type.
 cgAddrOf :: Type -> CExp -> Cg CExp
 cgAddrOf _ (CPtr ce) =
     return ce
