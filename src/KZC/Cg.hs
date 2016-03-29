@@ -2015,16 +2015,13 @@ cgBinding v tau ce = do
     go _ (CComp {}) =
         faildoc $ text "Cannot lower a computation."
 
-    -- We don't need to create a concrete binding for the variable @v@ if its is
-    -- defined using refs that are /never/ modified before any use of the
-    -- variable @v@.
-    go False ce@(CExp (C.Var {})) =
-        return ce
-
-    go _ ce = do
+    go True ce = do
         cv <- cgBinder False v tau
         cgAssign tau cv ce
         return cv
+
+    go _ ce =
+        return ce
 
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg ()
