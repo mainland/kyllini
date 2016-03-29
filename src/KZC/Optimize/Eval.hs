@@ -915,6 +915,7 @@ lutExp e = do
     traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
     tau_ret'   <- inferExp e'
     traceLUT $ nest 2 $ text "LUTted expression:" <+> ppr tau_ret' </> ppr e'
+    killVars e'
     return e'
   where
     checkedLutInfo :: Exp -> EvalM LUTInfo
