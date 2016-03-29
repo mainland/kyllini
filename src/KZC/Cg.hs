@@ -1364,14 +1364,9 @@ cgComp takek emitk comp k =
             appendStm $ rl sloc [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
         return CVoid
 
-    -- A 'LiftC' is a monadic value, but it doesn't take or emit. That is, it is
-    -- in ST, so it may have side effects, but those side effects do not include
-    -- taking or emitting. Therefore, we need to lower it to make sure the side
-    -- effect happens.
     cgStep (LiftC l e _) _ =
-        cgWithLabel l $ do
-        tau <- inferExp e
-        cgExp e >>= cgLower (resultType tau)
+        cgWithLabel l $
+        cgExp e
 
     -- A 'ReturnC' is a pure value, so we do not need to lower it.
     cgStep (ReturnC l e _) _ =
