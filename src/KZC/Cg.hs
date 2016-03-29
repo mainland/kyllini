@@ -34,6 +34,7 @@ import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.RefFlow
 import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
@@ -51,6 +52,16 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
 import KZC.Trace
+
+localExpRefFlowModVars :: Exp -> Cg a -> Cg a
+localExpRefFlowModVars e k = do
+    vs <- refFlowModExp e
+    localRefFlowModVars vs k
+
+localCompRefFlowModVars :: LComp -> Cg a -> Cg a
+localCompRefFlowModVars c k = do
+    vs <- refFlowModComp c
+    localRefFlowModVars vs k
 
 compileProgram :: LProgram -> Cg ()
 compileProgram (Program decls comp tau) = do
@@ -276,7 +287,8 @@ cgThread takek emitk donek tau comp = do
         useLabel l_done
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
-        ce <- cgComp takek emitk comp l_done
+        ce <- localCompRefFlowModVars comp $
+              cgComp takek emitk comp l_done
         cgWithLabel l_done $ donek ce
     appendDecls [decl | C.BlockDecl decl <- cblock]
     appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
@@ -314,7 +326,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
                           else cgTemp "let_res" tau_res
-                  cgExp e >>= cgAssign tau_res cres
+                  localExpRefFlowModVars e (cgExp e) >>= cgAssign tau_res cres
                   when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
@@ -378,7 +390,7 @@ cgDecl (LetCompD v tau comp _) k =
         withInstantiatedTyVars tau $ do
         comp' <- uniquifyCompLabels comp
         useLabels (compUsedLabels comp')
-        cgComp takek emitk comp' k
+        localCompRefFlowModVars comp' $ cgComp takek emitk comp' k
 
 cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
@@ -403,7 +415,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         extendIVarCExps (ivs `zip` ciotas) $ do
         extendVarCExps  (map fst vbs `zip` ces) $ do
         useLabels (compUsedLabels comp')
-        cgComp takek emitk comp' k
+        localCompRefFlowModVars comp' $ cgComp takek emitk comp' k
       where
         cgArg :: LArg -> Cg CExp
         cgArg (ExpA e) =
@@ -805,12 +817,8 @@ cgExp e = do
             go _ =
                 cgExp e
 
-    go (DerefE e _) = do
-        tau   <- inferExp e >>= checkRefT
-        ce    <- cgExp e
-        ctemp <- cgTemp "deref" tau
-        cgAssign tau ctemp (cgDeref ce)
-        return ctemp
+    go (DerefE e _) =
+        cgDeref <$> cgExp e
 
     go (AssignE e1 e2 _) = do
         tau <- inferExp e1
@@ -957,9 +965,9 @@ cgExp e = do
         cgExp e2
 
     go (BindE (TameV v) tau e1 e2 _) = do
-        ce1 <- cgExp e1
+        cv <- cgExp e1 >>= cgLower (bVar v) tau
         extendVars [(bVar v, tau)] $ do
-        extendVarCExps [(bVar v, ce1)] $ do
+        extendVarCExps [(bVar v, cv)] $ do
         cgExp e2
 
     go (LutE e) =
@@ -1964,28 +1972,33 @@ cgFor cfrom cto k = do
     return x
 
 cgLower :: Var -> Type -> CExp -> Cg CExp
-cgLower v tau ce = go ce
+cgLower v tau ce = do
+    refFlowMod <- askRefFlowModVar v
+    go refFlowMod ce
   where
-    go :: CExp -> Cg CExp
-    go ce@CVoid =
+    go :: Bool -> CExp -> Cg CExp
+    go _ ce@CVoid =
         return ce
 
-    go ce@(CBool {}) =
+    go _ ce@(CBool {}) =
         return ce
 
-    go ce@(CInt {}) =
+    go _ ce@(CInt {}) =
         return ce
 
-    go ce@(CFloat {}) =
+    go _ ce@(CFloat {}) =
         return ce
 
-    go (CComp {}) =
+    go _ (CComp {}) =
         faildoc $ text "Cannot lower a computation."
 
-    go ce@(CExp (C.Var {})) =
+    -- We don't need to create a concrete binding for the variable @v@ if its is
+    -- defined using refs that are /never/ modified before any use of the
+    -- variable @v@.
+    go False ce@(CExp (C.Var {})) =
         return ce
 
-    go ce = do
+    go _ ce = do
         cv <- cgBinder False v tau
         cgAssign tau cv ce
         return cv

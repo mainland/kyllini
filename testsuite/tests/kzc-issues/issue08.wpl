@@ -1,0 +1,24 @@
+fun comp test() {
+
+  var state: arr[64] int 
+  var next: arr[64] int 
+  var trellis: arr[4] arr[64] int 
+
+  repeat {
+    x <- take
+
+    do {
+      for i in [0,64] {
+        next[i] := state[i] + 5 
+      }
+
+      state := next
+      trellis[x] := state
+    }
+
+    emits trellis[x]
+  }
+
+}
+
+let comp main = read[int] >>> test() >>> write[int]
