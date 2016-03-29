@@ -346,19 +346,27 @@ instance IsBits CExp where
     ce     `shiftR'` i      = CExp [cexp|$ce >> $i|]
 
 instance ToExp CExp where
-    toExp CVoid                      = error "toExp: void compiled expression"
+    toExp CVoid                      = locatedError $
+                                       text "toExp: void compiled expression"
     toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
     toExp (CBit i)                   = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
     toExp (CInt i)                   = \_ -> [cexp|$int:i|]
     toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
     toExp (CExp e)                   = \_ -> e
-    toExp (CInit _)                  = error "toExp: cannot convert CInit to a C expression"
+    toExp ce@(CInit _)               = locatedError $
+                                       text "toExp: cannot convert CInit to a C expression" </> ppr ce
     toExp (CPtr e)                   = toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
     toExp (CBits ce)                 = toExp ce
-    toExp (CComp {})                 = error "toExp: cannot convert CComp to a C expression"
-    toExp (CFunComp {})              = error "toExp: cannot convert CFunComp to a C expression"
+    toExp ce@(CComp {})              = locatedError $
+                                       text "toExp: cannot convert CComp to a C expression" </> ppr ce
+    toExp ce@(CFunComp {})           = locatedError $
+                                       text "toExp: cannot convert CFunComp to a C expression" </> ppr ce
+
+locatedError :: Located a => Doc -> a -> b
+locatedError doc loc =
+    errordoc $ ppr (locOf loc) <> text ":" </> doc
 
 instance Pretty CExp where
     ppr CVoid                    = text "<void>"
