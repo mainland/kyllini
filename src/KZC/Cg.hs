@@ -1815,6 +1815,24 @@ cgAssign (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
     clen <- cgIota iota
     cgAssignBitArray ce1 ce2 clen
+  where
+    cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
+    cgAssignBitArray ce1 ce2 clen = do
+        csrc' <- cgLower tau0 csrc
+        appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
+      where
+        cdst, cdstIdx :: CExp
+        (cdst, cdstIdx) = unBitSlice ce1
+
+        csrc, csrcIdx :: CExp
+        (csrc, csrcIdx) = unBitSlice ce2
+
+        unBitSlice :: CExp -> (CExp, CExp)
+        unBitSlice (CSlice _ carr cidx _) =
+            (carr, cidx)
+
+        unBitSlice carr =
+            (carr, 0)
 
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     ctau <- cgType tau
@@ -1847,23 +1865,6 @@ cgAssign _ cv (CStruct flds) =
 -- may need to be dereferenced.
 cgAssign _ cv ce =
     appendStm [cstm|$(cgDeref cv) = $ce;|]
-
-cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
-cgAssignBitArray ce1 ce2 clen =
-    appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc, $csrcIdx, $clen);|]
-  where
-    cdst, cdstIdx :: CExp
-    (cdst, cdstIdx) = unBitSlice ce1
-
-    csrc, csrcIdx :: CExp
-    (csrc, csrcIdx) = unBitSlice ce2
-
-    unBitSlice :: CExp -> (CExp, CExp)
-    unBitSlice (CSlice _ carr cidx _) =
-        (carr, cidx)
-
-    unBitSlice carr =
-        (carr, 0)
 
 cgBoundsCheck :: CExp -> CExp -> Cg ()
 cgBoundsCheck clen cidx = do
@@ -1985,6 +1986,12 @@ cgLower tau ce =
         cv <- cgTemp "lower" tau
         cgAssign tau cv ce
         return cv
+
+    go ce@(CBits {}) = do
+        ctau <- cgBitcastType tau
+        cv   <- cgCTemp ce "bits" ctau Nothing
+        appendStm [cstm|$cv = $ce;|]
+        return $ CExp [cexp|($ty:bIT_ARRAY_ELEM_TYPE *) &$cv|]
 
     go ce =
         return ce

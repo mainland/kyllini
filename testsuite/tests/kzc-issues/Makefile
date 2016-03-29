@@ -33,3 +33,6 @@ issue07.c : issue07.wpl $(KZC)
 
 issue07-simplified.c : issue07-simplified.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval $< -o $@
+
+issue09.c : issue09.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval --fautolut --flut $< -o $@
