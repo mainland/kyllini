@@ -965,7 +965,7 @@ cgExp e = do
         cgExp e2
 
     go (BindE (TameV v) tau e1 e2 _) = do
-        cv <- cgExp e1 >>= cgLower (bVar v) tau
+        cv <- cgExp e1 >>= cgBinding (bVar v) tau
         extendVars [(bVar v, tau)] $ do
         extendVarCExps [(bVar v, cv)] $ do
         cgExp e2
@@ -1318,7 +1318,7 @@ cgComp takek emitk comp k =
 
         cgBind (BindC l (TameV v) tau _ : steps) ce =
             cgWithLabel l $ do
-            cv <- cgLower (bVar v) tau ce
+            cv <- cgBinding (bVar v) tau ce
             extendVars [(bVar v, tau)] $ do
             extendVarCExps [(bVar v, cv)] $ do
             cgSteps steps
@@ -1971,8 +1971,13 @@ cgFor cfrom cto k = do
     appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) { $items:cbody }|]
     return x
 
-cgLower :: Var -> Type -> CExp -> Cg CExp
-cgLower v tau ce = do
+-- | Generate code to bind a variable to a value. We do a little abstract
+-- interpretation here as usual to avoid, e.g., creating a new variable whose
+-- value is the value of another variable or a constant. If the binding has refs
+-- flow to it that are modified before some use of the variable, a condition we
+-- check by calling 'askRefFlowModVar', we create a binding no matter what.
+cgBinding :: Var -> Type -> CExp -> Cg CExp
+cgBinding v tau ce = do
     refFlowMod <- askRefFlowModVar v
     go refFlowMod ce
   where
