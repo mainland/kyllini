@@ -1310,9 +1310,9 @@ cgComp takek emitk comp k =
 
     cgBind (BindC l (TameV v) tau _ : steps) ce =
         cgWithLabel l $ do
-        clow <- cgLower tau ce
+        cv <- cgLower (bVar v) tau ce
         extendVars [(bVar v, tau)] $ do
-        extendVarCExps [(bVar v, clow)] $ do
+        extendVarCExps [(bVar v, cv)] $ do
         cgSteps steps
 
     cgBind steps _ =
@@ -1963,8 +1963,8 @@ cgFor cfrom cto k = do
     appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) { $items:cbody }|]
     return x
 
-cgLower :: Type -> CExp -> Cg CExp
-cgLower tau ce = go ce
+cgLower :: Var -> Type -> CExp -> Cg CExp
+cgLower v tau ce = go ce
   where
     go :: CExp -> Cg CExp
     go ce@CVoid =
@@ -1986,9 +1986,9 @@ cgLower tau ce = go ce
         return ce
 
     go ce = do
-        clow <- cgTemp "lower" tau
-        cgAssign tau clow ce
-        return clow
+        cv <- cgBinder False v tau
+        cgAssign tau cv ce
+        return cv
 
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg ()
