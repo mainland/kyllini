@@ -1099,6 +1099,15 @@ cgType (FunT ivs args ret _) = do
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
 
+{- Note [Type Qualifiers for Array Arguments]
+
+We use the restrict and static type qualifiers to declare that the arrays have
+at least a certain size and that there is no aliasing between pointers.
+
+See:
+  http://stackoverflow.com/questions/3430315/purpose-of-static-keyword-in-array-parameter-of-function
+-}
+
 -- | Compile a function parameter.
 cgParam :: Type -> Maybe C.Id -> Cg C.Param
 cgParam tau maybe_cv = do
@@ -1109,7 +1118,7 @@ cgParam tau maybe_cv = do
   where
     cgParamType :: Type -> Cg C.Type
     cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
@@ -1117,7 +1126,7 @@ cgParam tau maybe_cv = do
 
     cgParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+        return [cty|const $ty:ctau* restrict|]
 
     cgParamType tau = cgType tau
 
@@ -1131,15 +1140,15 @@ cgRetParam tau maybe_cv = do
   where
     cgRetParamType :: Type -> Cg C.Type
     cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[$int:n]|]
+        return [cty|$ty:ctau[restrict static $int:n]|]
 
     cgRetParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau*|]
+        return [cty|$ty:ctau* restrict|]
 
     cgRetParamType tau = cgType tau
 
