@@ -49,6 +49,7 @@ import Text.PrettyPrint.Mainland
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Monad
+import KZC.Check.Path
 import KZC.Check.Smart
 import KZC.Check.Types
 import qualified KZC.Core.Smart as C
@@ -524,6 +525,7 @@ tcExp e@(Z.CallE f es l) exp_ty =
     (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
     mces <- zipWithM checkArg es taus
+    checkNoAliasing (es `zip` taus)
     return $ co2 $ co1 $ do
         cf  <- trans f
         ces <- sequence mces
@@ -970,6 +972,43 @@ inferExp e = do
     mce <- tcExp e (Infer ref)
     tau <- readRef ref
     return (tau, mce)
+
+-- | Check that there is no aliasing between function arguments.
+checkNoAliasing :: [(Z.Exp, Type)] -> Ti ()
+checkNoAliasing etaus = do
+    rpaths <- concat <$> mapM root etaus
+    checkNoPathAliasing rpaths
+  where
+    root :: (Z.Exp, Type) -> Ti [RefPath Z.Var Z.Field]
+    root (e, tau) | isRefT tau = do
+        path <- refPath e
+        return [path]
+
+    root _ =
+        return []
+
+    refPath :: forall m . Monad m => Z.Exp -> m (RefPath Z.Var Z.Field)
+    refPath e =
+        go e []
+      where
+        go :: Z.Exp -> [Path Z.Field] -> m (RefPath Z.Var Z.Field)
+        go (Z.VarE v _) path =
+            return $ RefP v (reverse path)
+
+        go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) Nothing _) path =
+            go e (IdxP (fromIntegral (numerator r)) 1 : path)
+
+        go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) (Just len) _) path =
+            go e (IdxP (fromIntegral (numerator r)) len : path)
+
+        go (Z.IdxE e _ _ _) _ =
+            go e []
+
+        go (Z.ProjE e f _) path =
+            go e (ProjP f : path)
+
+        go e _ =
+            faildoc $ text "Not a reference:" <+> ppr e
 
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti C.Exp)
 tcStms (stm@(Z.LetS {}) : []) _ =

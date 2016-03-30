@@ -59,7 +59,7 @@ module KZC.Core.Lint (
     checkPureishSTCUnit
   ) where
 
-import Control.Applicative (Applicative)
+import Control.Applicative (Applicative, (<$>))
 import Control.Monad (when,
                       zipWithM_,
                       void)
@@ -76,10 +76,12 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
+import KZC.Check.Path
 import KZC.Core.Lint.Monad
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -419,6 +421,7 @@ inferExp (CallE f ies es _) = do
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
     zipWithM_ checkArg es (subst theta phi taus)
+    checkNoAliasing (es `zip` taus)
     return $ subst theta phi tau_ret
   where
     checkIotaArg :: Iota -> m ()
@@ -661,6 +664,42 @@ checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
+
+checkNoAliasing :: forall m . MonadTc m => [(Exp, Type)] -> m ()
+checkNoAliasing etaus = do
+    rpaths <- concat <$> mapM root etaus
+    checkNoPathAliasing rpaths
+  where
+    root :: (Exp, Type) -> m [RefPath Var Field]
+    root (e, tau) | isRefT tau = do
+        path <- refPath e
+        return [path]
+
+    root _ =
+        return []
+
+    refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
+    refPath e =
+        go e []
+      where
+        go :: Exp -> [Path Field] -> m (RefPath Var Field)
+        go (VarE v _) path =
+            return $ RefP v (reverse path)
+
+        go (IdxE e (ConstE (FixC I _ _ 0 r) _) Nothing _) path =
+            go e (IdxP (fromIntegral (numerator r)) 1 : path)
+
+        go (IdxE e (ConstE (FixC I _ _ 0 r) _) (Just len) _) path =
+            go e (IdxP (fromIntegral (numerator r)) len : path)
+
+        go (IdxE e _ _ _) _ =
+            go e []
+
+        go (ProjE e f _) path =
+            go e (ProjP f : path)
+
+        go e _ =
+            faildoc $ text "Not a reference:" <+> ppr e
 
 -- | Check that a struct has no missing and no extra fields.
 checkStructFields :: forall m . MonadTc m

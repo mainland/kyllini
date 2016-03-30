@@ -59,17 +59,21 @@ module KZC.Auto.Lint (
     checkPureishSTCUnit
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad (when,
+                      zipWithM,
                       zipWithM_,
                       void)
 import Data.Loc
 import qualified Data.Map as Map
+import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
+import KZC.Check.Path
 import KZC.Core.Lint (Tc(..),
                       runTc,
                       liftTc,
@@ -400,6 +404,7 @@ inferExp (LetE decl body _) =
 inferExp (CallE f ies es _) = do
     (taus, tau_ret) <- inferCall f ies es
     zipWithM_ checkArg es taus
+    checkNoAliasing (es `zip` taus)
     return tau_ret
   where
     checkArg :: Exp -> Type -> m ()
@@ -609,6 +614,42 @@ checkExp e tau = do
     tau' <- inferExp e
     checkTypeEquality tau' tau
 
+checkNoAliasing :: forall m . MonadTc m => [(Exp, Type)] -> m ()
+checkNoAliasing etaus = do
+    rpaths <- concat <$> mapM root etaus
+    checkNoPathAliasing rpaths
+  where
+    root :: (Exp, Type) -> m [RefPath Var Field]
+    root (e, tau) | isRefT tau = do
+        path <- refPath e
+        return [path]
+
+    root _ =
+        return []
+
+    refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
+    refPath e =
+        go e []
+      where
+        go :: Exp -> [Path Field] -> m (RefPath Var Field)
+        go (VarE v _) path =
+            return $ RefP v (reverse path)
+
+        go (IdxE e (ConstE (FixC I _ _ 0 r) _) Nothing _) path =
+            go e (IdxP (fromIntegral (numerator r)) 1 : path)
+
+        go (IdxE e (ConstE (FixC I _ _ 0 r) _) (Just len) _) path =
+            go e (IdxP (fromIntegral (numerator r)) len : path)
+
+        go (IdxE e _ _ _) _ =
+            go e []
+
+        go (ProjE e f _) path =
+            go e (ProjP f : path)
+
+        go e _ =
+            faildoc $ text "Not a reference:" <+> ppr e
+
 inferComp :: forall l m . (IsLabel l, MonadTc m) => Comp l -> m Type
 inferComp comp =
     withSummaryContext comp $
@@ -655,6 +696,7 @@ inferStep (VarC _ v _) =
 inferStep (CallC _ f ies args _) = do
     (taus, tau_ret) <- inferCall f ies args
     zipWithM_ checkArg args taus
+    zipWithM argRefs args taus >>= checkNoAliasing . concat
     appSTScope tau_ret
   where
     checkArg :: Arg l -> Type -> m ()
@@ -670,6 +712,20 @@ inferStep (CallC _ f ies args _) = do
         void $ checkST tau
         tau'' <- appSTScope tau'
         checkTypeEquality tau tau''
+
+    -- We treat all free variables of ref type in a computation argument as if
+    -- we were passing the whole ref. This is an approximation, but we don't
+    -- have a clean way to extract all the free "ref paths" from a computation.
+    argRefs :: Arg l -> Type -> m [(Exp, Type)]
+    argRefs (ExpA e) tau =
+        return [(e, tau)]
+
+    argRefs (CompA c) _ = do
+        taus <- mapM lookupVar vs
+        return [(varE v, tau) | (v, tau) <- vs `zip` taus, isRefT tau]
+      where
+        vs :: [Var]
+        vs = fvs c
 
 inferStep (IfC _ e1 e2 e3 _) = do
     tau1 <- inferExp e1
