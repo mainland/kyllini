@@ -22,7 +22,6 @@ module KZC.Optimize.Eval (
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad (filterM)
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Error (runErrorT)
 import Control.Monad.Trans.Maybe (MaybeT,
                                   runMaybeT)
 import Data.Bits
@@ -904,7 +903,7 @@ evalExp e =
 
 lutExp :: Exp -> EvalM Exp
 lutExp e = do
-    info       <- checkedLutInfo e
+    info       <- lutInfo e
     let vs_in  =  toList $ lutInVars info
     taus_in    <- mapM lookupVar vs_in
     let vs_out =  toList $ lutOutVars info
@@ -918,13 +917,6 @@ lutExp e = do
     killVars e'
     return e'
   where
-    checkedLutInfo :: Exp -> EvalM LUTInfo
-    checkedLutInfo e = do
-        maybe_info <- runErrorT $ lutInfo e
-        case maybe_info of
-          Left  err  -> fail err
-          Right info -> return info
-
     unSTC :: Type -> Type
     unSTC (ST _ (C tau) _ _ _ _) = tau
     unSTC tau                    = tau

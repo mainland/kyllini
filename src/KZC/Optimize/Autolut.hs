@@ -16,14 +16,14 @@ module KZC.Optimize.Autolut (
   ) where
 
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
-import Control.Monad.Exception (MonadException(..))
+import Control.Monad (liftM)
+import Control.Monad.Exception (MonadException(..), SomeException)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
-import Control.Monad.Trans.Error (runErrorT)
 import Data.IORef
 import Data.Traversable (traverse)
 import Text.PrettyPrint.Mainland hiding (width)
@@ -215,9 +215,9 @@ autoArg (CompA comp) = CompA <$> autoComp comp
 autoE :: Exp -> AutoM Exp
 autoE e = do
     traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
-    maybe_info <- runErrorT $ lutInfo e
+    maybe_info <- liftM Right (lutInfo e) `catch` \(err :: SomeException) -> return (Left err)
     case maybe_info of
-      Left  err  -> do traceAutoLUT $ text "Error:" <+> text (err :: String)
+      Left  err  -> do traceAutoLUT $ text "Error:" <+> (text . show) err
                        go e
       Right info -> do traceAutoLUT $ ppr info
                        should <- shouldLUT e
