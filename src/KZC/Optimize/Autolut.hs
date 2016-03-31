@@ -217,7 +217,7 @@ autoE e = do
     traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
     maybe_info <- runErrorT $ lutInfo e
     case maybe_info of
-      Left  err  -> do traceAutoLUT $ text "Error:" <+> ppr err
+      Left  err  -> do traceAutoLUT $ text "Error:" <+> text (err :: String)
                        go e
       Right info -> do traceAutoLUT $ ppr info
                        should <- shouldLUT e

@@ -29,8 +29,7 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
-import Control.Monad.Trans.Error (ErrorT,
-                                  runErrorT)
+import Control.Monad.Trans.Error (runErrorT)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Set (Set)
@@ -50,9 +49,10 @@ import KZC.Trace
 import KZC.Uniq
 
 shouldLUT :: forall m . MonadTc m => Exp -> m Bool
-shouldLUT e = either (const False) id <$> runErrorT act
+shouldLUT e =
+    either (\(_ :: String) -> False) id <$> runErrorT act
   where
-    act :: ErrorT String m Bool
+    act :: MonadTc m' => m' Bool
     act = do
         dflags <- askFlags
         info   <- lutInfo e
@@ -115,7 +115,7 @@ instance Pretty LUTInfo where
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
         nest 2 (text "LUT size in bytes:" <+> ppr (lutBytes info))
 
-lutInfo :: MonadTc m => Exp -> ErrorT String m LUTInfo
+lutInfo :: MonadTc m => Exp -> m LUTInfo
 lutInfo e = do
     (_, st)     <- runD (absEval e)
     tau_res     <- inferExp e
