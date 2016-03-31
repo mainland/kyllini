@@ -25,7 +25,6 @@ import Control.Monad (forM_,
                       when)
 import Data.Bits
 import Data.Loc
-import Data.Monoid (mempty)
 import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -1976,9 +1975,7 @@ cgIf tau e1 me2 me3 = do
     ce1         <- cgExp e1
     citems2     <- inNewBlock_ (me2 >>= cgAssign tau_res cres)
     citems3     <- inNewBlock_ (me3 >>= cgAssign tau_res cres)
-    if citems3 == mempty
-      then appendStm [cstm|if ($ce1) { $items:citems2 }|]
-      else appendStm [cstm|if ($ce1) { $items:citems2 } else { $items:citems3 }|]
+    appendStm $ cif ce1 citems2 citems3
     return cres
   where
     tau_res :: Type
@@ -2071,6 +2068,21 @@ cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
 cstruct s l = C.Id (namedString s ++ "_t") l
+
+-- | Construct a prettier if statement
+cif :: ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm
+cif ce1 [C.BlockStm cstm2] [] =
+    [cstm|if ($ce1) $stm:cstm2|]
+cif ce1 [C.BlockStm cstm2] [C.BlockStm cstm3] =
+    [cstm|if ($ce1) $stm:cstm2 else $stm:cstm3|]
+cif ce1 [C.BlockStm cstm2] citems3 =
+    [cstm|if ($ce1) $stm:cstm2 else { $items:citems3 }|]
+cif ce1 citems2 [] =
+    [cstm|if ($ce1) { $items:citems2 }|]
+cif ce1 citems2 [C.BlockStm cstm3] =
+    [cstm|if ($ce1) { $items:citems2 } else $stm:cstm3|]
+cif ce1 citems2 citems3 =
+    [cstm|if ($ce1) { $items:citems2 } else { $items:citems3 }|]
 
 -- | Render a location as a string
 renderLoc :: Located a => a -> String
