@@ -105,7 +105,7 @@ void kz_main(const typename kz_params_t* $id:params)
         cbuf   <- cgCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        appendStm [cstm|if($cbuf == NULL) { BREAK; }|]
+        appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
         case (tau, n) of
             (_, 1) | isBitT tau -> return $ CExp [cexp|*$cbuf & 1|]
                    | otherwise  -> return $ CExp [cexp|*$cbuf|]
