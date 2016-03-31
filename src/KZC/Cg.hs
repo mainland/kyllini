@@ -1128,6 +1128,21 @@ cgParam tau maybe_cv = do
         ctau <- cgType tau
         return [cty|const $ty:ctau* restrict|]
 
+    cgParamType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau = do
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
+
+    cgParamType (RefT (ArrT (ConstI n _) tau _) _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau[restrict static $int:n]|]
+
+    cgParamType (RefT (ArrT _ tau _) _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau* restrict|]
+
+    cgParamType (RefT tau _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau* restrict|]
+
     cgParamType tau = cgType tau
 
 -- | Compile a function parameter that is used to return a result.
