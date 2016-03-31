@@ -1,10 +1,11 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Auto.Comp
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -33,7 +34,9 @@ module KZC.Auto.Comp (
     uniquifyCompLabels
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader
 import Data.Loc
 import Data.Map (Map)

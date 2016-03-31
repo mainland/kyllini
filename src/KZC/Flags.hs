@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -40,8 +41,11 @@ module KZC.Flags (
 
 import Control.Monad (liftM,
                       when)
-import Control.Monad.Error (Error,
-                            ErrorT(..))
+#if MIN_VERSION_base(4,8,0)
+import Control.Monad.Except (ExceptT(..), runExceptT)
+#else /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Error (Error, ErrorT(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
@@ -247,9 +251,15 @@ instance MonadFlags m => MonadFlags (MaybeT m) where
     askFlags       = lift askFlags
     localFlags f m = MaybeT $ localFlags f (runMaybeT m)
 
+#if MIN_VERSION_base(4,8,0)
+instance (MonadFlags m) => MonadFlags (ExceptT e m) where
+    askFlags       = lift askFlags
+    localFlags f m = ExceptT $ localFlags f (runExceptT m)
+#else /* !MIN_VERSION_base(4,8,0) */
 instance (Error e, MonadFlags m) => MonadFlags (ErrorT e m) where
     askFlags       = lift askFlags
     localFlags f m = ErrorT $ localFlags f (runErrorT m)
+#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance MonadFlags m => MonadFlags (ReaderT r m) where
     askFlags       = lift askFlags

@@ -1,8 +1,9 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Transform.LambdaLift.Monad
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -25,7 +26,9 @@ import Control.Monad.State
 import Data.Foldable (toList)
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (mempty)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
 import qualified Data.Set as Set

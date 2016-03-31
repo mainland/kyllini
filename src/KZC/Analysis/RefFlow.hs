@@ -1,9 +1,10 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Analysis.RefFlow
--- Copyright   :  (c) Drexel University 2016
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -14,7 +15,9 @@ module KZC.Analysis.RefFlow (
 
 import Prelude hiding ((<=))
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (void,
                       when)
 import Control.Monad.Exception (MonadException(..))
@@ -31,7 +34,9 @@ import Data.Foldable (toList,
                       traverse_)
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland

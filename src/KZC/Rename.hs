@@ -1,8 +1,9 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 -- |
 -- Module      :  KZC.Rename
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -14,7 +15,9 @@ module KZC.Rename (
 
 import Prelude hiding (mapM)
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader (asks)
 import qualified Data.Map as Map
 import Data.Traversable

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
@@ -5,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Error
--- Copyright   :  (c) Drexel University 2014-2015
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -36,7 +37,11 @@ module KZC.Error (
     checkDuplicates
   ) where
 
+#if MIN_VERSION_base(4,8,0)
+import Control.Monad.Except (ExceptT(..), runExceptT)
+#else /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Error (Error, ErrorT(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (Exception(..),
                                 MonadException,
                                 SomeException,
@@ -49,7 +54,9 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
@@ -116,6 +123,17 @@ instance MonadErr m => MonadErr (MaybeT m) where
     err   = lift . err
     warn  = lift . warn
 
+#if MIN_VERSION_base(4,8,0)
+instance (MonadErr m) => MonadErr (ExceptT e m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = ExceptT $ localErrCtx ctx (runExceptT m)
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+#else /* !MIN_VERSION_base(4,8,0) */
 instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = ErrorT $ localErrCtx ctx (runErrorT m)
@@ -125,6 +143,7 @@ instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     panic = lift . panic
     err   = lift . err
     warn  = lift . warn
+#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance MonadErr m => MonadErr (ReaderT r m) where
     askErrCtx         = lift askErrCtx

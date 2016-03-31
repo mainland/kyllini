@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -16,7 +17,9 @@ module KZC.Transform.Auto (
     autoProgram
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
@@ -27,7 +30,9 @@ import Control.Monad.Ref (MonadRef(..),
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp

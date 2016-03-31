@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -78,7 +79,9 @@ module KZC.Optimize.Eval.Monad (
     ModifiedVars(..)
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
@@ -91,7 +94,10 @@ import Control.Monad.State (MonadState(..),
                             evalStateT,
                             gets,
                             modify)
-import Data.Foldable (toList, foldMap)
+#if !MIN_VERSION_base(4,8,0)
+import Data.Foldable (foldMap)
+#endif /* !MIN_VERSION_base(4,8,0) */
+import Data.Foldable (toList)
 import Data.IORef (IORef)
 import qualified Data.IntMap as IntMap
 import Data.List (foldl',

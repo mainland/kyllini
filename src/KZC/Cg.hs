@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -18,7 +19,9 @@ module KZC.Cg (
 
 import Prelude
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>), (<*>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (forM_,
                       mplus,
                       void,

@@ -1,8 +1,9 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
 -- Module      :  KZC.Analysis.Occ
--- Copyright   :  (c) Drexel University 2015
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -15,7 +16,9 @@ module KZC.Analysis.Occ (
 
 import Prelude hiding ((<=))
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
@@ -28,8 +31,10 @@ import Control.Monad.Writer (MonadWriter(..),
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 import Data.Traversable (traverse)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Lint

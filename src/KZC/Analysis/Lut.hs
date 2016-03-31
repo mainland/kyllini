@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,7 +21,9 @@ module KZC.Analysis.Lut (
     returnedVar
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
@@ -29,7 +32,11 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
+#if MIN_VERSION_base(4,8,0)
+import Control.Monad.Trans.Except (runExceptT)
+#else /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Trans.Error (runErrorT)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Set (Set)
@@ -50,7 +57,12 @@ import KZC.Uniq
 
 shouldLUT :: forall m . MonadTc m => Exp -> m Bool
 shouldLUT e =
-    either (\(_ :: String) -> False) id <$> runErrorT act
+    either (\(_ :: String) -> False) id <$>
+#if MIN_VERSION_base(4,8,0)
+        runExceptT act
+#else /* !MIN_VERSION_base(4,8,0) */
+        runErrorT act
+#endif /* !MIN_VERSION_base(4,8,0) */
   where
     act :: MonadTc m' => m' Bool
     act = do

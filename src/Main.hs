@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Main
 -- Copyright   :  (c) 2015-2016 Drexel University
@@ -6,14 +8,18 @@
 
 module Main where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
+#endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 import System.CPUTime (getCPUTime)

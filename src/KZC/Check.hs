@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -26,7 +27,9 @@ module KZC.Check (
     inferExp
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative hiding ((<|>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (filterM,
                       replicateM,
                       void,

@@ -118,6 +118,7 @@ endif
 #
 # Support Cabal's MIN_VERSION
 #
+RUNGHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 GHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 
 #

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -6,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Util.Lattice
--- Copyright   :  (c) Drexel University 2015
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -15,7 +16,9 @@ module KZC.Util.Lattice where
 import qualified Prelude
 import Prelude hiding ((<=))
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map

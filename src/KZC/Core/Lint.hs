@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -59,7 +60,9 @@ module KZC.Core.Lint (
     checkPureishSTCUnit
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (when,
                       zipWithM_,
                       void)

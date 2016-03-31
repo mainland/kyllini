@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,7 +16,9 @@ module KZC.Optimize.Autolut (
     autolutProgram
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (liftM)
 import Control.Monad.Exception (MonadException(..), SomeException)
 import Control.Monad.IO.Class (MonadIO)
@@ -25,7 +28,9 @@ import Control.Monad.Reader (MonadReader(..),
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
 import Data.IORef
+#if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (traverse)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.Lut (lutInfo,

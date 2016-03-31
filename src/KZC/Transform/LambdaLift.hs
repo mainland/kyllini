@@ -1,6 +1,8 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  KZC.Transform.LambdaLift
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -10,7 +12,9 @@ module KZC.Transform.LambdaLift (
     liftProgram
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>), (<*>), pure)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.Set as Set
 
 import KZC.Core.Lint

@@ -1,9 +1,10 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
 -- Module      :  KZC.Vars
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -22,11 +23,15 @@ module KZC.Vars (
     subst1
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Data.Foldable
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 

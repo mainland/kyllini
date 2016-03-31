@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -6,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Monad
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -21,7 +22,9 @@ module KZC.Monad (
     incPass
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref

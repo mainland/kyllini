@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -6,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Cg.Monad
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -70,7 +71,9 @@ module KZC.Cg.Monad (
 
 import Prelude hiding (elem)
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Foldable (toList)

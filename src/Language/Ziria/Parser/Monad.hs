@@ -1,10 +1,11 @@
 -- |
 -- Module      : Language.Ziria.Parser.Monad
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -44,7 +45,9 @@ module Language.Ziria.Parser.Monad (
     expectedAt,
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.State
 import Data.Int (Int64)

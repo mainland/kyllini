@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -6,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Monad.SEFKT
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -17,8 +18,10 @@ module KZC.Monad.SEFKT (
     runSEFKTM
   ) where
 
-import Control.Applicative (Alternative(..),
-                            Applicative(..))
+#if !MIN_VERSION_base(4,8,0)
+import Control.Applicative (Applicative(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Applicative (Alternative(..))
 import Control.Monad (MonadPlus(..),
                       ap)
 import Control.Monad.Exception (Exception(..),

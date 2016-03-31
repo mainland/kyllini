@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
@@ -10,7 +11,9 @@ module KZC.Optimize.Eval.Monad (
     EvalM
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 

@@ -7,7 +7,7 @@
 
 -- |
 -- Module      : Language.Ziria.Syntax
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
@@ -46,7 +46,9 @@ module Language.Ziria.Syntax (
     isComplexStruct
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Data.Foldable
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Loc
 import Data.Monoid
 import Data.Ratio (denominator, numerator)

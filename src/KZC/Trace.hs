@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -27,13 +28,19 @@ module KZC.Trace (
   ) where
 
 import Control.Monad (when)
+#if MIN_VERSION_base(4,8,0)
+import Control.Monad.Except (ExceptT(..), runExceptT)
+#else /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Error (Error, ErrorT(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import System.IO (hPutStrLn,
                   stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -49,9 +56,15 @@ instance MonadTrace m => MonadTrace (MaybeT m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = MaybeT $ localTraceDepth f (runMaybeT m)
 
+#if MIN_VERSION_base(4,8,0)
+instance (MonadTrace m) => MonadTrace (ExceptT e m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = ExceptT $ localTraceDepth f (runExceptT m)
+#else /* !MIN_VERSION_base(4,8,0) */
 instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = ErrorT $ localTraceDepth f (runErrorT m)
+#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance MonadTrace m => MonadTrace (ReaderT r m) where
     askTraceDepth       = lift askTraceDepth

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -11,7 +12,9 @@ module Opts (
     usage
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad ((>=>),
                       when)
 import Data.List (foldl')

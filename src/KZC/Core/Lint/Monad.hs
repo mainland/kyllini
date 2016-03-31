@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -51,9 +52,15 @@ module KZC.Core.Lint.Monad (
     relevantBindings
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (liftM)
+#if MIN_VERSION_base(4,8,0)
+import Control.Monad.Except (ExceptT(..), runExceptT)
+#else /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Error (Error, ErrorT(..))
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
@@ -63,7 +70,9 @@ import Data.List (foldl')
 import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid, mempty)
+#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -124,9 +133,15 @@ instance MonadTc m => MonadTc (MaybeT m) where
     askTc       = lift askTc
     localTc f m = MaybeT $ localTc f (runMaybeT m)
 
+#if MIN_VERSION_base(4,8,0)
+instance MonadTc m => MonadTc (ExceptT e m) where
+    askTc       = lift askTc
+    localTc f m = ExceptT $ localTc f (runExceptT m)
+#else
 instance (Error e, MonadTc m) => MonadTc (ErrorT e m) where
     askTc       = lift askTc
     localTc f m = ErrorT $ localTc f (runErrorT m)
+#endif
 
 instance MonadTc m => MonadTc (ReaderT r m) where
     askTc       = lift askTc
