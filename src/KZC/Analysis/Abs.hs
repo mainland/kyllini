@@ -258,18 +258,18 @@ absEval e =
 
     go (LetE (LetLD v tau e1 _) e2 _) = do
         e1' <- absEval e1
-        extendVars [(bVar v, refT tau)] $ do
+        extendVars [(bVar v, tau)] $ do
         letDom (bVar v) e1' $ do
         absEval e2
 
     go (LetE (LetRefLD v tau Nothing _) e2 _) =
-        extendVars [(bVar v, tau)] $
+        extendVars [(bVar v, refT tau)] $
         letrefDom (bVar v) $
         go e2
 
     go (LetE (LetRefLD v tau (Just e1) _) e2 _) = do
         e1' <- absEval e1
-        extendVars [(bVar v, tau)] $ do
+        extendVars [(bVar v, refT tau)] $ do
         letrefDom (bVar v) $ do
         assignDom (VarR (bVar v)) e1'
         absEval e2
