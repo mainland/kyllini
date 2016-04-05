@@ -47,6 +47,8 @@ module KZC.Core.Lint.Monad (
 
     inScopeTyVars,
 
+    typeSize,
+
     withFvContext,
 
     relevantBindings
@@ -80,6 +82,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Platform
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -319,6 +322,40 @@ inScopeTyVars = do
     case maybe_idxs of
       Nothing         -> return mempty
       Just (s',a',b') -> return $ fvs [s',a',b']
+
+-- | Compute the size of a type in bits.
+typeSize :: forall m . MonadTc m => Type -> m Int
+typeSize tau =
+    go tau
+  where
+    go :: Type -> m Int
+    go (UnitT {})                = pure 0
+    go (BoolT {})                = pure 1
+    go (FixT _ _ w _ _)          = pure $ width w
+    go (FloatT fp _)             = pure $ fpWidth fp
+    go (StructT "complex" _)     = pure $ 2 * width dEFAULT_INT_WIDTH
+    go (StructT "complex8" _)    = pure $ 16
+    go (StructT "complex16" _)   = pure $ 32
+    go (StructT "complex32" _)   = pure $ 64
+    go (StructT "complex64" _)   = pure $ 128
+    go (ArrT (ConstI n _) tau _) = (*) <$> pure n <*> go tau
+    go (ST _ (C tau) _ _ _ _)    = go tau
+    go (RefT tau _)              = go tau
+
+    go (StructT s _) = do
+        StructDef _ flds _ <- lookupStruct s
+        sum <$> mapM (typeSize . snd) flds
+
+    go tau =
+        faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
+
+    width :: W -> Int
+    width (W n) = n
+
+    fpWidth :: FP -> Int
+    fpWidth FP16 = 16
+    fpWidth FP32 = 32
+    fpWidth FP64 = 64
 
 withFvContext :: (Summary e, Located e, Fvs e Var, MonadTc m)
               => e

@@ -767,8 +767,8 @@ checkCast tau1 tau2 =
 -- a value of type @tau2@.
 checkBitcast :: MonadTc m => Type -> Type -> m ()
 checkBitcast tau1 tau2 = do
-    w1 <- bitSizeT tau1
-    w2 <- bitSizeT tau2
+    w1 <- typeSize tau1
+    w2 <- typeSize tau2
     when (w2 /= w1) $
         faildoc $
         text "Cannot bitcast between types with differing widths" <+>

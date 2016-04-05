@@ -1009,7 +1009,7 @@ unCFunComp ce =
 -- | Return the C type appropriate for bit casting.
 cgBitcastType :: Type -> Cg C.Type
 cgBitcastType tau = do
-    w <- bitSizeT tau
+    w <- typeSize tau
     case w of
       _ | w <= 8  -> return [cty|typename uint8_t|]
       _ | w <= 16 -> return [cty|typename uint16_t|]

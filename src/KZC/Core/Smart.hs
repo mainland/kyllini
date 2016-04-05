@@ -39,8 +39,6 @@ module KZC.Core.Smart (
 
     splitArrT,
 
-    bitSizeT,
-
     mkUniqVar,
     mkVar,
 
@@ -173,34 +171,6 @@ splitArrT (ArrT iota tau _) =
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
-
-bitSizeT :: forall m . (Applicative m, Monad m) => Type -> m Int
-bitSizeT tau =
-    go tau
-  where
-    go :: Type -> m Int
-    go (UnitT {})                = pure 0
-    go (BoolT {})                = pure 1
-    go (FixT _ _ w _ _)          = pure $ width w
-    go (FloatT fp _)             = pure $ fpWidth fp
-    go (StructT "complex" _)     = pure $ 2 * width dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)    = pure $ 16
-    go (StructT "complex16" _)   = pure $ 32
-    go (StructT "complex32" _)   = pure $ 64
-    go (StructT "complex64" _)   = pure $ 128
-    go (ArrT (ConstI n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST _ (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)              = go tau
-    go tau =
-        faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
-
-    width :: W -> Int
-    width (W n) = n
-
-    fpWidth :: FP -> Int
-    fpWidth FP16 = 16
-    fpWidth FP32 = 32
-    fpWidth FP64 = 64
 
 mkUniqVar :: (Located a, Applicative m, MonadUnique m) => String -> a -> m Var
 mkUniqVar s l = Var <$> mkUniqName s (locOf l)

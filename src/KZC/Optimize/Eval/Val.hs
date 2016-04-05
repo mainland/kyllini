@@ -336,7 +336,7 @@ toBitsV val tau =
         toBitsV val tau
 
     go val tau = do
-        w <- bitSizeT tau
+        w <- typeSize tau
         return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
     toBitArr :: Integer -> Int -> m (Val Exp)
@@ -410,7 +410,7 @@ fromBitsV (ArrayV vs) tau =
         set _ val                       = faildoc $ text "Not a bit:" <+> ppr val
 
 fromBitsV val tau = do
-    w <- bitSizeT tau
+    w <- typeSize tau
     return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
 unpackValues :: forall m . MonadTc m
@@ -427,7 +427,7 @@ unpackValues bits taus = do
         return $ UnitV : vals
 
     go n (tau:taus) = do
-        w    <- bitSizeT tau
+        w    <- typeSize tau
         slc  <- sliceV bits n w
         val  <- bitcastV slc (arrKnownT w bitT) tau
         vals <- go (n + w) taus
@@ -436,14 +436,20 @@ unpackValues bits taus = do
 -- | Bitcast a value from one type to another
 bitcastV :: forall m . MonadTc m
          => Val Exp -> Type -> Type -> m (Val Exp)
-bitcastV val tau_from (ArrT (ConstI n _) tau_elem _)
-    | isBitT tau_elem, Just n' <- bitSizeT tau_from, n' == n = toBitsV val tau_from
+bitcastV val tau_from tau_to@(ArrT (ConstI n _) tau_elem _) | isBitT tau_elem = do
+    n' <- typeSize tau_from
+    if n' == n
+      then toBitsV val tau_from
+      else return $ ExpV $ bitcastE tau_to (toExp val)
 
-bitcastV val (ArrT (ConstI n _) tau_elem _) tau
-    | isBitT tau_elem, Just n' <- bitSizeT tau, n' == n = fromBitsV val tau
+bitcastV val (ArrT (ConstI n _) tau_elem _) tau_to | isBitT tau_elem = do
+    n' <- typeSize tau_to
+    if n' == n
+      then fromBitsV val tau_to
+      else return $ ExpV $ bitcastE tau_to (toExp val)
 
-bitcastV val _ tau =
-    return $ ExpV $ bitcastE tau (toExp val)
+bitcastV val _ tau_to =
+    return $ ExpV $ bitcastE tau_to (toExp val)
 
 complexV :: Struct -> Val Exp -> Val Exp -> Val Exp
 complexV sname a b =

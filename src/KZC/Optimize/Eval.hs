@@ -953,8 +953,8 @@ lutExp e = do
                -> EvalM Exp
         genLUT k = do
             v_lut         <- mkUniqVar "lut" e
-            w_in          <- sum <$> mapM bitSizeT taus_in
-            w_entry       <- sum <$> mapM bitSizeT taus_result
+            w_in          <- sum <$> mapM typeSize taus_in
+            w_entry       <- sum <$> mapM typeSize taus_result
             let tau_entry =  arrKnownT w_entry bitT
             traceLUT $ text "Returned variable:" <+> ppr v_ret
             traceLUT $ text "LUT entry type:" <+> ppr tau_entry
@@ -996,7 +996,7 @@ lutExp e = do
                   -> EvalM Exp
         genLookup v_lut =
             lookupInVars vtaus_in $ \vtaus -> do
-            w_in        <- sum <$> mapM bitSizeT taus_in
+            w_in        <- sum <$> mapM typeSize taus_in
             let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
             idx         <- packValues [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
             vals        <- if null vs_in

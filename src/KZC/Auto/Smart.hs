@@ -78,8 +78,6 @@ import KZC.Core.Smart (tyVarT,
 
                        splitArrT,
 
-                       bitSizeT,
-
                        mkUniqVar,
                        mkVar)
 import KZC.Platform

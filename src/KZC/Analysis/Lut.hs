@@ -43,7 +43,6 @@ import KZC.Analysis.Dataflow (DState(..),
                               runD)
 import KZC.Analysis.Range ()
 import KZC.Auto.Lint
-import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
@@ -122,12 +121,12 @@ lutInfo e = withFvContext e $ do
     let outVars =  (Map.keysSet . usedefs) st
     let retVar  =  returnedVar e
     taus_in     <- mapM lookupVar (Set.toList inVars)
-    inbits      <- sum <$> mapM bitSizeT taus_in
+    inbits      <- sum <$> mapM typeSize taus_in
     taus_out    <- mapM lookupVar (Set.toList outVars)
-    outbits     <- sum <$> mapM bitSizeT taus_out
+    outbits     <- sum <$> mapM typeSize taus_out
     resbits     <- case retVar of
                      Just v | v `Set.member` outVars -> return 0
-                     _ -> bitSizeT tau_res
+                     _ -> typeSize tau_res
     let outbytes :: Int
         outbytes = (outbits + resbits + 7) `div` 8
     return $ LUTInfo { lutInVars      = inVars
