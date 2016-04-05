@@ -108,12 +108,12 @@ options =
     includePathOpt path fs = return fs { includePaths = includePaths fs ++ [path] }
 
     defineOpt :: String -> Flags -> m Flags
-    defineOpt def fs = return fs { defines = defines fs ++ [split (/= '=') def] }
+    defineOpt def fs = return fs { defines = defines fs ++ [splitOn '=' def] }
 
-    split :: (a -> Bool) -> [a] -> ([a], [a])
-    split p s = case split p s of
-                  (xs, []) -> (xs, [])
-                  (xs, ys) -> (xs, drop 1 ys)
+splitOn :: Eq a => a -> [a] -> ([a], [a])
+splitOn x s = case span (not . (== x)) s of
+              (xs, []) -> (xs, [])
+              (xs, ys) -> (xs, drop 1 ys)
 
 mkModeFlag :: Monad m
            => (ModeFlag, [Char], [String], String)
