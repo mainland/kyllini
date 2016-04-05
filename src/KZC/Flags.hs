@@ -136,12 +136,13 @@ instance (Enum a, Bounded a, Show a) => Show (FlagSet a) where
                                  n `testBit` fromEnum f]
 
 data Flags = Flags
-    { mode      :: !ModeFlag
-    , verbLevel :: !Int
-    , maxErrCtx :: !Int
-    , maxSimpl  :: !Int
-    , maxLUT    :: !Int
-    , minLUTOps :: !Int
+    { mode       :: !ModeFlag
+    , verbLevel  :: !Int
+    , maxErrCtx  :: !Int
+    , maxSimpl   :: !Int
+    , maxLUT     :: !Int
+    , maxLUTLog2 :: !Int
+    , minLUTOps  :: !Int
 
     , dynFlags   :: !(FlagSet DynFlag)
     , warnFlags  :: !(FlagSet WarnFlag)
@@ -158,13 +159,14 @@ data Flags = Flags
 
 instance Monoid Flags where
     mempty = Flags
-        { mode      = Compile
-        , verbLevel = 0
-        , maxErrCtx = 1
-        , maxSimpl  = 4
-        , maxLUT    = 32*1024 -- ^ Default maximum size for LUT is 32K bytes
-        , minLUTOps = 5 -- ^ Minimum number of operations necessary to consider
-                        -- a LUT for an expression
+        { mode       = Compile
+        , verbLevel  = 0
+        , maxErrCtx  = 1
+        , maxSimpl   = 4
+        , maxLUT     = 32*1024 -- ^ Default maximum size for LUT is 32K bytes
+        , maxLUTLog2 = 5 + 10  -- ^ Default maximum size for LUT log_2 is 15
+        , minLUTOps  = 5 -- ^ Minimum number of operations necessary to consider
+                         -- a LUT for an expression
 
         , dynFlags   = mempty
         , warnFlags  = mempty
@@ -179,12 +181,13 @@ instance Monoid Flags where
         }
 
     mappend f1 f2 = Flags
-        { mode      = mode f2
-        , verbLevel = verbLevel f1 + verbLevel f2
-        , maxErrCtx = max (maxErrCtx f1) (maxErrCtx f2)
-        , maxSimpl  = max (maxSimpl f1) (maxSimpl f2)
-        , maxLUT    = max (maxLUT f1) (maxLUT f2)
-        , minLUTOps = min (minLUTOps f1) (minLUTOps f2)
+        { mode       = mode f2
+        , verbLevel  = verbLevel f1 + verbLevel f2
+        , maxErrCtx  = max (maxErrCtx f1) (maxErrCtx f2)
+        , maxSimpl   = max (maxSimpl f1) (maxSimpl f2)
+        , maxLUT     = max (maxLUT f1) (maxLUT f2)
+        , maxLUTLog2 = max (maxLUT f1) (maxLUT f2)
+        , minLUTOps  = min (minLUTOps f1) (minLUTOps f2)
 
         , dynFlags   = dynFlags f1   <> dynFlags f2
         , warnFlags  = warnFlags f1  <> warnFlags f2

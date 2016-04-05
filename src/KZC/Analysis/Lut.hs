@@ -54,7 +54,8 @@ shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
     dflags <- askFlags
     stats  <- lutStats e
-    return $ lutBytes info <= fromIntegral (maxLUT dflags) &&
+    return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
+             lutBytes info <= fromIntegral (maxLUT dflags) &&
              lutOutBits info + lutResultBits info > 0 &&
              (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
              not (lutHasSideEffect stats)
@@ -99,7 +100,8 @@ data LUTInfo = LUTInfo
     , lutOutBits    :: Int
     , lutResultBits :: Int
 
-    , lutBytes :: Integer
+    , lutBytes     :: Integer
+    , lutBytesLog2 :: Int
     }
 
 instance Pretty LUTInfo where
@@ -110,7 +112,7 @@ instance Pretty LUTInfo where
         nest 2 (text "In bits:    " <+> ppr (lutInBits info)) </>
         nest 2 (text "Out bits:   " <+> ppr (lutOutBits info)) </>
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
-        nest 2 (text "LUT size in bytes:" <+> ppr (lutBytes info))
+        nest 2 (text "LUT size in bytes (log 2):" <+> ppr (lutBytesLog2 info))
 
 lutInfo :: MonadTc m => Exp -> m LUTInfo
 lutInfo e = do
@@ -126,6 +128,8 @@ lutInfo e = do
     resbits     <- case retVar of
                      Just v | v `Set.member` outVars -> return 0
                      _ -> bitSizeT tau_res
+    let outbytes :: Int
+        outbytes = (outbits + resbits + 7) `div` 8
     return $ LUTInfo { lutInVars      = inVars
                      , lutOutVars     = outVars
                      , lutReturnedVar = retVar
@@ -134,7 +138,8 @@ lutInfo e = do
                      , lutOutBits    = outbits
                      , lutResultBits = resbits
 
-                     , lutBytes      = 2^inbits * fromIntegral (((outbits + resbits) + 7) `div` 8)
+                     , lutBytes      = 2^inbits * fromIntegral outbytes
+                     , lutBytesLog2  = inbits + ceiling (log (fromIntegral outbytes) / log (2 :: Double))
                      }
 
 data LUTStats = LUTStats

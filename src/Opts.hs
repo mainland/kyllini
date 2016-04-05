@@ -90,7 +90,9 @@ options =
         n <- case humandReadable s of
                Just n  -> return n
                Nothing -> fail $ "bad argument to --fmax-lut option: " ++ s
-        return fs { maxLUT = n }
+        return fs { maxLUT     = n
+                  , maxLUTLog2 = ceiling (log (fromIntegral n) / log (2 :: Double))
+                  }
 
     minLUTOpsOpt :: String -> Flags -> m Flags
     minLUTOpsOpt s fs =
