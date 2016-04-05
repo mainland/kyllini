@@ -32,10 +32,6 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
-#if !MIN_VERSION_base(4,8,0)
-import Control.Monad.Trans.Error (runErrorT)
-#endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad.Trans.Except (runExceptT)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Set (Set)
@@ -54,19 +50,14 @@ import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 
-shouldLUT :: forall m . MonadTc m => Exp -> m Bool
-shouldLUT e =
-    either (\(_ :: String) -> False) id <$> runExceptT act
-  where
-    act :: MonadTc m' => m' Bool
-    act = do
-        dflags <- askFlags
-        info   <- lutInfo e
-        stats  <- lutStats e
-        return $ lutBytes info <= fromIntegral (maxLUT dflags) &&
-                 lutOutBits info + lutResultBits info > 0 &&
-                 (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
-                 not (lutHasSideEffect stats)
+shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
+shouldLUT info e = do
+    dflags <- askFlags
+    stats  <- lutStats e
+    return $ lutBytes info <= fromIntegral (maxLUT dflags) &&
+             lutOutBits info + lutResultBits info > 0 &&
+             (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
+             not (lutHasSideEffect stats)
 
 -- | Compute the variable that is returned by an expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its

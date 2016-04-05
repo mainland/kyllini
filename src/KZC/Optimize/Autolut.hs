@@ -225,7 +225,7 @@ autoE e = do
       Left  err  -> do traceAutoLUT $ text "Error:" <+> (text . show) err
                        go e
       Right info -> do traceAutoLUT $ ppr info
-                       should <- shouldLUT e
+                       should <- shouldLUT info e
                        if should
                          then do traceAutoLUT $ nest 2 $ text "Creating LUT for:" </> ppr e
                                  return $ LutE e
