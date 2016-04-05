@@ -115,7 +115,7 @@ instance Pretty LUTInfo where
         nest 2 (text "LUT size in bytes (log 2):" <+> ppr (lutBytesLog2 info))
 
 lutInfo :: MonadTc m => Exp -> m LUTInfo
-lutInfo e = do
+lutInfo e = withFvContext e $ do
     (_, st)     <- runD (absEval e)
     tau_res     <- inferExp e
     inVars      <- fromBoundedSet $ usefree st
