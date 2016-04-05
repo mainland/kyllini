@@ -235,7 +235,9 @@ absEvalArg e = do
       _       -> ValA <$> absEval e
 
 absEval :: forall s iv v m . MonadAbs s iv v m => Exp -> m v
-absEval e = go e
+absEval e =
+    withFvContext e $
+    go e
   where
     go :: Exp -> m v
     go (ConstE c _) =
@@ -251,14 +253,14 @@ absEval e = go e
         binopDom op <$> go e1 <*> go e2
 
     go (IfE e1 e2 e3 _) = do
-        av1 <- go e1
-        ifDom av1 (go e2) (go e3)
+        av1 <- absEval e1
+        ifDom av1 (absEval e2) (absEval e3)
 
     go (LetE (LetLD v tau e1 _) e2 _) = do
-        e1' <- go e1
+        e1' <- absEval e1
         extendVars [(bVar v, refT tau)] $ do
         letDom (bVar v) e1' $ do
-        go e2
+        absEval e2
 
     go (LetE (LetRefLD v tau Nothing _) e2 _) =
         extendVars [(bVar v, tau)] $
@@ -266,11 +268,11 @@ absEval e = go e
         go e2
 
     go (LetE (LetRefLD v tau (Just e1) _) e2 _) = do
-        e1' <- go e1
+        e1' <- absEval e1
         extendVars [(bVar v, tau)] $ do
         letrefDom (bVar v) $ do
         assignDom (VarR (bVar v)) e1'
-        go e2
+        absEval e2
 
     go (CallE v iotas es _) = do
         ivs <- mapM iotaDom iotas
@@ -287,16 +289,16 @@ absEval e = go e
         return $ constDom UnitC
 
     go (WhileE e1 e2 _) =
-        whileDom (go e1) (go e2)
+        whileDom (absEval e1) (absEval e2)
 
     go (ForE _ v tau e_start e_len e_body _) = do
         v_start <- go e_start
         v_len   <- go e_len
         extendVars [(v, tau)] $ do
-        forDom v v_start v_len (go e_body)
+        forDom v v_start v_len (absEval e_body)
 
     go (ArrayE es _) =
-        arrayDom <$> mapM go es
+        arrayDom <$> mapM absEval es
 
     go e0@(IdxE e1 e2 len _) = do
         tau <- inferExp e0
@@ -325,9 +327,9 @@ absEval e = go e
         returnDom v
 
     go (BindE wv tau e1 e2 _) = do
-        v_e1 <- go e1
+        v_e1 <- absEval e1
         extendWildVars [(wv, tau)] $ do
-        bindDom wv v_e1 (go e2)
+        bindDom wv v_e1 (absEval e2)
 
     go (LutE e) =
         go e
