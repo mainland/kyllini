@@ -86,14 +86,11 @@ options =
         return $ foldl' (flip setDumpFlag) fs [minBound..maxBound]
 
     maxLUTOpt :: String -> Flags -> m Flags
-    maxLUTOpt s fs =
-        case reads s of
-          (n, "")  : _ -> return fs { maxLUT = n }
-          (n, "k") : _ -> return fs { maxLUT = (n*1024) }
-          (n, "K") : _ -> return fs { maxLUT = (n*1024) }
-          (n, "m") : _ -> return fs { maxLUT = (n*1024*1024) }
-          (n, "M") : _ -> return fs { maxLUT = (n*1024*1024) }
-          _            -> fail $ "bad argument to --fmax-lut option: " ++ s
+    maxLUTOpt s fs = do
+        n <- case humandReadable s of
+               Just n  -> return n
+               Nothing -> fail $ "bad argument to --fmax-lut option: " ++ s
+        return fs { maxLUT = n }
 
     minLUTOpsOpt :: String -> Flags -> m Flags
     minLUTOpsOpt s fs =
@@ -114,6 +111,16 @@ splitOn :: Eq a => a -> [a] -> ([a], [a])
 splitOn x s = case span (not . (== x)) s of
               (xs, []) -> (xs, [])
               (xs, ys) -> (xs, drop 1 ys)
+
+humandReadable :: (Integral a, Read a, Monad m) => String -> m a
+humandReadable s =
+    case reads s of
+      (n, "")  : _ -> return n
+      (n, "k") : _ -> return (n*1024)
+      (n, "K") : _ -> return (n*1024)
+      (n, "m") : _ -> return (n*1024*1024)
+      (n, "M") : _ -> return (n*1024*1024)
+      _            -> fail "bad argument"
 
 mkModeFlag :: Monad m
            => (ModeFlag, [Char], [String], String)
