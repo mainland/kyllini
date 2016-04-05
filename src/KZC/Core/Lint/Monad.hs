@@ -56,11 +56,10 @@ module KZC.Core.Lint.Monad (
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (liftM)
-#if MIN_VERSION_base(4,8,0)
-import Control.Monad.Except (ExceptT(..), runExceptT)
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
@@ -133,15 +132,15 @@ instance MonadTc m => MonadTc (MaybeT m) where
     askTc       = lift askTc
     localTc f m = MaybeT $ localTc f (runMaybeT m)
 
-#if MIN_VERSION_base(4,8,0)
-instance MonadTc m => MonadTc (ExceptT e m) where
-    askTc       = lift askTc
-    localTc f m = ExceptT $ localTc f (runExceptT m)
-#else
+#if !MIN_VERSION_base(4,8,0)
 instance (Error e, MonadTc m) => MonadTc (ErrorT e m) where
     askTc       = lift askTc
     localTc f m = ErrorT $ localTc f (runErrorT m)
-#endif
+#endif /* !MIN_VERSION_base(4,8,0) */
+
+instance MonadTc m => MonadTc (ExceptT e m) where
+    askTc       = lift askTc
+    localTc f m = ExceptT $ localTc f (runExceptT m)
 
 instance MonadTc m => MonadTc (ReaderT r m) where
     askTc       = lift askTc

@@ -32,11 +32,10 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
-#if MIN_VERSION_base(4,8,0)
-import Control.Monad.Trans.Except (runExceptT)
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Trans.Error (runErrorT)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Trans.Except (runExceptT)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Set (Set)
@@ -57,12 +56,7 @@ import KZC.Uniq
 
 shouldLUT :: forall m . MonadTc m => Exp -> m Bool
 shouldLUT e =
-    either (\(_ :: String) -> False) id <$>
-#if MIN_VERSION_base(4,8,0)
-        runExceptT act
-#else /* !MIN_VERSION_base(4,8,0) */
-        runErrorT act
-#endif /* !MIN_VERSION_base(4,8,0) */
+    either (\(_ :: String) -> False) id <$> runExceptT act
   where
     act :: MonadTc m' => m' Bool
     act = do

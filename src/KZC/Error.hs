@@ -37,11 +37,10 @@ module KZC.Error (
     checkDuplicates
   ) where
 
-#if MIN_VERSION_base(4,8,0)
-import Control.Monad.Except (ExceptT(..), runExceptT)
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Exception (Exception(..),
                                 MonadException,
                                 SomeException,
@@ -123,17 +122,7 @@ instance MonadErr m => MonadErr (MaybeT m) where
     err   = lift . err
     warn  = lift . warn
 
-#if MIN_VERSION_base(4,8,0)
-instance (MonadErr m) => MonadErr (ExceptT e m) where
-    askErrCtx         = lift askErrCtx
-    localErrCtx ctx m = ExceptT $ localErrCtx ctx (runExceptT m)
-
-    displayWarning = lift . displayWarning
-
-    panic = lift . panic
-    err   = lift . err
-    warn  = lift . warn
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = ErrorT $ localErrCtx ctx (runErrorT m)
@@ -144,6 +133,16 @@ instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
     err   = lift . err
     warn  = lift . warn
 #endif /* !MIN_VERSION_base(4,8,0) */
+
+instance (MonadErr m) => MonadErr (ExceptT e m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = ExceptT $ localErrCtx ctx (runExceptT m)
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
 
 instance MonadErr m => MonadErr (ReaderT r m) where
     askErrCtx         = lift askErrCtx

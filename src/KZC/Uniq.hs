@@ -13,11 +13,10 @@ module KZC.Uniq (
     MonadUnique(..)
   ) where
 
-#if MIN_VERSION_base(4,8,0)
-import Control.Monad.Except (ExceptT(..))
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Except (ExceptT(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
@@ -40,13 +39,13 @@ class Monad m => MonadUnique m where
 instance MonadUnique m => MonadUnique (MaybeT m) where
     newUnique = lift newUnique
 
-#if MIN_VERSION_base(4,8,0)
-instance MonadUnique m => MonadUnique (ExceptT e m) where
-    newUnique = lift newUnique
-#else /* !MIN_VERSION_base(4,8,0) */
+#if !MIN_VERSION_base(4,8,0)
 instance (Error e, MonadUnique m) => MonadUnique (ErrorT e m) where
     newUnique = lift newUnique
 #endif /* !MIN_VERSION_base(4,8,0) */
+
+instance MonadUnique m => MonadUnique (ExceptT e m) where
+    newUnique = lift newUnique
 
 instance MonadUnique m => MonadUnique (ReaderT r m) where
     newUnique = lift newUnique
