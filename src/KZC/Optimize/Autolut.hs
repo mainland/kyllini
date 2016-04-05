@@ -181,7 +181,10 @@ autoSteps (step : k) =
         WhileC l <$> autoE e <*> autoComp comp <*> pure s
 
     autoStep (ForC l ann v tau e1 e2 comp s) =
-        ForC l ann v tau <$> autoE e1 <*> autoE e2 <*> autoComp comp <*> pure s
+        ForC l ann v tau <$> autoE e1
+                         <*> autoE e2
+                         <*>  extendVars [(v, tau)] (autoComp comp)
+                         <*> pure s
 
     autoStep (LiftC l e s) =
         LiftC l <$> autoE e <*> pure s
@@ -264,7 +267,10 @@ autoE e = do
         WhileE <$> autoE e1 <*> autoE e2 <*> pure s
 
     go (ForE ann v tau e1 e2 e3 s) =
-        ForE ann v tau <$> autoE e1 <*> autoE e2 <*> autoE e3 <*> pure s
+        ForE ann v tau <$> autoE e1
+                       <*> autoE e2
+                       <*> extendVars [(v, tau)] (autoE e3)
+                       <*> pure s
 
     go (ArrayE es s) =
         ArrayE <$> traverse autoE es <*> pure s
@@ -291,7 +297,9 @@ autoE e = do
         ReturnE ann <$> autoE e <*> pure s
 
     go (BindE wv tau e1 e2 s) =
-        BindE wv tau  <$> autoE e1 <*> autoE e2 <*> pure s
+        BindE wv tau <$> autoE e1
+                     <*> extendWildVars [(wv, tau)] (autoE e2)
+                     <*> pure s
 
     go e@(LutE {}) =
         pure e
