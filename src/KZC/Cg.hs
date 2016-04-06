@@ -447,9 +447,8 @@ cgLocalDecl decl@(LetLD v tau e _) k = do
            inSTScope tau $ do
            case unConstE e of
              Just _  -> cgExp e
-             Nothing -> do ce         <- cgExp e
-                           isTopLevel <- isInTopScope
-                           cve        <- cgBinder isTopLevel (bVar v) tau
+             Nothing -> do ce  <- cgExp e
+                           cve <- cgBinder (bVar v) tau
                            cgAssign tau cve ce
                            return cve
     extendVars [(bVar v, tau)] $ do
@@ -458,8 +457,7 @@ cgLocalDecl decl@(LetLD v tau e _) k = do
 
 cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     cve <- withSummaryContext decl $ do
-           isTopLevel <- isInTopScope
-           cve        <- cgBinder isTopLevel (bVar v) tau
+           cve <- cgBinder (bVar v) tau
            case maybe_e of
              Nothing -> cgDefaultValue tau cve
              Just e  -> do ce <- inLocalScope $ cgExp e
@@ -1179,12 +1177,13 @@ cgTemp s tau = do
 -- | Allocate storage for a binder with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
-cgBinder :: Bool -> Var -> Type -> Cg CExp
-cgBinder isTopLevel v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau = do
-    cgBinder isTopLevel v tau'
+cgBinder :: Var -> Type -> Cg CExp
+cgBinder v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau = do
+    cgBinder v tau'
 
-cgBinder isTopLevel v tau = do
-    cv <- cvar v
+cgBinder v tau = do
+    isTopLevel <- isInTopScope
+    cv         <- cvar v
     cgStorage isTopLevel cv tau
 
 -- | Allocate storage for a C identifier with the given core type. The first
@@ -2047,7 +2046,7 @@ cgBinding v tau ce = do
         faildoc $ text "Cannot lower a computation."
 
     go True ce = do
-        cv <- cgBinder False v tau
+        cv <- cgBinder v tau
         cgAssign tau cv ce
         return cv
 
