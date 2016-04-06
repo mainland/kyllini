@@ -75,7 +75,6 @@ instance Show FunCompC where
 -- | The type of "compiled" expressions.
 data CExp = CVoid
           | CBool Bool
-          | CBit Bool
           | CInt Integer     -- ^ Integer constant
           | CFloat Rational  -- ^ Float constant
           | CExp C.Exp       -- ^ C expression
@@ -102,7 +101,6 @@ data CExp = CVoid
 instance Located CExp where
     locOf CVoid               = NoLoc
     locOf (CBool {})          = NoLoc
-    locOf (CBit {})           = NoLoc
     locOf (CInt {})           = NoLoc
     locOf (CFloat {})         = NoLoc
     locOf (CExp ce)           = locOf ce
@@ -118,7 +116,6 @@ instance Located CExp where
 instance Relocatable CExp where
     reloc _ ce@CVoid                   = ce
     reloc _ ce@(CBool {})              = ce
-    reloc _ ce@(CBit {})               = ce
     reloc _ ce@(CInt {})               = ce
     reloc _ ce@(CFloat {})             = ce
     reloc l (CExp ce)                  = CExp $ reloc l ce
@@ -139,7 +136,6 @@ instance IfThenElse CExp CExp where
 instance Eq CExp where
     CVoid          == CVoid          = True
     CBool x        == CBool y        = x == y
-    CBit x         == CBit y         = x == y
     CInt x         == CInt y         = x == y
     CFloat x       == CFloat y       = x == y
     CPtr x         == CPtr y         = x == y
@@ -151,7 +147,6 @@ instance Eq CExp where
 instance Ord CExp where
     compare CVoid            CVoid            = EQ
     compare (CBool x)        (CBool y)        = compare x y
-    compare (CBit x)         (CBit y)         = compare x y
     compare (CInt x)         (CInt y)         = compare x y
     compare (CFloat x)       (CFloat y)       = compare x y
     compare (CPtr x)         (CPtr y)         = compare x y
@@ -168,13 +163,11 @@ instance Enum CExp where
 
 instance IsEq CExp where
     CBool x  .==. CBool y =  CBool (x == y)
-    CBit x   .==. CBit y   = CBool (x == y)
     CInt x   .==. CInt y   = CBool (x == y)
     CFloat x .==. CFloat y = CBool (x == y)
     ce1      .==. ce2      = CExp [cexp|$ce1 == $ce2|]
 
     CBool x  ./=. CBool y =  CBool (x /= y)
-    CBit x   ./=. CBit y   = CBool (x /= y)
     CInt x   ./=. CInt y   = CBool (x /= y)
     CFloat x ./=. CFloat y = CBool (x /= y)
     ce1      ./=. ce2      = CExp [cexp|$ce1 != $ce2|]
@@ -354,7 +347,6 @@ instance ToExp CExp where
     toExp CVoid                      = locatedError $
                                        text "toExp: void compiled expression"
     toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
-    toExp (CBit i)                   = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
     toExp (CInt i)                   = \_ -> [cexp|$int:i|]
     toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
     toExp (CExp e)                   = \_ -> e
@@ -379,8 +371,6 @@ instance Pretty CExp where
     ppr CVoid                    = text "<void>"
     ppr (CBool True)             = text "true"
     ppr (CBool False)            = text "false"
-    ppr (CBit True)              = text "'1"
-    ppr (CBit False)             = text "'0"
     ppr (CInt i)                 = ppr i
     ppr (CFloat f)               = ppr f
     ppr (CExp e)                 = ppr e
