@@ -940,7 +940,7 @@ cgExp e = do
         cgExp e2
 
     go (BindE (TameV v) tau e1 e2 _) = do
-        cv <- cgExp e1 >>= cgBinding (bVar v) tau
+        cv <- cgExp e1 >>= cgMonadicBinding v tau
         extendVars [(bVar v, tau)] $ do
         extendVarCExps [(bVar v, cv)] $ do
         cgExp e2
@@ -1167,12 +1167,43 @@ cgRetParam tau maybe_cv = do
 
     cgRetParamType tau = cgType tau
 
--- | Allocate storage for a temporary of the given core type. The name of the
--- temporary is gensym'd using @s@ with a prefix of @__@.
-cgTemp :: String -> Type -> Cg CExp
-cgTemp s tau = do
-    cv <- gensym ("__" ++ s)
-    cgStorage False cv tau
+-- | Generate code to bind a variable to a value in a monadic binding. We do a
+-- little abstract interpretation here as usual to avoid, e.g., creating a new
+-- variable whose value is the value of another variable or a constant. If the
+-- binding has refs flow to it that are modified before some use of the
+-- variable, a condition we check by calling 'askRefFlowModVar', we create a
+-- binding no matter what.
+cgMonadicBinding :: BoundVar -> Type -> CExp -> Cg CExp
+cgMonadicBinding bv tau ce = do
+    refFlowMod <- askRefFlowModVar (bVar bv)
+    go refFlowMod ce
+  where
+    go :: Bool -> CExp -> Cg CExp
+    go _ ce@CVoid =
+        return ce
+
+    go _ ce@(CBool {}) =
+        return ce
+
+    go _ ce@(CInt {}) =
+        return ce
+
+    go _ ce@(CFloat {}) =
+        return ce
+
+    go _ (CComp {}) =
+        faildoc $ text "Cannot bind a computation."
+
+    go _ (CFunComp {}) =
+        faildoc $ text "Cannot bind a computation function."
+
+    go True ce = do
+        cv <- cgBinder (bVar bv) tau
+        cgAssign tau cv ce
+        return cv
+
+    go _ ce =
+        return ce
 
 -- | Allocate storage for a binder with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
@@ -1185,6 +1216,13 @@ cgBinder v tau = do
     isTopLevel <- isInTopScope
     cv         <- cvar v
     cgStorage isTopLevel cv tau
+
+-- | Allocate storage for a temporary of the given core type. The name of the
+-- temporary is gensym'd using @s@ with a prefix of @__@.
+cgTemp :: String -> Type -> Cg CExp
+cgTemp s tau = do
+    cv <- gensym ("__" ++ s)
+    cgStorage False cv tau
 
 -- | Allocate storage for a C identifier with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
@@ -1323,7 +1361,7 @@ cgComp takek emitk comp k =
 
         cgBind (BindC l (TameV v) tau _ : steps) ce =
             cgWithLabel l $ do
-            cv <- cgBinding (bVar v) tau ce
+            cv <- cgMonadicBinding v tau ce
             extendVars [(bVar v, tau)] $ do
             extendVarCExps [(bVar v, cv)] $ do
             cgSteps steps
@@ -2017,40 +2055,6 @@ cgLower tau ce =
         return $ CExp [cexp|($ty:bIT_ARRAY_ELEM_TYPE *) &$cv|]
 
     go ce =
-        return ce
-
--- | Generate code to bind a variable to a value. We do a little abstract
--- interpretation here as usual to avoid, e.g., creating a new variable whose
--- value is the value of another variable or a constant. If the binding has refs
--- flow to it that are modified before some use of the variable, a condition we
--- check by calling 'askRefFlowModVar', we create a binding no matter what.
-cgBinding :: Var -> Type -> CExp -> Cg CExp
-cgBinding v tau ce = do
-    refFlowMod <- askRefFlowModVar v
-    go refFlowMod ce
-  where
-    go :: Bool -> CExp -> Cg CExp
-    go _ ce@CVoid =
-        return ce
-
-    go _ ce@(CBool {}) =
-        return ce
-
-    go _ ce@(CInt {}) =
-        return ce
-
-    go _ ce@(CFloat {}) =
-        return ce
-
-    go _ (CComp {}) =
-        faildoc $ text "Cannot lower a computation."
-
-    go True ce = do
-        cv <- cgBinder v tau
-        cgAssign tau cv ce
-        return cv
-
-    go _ ce =
         return ce
 
 -- | Append a comment to the list of top-level definitions.
