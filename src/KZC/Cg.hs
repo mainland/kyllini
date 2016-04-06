@@ -452,40 +452,15 @@ cgLocalDecl decl@(LetLD v tau e _) k = do
 
 cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     cve <- withSummaryContext decl $ do
-           cve <- cgBinder (bVar v) tau
            case maybe_e of
-             Nothing -> cgDefaultValue tau cve
-             Just e  -> do ce <- inLocalScope $ cgExp e
+             Nothing -> cgDefaultLetBinding v tau
+             Just e  -> do ce  <- inLocalScope $ cgExp e
+                           cve <- cgBinder (bVar v) tau
                            cgAssign tau cve ce
-           return cve
+                           return cve
     extendVars [(bVar v, refT tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
-
-cgDefaultValue :: Type -> CExp -> Cg ()
-cgDefaultValue tau cv = go tau
-  where
-    go :: Type -> Cg ()
-    go (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
-    go (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
-    go (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
-
-    go (ArrT iota tau _) | isBitT tau = do
-        cn <- cgIota iota
-        appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
-      where
-        ctau :: C.Type
-        ctau = bIT_ARRAY_ELEM_TYPE
-
-    go (ArrT iota tau _) = do
-        cn    <- cgIota iota
-        ctau  <- cgType tau
-        appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
-
-    go tau = do
-        ctau  <- cgType tau
-        caddr <- cgAddrOf tau cv
-        appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 -- | Generate a 'CExp' representing a constant. The 'CExp' produced is
 -- guaranteed to be a legal C initializer, so it can be used in an array or
@@ -1161,6 +1136,35 @@ cgRetParam tau maybe_cv = do
         return [cty|$ty:ctau* restrict|]
 
     cgRetParamType tau = cgType tau
+
+-- | Generate code to initialize a let binding to its default value.
+cgDefaultLetBinding :: BoundVar -> Type -> Cg CExp
+cgDefaultLetBinding bv tau = do
+    cv <- cgBinder (bVar bv) tau
+    go cv tau
+    return cv
+  where
+    go :: CExp -> Type -> Cg ()
+    go cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
+    go cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
+    go cv (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
+
+    go cv (ArrT iota tau _) | isBitT tau = do
+        cn <- cgIota iota
+        appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+      where
+        ctau :: C.Type
+        ctau = bIT_ARRAY_ELEM_TYPE
+
+    go cv (ArrT iota tau _) = do
+        cn    <- cgIota iota
+        ctau  <- cgType tau
+        appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
+
+    go cv tau = do
+        ctau  <- cgType tau
+        caddr <- cgAddrOf tau cv
+        appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 -- | Generate code to bind a variable to a value in a let binding.
 cgLetBinding :: BoundVar -> Type -> CExp -> Cg CExp
