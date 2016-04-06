@@ -445,12 +445,7 @@ cgLocalDecl :: LocalDecl -> Cg a -> Cg a
 cgLocalDecl decl@(LetLD v tau e _) k = do
     cve <- withSummaryContext decl $ do
            inSTScope tau $ do
-           case unConstE e of
-             Just _  -> cgExp e
-             Nothing -> do ce  <- cgExp e
-                           cve <- cgBinder (bVar v) tau
-                           cgAssign tau cve ce
-                           return cve
+           cgExp e >>= cgLetBinding v tau
     extendVars [(bVar v, tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
     k
@@ -1166,6 +1161,38 @@ cgRetParam tau maybe_cv = do
         return [cty|$ty:ctau* restrict|]
 
     cgRetParamType tau = cgType tau
+
+-- | Generate code to bind a variable to a value in a let binding.
+cgLetBinding :: BoundVar -> Type -> CExp -> Cg CExp
+cgLetBinding bv tau ce =
+    go ce
+  where
+    go :: CExp -> Cg CExp
+    go ce@CVoid =
+        return ce
+
+    go ce@(CBool {}) =
+        return ce
+
+    go ce@(CInt {}) =
+        return ce
+
+    go ce@(CFloat {}) =
+        return ce
+
+    go (CComp {}) =
+        faildoc $ text "Cannot bind a computation."
+
+    go (CFunComp {}) =
+        faildoc $ text "Cannot bind a computation function."
+
+    go ce@(CExp [cexp|$id:_|]) =
+        return ce
+
+    go ce = do
+        cv <- cgBinder (bVar bv) tau
+        cgAssign tau cv ce
+        return cv
 
 -- | Generate code to bind a variable to a value in a monadic binding. We do a
 -- little abstract interpretation here as usual to avoid, e.g., creating a new
