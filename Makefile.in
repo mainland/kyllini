@@ -168,16 +168,16 @@ kzc : $(SRC) dist/build/autogen/cabal_macros.h
 #
 # Generated instances
 #
-$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
+$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
+$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Auto/Syntax-instances.hs : bin/gen-auto-instances.hs $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Auto/Syntax.hs
+$(SRCDIR)KZC/Auto/Syntax-instances.hs : bin/gen-auto-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Auto/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #
@@ -273,4 +273,4 @@ Makefile : Makefile.in
 	./config.status
 
 dist/build/autogen/cabal_macros.h :
-	cabal build
+	cabal build BlinkDiff
