@@ -13,7 +13,7 @@
 int parseOpts(kz_params_t*, int, char *[]);
 kz_mode_t parseMode(int argc, char *argv[], const char*);
 kz_dev_t parseDev(int argc, char *argv[], const char* desc);
-void usage(int argc, char *argv[]);
+void usage(int argc, char *argv[]) __attribute__((noreturn));
 
 void kz_assert(int flag, const char* loc, const char *format, ...)
 {

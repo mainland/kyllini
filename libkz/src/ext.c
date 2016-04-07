@@ -211,8 +211,8 @@ void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const com
     int i;
 
     for (i = 0; i < n; ++i) {
-        c[i].re = a[i].re * b[i].re - a[i].im * b[i].im >> shift;
-        c[i].im = a[i].re * b[i].im + a[i].im * b[i].re >> shift;
+        c[i].re = (a[i].re * b[i].re - a[i].im * b[i].im) >> shift;
+        c[i].im = (a[i].re * b[i].im + a[i].im * b[i].re) >> shift;
     }
 }
 
@@ -231,8 +231,8 @@ void __kz_v_conj_mul_complex16(int n, complex16_t *c, const complex16_t *a, cons
     int i;
 
     for (i = 0; i < n; ++i) {
-        c[i].re = a[i].re * b[i].re + a[i].im * b[i].im >> shift;
-        c[i].im = a[i].im * b[i].re - a[i].re * b[i].im >> shift;
+        c[i].re = (a[i].re * b[i].re + a[i].im * b[i].im) >> shift;
+        c[i].im = (a[i].im * b[i].re - a[i].re * b[i].im) >> shift;
     }
 }
 

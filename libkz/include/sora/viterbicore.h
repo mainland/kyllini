@@ -85,7 +85,7 @@ void Viterbi_sig11 (__m128i *pTrellis, const char * pbInput, char * pbOutput, in
 
     // temporal variables
     __m128i rub0, rub1, rub2, rub3;
-    __m128i rus0, rus1, rus2, rus3;
+    __m128i rus0, rus2, rus3;
     __m128i rus4, rus5, rus6, rus7;
 
     unsigned int i_ma = 0; // index to the Branch Metric LUT table
@@ -178,7 +178,7 @@ void Viterbi_sig11 (__m128i *pTrellis, const char * pbInput, char * pbOutput, in
 
         // Normalize
         if ((i_trellis & 7) == 0 ) {
-            // normalization\
+            // normalization
             // find the smallest component and extract it from all states
             rub0 = _mm_min_epu8 (pTrellis[0], pTrellis[1] );
             rub1 = _mm_min_epu8 (pTrellis[2], pTrellis[3] );
@@ -322,7 +322,7 @@ public:
   void BranchACS (const __m128i pVITMA[], unsigned int i_ma, const __m128i pVITMB[], unsigned int i_mb)
   {
       // temporal variables
-      __m128i rub0, rub1, rub2, rub3;
+      __m128i rub0, rub1;
 
       // Compute the bench metric
       i_ma <<= 3;
@@ -402,7 +402,7 @@ public:
   void BranchACS (const __m128i pVITMA[], unsigned int i_ma)
   {
       // temporal variables
-      __m128i rub0, rub1, rub2, rub3;
+      __m128i rub0, rub1;
 
       // Compute the bench metric
       i_ma <<= 3;
@@ -474,7 +474,7 @@ public:
   {
       __m128i rub0, rub1, rub2, rub3;
 
-    // normalization\
+    // normalization
     // find the smallest component and extract it from all states
     rub0 = _mm_min_epu8 (m_pTrellis[0], m_pTrellis[1] );
     rub1 = _mm_min_epu8 (m_pTrellis[2], m_pTrellis[3] );
@@ -496,8 +496,8 @@ public:
   FORCE_INLINE
   void Traceback (char * pbOutput, unsigned long output_bits, unsigned long lookahead )
   {
-    __m128i rub0, rub1, rub2, rub3;
-    __m128i rus0, rus1, rus2, rus3;
+    __m128i rub0, rub1;
+    __m128i rus0, rus2, rus3;
     __m128i rus4, rus5, rus6, rus7;
 
       // rub3 has the minimal value, we need to find the index

@@ -26,7 +26,6 @@ static void  write_bit(kz_buf_t *buf, int i, bit_t bit);
 
 static void *read_file(const char* file, const char* mode, size_t* len);
 static void free_buf(kz_buf_t* buf);
-static void check_errno(const char* msg, int result);
 
 template<typename T>
 typename std::enable_if<std::is_signed<T>::value && std::is_integral<T>::value,int>::type
@@ -126,9 +125,9 @@ print(FILE* fp, T x, bool comma)
 static int print_bit(FILE* fp, bit_t x, bool comma)
 {
     if (comma)
-        fprintf(fp, "%d,", (int) (x > 0 ? 1 : 0));
+        return fprintf(fp, "%d,", (int) (x > 0 ? 1 : 0));
     else
-        fprintf(fp, "%d", (int) (x > 0 ? 1 : 0));
+        return fprintf(fp, "%d", (int) (x > 0 ? 1 : 0));
 }
 
 template<typename T> void init_input(const kz_params_t* params, kz_buf_t* buf)
@@ -175,7 +174,7 @@ template<typename T> void init_input(const kz_params_t* params, kz_buf_t* buf)
                     s = strtok(NULL, ",");
             } while(!success);
 
-            while (s = strtok(NULL, ","))  {
+            while ((s = strtok(NULL, ",")))  {
                 x = parse<T>(s, &success);
                 if (success) {
                     if (buf->len == size) {
@@ -320,16 +319,6 @@ void free_buf(kz_buf_t* buf)
     buf->buf = NULL;
 }
 
-void check_errno(const char* msg, int result)
-{
-    if (result != 0) {
-        const char *err = strerror(0);
-
-        fprintf(stderr, "%s\n%s\n", msg, err);
-        exit(EXIT_FAILURE);
-    }
-}
-
 #define DECLARE_IO(D,T) \
 void kz_init_input_##D(const kz_params_t* params, kz_buf_t* buf) \
 { \
@@ -418,7 +407,7 @@ void kz_init_input_bit(const kz_params_t* params, kz_buf_t* buf)
                     s = strtok(NULL, ",");
             } while(!success);
 
-            while (s = strtok(NULL, ","))  {
+            while ((s = strtok(NULL, ",")))  {
                 x = parse_bit(s, &success);
                 if (success) {
                     if (buf->len == size) {
@@ -466,7 +455,7 @@ void kz_cleanup_output_bit(const kz_params_t* params, kz_buf_t* buf)
             assert(fclose(fp) == 0);
         } else if (params->dst_mode == MODE_TEXT) {
             FILE *fp;
-            int i;
+            unsigned i;
 
             fp = fopen(params->dst, "w");
             if (fp == NULL) {
@@ -513,8 +502,6 @@ const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
             /* Copy bits to a temporary buffer so we can return a pointer to the
              * bits.
              */
-            int i;
-
             if (bitbuf_len < n) {
                 if (bitbuf == NULL) {
                     bitbuf_len = (n + BIT_ARRAY_ELEM_BITS - 1) & ~(BIT_ARRAY_ELEM_BITS - 1);

@@ -73,7 +73,7 @@ unsigned char bit_scope_ub(unsigned char x)
 unsigned char bit_scope_us(unsigned short x)
 {
     unsigned char tt;
-    if (tt = (x >> 8))
+    if ((tt = (x >> 8)))
         return bit_scope_ub (tt) + 8;
     else
         return bit_scope_ub ((unsigned char)(x));
@@ -83,7 +83,7 @@ unsigned char bit_scope_ui(unsigned int x)
 {
     unsigned short tt;
 
-    if (tt = (x >> 16))
+    if ((tt = (x >> 16)))
         return bit_scope_us (tt) + 16;
     else
         return bit_scope_us ((unsigned short)(x));
@@ -498,7 +498,6 @@ int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], uin
     static const int input_size = 48; // always 48 soft-values
 
     __m128i trellis[state_size / 16 * input_size];
-    unsigned int output = 0;
 
     Viterbi_sig11(trellis, (char *)svalue, (char *)(bitValue));
     *((unsigned int *)bitValue) >>= 6; // remove the prefix 6 zeros

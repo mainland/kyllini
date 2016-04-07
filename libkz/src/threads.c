@@ -6,7 +6,7 @@
 
 int kz_tinfo_init(kz_tinfo_t *tinfo)
 {
-    int err;
+    return 0;
 }
 
 int kz_thread_init(kz_tinfo_t *tinfo,
