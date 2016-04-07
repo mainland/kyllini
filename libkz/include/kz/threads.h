@@ -50,6 +50,7 @@ int kz_thread_init(kz_tinfo_t *tinfo,
                    void *(*start_routine)(void *));
 int kz_thread_post(kz_tinfo_t *tinfo);
 int kz_thread_wait(kz_tinfo_t *tinfo);
+int kz_thread_join(kz_thread_t thread, void **retval);
 
 #ifdef __cplusplus
 }
