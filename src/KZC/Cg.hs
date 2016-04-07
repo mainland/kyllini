@@ -1933,7 +1933,7 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     ce1' <- cgArrayAddr ce1
     ce2' <- cgArrayAddr ce2
     clen <- cgIota iota
-    appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+    appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
   where
     cgArrayAddr :: CExp -> Cg CExp
     cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
