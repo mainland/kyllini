@@ -18,7 +18,7 @@ void kz_bitarray_print(const bit_t* x, int32_t n)
     }
 }
 
-inline
+static inline
 void copy_first_bits(uint8_t* dst, int dst_off, int* len, uint8_t c)
 {
     if (*len >= (CHAR_BIT - dst_off)) {

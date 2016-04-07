@@ -7,7 +7,7 @@ CXX=g++
 LD=gcc
 
 CPPFLAGS+=-I$(TOP)/libkz/include
-CFLAGS+=-msse4 -Og
+CFLAGS+=-msse4
 
 CCFLAGS=-std=gnu99
 CXXFLAGS=-std=c++11
