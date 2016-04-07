@@ -186,6 +186,8 @@ template<typename T> void init_input(const kz_params_t* params, kz_buf_t* buf)
                     ((T*) buf->buf)[buf->len++] = x;
                 }
             }
+
+            free(text);
         }
     } else {
         buf->dev = params->src_dev;
@@ -419,6 +421,8 @@ void kz_init_input_bit(const kz_params_t* params, kz_buf_t* buf)
                     write_bit(buf, buf->len++, x);
                 }
             }
+
+            free(text);
         }
     } else {
         buf->dev = params->src_dev;

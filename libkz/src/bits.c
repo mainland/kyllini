@@ -65,7 +65,7 @@ void kz_bitarray_copy(uint8_t* dst_orig, int dst_idx,
         int bytes_len = len / CHAR_BIT;
 
         if (bytes_len != 0) {
-            memcpy(dst, src, bytes_len);
+            memmove(dst, src, bytes_len);
             dst += bytes_len;
             src += bytes_len;
         }
@@ -92,7 +92,8 @@ void kz_bitarray_copy(uint8_t* dst_orig, int dst_idx,
             bit_diff_ls = CHAR_BIT - bit_diff_rs;
 
             c = *src++ >> bit_diff_rs;
-            c |= *src << bit_diff_ls;
+            if (src_off + len > CHAR_BIT)
+                c |= *src << bit_diff_ls;
         } else {
             bit_diff_ls = dst_off - src_off;
             bit_diff_rs = CHAR_BIT - bit_diff_ls;

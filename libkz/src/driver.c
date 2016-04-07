@@ -11,6 +11,7 @@
 #include <kz.h>
 
 int parseOpts(kz_params_t*, int, char *[]);
+void parseOptsCleanup(kz_params_t* params);
 kz_mode_t parseMode(int argc, char *argv[], const char*);
 kz_dev_t parseDev(int argc, char *argv[], const char* desc);
 void usage(int argc, char *argv[]) __attribute__((noreturn));
@@ -86,10 +87,14 @@ int main(int argc, char *argv[])
 {
     kz_params_t params;
 
-    if (parseOpts(&params, argc, argv) != 0)
+    if (parseOpts(&params, argc, argv) != 0) {
+        parseOptsCleanup(&params);
         return EXIT_FAILURE;
+    }
 
     kz_main(&params);
+
+    parseOptsCleanup(&params);
 
     return EXIT_SUCCESS;
 }
@@ -150,6 +155,15 @@ int parseOpts(kz_params_t* params, int argc, char *argv[])
     }
 
     return 0;
+}
+
+void parseOptsCleanup(kz_params_t* params)
+{
+    if (params->src != NULL)
+        free(params->src);
+
+    if (params->dst != NULL)
+        free(params->dst);
 }
 
 struct mode_desc_t {
