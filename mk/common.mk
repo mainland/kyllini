@@ -30,24 +30,24 @@ endif
 CPPFLAGS+=-I$(TOP)/libkz/include
 CFLAGS+=-msse4
 
-CCFLAGS=-std=gnu99
-CXXFLAGS=-std=c++11
+CCFLAGS+=-std=gnu99
+CXXFLAGS+=-std=c++11
 
-LDFLAGS=
+LDFLAGS+=
 
-LIBS=-lm -lpthread
+LIBS+=-lm -lpthread
 
 GHC=ghc
-GHCFLAGS=-O -Wall -fno-warn-name-shadowing -Werror
+GHCFLAGS+=-O -Wall -fno-warn-name-shadowing -Werror
 
 RUNGHC=runghc
-RUNGHCFLAGS=-W -fno-warn-unused-imports
+RUNGHCFLAGS+=-W -fno-warn-unused-imports
 
 HAPPY=happy 
-HAPPY_ARGS=-agci
+HAPPYFLAGS+=-agci
 
 ALEX=alex 
-ALEX_ARGS=-gi
+ALEXFLAGS+=-gi
 
 #
 # GHC optimization flags
