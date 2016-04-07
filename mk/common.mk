@@ -2,10 +2,31 @@ MAKEFLAGS:=--no-print-directory
 
 _QUIET=@
 
+include $(TOP)/mk/virtual.mk
+
+#
+# No built-in rules
+#
+MAKEFLAGS += --no-builtin-rules
+
+#
+# Pick compiler
+#
+ifeq ($(GCC), 1)
 CC=gcc
 CXX=g++
 LD=gcc
+endif
 
+ifeq ($(CLANG), 1)
+CC=clang
+CXX=clang++
+LD=clang
+endif
+
+#
+# Misc flags
+#
 CPPFLAGS+=-I$(TOP)/libkz/include
 CFLAGS+=-msse4
 
@@ -27,53 +48,6 @@ HAPPY_ARGS=-agci
 
 ALEX=alex 
 ALEX_ARGS=-gi
-
-#
-# No built-in rules
-#
-MAKEFLAGS += --no-builtin-rules
-
-#
-# quiet and noquiet make commands
-#
-ifeq ($(filter quiet, $(MAKECMDGOALS)), quiet)
-VIRTUAL_GOALS += quiet
-QUIET := 1
-endif
-
-MAKECMDGOALS := $(filter-out quiet, $(MAKECMDGOALS))
-
-ifeq ($(filter noquiet, $(MAKECMDGOALS)), noquiet)
-VIRTUAL_GOALS += noquiet
-NOQUIET := 1
-endif
-
-MAKECMDGOALS := $(filter-out noquiet, $(MAKECMDGOALS))
-
-ifeq ($(QUIET), 1)
-_QUIET = @
-endif
-
-ifeq ($(NOQUIET), 1)
-_QUIET = 
-endif
-
-#
-# opt and noopt make commands
-#
-ifeq ($(filter opt, $(MAKECMDGOALS)), opt)
-VIRTUAL_GOALS += opt
-OPT := 1
-endif
-
-MAKECMDGOALS := $(filter-out opt, $(MAKECMDGOALS))
-
-ifeq ($(filter noopt, $(MAKECMDGOALS)), noopt)
-VIRTUAL_GOALS += noopt
-NOOPT := 1
-endif
-
-MAKECMDGOALS := $(filter-out noopt, $(MAKECMDGOALS))
 
 #
 # GHC optimization flags
