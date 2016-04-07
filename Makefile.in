@@ -254,7 +254,7 @@ test-all :
 	  code/WiFi/receiver/tests \
 	  code/WiFi/tests \
 	  code/WiFi/sniffer; do \
-		(cd $(TESTDIR)/$$DIR && make); \
+		(cd $(TESTDIR)/$$DIR && $(MAKE) $(VIRTUAL_GOALS)); \
 	done
 
 #
