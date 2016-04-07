@@ -36,28 +36,19 @@ MAKEFLAGS += --no-builtin-rules
 #
 # quiet and noquiet make commands
 #
-QUIET_MAKECMD := $(filter quiet, $(MAKECMDGOALS))
+ifeq ($(filter quiet, $(MAKECMDGOALS)), quiet)
+VIRTUAL_GOALS += quiet
+QUIET := 1
+endif
+
 MAKECMDGOALS := $(filter-out quiet, $(MAKECMDGOALS))
 
-NOQUIET_MAKECMD := $(filter noquiet, $(MAKECMDGOALS))
-MAKECMDGOALS := $(filter-out noquiet, $(MAKECMDGOALS))
-
-ifeq ($(QUIET_MAKECMD), quiet)
-VIRTUAL_GOALS += quiet
-
-QUIET_MAKECMD := 1
-QUIET := 1
-else
-QUIET_MAKECMD := 0
-QUIET := 0
-endif
-
-ifeq ($(NOQUIET_MAKECMD), noquiet)
+ifeq ($(filter noquiet, $(MAKECMDGOALS)), noquiet)
 VIRTUAL_GOALS += noquiet
-
-NOQUIET_MAKECMD := 1
 NOQUIET := 1
 endif
+
+MAKECMDGOALS := $(filter-out noquiet, $(MAKECMDGOALS))
 
 ifeq ($(QUIET), 1)
 _QUIET = @
@@ -70,30 +61,19 @@ endif
 #
 # opt and noopt make commands
 #
-OPT_MAKECMD := $(filter opt, $(MAKECMDGOALS))
+ifeq ($(filter opt, $(MAKECMDGOALS)), opt)
+VIRTUAL_GOALS += opt
+OPT := 1
+endif
+
 MAKECMDGOALS := $(filter-out opt, $(MAKECMDGOALS))
 
-NOOPT_MAKECMD := $(filter noopt, $(MAKECMDGOALS))
-MAKECMDGOALS := $(filter-out noopt, $(MAKECMDGOALS))
-
-ifeq ($(OPT_MAKECMD), opt)
-VIRTUAL_GOALS += opt
-
-OPT_MAKECMD := 1
-OPT := 1
-else
-OPT_MAKECMD := 0
-OPT := 0
-endif
-
-ifeq ($(NOOPT_MAKECMD), noopt)
+ifeq ($(filter noopt, $(MAKECMDGOALS)), noopt)
 VIRTUAL_GOALS += noopt
-
-NOOPT_MAKECMD := 1
 NOOPT := 1
-else
-NOOPT_MAKECMD := 0
 endif
+
+MAKECMDGOALS := $(filter-out noopt, $(MAKECMDGOALS))
 
 #
 # GHC optimization flags
