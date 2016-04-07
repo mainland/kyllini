@@ -3,15 +3,17 @@ MAKEFLAGS:=--no-print-directory
 _QUIET=@
 
 CC=gcc
-CFLAGS+=-std=gnu99 -msse4 -Og
-
 CXX=g++
-CXXFLAGS=$(CFLAGS) -std=c++11
-
-CPPFLAGS=-I$(TOP)/libkz/include
-
 LD=gcc
+
+CPPFLAGS+=-I$(TOP)/libkz/include
+CFLAGS+=-msse4 -Og
+
+CCFLAGS=-std=gnu99
+CXXFLAGS=-std=c++11
+
 LDFLAGS=
+
 LIBS=-lm -lpthread
 
 GHC=ghc
@@ -160,10 +162,10 @@ RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 	$(_QUIET)$(KZC) $(KZCFLAGS) $< -o $@
 
 %.o : %.c
-	$(_QUIET)$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(_QUIET)$(CC) $(CPPFLAGS) $(CCFLAGS) $(CFLAGS) -c $< -o $@
 
 %.o : %.cpp
-	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(CFLAGS) -c $< -o $@
 
 %.exe : %.o $(RUNTIME_OBJ)
 	$(_QUIET)$(LD) $(LDFLAGS) $< $(RUNTIME_OBJ) $(LIBS) -o $@
