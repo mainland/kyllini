@@ -58,3 +58,11 @@ MAKECMDGOALS := $(filter-out clang, $(MAKECMDGOALS))
 ifneq ($(CLANG), 1)
 GCC := 1
 endif
+
+# sanitizer
+ifeq ($(filter sanitize, $(MAKECMDGOALS)), sanitize)
+VIRTUAL_GOALS += sanitize
+SANITIZE := 1
+endif
+
+MAKECMDGOALS := $(filter-out sanitize, $(MAKECMDGOALS))

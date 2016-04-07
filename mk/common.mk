@@ -24,6 +24,21 @@ CXX=clang++
 LD=clang
 endif
 
+ifeq ($(SANITIZE), 1)
+ifeq ($(CLANG), 1)
+SANITIZEFLAGS+=-fsanitize=address -fsanitize=leak -fsanitize=undefined
+CFLAGS+=$(SANITIZEFLAGS)
+LDFLAGS+=$(SANITIZEFLAGS)
+LIBS+=-lstdc++
+endif
+
+ifeq ($(GCC), 1)
+SANITIZEFLAGS+=-fsanitize=address
+CFLAGS+=$(SANITIZEFLAGS)
+LDFLAGS+=$(SANITIZEFLAGS)
+endif
+endif
+
 #
 # Misc flags
 #
