@@ -691,55 +691,50 @@ cgExp e = do
         cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
         cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
 
-        cgBinop tau _ _ Cat | isBitArrT tau =
-            unfoldCat e >>= cgCat
-
-        cgBinop _ _ _ Cat =
-            faildoc $ text "Cannot compile array concatenation"
-
-        unfoldCat :: Exp -> Cg [(Exp, Int)]
-        unfoldCat (BinopE Cat e1 e2 _) =
-            (++) <$> unfoldCat e1 <*> unfoldCat e2
-
-        unfoldCat e = do
-            (iota, _) <- inferExp e >>= checkArrT
-            n         <- cgConstIota iota
-            return [(e, fromIntegral n)]
-
-        cgCat :: [(Exp, Int)] -> Cg CExp
-        cgCat arrs = do
-            ces <- reverse <$> shiftFields 0 (reverse arrs)
-            return $ CBits $ foldr1 (..|..) ces
+        cgBinop tau _ _ Cat = do
+            (_, tau_elem) <- checkArrT tau
+            arrs          <- unfoldCat e
+            if isBitT tau_elem
+              then cgBitCat arrs
+              else cgCat arrs
           where
-            shiftFields :: Int -> [(Exp, Int)] -> Cg [CExp]
-            shiftFields _ [] =
-                return []
+            -- Split nested applications of (++) into a single list of
+            -- concatenated arrays, each paired with the number of elements it
+            -- contains.
+            unfoldCat :: Exp -> Cg [(Exp, Int)]
+            unfoldCat (BinopE Cat e1 e2 _) =
+                (++) <$> unfoldCat e1 <*> unfoldCat e2
 
-            shiftFields n ((e, w):flds) = do
-                ce  <- cgExp e
-                ce' <- shiftField ce w n
-                ces <- shiftFields (n+w) flds
-                return $ ce' ++ ces
+            unfoldCat e = do
+                (iota, _) <- inferExp e >>= checkArrT
+                n         <- cgConstIota iota
+                return [(e, fromIntegral n)]
 
-            shiftField :: CExp -> Int -> Int -> Cg [CExp]
-            shiftField (CBits ce) _ n =
-                return [shiftL ce n]
+            -- XXX: Need to allocate a single array and fill it using cgSlice
+            -- and cgAssign.
+            cgCat :: [(Exp, Int)] -> Cg CExp
+            cgCat _ =
+                fail "Cannot compile concatenation of not-bit arrays"
 
-            -- A bit array may have more bits that are strictly needed, e.g., a
-            -- 6-bit bit array will be represented using 8 bits. These extra
-            -- bits are uninitialized, so we need to mask them off when
-            -- concatenating them into larger bit arrays.
-            shiftField ce w n =
-                return [shiftL (extractBits ce i) (n+i*8) | i <- [0..bitArrayLen w-1]]
+            cgBitCat :: [(Exp, Int)] -> Cg CExp
+            cgBitCat arrs = do
+                carrs <- mapM asBits arrs
+                -- Rearrange the arrays we are concatenating in order from
+                -- lowest bits to highest bits
+                let carrs' = reverse carrs
+                let ces    = shiftFields 0 carrs'
+                -- Although it doesn't matter, we reverse ces here so in the
+                -- source they appear ordered from highest bits to lowest bits
+                return $ CBits $ foldr1 (..|..) $ reverse ces
               where
-                extractBits :: CExp -> Int -> CExp
-                extractBits ce i
-                    | w < (i+1)*8 = cbits ..&.. cmask
-                    | otherwise   = cbits
-                  where
-                    cbits, cmask :: CExp
-                    cbits = CExp [cexp|$ce[$int:i]|]
-                    cmask = CExp (chexconst (2^(w `rem` bIT_ARRAY_ELEM_BITS)-1))
+                shiftFields :: Int -> [(CExp, Int)] -> [CExp]
+                shiftFields _ []             = []
+                shiftFields n ((ce, w):flds) = shiftL ce n : shiftFields (n+w) flds
+
+                asBits :: (Exp, Int) -> Cg (CExp, Int)
+                asBits (e, w) = do
+                    cbits <- cgExp e >>= cgBits (arrKnownT w bitT)
+                    return (CBits $ CExp $ rl (locOf l) cbits, w)
 
     go (IfE e1 e2 e3 _) = do
         tau <- inferExp e2
@@ -987,7 +982,36 @@ unCFunComp (CFunComp funcompc) =
 unCFunComp ce =
     panicdoc $ nest 2 $ text "unCFunComp: not a CFunComp:" </> ppr ce
 
--- | Return the C type appropriate for bit casting.
+-- | Compile a 'CExp' into a 'C.Exp' that is its bit representation as a
+-- numerical value. The result is an appropriate argument for the 'CBits' data
+-- constructor.
+cgBits :: Type
+       -> CExp
+       -> Cg C.Exp
+cgBits _ (CBits ce) =
+    return [cexp|$ce|]
+
+--- XXX: If ce happens to be a slice that starts at an index that is not a
+--- multiple of 'bIT_ARRAY_ELEM_BITS', then it will end up being copied into a
+--- temporary by 'cgAddrOf'. We should instead do our own shift and mask.
+cgBits tau@(ArrT iota _ _) ce | isBitArrT tau = do
+    ctau  <- cgBitcastType tau
+    caddr <- cgAddrOf tau ce
+    w     <- cgConstIota iota
+    if cgWidthMatchesBitcastTypeWidth w
+      then return [cexp|*(($ty:ctau*) $caddr)|]
+      else return [cexp|*(($ty:ctau*) $caddr) & $(chexconst (2^w - 1))|]
+
+cgBits tau@(FixT {}) ce = do
+    ctau <- cgBitcastType tau
+    return [cexp|($ty:ctau) $ce|]
+
+cgBits tau ce = do
+    ctau  <- cgBitcastType tau
+    caddr <- cgAddrOf tau ce
+    return [cexp|*(($ty:ctau*) $caddr)|]
+
+-- | Return the C type appropriate for bit casting a value of the given type.
 cgBitcastType :: Type -> Cg C.Type
 cgBitcastType tau = do
     w <- typeSize tau
@@ -998,6 +1022,15 @@ cgBitcastType tau = do
       _ | w <= 64 -> return [cty|typename uint64_t|]
       _ ->
         faildoc $ text "Cannot compile bitcast type for" <+> ppr tau <+> "(width >64)."
+
+-- | Return if the given width is the same as the width of the type returned by
+-- 'cgBitcastType'.
+cgWidthMatchesBitcastTypeWidth :: (Eq a, Num a) => a -> Bool
+cgWidthMatchesBitcastTypeWidth 8  = True
+cgWidthMatchesBitcastTypeWidth 16 = True
+cgWidthMatchesBitcastTypeWidth 32 = True
+cgWidthMatchesBitcastTypeWidth 64 = True
+cgWidthMatchesBitcastTypeWidth _  = False
 
 -- | Compile a type to its C representation.
 cgType :: Type -> Cg C.Type
