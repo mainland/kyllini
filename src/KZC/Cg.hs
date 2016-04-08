@@ -607,12 +607,12 @@ cgExp e = do
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
-        cgBitcast ce tau_from tau_to@(FixT {}) | isBitArrT tau_from = do
+        cgBitcast ce tau_from tau_to@(FixT I U _ (BP 0) _) | isBitArrT tau_from = do
             cbits   <- cgBits tau_from ce
             ctau_to <- cgType tau_to
             return $ CExp $ rl l [cexp|($ty:ctau_to) $cbits|]
 
-        cgBitcast ce tau_from@(FixT {}) tau_to | isBitArrT tau_to = do
+        cgBitcast ce tau_from@(FixT I U _ (BP 0) _) tau_to | isBitArrT tau_to = do
             ctau_to <- cgBitcastType tau_from
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
