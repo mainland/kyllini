@@ -1922,17 +1922,10 @@ cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau =
         appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
       where
         cdst, cdstIdx :: CExp
-        (cdst, cdstIdx) = unBitSlice ce1
+        (cdst, cdstIdx) = unCSlice ce1
 
         csrc, csrcIdx :: CExp
-        (csrc, csrcIdx) = unBitSlice ce2
-
-        unBitSlice :: CExp -> (CExp, CExp)
-        unBitSlice (CSlice _ carr cidx _) =
-            (carr, cidx)
-
-        unBitSlice carr =
-            (carr, 0)
+        (csrc, csrcIdx) = unCSlice ce2
 
 cgAssign tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     ctau <- cgType tau
