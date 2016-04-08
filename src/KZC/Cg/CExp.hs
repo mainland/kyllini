@@ -18,6 +18,9 @@ module KZC.Cg.CExp (
 
     CExp(..),
 
+    unCSlice,
+    unBitCSliceBase,
+
     toInit
   ) where
 
@@ -383,6 +386,44 @@ instance Pretty CExp where
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
 
+-- | Given a 'CExp' that is potentially a slice of an array, return the base
+-- array and the index at which the slice begins. If the input 'CExp' is not a
+-- slice, the returned index is 0.
+unCSlice :: CExp -> (CExp, CExp)
+unCSlice (CSlice _ carr cidx _) = (carr, cidx)
+unCSlice carr                   = (carr, 0)
+
+-- | Given a 'CExp' that is potentially a slice of a /bit/ array, return the
+-- array base of the slice, i.e., a pointer to the beginning of the slice. This
+-- function is partial; the base array can only be calculated if the index of
+-- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
+unBitCSliceBase :: CExp -> Maybe CExp
+unBitCSliceBase (CSlice _ carr (CInt i) _) | bitOff == 0 =
+    Just $ CExp [cexp|&$carr[$int:bitIdx]|]
+  where
+    bitIdx, bitOff :: Integer
+    (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
+
+unBitCSliceBase (CSlice _ carr (CExp [cexp|$int:n * $ce|]) _)
+    | q == 1 && r == 0 = Just $ CExp [cexp|&$carr[$ce]|]
+    | r == 0           = Just $ CExp [cexp|&$carr[$int:q * $ce]|]
+  where
+    q, r :: Integer
+    (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
+
+unBitCSliceBase (CSlice _ carr (CExp [cexp|$ce * $int:n|]) _)
+    | q == 1 && r == 0 = Just $ CExp [cexp|&$carr[$ce]|]
+    | r == 0           = Just $ CExp [cexp|&$carr[$int:q * $ce]|]
+  where
+    q, r :: Integer
+    (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
+
+unBitCSliceBase (CSlice {}) =
+    Nothing
+
+unBitCSliceBase ce =
+    Just ce
+
 toInit :: CExp -> C.Initializer
 toInit (CInit cinit) = cinit
 toInit ce            = [cinit|$ce|]
@@ -404,16 +445,13 @@ lowerIdx tau carr ci
 
 -- | Lower a slice operation to a 'C.Exp'
 lowerSlice :: Type -> CExp -> CExp -> Int -> C.Exp
-lowerSlice tau carr ce@(CInt i) len | isBitT tau =
-    if bitOff == 0
-    then [cexp|&$carr[$int:bitIdx]|]
-    else errordoc $ nest 4 $
-         ppr (locOf ce) <> text ":" </>
-         text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
-         ppr (CSlice tau carr ce len)
-  where
-    bitIdx, bitOff :: Integer
-    (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
+lowerSlice tau carr cidx len | isBitT tau =
+    case unBitCSliceBase (CSlice tau carr cidx len) of
+      Just (CExp ce) -> ce
+      _ -> errordoc $ nest 4 $
+           ppr (locOf cidx) <> text ":" </>
+           text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
+           ppr (CSlice tau carr cidx len)
 
 lowerSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]
