@@ -1552,14 +1552,15 @@ cgWithLabel lbl k = do
     l :: SrcLoc
     C.Id ident l = toIdent lbl noLoc
 
-cgCompOneshot :: TakeK  KontLabel -- ^ Code generator for take
-              -> EmitK  KontLabel -- ^ Code generator for emit
-              -> EmitsK KontLabel -- ^ Code generator for emit
-              -> LComp            -- ^ Computation to compiled
-              -> KontLabel        -- ^ Label of our continuation
-              -> Cg CExp
-cgCompOneshot takek emitk emitsk comp klbl =
-    cgComp takek emitk emitsk comp klbl $ multishot return
+-- | Compile a computation and throw away he result.
+cgCompVoid :: TakeK  KontLabel -- ^ Code generator for take
+           -> EmitK  KontLabel -- ^ Code generator for emit
+           -> EmitsK KontLabel -- ^ Code generator for emits
+           -> LComp            -- ^ Computation to compiled
+           -> KontLabel        -- ^ Label of our continuation
+           -> Cg ()
+cgCompVoid takek emitk emitsk comp klbl =
+    cgComp takek emitk emitsk comp klbl $ multishot $ const $ return ()
 
 -- | 'cgComp' compiles a computation and ensures that the continuation label is
 -- jumped to. We assume that the continuation labels the code that will be
@@ -1630,7 +1631,7 @@ cgComp takek emitk emitsk comp klbl k =
         (citems_test, ce_test) <- inNewBlock $ cgExpOneshot e_test
         citems_body            <- inNewBlock_ $ do
                                   l_inner <- genLabel "inner_whilek"
-                                  void $ cgCompOneshot takek emitk emitsk c_body l_inner
+                                  cgCompVoid takek emitk emitsk c_body l_inner
                                   cgLabel l_inner
         cgWithLabel l $ do
             appendBlock $ map (rl sloc) citems_test
@@ -1647,7 +1648,7 @@ cgComp takek emitk emitsk comp klbl k =
         ce_len   <- cgExpOneshot e_len
         citems   <- inNewBlock_ $ do
                     l_inner <- genLabel "inner_fork"
-                    void $ cgCompOneshot takek emitk emitsk c_body l_inner
+                    cgCompVoid takek emitk emitsk c_body l_inner
                     cgLabel l_inner
         cgWithLabel l $
             appendStm $ rl sloc [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
@@ -1689,7 +1690,7 @@ cgComp takek emitk emitsk comp klbl k =
 
     cgStep (RepeatC l _ c_body sloc) _ k = do
         citems <- inNewBlock_ $ do
-                  void $ cgCompOneshot takek emitk emitsk c_body l
+                  cgCompVoid takek emitk emitsk c_body l
                   cgLabel l
         appendStm $ rl sloc [cstm|for (;;) { $items:citems }|]
         runKont k CVoid
@@ -2006,9 +2007,8 @@ void* $id:cf(void* _tinfo)
 
     cgConsumer :: CExp -> CExp -> CExp -> CExp -> LComp -> KontLabel -> Cg ()
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
-        ce <- cgCompOneshot takek' emitk' emitsk' comp klbl
+        cgComp takek' emitk' emitsk' comp klbl $ multishot $ cgAssign tau_res cres
         appendStm [cstm|$ctinfo.done = 1;|]
-        cgAssign tau_res cres ce
         appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
         appendStm [cstm|JUMP($id:l_pardone);|]
       where
