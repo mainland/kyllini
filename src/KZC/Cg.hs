@@ -696,10 +696,7 @@ cgExp e = do
 
         unfoldCat e = do
             (iota, _) <- inferExp e >>= checkArrT
-            ciota     <- cgIota iota
-            n         <- case ciota of
-                           CInt n -> return n
-                           _ -> faildoc $ text "Cannot compile array concatenation"
+            n         <- cgConstIota iota
             return [(e, fromIntegral n)]
 
         cgCat :: [(Exp, Int)] -> Cg CExp
@@ -940,6 +937,15 @@ cgVarBind (v, tau) = do
 cgIota :: Iota -> Cg CExp
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
+
+-- | Compile an 'Iota' to an 'Integer' constant. If the argument cannot be
+-- resolved to a constant, raise an exception.
+cgConstIota :: Iota -> Cg Integer
+cgConstIota iota = do
+    ciota <- cgIota iota
+    case ciota of
+      CInt n -> return n
+      _      -> faildoc $ text "Non-polymorphic array required"
 
 -- | Compile real and imaginary parts into a complex number
 cgComplex :: CExp -> CExp -> Cg CExp
