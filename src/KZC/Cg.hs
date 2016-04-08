@@ -606,17 +606,17 @@ cgExp e = do
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
-        cgBitcast (CBits ce) (ArrT _ tau _) tau_to@(FixT {}) | isBitT tau = do
+        cgBitcast (CBits ce) tau_from tau_to@(FixT {}) | isBitArrT tau_from = do
             ctau_to <- cgType tau_to
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
-        cgBitcast ce tau_from@(ArrT iota tau _) tau_to@(FixT {}) | isBitT tau = do
+        cgBitcast ce tau_from@(ArrT iota _ _) tau_to@(FixT {}) | isBitArrT tau_from = do
             ctau_to <- cgType tau_to
             caddr   <- cgAddrOf tau_from ce
             n       <- cgConstIota iota
             return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr) & $(2^n - 1 :: Int)|]
 
-        cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
+        cgBitcast ce tau_from@(FixT {}) tau_to | isBitArrT tau_to = do
             ctau_to <- cgBitcastType tau_from
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
@@ -690,7 +690,7 @@ cgExp e = do
         cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
         cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
 
-        cgBinop (ArrT _ tau_elem _) _ _ Cat | isBitT tau_elem =
+        cgBinop tau _ _ Cat | isBitArrT tau =
             unfoldCat e >>= cgCat
 
         cgBinop _ _ _ Cat =
