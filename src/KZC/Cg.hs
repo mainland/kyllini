@@ -28,6 +28,7 @@ import Control.Monad (forM_,
                       when)
 import Data.Bits
 import Data.Loc
+import Data.Maybe (isJust)
 import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -1843,8 +1844,8 @@ isLvalue (CIdx tau _ _) | isBitT tau =
 isLvalue (CIdx _ ce _) =
     isLvalue ce
 
-isLvalue (CSlice tau carr (CInt i) _) | isBitT tau =
-    isLvalue carr && i `rem` bIT_ARRAY_ELEM_BITS == 0
+isLvalue ce@(CSlice tau carr _ _) | isBitT tau =
+    isLvalue carr && isJust (unBitCSliceBase ce)
 
 isLvalue (CSlice tau _ _ _) | isBitT tau =
     False
