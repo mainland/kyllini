@@ -610,6 +610,12 @@ cgExp e = do
             ctau_to <- cgType tau_to
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
+        cgBitcast ce tau_from@(ArrT iota tau _) tau_to@(FixT {}) | isBitT tau = do
+            ctau_to <- cgType tau_to
+            caddr   <- cgAddrOf tau_from ce
+            n       <- cgConstIota iota
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr) & $(2^n - 1 :: Int)|]
+
         cgBitcast ce tau_from@(FixT {}) (ArrT _ tau _) | isBitT tau = do
             ctau_to <- cgBitcastType tau_from
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
