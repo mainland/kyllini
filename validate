@@ -1,15 +1,15 @@
 #!/bin/sh
 set -e
 make
-make clean-tests && make test-all
-make clean-tests && CFLAGS="-DFIRSTCLASSLABELS" make test-all
-make clean-tests && KZCFLAGS="--fsimpl" make test-all
-make clean-tests && KZCFLAGS="--fsimpl --finline" make test-all
-make clean-tests && KZCFLAGS="--ffuse" make test-all
-make clean-tests && KZCFLAGS="--fpeval" make test-all
-make clean-tests && KZCFLAGS="--fsimpl --fpeval" make test-all
-make clean-tests && KZCFLAGS="--ffuse --fpeval" make test-all
-make clean-tests && KZCFLAGS="--fautolut --flut" make test-all
-make clean-tests && KZCFLAGS="--fautolut --flut --fpeval" make test-all
-make clean-tests && KZCFLAGS="--finline --fsimpl --fpeval --fautolut --flut" make test-all
+make clean-tests && make -B test-all $@
+make clean-tests && CFLAGS="-DFIRSTCLASSLABELS" make -B test-all $@
+make clean-tests && KZCFLAGS="--fsimpl" make -B test-all $@
+make clean-tests && KZCFLAGS="--fsimpl --finline" make -B test-all $@
+make clean-tests && KZCFLAGS="--ffuse" make -B test-all $@
+make clean-tests && KZCFLAGS="--fpeval" make -B test-all $@
+make clean-tests && KZCFLAGS="--fsimpl --fpeval" make -B test-all $@
+make clean-tests && KZCFLAGS="--ffuse --fpeval" make -B test-all $@
+make clean-tests && KZCFLAGS="--fautolut --flut" make -B test-all $@
+make clean-tests && KZCFLAGS="--fautolut --flut --fpeval" make -B test-all $@
+make clean-tests && KZCFLAGS="--finline --fsimpl --fpeval --fautolut --flut" make -B test-all $@
 make clean-tests
