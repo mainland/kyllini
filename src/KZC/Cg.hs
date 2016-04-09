@@ -96,6 +96,8 @@ void kz_main(const typename kz_params_t* $id:params)
 {
     $items:cblock
 }|]
+    stats <- getStats
+    traceCg $ nest 2 $ text "Code generator statistics:" </> ppr stats
   where
     in_buf, out_buf, params :: C.Id
     in_buf  = "in"
@@ -2027,6 +2029,7 @@ cgAssign _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau
     cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
     cgAssignBitArray ce1 ce2 clen = do
         csrc' <- cgLower tau0 csrc
+        incBitArrayCopies
         appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
       where
         cdst, cdstIdx :: CExp
@@ -2040,6 +2043,7 @@ cgAssign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     ce1' <- cgArrayAddr ce1
     ce2' <- cgArrayAddr ce2
     clen <- cgIota iota
+    incMemCopies
     if mayAlias
       then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
       else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]

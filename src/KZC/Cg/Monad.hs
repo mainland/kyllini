@@ -14,6 +14,7 @@
 module KZC.Cg.Monad (
     Cg,
     CgEnv,
+    CgStats(..),
     evalCg,
 
     extendVarCExps,
@@ -66,7 +67,11 @@ module KZC.Cg.Monad (
     collectLabels,
     useLabel,
     useLabels,
-    isLabelUsed
+    isLabelUsed,
+
+    getStats,
+    incMemCopies,
+    incBitArrayCopies
   ) where
 
 import Prelude hiding (elem)
@@ -121,15 +126,38 @@ defaultCgEnv = CgEnv
     , refFlowModVars = mempty
     }
 
+data CgStats = CgStats
+    { memCopies      :: !Int
+    , bitArrayCopies :: !Int
+    }
+
+instance Monoid CgStats where
+    mempty = CgStats
+        { memCopies      = 0
+        , bitArrayCopies = 0
+        }
+
+    x `mappend` y =
+        CgStats { memCopies      = memCopies x + memCopies y
+                , bitArrayCopies = bitArrayCopies x + bitArrayCopies y
+                }
+
+instance Pretty CgStats where
+    ppr stats =
+        text "   Memory copies:" <+> ppr (memCopies stats) </>
+        text "Bit array copies:" <+> ppr (bitArrayCopies stats)
+
 data CgState = CgState
     { labels :: Set Label
     , code   :: Code
+    , stats  :: CgStats
     }
 
 defaultCgState :: CgState
 defaultCgState = CgState
     { labels = mempty
     , code   = mempty
+    , stats  = mempty
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -380,6 +408,20 @@ useLabels lbls =
 isLabelUsed :: Label -> Cg Bool
 isLabelUsed lbl =
     gets (Set.member lbl . labels)
+
+getStats :: Cg CgStats
+getStats = gets stats
+
+modifyStats :: (CgStats -> CgStats) -> Cg ()
+modifyStats f = modify $ \s -> s { stats = f (stats s) }
+
+incMemCopies :: Cg ()
+incMemCopies =
+    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
+
+incBitArrayCopies :: Cg ()
+incBitArrayCopies =
+    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
 
 instance IfThenElse CExp (Cg ()) where
     ifThenElse (CBool True)  t _ = t
