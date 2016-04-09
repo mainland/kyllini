@@ -18,6 +18,8 @@ module KZC.Cg.CExp (
 
     CExp(..),
 
+    calias,
+
     unCSlice,
     unBitCSliceBase,
 
@@ -32,6 +34,7 @@ import Data.Monoid
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Auto.Lint (refPath)
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Label
@@ -95,6 +98,9 @@ data CExp = CVoid
             -- ^ A struct
           | CBits CExp
             -- ^ A bit array represented as an integer
+          | CAlias Exp CExp
+            -- ^ The 'CAlias' data constructor indicates a 'CExp' that aliases
+            -- an expression. See Note [Aliasing].
           | CComp CompC
             -- ^ A computation.
           | CFunComp FunCompC
@@ -113,6 +119,7 @@ instance Located CExp where
     locOf (CSlice _ _ cidx _) = locOf cidx
     locOf (CStruct flds)      = locOf (map snd flds)
     locOf (CBits ce)          = locOf ce
+    locOf (CAlias _ ce)       = locOf ce
     locOf (CComp {})          = NoLoc
     locOf (CFunComp {})       = NoLoc
 
@@ -128,6 +135,7 @@ instance Relocatable CExp where
     reloc l (CSlice tau carr cidx len) = CSlice tau (reloc l carr) (reloc l cidx) len
     reloc l (CStruct flds)             = CStruct [(f, reloc l ce) | (f, ce) <- flds]
     reloc l (CBits ce)                 = CBits (reloc l ce)
+    reloc l (CAlias e ce)              = CAlias e (reloc l ce)
     reloc _ ce@(CComp {})              = ce
     reloc _ ce@(CFunComp {})           = ce
 
@@ -145,6 +153,7 @@ instance Eq CExp where
     CIdx r s t     == CIdx x y z     = (r,s,t) == (x,y,z)
     CSlice q r s t == CSlice w x y z = (q,r,s,t) == (w,x,y,z)
     CBits x        == CBits y        = x == y
+    CAlias r s     == CAlias x y     = (r,s) == (x,y)
     _              == _              = error "Eq CExp: incomparable"
 
 instance Ord CExp where
@@ -156,6 +165,7 @@ instance Ord CExp where
     compare (CIdx r s t)     (CIdx x y z)     = compare (r,s,t) (x,y,z)
     compare (CSlice q r s t) (CSlice w x y z) = compare (q,r,s,t) (w,x,y,z)
     compare (CBits x)        (CBits y)        = compare x y
+    compare (CAlias r s)     (CAlias x y)     = compare (r,s) (x,y)
     compare _                _                = error "Ord CExp: incomparable"
 
 instance Enum CExp where
@@ -361,6 +371,7 @@ instance ToExp CExp where
     toExp ce@(CStruct {})            = locatedError $
                                        text "toExp: cannot convert CStruct to a C expression" </> ppr ce
     toExp (CBits ce)                 = toExp ce
+    toExp (CAlias _ ce)              = toExp ce
     toExp ce@(CComp {})              = locatedError $
                                        text "toExp: cannot convert CComp to a C expression" </> ppr ce
     toExp ce@(CFunComp {})           = locatedError $
@@ -383,8 +394,20 @@ instance Pretty CExp where
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
     ppr (CStruct flds)           = pprStruct flds
     ppr (CBits e)                = ppr e
+    ppr (CAlias _ e)             = ppr e
     ppr (CComp {})               = text "<comp>"
     ppr (CFunComp {})            = text "<fun comp>"
+
+-- | Tag the translation of an expression with the expression is aliases.
+calias :: Exp -> CExp -> CExp
+calias _ ce@CVoid    = ce
+calias _ ce@CBool{}  = ce
+calias _ ce@CInt{}   = ce
+calias _ ce@CFloat{} = ce
+calias _ ce@CInit{}  = ce
+calias e ce          = case refPath e of
+                         Nothing -> ce
+                         Just _  -> CAlias e ce
 
 -- | Given a 'CExp' that is potentially a slice of an array, return the base
 -- array and the index at which the slice begins. If the input 'CExp' is not a

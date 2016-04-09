@@ -45,6 +45,7 @@ import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Monad
 import KZC.Cg.Util
+import KZC.Check.Path
 import KZC.Error
 import KZC.Flags
 import KZC.Label
@@ -518,6 +519,41 @@ cgConst (StructC s flds) = do
                 Just c -> cgConst c
         return $ toInit ce
 
+{- Note [Aliasing]
+
+In general, when compiling @e1 := e2@, the translation of @e2@ could be a
+variable bound to a value that aliases the compiled version of @e1@ because it
+could be the case that 'cgExp' did make a copy of @e2@ to produce its
+translation. Therefore, we cannot assume that if @e1@ and @e2@ don't aliases,
+then their translations won't alias. Consider the following example taken from
+test_c_CCA.wpl:
+
+@
+(x : struct complex32[3]) <- !ac_corr[1,3];
+ac_corr[0, 3] := x
+@
+
+In this fragment, the compiler won't actually make a copy of @ac_corr[1,3]@ and
+assign it to @x@; instead, the translation of @x@ will simply point to
+@ac_corr[1,3]@, so this assignment must be performed with @memmove@ instead of
+@memcpy@.
+
+How do we track aliasing like this that occurs in the compiler but not in the
+source language? We use the 'CAlias' data constructor. Whenever we create a
+translation that can result in aliasing, we potentially tag it with
+'CAlias'---we actually use the 'calias' smart constructor.
+
+When can the compiler introduce aliasing that doesn't exist in the source
+language? When it elides creating new storage for bindings, so a source language
+dereference may actually be a reference to the dereferenced expression.
+
+The two remaining issues we don't yet properly deal with are function arguments
+and par computations. The source language requires that function arguments don't
+alias and that branches of a par don't share any mutable state. We may be able
+to deal with these by modifying the reference flow analysis in
+KZC.Analysis.RefFlow.
+-}
+
 cgExp :: Exp -> Cg CExp
 cgExp e = do
     reloc (locOf e) <$> go e
@@ -769,24 +805,26 @@ cgExp e = do
     go (DerefE e _) =
         cgDeref <$> cgExp e
 
-    --
-    -- In general, @e2@ could be a variable bound to a value that aliases
-    -- @e1@. Since it could be the case that 'cgExp' did not copy @e2@ to
-    -- produce @ce2@, we cannot assume that if @e1@ and @e2@ don't aliases, then
-    -- @ce1@ and @ce2@ won't either. Consider this example taken from
-    -- test_c_CCA.wpl:
-    --
-    -- @
-    -- (x : struct complex32[3]) <- !ac_corr[1,3];
-    -- ac_corr[0, 3] := x
-    -- @
-    --
-    go (AssignE e1 e2 _) = do
-        tau <- inferExp e1
-        ce1 <- cgExp e1
-        ce2 <- cgExp e2
-        cgAssign True tau ce1 ce2
+    go e@(AssignE e1 e2 _) = do
+        tau   <- inferExp e1
+        ce1   <- cgExp e1
+        ce2   <- cgExp e2
+        alias <- mayAlias ce1 ce2
+        cgAssign alias tau ce1 ce2
         return CVoid
+      where
+        mayAlias :: CExp -> CExp -> Cg Bool
+        mayAlias ce1 ce2@(CAlias e2' _) = do
+            alias <- pathsMayAlias <$> refPath e1 <*> refPath e2'
+            traceCg $ nest 2 $
+                ppr (locOf e) <> char ':' </>
+                (nest 2 $
+                 text "Potentially aliasing assignment" <+> parens (ppr alias) </>
+                 ppr ce1 <+> text ":=" <+> ppr ce2)
+            return alias
+
+        mayAlias _ce1 _ce2 =
+            return False
 
     {- Note [Compiling While Loops]
 
@@ -835,14 +873,14 @@ cgExp e = do
                 cgAssign False (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
             return $ CExp [cexp|$id:cv|]
 
-    go (IdxE e1 e2 maybe_len _) = do
+    go e@(IdxE e1 e2 maybe_len _) = do
         (iota, tau) <- inferExp e1 >>= checkArrOrRefArrT
         cn          <- cgIota iota
         ce1         <- cgExp e1
         ce2         <- cgExp e2
         case maybe_len of
-          Nothing  -> cgIdx tau ce1 cn ce2
-          Just len -> cgSlice tau ce1 cn ce2 len
+          Nothing  -> calias e <$> cgIdx tau ce1 cn ce2
+          Just len -> calias e <$> cgSlice tau ce1 cn ce2 len
 
     go e@(StructE _ flds l) = do
         case unConstE e of
@@ -854,9 +892,10 @@ cgExp e = do
             ce <- cgExp e
             return (fld, ce)
 
-    go (ProjE e fld l) = do
-        ce <- cgExp e
-        rl l <$> cgProj ce fld
+    go e@(ProjE e1 fld l) = do
+        ce1  <- cgExp e1
+        ce1' <- rl l <$> cgProj ce1 fld
+        return $ calias e ce1'
 
     go (PrintE nl es l) = do
         mapM_ cgPrint es
@@ -1246,6 +1285,9 @@ cgLetBinding bv tau ce =
     go ce@(CExp [cexp|$id:_|]) =
         return ce
 
+    go (CAlias e ce) =
+        calias e <$> go ce
+
     go ce = do
         cv <- cgBinder (bVar bv) tau
         cgAssign False tau cv ce
@@ -1257,7 +1299,10 @@ cgLetBinding bv tau ce =
 -- binding has refs flow to it that are modified before some use of the
 -- variable, a condition we check by calling 'askRefFlowModVar', we create a
 -- binding no matter what.
-cgMonadicBinding :: BoundVar -> Type -> CExp -> Cg CExp
+cgMonadicBinding :: BoundVar -- ^ The binder
+                 -> Type     -- ^ The type of the binder
+                 -> CExp     -- ^ The compiled value being bound.
+                 -> Cg CExp  -- ^ The bound expression.
 cgMonadicBinding bv tau ce = do
     refFlowMod <- askRefFlowModVar (bVar bv)
     go refFlowMod ce
@@ -1280,6 +1325,15 @@ cgMonadicBinding bv tau ce = do
 
     go _ (CFunComp {}) =
         faildoc $ text "Cannot bind a computation function."
+
+    -- If our first argument is @True@, then we will create a new binding, so we
+    -- can forget the alias.
+    go True (CAlias _ ce) =
+        go True ce
+
+    -- Otherwise we have to remember the alias.
+    go False (CAlias e ce) =
+        calias e <$> go False ce
 
     go True ce = do
         cv <- cgBinder (bVar bv) tau
@@ -1897,6 +1951,7 @@ isLvalue (CExp (C.Var {}))       = True
 isLvalue (CExp (C.Member {}))    = True
 isLvalue (CExp (C.PtrMember {})) = True
 isLvalue (CExp (C.Index {}))     = True
+isLvalue (CAlias _ ce)           = isLvalue ce
 isLvalue _                       = False
 
 -- | @'resultType' tau@ returns the type of the result of a computation of
@@ -1939,6 +1994,12 @@ cgAssign _ _ _ CVoid =
 -- example, be a function call!
 cgAssign _ (UnitT {}) _ ce =
    appendStm [cstm|$ce;|]
+
+cgAssign mayAlias tau (CAlias _ ce1) ce2 =
+   cgAssign mayAlias tau ce1 ce2
+
+cgAssign mayAlias tau ce1 (CAlias _ ce2) =
+   cgAssign mayAlias tau ce1 ce2
 
 -- XXX: Should use more efficient bit twiddling code here. See:
 --
@@ -1990,6 +2051,9 @@ cgAssign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
     cgArrayAddr (CSlice _ carr cidx _) =
         return $ CExp [cexp|&$carr[$cidx]|]
 
+    cgArrayAddr (CAlias e ce) =
+        calias e <$> cgArrayAddr ce
+
     cgArrayAddr ce =
         return ce
 
@@ -2024,6 +2088,9 @@ cgIdx tau (CSlice _ carr cidx1 _) clen cidx2 = do
     cgBoundsCheck clen cidx2
     return $ CIdx tau carr (cidx1 + cidx2)
 
+cgIdx tau (CAlias _ carr) clen cidx =
+    cgIdx tau carr clen cidx
+
 cgIdx tau carr clen cidx = do
     cgBoundsCheck clen cidx
     return $ CIdx tau carr cidx
@@ -2047,6 +2114,9 @@ cgProj ce@(CStruct flds) fld =
       Nothing -> faildoc $ text "Cannot find field" <+> ppr fld <+> text "in" <+> ppr ce
       Just ce -> return ce
 
+cgProj (CAlias _ ce) fld =
+    cgProj ce fld
+
 cgProj ce fld =
     return $ CExp [cexp|$ce.$id:cfld|]
   where
@@ -2056,13 +2126,17 @@ cgProj ce fld =
 -- | Dereference a 'CExp' representing a value with ref type, which may or may
 -- not be represented as a pointer.
 cgDeref :: CExp -> CExp
-cgDeref (CPtr ce) = CExp [cexp|*$ce|]
-cgDeref ce        = ce
+cgDeref (CPtr ce)     = CExp [cexp|*$ce|]
+cgDeref (CAlias e ce) = calias e (cgDeref ce)
+cgDeref ce            = ce
 
 -- | Take the address of a 'CExp' representing a value of the given type.
 cgAddrOf :: Type -> CExp -> Cg CExp
 cgAddrOf _ (CPtr ce) =
     return ce
+
+cgAddrOf tau (CAlias _ ce) =
+    cgAddrOf tau ce
 
 cgAddrOf (ArrT {}) ce | isLvalue ce =
     return $ CExp [cexp|$ce|]
@@ -2132,6 +2206,9 @@ cgLower tau ce =
         cv   <- cgCTemp ce "bits" ctau Nothing
         appendStm [cstm|$cv = $ce;|]
         return $ CExp [cexp|($ty:bIT_ARRAY_ELEM_TYPE *) &$cv|]
+
+    go (CAlias _ ce) =
+        go ce
 
     go ce =
         return ce
