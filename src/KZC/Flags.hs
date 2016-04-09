@@ -163,10 +163,10 @@ instance Monoid Flags where
         , verbLevel  = 0
         , maxErrCtx  = 1
         , maxSimpl   = 4
-        , maxLUT     = 32*1024 -- ^ Default maximum size for LUT is 32K bytes
-        , maxLUTLog2 = 5 + 10  -- ^ Default maximum size for LUT log_2 is 15
-        , minLUTOps  = 5 -- ^ Minimum number of operations necessary to consider
-                         -- a LUT for an expression
+        , maxLUT     = 32*1024 -- Default maximum size for LUT is 32K bytes
+        , maxLUTLog2 = 5 + 10  -- Default maximum size for LUT log_2 is 15
+        , minLUTOps  = 5 -- Minimum number of operations necessary to consider a
+                         -- LUT for an expression
 
         , dynFlags   = mempty
         , warnFlags  = mempty

@@ -105,44 +105,43 @@ data Val a where
     StructV :: !Struct -> !(Map Field (Val Exp)) -> Val Exp
     ArrayV  :: !(P.PArray (Val Exp)) -> Val Exp
 
-    -- | An element of an array
+    -- An element of an array
     IdxV :: Val Exp -> Val Exp -> Val Exp
 
-    -- | An array slice
+    -- An array slice
     SliceV :: Val Exp -> Val Exp -> Int -> Val Exp
 
-    -- | A Reference
+    -- A Reference
     RefV :: Ref -> Val Exp
 
-    -- | A residual expression.
+    -- A residual expression.
     ExpV :: Exp -> Val Exp
 
-    -- | A value returned from a monadic action. We need to wrap it in a
-    -- 'ReturnV' constructor so that we can convert it to a type-correct
-    -- expression later.
+    -- A value returned from a monadic action. We need to wrap it in a 'ReturnV'
+    -- constructor so that we can convert it to a type-correct expression later.
     ReturnV :: Val Exp -> Val Exp
 
-    -- | A residual command that cannot be fully evaluated. The 'Heap' argument
-    -- is the state of the heap right before the residual expression is
-    -- executed.
+    -- A residual command that cannot be fully evaluated. The 'Heap' argument is
+    -- the state of the heap right before the residual expression is executed.
     CmdV :: Heap -> Exp -> Val Exp
 
-    -- | A function closure
+    -- A function closure
     FunClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM (Val Exp)) -> Val Exp
 
-    -- | A value returned from a computation.
+    -- A value returned from a computation.
     CompReturnV :: Val Exp -> Val LComp
 
-    -- | A residual computation.
+    -- A residual computation.
     CompV :: Heap -> [LStep] -> Val LComp
 
-    -- | A computation or computation function we know nothing about except its name.
+    -- A computation or computation function we know nothing about except its
+    -- name.
     CompVarV :: Var -> Val LComp
 
-    -- | A computation closure.
+    -- A computation closure.
     CompClosV :: !Theta -> Type -> !(EvalM (Val LComp)) -> Val LComp
 
-    -- | A computation function closure.
+    -- A computation function closure.
     FunCompClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM (Val LComp)) -> Val LComp
 
 deriving instance Eq (Val a)
