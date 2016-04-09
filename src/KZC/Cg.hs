@@ -651,8 +651,9 @@ KZC.Analysis.RefFlow.
 -}
 
 cgExpOneshot :: Exp -> Cg CExp
-cgExpOneshot e =
-    cgExp e $ multishot return
+cgExpOneshot e = do
+    tau <- inferExp e
+    cgExp e $ oneshot tau return
 
 cgExp :: Exp -> Kont a -> Cg a
 cgExp e k =
