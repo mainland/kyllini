@@ -27,13 +27,15 @@ import Data.Monoid (Monoid)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
+import KZC.Flags
+
 newtype Uniq = Uniq Int
   deriving (Eq, Ord, Read, Show)
 
 instance Pretty Uniq where
     ppr (Uniq u) = ppr u
 
-class Monad m => MonadUnique m where
+class (Monad m, MonadFlags m) => MonadUnique m where
     newUnique :: m Uniq
 
 instance MonadUnique m => MonadUnique (MaybeT m) where

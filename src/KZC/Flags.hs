@@ -76,6 +76,7 @@ data DynFlag = Quiet
              | Timers
              | AutoLUT
              | LUT
+             | NoGensym
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError

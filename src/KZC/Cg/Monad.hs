@@ -95,6 +95,7 @@ import KZC.Auto.Lint (Tc, liftTc)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
+import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT
@@ -385,8 +386,11 @@ appendBlock citems
 
 gensym :: String -> Cg C.Id
 gensym s = do
-    Uniq u <- newUnique
-    return $ C.Id (s ++ "__" ++ show u) noLoc
+    noGensym <- asksFlags $ testDynFlag NoGensym
+    if noGensym
+      then return $ C.Id s noLoc
+      else do Uniq u <- newUnique
+              return $ C.Id (s ++ "__" ++ show u) noLoc
 
 collectLabels :: Cg a -> Cg (Set Label, a)
 collectLabels m = do

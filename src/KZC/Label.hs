@@ -2,7 +2,7 @@
 
 -- |
 -- Module      :  KZC.Label
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -20,6 +20,7 @@ import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Cg.Util
+import KZC.Flags
 import KZC.Uniq
 
 class (Ord l, Pretty l, C.ToIdent l) => IsLabel l where
@@ -50,10 +51,16 @@ instance C.ToIdent (Label, Label) where
 
 genLabel :: MonadUnique m => String -> m Label
 genLabel s = do
-    u <- newUnique
-    return $ Label (intern s) (Just u)
+    noGensym <- asksFlags $ testDynFlag NoGensym
+    if noGensym
+      then return $ Label (intern s) Nothing
+      else do u <- newUnique
+              return $ Label (intern s) (Just u)
 
 uniquifyLabel :: MonadUnique m => Label -> m Label
 uniquifyLabel (Label l _) = do
-    u <- newUnique
-    return $ Label l (Just u)
+    noGensym <- asksFlags $ testDynFlag NoGensym
+    if noGensym
+      then return $ Label l Nothing
+      else do u <- newUnique
+              return $ Label l (Just u)
