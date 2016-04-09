@@ -17,7 +17,8 @@ import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad ((>=>),
                       when)
-import Data.List (foldl')
+import Data.List (foldl',
+                  isPrefixOf)
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
@@ -148,6 +149,10 @@ mkSetOptFlag :: Monad m
              -> (f -> Flags -> Flags)
              -> (f, String, String)
              -> [OptDescr (Flags -> m Flags)]
+mkSetOptFlag pfx mfx set _unset (f, str, desc) | "no" `isPrefixOf` str =
+    [  Option  [] [pfx ++ mfx ++ str] (NoArg (return . set f)) desc
+    ]
+
 mkSetOptFlag pfx mfx set unset (f, str, desc) =
     [  Option  [] [pfx ++          mfx ++ str] (NoArg (return . set f)) desc
     ,  Option  [] [pfx ++ "no"  ++ mfx ++ str] (NoArg (return . unset f)) ("don't " ++ desc)
@@ -172,6 +177,7 @@ fDynFlagOpts =
   , (Timers,      "timers",       "insert code to track elapsed time")
   , (AutoLUT,     "autolut",      "run the auto-LUTter")
   , (LUT,         "lut",          "run the LUTter")
+  , (NoGensym,    "no-gensym",    "don't gensym (for debugging)")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
