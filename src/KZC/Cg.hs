@@ -25,7 +25,6 @@ import Control.Applicative ((<$>), (<*>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (forM_,
                       mplus,
-                      void,
                       when)
 import Data.Bits
 import Data.Loc
@@ -655,6 +654,22 @@ cgExpOneshot e = do
     tau <- inferExp e
     cgExp e $ oneshot tau return
 
+-- | Compile an 'Exp' and throw away the result while ensuring that any side
+-- effects are performed.
+cgExpVoid :: Exp -> Cg ()
+cgExpVoid e = cgExp e $ multishot cgVoid
+
+-- | Return 'True' if the given 'CExp' may have some sort of effect. The only
+-- time a 'CExp' can currently have a side effect is when it is a function call.
+mayHaveEffect :: CExp -> Bool
+mayHaveEffect (CExp [cexp|$id:_($args:_)|]) = True
+mayHaveEffect _                             = False
+
+-- | Throw away a 'CExp' while ensuring that any side effects are performed.
+cgVoid :: CExp -> Cg ()
+cgVoid ce | mayHaveEffect ce = appendStm [cstm|$ce;|]
+          | otherwise        = return ()
+
 cgExp :: Exp -> Kont a -> Cg a
 cgExp e k =
     go e $ mapKont (\f ce -> f (reloc (locOf e) ce)) k
@@ -942,7 +957,7 @@ cgExp e k =
         appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
         ce_start <- cgExpOneshot e_start
         ce_len   <- cgExpOneshot e_len
-        citems   <- inNewBlock_ $ cgExpOneshot e_body
+        citems   <- inNewBlock_ $ cgExpVoid e_body
         appendStm $ rl l [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
         runKont k CVoid
 
@@ -1040,7 +1055,7 @@ cgExp e k =
         cgExp e k
 
     go (BindE WildV _ e1 e2 _) k = do
-        void $ cgExpOneshot e1
+        cgExpVoid e1
         cgExp e2 k
 
     go (BindE (TameV v) tau e1 e2 _) k = do
@@ -1427,7 +1442,12 @@ cgMonadicBinding bv tau =
         go False (CAlias e ce) =
             calias e <$> go False ce
 
-        go True ce = do
+        -- Right now we bind values when they are derived from a reference that
+        -- may be modified before the derived value is used or when the value
+        -- may have a side-effect, e.g., it is the result of a function
+        -- call. Perhaps we should be more aggressive about binding
+        -- computationally expensive values here?
+        go refFlowMod ce | refFlowMod || mayHaveEffect ce = do
             cv <- cgBinder (bVar bv) tau
             cgAssign tau cv ce
             return cv
@@ -1561,7 +1581,7 @@ cgCompVoid :: TakeK  KontLabel -- ^ Code generator for take
            -> KontLabel        -- ^ Label of our continuation
            -> Cg ()
 cgCompVoid takek emitk emitsk comp klbl =
-    cgComp takek emitk emitsk comp klbl $ multishot $ const $ return ()
+    cgComp takek emitk emitsk comp klbl $ multishot cgVoid
 
 -- | 'cgComp' compiles a computation and ensures that the continuation label is
 -- jumped to. We assume that the continuation labels the code that will be
@@ -1590,7 +1610,7 @@ cgComp takek emitk emitsk comp klbl k =
         cgSteps steps k
 
     cgSteps (step : BindC l WildV _ _ : steps) k = do
-        void $ cgStep step l $ multishot return
+        cgStepVoid step l
         cgWithLabel l $ cgSteps steps k
 
     cgSteps (step : BindC l (TameV v) tau _ : steps) k = do
@@ -1603,8 +1623,11 @@ cgComp takek emitk emitsk comp klbl k =
 
     cgSteps (step : steps) k = do
         l <- stepLabel (head steps)
-        void $ cgStep step l $ multishot return
+        cgStepVoid step l
         cgSteps steps k
+
+    cgStepVoid :: LStep -> KontLabel -> Cg ()
+    cgStepVoid step klbl = cgStep step klbl $ multishot cgVoid
 
     cgStep :: forall a . LStep -> KontLabel -> Kont a -> Cg a
     cgStep (VarC l v _) klbl k =
