@@ -831,14 +831,44 @@ simplExp e0@(VarE v _) =
         inlineBinding v
         simplExp rhs
 
-simplExp (UnopE op e s) =
-    UnopE op <$> simplExp e <*> pure s
+simplExp (UnopE op e s) = do
+    e' <- simplExp e
+    simplUnop op e'
+  where
+    simplUnop :: Unop -> Exp -> SimplM Exp
+    simplUnop Neg e' = return $ negate e'
+    simplUnop op  e' = return $ UnopE op e' s
 
-simplExp (BinopE op e1 e2 s) =
-    BinopE op <$> simplExp e1 <*> simplExp e2 <*> pure s
+simplExp (BinopE op e1 e2 s) = do
+    e1' <- simplExp e1
+    e2' <- simplExp e2
+    simplBinop op e1' e2'
+  where
+    simplBinop :: Binop -> Exp -> Exp -> SimplM Exp
+    simplBinop Add e1' e2' = return $ e1' + e2'
+    simplBinop Sub e1' e2' = return $ e1' - e2'
+    simplBinop Mul e1' e2' = return $ e1' * e2'
+    simplBinop op  e1' e2' = return $ BinopE op e1' e2' s
 
-simplExp (IfE e1 e2 e3 s) =
-    IfE <$> simplExp e1 <*> simplExp e2 <*> simplExp e3 <*> pure s
+simplExp (IfE e1 e2 e3 s) = do
+    e1' <- simplExp e1
+    e2' <- simplExp e2
+    e3' <- simplExp e3
+    simplIf e1' e2' e3'
+  where
+    simplIf :: Exp -> Exp -> Exp -> SimplM Exp
+    simplIf e1' e2' e3'
+        | isTrue e1'  = return e2'
+        | isFalse e1' = return e3'
+        | otherwise   = return $ IfE e1' e2' e3' s
+
+    isTrue :: Exp -> Bool
+    isTrue (ConstE (BoolC True) _) = True
+    isTrue _                       = False
+
+    isFalse :: Exp -> Bool
+    isFalse (ConstE (BoolC False) _) = True
+    isFalse _                        = False
 
 simplExp (LetE decl e s) = do
     (maybe_decl', e') <- simplLocalDecl decl $ simplExp e

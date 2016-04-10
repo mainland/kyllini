@@ -4,7 +4,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
 -- Module      : KZC.Auto.Syntax
@@ -1517,16 +1519,128 @@ instance Freshen WildVar Exp Var where
  -
  ------------------------------------------------------------------------------}
 
+instance Num Const where
+    x + y = case unConstE (constE x + constE y) of
+              Nothing -> error "Num Const: + did not result in a constant"
+              Just z  -> z
+
+    x - y = case unConstE (constE x - constE y) of
+              Nothing -> error "Num Const: - did not result in a constant"
+              Just z  -> z
+
+    x * y = case unConstE (constE x * constE y) of
+              Nothing -> error "Num Const: - did not result in a constant"
+              Just z  -> z
+
+    negate x = case unConstE (negate (constE x)) of
+                 Nothing -> error "Num Const: negate did not result in a constant"
+                 Just z  -> z
+
+    fromInteger i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+    abs _    = error "Num Const: abs not implemented"
+    signum _ = error "Num Const: signum not implemented"
+
 instance Num Exp where
-    e1 + e2 = BinopE Add e1 e2 (e1 `srcspan` e2)
-    e1 * e2 = BinopE Mul e1 e2 (e1 `srcspan` e2)
+    x + y | isZero x  = y
+          | isZero y  = x
+          | otherwise = liftNum2 Add (+) x y
 
-    negate e = UnopE Neg e (srclocOf e)
+    x - y | isZero x  = - y
+          | isZero y  = x
+          | otherwise = liftNum2 Sub (-) x y
 
-    fromInteger i = ConstE (FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
+    x * y | isOne x   = y
+          | isOne y   = x
+          | otherwise = liftNum2 Mul (*) x y
+
+    negate x = liftNum Neg negate x
+
+    fromInteger i = ConstE (fromInteger i) noLoc
 
     abs _    = error "Num Exp: abs not implemented"
     signum _ = error "Num Exp: signum not implemented"
+
+complexC :: Struct -> Const -> Const -> Const
+complexC sname a b =
+    StructC sname [("re", a), ("im", b)]
+
+uncomplexC :: Const -> (Const, Const)
+uncomplexC c@(StructC sname x) | isComplexStruct sname =
+    maybe (errordoc $ text "Bad complex value:" <+> ppr c) id $ do
+      re <- lookup "re" x
+      im <- lookup "im" x
+      return (re, im)
+
+uncomplexC c =
+    errordoc $ text "Not a complex value:" <+> ppr c
+
+unConstE :: forall m . Monad m => Exp -> m Const
+unConstE (ConstE c _) =
+    return c
+unConstE e =
+    faildoc $ text "Expression" <+> ppr e <+> text "is non-constant."
+
+constE :: Const -> Exp
+constE c = ConstE c noLoc
+
+isZero :: Exp -> Bool
+isZero (ConstE (FixC _ _ _ _ 0) _) = True
+isZero (ConstE (FloatC _ 0) _)     = True
+isZero _                           = False
+
+isOne :: Exp -> Bool
+isOne (ConstE (FixC I _ _ (BP 0) 1) _) = True
+isOne (ConstE (FloatC _ 1) _)          = True
+isOne _                                = False
+
+liftNum :: Unop -> (forall a . Num a => a -> a) -> Exp -> Exp
+liftNum _ f (ConstE (FixC sc s w bp r) l) =
+    ConstE (FixC sc s w bp (f r)) l
+
+liftNum _ f (ConstE (FloatC fp r) l) =
+    ConstE (FloatC fp (f r)) l
+
+liftNum op _ e =
+    UnopE op e (srclocOf e)
+
+liftNum2 :: Binop -> (forall a . Num a => a -> a -> a) -> Exp -> Exp -> Exp
+liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) =
+    go op c1 c2
+  where
+    go :: Binop -> Const -> Const -> Exp
+    go _ (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
+        ConstE (FixC sc s w bp (f r1 r2)) (e1 `srcspan` e2)
+
+    go _ (FloatC fp r1) (FloatC _ r2) =
+        ConstE (FloatC fp (f r1 r2)) (e1 `srcspan` e2)
+
+    go Add x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        constE $ complexC sn (a+c) (b+d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    go Sub x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        constE $ complexC sn (a-c) (b-d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    go Mul x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        constE $ complexC sn (a*c - b*d) (b*c + a*d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    go _op _c1 _c2 =
+        BinopE op e1 e2 (e1 `srcspan` e2)
+
+liftNum2 op _ e1 e2 =
+    BinopE op e1 e2 (e1 `srcspan` e2)
 
 instance IsEq Exp where
     e1 .==. e2 = BinopE Eq e1 e2 (e1 `srcspan` e2)
