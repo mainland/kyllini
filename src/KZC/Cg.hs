@@ -899,12 +899,12 @@ cgExp e k =
         cf                   <- lookupVarCExp f
         ciotas               <- mapM cgIota iotas
         ces                  <- mapM cgArg es
-        cres                 <- extendIVarCExps (ivs `zip` ciotas) $
-                                cgTemp "call_res" tau_res
         if isReturnedByRef tau_res
-          then appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
-          else cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
-        runKont k cres
+          then do cres <- extendIVarCExps (ivs `zip` ciotas) $
+                          cgTemp "call_res" tau_res
+                  appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
+                  runKont k cres
+          else runKont k $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
       where
         cgArg :: Exp -> Cg CExp
         cgArg e = do
