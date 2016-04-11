@@ -84,7 +84,7 @@ compileProgram (Program decls comp tau) = do
         cres <- cgTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
         let donek :: DoneK
-            donek ce = cgAssign False (resultType tau) cres ce
+            donek ce = cgAssign (resultType tau) cres ce
         -- Compile the computation
         cgTimed $ cgThread takek emitk donek tau comp
         -- Clean up input and output buffers
@@ -332,7 +332,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
                           else cgTemp "let_res" tau_res
-                  localExpRefFlowModVars e (cgExp e) >>= cgAssign False tau_res cres
+                  localExpRefFlowModVars e (cgExp e) >>= cgAssign tau_res cres
                   when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
@@ -460,7 +460,7 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
              Nothing -> cgDefaultLetBinding v tau
              Just e  -> do ce  <- inLocalScope $ cgExp e
                            cve <- cgBinder (bVar v) tau
-                           cgAssign False tau cve ce
+                           cgAssign tau cve ce
                            return cve
     extendVars [(bVar v, refT tau)] $ do
     extendVarCExps [(bVar v, cve)] $ do
@@ -786,7 +786,7 @@ cgExp e = do
                                 cgTemp "call_res" tau_res
         if isReturnedByRef tau_res
           then appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
-          else cgAssign False tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+          else cgAssign tau_res cres $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
         return cres
       where
         cgArg :: Exp -> Cg CExp
@@ -807,26 +807,12 @@ cgExp e = do
     go (DerefE e _) =
         cgDeref <$> cgExp e
 
-    go e@(AssignE e1 e2 _) = do
-        tau   <- inferExp e1
-        ce1   <- cgExp e1
-        ce2   <- cgExp e2
-        alias <- mayAlias ce1 ce2
-        cgAssign alias tau ce1 ce2
+    go (AssignE e1 e2 _) = do
+        tau <- inferExp e1
+        ce1 <- cgExp e1
+        ce2 <- cgExp e2
+        cgAssign tau ce1 ce2
         return CVoid
-      where
-        mayAlias :: CExp -> CExp -> Cg Bool
-        mayAlias ce1 ce2@(CAlias e2' _) = do
-            alias <- pathsMayAlias <$> refPath e1 <*> refPath e2'
-            traceCg $ nest 2 $
-                ppr (locOf e) <> char ':' </>
-                (nest 2 $
-                 text "Potentially aliasing assignment" <+> parens (ppr alias) </>
-                 ppr ce1 <+> text ":=" <+> ppr ce2)
-            return alias
-
-        mayAlias _ce1 _ce2 =
-            return False
 
     {- Note [Compiling While Loops]
 
@@ -872,7 +858,7 @@ cgExp e = do
             appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
             forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
                 ce <- cgExp e
-                cgAssign False (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
+                cgAssign (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
             return $ CExp [cexp|$id:cv|]
 
     go e@(IdxE e1 e2 maybe_len _) = do
@@ -1239,9 +1225,9 @@ cgDefaultLetBinding bv tau = do
     return cv
   where
     go :: CExp -> Type -> Cg ()
-    go cv (BoolT {})  = cgAssign False tau cv (CExp [cexp|0|])
-    go cv (FixT {})   = cgAssign False tau cv (CExp [cexp|0|])
-    go cv (FloatT {}) = cgAssign False tau cv (CExp [cexp|0.0|])
+    go cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
+    go cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
+    go cv (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
 
     go cv (ArrT iota tau _) | isBitT tau = do
         cn <- cgIota iota
@@ -1292,7 +1278,7 @@ cgLetBinding bv tau ce =
 
     go ce = do
         cv <- cgBinder (bVar bv) tau
-        cgAssign False tau cv ce
+        cgAssign tau cv ce
         return cv
 
 -- | Generate code to bind a variable to a value in a monadic binding. We do a
@@ -1339,7 +1325,7 @@ cgMonadicBinding bv tau ce = do
 
     go True ce = do
         cv <- cgBinder (bVar bv) tau
-        cgAssign False tau cv ce
+        cgAssign tau cv ce
         return cv
 
     go _ ce =
@@ -1646,7 +1632,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
     let donek :: CExp -> Cg ()
-        donek ce = do cgAssign False tau_res cres ce
+        donek ce = do cgAssign tau_res cres ce
                       appendStm [cstm|JUMP($id:l_pardone);|]
     -- Generate variables to hold the left and right computations'
     -- continuations.
@@ -1696,7 +1682,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel lbl $
-                cgAssign False (refT tau) (CIdx tau carr ci) (CExp [cexp|*$cbufp|])
+                cgAssign (refT tau) (CIdx tau carr ci) (CExp [cexp|*$cbufp|])
         return carr
 
     emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
@@ -1737,7 +1723,7 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
         appendStm [cstm|$cbufp = $caddr;|]
 
     cgAssignBufp tau cbuf cbufp ce = do
-        cgAssign False tau cbuf ce
+        cgAssign tau cbuf ce
         appendStm [cstm|$cbufp = &$cbuf;|]
 
 -- | Generate code that exits from a computation that is part of a par.
@@ -1858,7 +1844,7 @@ void* $id:cf(void* _tinfo)
         donek :: DoneK
         donek ce = do
             ctau_res <- cgType tau_res
-            cgAssign False tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
+            cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
             cgMemoryBarrier
             appendStm [cstm|$ctinfo.done = 1;|]
 
@@ -1866,7 +1852,7 @@ void* $id:cf(void* _tinfo)
         cgProduce :: CExp -> CExp -> ExitK -> Type -> CExp -> Cg ()
         cgProduce ctinfo cbuf exitk tau ce = do
             cgWaitWhileBufferFull ctinfo exitk
-            cgAssign False tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
+            cgAssign tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
@@ -1886,7 +1872,7 @@ void* $id:cf(void* _tinfo)
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
         ce <- cgComp takek' emitk' comp k
         appendStm [cstm|$ctinfo.done = 1;|]
-        cgAssign False tau_res cres ce
+        cgAssign tau_res cres ce
         appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
         appendStm [cstm|JUMP($id:l_pardone);|]
       where
@@ -1984,97 +1970,113 @@ isReturnedByRef _         = False
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
-cgAssign :: Bool -> Type -> CExp -> CExp -> Cg ()
+cgAssign :: Type -> CExp -> CExp -> Cg ()
 -- If we don't care about the value, don't actually perform the assignment. This
 -- can happen when we are in a loop---we don't actually need the result of the
 -- computation in the body of the loop, just its effect(s).
-cgAssign _ _ _ CVoid =
+cgAssign _ _ CVoid =
     return ()
 
 -- If the type of the value is unit, don't actually perform the
 -- assignment. However, we *do* need no evaluate the expression; it could, for
 -- example, be a function call!
-cgAssign _ (UnitT {}) _ ce =
-   appendStm [cstm|$ce;|]
+cgAssign (UnitT {}) _ ce =
+    appendStm [cstm|$ce;|]
 
-cgAssign mayAlias tau (CAlias _ ce1) ce2 =
-   cgAssign mayAlias tau ce1 ce2
-
-cgAssign mayAlias tau ce1 (CAlias _ ce2) =
-   cgAssign mayAlias tau ce1 ce2
-
--- XXX: Should use more efficient bit twiddling code here. See:
---
---   http://realtimecollisiondetection.net/blog/?p=78
---   https://graphics.stanford.edu/~seander/bithacks.html
---   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
---
-cgAssign _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
-    appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
+cgAssign tau ce1 ce2 = do
+    alias <- mayAlias ce1 ce2
+    go alias tau ce1 ce2
   where
-    cbitIdx, cbitOff :: CExp
-    (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+    mayAlias :: CExp -> CExp -> Cg Bool
+    mayAlias ce1@(CAlias e1' _) ce2@(CAlias e2' _) = do
+        alias <- pathsMayAlias <$> refPath e1' <*> refPath e2'
+        traceCg $ nest 2 $
+            text "Potentially aliasing assignment" <+> parens (ppr alias) </>
+            ppr ce1 <+> text ":=" <+> ppr ce2
+        return alias
 
-    cmask, cbit :: CExp
-    cmask = 1 `shiftL'` cbitOff
-    -- Bits are always masked off, so we we can assume ce2 is either 0 or 1. If
-    -- we couldn't make this assumption, we would need to use [cexp|!!$ce2|]
-    -- here.
-    cbit = ce2 `shiftL'` cbitOff
+    mayAlias _ce1 _ce2 =
+        return False
 
-cgAssign _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
-    clen <- cgIota iota
-    cgAssignBitArray ce1 ce2 clen
-  where
-    cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
-    cgAssignBitArray ce1 ce2 clen = do
-        csrc' <- cgLower tau0 csrc
-        incBitArrayCopies
-        appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
+    go :: Bool -> Type -> CExp -> CExp -> Cg ()
+    go mayAlias tau (CAlias _ ce1) ce2 =
+       go mayAlias tau ce1 ce2
+
+    go mayAlias tau ce1 (CAlias _ ce2) =
+       go mayAlias tau ce1 ce2
+
+    -- XXX: Should use more efficient bit twiddling code here. See:
+    --
+    --   http://realtimecollisiondetection.net/blog/?p=78
+    --   https://graphics.stanford.edu/~seander/bithacks.html
+    --   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
+    --
+    go _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
+        appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
-        cdst, cdstIdx :: CExp
-        (cdst, cdstIdx) = unCSlice ce1
+        cbitIdx, cbitOff :: CExp
+        (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
 
-        csrc, csrcIdx :: CExp
-        (csrc, csrcIdx) = unCSlice ce2
+        cmask, cbit :: CExp
+        cmask = 1 `shiftL'` cbitOff
+        -- Bits are always masked off, so we we can assume ce2 is either 0 or
+        -- 1. If we couldn't make this assumption, we would need to use
+        -- [cexp|!!$ce2|] here.
+        cbit = ce2 `shiftL'` cbitOff
 
-cgAssign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
-    ctau <- cgType tau
-    ce1' <- cgArrayAddr ce1
-    ce2' <- cgArrayAddr ce2
-    clen <- cgIota iota
-    incMemCopies
-    if mayAlias
-      then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
-      else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
-  where
-    cgArrayAddr :: CExp -> Cg CExp
-    cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
-        panicdoc $ text "cgArrayAddr: the impossible happened!"
-
-    cgArrayAddr (CSlice _ carr cidx _) =
-        return $ CExp [cexp|&$carr[$cidx]|]
-
-    cgArrayAddr (CAlias e ce) =
-        calias e <$> cgArrayAddr ce
-
-    cgArrayAddr ce =
-        return ce
-
-cgAssign _ _ cv (CStruct flds) =
-    mapM_ cgAssignField flds
-  where
-    cgAssignField :: (Field, CExp) -> Cg ()
-    cgAssignField (fld, ce) =
-        appendStm [cstm|$cv.$id:cfld = $ce;|]
+    go _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
+        clen <- cgIota iota
+        cgAssignBitArray ce1 ce2 clen
       where
-        cfld :: String
-        cfld = zencode (namedString fld)
+        cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
+        cgAssignBitArray ce1 ce2 clen = do
+            csrc' <- cgLower tau0 csrc
+            incBitArrayCopies
+            appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
+          where
+            cdst, cdstIdx :: CExp
+            (cdst, cdstIdx) = unCSlice ce1
 
--- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
--- may need to be dereferenced.
-cgAssign _ _ cv ce =
-    appendStm [cstm|$(cgDeref cv) = $ce;|]
+            csrc, csrcIdx :: CExp
+            (csrc, csrcIdx) = unCSlice ce2
+
+    go mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
+        ctau <- cgType tau
+        ce1' <- cgArrayAddr ce1
+        ce2' <- cgArrayAddr ce2
+        clen <- cgIota iota
+        incMemCopies
+        if mayAlias
+          then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+          else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+      where
+        cgArrayAddr :: CExp -> Cg CExp
+        cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
+            panicdoc $ text "cgArrayAddr: the impossible happened!"
+
+        cgArrayAddr (CSlice _ carr cidx _) =
+            return $ CExp [cexp|&$carr[$cidx]|]
+
+        cgArrayAddr (CAlias e ce) =
+            calias e <$> cgArrayAddr ce
+
+        cgArrayAddr ce =
+            return ce
+
+    go _ _ cv (CStruct flds) =
+        mapM_ cgAssignField flds
+      where
+        cgAssignField :: (Field, CExp) -> Cg ()
+        cgAssignField (fld, ce) =
+            appendStm [cstm|$cv.$id:cfld = $ce;|]
+          where
+            cfld :: String
+            cfld = zencode (namedString fld)
+
+    -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
+    -- may need to be dereferenced.
+    go _ _ cv ce =
+        appendStm [cstm|$(cgDeref cv) = $ce;|]
 
 cgBoundsCheck :: CExp -> CExp -> Cg ()
 cgBoundsCheck clen cidx = do
@@ -2150,12 +2152,12 @@ cgAddrOf _ ce | isLvalue ce =
 
 cgAddrOf tau@(ArrT {}) ce = do
     ctemp <- cgTemp "addrof" tau
-    cgAssign False tau ctemp ce
+    cgAssign tau ctemp ce
     return $ CExp [cexp|$ctemp|]
 
 cgAddrOf tau ce = do
     ctemp <- cgTemp "addrof" tau
-    cgAssign False tau ctemp ce
+    cgAssign tau ctemp ce
     return $ CExp [cexp|&$ctemp|]
 
 -- | Generate code for an if statement.
@@ -2170,8 +2172,8 @@ cgIf tau e1 me2 me3 | isPureT tau = do
 cgIf tau e1 me2 me3 = do
     cres        <- cgTemp "if_res" tau_res
     ce1         <- cgExp e1
-    citems2     <- inNewBlock_ (me2 >>= cgAssign False tau_res cres)
-    citems3     <- inNewBlock_ (me3 >>= cgAssign False tau_res cres)
+    citems2     <- inNewBlock_ (me2 >>= cgAssign tau_res cres)
+    citems3     <- inNewBlock_ (me3 >>= cgAssign tau_res cres)
     appendStm $ cif ce1 citems2 citems3
     return cres
   where
@@ -2202,7 +2204,7 @@ cgLower tau ce =
     go :: CExp -> Cg CExp
     go ce@(CStruct {}) = do
         cv <- cgTemp "lower" tau
-        cgAssign False tau cv ce
+        cgAssign tau cv ce
         return cv
 
     go ce@(CBits {}) = do
