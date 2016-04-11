@@ -57,37 +57,6 @@ import KZC.Staged
 import KZC.Summary
 import KZC.Trace
 
--- | A 'Label' representing the continuation of the code that is currently being
--- generated.
-type KontLabel = Label
-
--- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
--- executes an action in the 'Cg' monad. This is distinct from a 'LabelKont',
--- which represents /the continuation of the code being generated/, not the
--- continuation of the code generator.
-data Kont a -- | A continuation that may only be called once because calling it
-            -- more than once may generate duplicate code. The 'Type' of the
-            -- 'CExp' expected as an argument is specified.
-            = OneshotK Type (CExp -> Cg a)
-
-            -- | Like 'OneshotK', but give a binder name to use if we need to
-            -- convert this continuation into a multishot continuation.
-            | OneshotBinderK BoundVar Type (CExp -> Cg a)
-
-            -- | A continuation that may be called multiple times, i.e., it does
-            -- not generate duplicate code. Note that the result of the
-            -- continuation must be the same every time it is invoked, e.g., it
-            -- may return a 'CExp' consisting of the same identifier every time
-            -- it is invoked. When called multiple times, only one of the
-            -- returned results will be used; however, the monadic side effects
-            -- of all invocations will be executed.
-            | MultishotK (CExp -> Cg a)
-
-            -- | Like 'MultishotK', but given the explicit destination in which
-            -- to place the result. The result will have been placed in the
-            -- destination before the continuation is called.
-            | MultishotBindK Type CExp (CExp -> Cg a)
-
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp -> Cg a) -> Kont a
 oneshot tau f = OneshotK tau f
@@ -521,12 +490,13 @@ cgDecl (LetCompD v tau comp _) k =
     -- Compile a bound computation. This will be called in some future
     -- context. It may be called multiple times, so we need to create a copy of
     -- the computation with fresh labels before we compile it.
-    compc :: CompC
-    compc takek emitk emitsk klbl =
+    compc :: CompC a
+    compc takek emitk emitsk klbl k =
         withInstantiatedTyVars tau $ do
         comp' <- uniquifyCompLabels comp
         useLabels (compUsedLabels comp')
-        localCompRefFlowModVars comp' $ cgComp takek emitk emitsk comp' klbl $ oneshot tau return
+        localCompRefFlowModVars comp' $
+            cgComp takek emitk emitsk comp' klbl k
 
 cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
@@ -540,8 +510,8 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     -- called in some future context. It may be called multiple times, so we
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
-    funcompc :: FunCompC
-    funcompc iotas es takek emitk emitsk klbl =
+    funcompc :: FunCompC a
+    funcompc iotas es takek emitk emitsk klbl k =
         withInstantiatedTyVars tau_ret $ do
         comp'  <- uniquifyCompLabels comp
         ciotas <- mapM cgIota iotas
@@ -552,8 +522,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         extendVarCExps  (map fst vbs `zip` ces) $ do
         useLabels (compUsedLabels comp')
         localCompRefFlowModVars comp' $
-            cgComp takek emitk emitsk comp' klbl $
-            oneshot tau_ret return
+            cgComp takek emitk emitsk comp' klbl k
       where
         cgArg :: LArg -> Cg CExp
         cgArg (ExpA e) =
@@ -563,10 +532,9 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         cgArg (CompA comp) =
             return $ CComp compc
           where
-            compc :: CompC
+            compc :: CompC a
             compc takek emitk emitsk klbl =
-                cgComp takek emitk emitsk comp klbl $
-                oneshot tau_ret return
+                cgComp takek emitk emitsk comp klbl
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context. We need to do this when
@@ -1162,14 +1130,14 @@ checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
-unCComp :: CExp -> Cg CompC
+unCComp :: CExp -> Cg (CompC a)
 unCComp (CComp compc) =
     return compc
 
 unCComp ce =
     panicdoc $ nest 2 $ text "unCComp: not a CComp:" </> ppr ce
 
-unCFunComp :: CExp -> Cg FunCompC
+unCFunComp :: CExp -> Cg (FunCompC a)
 unCFunComp (CFunComp funcompc) =
     return funcompc
 
@@ -1677,12 +1645,12 @@ cgComp takek emitk emitsk comp klbl k =
     cgStep (VarC l v _) klbl k =
         cgWithLabel l $ do
         compc <- lookupVarCExp v >>= unCComp
-        compc takek emitk emitsk klbl >>= runKont k
+        compc takek emitk emitsk klbl k
 
     cgStep (CallC l f iotas args _) klbl k = do
         cgWithLabel l $ do
         funcompc <- lookupVarCExp f >>= unCFunComp
-        funcompc iotas args takek emitk emitsk klbl >>= runKont k
+        funcompc iotas args takek emitk emitsk klbl k
 
     cgStep (IfC l e thenk elsek _) klbl k =
         cgWithLabel l $ do
