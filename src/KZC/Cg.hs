@@ -174,10 +174,8 @@ compileProgram (Program decls comp tau) = do
         -- Create storage for the result
         cres <- cgTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
-        let donek :: DoneK
-            donek ce = cgAssign (resultType tau) cres ce
-        -- Compile the computation
-        cgTimed $ cgThread takek emitk emitsk donek tau comp
+        cgTimed $ cgThread takek emitk emitsk tau comp $
+            multishotBind (resultType tau) cres $ \_ce -> return ()
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -366,17 +364,14 @@ cgCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
 cgCheckErr ce msg x =
     appendStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
--- | Generate code to handle the result of a thread's computation.
-type DoneK = CExp -> Cg ()
-
 cgThread :: TakeK  KontLabel -- ^ Code generator for take
          -> EmitK  KontLabel -- ^ Code generator for emit
-         -> EmitsK KontLabel -- ^ Code generator for emits
-         -> DoneK            -- ^ Code generator to deal with result of computation
+         -> EmitsK KontLabel -- ^ Code generator for emit
          -> Type             -- ^ Type of the result of the computation
          -> LComp            -- ^ Computation to compiled
+         -> Kont ()         -- ^ Code generator to deal with result of computation
          -> Cg ()
-cgThread takek emitk emitsk donek tau comp = do
+cgThread takek emitk emitsk tau comp k = do
     cblock <-
         inSTScope tau $
         inLocalScope $
@@ -392,8 +387,7 @@ cgThread takek emitk emitsk donek tau comp = do
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
         localCompRefFlowModVars comp $
-          cgComp takek emitk emitsk comp l_done $ oneshot tau $ \ce ->
-          cgWithLabel l_done $ donek ce
+          cgComp takek emitk emitsk comp l_done $ oneshot tau $ runKont k
     appendDecls [decl | C.BlockDecl decl <- cblock]
     appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
   where
@@ -1789,9 +1783,10 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     useLabel l_pardone
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
-    let donek :: CExp -> Cg ()
-        donek ce = do cgAssign tau_res cres ce
-                      appendStm [cstm|JUMP($id:l_pardone);|]
+    let donek :: Kont ()
+        donek = multishot $ \ce -> do
+                cgAssign tau_res cres ce
+                appendStm [cstm|JUMP($id:l_pardone);|]
     -- Generate variables to hold the left and right computations'
     -- continuations.
     leftl   <- compLabel left
@@ -1807,9 +1802,9 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     cbufp   <- cgCTemp b "par_bufp" ctauptr Nothing
     -- Generate code for the left and right computations.
     localSTIndTypes (Just (b, b, c)) $
-        cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right klbl $ multishot donek
+        cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right klbl donek
     localSTIndTypes (Just (s, a, b)) $
-        cgComp takek (emitk' cleftk crightk cbuf cbufp) (emitsk' cleftk crightk cbuf cbufp) left klbl $ multishot donek
+        cgComp takek (emitk' cleftk crightk cbuf cbufp) (emitsk' cleftk crightk cbuf cbufp) left klbl donek
     cgLabel l_pardone
     runKont k cres
   where
@@ -1969,7 +1964,7 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
         (clabels, cblock) <-
             collectLabels $
             inNewThreadBlock_ $
-            cgThread takek' emitk' emitsk' donek tau comp
+            cgThread takek' emitk' emitsk' tau comp donek
         cgLabels clabels
         appendTopDef [cedecl|
 void* $id:cf(void* _tinfo)
@@ -2014,8 +2009,8 @@ void* $id:cf(void* _tinfo)
         exitk :: Cg ()
         exitk = appendStm [cstm|BREAK;|]
 
-        donek :: DoneK
-        donek ce = do
+        donek :: Kont ()
+        donek = multishot $ \ce -> do
             ctau_res <- cgType tau_res
             cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
             cgMemoryBarrier
