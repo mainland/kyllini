@@ -1654,9 +1654,10 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right k = do
     cleftk  <- cgCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
     crightk <- cgCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
     -- Generate a pointer to the current element in the buffer.
-    ctau  <- cgType b
-    cbuf  <- cgCTemp b "par_buf"  [cty|$ty:ctau|]  Nothing
-    cbufp <- cgCTemp b "par_bufp" [cty|const $ty:ctau*|] Nothing
+    ctau    <- cgType b
+    ctauptr <- cgBufPtrType b
+    cbuf    <- cgCTemp b "par_buf"  ctau    Nothing
+    cbufp   <- cgCTemp b "par_bufp" ctauptr Nothing
     -- Generate code for the left and right computations.
     localSTIndTypes (Just (b, b, c)) $
         cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right k >>= donek
@@ -1665,6 +1666,19 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right k = do
     cgLabel l_pardone
     return cres
   where
+    cgBufPtrType :: Type -> Cg C.Type
+    cgBufPtrType (ArrT _ tau _) = do
+        ctau <- cgType tau
+        return [cty|const $ty:ctau*|]
+
+    cgBufPtrType tau = do
+        ctau <- cgType tau
+        return [cty|const $ty:ctau*|]
+
+    cgDerefBufPtr :: Type -> CExp -> CExp
+    cgDerefBufPtr (ArrT {}) ce = ce
+    cgDerefBufPtr _         ce = CExp [cexp|*$ce|]
+
     takek' :: CExp -> CExp -> CExp -> CExp -> TakeK Label
     -- The one element take is easy. We know the element will be in @cbufp@,
     -- so we call @k1@ with @cbufp@ as the argument, which generates a
@@ -1677,7 +1691,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right k = do
         useLabel k
         appendStm [cstm|$crightk = LABELADDR($id:k);|]
         appendStm [cstm|INDJUMP($cleftk);|]
-        return $ CExp [cexp|*$cbufp|]
+        return $ cgDerefBufPtr b cbufp
 
     -- The multi-element take is a bit tricker. We allocate a buffer to hold
     -- all the elements, and then loop, jumping to the left computation's
@@ -1693,7 +1707,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right k = do
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel lbl $
-                cgAssign (refT tau) (CIdx tau carr ci) (CExp [cexp|*$cbufp|])
+                cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
         return carr
 
     emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
