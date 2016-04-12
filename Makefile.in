@@ -199,6 +199,7 @@ TESTS = \
 	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/libs/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/tests/kzc-issues/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/tests/threads/*.wpl | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/sniffer/sniffer_example.blk) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
@@ -234,6 +235,7 @@ GROUNDFILES= \
 	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/lut/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/tests/kzc-issues/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/tests/threads/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/sniffer/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
@@ -250,6 +252,7 @@ test-all :
 	  tests/lut \
 	  tests/libs \
 	  tests/kzc-issues \
+	  tests/threads \
 	  code/WiFi/transmitter/tests \
 	  code/WiFi/receiver/tests \
 	  code/WiFi/tests \
