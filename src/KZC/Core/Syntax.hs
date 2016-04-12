@@ -231,9 +231,9 @@ data InlineAnn = Inline     -- ^ Always inline
                | AutoInline -- ^ Let the compiler decide when to inline
   deriving (Enum, Eq, Ord, Read, Show)
 
-data PipelineAnn = Pipeline     -- ^ Always pipeline
-                 | NoPipeline   -- ^ Never pipeline
-                 | AutoPipeline -- ^ Let the compiler decide when to pipeline
+data PipelineAnn = AlwaysPipeline -- ^ Always pipeline
+                 | NoPipeline     -- ^ Never pipeline
+                 | AutoPipeline   -- ^ Let the compiler decide when to pipeline
   deriving (Enum, Eq, Ord, Read, Show)
 
 data VectAnn = AutoVect
@@ -555,8 +555,8 @@ instance Pretty Exp where
         pprPrec arrPrec e2
 
 instance Pretty PipelineAnn where
-    ppr Pipeline = text "|>>>|"
-    ppr _        = text ">>>"
+    ppr AlwaysPipeline = text "|>>>|"
+    ppr _              = text ">>>"
 
 expToStms :: Exp -> [Stm Exp]
 expToStms (ReturnE ann e l)             = [ReturnS ann e l]

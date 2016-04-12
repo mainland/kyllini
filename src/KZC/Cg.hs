@@ -1618,8 +1618,10 @@ cgComp takek emitk emitsk comp k =
         dontFuse ann = do
            tau_res <- resultType <$> inferStep step
            case ann of
-             Pipeline -> cgParMultiThreaded  takek emitk emitsk tau_res b left right k
-             _        -> cgParSingleThreaded takek emitk emitsk tau_res b left right k
+             AlwaysPipeline ->
+                 cgParMultiThreaded  takek emitk emitsk tau_res b left right k
+             _ ->
+                 cgParSingleThreaded takek emitk emitsk tau_res b left right k
 
     cgStep (LoopC {}) _ =
         faildoc $ text "cgStep: saw LoopC"
