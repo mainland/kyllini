@@ -1902,9 +1902,11 @@ void* $id:cf(void* _tinfo)
         cgConsume :: CExp -> CExp -> ExitK -> (CExp -> Cg a) -> Cg a
         cgConsume ctinfo cbuf exitk consumek = do
             cgWaitWhileBufferEmpty ctinfo exitk
-            x <- consumek (CExp [cexp|$cbuf[$ctinfo.cons_cnt % KZ_BUFFER_SIZE]|])
+            cidx <- cgCTemp right "cons_idx" [cty|int|] Nothing
+            appendStm [cstm|$cidx = $ctinfo.cons_cnt % KZ_BUFFER_SIZE;|]
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.cons_cnt;|]
+            x <- consumek (CExp [cexp|$cbuf[$cidx]|])
             return x
 
         -- | Request @cn@ data elements.
