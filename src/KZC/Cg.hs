@@ -643,6 +643,9 @@ cgExp e = do
             text "Cannot cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2 <+>
             text "since types have different binary points."
 
+        cgCast ce _ tau_to | isBitT tau_to =
+            return $ CExp $ rl l [cexp|$ce > 0 ? 1 : 0|]
+
         cgCast ce _ tau_to = do
             ctau_to <- cgType tau_to
             return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
