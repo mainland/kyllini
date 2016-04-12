@@ -86,7 +86,7 @@ compileProgram (Program decls comp tau) = do
         let donek :: DoneK
             donek ce = cgAssign (resultType tau) cres ce
         -- Compile the computation
-        cgTimed $ cgThread takek emitk donek tau comp
+        cgTimed $ cgThread takek emitk emitsk donek tau comp
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -121,6 +121,11 @@ void kz_main(const typename kz_params_t* $id:params)
     emitk tau ce _k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
+
+    emitsk :: EmitsK Label
+    emitsk iota tau ce _k = do
+        ceAddr <- cgAddrOf (arrT iota tau) ce
+        cgOutput (arrT iota tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
     cgInitInput :: Type -> CExp -> CExp -> Cg ()
     cgInitInput tau cp cbuf =
@@ -272,13 +277,14 @@ cgCheckErr ce msg x =
 -- | Generate code to handle the result of a thread's computation.
 type DoneK = CExp -> Cg ()
 
-cgThread :: TakeK Label -- ^ Code generator for take
-         -> EmitK Label -- ^ Code generator for emit
-         -> DoneK       -- ^ Code generator to deal with result of computation
-         -> Type        -- ^ Type of the result of the computation
-         -> LComp       -- ^ Computation to compiled
+cgThread :: TakeK  Label -- ^ Code generator for take
+         -> EmitK  Label -- ^ Code generator for emit
+         -> EmitsK Label -- ^ Code generator for emit
+         -> DoneK        -- ^ Code generator to deal with result of computation
+         -> Type         -- ^ Type of the result of the computation
+         -> LComp        -- ^ Computation to compiled
          -> Cg ()
-cgThread takek emitk donek tau comp = do
+cgThread takek emitk emitsk donek tau comp = do
     cblock <-
         inSTScope tau $
         inLocalScope $
@@ -294,7 +300,7 @@ cgThread takek emitk donek tau comp = do
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
         ce <- localCompRefFlowModVars comp $
-              cgComp takek emitk comp l_done
+              cgComp takek emitk emitsk comp l_done
         cgWithLabel l_done $ donek ce
     appendDecls [decl | C.BlockDecl decl <- cblock]
     appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
@@ -392,11 +398,11 @@ cgDecl (LetCompD v tau comp _) k =
     -- context. It may be called multiple times, so we need to create a copy of
     -- the computation with fresh labels before we compile it.
     compc :: CompC
-    compc takek emitk k =
+    compc takek emitk emitsk k =
         withInstantiatedTyVars tau $ do
         comp' <- uniquifyCompLabels comp
         useLabels (compUsedLabels comp')
-        localCompRefFlowModVars comp' $ cgComp takek emitk comp' k
+        localCompRefFlowModVars comp' $ cgComp takek emitk emitsk comp' k
 
 cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
@@ -411,7 +417,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
     funcompc :: FunCompC
-    funcompc iotas es takek emitk k =
+    funcompc iotas es takek emitk emitsk k =
         withInstantiatedTyVars tau_ret $ do
         comp'  <- uniquifyCompLabels comp
         ciotas <- mapM cgIota iotas
@@ -421,7 +427,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         extendIVarCExps (ivs `zip` ciotas) $ do
         extendVarCExps  (map fst vbs `zip` ces) $ do
         useLabels (compUsedLabels comp')
-        localCompRefFlowModVars comp' $ cgComp takek emitk comp' k
+        localCompRefFlowModVars comp' $ cgComp takek emitk emitsk comp' k
       where
         cgArg :: LArg -> Cg CExp
         cgArg (ExpA e) =
@@ -432,7 +438,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
             return $ CComp compc
           where
             compc :: CompC
-            compc takek emitk k = cgComp takek emitk comp k
+            compc takek emitk emitsk k = cgComp takek emitk emitsk comp k
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context. We need to do this when
@@ -1453,12 +1459,13 @@ cgWithLabel lbl k = do
 -- jumped to. We assume that the continuation labels the code that will be
 -- generated immediately after the call to 'cgComp', so if the computation
 -- compiles to straight-line code, no @goto@ will be generated.
-cgComp :: TakeK Label -- ^ Code generator for take
-       -> EmitK Label -- ^ Code generator for emit
-       -> LComp       -- ^ Computation to compiled
-       -> Label       -- ^ Label of our continuation
-       -> Cg CExp     -- ^ Value returned by the computation.
-cgComp takek emitk comp k =
+cgComp :: TakeK  Label -- ^ Code generator for take
+       -> EmitK  Label -- ^ Code generator for emit
+       -> EmitsK Label -- ^ Code generator for emits
+       -> LComp        -- ^ Computation to compiled
+       -> Label        -- ^ Label of our continuation
+       -> Cg CExp      -- ^ Value returned by the computation.
+cgComp takek emitk emitsk comp k =
     cgSteps (unComp comp)
   where
     cgSteps :: [Step Label] -> Cg CExp
@@ -1499,17 +1506,20 @@ cgComp takek emitk comp k =
     cgStep (VarC l v _) k =
         cgWithLabel l $ do
         compc <- lookupVarCExp v >>= unCComp
-        compc takek emitk k
+        compc takek emitk emitsk k
 
     cgStep (CallC l f iotas args _) k = do
         cgWithLabel l $ do
         funcompc <- lookupVarCExp f >>= unCFunComp
-        funcompc iotas args takek emitk k
+        funcompc iotas args takek emitk emitsk k
 
     cgStep (IfC l e thenk elsek _) k =
         cgWithLabel l $ do
         tau <- inferComp thenk
-        cgIf tau e (cgComp takek emitk thenk k) (cgComp takek emitk elsek k)
+        cgIf tau
+             e
+             (cgComp takek emitk emitsk thenk k)
+             (cgComp takek emitk emitsk elsek k)
 
     cgStep (LetC {}) _ =
         faildoc $ text "Cannot compile let computation step."
@@ -1518,7 +1528,7 @@ cgComp takek emitk comp k =
         (citems_test, ce_test) <- inNewBlock $ cgExp e_test
         citems_body            <- inNewBlock_ $ do
                                   l_inner <- genLabel "inner_whilek"
-                                  void $ cgComp takek emitk c_body l_inner
+                                  void $ cgComp takek emitk emitsk c_body l_inner
                                   cgLabel l_inner
         cgWithLabel l $ do
             appendBlock $ map (rl sloc) citems_test
@@ -1535,7 +1545,7 @@ cgComp takek emitk comp k =
         ce_len   <- cgExp e_len
         citems   <- inNewBlock_ $ do
                     l_inner <- genLabel "inner_fork"
-                    void $ cgComp takek emitk c_body l_inner
+                    void $ cgComp takek emitk emitsk c_body l_inner
                     cgLabel l_inner
         cgWithLabel l $
             appendStm $ rl sloc [cstm|for ($id:cv = $ce_start; $id:cv < $(ce_start + ce_len); $id:cv++) { $items:citems }|]
@@ -1570,14 +1580,14 @@ cgComp takek emitk comp k =
 
     cgStep (EmitsC l e _) k =
         cgWithLabel l $ do
-        tau <- inferExp e
-        ce  <- cgExp e
-        emitk tau ce k
+        (iota, tau) <- inferExp e >>= checkArrT
+        ce          <- cgExp e
+        emitsk iota tau ce k
         return CVoid
 
     cgStep (RepeatC l _ c_body sloc) _ = do
         citems <- inNewBlock_ $ do
-                  void $ cgComp takek emitk c_body l
+                  void $ cgComp takek emitk emitsk c_body l
                   cgLabel l
         appendStm $ rl sloc [cstm|for (;;) { $items:citems }|]
         return CVoid
@@ -1594,7 +1604,7 @@ cgComp takek emitk comp k =
                comp      <- fusePar s a b c left right
                useLabels (compUsedLabels comp)
                checkComp comp tau
-               cgComp takek emitk comp k
+               cgComp takek emitk emitsk comp k
           `mplus`
             do traceFusion $ text "Failed to fuse" <+>
                    (nest 2 $ text "producer:" </> ppr left) </>
@@ -1605,8 +1615,8 @@ cgComp takek emitk comp k =
         dontFuse ann = do
            tau_res <- resultType <$> inferStep step
            case ann of
-             Pipeline -> cgParMultiThreaded  takek emitk tau_res b left right k
-             _        -> cgParSingleThreaded takek emitk tau_res b left right k
+             Pipeline -> cgParMultiThreaded  takek emitk emitsk tau_res b left right k
+             _        -> cgParSingleThreaded takek emitk emitsk tau_res b left right k
 
     cgStep (LoopC {}) _ =
         faildoc $ text "cgStep: saw LoopC"
@@ -1614,15 +1624,16 @@ cgComp takek emitk comp k =
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
 -- code for the par's take and emit.
-cgParSingleThreaded :: TakeK Label -- ^ Code generator for /producer's/ take
-                    -> EmitK Label -- ^ Code generator for /consumer's/ emit
-                    -> Type        -- ^ The type of the result of the par
-                    -> Type        -- ^ The type of the par's internal buffer
-                    -> LComp       -- ^ The producer computation
-                    -> LComp       -- ^ The consumer computation
-                    -> Label       -- ^ The computation's continuation
-                    -> Cg CExp     -- ^ The result of the computation
-cgParSingleThreaded takek emitk tau_res b left right k = do
+cgParSingleThreaded :: TakeK  Label -- ^ Code generator for /producer's/ take
+                    -> EmitK  Label -- ^ Code generator for /consumer's/ emit
+                    -> EmitsK Label -- ^ Code generator for /consumer's/ emits
+                    -> Type         -- ^ The type of the result of the par
+                    -> Type         -- ^ The type of the par's internal buffer
+                    -> LComp        -- ^ The producer computation
+                    -> LComp        -- ^ The consumer computation
+                    -> Label        -- ^ The computation's continuation
+                    -> Cg CExp      -- ^ The result of the computation
+cgParSingleThreaded takek emitk emitsk tau_res b left right k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTemp "par_res" tau_res
@@ -1648,9 +1659,9 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
     cbufp <- cgCTemp b "par_bufp" [cty|const $ty:ctau*|] Nothing
     -- Generate code for the left and right computations.
     localSTIndTypes (Just (b, b, c)) $
-        cgComp (takek' cleftk crightk cbuf cbufp) emitk right k >>= donek
+        cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right k >>= donek
     localSTIndTypes (Just (s, a, b)) $
-        cgComp takek (emitk' cleftk crightk cbuf cbufp) left k >>= donek
+        cgComp takek (emitk' cleftk crightk cbuf cbufp) (emitsk' cleftk crightk cbuf cbufp) left k >>= donek
     cgLabel l_pardone
     return cres
   where
@@ -1686,14 +1697,19 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
         return carr
 
     emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
-    emitk' cleftk crightk cbuf cbufp (ArrT (ConstI 1 _) tau _) ce k = do
+    -- @tau@ must be a base (scalar) type
+    emitk' cleftk crightk cbuf cbufp tau ce k = do
         useLabel k
         appendStm [cstm|$cleftk = LABELADDR($id:k);|]
-        cidx <- cgIdx tau ce 1 0
-        cgAssignBufp tau cbuf cbufp cidx
+        cgAssignBufp tau cbuf cbufp ce
         appendStm [cstm|INDJUMP($crightk);|]
 
-    emitk' cleftk crightk cbuf cbufp (ArrT iota tau _) ce _k = do
+    emitsk' :: CExp -> CExp -> CExp -> CExp -> EmitsK Label
+    emitsk' cleftk crightk cbuf cbufp (ConstI 1 _) tau ce k = do
+        ce' <- cgIdx tau ce 1 0
+        emitk' cleftk crightk cbuf cbufp tau ce' k
+
+    emitsk' cleftk crightk cbuf cbufp iota tau ce _k = do
         cn    <- cgIota iota
         loopl <- genLabel "emitsk_next"
         useLabel loopl
@@ -1705,13 +1721,6 @@ cgParSingleThreaded takek emitk tau_res b left right k = do
             -- Because we need a statement to label, but the continuation is
             -- the next loop iteration...
             cgLabel loopl
-
-    -- @tau@ must be a base (scalar) type
-    emitk' cleftk crightk cbuf cbufp tau ce k = do
-        useLabel k
-        appendStm [cstm|$cleftk = LABELADDR($id:k);|]
-        cgAssignBufp tau cbuf cbufp ce
-        appendStm [cstm|INDJUMP($crightk);|]
 
     -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
     -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
@@ -1733,15 +1742,16 @@ type ExitK = Cg ()
 -- strategy. The take and emit code generators passed as arguments to
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
 -- inner take and emit is done with a producer-consumer buffer.
-cgParMultiThreaded :: TakeK Label -- ^ Code generator for /producer's/ take
-                   -> EmitK Label -- ^ Code generator for /consumer's/ emit
-                   -> Type        -- ^ The type of the result of the par
-                   -> Type        -- ^ The type of the par's internal buffer
-                   -> LComp       -- ^ The producer computation
-                   -> LComp       -- ^ The consumer computation
-                   -> Label       -- ^ The computation's continuation
-                   -> Cg CExp     -- ^ The result of the computation
-cgParMultiThreaded takek emitk tau_res b left right k = do
+cgParMultiThreaded :: TakeK  Label -- ^ Code generator for /producer's/ take
+                   -> EmitK  Label -- ^ Code generator for /consumer's/ emit
+                   -> EmitsK Label -- ^ Code generator for /consumer's/ emit
+                   -> Type         -- ^ The type of the result of the par
+                   -> Type         -- ^ The type of the par's internal buffer
+                   -> LComp        -- ^ The producer computation
+                   -> LComp        -- ^ The consumer computation
+                   -> Label        -- ^ The computation's continuation
+                   -> Cg CExp      -- ^ The result of the computation
+cgParMultiThreaded takek emitk emitsk tau_res b left right k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the par buffer.
     cb   <- cgType b
@@ -1797,7 +1807,7 @@ cgParMultiThreaded takek emitk tau_res b left right k = do
         (clabels, cblock) <-
             collectLabels $
             inNewThreadBlock_ $
-            cgThread takek' emitk' donek tau comp
+            cgThread takek' emitk' emitsk' donek tau comp
         cgLabels clabels
         appendTopDef [cedecl|
 void* $id:cf(void* _tinfo)
@@ -1826,17 +1836,18 @@ void* $id:cf(void* _tinfo)
             takek n tau k
 
         emitk' :: EmitK Label
+        -- @tau@ must be a base (scalar) type
+        emitk' tau ce _k =
+            cgProduce ctinfo cbuf exitk tau ce
+
+        emitsk' :: EmitsK Label
         -- Right now we just loop and write the elements one by one---it would
         -- be better to write them all at once.
-        emitk' (ArrT iota tau _) ce _k = do
+        emitsk' iota tau ce _k = do
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
                 cidx <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf exitk tau cidx
-
-        -- @tau@ must be a base (scalar) type
-        emitk' tau ce _k =
-            cgProduce ctinfo cbuf exitk tau ce
 
         exitk :: Cg ()
         exitk = appendStm [cstm|BREAK;|]
@@ -1870,7 +1881,7 @@ void* $id:cf(void* _tinfo)
 
     cgConsumer :: CExp -> CExp -> CExp -> CExp -> LComp -> Label -> Cg ()
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
-        ce <- cgComp takek' emitk' comp k
+        ce <- cgComp takek' emitk' emitsk' comp k
         appendStm [cstm|$ctinfo.done = 1;|]
         cgAssign tau_res cres ce
         appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
@@ -1892,6 +1903,9 @@ void* $id:cf(void* _tinfo)
 
         emitk' :: EmitK Label
         emitk' = emitk
+
+        emitsk' :: EmitsK Label
+        emitsk' = emitsk
 
         exitk :: Cg ()
         exitk = appendStm [cstm|JUMP($id:l_pardone);|]

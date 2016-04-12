@@ -13,6 +13,7 @@
 module KZC.Cg.CExp (
     TakeK,
     EmitK,
+    EmitsK,
     CompC,
     FunCompC,
 
@@ -50,30 +51,38 @@ import KZC.Staged
 -- labels the code that will be generated immediately after the take.
 type TakeK l = Int -> Type -> l -> Cg CExp
 
--- | Generate code to emit the specified value at the specified type jumping to
+-- | Generate code to emit the specified value at the specified type, jumping to
 -- the specified label when the take is complete. We assume that the
 -- continuation labels the code that will be generated immediately after the
 -- emit.
 type EmitK l = Type -> CExp -> l -> Cg ()
 
+-- | Generate code to emit the specified arrays of values at the specified type,
+-- jumping to the specified label when the take is complete. We assume that the
+-- continuation labels the code that will be generated immediately after the
+-- emit.
+type EmitsK l = Iota -> Type -> CExp -> l -> Cg ()
+
 -- | A computation compiler, which produces a compiled computation when given
 -- the appropriate arguments.
-type CompC =  TakeK Label -- Code generator for take
-           -> EmitK Label -- Code generator for emit
-           -> Label       -- Label of our continuation
-           -> Cg CExp     -- Value returned by the computation.
+type CompC =  TakeK Label  -- Code generator for take
+           -> EmitK Label  -- Code generator for emit
+           -> EmitsK Label -- Code generator for emits
+           -> Label        -- Label of our continuation
+           -> Cg CExp      -- Value returned by the computation.
 
 instance Show CompC where
     show _ = "<comp>"
 
 -- | A computation function compiler, which produces a compiled call to a
 -- computation function when given the appropriate arguments.
-type FunCompC =  [Iota]      -- Array length arguments
-              -> [LArg]      -- Function arguments
-              -> TakeK Label -- Code generator for take
-              -> EmitK Label -- Code generator for emit
-              -> Label       -- Label of our continuation
-              -> Cg CExp     -- Value returned by the computation.
+type FunCompC =  [Iota]       -- Array length arguments
+              -> [LArg]       -- Function arguments
+              -> TakeK Label  -- Code generator for take
+              -> EmitK Label  -- Code generator for emit
+              -> EmitsK Label -- Code generator for emit
+              -> Label        -- Label of our continuation
+              -> Cg CExp      -- Value returned by the computation.
 
 instance Show FunCompC where
     show _ = "<funcomp>"
