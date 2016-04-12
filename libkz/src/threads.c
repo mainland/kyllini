@@ -48,5 +48,6 @@ int kz_thread_wait(kz_tinfo_t *tinfo)
 
 int kz_thread_join(kz_thread_t thread, void **retval)
 {
-    return pthread_join(thread, retval);
+    /* We detach threads, so we cannot join them */
+    return 0;
 }
