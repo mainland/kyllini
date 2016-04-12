@@ -16,4 +16,4 @@ fun f1(x : arr[3] bit) {
    return z;
 }
 
-let comp main = read >>> map f1 >>> map f1 >>> write[arr [3] bit]
+let comp main = read >>> map f1 |>>>| map f1 >>> write[arr [3] bit]
