@@ -191,9 +191,10 @@ template<typename T> void init_input(const kz_params_t* params, kz_buf_t* buf)
         }
     } else {
         buf->dev = params->src_dev;
-        buf->buf = NULL;
+        buf->buf = malloc(DEFAULT_BUFSIZE*sizeof(T));
         buf->idx = 0;
         buf->len = 0;
+        buf->dummy_samples = params->dummy_samples;
     }
 }
 
@@ -244,9 +245,12 @@ template<typename T> void cleanup_output(const kz_params_t* params, kz_buf_t* bu
 
 template<typename T> const T* input(kz_buf_t* buf, size_t n)
 {
-    if (buf->dev == DEV_DUMMY)
-        return (T*) buf->buf;
-    else {
+    if (buf->dev == DEV_DUMMY) {
+        if (buf->dummy_samples-- > 0)
+            return (T*) buf->buf;
+        else
+            return NULL;
+    } else {
         if (buf->idx + n <= buf->len) {
             T* p = &((T*) buf->buf)[buf->idx];
 
@@ -429,6 +433,7 @@ void kz_init_input_bit(const kz_params_t* params, kz_buf_t* buf)
         buf->buf = NULL;
         buf->idx = 0;
         buf->len = 0;
+        buf->dummy_samples = params->dummy_samples;
     }
 }
 
@@ -482,17 +487,15 @@ inline const size_t bit_array_len(size_t n)
 
 const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
 {
+    static bit_t  dummy_bitbuf;
     static bit_t* bitbuf = NULL;
     static size_t bitbuf_len = 0;
 
     if (buf->dev == DEV_DUMMY) {
-        if (bitbuf == NULL) {
-            bitbuf_len = (n + BIT_ARRAY_ELEM_BITS - 1) & ~(BIT_ARRAY_ELEM_BITS - 1);
-            bitbuf = (bit_t*) malloc(bitbuf_len/CHAR_BIT);
-            assert(bitbuf != NULL);
-        }
-
-        return bitbuf;
+        if (buf->dummy_samples-- > 0)
+            return &dummy_bitbuf;
+        else
+            return NULL;
     } else {
         if (buf->idx + n > buf->len)
             return NULL;

@@ -28,6 +28,7 @@ typedef struct {
     kz_dev_t  dst_dev;
     kz_mode_t dst_mode;
     char*     dst;
+    int       dummy_samples;
 } kz_params_t;
 
 typedef struct {
@@ -35,6 +36,7 @@ typedef struct {
     void*    buf;
     size_t   len;
     size_t   idx;
+    int      dummy_samples;
 } kz_buf_t;
 
 void kz_main(const kz_params_t*);

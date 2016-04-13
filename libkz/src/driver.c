@@ -101,16 +101,18 @@ int main(int argc, char *argv[])
 
 int parseOpts(kz_params_t* params, int argc, char *argv[])
 {
-    struct option longopts[] = {
-        { "input",       required_argument, NULL, 'i'},
-        { "input-mode",  required_argument, NULL, 'm'},
-        { "input-dev",   required_argument, NULL, 'd'},
-        { "output",      required_argument, NULL, 'o'},
-        { "output-mode", required_argument, NULL, 'n'},
-        { "output-dev",  required_argument, NULL, 'e'},
-        { NULL,          0,                 NULL, 0 }
+    static struct option longopts[] = {
+        { "input",         required_argument, NULL, 'i'},
+        { "input-mode",    required_argument, NULL, 'm'},
+        { "input-dev",     required_argument, NULL, 'd'},
+        { "output",        required_argument, NULL, 'o'},
+        { "output-mode",   required_argument, NULL, 'n'},
+        { "output-dev",    required_argument, NULL, 'e'},
+        { "dummy-samples", required_argument, NULL, 0 },
+        { NULL,            0,                 NULL, 0 }
     };
     int opt;
+    int option_index = 0;
 
     params->src_dev = DEV_FILE;
     params->src_mode = MODE_TEXT;
@@ -118,14 +120,15 @@ int parseOpts(kz_params_t* params, int argc, char *argv[])
     params->dst_dev = DEV_FILE;
     params->dst_mode = MODE_TEXT;
     params->dst = NULL;
+    params->dummy_samples = 0;
 
-    while ((opt = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "", longopts, &option_index)) != -1) {
         switch (opt) {
         case 'i':
             if (params->src != NULL)
                 usage(argc, argv);
 
-            params->src = malloc(strlen(optarg)+1);
+            params->src = (char*) malloc(strlen(optarg)+1);
             strcpy(params->src, optarg);
             break;
 
@@ -133,7 +136,7 @@ int parseOpts(kz_params_t* params, int argc, char *argv[])
             if (params->dst != NULL)
                 usage(argc, argv);
 
-            params->dst = malloc(strlen(optarg)+1);
+            params->dst = (char*) malloc(strlen(optarg)+1);
             strcpy(params->dst, optarg);
             break;
 
@@ -147,6 +150,18 @@ int parseOpts(kz_params_t* params, int argc, char *argv[])
 
         case 'd':
             params->src_dev = parseDev(argc, argv, optarg);
+            break;
+
+        case 'e':
+            params->dst_dev = parseDev(argc, argv, optarg);
+            break;
+
+        case 0:
+            switch (option_index) {
+            case 6:
+                params->dummy_samples = atoi(optarg);
+                break;
+            }
             break;
 
         default:
@@ -180,14 +195,14 @@ static struct mode_desc_t mode_descs[] = {
     { "text",   MODE_TEXT },
     { "binary", MODE_BINARY },
     { "bin",    MODE_BINARY },
-    { NULL,     0 }
+    { NULL,     (kz_mode_t) 0 }
 };
 
 static struct dev_desc_t dev_descs[] = {
     { "dummy",  DEV_DUMMY },
     { "memory", DEV_MEMORY },
     { "file",   DEV_FILE },
-    { NULL,     0 }
+    { NULL,     (kz_dev_t) 0 }
 };
 
 kz_mode_t parseMode(int argc, char *argv[], const char* desc)
