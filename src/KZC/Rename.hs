@@ -186,8 +186,9 @@ instance Rename Exp where
     rn (StandaloneE e l) =
         StandaloneE <$> rn e <*> pure l
 
-    rn (MapE ann v tau l) =
-        MapE ann <$> rn v <*> pure tau <*> pure l
+    rn (MapE ann f tau l) =
+        -- @f@ may be a computation, so look there first. This fixes #15
+        MapE ann <$> lookupMaybeCompVar f <*> pure tau <*> pure l
 
     rn (FilterE v tau l) =
         FilterE <$> rn v <*> pure tau <*> pure l
