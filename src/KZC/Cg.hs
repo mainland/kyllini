@@ -57,6 +57,10 @@ import KZC.Staged
 import KZC.Summary
 import KZC.Trace
 
+restrict, static :: C.TypeQual
+restrict = C.EscTypeQual "RESTRICT" noLoc
+static   = C.EscTypeQual "STATIC" noLoc
+
 localExpRefFlowModVars :: Exp -> Cg a -> Cg a
 localExpRefFlowModVars e k = do
     vs <- refFlowModExp e
@@ -1177,7 +1181,7 @@ cgParam tau maybe_cv = do
   where
     cgParamType :: Type -> Cg C.Type
     cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
+        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
@@ -1185,22 +1189,22 @@ cgParam tau maybe_cv = do
 
     cgParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|const $ty:ctau* restrict|]
+        return [cty|const $ty:ctau* $tyqual:restrict|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau = do
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[restrict static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:restrict $tyqual:static $int:n]|]
 
     cgParamType (RefT (ArrT _ tau _) _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* restrict|]
+        return [cty|$ty:ctau* $tyqual:restrict|]
 
     cgParamType (RefT tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* restrict|]
+        return [cty|$ty:ctau* $tyqual:restrict|]
 
     cgParamType tau = cgType tau
 
@@ -1214,15 +1218,15 @@ cgRetParam tau maybe_cv = do
   where
     cgRetParamType :: Type -> Cg C.Type
     cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[restrict static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[restrict static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:restrict $tyqual:static $int:n]|]
 
     cgRetParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* restrict|]
+        return [cty|$ty:ctau* $tyqual:restrict|]
 
     cgRetParamType tau = cgType tau
 
