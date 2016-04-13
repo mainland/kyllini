@@ -1621,11 +1621,21 @@ cgComp takek emitk emitsk comp klbl k =
 
     cgSteps (step : BindC l (TameV v) tau _ : steps) k = do
         cv <- cgStep step l $
-              mapKont (\f ce -> cgWithLabel l $ f ce) $
+              mapKont cgBind $
               cgMonadicBinding v tau
         extendVars [(bVar v, tau)] $
             extendVarCExps [(bVar v, cv)] $
             cgSteps steps k
+      where
+        -- @e@ could be a pureish computation, in which case we need to compile
+        -- it here before we call the continuation with the result. See issue
+        -- #12.
+        cgBind :: forall a . (CExp -> Cg a) -> CExp -> Cg a
+        cgBind k ce =
+            cgWithLabel l $
+            case ce of
+              CComp compc -> compc takek emitk emitsk klbl $ multishot k
+              _           -> k ce
 
     cgSteps (step : steps) k = do
         l <- stepLabel (head steps)
