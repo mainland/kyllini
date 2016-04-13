@@ -27,6 +27,8 @@ module KZC.Core.Lint (
     inferExp,
     checkExp,
 
+    refPath,
+
     inferKind,
     checkKind,
 
@@ -681,28 +683,28 @@ checkNoAliasing etaus = do
     root _ =
         return []
 
-    refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
-    refPath e =
+refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
+refPath e =
+    go e []
+  where
+    go :: Exp -> [Path Field] -> m (RefPath Var Field)
+    go (VarE v _) path =
+        return $ RefP v (reverse path)
+
+    go (IdxE e (ConstE (FixC I _ _ 0 r) _) Nothing _) path =
+        go e (IdxP (fromIntegral (numerator r)) 1 : path)
+
+    go (IdxE e (ConstE (FixC I _ _ 0 r) _) (Just len) _) path =
+        go e (IdxP (fromIntegral (numerator r)) len : path)
+
+    go (IdxE e _ _ _) _ =
         go e []
-      where
-        go :: Exp -> [Path Field] -> m (RefPath Var Field)
-        go (VarE v _) path =
-            return $ RefP v (reverse path)
 
-        go (IdxE e (ConstE (FixC I _ _ 0 r) _) Nothing _) path =
-            go e (IdxP (fromIntegral (numerator r)) 1 : path)
+    go (ProjE e f _) path =
+        go e (ProjP f : path)
 
-        go (IdxE e (ConstE (FixC I _ _ 0 r) _) (Just len) _) path =
-            go e (IdxP (fromIntegral (numerator r)) len : path)
-
-        go (IdxE e _ _ _) _ =
-            go e []
-
-        go (ProjE e f _) path =
-            go e (ProjP f : path)
-
-        go e _ =
-            faildoc $ text "Not a reference:" <+> ppr e
+    go e _ =
+        faildoc $ text "refPath: Not a reference:" <+> ppr e
 
 -- | Check that a struct has no missing and no extra fields.
 checkStructFields :: forall m . MonadTc m

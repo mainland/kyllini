@@ -24,7 +24,9 @@ module KZC.Check (
 
     tcExp,
     checkExp,
-    inferExp
+    inferExp,
+
+    refPath
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -990,28 +992,28 @@ checkNoAliasing etaus = do
     root _ =
         return []
 
-    refPath :: forall m . Monad m => Z.Exp -> m (RefPath Z.Var Z.Field)
-    refPath e =
+refPath :: forall m . Monad m => Z.Exp -> m (RefPath Z.Var Z.Field)
+refPath e =
+    go e []
+  where
+    go :: Z.Exp -> [Path Z.Field] -> m (RefPath Z.Var Z.Field)
+    go (Z.VarE v _) path =
+        return $ RefP v (reverse path)
+
+    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) Nothing _) path =
+        go e (IdxP (fromIntegral (numerator r)) 1 : path)
+
+    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) (Just len) _) path =
+        go e (IdxP (fromIntegral (numerator r)) len : path)
+
+    go (Z.IdxE e _ _ _) _ =
         go e []
-      where
-        go :: Z.Exp -> [Path Z.Field] -> m (RefPath Z.Var Z.Field)
-        go (Z.VarE v _) path =
-            return $ RefP v (reverse path)
 
-        go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) Nothing _) path =
-            go e (IdxP (fromIntegral (numerator r)) 1 : path)
+    go (Z.ProjE e f _) path =
+        go e (ProjP f : path)
 
-        go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) (Just len) _) path =
-            go e (IdxP (fromIntegral (numerator r)) len : path)
-
-        go (Z.IdxE e _ _ _) _ =
-            go e []
-
-        go (Z.ProjE e f _) path =
-            go e (ProjP f : path)
-
-        go e _ =
-            faildoc $ text "Not a reference:" <+> ppr e
+    go e _ =
+        faildoc $ text "refPath: Not a reference:" <+> ppr e
 
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti C.Exp)
 tcStms (stm@(Z.LetS {}) : []) _ =
