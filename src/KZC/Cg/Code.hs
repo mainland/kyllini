@@ -1,6 +1,8 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 -- |
 -- Module      :  KZC.Cg.Code
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -11,9 +13,16 @@ module KZC.Cg.Code (
 import Data.Foldable (toList)
 import Data.Monoid
 import Data.Sequence (Seq)
+import Data.Sequence (ViewL((:<)),
+                      ViewR((:>)),
+                      (<|),
+                      viewl,
+                      viewr)
 import Language.C.Pretty ()
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
+
+import KZC.Quote.C
 
 -- | Contains generated code.
 data Code = Code
@@ -56,5 +65,8 @@ instance Monoid Code where
              , codeCleanupStms = codeCleanupStms a <> codeCleanupStms b
              , codeThreadDecls = codeThreadDecls a <> codeThreadDecls b
              , codeDecls       = codeDecls a <> codeDecls b
-             , codeStms        = codeStms a <> codeStms b
+             , codeStms        = case (viewr (codeStms a), viewl (codeStms b)) of
+                                   (stms1 :> [cstm|$id:lbl: ;|], stm :< stms2) ->
+                                        stms1 <> ([cstm|$id:lbl: $stm:stm|] <| stms2)
+                                   _ -> codeStms a <> codeStms b
              }
