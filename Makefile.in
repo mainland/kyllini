@@ -149,6 +149,10 @@ clean-tests :
 	      $(patsubst %.outfile.ground,%.exe,$(GROUNDFILES)) \
 	      $(patsubst %.outfile.ground,%.outfile,$(GROUNDFILES)) \
 	      $(patsubst %.outfile.ground,%.dump*,$(GROUNDFILES))
+	$(_QUIET)rm -f \
+	      $(patsubst %.blk,%.c,$(PERFTESTS)) \
+	      $(patsubst %.blk,%.exe,$(PERFTESTS)) \
+	      $(patsubst %.blk,%.dump*,$(PERFTESTS))
 
 .PHONY : distclean
 distclean : clean
@@ -204,6 +208,9 @@ TESTS = \
 	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
 	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.blk | sort)
+
+PERFTESTS = \
+	$(shell ls $(TESTDIR)/code/WiFi/perf/*.blk | sort)
 
 .PHONY : test-parser
 test-parser : kzc
