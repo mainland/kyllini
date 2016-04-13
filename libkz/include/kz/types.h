@@ -34,4 +34,7 @@ typedef struct complex64_t {
     int64_t im;
 } complex64_t;
 
+#define STATIC static
+#define RESTRICT restrict
+
 #endif /* !defined(KZ_TYPES_H) */

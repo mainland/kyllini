@@ -1601,11 +1601,16 @@ cgComp takek emitk emitsk comp k =
 
     cgStep step@(ParC ann b left right _) _ =
         withSummaryContext step $ do
-        doFuse <- asksFlags (testDynFlag Fuse)
-        if doFuse then fuse else dontFuse ann
+        dflags <- askFlags
+        cgPar dflags
       where
-        fuse :: Cg CExp
-        fuse = do
+        cgPar :: Flags -> Cg CExp
+        cgPar dflags
+            | testDynFlag Fuse dflags = fuse dflags
+            | otherwise               = dontFuse dflags ann
+
+        fuse :: Flags -> Cg CExp
+        fuse dflags = do
             do (s, a, c) <- askSTIndTypes
                tau       <- inferStep step
                comp      <- fusePar s a b c left right
@@ -1616,13 +1621,13 @@ cgComp takek emitk emitsk comp k =
             do traceFusion $ text "Failed to fuse" <+>
                    (nest 2 $ text "producer:" </> ppr left) </>
                    (nest 2 $ text "and consumer:" </> ppr right)
-               dontFuse ann
+               dontFuse dflags ann
 
-        dontFuse :: PipelineAnn -> Cg CExp
-        dontFuse ann = do
+        dontFuse :: Flags -> PipelineAnn -> Cg CExp
+        dontFuse dflags ann = do
            tau_res <- resultType <$> inferStep step
            case ann of
-             AlwaysPipeline ->
+             AlwaysPipeline | testDynFlag Pipeline dflags ->
                  cgParMultiThreaded  takek emitk emitsk tau_res b left right k
              _ ->
                  cgParSingleThreaded takek emitk emitsk tau_res b left right k

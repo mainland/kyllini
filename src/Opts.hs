@@ -178,6 +178,7 @@ fDynFlagOpts =
   , (AutoLUT,     "autolut",      "run the auto-LUTter")
   , (LUT,         "lut",          "run the LUTter")
   , (NoGensym,    "no-gensym",    "don't gensym (for debugging)")
+  , (Pipeline,    "pipeline",     "pipeline computations")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]

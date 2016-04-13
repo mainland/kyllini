@@ -77,6 +77,7 @@ data DynFlag = Quiet
              | AutoLUT
              | LUT
              | NoGensym
+             | Pipeline
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError
