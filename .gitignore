@@ -1,3 +1,4 @@
+*.dump-*
 /.cabal-sandbox
 /Makefile
 /TODO
