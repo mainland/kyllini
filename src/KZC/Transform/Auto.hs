@@ -309,8 +309,7 @@ transComp e@(C.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
     if isPureishT tau
-      then do e' <- transExp e
-              liftC e'
+      then liftC =<< transExp e
       else varC v'
 
 transComp e@(C.IfE e1 e2 e3 l) = do
@@ -337,8 +336,7 @@ transComp e@(C.CallE f iotas es _) = do
     f'              <- lookupVarSubst f
     (_, _, tau_res) <- lookupVar f >>= checkFunT
     if isPureishT tau_res
-      then do e' <- transExp e
-              liftC e'
+      then liftC =<< transExp e
       else do args <- mapM transArg es
               callC f' iotas args
   where
