@@ -40,6 +40,14 @@ endif
 endif
 
 #
+# Whole program
+#
+ifeq ($(WHOLEPROGRAM), 1)
+CPPFLAGS+=-DWHOLEPROGRAM -I$(TOP)/libkz/src
+CFLAGS+=-fwhole-program
+endif
+
+#
 # Misc flags
 #
 CPPFLAGS+=-I$(TOP)/libkz/include
@@ -136,8 +144,13 @@ RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 %.o : %.cpp
 	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(CFLAGS) -c $< -o $@
 
+ifeq ($(WHOLEPROGRAM), 1)
+%.exe : %.c $(RUNTIME_SRC)
+	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(CFLAGS) $(LIBS) $< -o $@
+else
 %.exe : %.o $(RUNTIME_OBJ)
 	$(_QUIET)$(LD) $(LDFLAGS) $< $(RUNTIME_OBJ) $(LIBS) -o $@
+endif
 
 bin_%.outfile: bin_%.exe bin_%.infile
 	$(_QUIET)./$< \

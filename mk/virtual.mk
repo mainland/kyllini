@@ -66,3 +66,12 @@ SANITIZE := 1
 endif
 
 MAKECMDGOALS := $(filter-out sanitize, $(MAKECMDGOALS))
+
+
+# whole program
+ifeq ($(filter wholeprogram, $(MAKECMDGOALS)), wholeprogram)
+VIRTUAL_GOALS += wholeprogram
+WHOLEPROGRAM := 1
+endif
+
+MAKECMDGOALS := $(filter-out wholeprogram, $(MAKECMDGOALS))

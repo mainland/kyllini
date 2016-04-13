@@ -14,6 +14,15 @@
 #include <kz/ext.h>
 #include <kz/threads.h>
 
+#if defined(WHOLEPROGRAM)
+#include <bits.c>
+#include <driver.c>
+#include <ext.c>
+#include <io.cpp>
+#include <threads.c>
+#include <sora/kz_sora.cpp>
+#endif /* defined(WHOLEPROGRAM) */
+
 #if defined(FIRSTCLASSLABELS)
 typedef void* KONT;
 
