@@ -36,6 +36,8 @@ module KZC.Auto.Lint (
     inferComp,
     checkComp,
 
+    compToExp,
+
     inferStep,
 
     checkEqT,
@@ -858,3 +860,87 @@ checkComp :: (IsLabel l, MonadTc m)
 checkComp comp tau = do
     tau' <- inferComp comp
     checkTypeEquality tau' tau
+
+-- | 'compToExp' will convert a pureish computation back to an expression.
+compToExp :: forall l m . (IsLabel l, MonadTc m)
+          => Comp l
+          -> m Exp
+compToExp comp@(Comp steps) =
+    withSummaryContext comp $
+    stepsToExp steps
+  where
+    stepsToExp :: [Step l] -> m Exp
+    stepsToExp [] =
+        panicdoc $
+        text "compToExp: No computational steps to convert to an expression!"
+
+    stepsToExp [step] =
+        stepToExp step
+
+    stepsToExp (LetC _ decl _ : steps) = do
+        e <- stepsToExp steps
+        return $ LetE decl e (decl `srcspan` e)
+
+    stepsToExp (step : BindC _ wv tau _ : steps) = do
+        e1 <- stepToExp  step
+        e2 <- stepsToExp steps
+        return $ BindE wv tau e1 e2 (e1 `srcspan` e2)
+
+    stepsToExp (step : steps) = do
+        e1  <- stepToExp  step
+        tau <- inferExp e1
+        e2  <- stepsToExp steps
+        return $ BindE WildV tau e1 e2 (e1 `srcspan` e2)
+
+    stepToExp :: Step l -> m Exp
+    stepToExp (VarC _ v l) =
+        pure $ VarE v l
+
+    stepToExp (CallC _ f iotas args l) =
+        CallE f iotas <$> mapM argToExp args <*> pure l
+
+    stepToExp (IfC _ e1 c2 c3 l) =
+        IfE e1 <$> compToExp c2 <*> compToExp c3 <*> pure l
+
+    stepToExp LetC{} =
+        faildoc $ text "compToExp: saw let."
+
+    stepToExp (WhileC _ e1 c2 l) =
+        WhileE e1 <$> compToExp c2 <*> pure l
+
+    stepToExp (ForC _ ann v tau e1 e2 c3 l) =
+        ForE ann v tau e1 e2 <$> compToExp c3 <*> pure l
+
+    stepToExp (LiftC _ e _) =
+        pure e
+
+    stepToExp (ReturnC _ e l) =
+        pure $ ReturnE AutoInline e l
+
+    stepToExp BindC{} =
+        faildoc $ text "compToExp: saw bind."
+
+    stepToExp TakeC{} =
+        faildoc $ text "compToExp: saw take."
+
+    stepToExp TakesC{} =
+        faildoc $ text "compToExp: saw takes."
+
+    stepToExp EmitC{} =
+        faildoc $ text "compToExp: saw emit."
+
+    stepToExp EmitsC{} =
+        faildoc $ text "compToExp: saw emits."
+
+    stepToExp RepeatC{} =
+        faildoc $ text "compToExp: saw repeat."
+
+    stepToExp ParC{} =
+        faildoc $ text "compToExp: saw >>>."
+
+    stepToExp LoopC{} =
+        faildoc $ text "compToExp: saw loop."
+
+    argToExp :: Arg l -> m Exp
+    argToExp (ExpA e)  = return e
+    argToExp (CompA c) = compToExp c

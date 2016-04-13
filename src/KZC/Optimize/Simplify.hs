@@ -805,6 +805,16 @@ simplExp e0@(VarE v _) =
     go (Just (DoneExp e)) =
         inlineRhs e
 
+    -- The variable may be bound to a pureish computation, in which case we need
+    -- to convert it back to an expression...ugh. See #13.
+    go (Just (SuspComp theta c)) = do
+        e <- compToExp c
+        go (Just (SuspExp theta e))
+
+    go (Just (DoneComp c)) = do
+        e <- compToExp c
+        go (Just (DoneExp e))
+
     go _ =
         faildoc $
         text "Variable" <+> ppr v <+>
