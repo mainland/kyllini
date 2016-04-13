@@ -1,0 +1,5 @@
+fun comp inc(x : int) {
+   return (x+1);
+}
+
+let comp main = read [int] >>> map inc >>> write [int] 
