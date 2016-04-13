@@ -1,0 +1,16 @@
+let comp pureish =
+    return 1
+
+let comp foo = repeat
+    { (xs : arr[2] int) <- takes 2
+    ; emits xs
+    }
+
+let comp bar = repeat
+    { x <- take
+    ; y <- pureish
+    ; emit x
+    ; emit y
+    }
+
+let comp main = read >>> foo >>> bar >>> write
