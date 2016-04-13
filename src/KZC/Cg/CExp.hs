@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- |
 -- Module      :  KZC.Cg.CExp
@@ -11,6 +13,10 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Cg.CExp (
+    KontLabel,
+
+    Kont(..),
+
     TakeK,
     EmitK,
     EmitsK,
@@ -45,6 +51,10 @@ import KZC.Pretty
 import KZC.Quote.C
 import KZC.Staged
 
+-- | A 'Label' representing the continuation of the code that is currently being
+-- generated.
+type KontLabel = Label
+
 -- | Generate code to take the specified number of elements of the specified
 -- type, jumping to the specified label when the take is complete. A 'CExp'
 -- representing the taken value(s) is returned. We assume that the continuation
@@ -63,28 +73,57 @@ type EmitK l = Type -> CExp -> l -> Cg ()
 -- emit.
 type EmitsK l = Iota -> Type -> CExp -> l -> Cg ()
 
+-- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
+-- executes an action in the 'Cg' monad. This is distinct from a 'LabelKont',
+-- which represents /the continuation of the code being generated/, not the
+-- continuation of the code generator.
+data Kont a -- | A continuation that may only be called once because calling it
+            -- more than once may generate duplicate code. The 'Type' of the
+            -- 'CExp' expected as an argument is specified.
+            = OneshotK Type (CExp -> Cg a)
+
+            -- | Like 'OneshotK', but give a binder name to use if we need to
+            -- convert this continuation into a multishot continuation.
+            | OneshotBinderK BoundVar Type (CExp -> Cg a)
+
+            -- | A continuation that may be called multiple times, i.e., it does
+            -- not generate duplicate code. Note that the result of the
+            -- continuation must be the same every time it is invoked, e.g., it
+            -- may return a 'CExp' consisting of the same identifier every time
+            -- it is invoked. When called multiple times, only one of the
+            -- returned results will be used; however, the monadic side effects
+            -- of all invocations will be executed.
+            | MultishotK (CExp -> Cg a)
+
+            -- | Like 'MultishotK', but given the explicit destination in which
+            -- to place the result. The result will have been placed in the
+            -- destination before the continuation is called.
+            | MultishotBindK Type CExp (CExp -> Cg a)
+
 -- | A computation compiler, which produces a compiled computation when given
 -- the appropriate arguments.
-type CompC =  TakeK Label  -- Code generator for take
-           -> EmitK Label  -- Code generator for emit
-           -> EmitsK Label -- Code generator for emits
-           -> Label        -- Label of our continuation
-           -> Cg CExp      -- Value returned by the computation.
+type CompC a =  TakeK Label  -- Code generator for take
+             -> EmitK Label  -- Code generator for emit
+             -> EmitsK Label -- Code generator for emits
+             -> KontLabel    -- Label of our continuation
+             -> Kont a       -- Continuation accepting the compilation result
+             -> Cg a         -- Value returned by the computation.
 
-instance Show CompC where
+instance Show (CompC a) where
     show _ = "<comp>"
 
 -- | A computation function compiler, which produces a compiled call to a
 -- computation function when given the appropriate arguments.
-type FunCompC =  [Iota]       -- Array length arguments
-              -> [LArg]       -- Function arguments
-              -> TakeK Label  -- Code generator for take
-              -> EmitK Label  -- Code generator for emit
-              -> EmitsK Label -- Code generator for emit
-              -> Label        -- Label of our continuation
-              -> Cg CExp      -- Value returned by the computation.
+type FunCompC a =  [Iota]       -- Array length arguments
+                -> [LArg]       -- Function arguments
+                -> TakeK Label  -- Code generator for take
+                -> EmitK Label  -- Code generator for emit
+                -> EmitsK Label -- Code generator for emits
+                -> KontLabel    -- Label of our continuation
+                -> Kont a       -- Continuation accepting the compilation result
+                -> Cg a
 
-instance Show FunCompC where
+instance Show (FunCompC a) where
     show _ = "<funcomp>"
 
 -- | The type of "compiled" expressions.
@@ -110,11 +149,12 @@ data CExp = CVoid
           | CAlias Exp CExp
             -- ^ The 'CAlias' data constructor indicates a 'CExp' that aliases
             -- an expression. See Note [Aliasing].
-          | CComp CompC
+          | CComp (forall a . CompC a)
             -- ^ A computation.
-          | CFunComp FunCompC
+          | CFunComp (forall a . FunCompC a)
             -- ^ A computation function.
-  deriving (Show)
+
+deriving instance Show CExp
 
 instance Located CExp where
     locOf CVoid               = NoLoc
