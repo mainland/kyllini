@@ -8,7 +8,7 @@ all : $(patsubst %.blk, %.perf, $(TESTS))
 WHOLEPROGRAM=1
 include $(TOP)/mk/common.mk
 
-KZCFLAGS+=--ftimer --fautolut --flut
+KZCFLAGS+=--ftimer --fautolut --flut --ffuse
 CFLAGS+=-march=native -mtune=native -Ofast -pipe
 LDFLAGS+=-march=native -mtune=native -Ofast
 
