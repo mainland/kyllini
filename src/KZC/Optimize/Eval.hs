@@ -71,7 +71,9 @@ evalProgram (Program decls comp tau) =
                                          comp' <- toComp val
                                          return (h', comp')
                    CompV h' steps' -> return (h', Comp steps')
-                   _               -> faildoc $ text "Computation did not return CompReturnV or CompV."
+                   _               -> faildoc $ nest 2 $
+                                      text "Computation did not return CompReturnV or CompV:" </>
+                                      ppr val
   decls' <- mkDecls h'
   return $ Program decls' comp' tau
 
@@ -263,7 +265,10 @@ evalComp (Comp steps) = evalSteps steps
           CompReturnV {} -> evalBind step val steps
           CompV h steps1 -> do steps2 <- evalFullBind steps
                                return $ CompV h (steps1 ++ steps2)
-          _              -> faildoc $ text "Step did not return CompReturnV or CompV."
+          _              -> withSummaryContext step $
+                            faildoc $ nest 2 $
+                            text "Step did not return CompReturnV or CompV:" </>
+                            ppr val
 
     evalBind :: LStep -> Val LComp -> [LStep] -> EvalM (Val LComp)
     evalBind _step (CompReturnV val1) (BindC l wv tau s : k) =
@@ -276,7 +281,10 @@ evalComp (Comp steps) = evalSteps steps
           CompV h steps2' -> do tau'    <- simplType tau
                                 steps1' <- returnC (toExp val1)
                                 partial $ CompV h $ unComp steps1' ++ BindC l wv' tau' s : steps2'
-          _               -> faildoc $ text "Steps did not return CompReturnV or CompV."
+          _               -> withSummaryContext k $
+                             faildoc $ nest 2 $
+                             text "Steps did not return CompReturnV or CompV:" </>
+                             ppr val
 
     evalBind _step (CompReturnV _val1) k =
         evalSteps k
@@ -295,9 +303,11 @@ evalComp (Comp steps) = evalSteps steps
         steps2' <- evalFullSteps k
         partial $ CompV h1 $ steps1' ++ steps2'
 
-    evalBind step _ _ =
+    evalBind step val _ =
         withSummaryContext step $
-        faildoc $ text "Command did not return CmdV or ReturnV."
+        faildoc $ nest 2 $
+        text "Command did not return CmdV or ReturnV:" </>
+        (text . show) val
 
     evalFullBind :: [LStep] -> EvalM [LStep]
     evalFullBind (BindC l wv tau s : steps) =
@@ -418,13 +428,15 @@ evalStep (WhileC _ e c _) =
 evalStep (ForC _ ann v tau e1 e2 c _) =
     evalFor ann v tau e1 e2 c
 
-evalStep step@(LiftC l e s) = do
+evalStep (LiftC l e s) = do
     val <- withSummaryContext e $ evalExp e
     case val of
       ReturnV val' -> return $ CompReturnV val'
       CmdV h e'    -> partial $ CompV h [LiftC l e' s]
-      _            -> withSummaryContext step $
-                      faildoc $ text "Command did not return CmdV or ReturnV."
+      _            -> withSummaryContext e $
+                      faildoc $ nest 2 $
+                      text "Command did not return CmdV or Return:" </>
+                      (text . show) val
 
 evalStep (ReturnC l e s) = do
     val <- evalExp e
@@ -482,7 +494,10 @@ evalFullSteps steps = do
                                             steps' <- toSteps val
                                             return (h', steps')
                       CompV h' steps' -> return (h', steps')
-                      _               -> faildoc $ text "Computation did not return CompReturnV or CompV."
+                      _               -> withSummaryContext steps $
+                                         faildoc $ nest 2 $
+                                         text "Computation did not return CompReturnV or CompV:" </>
+                                         ppr val
     unComp <$> diffHeapComp h h' (Comp steps')
 
 evalFullComp :: LComp -> EvalM LComp
@@ -524,11 +539,22 @@ evalExp e =
 
     eval flags (VarE v _) | peval flags = do
         v' <- maybe v id <$> lookupSubst v
-        lookupVarBind v'
+        -- If @v@ is a pureish computation, we need to look it up in the
+        -- computation environment and convert it to an 'Exp Val'. This fixes
+        -- #13.
+        isVarNotComp <- isInScope v'
+        if isVarNotComp
+          then lookupVarBind v'
+          else lookupCVarBind v' >>= compValToExpVal
 
     eval _flags (VarE v s) = do
-        v' <- maybe v id <$> lookupSubst v
-        partialExp $ VarE v' s
+        v'  <- maybe v id <$> lookupSubst v
+        -- If @v@ is a pureish computation, we need to return a 'CmdV' instead
+        -- of a 'ExpV'. This is part of the fix to #13.
+        tau <- lookupVar v
+        if isCompT tau
+          then partialCmd $ VarE v' s
+          else partialExp $ VarE v' s
 
     eval flags (UnopE op e s) | peval flags = do
         val <- eval flags e
@@ -880,7 +906,9 @@ evalExp e =
                            withSummaryContext e2 $
                            eval flags e2 >>= wrapBind wv' tau' val1'
           _             -> withSummaryContext e1 $
-                           faildoc $ text "Command did not return CmdV or ReturnV."
+                           faildoc $ nest 2 $
+                           text "Command did not return CmdV or ReturnV:" </>
+                           (text . show) val1
       where
         -- If @val2@ uses the binding, we need to keep it around. This can happen if
         -- we decide not to inline a variable, e.g., if the variable is bound to an
@@ -1041,7 +1069,9 @@ evalFullCmd e =
                   ReturnV {} -> do h' <- getHeap
                                    return (h', toExp val)
                   CmdV h' e' -> return (h', e')
-                  _          -> faildoc $ text "Command did not return CmdV or ReturnV." </> ppr val
+                  _          -> faildoc $ nest 2 $
+                                text "Command did not return CmdV or ReturnV:" </>
+                                (text . show) val
     diffHeapExp h h' e'
 
 refVarPtr :: Ref -> VarPtr
@@ -1313,3 +1343,27 @@ transformExpVal f val0 =
 transformCompVal :: (LComp -> EvalM LComp) -> Val LComp -> EvalM (Val LComp)
 transformCompVal f val =
     toComp val >>= f >>= partialComp
+
+-- | Like 'compToExp', 'compValToExpVal' attempts to convert a 'Val Comp'
+-- representing a pureish computation to a 'Val Exp' representing the same
+-- computation.
+compValToExpVal :: Val LComp -> EvalM (Val Exp)
+compValToExpVal (CompReturnV e) =
+    return $ ReturnV e
+
+compValToExpVal (CompV h steps) =
+    CmdV h <$> compToExp (Comp steps)
+
+compValToExpVal (CompVarV v) =
+    return $ ReturnV $ ExpV $ varE v
+
+compValToExpVal (CompClosV theta _tau m) =
+    withSubst theta m >>= compValToExpVal
+
+compValToExpVal (FunCompClosV theta ivs vtaus tau m) =
+    return $ FunClosV theta ivs vtaus tau $ m >>= compValToExpVal
+
+compValToExpVal val =
+    panicdoc $
+    nest 2 $
+    text "compValToExpVal: cannot convert comp value to expression value:" </> ppr val
