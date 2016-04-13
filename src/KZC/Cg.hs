@@ -1387,10 +1387,10 @@ cgLetBinding bv tau =
         return ce
 
     oneshotk (CComp {}) =
-        faildoc $ text "Cannot bind a computation."
+        panicdoc $ text "cgLetBinding: cannot bind a computation."
 
     oneshotk (CFunComp {}) =
-        faildoc $ text "Cannot bind a computation function."
+        panicdoc $ text "cgLetBinding: cannot bind a computation function."
 
     oneshotk ce@(CExp [cexp|$id:_|]) =
         return ce
@@ -1434,10 +1434,10 @@ cgMonadicBinding bv tau =
             return ce
 
         go _ (CComp {}) =
-            faildoc $ text "Cannot bind a computation."
+            panicdoc $ text "cgMonadicBinding: cannot bind a computation."
 
         go _ (CFunComp {}) =
-            faildoc $ text "Cannot bind a computation function."
+            panicdoc $ text "cgMonadicBinding: cannot bind a computation function."
 
         -- If our first argument is @True@, then we will create a new binding, so we
         -- can forget the alias.
