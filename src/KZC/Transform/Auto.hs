@@ -36,13 +36,13 @@ import Data.Monoid
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
-import KZC.Auto.Label
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Core.Lint
 import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
+import KZC.Label
 import KZC.Monad
 import KZC.Summary
 import KZC.Trace
@@ -87,24 +87,24 @@ ensureUnique v k = do
                local (\env -> env { autoSubst = Map.insert v v' (autoSubst env) }) (k v')
        else k v
 
-autoProgram :: [C.Decl] -> Auto LProgram
+autoProgram :: forall l . IsLabel l => [C.Decl] -> Auto (Program l)
 autoProgram cdecls = do
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
   where
-    findMain :: [LDecl] -> Auto (LComp, Type)
+    findMain :: [Decl l] -> Auto (Comp l, Type)
     findMain decls =
         case filter isMain decls of
           [] -> faildoc $ text "Cannot find main computation."
           [LetCompD _ tau comp _] -> return (comp, tau)
           _ -> faildoc $ text "More than one main computation!"
 
-    isMain :: LDecl -> Bool
+    isMain :: Decl l -> Bool
     isMain (LetCompD v _ _ _) = v == "main"
     isMain _                  = False
 
-transDecls :: [C.Decl] -> ([LDecl] -> Auto a) -> Auto a
+transDecls :: IsLabel l => [C.Decl] -> ([Decl l] -> Auto a) -> Auto a
 transDecls [] k =
     k []
 
@@ -113,7 +113,7 @@ transDecls (cdecl:cdecls) k =
     transDecls cdecls $ \decls ->
     k (decl:decls)
 
-transDecl :: C.Decl -> (LDecl -> Auto a) -> Auto a
+transDecl :: IsLabel l => C.Decl -> (Decl l -> Auto a) -> Auto a
 transDecl decl@(C.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
@@ -304,7 +304,7 @@ transExp e@(C.ParE {}) =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
-transComp :: C.Exp -> Auto LComp
+transComp :: forall l . IsLabel l => C.Exp -> Auto (Comp l)
 transComp e@(C.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
@@ -317,7 +317,7 @@ transComp e@(C.IfE e1 e2 e3 l) = do
     e1' <- transExp e1
     go tau e1'
   where
-    go :: Type -> Exp -> Auto LComp
+    go :: Type -> Exp -> Auto (Comp l)
     go tau e1' | isPureishT tau = do
         e2' <- transExp e2
         e3' <- transExp e3
@@ -340,7 +340,7 @@ transComp e@(C.CallE f iotas es _) = do
       else do args <- mapM transArg es
               callC f' iotas args
   where
-    transArg :: C.Exp -> Auto LArg
+    transArg :: C.Exp -> Auto (Arg l)
     transArg e = do
         tau <- inferExp e
         if isPureT tau
