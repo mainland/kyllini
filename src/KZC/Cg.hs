@@ -2213,15 +2213,76 @@ cgAssign tau ce1 ce2 = do
       where
         cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
         cgAssignBitArray ce1 ce2 clen = do
-            csrc' <- cgLower tau0 csrc
-            incBitArrayCopies
-            appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
+            appendComment $ text "Bit array:" <+> ppr ce1 <+> text ":=" <+> ppr ce2
+            case (unBitCSliceBase ce1, unBitCSliceBase ce2, clen) of
+              (Just cdst, Just csrc, CInt len) -> fastPath cdst csrc 0 len
+              _ -> case (unCSlice ce1, unCSlice ce2, clen) of
+                     ((cdst, CInt dstIdx), (csrc, CInt srcIdx), CInt len) ->
+                         mediumPath cdst dstIdx csrc srcIdx len
+                     ((cdst, cdstIdx), (csrc, csrcIdx), clen) ->
+                         slowPath cdst cdstIdx csrc csrcIdx clen
           where
-            cdst, cdstIdx :: CExp
-            (cdst, cdstIdx) = unCSlice ce1
+            fastPath :: CExp -> CExp -> Integer -> Integer -> Cg ()
+            fastPath _cdst _csrc _i 0 =
+                return ()
 
-            csrc, csrcIdx :: CExp
-            (csrc, csrcIdx) = unCSlice ce2
+            fastPath cdst csrc i n | q /= 0 = do
+                forM_ [0..q - 1] $ \j ->
+                    appendStm [cstm|((typename uint64_t*) &$cdst[$int:i])[$int:j] = ((typename uint64_t*) &$csrc[$int:i])[$int:j];|]
+                fastPath cdst csrc (i + 8*q) r
+              where
+                (q, r) = n `quotRem` 64
+
+            fastPath cdst csrc i n | q /= 0 = do
+                forM_ [0..q - 1] $ \j ->
+                    appendStm [cstm|((typename uint32_t*) &$cdst[$int:i])[$int:j] = ((typename uint32_t*) &$csrc[$int:i])[$int:j];|]
+                fastPath cdst csrc (i + 4*q) r
+              where
+                (q, r) = n `quotRem` 32
+
+            fastPath cdst csrc i n | q /= 0 = do
+                forM_ [0..q - 1] $ \j ->
+                    appendStm [cstm|((typename uint16_t*) &$cdst[$int:i])[$int:j] = ((typename uint16_t*) &$csrc[$int:i])[$int:j];|]
+                fastPath cdst csrc (i + 2*q) r
+              where
+                (q, r) = n `quotRem` 16
+
+            fastPath cdst csrc i n | q /= 0 = do
+                forM_ [0..q - 1] $ \j ->
+                    appendStm [cstm|$cdst[$int:(i+j)] = $csrc[$int:(i+j)];|]
+                fastPath cdst csrc (i + q) r
+              where
+                (q, r) = n `quotRem` 8
+
+            fastPath cdst csrc i n | n < 8 =
+                maskedAssign (CExp [cexp|$cdst[$int:i]|]) (CExp [cexp|$csrc[$int:i]|]) n
+
+            fastPath _ _ i _ =
+                slowPath cdst (cdstIdx + fromIntegral i) csrc (csrcIdx + fromIntegral i) clen
+              where
+                cdst, cdstIdx :: CExp
+                (cdst, cdstIdx) = unCSlice ce1
+
+                csrc, csrcIdx :: CExp
+                (csrc, csrcIdx) = unCSlice ce2
+
+            mediumPath :: CExp -> Integer -> CExp -> Integer -> Integer -> Cg ()
+            mediumPath cdst dstIdx csrc srcIdx len =
+                slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt len)
+
+            maskedAssign :: CExp -> CExp -> Integer -> Cg ()
+            maskedAssign cdst csrc n =
+                appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc ..&.. cmask);|]
+              where
+                cmask, cnotmask :: CExp
+                cmask    = CExp $ chexconst (2^n - 1)
+                cnotmask = CExp $ [cexp|~$(chexconst (2^n - 1))|]
+
+            slowPath :: CExp -> CExp -> CExp -> CExp -> CExp -> Cg ()
+            slowPath cdst cdstIdx csrc csrcIdx clen = do
+                csrc' <- cgLower tau0 csrc
+                incBitArrayCopies
+                appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
 
     assign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
         ctau <- cgType tau
