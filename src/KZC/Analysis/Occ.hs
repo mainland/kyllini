@@ -97,7 +97,7 @@ withOccInfo v m =
 updOccInfo :: BoundVar -> OccInfo -> BoundVar
 updOccInfo v occ = v { bOccInfo = Just occ }
 
-occProgram :: LProgram -> OccM LProgram
+occProgram :: Program l -> OccM (Program l)
 occProgram (Program decls comp tau) = do
   (decls', comp') <-
       occDecls decls $
@@ -107,9 +107,9 @@ occProgram (Program decls comp tau) = do
       occComp comp
   return $ Program decls' comp' tau
 
-occDecls :: [LDecl]
+occDecls :: [Decl l]
          -> OccM a
-         -> OccM ([LDecl], a)
+         -> OccM ([Decl l], a)
 occDecls [] m = do
     x <- m
     return ([], x)
@@ -118,9 +118,9 @@ occDecls (d:ds) m = do
     (d', (ds', x)) <- occDecl d $ occDecls ds $ m
     return (d':ds', x)
 
-occDecl :: LDecl
+occDecl :: Decl l
         -> OccM a
-        -> OccM (LDecl, a)
+        -> OccM (Decl l, a)
 occDecl (LetD decl s) m = do
     (decl', x) <- occLocalDecl decl m
     return (LetD decl' s, x)
@@ -187,10 +187,10 @@ occLocalDecl (LetRefLD v tau e s) m = do
     (x, occ) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
     return (LetRefLD (updOccInfo v occ) tau e' s, x)
 
-occComp :: LComp -> OccM LComp
+occComp :: Comp l -> OccM (Comp l)
 occComp (Comp steps) = Comp <$> occSteps steps
 
-occSteps :: [LStep] -> OccM [LStep]
+occSteps :: [Step l] -> OccM [Step l]
 occSteps [] =
     return []
 
@@ -210,7 +210,7 @@ occSteps (BindC l (TameV v) tau s : steps) = do
 occSteps (step : steps) =
     (:) <$> occStep step <*> occSteps steps
 
-occStep :: LStep -> OccM LStep
+occStep :: Step l -> OccM (Step l)
 occStep step@(VarC _ v _) = do
     occVar v
     return step
@@ -220,7 +220,7 @@ occStep (CallC l f iotas args s) = do
     args' <- mapM occArg args
     return $ CallC l f iotas args' s
   where
-    occArg :: LArg -> OccM LArg
+    occArg :: Arg l -> OccM (Arg l)
     occArg (ExpA e)  = ExpA  <$> occExp e
     occArg (CompA c) = CompA <$> occComp c
 
