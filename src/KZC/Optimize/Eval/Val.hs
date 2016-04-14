@@ -84,6 +84,7 @@ import Data.String (fromString)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
+import KZC.Auto.Label
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax

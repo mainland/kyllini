@@ -57,6 +57,7 @@ SOURCE = \
 	KZC/Analysis/Range.hs \
 	KZC/Analysis/RefFlow.hs \
 	KZC/Auto/Comp.hs \
+	KZC/Auto/Label.hs \
 	KZC/Auto/Lint.hs \
 	KZC/Auto/Smart.hs \
 	KZC/Auto/Syntax.hs \

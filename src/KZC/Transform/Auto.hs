@@ -36,6 +36,7 @@ import Data.Monoid
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
+import KZC.Auto.Label
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Core.Lint
