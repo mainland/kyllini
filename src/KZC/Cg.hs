@@ -2168,7 +2168,7 @@ cgAssign (UnitT {}) _ ce =
 
 cgAssign tau ce1 ce2 = do
     alias <- mayAlias ce1 ce2
-    go alias tau ce1 ce2
+    assign alias tau ce1 ce2
   where
     mayAlias :: CExp -> CExp -> Cg Bool
     mayAlias ce1@(CAlias e1' _) ce2@(CAlias e2' _) = do
@@ -2181,12 +2181,12 @@ cgAssign tau ce1 ce2 = do
     mayAlias _ce1 _ce2 =
         return False
 
-    go :: Bool -> Type -> CExp -> CExp -> Cg ()
-    go mayAlias tau (CAlias _ ce1) ce2 =
-       go mayAlias tau ce1 ce2
+    assign :: Bool -> Type -> CExp -> CExp -> Cg ()
+    assign mayAlias tau (CAlias _ ce1) ce2 =
+       assign mayAlias tau ce1 ce2
 
-    go mayAlias tau ce1 (CAlias _ ce2) =
-       go mayAlias tau ce1 ce2
+    assign mayAlias tau ce1 (CAlias _ ce2) =
+       assign mayAlias tau ce1 ce2
 
     -- XXX: Should use more efficient bit twiddling code here. See:
     --
@@ -2194,7 +2194,7 @@ cgAssign tau ce1 ce2 = do
     --   https://graphics.stanford.edu/~seander/bithacks.html
     --   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
     --
-    go _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
+    assign _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
         appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
         cbitIdx, cbitOff :: CExp
@@ -2207,7 +2207,7 @@ cgAssign tau ce1 ce2 = do
         -- [cexp|!!$ce2|] here.
         cbit = ce2 `shiftL'` cbitOff
 
-    go _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
+    assign _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
         clen <- cgIota iota
         cgAssignBitArray ce1 ce2 clen
       where
@@ -2223,7 +2223,7 @@ cgAssign tau ce1 ce2 = do
             csrc, csrcIdx :: CExp
             (csrc, csrcIdx) = unCSlice ce2
 
-    go mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
+    assign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
         ctau <- cgType tau
         ce1' <- cgArrayAddr ce1
         ce2' <- cgArrayAddr ce2
@@ -2246,7 +2246,7 @@ cgAssign tau ce1 ce2 = do
         cgArrayAddr ce =
             return ce
 
-    go _ _ cv (CStruct flds) =
+    assign _ _ cv (CStruct flds) =
         mapM_ cgAssignField flds
       where
         cgAssignField :: (Field, CExp) -> Cg ()
@@ -2258,7 +2258,7 @@ cgAssign tau ce1 ce2 = do
 
     -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
     -- may need to be dereferenced.
-    go _ _ cv ce =
+    assign _ _ cv ce =
         appendStm [cstm|$(cgDeref cv) = $ce;|]
 
 cgBoundsCheck :: CExp -> CExp -> Cg ()
