@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
 -- Module      :  KZC.Label
@@ -11,6 +12,8 @@ module KZC.Label (
     Label(..)
   ) where
 
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.String (IsString(..))
 import Data.Symbol
 import qualified Language.C.Quote as C
@@ -18,8 +21,16 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Cg.Util
 import KZC.Uniq
+import KZC.Util.SetLike
+import KZC.Vars
 
-class (Ord l, IsString l, C.ToIdent l, Pretty l, Gensym l) => IsLabel l where
+class ( Ord l
+      , IsString l
+      , C.ToIdent l
+      , Pretty l
+      , Gensym l
+      , Fvs l l
+      , Subst l l l ) => IsLabel l where
     pairLabel :: l -> l -> l
 
 -- | A code label
@@ -46,3 +57,9 @@ instance Gensym Label where
 
 instance IsLabel Label where
     pairLabel = PairL
+
+instance Fvs Label Label where
+    fvs l = singleton l
+
+instance Subst Label Label Label where
+    substM x (theta, _) = fromMaybe x (Map.lookup x theta)

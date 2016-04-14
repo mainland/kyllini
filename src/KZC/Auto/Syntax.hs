@@ -928,7 +928,7 @@ instance Subst a b Exp => Subst a b (Field, Exp) where
  -
  ------------------------------------------------------------------------------}
 
-instance IsLabel l => Subst l l (Step l) where
+instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
     substM (VarC l v s) =
         VarC <$> substM l <*> pure v <*> pure s
 
@@ -977,7 +977,7 @@ instance IsLabel l => Subst l l (Step l) where
     substM step@(LoopC {}) =
         return step
 
-instance IsLabel l => Subst l l (Comp l) where
+instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
     substM comp = Comp <$> substM (unComp comp)
 
 {------------------------------------------------------------------------------

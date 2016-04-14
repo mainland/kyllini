@@ -28,7 +28,6 @@ import Data.Foldable
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -47,9 +46,6 @@ instance (Binders x n) => Binders [x] n where
 class Ord n => Fvs x n where
     fvs :: SetLike m n => x -> m n
     fvs _ = mempty
-
-instance Ord a => Fvs a a where
-    fvs x = singleton x
 
 instance Fvs x n => Fvs (Maybe x) n where
     fvs = foldMap fvs
@@ -101,9 +97,6 @@ instance Subst e v a => Subst e v [a] where
 
 instance Subst e v a => Subst e v (Maybe a) where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
-
-instance Ord a => Subst a a a where
-    substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
 class Ord v => Freshen a e v where
     -- | Freshen a value of type @a@ within a substitution that is mapping
