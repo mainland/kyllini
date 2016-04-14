@@ -117,9 +117,9 @@ typename std::enable_if<std::is_floating_point<T>::value,void>::type
 print(FILE* fp, T x, bool comma)
 {
     if (comma)
-        fprintf(fp, "%f,", (double) x);
+        fprintf(fp, "%g,", (double) x);
     else
-        fprintf(fp, "%f", (double) x);
+        fprintf(fp, "%g", (double) x);
 }
 
 static int print_bit(FILE* fp, bit_t x, bool comma)
