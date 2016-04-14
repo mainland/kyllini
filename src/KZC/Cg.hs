@@ -2416,6 +2416,11 @@ appendTopComment :: Doc -> Cg ()
 appendTopComment doc =
     appendTopDef [cedecl|$esc:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
 
+-- | Append a comment to the current sequence of statements.
+appendComment :: Doc -> Cg ()
+appendComment doc =
+    appendStm [cstm|$escstm:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
+
 -- | Return a C hex constant.
 chexconst :: Integer -> C.Exp
 chexconst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
