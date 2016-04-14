@@ -1,6 +1,8 @@
+{-# LANGUAGE RoleAnnotations #-}
+
 -- |
 -- Module      :  KZC.Cg.Monad
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
@@ -15,10 +17,10 @@ import Control.Monad.State (StateT)
 import KZC.Auto.Lint (Tc)
 import KZC.Monad.SEFKT (SEFKT)
 
-type Cg a = SEFKT (ReaderT CgEnv (StateT CgState Tc)) a
+type Cg l a = SEFKT (ReaderT (CgEnv l) (StateT (CgState l) Tc)) a
 
-data CgEnv
+type role CgEnv nominal
 
-instance Show CgEnv where
+data CgEnv l
 
-data CgState
+data CgState l

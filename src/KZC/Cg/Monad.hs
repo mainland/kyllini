@@ -95,6 +95,7 @@ import KZC.Auto.Lint (Tc, liftTc)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
+import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Quote.C
@@ -103,21 +104,21 @@ import KZC.Uniq
 import KZC.Util.Env
 
 -- | The 'Cg' monad.
-type Cg a = SEFKT (ReaderT CgEnv (StateT CgState Tc)) a
+type Cg l a = SEFKT (ReaderT (CgEnv l) (StateT (CgState l) Tc)) a
 
-data CgEnv = CgEnv
-    { varCExps    :: Map Var CExp
-    , ivarCExps   :: Map IVar CExp
+data CgEnv l = CgEnv
+    { varCExps    :: Map Var (CExp l)
+    , ivarCExps   :: Map IVar (CExp l)
     , tyvarTypes  :: Map TyVar Type
     , -- | Variables defined using refs that are then modified before some use
       -- of the variable.
       refFlowModVars :: Set Var
     }
 
-instance Show CgEnv where
+instance Show (CgEnv l) where
     show _ = "<Env>"
 
-defaultCgEnv :: CgEnv
+defaultCgEnv :: CgEnv l
 defaultCgEnv = CgEnv
     { varCExps       = mempty
     , ivarCExps      = mempty
@@ -146,13 +147,13 @@ instance Pretty CgStats where
         text "   Memory copies:" <+> ppr (memCopies stats) </>
         text "Bit array copies:" <+> ppr (bitArrayCopies stats)
 
-data CgState = CgState
-    { labels :: Set Label
+data CgState l = CgState
+    { labels :: Set l
     , code   :: Code
     , stats  :: CgStats
     }
 
-defaultCgState :: CgState
+defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
     { labels = mempty
     , code   = mempty
@@ -160,27 +161,27 @@ defaultCgState = CgState
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
-evalCg :: Cg () -> KZC [C.Definition]
+evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc $ execStateT (runReaderT (runSEFKT m) defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
 
-extendVarCExps :: [(Var, CExp)] -> Cg a -> Cg a
+extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
 extendVarCExps ves m =
     extendEnv varCExps (\env x -> env { varCExps = x }) ves m
 
-lookupVarCExp :: Var -> Cg CExp
+lookupVarCExp :: Var -> Cg l (CExp l)
 lookupVarCExp v =
     lookupEnv varCExps onerr v
   where
     onerr = faildoc $
             text "Compiled variable" <+> ppr v <+> text "not in scope"
 
-extendIVarCExps :: [(IVar, CExp)] -> Cg a -> Cg a
+extendIVarCExps :: [(IVar, CExp l)] -> Cg l a -> Cg l a
 extendIVarCExps ves m =
     extendEnv ivarCExps (\env x -> env { ivarCExps = x }) ves m
 
-lookupIVarCExp :: IVar -> Cg CExp
+lookupIVarCExp :: IVar -> Cg l (CExp l)
 lookupIVarCExp v =
     lookupEnv ivarCExps onerr v
   where
@@ -188,11 +189,11 @@ lookupIVarCExp v =
             text "Compiled array size variable" <+> ppr v <+>
             text "not in scope"
 
-extendTyVarTypes :: [(TyVar, Type)] -> Cg a -> Cg a
+extendTyVarTypes :: [(TyVar, Type)] -> Cg l a -> Cg l a
 extendTyVarTypes tvtaus m =
     extendEnv tyvarTypes (\env x -> env { tyvarTypes = x }) tvtaus m
 
-lookupTyVarType :: TyVar -> Cg Type
+lookupTyVarType :: TyVar -> Cg l Type
 lookupTyVarType alpha =
     lookupEnv tyvarTypes onerr alpha
   where
@@ -202,21 +203,21 @@ lookupTyVarType alpha =
 
 -- | Return a function that substitutes type variables for their current
 -- instantiation.
-askTyVarTypeSubst :: Cg (Map TyVar Type)
+askTyVarTypeSubst :: Cg l (Map TyVar Type)
 askTyVarTypeSubst = asks tyvarTypes
 
 -- | Specify the set of variables defined using refs that are then modified
 -- before some use of the variable they flow to.
-localRefFlowModVars :: Set Var -> Cg a -> Cg a
+localRefFlowModVars :: Set Var -> Cg l a -> Cg l a
 localRefFlowModVars vs k =
     local (\env -> env { refFlowModVars = vs }) k
 
 -- | Ask if a variable is defined by a ref that is then modified before some use
 -- of the variable.
-askRefFlowModVar :: Var -> Cg Bool
+askRefFlowModVar :: Var -> Cg l Bool
 askRefFlowModVar v = asks $ \env -> Set.member v (refFlowModVars env)
 
-tell :: ToCode a => a -> Cg ()
+tell :: ToCode a => a -> Cg l ()
 tell c = modify $ \s -> s { code = code s <> toCode c }
 
 class ToCode a where
@@ -243,7 +244,7 @@ instance ToCode C.Stm where
 instance ToCode [C.Stm] where
     toCode cstms = mempty { codeStms = Seq.fromList cstms }
 
-collect :: Cg a -> Cg (Code, a)
+collect :: Cg l a -> Cg l (Code, a)
 collect m = do
     old_code <- gets code
     modify $ \s -> s { code = mempty }
@@ -252,43 +253,43 @@ collect m = do
     modify $ \s -> s { code = old_code }
     return (c, x)
 
-collectDefinitions :: Cg a -> Cg ([C.Definition], a)
+collectDefinitions :: Cg l a -> Cg l ([C.Definition], a)
 collectDefinitions m = do
     (c, x) <- collect m
     tell c { codeDefs = mempty }
     return (toList (codeDefs c), x)
 
-collectDefinitions_ :: Cg () -> Cg ([C.Definition])
+collectDefinitions_ :: Cg l () -> Cg l ([C.Definition])
 collectDefinitions_ m = fst <$> collectDefinitions m
 
-collectThreadDecls :: Cg a -> Cg ([C.InitGroup], a)
+collectThreadDecls :: Cg l a -> Cg l ([C.InitGroup], a)
 collectThreadDecls m = do
     (c, x) <- collect m
     tell c { codeThreadDecls = mempty }
     return (toList (codeThreadDecls c), x)
 
-collectThreadDecls_ :: Cg () -> Cg ([C.InitGroup])
+collectThreadDecls_ :: Cg l () -> Cg l ([C.InitGroup])
 collectThreadDecls_ m = fst <$> collectThreadDecls m
 
-collectDecls :: Cg a -> Cg ([C.InitGroup], a)
+collectDecls :: Cg l a -> Cg l ([C.InitGroup], a)
 collectDecls m = do
     (c, x) <- collect m
     tell c { codeDecls = mempty }
     return (toList (codeDecls c), x)
 
-collectDecls_ :: Cg () -> Cg ([C.InitGroup])
+collectDecls_ :: Cg l () -> Cg l ([C.InitGroup])
 collectDecls_ m = fst <$> collectDecls m
 
-collectStms :: Cg a -> Cg ([C.Stm], a)
+collectStms :: Cg l a -> Cg l ([C.Stm], a)
 collectStms m = do
     (c, x) <- collect m
     tell c { codeStms = mempty }
     return (toList (codeStms c), x)
 
-collectStms_ :: Cg () -> Cg ([C.Stm])
+collectStms_ :: Cg l () -> Cg l ([C.Stm])
 collectStms_ m = fst <$> collectStms m
 
-inNewMainThreadBlock :: Cg a -> Cg ([C.BlockItem], a)
+inNewMainThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewMainThreadBlock m = do
     (c, x) <- collect m
     tell c { codeInitStms    = mempty
@@ -304,11 +305,11 @@ inNewMainThreadBlock m = do
             (map C.BlockStm .  toList . codeCleanupStms) c
            ,x)
 
-inNewMainThreadBlock_ :: Cg a -> Cg [C.BlockItem]
+inNewMainThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewMainThreadBlock_ m =
     fst <$> inNewMainThreadBlock m
 
-inNewThreadBlock :: Cg a -> Cg ([C.BlockItem], a)
+inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewThreadBlock m = do
     (c, x) <- collect m
     tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms  = mempty }
@@ -316,64 +317,64 @@ inNewThreadBlock m = do
             (map C.BlockDecl . toList . codeDecls) c ++
             (map C.BlockStm .  toList . codeStms) c, x)
 
-inNewThreadBlock_ :: Cg a -> Cg [C.BlockItem]
+inNewThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewThreadBlock_ m =
     fst <$> inNewThreadBlock m
 
-inNewBlock :: Cg a -> Cg ([C.BlockItem], a)
+inNewBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewBlock m = do
     (c, x) <- collect m
     tell c { codeDecls = mempty, codeStms  = mempty }
     return ((map C.BlockDecl . toList . codeDecls) c ++
             (map C.BlockStm .  toList . codeStms) c, x)
 
-inNewBlock_ :: Cg a -> Cg [C.BlockItem]
+inNewBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewBlock_ m =
     fst <$> inNewBlock m
 
-appendTopDef :: C.Definition -> Cg ()
+appendTopDef :: C.Definition -> Cg l ()
 appendTopDef cdef =
   tell mempty { codeDefs = Seq.singleton cdef }
 
-appendTopDefs :: [C.Definition] -> Cg ()
+appendTopDefs :: [C.Definition] -> Cg l ()
 appendTopDefs cdefs =
   tell mempty { codeDefs = Seq.fromList cdefs }
 
-appendTopDecl :: C.InitGroup -> Cg ()
+appendTopDecl :: C.InitGroup -> Cg l ()
 appendTopDecl cdecl =
   tell mempty { codeDefs = Seq.singleton (C.DecDef cdecl noLoc) }
 
-appendTopDecls :: [C.InitGroup] -> Cg ()
+appendTopDecls :: [C.InitGroup] -> Cg l ()
 appendTopDecls cdecls =
   tell mempty { codeDefs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
 
-appendInitStm :: C.Stm -> Cg ()
+appendInitStm :: C.Stm -> Cg l ()
 appendInitStm cstm =
   tell mempty { codeInitStms = Seq.singleton cstm }
 
-appendCleanupStm :: C.Stm -> Cg ()
+appendCleanupStm :: C.Stm -> Cg l ()
 appendCleanupStm cstm =
   tell mempty { codeCleanupStms = Seq.singleton cstm }
 
-appendThreadDecl :: C.InitGroup -> Cg ()
+appendThreadDecl :: C.InitGroup -> Cg l ()
 appendThreadDecl cdecl = tell mempty { codeThreadDecls = Seq.singleton cdecl }
 
-appendThreadDecls :: [C.InitGroup] -> Cg ()
+appendThreadDecls :: [C.InitGroup] -> Cg l ()
 appendThreadDecls cdecls = tell mempty { codeThreadDecls = Seq.fromList cdecls }
 
-appendDecl :: C.InitGroup -> Cg ()
+appendDecl :: C.InitGroup -> Cg l ()
 appendDecl cdecl = tell cdecl
 
-appendDecls :: [C.InitGroup] -> Cg ()
+appendDecls :: [C.InitGroup] -> Cg l ()
 appendDecls cdecls = tell cdecls
 
-appendStm :: C.Stm -> Cg ()
+appendStm :: C.Stm -> Cg l ()
 appendStm cstm = tell cstm
 
-appendStms :: [C.Stm] -> Cg ()
+appendStms :: [C.Stm] -> Cg l ()
 appendStms cstms = tell cstms
 
-appendBlock :: [C.BlockItem] -> Cg ()
+appendBlock :: [C.BlockItem] -> Cg l ()
 appendBlock citems
     | all isBlockStm citems = appendStms [stm | C.BlockStm stm <- citems]
     | otherwise             = appendStm [cstm|{ $items:citems }|]
@@ -382,7 +383,7 @@ appendBlock citems
     isBlockStm (C.BlockStm {}) = True
     isBlockStm _               = False
 
-collectLabels :: Cg a -> Cg (Set Label, a)
+collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
 collectLabels m = do
     old_labels <- gets labels
     modify $ \s -> s { labels = mempty }
@@ -391,33 +392,33 @@ collectLabels m = do
     modify $ \s -> s { labels = old_labels }
     return (lbls, x)
 
-useLabel :: Label -> Cg ()
+useLabel :: IsLabel l => l -> Cg l ()
 useLabel lbl =
     modify $ \s -> s { labels = Set.insert lbl (labels s) }
 
-useLabels :: Set Label -> Cg ()
+useLabels :: IsLabel l => Set l -> Cg l ()
 useLabels lbls =
     modify $ \s -> s { labels = labels s `Set.union` lbls }
 
-isLabelUsed :: Label -> Cg Bool
+isLabelUsed :: IsLabel l => l -> Cg l Bool
 isLabelUsed lbl =
     gets (Set.member lbl . labels)
 
-getStats :: Cg CgStats
+getStats :: Cg l CgStats
 getStats = gets stats
 
-modifyStats :: (CgStats -> CgStats) -> Cg ()
+modifyStats :: (CgStats -> CgStats) -> Cg l ()
 modifyStats f = modify $ \s -> s { stats = f (stats s) }
 
-incMemCopies :: Cg ()
+incMemCopies :: Cg l ()
 incMemCopies =
     modifyStats $ \s -> s { memCopies = memCopies s + 1 }
 
-incBitArrayCopies :: Cg ()
+incBitArrayCopies :: Cg l ()
 incBitArrayCopies =
     modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
 
-instance IfThenElse CExp (Cg ()) where
+instance IfThenElse (CExp l) (Cg l ()) where
     ifThenElse (CBool True)  t _ = t
     ifThenElse (CBool False) _ e = e
     ifThenElse c t e = do

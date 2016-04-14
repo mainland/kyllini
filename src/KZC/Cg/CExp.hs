@@ -13,8 +13,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Cg.CExp (
-    KontLabel,
-
     Kont(..),
 
     TakeK,
@@ -50,112 +48,108 @@ import KZC.Pretty
 import KZC.Quote.C
 import KZC.Staged
 
--- | A 'Label' representing the continuation of the code that is currently being
--- generated.
-type KontLabel = Label
-
 -- | Generate code to take the specified number of elements of the specified
 -- type, jumping to the specified label when the take is complete. A 'CExp'
 -- representing the taken value(s) is returned. We assume that the continuation
 -- labels the code that will be generated immediately after the take.
-type TakeK l = Int -> Type -> l -> Cg CExp
+type TakeK l = Int -> Type -> l -> Cg l (CExp l)
 
 -- | Generate code to emit the specified value at the specified type, jumping to
 -- the specified label when the take is complete. We assume that the
 -- continuation labels the code that will be generated immediately after the
 -- emit.
-type EmitK l = Type -> CExp -> l -> Cg ()
+type EmitK l = Type -> CExp l -> l -> Cg l ()
 
 -- | Generate code to emit the specified arrays of values at the specified type,
 -- jumping to the specified label when the take is complete. We assume that the
 -- continuation labels the code that will be generated immediately after the
 -- emit.
-type EmitsK l = Iota -> Type -> CExp -> l -> Cg ()
+type EmitsK l = Iota -> Type -> CExp l -> l -> Cg l ()
 
 -- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
 -- executes an action in the 'Cg' monad. This is distinct from a 'LabelKont',
 -- which represents /the continuation of the code being generated/, not the
 -- continuation of the code generator.
-data Kont a -- | A continuation that may only be called once because calling it
-            -- more than once may generate duplicate code. The 'Type' of the
-            -- 'CExp' expected as an argument is specified.
-            = OneshotK Type (CExp -> Cg a)
+data Kont l a -- | A continuation that may only be called once because calling it
+              -- more than once may generate duplicate code. The 'Type' of the
+              -- 'CExp' expected as an argument is specified.
+              = OneshotK Type (CExp l -> Cg l a)
 
-            -- | Like 'OneshotK', but give a binder name to use if we need to
-            -- convert this continuation into a multishot continuation.
-            | OneshotBinderK BoundVar Type (CExp -> Cg a)
+              -- | Like 'OneshotK', but give a binder name to use if we need to
+              -- convert this continuation into a multishot continuation.
+              | OneshotBinderK BoundVar Type (CExp l -> Cg l a)
 
-            -- | A continuation that may be called multiple times, i.e., it does
-            -- not generate duplicate code. Note that the result of the
-            -- continuation must be the same every time it is invoked, e.g., it
-            -- may return a 'CExp' consisting of the same identifier every time
-            -- it is invoked. When called multiple times, only one of the
-            -- returned results will be used; however, the monadic side effects
-            -- of all invocations will be executed.
-            | MultishotK (CExp -> Cg a)
+              -- | A continuation that may be called multiple times, i.e., it does
+              -- not generate duplicate code. Note that the result of the
+              -- continuation must be the same every time it is invoked, e.g., it
+              -- may return a 'CExp' consisting of the same identifier every time
+              -- it is invoked. When called multiple times, only one of the
+              -- returned results will be used; however, the monadic side effects
+              -- of all invocations will be executed.
+              | MultishotK (CExp l -> Cg l a)
 
-            -- | Like 'MultishotK', but given the explicit destination in which
-            -- to place the result. The result will have been placed in the
-            -- destination before the continuation is called.
-            | MultishotBindK Type CExp (CExp -> Cg a)
+              -- | Like 'MultishotK', but given the explicit destination in which
+              -- to place the result. The result will have been placed in the
+              -- destination before the continuation is called.
+              | MultishotBindK Type (CExp l) (CExp l -> Cg l a)
 
 -- | A computation compiler, which produces a compiled computation when given
 -- the appropriate arguments.
-type CompC a =  TakeK Label  -- Code generator for take
-             -> EmitK Label  -- Code generator for emit
-             -> EmitsK Label -- Code generator for emits
-             -> KontLabel    -- Label of our continuation
-             -> Kont a       -- Continuation accepting the compilation result
-             -> Cg a         -- Value returned by the computation.
+type CompC l a =  TakeK l  -- Code generator for take
+               -> EmitK l  -- Code generator for emit
+               -> EmitsK l -- Code generator for emits
+               -> l        -- Label of our continuation
+               -> Kont l a -- Continuation accepting the compilation result
+               -> Cg l a   -- Value returned by the computation.
 
-instance Show (CompC a) where
+instance Show (CompC l a) where
     show _ = "<comp>"
 
 -- | A computation function compiler, which produces a compiled call to a
 -- computation function when given the appropriate arguments.
-type FunCompC a =  [Iota]       -- Array length arguments
-                -> [LArg]       -- Function arguments
-                -> TakeK Label  -- Code generator for take
-                -> EmitK Label  -- Code generator for emit
-                -> EmitsK Label -- Code generator for emits
-                -> KontLabel    -- Label of our continuation
-                -> Kont a       -- Continuation accepting the compilation result
-                -> Cg a
+type FunCompC l a =  [Iota]   -- Array length arguments
+                  -> [Arg l]  -- Function arguments
+                  -> TakeK l  -- Code generator for take
+                  -> EmitK l  -- Code generator for emit
+                  -> EmitsK l -- Code generator for emits
+                  -> l        -- Label of our continuation
+                  -> Kont l a -- Continuation accepting the compilation result
+                  -> Cg l a
 
-instance Show (FunCompC a) where
+instance Show (FunCompC l a) where
     show _ = "<funcomp>"
 
 -- | The type of "compiled" expressions.
-data CExp = CVoid
-          | CBool Bool
-          | CInt Integer     -- ^ Integer constant
-          | CFloat Rational  -- ^ Float constant
-          | CExp C.Exp       -- ^ C expression
-          | CInit C.Initializer
-            -- ^ A list of C initializers for a constant
-          | CPtr CExp        -- ^ A pointer.
-          | CIdx Type CExp CExp
-            -- ^ An array element. The data constructor's arguments are the type
-            -- of the array's elements, the array, and the index.
-          | CSlice Type CExp CExp Int
-            -- ^ An array slice. The data constructor's arguments are the type
-            -- of the array's elements, the array, the offset, the length of the
-            -- slice.
-          | CStruct [(Field, CExp)]
-            -- ^ A struct
-          | CBits CExp
-            -- ^ A bit array represented as an integer
-          | CAlias Exp CExp
-            -- ^ The 'CAlias' data constructor indicates a 'CExp' that aliases
-            -- an expression. See Note [Aliasing].
-          | CComp (forall a . CompC a)
-            -- ^ A computation.
-          | CFunComp (forall a . FunCompC a)
-            -- ^ A computation function.
+data CExp l = CVoid
+            | CBool Bool
+            | CInt Integer     -- ^ Integer constant
+            | CFloat Rational  -- ^ Float constant
+            | CExp C.Exp       -- ^ C expression
+            | CInit C.Initializer
+              -- ^ A list of C initializers for a constant
+            | CPtr (CExp l)    -- ^ A pointer.
+            | CIdx Type (CExp l) (CExp l)
+              -- ^ An array element. The data constructor's arguments are the type
+              -- of the array's elements, the array, and the index.
+            | CSlice Type (CExp l) (CExp l) Int
+              -- ^ An array slice. The data constructor's arguments are the type
+              -- of the array's elements, the array, the offset, the length of the
+              -- slice.
+            | CStruct [(Field, (CExp l))]
+              -- ^ A struct
+            | CBits (CExp l)
+              -- ^ A bit array represented as an integer
+            | CAlias Exp (CExp l)
+              -- ^ The 'CAlias' data constructor indicates a 'CExp' that aliases
+              -- an expression. See Note [Aliasing].
+            | CComp (forall a . CompC l a)
+              -- ^ A computation.
+            | CFunComp (forall a. FunCompC l a)
+              -- ^ A computation function.
 
-deriving instance Show CExp
+deriving instance Show (CExp l)
 
-instance Located CExp where
+instance Located (CExp l) where
     locOf CVoid               = NoLoc
     locOf (CBool {})          = NoLoc
     locOf (CInt {})           = NoLoc
@@ -171,7 +165,7 @@ instance Located CExp where
     locOf (CComp {})          = NoLoc
     locOf (CFunComp {})       = NoLoc
 
-instance Relocatable CExp where
+instance Relocatable (CExp l) where
     reloc _ ce@CVoid                   = ce
     reloc _ ce@(CBool {})              = ce
     reloc _ ce@(CInt {})               = ce
@@ -187,12 +181,12 @@ instance Relocatable CExp where
     reloc _ ce@(CComp {})              = ce
     reloc _ ce@(CFunComp {})           = ce
 
-instance IfThenElse CExp CExp where
+instance IfThenElse (CExp l) (CExp l) where
     ifThenElse (CBool True)  t _ = t
     ifThenElse (CBool False) _ e = e
     ifThenElse c             t e = CExp [cexp|$c ? $t : $e|]
 
-instance Eq CExp where
+instance Eq (CExp l) where
     CVoid          == CVoid          = True
     CBool x        == CBool y        = x == y
     CInt x         == CInt y         = x == y
@@ -207,7 +201,7 @@ instance Eq CExp where
                                        (text . show) ce1 <+>
                                        (text . show) ce2
 
-instance Ord CExp where
+instance Ord (CExp l) where
     compare CVoid            CVoid            = EQ
     compare (CBool x)        (CBool y)        = compare x y
     compare (CInt x)         (CInt y)         = compare x y
@@ -222,13 +216,13 @@ instance Ord CExp where
                                                 (text . show) ce1 <+>
                                                 (text . show) ce2
 
-instance Enum CExp where
+instance Enum (CExp l) where
     toEnum n = CInt (fromIntegral n)
 
     fromEnum (CInt n) = fromIntegral n
     fromEnum _        = error "Enum Exp: fromEnum not implemented"
 
-instance IsEq CExp where
+instance IsEq (CExp l) where
     CBool x  .==. CBool y =  CBool (x == y)
     CInt x   .==. CInt y   = CBool (x == y)
     CFloat x .==. CFloat y = CBool (x == y)
@@ -239,7 +233,7 @@ instance IsEq CExp where
     CFloat x ./=. CFloat y = CBool (x /= y)
     ce1      ./=. ce2      = CExp [cexp|$ce1 != $ce2|]
 
-instance IsOrd CExp where
+instance IsOrd (CExp l) where
     CInt x   .<. CInt y   = CBool (x < y)
     CFloat x .<. CFloat y = CBool (x < y)
     ce1      .<. ce2      = CExp [cexp|$ce1 < $ce2|]
@@ -256,7 +250,7 @@ instance IsOrd CExp where
     CFloat x .>. CFloat y = CBool (x > y)
     ce1      .>. ce2      = CExp [cexp|$ce1 > $ce2|]
 
-instance Num CExp where
+instance Num (CExp l) where
     CInt 0   + y        = y
     x        + CInt 0   = x
     CInt x   + CInt y   = CInt (x + y)
@@ -301,12 +295,12 @@ instance Num CExp where
 
     fromInteger i = CInt i
 
-instance Real CExp where
+instance Real (CExp l) where
     toRational (CInt n)   = toRational n
     toRational (CFloat n) = n
     toRational _          = error "Real CExp: toRational not implemented"
 
-instance Integral CExp where
+instance Integral (CExp l) where
     CInt x `quot` CInt y = CInt (x `quot` y)
     x      `quot` y      = CExp [cexp|$x / $y|]
 
@@ -331,7 +325,7 @@ instance Integral CExp where
     toInteger (CInt i) = i
     toInteger _        = error "Integral CExp: fromInteger not implemented"
 
-instance Fractional CExp where
+instance Fractional (CExp l) where
     CFloat x / CFloat y = CFloat (x / y)
     x        / y        = CExp [cexp|$x / $y|]
 
@@ -340,7 +334,7 @@ instance Fractional CExp where
 
     fromRational r = CFloat r
 
-instance Bits CExp where
+instance Bits (CExp l) where
     CInt x .&. CInt y = CInt (x .&. y)
     ce1    .&. ce2    = CExp [cexp|$ce1 & $ce2|]
 
@@ -386,7 +380,7 @@ instance Bits CExp where
     testBit _ _ = error "Bits CExp: testBit not implemented"
     popCount _ = error "Bits CExp: popCount not implemented"
 
-instance IsBool CExp where
+instance IsBool (CExp l) where
     CBool True  .&&. ce  = ce
     CBool False .&&. _   = CBool False
     ce1         .&&. ce2 = CExp [cexp|$ce1 && $ce2|]
@@ -395,7 +389,7 @@ instance IsBool CExp where
     CBool False .||. ce  = ce
     ce1         .||. ce2 = CExp [cexp|$ce1 || $ce2|]
 
-instance IsBits CExp where
+instance IsBits (CExp l) where
     CInt x ..&.. CInt i = CInt (x .&. i)
     ce     ..&.. i      = CExp [cexp|$ce & $i|]
 
@@ -410,7 +404,7 @@ instance IsBits CExp where
     x      `shiftR'` CInt 0 = x
     ce     `shiftR'` i      = CExp [cexp|$ce >> $i|]
 
-instance ToExp CExp where
+instance ToExp (CExp l) where
     toExp CVoid                      = locatedError $
                                        text "toExp: void compiled expression"
     toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
@@ -435,7 +429,7 @@ locatedError :: Located a => Doc -> a -> b
 locatedError doc loc =
     errordoc $ ppr (locOf loc) <> text ":" </> doc
 
-instance Pretty CExp where
+instance Pretty (CExp l) where
     ppr CVoid                    = text "<void>"
     ppr (CBool True)             = text "true"
     ppr (CBool False)            = text "false"
@@ -453,7 +447,7 @@ instance Pretty CExp where
     ppr (CFunComp {})            = text "<fun comp>"
 
 -- | Tag the translation of an expression with the expression is aliases.
-calias :: Exp -> CExp -> CExp
+calias :: Exp -> CExp l -> CExp l
 calias _ ce@CVoid    = ce
 calias _ ce@CBool{}  = ce
 calias _ ce@CInt{}   = ce
@@ -466,7 +460,7 @@ calias e ce          = case refPath e of
 -- | Given a 'CExp' that is potentially a slice of an array, return the base
 -- array and the index at which the slice begins. If the input 'CExp' is not a
 -- slice, the returned index is 0.
-unCSlice :: CExp -> (CExp, CExp)
+unCSlice :: CExp l -> (CExp l, CExp l)
 unCSlice (CSlice _ carr cidx _) = (carr, cidx)
 unCSlice carr                   = (carr, 0)
 
@@ -474,7 +468,7 @@ unCSlice carr                   = (carr, 0)
 -- array base of the slice, i.e., a pointer to the beginning of the slice. This
 -- function is partial; the base array can only be calculated if the index of
 -- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
-unBitCSliceBase :: CExp -> Maybe CExp
+unBitCSliceBase :: CExp l -> Maybe (CExp l)
 unBitCSliceBase (CSlice _ carr (CInt i) _) | bitOff == 0 =
     Just $ CExp [cexp|&$carr[$int:bitIdx]|]
   where
@@ -501,27 +495,27 @@ unBitCSliceBase (CSlice {}) =
 unBitCSliceBase ce =
     Just ce
 
-toInit :: CExp -> C.Initializer
+toInit :: CExp l -> C.Initializer
 toInit (CInit cinit) = cinit
 toInit ce            = [cinit|$ce|]
 
 -- | Lower an array indexing operation to a 'C.Exp'
-lowerIdx :: Type -> CExp -> CExp -> C.Exp
+lowerIdx :: forall l . Type -> CExp l -> CExp l -> C.Exp
 lowerIdx tau carr ci
     | isBitT tau = toExp (CExp [cexp|($carr[$cbitIdx] & $cbitMask)|] `shiftR'` cbitOff) l
     | otherwise  = [cexp|$carr[$ci]|]
   where
-    cbitIdx, cbitOff :: CExp
+    cbitIdx, cbitOff :: CExp l
     (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
 
-    cbitMask :: CExp
+    cbitMask :: CExp l
     cbitMask = 1 `shiftL'` cbitOff
 
     l :: SrcLoc
     l = carr `srcspan` ci
 
 -- | Lower a slice operation to a 'C.Exp'
-lowerSlice :: Type -> CExp -> CExp -> Int -> C.Exp
+lowerSlice :: Type -> CExp l -> CExp l -> Int -> C.Exp
 lowerSlice tau carr cidx len | isBitT tau =
     case unBitCSliceBase (CSlice tau carr cidx len) of
       Just (CExp ce) -> ce

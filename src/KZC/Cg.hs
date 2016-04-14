@@ -48,6 +48,7 @@ import KZC.Cg.Util
 import KZC.Check.Path
 import KZC.Error
 import KZC.Flags
+import KZC.Label
 import KZC.Name
 import KZC.Optimize.Fuse
 import KZC.Platform
@@ -57,23 +58,23 @@ import KZC.Summary
 import KZC.Trace
 
 -- | Create a oneshot continuation.
-oneshot :: Type -> (CExp -> Cg a) -> Kont a
+oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a
 oneshot tau f = OneshotK tau f
 
 -- | Create a oneshot continuation with the name of a binder to use.
-oneshotBinder :: BoundVar -> Type -> (CExp -> Cg a) -> Kont a
+oneshotBinder :: BoundVar -> Type -> (CExp l -> Cg l a) -> Kont l a
 oneshotBinder bv tau f = OneshotBinderK bv tau f
 
 -- | Create a multishot continuation.
-multishot :: (CExp -> Cg a) -> Kont a
+multishot :: (CExp l -> Cg l a) -> Kont l a
 multishot f = MultishotK f
 
 -- | Create a multishot continuation that binds its argument to the given '.
-multishotBind :: Type -> CExp -> (CExp -> Cg a) -> Kont a
+multishotBind :: Type -> CExp l -> (CExp l -> Cg l a) -> Kont l a
 multishotBind tau cv f = MultishotBindK tau cv f
 
 -- | Return 'True' if the continuation is oneshot, 'False' otherwise.
-isOneshot :: Kont a -> Bool
+isOneshot :: Kont l a -> Bool
 isOneshot (OneshotK {})       = True
 isOneshot (OneshotBinderK {}) = True
 isOneshot (MultishotK {})     = False
@@ -82,7 +83,7 @@ isOneshot (MultishotBindK {}) = False
 -- | Split a oneshot continuation into two parts: a multishot continuation that
 -- stores values in a temporary, and a new oneshot continuation that consumes
 -- the temporary and does the real work.
-splitOneshot :: Kont a -> Cg (Kont (), Cg a)
+splitOneshot :: Kont l a -> Cg l (Kont l (), Cg l a)
 splitOneshot (OneshotK tau f) = do
     ctemp <- cgTemp "oneshot" tau_res
     return (MultishotK $ cgAssign tau_res ctemp, f ctemp)
@@ -103,7 +104,7 @@ splitOneshot (MultishotBindK {}) =
 -- | Split a continuation into two parts: a 'CExp' in which we can place the
 -- result, and a continuation to be called after the result has been placed into
 -- the 'CExp'.
-splitMultishotBind :: String -> Type -> Bool -> Kont a -> Cg (CExp, Cg a)
+splitMultishotBind :: String -> Type -> Bool -> Kont l a -> Cg l (CExp l, Cg l a)
 splitMultishotBind v _ _needsLvalue (OneshotK tau f) = do
     ctemp <- cgTemp v tau_res
     return (ctemp, f ctemp)
@@ -126,8 +127,8 @@ splitMultishotBind v tau True (MultishotBindK _tau' cv f) | not (isLvalue cv) = 
 splitMultishotBind _v _tau _ (MultishotBindK _tau' cv f) =
     return (cv, f cv)
 
--- | Run a 'Kont a' by giving it a 'CExp'.
-runKont :: Kont a -> CExp -> Cg a
+-- | Run a 'Kont l a' by giving it a 'CExp'.
+runKont :: Kont l a -> CExp l -> Cg l a
 runKont (OneshotK _ k)            ce = k ce
 runKont (OneshotBinderK _ _ k)    ce = k ce
 runKont (MultishotK k)            ce = k ce
@@ -135,9 +136,9 @@ runKont (MultishotBindK tau cv k) ce = do cgAssign tau cv ce
                                           k cv
 
 -- | Map a function over a continuation.
-mapKont :: ((CExp -> Cg a) -> (CExp -> Cg a))
-        -> Kont a
-        -> Kont a
+mapKont :: ((CExp l -> Cg l a) -> (CExp l -> Cg l a))
+        -> Kont l a
+        -> Kont l a
 mapKont f (OneshotK tau g)          = OneshotK tau (f g)
 mapKont f (OneshotBinderK bv tau g) = OneshotBinderK bv tau (f g)
 mapKont f (MultishotK g)            = MultishotK (f g)
@@ -147,17 +148,17 @@ restrict, static :: C.TypeQual
 restrict = C.EscTypeQual "RESTRICT" noLoc
 static   = C.EscTypeQual "STATIC" noLoc
 
-localExpRefFlowModVars :: Exp -> Cg a -> Cg a
+localExpRefFlowModVars :: Exp -> Cg l a -> Cg l a
 localExpRefFlowModVars e k = do
     vs <- refFlowModExp e
     localRefFlowModVars vs k
 
-localCompRefFlowModVars :: LComp -> Cg a -> Cg a
+localCompRefFlowModVars :: Comp l -> Cg l a -> Cg l a
 localCompRefFlowModVars c k = do
     vs <- refFlowModComp c
     localRefFlowModVars vs k
 
-compileProgram :: LProgram -> Cg ()
+compileProgram :: forall l . IsLabel l => Program l -> Cg l ()
 compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
@@ -205,43 +206,43 @@ void kz_main(const typename kz_params_t* $id:params)
                    | otherwise  -> return $ CExp [cexp|*$cbuf|]
             _                   -> return $ CExp [cexp|$cbuf|]
 
-    emitk :: EmitK KontLabel
+    emitk :: EmitK l
     emitk tau ce _k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
-    emitsk :: EmitsK Label
+    emitsk :: EmitsK l
     emitsk iota tau ce _k = do
         ceAddr <- cgAddrOf (arrT iota tau) ce
         cgOutput (arrT iota tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
-    cgInitInput :: Type -> CExp -> CExp -> Cg ()
+    cgInitInput :: Type -> CExp l -> CExp l -> Cg l ()
     cgInitInput tau cp cbuf =
         cgBufferInit "kz_init_input" tau cp cbuf
 
-    cgInitOutput :: Type -> CExp -> CExp -> Cg ()
+    cgInitOutput :: Type -> CExp l -> CExp l -> Cg l ()
     cgInitOutput tau cp cbuf =
         cgBufferInit "kz_init_output" tau cp cbuf
 
-    cgCleanupInput :: Type -> CExp -> CExp -> Cg ()
+    cgCleanupInput :: Type -> CExp l -> CExp l -> Cg l ()
     cgCleanupInput tau cp cbuf =
         cgBufferCleanup "kz_cleanup_input" tau cp cbuf
 
-    cgCleanupOutput :: Type -> CExp -> CExp -> Cg ()
+    cgCleanupOutput :: Type -> CExp l -> CExp l -> Cg l ()
     cgCleanupOutput tau cp cbuf =
         cgBufferCleanup "kz_cleanup_output" tau cp cbuf
 
-    cgBufferInit :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferInit :: String -> Type -> CExp l -> CExp l -> Cg l ()
     cgBufferInit = cgBufferConfig appendInitStm
 
-    cgBufferCleanup :: String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferCleanup :: String -> Type -> CExp l -> CExp l -> Cg l ()
     cgBufferCleanup = cgBufferConfig appendCleanupStm
 
-    cgBufferConfig :: (C.Stm -> Cg ()) -> String -> Type -> CExp -> CExp -> Cg ()
+    cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
     cgBufferConfig appStm f tau cp cbuf =
         go tau
       where
-        go :: Type -> Cg ()
+        go :: Type -> Cg l ()
         go (ArrT _ tau _)          = go tau
         go tau | isBitT tau        = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
         go (FixT I S (W 8)  0 _)   = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
@@ -262,10 +263,10 @@ void kz_main(const typename kz_params_t* $id:params)
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
 
-    cgInput :: Type -> CExp -> CExp -> Cg CExp
+    cgInput :: Type -> CExp l -> CExp l -> Cg l (CExp l)
     cgInput tau cbuf cn = go tau
       where
-        go :: Type -> Cg CExp
+        go :: Type -> Cg l (CExp l)
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgInput tau cbuf (cn*ci)
         go tau | isBitT tau        = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
@@ -286,10 +287,10 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau                     = do ctau <- cgType tau
                                         return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
-    cgOutput :: Type -> CExp -> CExp -> CExp -> Cg ()
+    cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgOutput tau cbuf cn cval = go tau
       where
-        go :: Type -> Cg ()
+        go :: Type -> Cg l ()
         go (ArrT iota tau _)       = do ci <- cgIota iota
                                         cgOutput tau cbuf (cn*ci) cval
         go tau | isBitT tau        = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
@@ -310,12 +311,12 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
-cgTimed :: forall a . Cg a -> Cg a
+cgTimed :: forall l a . Cg l a -> Cg l a
 cgTimed m = do
     flags <- askFlags
     go flags
   where
-    go :: Flags -> Cg a
+    go :: Flags -> Cg l a
     go flags | testDynFlag Timers flags = do
         cpu_time_start  :: C.Id <- gensym "cpu_time_start"
         cpu_time_end    :: C.Id <- gensym "cpu_time_end"
@@ -336,11 +337,11 @@ cgTimed m = do
     go _flags =
         m
 
-cgLabels :: Set Label -> Cg ()
+cgLabels :: forall l . IsLabel l => Set l -> Cg l ()
 cgLabels ls = do
     go (Set.toList ls)
   where
-    go :: [Label] -> Cg ()
+    go :: [l] -> Cg l ()
     go [] = return ()
 
     go (l:ls) = do
@@ -354,22 +355,23 @@ cgLabels ls = do
         cls = [ [cenum|$id:l|] | l <- ls]
 
 -- | Generate code to check return value of a function call.
-cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
 cgInitCheckErr ce msg x =
     appendInitStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 -- | Generate code to check return value of a function call.
-cgCheckErr :: Located a => C.Exp -> String -> a -> Cg ()
+cgCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
 cgCheckErr ce msg x =
     appendStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
-cgThread :: TakeK  KontLabel -- ^ Code generator for take
-         -> EmitK  KontLabel -- ^ Code generator for emit
-         -> EmitsK KontLabel -- ^ Code generator for emit
-         -> Type             -- ^ Type of the result of the computation
-         -> LComp            -- ^ Computation to compiled
-         -> Kont ()         -- ^ Code generator to deal with result of computation
-         -> Cg ()
+cgThread :: IsLabel l
+         => TakeK  l  -- ^ Code generator for take
+         -> EmitK  l  -- ^ Code generator for emit
+         -> EmitsK l  -- ^ Code generator for emit
+         -> Type      -- ^ Type of the result of the computation
+         -> Comp l    -- ^ Computation to compiled
+         -> Kont l () -- ^ Code generator to deal with result of computation
+         -> Cg l ()
 cgThread takek emitk emitsk tau comp k = do
     cblock <-
         inSTScope tau $
@@ -393,14 +395,14 @@ cgThread takek emitk emitsk tau comp k = do
     cUR_KONT :: C.Id
     cUR_KONT = "curk"
 
-cgDecls :: [LDecl] -> Cg a -> Cg a
+cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls [] k =
     k
 
 cgDecls (decl:decls) k =
     cgDecl decl $ cgDecls decls k
 
-cgDecl :: LDecl -> Cg a -> Cg a
+cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
 cgDecl (LetD decl _) k =
     cgLocalDecl decl k
 
@@ -469,7 +471,7 @@ cgDecl decl@(LetStructD s flds l) k = do
         appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
     extendStructs [StructDef s flds l] k
   where
-    cgField :: (Field, Type) -> Cg C.FieldGroup
+    cgField :: (Field, Type) -> Cg l C.FieldGroup
     cgField (fld, tau) = do
         let cfld =  zencode (namedString fld)
         ctau     <- cgType tau
@@ -483,7 +485,7 @@ cgDecl (LetCompD v tau comp _) k =
     -- Compile a bound computation. This will be called in some future
     -- context. It may be called multiple times, so we need to create a copy of
     -- the computation with fresh labels before we compile it.
-    compc :: CompC a
+    compc :: forall a . CompC l a
     compc takek emitk emitsk klbl k =
         withInstantiatedTyVars tau $ do
         comp' <- uniquifyCompLabels comp
@@ -503,7 +505,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     -- called in some future context. It may be called multiple times, so we
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
-    funcompc :: FunCompC a
+    funcompc :: forall a . FunCompC l a
     funcompc iotas es takek emitk emitsk klbl k =
         withInstantiatedTyVars tau_ret $ do
         comp'  <- uniquifyCompLabels comp
@@ -517,7 +519,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         localCompRefFlowModVars comp' $
             cgComp takek emitk emitsk comp' klbl k
       where
-        cgArg :: LArg -> Cg CExp
+        cgArg :: Arg l -> Cg l (CExp l)
         cgArg (ExpA e) =
             withFvContext e $
             cgExpOneshot e
@@ -525,14 +527,14 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         cgArg (CompA comp) =
             return $ CComp compc
           where
-            compc :: CompC a
+            compc :: forall a . CompC l a
             compc takek emitk emitsk klbl =
                 cgComp takek emitk emitsk comp klbl
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context. We need to do this when
 -- compiling a computation of computation function.
-withInstantiatedTyVars :: Type -> Cg a -> Cg a
+withInstantiatedTyVars :: Type -> Cg l a -> Cg l a
 withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
     ST _ _ s' a' b' _ <- appSTScope tau
     extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
@@ -540,7 +542,7 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-cgLocalDecl :: LocalDecl -> Cg a -> Cg a
+cgLocalDecl :: forall l a . IsLabel l => LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl decl@(LetLD v tau e _) k = do
     withSummaryContext decl $ do
     cve <- inSTScope tau $ cgExp e $ cgLetBinding v tau
@@ -555,7 +557,7 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     extendVarCExps [(bVar v, cve)] $ do
     k
   where
-    cgLetRefBinding :: Maybe Exp -> Cg CExp
+    cgLetRefBinding :: Maybe Exp -> Cg l (CExp l)
     cgLetRefBinding Nothing =
         cgDefaultLetBinding v tau
 
@@ -567,7 +569,7 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
 -- | Generate a 'CExp' representing a constant. The 'CExp' produced is
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.
-cgConst :: Const -> Cg CExp
+cgConst :: forall l . IsLabel l => Const -> Cg l (CExp l)
 cgConst UnitC            = return CVoid
 cgConst (BoolC b)        = return $ CBool b
 cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
@@ -580,23 +582,23 @@ cgConst c@(ArrayC cs) = do
     ces      <- mapM cgConst cs
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
   where
-    cgArrayConstInits :: Type -> [CExp] -> [C.Initializer]
+    cgArrayConstInits :: Type -> [CExp l] -> [C.Initializer]
     cgArrayConstInits tau ces | isBitT tau =
         finalizeBits $ foldl mkBits (0,0,[]) ces
       where
-        mkBits :: (CExp, Int, [C.Initializer]) -> CExp -> (CExp, Int, [C.Initializer])
+        mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
         mkBits (cconst, i, cinits) ce
             | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
             | otherwise                    = (cconst', i+1, cinits)
           where
-            cconst' :: CExp
+            cconst' :: CExp l
             cconst' = cconst .|. (ce `shiftL` i)
 
-        finalizeBits :: (CExp, Int, [C.Initializer]) -> [C.Initializer]
+        finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
         finalizeBits (_,      0, cinits) = reverse cinits
         finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
 
-        const :: CExp -> C.Initializer
+        const :: CExp l -> C.Initializer
         const (CInt i) = [cinit|$(chexconst i)|]
         const ce       = toInit ce
 
@@ -612,7 +614,7 @@ cgConst (StructC s flds) = do
     cinits <- mapM (cgField flds) (map fst fldDefs)
     return $ CInit [cinit|{ $inits:cinits }|]
   where
-    cgField :: [(Field, Const)] -> Field -> Cg C.Initializer
+    cgField :: [(Field, Const)] -> Field -> Cg l C.Initializer
     cgField flds f = do
         ce <- case lookup f flds of
                 Nothing -> panicdoc $ text "cgField: missing field"
@@ -654,37 +656,37 @@ to deal with these by modifying the reference flow analysis in
 KZC.Analysis.RefFlow.
 -}
 
-cgExpOneshot :: Exp -> Cg CExp
+cgExpOneshot :: IsLabel l => Exp -> Cg l (CExp l)
 cgExpOneshot e = do
     tau <- inferExp e
     cgExp e $ oneshot tau return
 
 -- | Compile an 'Exp' and throw away the result while ensuring that any side
 -- effects are performed.
-cgExpVoid :: Exp -> Cg ()
+cgExpVoid :: IsLabel l => Exp -> Cg l ()
 cgExpVoid e = cgExp e $ multishot cgVoid
 
 -- | Return 'True' if the given 'CExp' may have some sort of effect. The only
 -- time a 'CExp' can currently have a side effect is when it is a function call.
-mayHaveEffect :: CExp -> Bool
+mayHaveEffect :: CExp l -> Bool
 mayHaveEffect (CExp [cexp|$id:_($args:_)|]) = True
 mayHaveEffect _                             = False
 
 -- | Throw away a 'CExp' while ensuring that any side effects are performed.
-cgVoid :: CExp -> Cg ()
+cgVoid :: CExp l -> Cg l ()
 cgVoid ce | mayHaveEffect ce = appendStm [cstm|$ce;|]
           | otherwise        = return ()
 
-cgExp :: Exp -> Kont a -> Cg a
+cgExp :: forall l a . IsLabel l => Exp -> Kont l a -> Cg l a
 cgExp e k =
     go e $ mapKont (\f ce -> f (reloc (locOf e) ce)) k
   where
-    go :: forall a . Exp -> Kont a -> Cg a
+    go :: forall a . Exp -> Kont l a -> Cg l a
     go e@(ConstE c _) k = do
         tau <- inferExp e
         cgConst c >>= cgConstExp tau
       where
-        cgConstExp :: Type -> CExp -> Cg a
+        cgConstExp :: Type -> CExp l -> Cg l a
         cgConstExp tau (CInit cinit) = do
             cv :: C.Id <- gensym "__const"
             ctau       <- cgType tau
@@ -702,7 +704,7 @@ cgExp e k =
         ce  <- cgExpOneshot e
         cgUnop tau ce op >>= runKont k
       where
-        cgUnop :: Type -> CExp -> Unop -> Cg CExp
+        cgUnop :: Type -> CExp l -> Unop -> Cg l (CExp l)
         cgUnop tau_from ce (Cast tau_to) =
             cgCast ce tau_from tau_to
 
@@ -719,7 +721,7 @@ cgExp e k =
         cgUnop tau ce op | isComplexT tau =
             go op
           where
-            go :: Unop -> Cg CExp
+            go :: Unop -> Cg l (CExp l)
             go Neg = do
                 (a, b) <- unComplex ce
                 cgComplex (-a) (-b)
@@ -732,7 +734,7 @@ cgExp e k =
                            | otherwise  = return $ CExp [cexp|~$ce|]
         cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
 
-        cgCast :: CExp -> Type -> Type -> Cg CExp
+        cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
         cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
             (a, b) <- unComplex ce
             ctemp  <- cgTemp "cast_complex" tau_to
@@ -763,7 +765,7 @@ cgExp e k =
             ctau_to <- cgType tau_to
             return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
-        cgBitcast :: CExp -> Type -> Type -> Cg CExp
+        cgBitcast :: CExp l -> Type -> Type -> Cg l (CExp l)
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
@@ -787,11 +789,11 @@ cgExp e k =
         ce2 <- cgExpOneshot e2
         cgBinop tau ce1 ce2 op >>= runKont k
       where
-        cgBinop :: Type -> CExp -> CExp -> Binop -> Cg CExp
+        cgBinop :: Type -> CExp l -> CExp l -> Binop -> Cg l (CExp l)
         cgBinop tau ce1 ce2 op | isComplexT tau =
             go op
           where
-            go :: Binop -> Cg CExp
+            go :: Binop -> Cg l (CExp l)
             go Eq = do
                 (a, b) <- unComplex ce1
                 (c, d) <- unComplex ce2
@@ -856,7 +858,7 @@ cgExp e k =
             -- Split nested applications of (++) into a single list of
             -- concatenated arrays, each paired with the number of elements it
             -- contains.
-            unfoldCat :: Exp -> Cg [(Exp, Int)]
+            unfoldCat :: Exp -> Cg l [(Exp, Int)]
             unfoldCat (BinopE Cat e1 e2 _) =
                 (++) <$> unfoldCat e1 <*> unfoldCat e2
 
@@ -867,11 +869,11 @@ cgExp e k =
 
             -- XXX: Need to allocate a single array and fill it using cgSlice
             -- and cgAssign.
-            cgCat :: [(Exp, Int)] -> Cg CExp
+            cgCat :: [(Exp, Int)] -> Cg l (CExp l)
             cgCat _ =
                 fail "Cannot compile concatenation of not-bit arrays"
 
-            cgBitCat :: [(Exp, Int)] -> Cg CExp
+            cgBitCat :: [(Exp, Int)] -> Cg l (CExp l)
             cgBitCat arrs = do
                 carrs <- mapM asBits arrs
                 -- Rearrange the arrays we are concatenating in order from
@@ -882,11 +884,11 @@ cgExp e k =
                 -- source they appear ordered from highest bits to lowest bits
                 return $ CBits $ foldr1 (..|..) $ reverse ces
               where
-                shiftFields :: Int -> [(CExp, Int)] -> [CExp]
+                shiftFields :: Int -> [(CExp l, Int)] -> [CExp l]
                 shiftFields _ []             = []
                 shiftFields n ((ce, w):flds) = shiftL ce n : shiftFields (n+w) flds
 
-                asBits :: (Exp, Int) -> Cg (CExp, Int)
+                asBits :: (Exp, Int) -> Cg l (CExp l, Int)
                 asBits (e, w) = do
                     cbits <- cgExpOneshot e >>= cgBits (arrKnownT w bitT)
                     return (CBits $ CExp $ rl (locOf l) cbits, w)
@@ -911,12 +913,12 @@ cgExp e k =
                k'
           else runKont k $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
       where
-        cgArg :: Exp -> Cg CExp
+        cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
             tau <- inferExp e
             go tau
           where
-            go :: Type -> Cg CExp
+            go :: Type -> Cg l (CExp l)
             go tau@(ArrT {}) =
                 cgExp e $ oneshot tau $ cgAddrOf tau
 
@@ -971,7 +973,7 @@ cgExp e k =
           Nothing -> cgArrayExp
           Just c  -> cgExp (ConstE c l) k
       where
-        cgArrayExp :: Cg a
+        cgArrayExp :: Cg l a
         cgArrayExp = do
             (_, tau)   <- inferExp e >>= checkArrT
             cv :: C.Id <- gensym "__arr"
@@ -996,7 +998,7 @@ cgExp e k =
           Nothing -> CStruct <$> mapM cgField flds >>= runKont k
           Just c  -> cgExp (ConstE c l) k
       where
-        cgField :: (Field, Exp) -> Cg (Field, CExp)
+        cgField :: (Field, Exp) -> Cg l (Field, CExp l)
         cgField (fld, e) = do
             ce <- cgExpOneshot e
             return (fld, ce)
@@ -1012,13 +1014,13 @@ cgExp e k =
             appendStm $ rl l [cstm|printf("\n");|]
         runKont k CVoid
       where
-        cgPrint :: Exp -> Cg ()
+        cgPrint :: Exp -> Cg l ()
         cgPrint e = do
             tau <- inferExp e
             ce  <- cgExpOneshot e
             cgPrintScalar tau ce
 
-        cgPrintScalar :: Type -> CExp -> Cg ()
+        cgPrintScalar :: Type -> CExp l -> Cg l ()
         cgPrintScalar (UnitT {})            _  = appendStm $ rl l [cstm|printf("()");|]
         cgPrintScalar (BoolT {})            ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
         cgPrintScalar (FixT I U (W 1)  0 _) ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
@@ -1037,7 +1039,7 @@ cgExp e k =
         cgPrintScalar tau _ =
             faildoc $ text "Cannot print type:" <+> ppr tau
 
-        cgPrintArray :: Iota -> Type -> CExp -> Cg ()
+        cgPrintArray :: Iota -> Type -> CExp l -> Cg l ()
         cgPrintArray iota tau ce | isBitT tau = do
             cn    <- cgIota iota
             caddr <- cgAddrOf (ArrT iota tau noLoc) ce
@@ -1072,7 +1074,7 @@ cgExp e k =
     go (LutE e) k =
         cgExp e k
 
-cgIVar :: IVar -> Cg (CExp, C.Param)
+cgIVar :: IVar -> Cg l (CExp l, C.Param)
 cgIVar iv = do
     civ <- cvar iv
     return (CExp [cexp|$id:civ|], [cparam|int $id:civ|])
@@ -1080,7 +1082,7 @@ cgIVar iv = do
 -- | Compile a function variable binding. When the variable is a ref type, it is
 -- represented as a pointer, so we use the 'CPtr' constructor to ensure that
 -- dereferencing occurs.
-cgVarBind :: (Var, Type) -> Cg (CExp, C.Param)
+cgVarBind :: (Var, Type) -> Cg l (CExp l, C.Param)
 cgVarBind (v, tau) = do
     cv     <- cvar v
     cparam <- cgParam tau (Just cv)
@@ -1091,13 +1093,13 @@ cgVarBind (v, tau) = do
     l :: Loc
     l = locOf v <--> locOf tau
 
-cgIota :: Iota -> Cg CExp
+cgIota :: Iota -> Cg l (CExp l)
 cgIota (ConstI i _) = return $ CInt (fromIntegral i)
 cgIota (VarI iv _)  = lookupIVarCExp iv
 
 -- | Compile an 'Iota' to an 'Integer' constant. If the argument cannot be
 -- resolved to a constant, raise an exception.
-cgConstIota :: Iota -> Cg Integer
+cgConstIota :: Iota -> Cg l Integer
 cgConstIota iota = do
     ciota <- cgIota iota
     case ciota of
@@ -1105,13 +1107,13 @@ cgConstIota iota = do
       _      -> faildoc $ text "Non-polymorphic array required"
 
 -- | Compile real and imaginary parts into a complex number
-cgComplex :: CExp -> CExp -> Cg CExp
+cgComplex :: CExp l -> CExp l -> Cg l (CExp l)
 cgComplex cre cim =
     return $ CStruct [("re", cre), ("im", cim)]
 
 -- | Destruct a 'CExp' representing a complex number into its constituent real
 -- and imaginary parts.
-unComplex :: CExp -> Cg (CExp, CExp)
+unComplex :: CExp l -> Cg l (CExp l, CExp l)
 unComplex ce = (,) <$> cgProj ce "re" <*> cgProj ce "im"
 
 -- | Check that the argument is either an array or a reference to an array and
@@ -1123,14 +1125,14 @@ checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
-unCComp :: CExp -> Cg (CompC a)
+unCComp :: CExp l -> Cg l (CompC l a)
 unCComp (CComp compc) =
     return compc
 
 unCComp ce =
     panicdoc $ nest 2 $ text "unCComp: not a CComp:" </> ppr ce
 
-unCFunComp :: CExp -> Cg (FunCompC a)
+unCFunComp :: CExp l -> Cg l (FunCompC l a)
 unCFunComp (CFunComp funcompc) =
     return funcompc
 
@@ -1141,8 +1143,8 @@ unCFunComp ce =
 -- numerical value. The result is an appropriate argument for the 'CBits' data
 -- constructor.
 cgBits :: Type
-       -> CExp
-       -> Cg C.Exp
+       -> CExp l
+       -> Cg l C.Exp
 cgBits _ (CBits ce) =
     return [cexp|$ce|]
 
@@ -1167,7 +1169,7 @@ cgBits tau ce = do
     return [cexp|*(($ty:ctau*) $caddr)|]
 
 -- | Return the C type appropriate for bit casting a value of the given type.
-cgBitcastType :: Type -> Cg C.Type
+cgBitcastType :: Type -> Cg l C.Type
 cgBitcastType tau = do
     w <- typeSize tau
     case w of
@@ -1188,7 +1190,7 @@ cgWidthMatchesBitcastTypeWidth 64 = True
 cgWidthMatchesBitcastTypeWidth _  = False
 
 -- | Compile a type to its C representation.
-cgType :: Type -> Cg C.Type
+cgType :: Type -> Cg l C.Type
 cgType (UnitT {}) =
     return [cty|void|]
 
@@ -1280,14 +1282,14 @@ See:
 -}
 
 -- | Compile a function parameter.
-cgParam :: Type -> Maybe C.Id -> Cg C.Param
+cgParam :: Type -> Maybe C.Id -> Cg l C.Param
 cgParam tau maybe_cv = do
     ctau <- cgParamType tau
     case maybe_cv of
       Nothing -> return [cparam|$ty:ctau|]
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
-    cgParamType :: Type -> Cg C.Type
+    cgParamType :: Type -> Cg l C.Type
     cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
         return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
 
@@ -1317,14 +1319,14 @@ cgParam tau maybe_cv = do
     cgParamType tau = cgType tau
 
 -- | Compile a function parameter that is used to return a result.
-cgRetParam :: Type -> Maybe C.Id -> Cg C.Param
+cgRetParam :: Type -> Maybe C.Id -> Cg l C.Param
 cgRetParam tau maybe_cv = do
     ctau <- cgRetParamType tau
     case maybe_cv of
       Nothing -> return [cparam|$ty:ctau|]
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
-    cgRetParamType :: Type -> Cg C.Type
+    cgRetParamType :: Type -> Cg l C.Type
     cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
         return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
 
@@ -1339,13 +1341,13 @@ cgRetParam tau maybe_cv = do
     cgRetParamType tau = cgType tau
 
 -- | Generate code to initialize a let binding to its default value.
-cgDefaultLetBinding :: BoundVar -> Type -> Cg CExp
+cgDefaultLetBinding :: BoundVar -> Type -> Cg l (CExp l)
 cgDefaultLetBinding bv tau = do
     cv <- cgBinder (bVar bv) tau
     go cv tau
     return cv
   where
-    go :: CExp -> Type -> Cg ()
+    go :: CExp l -> Type -> Cg l ()
     go cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
     go cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
     go cv (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
@@ -1368,11 +1370,11 @@ cgDefaultLetBinding bv tau = do
         appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 -- | Generate code to bind a variable to a value in a let binding.
-cgLetBinding :: BoundVar -> Type -> Kont CExp
+cgLetBinding :: BoundVar -> Type -> Kont l (CExp l)
 cgLetBinding bv tau =
     oneshotBinder bv tau oneshotk
   where
-    oneshotk :: CExp -> Cg CExp
+    oneshotk :: CExp l -> Cg l (CExp l)
     oneshotk ce@CVoid =
         return ce
 
@@ -1408,18 +1410,18 @@ cgLetBinding bv tau =
 -- binding has refs flow to it that are modified before some use of the
 -- variable, a condition we check by calling 'askRefFlowModVar', we create a
 -- binding no matter what.
-cgMonadicBinding :: BoundVar  -- ^ The binder
-                 -> Type      -- ^ The type of the binder
-                 -> Kont CExp -- ^ The continuation that receives the binding.
+cgMonadicBinding :: BoundVar        -- ^ The binder
+                 -> Type            -- ^ The type of the binder
+                 -> Kont l (CExp l) -- ^ The continuation that receives the binding.
 cgMonadicBinding bv tau =
     oneshotBinder bv tau oneshotk
   where
-    oneshotk :: CExp -> Cg CExp
+    oneshotk :: CExp l -> Cg l (CExp l)
     oneshotk ce = do
         refFlowMod <- askRefFlowModVar (bVar bv)
         go refFlowMod ce
       where
-        go :: Bool -> CExp -> Cg CExp
+        go :: Bool -> CExp l -> Cg l (CExp l)
         go _ ce@CVoid =
             return ce
 
@@ -1463,7 +1465,7 @@ cgMonadicBinding bv tau =
 -- | Allocate storage for a binder with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
-cgBinder :: Var -> Type -> Cg CExp
+cgBinder :: Var -> Type -> Cg l (CExp l)
 cgBinder v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau = do
     cgBinder v tau'
 
@@ -1474,7 +1476,7 @@ cgBinder v tau = do
 
 -- | Allocate storage for a temporary of the given core type. The name of the
 -- temporary is gensym'd using @s@ with a prefix of @__@.
-cgTemp :: String -> Type -> Cg CExp
+cgTemp :: String -> Type -> Cg l (CExp l)
 cgTemp s tau = do
     cv <- gensym ("__" ++ s)
     cgStorage False cv tau
@@ -1482,11 +1484,11 @@ cgTemp s tau = do
 -- | Allocate storage for a C identifier with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
-cgStorage :: Bool -> C.Id -> Type -> Cg CExp
+cgStorage :: Bool -> C.Id -> Type -> Cg l (CExp l)
 cgStorage isTopLevel cv tau =
     go tau
   where
-    go :: Type -> Cg CExp
+    go :: Type -> Cg l (CExp l)
     go (UnitT {}) =
         return CVoid
 
@@ -1520,14 +1522,14 @@ cgStorage isTopLevel cv tau =
 
     -- Append a C declaration. If we are at top-level, make this a top-level C
     -- declaration; otherwise, make it a local C declaration.
-    appendLetDecl :: C.InitGroup -> Cg ()
+    appendLetDecl :: C.InitGroup -> Cg l ()
     appendLetDecl decl | isTopLevel = appendTopDecl decl
                        | otherwise  = appendThreadDecl decl
 
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer
 -- @maybe_cinit@.
-cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
+cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg l (CExp l)
 cgCTemp l s ctau maybe_cinit = do
     cv :: C.Id <- gensym ("__" ++ s)
     case maybe_cinit of
@@ -1538,7 +1540,7 @@ cgCTemp l s ctau maybe_cinit = do
 -- | Generate code for a top-level C temporary with a gensym'd name, based on @s@
 -- and prefixed with @__@, having C type @ctau@, and with the initializer
 -- @maybe_cinit@.
-cgTopCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
+cgTopCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg l (CExp l)
 cgTopCTemp l s ctau maybe_cinit = do
     cv :: C.Id <- gensym ("__" ++ s)
     case maybe_cinit of
@@ -1547,7 +1549,7 @@ cgTopCTemp l s ctau maybe_cinit = do
     return $ CExp $ rl l [cexp|$id:cv|]
 
 -- | Generate an empty label statement if the label argument is required.
-cgLabel :: Label -> Cg ()
+cgLabel :: IsLabel l => l -> Cg l ()
 cgLabel lbl = do
     required <- isLabelUsed lbl
     when required $
@@ -1557,7 +1559,7 @@ cgLabel lbl = do
 -- | Label the statements generated by the continuation @k@ with the specified
 -- label. We only generate a C label when the label is actually used, as
 -- determined by @isLabelUsed@.
-cgWithLabel :: Label -> Cg a -> Cg a
+cgWithLabel :: IsLabel l => l -> Cg l a -> Cg l a
 cgWithLabel lbl k = do
     required <- isLabelUsed lbl
     if required
@@ -1579,12 +1581,13 @@ cgWithLabel lbl k = do
     C.Id ident l = toIdent lbl noLoc
 
 -- | Compile a computation and throw away he result.
-cgCompVoid :: TakeK  KontLabel -- ^ Code generator for take
-           -> EmitK  KontLabel -- ^ Code generator for emit
-           -> EmitsK KontLabel -- ^ Code generator for emits
-           -> LComp            -- ^ Computation to compiled
-           -> KontLabel        -- ^ Label of our continuation
-           -> Cg ()
+cgCompVoid :: IsLabel l
+           => TakeK  l -- ^ Code generator for take
+           -> EmitK  l -- ^ Code generator for emit
+           -> EmitsK l -- ^ Code generator for emits
+           -> Comp l            -- ^ Computation to compiled
+           -> l        -- ^ Label of our continuation
+           -> Cg l ()
 cgCompVoid takek emitk emitsk comp klbl =
     cgComp takek emitk emitsk comp klbl $ multishot cgVoid
 
@@ -1592,17 +1595,18 @@ cgCompVoid takek emitk emitsk comp klbl =
 -- jumped to. We assume that the continuation labels the code that will be
 -- generated immediately after the call to 'cgComp', so if the computation
 -- compiles to straight-line code, no @goto@ will be generated.
-cgComp :: TakeK KontLabel  -- ^ Code generator for take
-       -> EmitK KontLabel  -- ^ Code generator for emit
-       -> EmitsK KontLabel -- ^ Code generator for emit
-       -> LComp            -- ^ Computation to compiled
-       -> KontLabel        -- ^ Label of our continuation
-       -> Kont a           -- ^ Continuation accepting the compilation result
-       -> Cg a
+cgComp :: forall a l . IsLabel l
+       => TakeK l  -- ^ Code generator for take
+       -> EmitK l  -- ^ Code generator for emit
+       -> EmitsK l -- ^ Code generator for emit
+       -> Comp l           -- ^ Computation to compiled
+       -> l        -- ^ Label of our continuation
+       -> Kont l a           -- ^ Continuation accepting the compilation result
+       -> Cg l a
 cgComp takek emitk emitsk comp klbl k =
     cgSteps (unComp comp) k
   where
-    cgSteps :: forall a . [LStep] -> Kont a -> Cg a
+    cgSteps :: forall a . [Step l] -> Kont l a -> Cg l a
     cgSteps [] _ =
         faildoc $ text "No computational steps to compile!"
 
@@ -1629,7 +1633,7 @@ cgComp takek emitk emitsk comp klbl k =
         -- @e@ could be a pureish computation, in which case we need to compile
         -- it here before we call the continuation with the result. See issue
         -- #12.
-        cgBind :: forall a . (CExp -> Cg a) -> CExp -> Cg a
+        cgBind :: forall a . (CExp l -> Cg l a) -> CExp l -> Cg l a
         cgBind k ce =
             cgWithLabel l $
             case ce of
@@ -1641,10 +1645,10 @@ cgComp takek emitk emitsk comp klbl k =
         cgStepVoid step l
         cgSteps steps k
 
-    cgStepVoid :: LStep -> KontLabel -> Cg ()
+    cgStepVoid :: Step l -> l -> Cg l ()
     cgStepVoid step klbl = cgStep step klbl $ multishot cgVoid
 
-    cgStep :: forall a . LStep -> KontLabel -> Kont a -> Cg a
+    cgStep :: forall a . Step l -> l -> Kont l a -> Cg l a
     cgStep (VarC l v _) klbl k =
         cgWithLabel l $ do
         compc <- lookupVarCExp v >>= unCComp
@@ -1739,12 +1743,12 @@ cgComp takek emitk emitsk comp klbl k =
         dflags <- askFlags
         cgPar dflags
       where
-        cgPar :: Flags -> Cg a
+        cgPar :: Flags -> Cg l a
         cgPar dflags
             | testDynFlag Fuse dflags = fuse dflags
             | otherwise               = dontFuse dflags ann
 
-        fuse :: Flags -> Cg a
+        fuse :: Flags -> Cg l a
         fuse dflags = do
             do (s, a, c) <- askSTIndTypes
                tau       <- inferStep step
@@ -1758,7 +1762,7 @@ cgComp takek emitk emitsk comp klbl k =
                    (nest 2 $ text "and consumer:" </> ppr right)
                dontFuse dflags ann
 
-        dontFuse :: Flags -> PipelineAnn -> Cg a
+        dontFuse :: Flags -> PipelineAnn -> Cg l a
         dontFuse dflags ann = do
            tau_res <- resultType <$> inferStep step
            case ann of
@@ -1773,16 +1777,17 @@ cgComp takek emitk emitsk comp klbl k =
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
 -- code for the par's take and emit.
-cgParSingleThreaded :: TakeK  KontLabel -- ^ Code generator for /producer's/ take
-                    -> EmitK  KontLabel -- ^ Code generator for /consumer's/ emit
-                    -> EmitsK KontLabel -- ^ Code generator for /consumer's/ emit
+cgParSingleThreaded :: forall a l . IsLabel l
+                    => TakeK  l -- ^ Code generator for /producer's/ take
+                    -> EmitK  l -- ^ Code generator for /consumer's/ emit
+                    -> EmitsK l -- ^ Code generator for /consumer's/ emit
                     -> Type             -- ^ The type of the result of the par
                     -> Type             -- ^ The type of the par's internal buffer
-                    -> LComp            -- ^ The producer computation
-                    -> LComp            -- ^ The consumer computation
-                    -> KontLabel        -- ^ The computation's continuation
-                    -> Kont a           -- ^ Continuation accepting the compilation result
-                    -> Cg a
+                    -> Comp l            -- ^ The producer computation
+                    -> Comp l            -- ^ The consumer computation
+                    -> l        -- ^ The computation's continuation
+                    -> Kont l a           -- ^ Continuation accepting the compilation result
+                    -> Cg l a
 cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the result of the par construct.
@@ -1792,7 +1797,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     useLabel l_pardone
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
-    let donek :: Kont ()
+    let donek :: Kont l ()
         donek = multishot $ \ce -> do
                 cgAssign tau_res cres ce
                 appendStm [cstm|JUMP($id:l_pardone);|]
@@ -1817,7 +1822,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     cgLabel l_pardone
     runKont k cres
   where
-    cgBufPtrType :: Type -> Cg C.Type
+    cgBufPtrType :: Type -> Cg l C.Type
     cgBufPtrType (ArrT _ tau _) = do
         ctau <- cgType tau
         return [cty|const $ty:ctau*|]
@@ -1826,11 +1831,11 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
         ctau <- cgType tau
         return [cty|const $ty:ctau*|]
 
-    cgDerefBufPtr :: Type -> CExp -> CExp
+    cgDerefBufPtr :: Type -> CExp l -> CExp l
     cgDerefBufPtr (ArrT {}) ce = ce
     cgDerefBufPtr _         ce = CExp [cexp|*$ce|]
 
-    takek' :: CExp -> CExp -> CExp -> CExp -> TakeK KontLabel
+    takek' :: CExp l -> CExp l -> CExp l -> CExp l -> TakeK l
     -- The one element take is easy. We know the element will be in @cbufp@,
     -- so we call @k1@ with @cbufp@ as the argument, which generates a
     -- 'CComp', @ccomp@ that represents the continuation that consumes the
@@ -1861,7 +1866,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
                 cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
         return carr
 
-    emitk' :: CExp -> CExp -> CExp -> CExp -> EmitK Label
+    emitk' :: CExp l -> CExp l -> CExp l -> CExp l -> EmitK l
     -- @tau@ must be a base (scalar) type
     emitk' cleftk crightk cbuf cbufp tau ce k = do
         useLabel k
@@ -1869,7 +1874,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
         cgAssignBufp tau cbuf cbufp ce
         appendStm [cstm|INDJUMP($crightk);|]
 
-    emitsk' :: CExp -> CExp -> CExp -> CExp -> EmitsK Label
+    emitsk' :: CExp l -> CExp l -> CExp l -> CExp l -> EmitsK l
     emitsk' cleftk crightk cbuf cbufp (ConstI 1 _) tau ce k = do
         ce' <- cgIdx tau ce 1 0
         emitk' cleftk crightk cbuf cbufp tau ce' k
@@ -1891,7 +1896,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
     -- @cbuf@. This ensures that we can always pass buffer elements by
     -- reference.
-    cgAssignBufp :: Type -> CExp -> CExp -> CExp -> Cg ()
+    cgAssignBufp :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgAssignBufp tau _ cbufp ce | isLvalue ce = do
         caddr <- cgAddrOf tau ce
         appendStm [cstm|$cbufp = $caddr;|]
@@ -1901,22 +1906,23 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
         appendStm [cstm|$cbufp = &$cbuf;|]
 
 -- | Generate code that exits from a computation that is part of a par.
-type ExitK = Cg ()
+type ExitK l = Cg l ()
 
 -- | Compile a par, i.e., a producer/consumer pair, using the multi-threaded
 -- strategy. The take and emit code generators passed as arguments to
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
 -- inner take and emit is done with a producer-consumer buffer.
-cgParMultiThreaded :: TakeK  KontLabel -- ^ Code generator for /producer's/ take
-                   -> EmitK  KontLabel -- ^ Code generator for /consumer's/ emit
-                   -> EmitsK KontLabel -- ^ Code generator for /consumer's/ emit
-                   -> Type             -- ^ The type of the result of the par
-                   -> Type             -- ^ The type of the par's internal buffer
-                   -> LComp            -- ^ The producer computation
-                   -> LComp            -- ^ The consumer computation
-                   -> KontLabel        -- ^ The computation's continuation
-                   -> Kont a           -- ^ Continuation accepting the compilation result
-                   -> Cg a
+cgParMultiThreaded :: forall a l . IsLabel l
+                   => TakeK  l -- ^ Code generator for /producer's/ take
+                   -> EmitK  l -- ^ Code generator for /consumer's/ emit
+                   -> EmitsK l -- ^ Code generator for /consumer's/ emit
+                   -> Type     -- ^ The type of the result of the par
+                   -> Type     -- ^ The type of the par's internal buffer
+                   -> Comp l   -- ^ The producer computation
+                   -> Comp l   -- ^ The consumer computation
+                   -> l        -- ^ The computation's continuation
+                   -> Kont l a -- ^ Continuation accepting the compilation result
+                   -> Cg l a
 cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the par buffer.
@@ -1957,17 +1963,17 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     cgLabel l_pardone
     runKont k cres
   where
-    cgExitWhenDone :: CExp -> ExitK -> Cg ()
+    cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
     cgExitWhenDone ctinfo exitk = do
         cblock <- inNewBlock_ exitk
         appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
 
     -- | Insert a memory barrier
-    cgMemoryBarrier :: Cg ()
+    cgMemoryBarrier :: Cg l ()
     cgMemoryBarrier =
         appendStm [cstm|kz_memory_barrier();|]
 
-    cgProducer :: C.Id -> CExp -> LComp -> Cg ()
+    cgProducer :: C.Id -> CExp l -> Comp l -> Cg l ()
     cgProducer cf cbuf comp = do
         tau <- inferComp comp
         (clabels, cblock) <-
@@ -1990,23 +1996,23 @@ void* $id:cf(void* _tinfo)
     return NULL;
 }|]
       where
-        ctinfo :: CExp
+        ctinfo :: CExp l
         ctinfo = CExp [cexp|*tinfo|]
 
         -- When the producer takes, we need to make sure that the consumer has
         -- asked for more data than we have given it, so we spin until the
         -- consumer requests data.
-        takek' :: TakeK KontLabel
+        takek' :: TakeK l
         takek' n tau k = do
             cgWaitForConsumerRequest ctinfo exitk
             takek n tau k
 
-        emitk' :: EmitK Label
+        emitk' :: EmitK l
         -- @tau@ must be a base (scalar) type
         emitk' tau ce _k =
             cgProduce ctinfo cbuf exitk tau ce
 
-        emitsk' :: EmitsK Label
+        emitsk' :: EmitsK l
         -- Right now we just loop and write the elements one by one---it would
         -- be better to write them all at once.
         emitsk' iota tau ce _k = do
@@ -2015,10 +2021,10 @@ void* $id:cf(void* _tinfo)
                 cidx <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf exitk tau cidx
 
-        exitk :: Cg ()
+        exitk :: Cg l ()
         exitk = appendStm [cstm|BREAK;|]
 
-        donek :: Kont ()
+        donek :: Kont l ()
         donek = multishot $ \ce -> do
             ctau_res <- cgType tau_res
             cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
@@ -2026,7 +2032,7 @@ void* $id:cf(void* _tinfo)
             appendStm [cstm|$ctinfo.done = 1;|]
 
         -- | Put a single data element in the buffer.
-        cgProduce :: CExp -> CExp -> ExitK -> Type -> CExp -> Cg ()
+        cgProduce :: CExp l -> CExp l -> ExitK l -> Type -> CExp l -> Cg l ()
         cgProduce ctinfo cbuf exitk tau ce = do
             cgWaitWhileBufferFull ctinfo exitk
             cgAssign tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
@@ -2034,18 +2040,18 @@ void* $id:cf(void* _tinfo)
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
         -- | Wait until the consumer requests data
-        cgWaitForConsumerRequest :: CExp -> ExitK -> Cg ()
+        cgWaitForConsumerRequest :: CExp l -> ExitK l -> Cg l ()
         cgWaitForConsumerRequest ctinfo exitk = do
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.cons_req - $ctinfo.prod_cnt == 0);|]
             cgExitWhenDone ctinfo exitk
 
         -- | Wait while the buffer is full
-        cgWaitWhileBufferFull :: CExp -> ExitK -> Cg ()
+        cgWaitWhileBufferFull :: CExp l -> ExitK l -> Cg l ()
         cgWaitWhileBufferFull ctinfo exitk = do
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
             cgExitWhenDone ctinfo exitk
 
-    cgConsumer :: CExp -> CExp -> CExp -> CExp -> LComp -> KontLabel -> Cg ()
+    cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
         cgComp takek' emitk' emitsk' comp klbl $
             multishotBind tau_res cres $ \_ce -> return ()
@@ -2053,7 +2059,7 @@ void* $id:cf(void* _tinfo)
         appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
         appendStm [cstm|JUMP($id:l_pardone);|]
       where
-        takek' :: TakeK KontLabel
+        takek' :: TakeK l
         takek' 1 _tau _k = do
             cgRequestData ctinfo 1
             cgConsume ctinfo cbuf exitk return
@@ -2067,19 +2073,19 @@ void* $id:cf(void* _tinfo)
                     appendStm [cstm|$carr[$ci] = $ce;|]
             return carr
 
-        emitk' :: EmitK KontLabel
+        emitk' :: EmitK l
         emitk' = emitk
 
-        emitsk' :: EmitsK Label
+        emitsk' :: EmitsK l
         emitsk' = emitsk
 
-        exitk :: Cg ()
+        exitk :: Cg l ()
         exitk = appendStm [cstm|JUMP($id:l_pardone);|]
 
         -- | Consumer a single data element from the buffer. We take a consumption
         -- continuation, because we must be sure that we insert a memory barrier
         -- before incrementing the consumer count.
-        cgConsume :: CExp -> CExp -> ExitK -> (CExp -> Cg a) -> Cg a
+        cgConsume :: forall a . CExp l -> CExp l -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
         cgConsume ctinfo cbuf exitk consumek = do
             cgWaitWhileBufferEmpty ctinfo exitk
             cidx <- cgCTemp right "cons_idx" [cty|int|] Nothing
@@ -2090,18 +2096,18 @@ void* $id:cf(void* _tinfo)
             return x
 
         -- | Request @cn@ data elements.
-        cgRequestData :: CExp -> CExp -> Cg ()
+        cgRequestData :: CExp l -> CExp l -> Cg l ()
         cgRequestData ctinfo cn =
             appendStm [cstm|$ctinfo.cons_req += $cn;|]
 
         -- | Wait while the buffer is empty
-        cgWaitWhileBufferEmpty :: CExp -> ExitK -> Cg ()
+        cgWaitWhileBufferEmpty :: CExp l -> ExitK l -> Cg l ()
         cgWaitWhileBufferEmpty ctinfo exitk = do
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
             cgExitWhenDone ctinfo exitk
 
 -- | Return 'True' if a compiled expression is a C lvalue.
-isLvalue :: CExp -> Bool
+isLvalue :: CExp l -> Bool
 isLvalue (CIdx tau _ _) | isBitT tau =
     False
 
@@ -2152,7 +2158,7 @@ isReturnedByRef _         = False
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
-cgAssign :: Type -> CExp -> CExp -> Cg ()
+cgAssign :: forall l . Type -> CExp l -> CExp l -> Cg l ()
 -- If we don't care about the value, don't actually perform the assignment. This
 -- can happen when we are in a loop---we don't actually need the result of the
 -- computation in the body of the loop, just its effect(s).
@@ -2169,7 +2175,7 @@ cgAssign tau ce1 ce2 = do
     alias <- mayAlias ce1 ce2
     assign alias tau ce1 ce2
   where
-    mayAlias :: CExp -> CExp -> Cg Bool
+    mayAlias :: CExp l -> CExp l -> Cg l Bool
     mayAlias ce1@(CAlias e1' _) ce2@(CAlias e2' _) = do
         alias <- pathsMayAlias <$> refPath e1' <*> refPath e2'
         traceCg $ nest 2 $
@@ -2180,7 +2186,7 @@ cgAssign tau ce1 ce2 = do
     mayAlias _ce1 _ce2 =
         return False
 
-    assign :: Bool -> Type -> CExp -> CExp -> Cg ()
+    assign :: Bool -> Type -> CExp l -> CExp l -> Cg l ()
     assign mayAlias tau (CAlias _ ce1) ce2 =
        assign mayAlias tau ce1 ce2
 
@@ -2196,10 +2202,10 @@ cgAssign tau ce1 ce2 = do
     assign _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
         appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
-        cbitIdx, cbitOff :: CExp
+        cbitIdx, cbitOff :: CExp l
         (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
 
-        cmask, cbit :: CExp
+        cmask, cbit :: CExp l
         cmask = 1 `shiftL'` cbitOff
         -- Bits are always masked off, so we we can assume ce2 is either 0 or
         -- 1. If we couldn't make this assumption, we would need to use
@@ -2210,7 +2216,7 @@ cgAssign tau ce1 ce2 = do
         clen <- cgIota iota
         cgAssignBitArray ce1 ce2 clen
       where
-        cgAssignBitArray :: CExp -> CExp -> CExp -> Cg ()
+        cgAssignBitArray :: CExp l -> CExp l -> CExp l -> Cg l ()
         cgAssignBitArray ce1 ce2 clen = do
             appendComment $ text "Bit array:" <+> ppr ce1 <+> text ":=" <+> ppr ce2
             case (unBitCSliceBase ce1, unBitCSliceBase ce2, clen) of
@@ -2221,7 +2227,7 @@ cgAssign tau ce1 ce2 = do
                      ((cdst, cdstIdx), (csrc, csrcIdx), clen) ->
                          slowPath cdst cdstIdx csrc csrcIdx clen
           where
-            fastPath :: CExp -> CExp -> Integer -> Integer -> Cg ()
+            fastPath :: CExp l -> CExp l -> Integer -> Integer -> Cg l ()
             fastPath _cdst _csrc _i 0 =
                 return ()
 
@@ -2259,25 +2265,25 @@ cgAssign tau ce1 ce2 = do
             fastPath _ _ i _ =
                 slowPath cdst (cdstIdx + fromIntegral i) csrc (csrcIdx + fromIntegral i) clen
               where
-                cdst, cdstIdx :: CExp
+                cdst, cdstIdx :: CExp l
                 (cdst, cdstIdx) = unCSlice ce1
 
-                csrc, csrcIdx :: CExp
+                csrc, csrcIdx :: CExp l
                 (csrc, csrcIdx) = unCSlice ce2
 
-            mediumPath :: CExp -> Integer -> CExp -> Integer -> Integer -> Cg ()
+            mediumPath :: CExp l -> Integer -> CExp l -> Integer -> Integer -> Cg l ()
             mediumPath cdst dstIdx csrc srcIdx len =
                 slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt len)
 
-            maskedAssign :: CExp -> CExp -> Integer -> Cg ()
+            maskedAssign :: CExp l -> CExp l -> Integer -> Cg l ()
             maskedAssign cdst csrc n =
                 appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc ..&.. cmask);|]
               where
-                cmask, cnotmask :: CExp
+                cmask, cnotmask :: CExp l
                 cmask    = CExp $ chexconst (2^n - 1)
                 cnotmask = CExp $ [cexp|~$(chexconst (2^n - 1))|]
 
-            slowPath :: CExp -> CExp -> CExp -> CExp -> CExp -> Cg ()
+            slowPath :: CExp l -> CExp l -> CExp l -> CExp l -> CExp l -> Cg l ()
             slowPath cdst cdstIdx csrc csrcIdx clen = do
                 csrc' <- cgLower tau0 csrc
                 incBitArrayCopies
@@ -2293,7 +2299,7 @@ cgAssign tau ce1 ce2 = do
           then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
           else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
       where
-        cgArrayAddr :: CExp -> Cg CExp
+        cgArrayAddr :: CExp l -> Cg l (CExp l)
         cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
             panicdoc $ text "cgArrayAddr: the impossible happened!"
 
@@ -2309,7 +2315,7 @@ cgAssign tau ce1 ce2 = do
     assign _ _ cv (CStruct flds) =
         mapM_ cgAssignField flds
       where
-        cgAssignField :: (Field, CExp) -> Cg ()
+        cgAssignField :: (Field, CExp l) -> Cg l ()
         cgAssignField (fld, ce) =
             appendStm [cstm|$cv.$id:cfld = $ce;|]
           where
@@ -2321,18 +2327,18 @@ cgAssign tau ce1 ce2 = do
     assign _ _ cv ce =
         appendStm [cstm|$(cgDeref cv) = $ce;|]
 
-cgBoundsCheck :: CExp -> CExp -> Cg ()
+cgBoundsCheck :: CExp l -> CExp l -> Cg l ()
 cgBoundsCheck clen cidx = do
     boundsCheck <- asksFlags (testDynFlag BoundsCheck)
     when boundsCheck $ do
         appendStm [cstm|kz_assert($cidx >= 0 && $cidx < $clen, $string:(renderLoc cidx), "Array index %d out of bounds (%d)", $cidx, $clen);|]
 
 -- | Generate a 'CExp' representing an index into an array.
-cgIdx :: Type    -- ^ Type of the array element
-      -> CExp    -- ^ The array
-      -> CExp    -- ^ The length of the array
-      -> CExp    -- ^ The array index
-      -> Cg CExp
+cgIdx :: Type          -- ^ Type of the array element
+      -> CExp l        -- ^ The array
+      -> CExp l        -- ^ The length of the array
+      -> CExp l        -- ^ The array index
+      -> Cg l (CExp l) -- ^ The indexed element
 cgIdx tau (CSlice _ carr cidx1 _) clen cidx2 = do
     cgBoundsCheck clen cidx2
     return $ CIdx tau carr (cidx1 + cidx2)
@@ -2345,19 +2351,19 @@ cgIdx tau carr clen cidx = do
     return $ CIdx tau carr cidx
 
 -- | Generate a 'CExp' representing a slice of an array.
-cgSlice :: Type    -- ^ Type of the array element
-        -> CExp    -- ^ The array
-        -> CExp    -- ^ The length of the array
-        -> CExp    -- ^ The array index
-        -> Int     -- ^ The length of the slice
-        -> Cg CExp
+cgSlice :: Type          -- ^ Type of the array element
+        -> CExp l        -- ^ The array
+        -> CExp l        -- ^ The length of the array
+        -> CExp l        -- ^ The array index
+        -> Int           -- ^ The length of the slice
+        -> Cg l (CExp l) -- ^ The slice
 cgSlice tau carr clen cidx len = do
     cgBoundsCheck clen cidx
     cgBoundsCheck clen (cidx + fromIntegral (len - 1))
     return $ CSlice tau carr cidx len
 
 -- | Generate a 'CExp' representing a field projected from a struct.
-cgProj :: CExp -> Field -> Cg CExp
+cgProj :: CExp l -> Field -> Cg l (CExp l)
 cgProj ce@(CStruct flds) fld =
     case lookup fld flds of
       Nothing -> faildoc $ text "Cannot find field" <+> ppr fld <+> text "in" <+> ppr ce
@@ -2374,13 +2380,13 @@ cgProj ce fld =
 
 -- | Dereference a 'CExp' representing a value with ref type, which may or may
 -- not be represented as a pointer.
-cgDeref :: CExp -> CExp
+cgDeref :: CExp l -> CExp l
 cgDeref (CPtr ce)     = CExp [cexp|*$ce|]
 cgDeref (CAlias e ce) = calias e (cgDeref ce)
 cgDeref ce            = ce
 
 -- | Take the address of a 'CExp' representing a value of the given type.
-cgAddrOf :: Type -> CExp -> Cg CExp
+cgAddrOf :: Type -> CExp l -> Cg l (CExp l)
 cgAddrOf _ (CPtr ce) =
     return ce
 
@@ -2404,12 +2410,13 @@ cgAddrOf tau ce = do
     return $ CExp [cexp|&$ctemp|]
 
 -- | Generate code for an if statement.
-cgIf :: forall a . Type
+cgIf :: forall l a . IsLabel l
+     => Type
      -> Exp
-     -> (forall a . Kont a -> Cg a)
-     -> (forall a . Kont a -> Cg a)
-     -> Kont a
-     -> Cg a
+     -> (forall a . Kont l a -> Cg l a)
+     -> (forall a . Kont l a -> Cg l a)
+     -> Kont l a
+     -> Cg l a
 -- Our strategy is to first attempt to run @me2@ and @me3@ and see if they
 -- generate any side effects. If not, we can generate a ternary if. Otherwise,
 -- we have to generate an if statement.
@@ -2419,7 +2426,7 @@ cgIf tau e1 me2 me3 k = do
     (citems3, ce3) <- inNewBlock (me3 $ multishot $ cgLower tau)
     go ce1 citems2 ce2 citems3 ce3
   where
-    go :: CExp -> [C.BlockItem] -> CExp -> [C.BlockItem] -> CExp -> Cg a
+    go :: CExp l -> [C.BlockItem] -> CExp l -> [C.BlockItem] -> CExp l -> Cg l a
     go ce1 [] ce2 [] ce3 =
         runKont k $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
 
@@ -2439,7 +2446,7 @@ cgIf tau e1 me2 me3 k = do
 -- | Generate C code for a @for@ loop. @cfrom@ and @cto@ are the loop bounds,
 -- and @k@ is a continuation that takes an expression representing the loop
 -- index and generates the body of the loop.
-cgFor :: CExp -> CExp -> (CExp -> Cg ()) -> Cg ()
+cgFor :: CExp l -> CExp l -> (CExp l -> Cg l ()) -> Cg l ()
 cgFor cfrom@(CInt i) (CInt j) k
     | j <= i     = return ()
     | j == i + 1 = k cfrom
@@ -2453,11 +2460,11 @@ cgFor cfrom cto k = do
     return x
 
 -- | Lower a 'CExp' into a form we can use directly in an antiquotation.
-cgLower :: Type -> CExp -> Cg CExp
+cgLower :: Type -> CExp l -> Cg l (CExp l)
 cgLower tau ce =
     go ce
   where
-    go :: CExp -> Cg CExp
+    go :: CExp l -> Cg l (CExp l)
     go ce@(CStruct {}) = do
         cv <- cgTemp "lower" tau
         cgAssign tau cv ce
@@ -2476,12 +2483,12 @@ cgLower tau ce =
         return ce
 
 -- | Append a comment to the list of top-level definitions.
-appendTopComment :: Doc -> Cg ()
+appendTopComment :: Doc -> Cg l ()
 appendTopComment doc =
     appendTopDef [cedecl|$esc:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
 
 -- | Append a comment to the current sequence of statements.
-appendComment :: Doc -> Cg ()
+appendComment :: Doc -> Cg l ()
 appendComment doc =
     appendStm [cstm|$escstm:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
 
@@ -2491,7 +2498,7 @@ chexconst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noL
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
-cvar :: (Located a, Named a) => a -> Cg C.Id
+cvar :: (Located a, Named a) => a -> Cg l C.Id
 cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 
 -- | Return the C identifier corresponding to a struct.
