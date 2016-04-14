@@ -44,7 +44,6 @@ import Text.PrettyPrint.Mainland
 import KZC.Auto.Lint (refPath)
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
-import KZC.Label
 import {-# SOURCE #-} KZC.Cg.Monad
 import KZC.Platform
 import KZC.Pretty

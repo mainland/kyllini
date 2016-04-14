@@ -48,7 +48,6 @@ import KZC.Cg.Util
 import KZC.Check.Path
 import KZC.Error
 import KZC.Flags
-import KZC.Label
 import KZC.Name
 import KZC.Optimize.Fuse
 import KZC.Platform

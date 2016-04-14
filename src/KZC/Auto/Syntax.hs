@@ -16,6 +16,7 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Auto.Syntax (
+    Label(..),
     Var(..),
     WildVar(..),
     Field(..),
@@ -100,8 +101,10 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
 import Data.Symbol
+import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Cg.Util
 import KZC.Core.Syntax (Var(..),
                         Field(..),
                         Struct(..),
@@ -264,6 +267,43 @@ data Step l = VarC l Var !SrcLoc
 
 newtype Comp l = Comp { unComp :: [Step l] }
   deriving (Eq, Ord, Read, Show, Monoid)
+
+{------------------------------------------------------------------------------
+ -
+ - Standard code label
+ -
+ ------------------------------------------------------------------------------}
+
+-- | A code label
+data Label = SeqL !Symbol (Maybe Uniq)
+           | ParL Label Label
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString Label where
+    fromString s = SeqL (fromString s) Nothing
+
+instance Pretty Label where
+    ppr (SeqL s Nothing)  = text (unintern s)
+    ppr (SeqL s (Just u)) = text (unintern s) <> braces (ppr u)
+    ppr (ParL l1 l2)      = ppr (l1, l2)
+
+instance C.ToIdent Label where
+    toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
+
+instance Gensym Label where
+    gensym s = SeqL (intern s) <$> maybeNewUnique
+
+    uniquify (SeqL s _)   = SeqL s <$> maybeNewUnique
+    uniquify (ParL l1 l2) = ParL <$> uniquify l1 <*> uniquify l2
+
+instance IsLabel Label where
+    pairLabel = ParL
+
+instance Fvs Label Label where
+    fvs l = singleton l
+
+instance Subst Label Label Label where
+    substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
 type LProgram = Program Label
 

@@ -95,7 +95,6 @@ import KZC.Auto.Lint (Tc, liftTc)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
-import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Quote.C

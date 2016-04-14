@@ -87,7 +87,6 @@ import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
-import KZC.Label
 import {-# SOURCE #-} KZC.Optimize.Eval.Monad (EvalM)
 import qualified KZC.Optimize.Eval.PArray as P
 import KZC.Platform
