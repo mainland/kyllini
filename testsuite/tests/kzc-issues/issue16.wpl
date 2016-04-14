@@ -1,0 +1,15 @@
+let comp id2 = repeat
+     { (x : double) <- take
+     ; y <- take
+     ; emit x
+     ; emit y
+     }
+
+let comp id2' = repeat
+     { (s : double) <- take
+     ; emit s
+     ; t <- take
+     ; emit t
+     }
+       
+let comp main = read >>> id2 >>> id2' >>> write
