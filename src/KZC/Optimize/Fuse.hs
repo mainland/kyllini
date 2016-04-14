@@ -27,7 +27,6 @@ import Data.Map (Map)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
@@ -42,7 +41,7 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-data FState = FState { seen :: Set (Label, Label) }
+data FState = FState { seen :: Set Label }
 
 type F m a = SEFKT (StateT FState m) a
 
@@ -52,22 +51,22 @@ runF m fstate = evalStateT (runSEFKT m) fstate
 runF1 :: MonadErr m => F m a -> FState -> m (Maybe a)
 runF1 m fstate = evalStateT (runSEFKT1 m) fstate
 
-sawLabel :: (MonadPlus m, MonadTc m) => (Label, Label) -> F m Bool
+sawLabel :: (MonadPlus m, MonadTc m) => Label -> F m Bool
 sawLabel l = gets (Set.member l . seen)
 
-recordLabel :: (MonadPlus m, MonadTc m) => (Label, Label) -> F m ()
+recordLabel :: (MonadPlus m, MonadTc m) => Label -> F m ()
 recordLabel l = modify $ \s -> s { seen = Set.insert l (seen s) }
 
-jointLabel :: (MonadPlus m, MonadTc m) => [LStep] -> [LStep] -> F m (Label, Label)
-jointLabel lss rss = (,) <$> stepLabel (head lss) <*> stepLabel (head rss)
+jointLabel :: (MonadPlus m, MonadTc m) => [LStep] -> [LStep] -> F m Label
+jointLabel lss rss = pairLabel <$> stepLabel (head lss) <*> stepLabel (head rss)
 
 -- | Calculate a joint label for two computations where one or both are repeat
 -- loops. Since we unroll repeats during fusion, the "loop header" state we are
 -- looking for is found by "fast-forwarding" past the repeat state.
-jointRepeatLabel :: forall m l . (Applicative m, Monad m)
-                 => [Step l] -> [Step l] -> m (l, l)
+jointRepeatLabel :: forall m l . (IsLabel l, Applicative m, Monad m)
+                 => [Step l] -> [Step l] -> m l
 jointRepeatLabel lss rss =
-    (,) <$> ffLabel lss <*> ffLabel rss
+    pairLabel <$> ffLabel lss <*> ffLabel rss
   where
     ffLabel :: Monad m => [Step l] -> m l
     ffLabel []                    = fail "ffLabel: empty computation"
@@ -75,11 +74,11 @@ jointRepeatLabel lss rss =
     ffLabel (step : _)            = stepLabel step
 
 runRepeat :: (IsLabel l, Monad m)
-          => (l, l)
+          => l
           -> [Step l]
-          -> [Step (l, l)]
-          -> m ([Step l], [Step (l, l)])
-          -> m ([Step l], [Step (l, l)])
+          -> [Step l]
+          -> m ([Step l], [Step l])
+          -> m ([Step l], [Step l])
 runRepeat l_repeat ss_other ss k
     | ss      == [LoopC l_repeat] = return (ss_other, ss)
     | last ss == LoopC l_repeat   = k
@@ -95,9 +94,9 @@ runRepeat l_repeat ss_other ss k
 -- can be introduced into a computation.
 whenNotBeenThere :: (MonadPlus m, MonadTc m)
                  => [LStep]
-                 -> (Label,Label)
-                 -> F m ([LStep], [Step (Label, Label)])
-                 -> F m ([LStep], [Step (Label, Label)])
+                 -> Label
+                 -> F m ([LStep], [LStep])
+                 -> F m ([LStep], [LStep])
 whenNotBeenThere ss l k = do
     beenThere <- sawLabel l
     if beenThere
@@ -251,7 +250,7 @@ fusePar s a b c left right = do
     right' <- localSTIndTypes (Just (b, b, c)) $
               unquify <$> fuseComp right
     l      <- compLabel right'
-    comp   <- fuse left' right' >>= mapCompLabels pair >>= setFirstLabel l
+    comp   <- fuse left' right' >>= setFirstLabel l
     traceFusion $ text "Fused" <+>
         (nest 2 $ text "producer:" </> ppr left') </>
         (nest 2 $ text "and consumer:" </> ppr right') </>
@@ -263,16 +262,10 @@ fusePar s a b c left right = do
         l <- compLabel comp
         return $ subst1 (l /-> l') comp
 
-    pair :: (Label, Label) -> m Label
-    pair (Label l1 _, Label l2 _) = do
-        u <- newUnique
-        let l' = displayS (renderCompact (parens (text (unintern l1) <> comma <> text (unintern l2)))) ""
-        return $ Label (intern l') (Just u)
-
 fuse :: forall m . (MonadPlus m, MonadTc m)
      => LComp
      -> LComp
-     -> m (Comp (Label, Label))
+     -> m LComp
 fuse left right = do
     maybe_res <- runF1 (runRight (unComp left) (unComp right)) fstate
     case maybe_res of
@@ -282,14 +275,14 @@ fuse left right = do
     fstate :: FState
     fstate = FState mempty
 
-    runRight :: [LStep] -> [LStep] -> F m ([LStep], [Step (Label, Label)])
+    runRight :: [LStep] -> [LStep] -> F m ([LStep], [LStep])
     runRight lss [] =
         return (lss, [])
 
     runRight lss (rs@(IfC _ e c1 c2 s) : rss) =
         joinIf `mplus` divergeIf
       where
-        joinIf :: F m ([LStep], [Step (Label, Label)])
+        joinIf :: F m ([LStep], [LStep])
         joinIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -300,7 +293,7 @@ fuse left right = do
             (lss', steps) <- runRight lss rss
             return (lss', step:steps)
 
-        divergeIf :: F m ([LStep], [Step (Label, Label)])
+        divergeIf :: F m ([LStep], [LStep])
         divergeIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -344,14 +337,14 @@ fuse left right = do
         (lss', steps) <- runRight lss rss
         return (lss', step:steps)
 
-    runLeft :: [LStep] -> [LStep] -> F m ([LStep], [Step (Label, Label)])
+    runLeft :: [LStep] -> [LStep] -> F m ([LStep], [LStep])
     runLeft [] rss =
         return (rss, [])
 
     runLeft (ls@(IfC _ e c1 c2 s) : lss) rss =
         joinIf `mplus` divergeIf
       where
-        joinIf :: F m ([LStep], [Step (Label, Label)])
+        joinIf :: F m ([LStep], [LStep])
         joinIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -362,7 +355,7 @@ fuse left right = do
             (rss', steps) <- runLeft lss rss
             return (rss', step:steps)
 
-        divergeIf :: F m ([LStep], [Step (Label, Label)])
+        divergeIf :: F m ([LStep], [LStep])
         divergeIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -393,8 +386,8 @@ fuse left right = do
         (rss', steps) <- runRight (dropBind lss) rss
         return (rss', step:steps)
       where
-        l' :: (Label, Label)
-        l' = (l_left, l_right)
+        l' :: Label
+        l' = pairLabel l_left l_right
 
     runLeft (EmitC {} : _) (TakesC {} : _) =
         mzero
@@ -412,18 +405,18 @@ fuse left right = do
           else emitsNTake n
       where
         -- If we are emitting an array with only one element, fusion is trivial.
-        emits1Take :: F m ([LStep], [Step (Label, Label)])
+        emits1Take :: F m ([LStep], [LStep])
         emits1Take = do
             (rss', steps) <- runRight (dropBind lss) rss
             return (rss', step:steps)
           where
-            step :: Step (Label,Label)
+            step :: LStep
             step = ReturnC l' (idxE e 0) s1
 
         -- If we are emitting an array with more than one element, we rewrite
         -- the emits as a for loop that yields each element of the array one by
         -- one and try to fuse the rewritten computation.
-        emitsNTake :: Int -> F m ([LStep], [Step (Label, Label)])
+        emitsNTake :: Int -> F m ([LStep], [LStep])
         emitsNTake n = do
             i    <- gensymAt "i" s1
             -- XXX We need the empty return so that the emit has a
@@ -433,8 +426,8 @@ fuse left right = do
             fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
             runLeft (unComp fori ++ dropBind lss) (rs : rss)
 
-        l' :: (Label, Label)
-        l' = (l_left, l_right)
+        l' :: Label
+        l' = pairLabel l_left l_right
 
     runLeft (EmitsC l_left e s1 : lss) (TakesC l_right n_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
@@ -445,8 +438,8 @@ fuse left right = do
         (rss', steps) <- runRight (dropBind lss) rss
         return (rss', step:steps)
       where
-        l' :: (Label, Label)
-        l' = (l_left, l_right)
+        l' :: Label
+        l' = pairLabel l_left l_right
 
     runLeft (EmitsC {} : _) _ =
         faildoc $ text "emits paired with non-take."

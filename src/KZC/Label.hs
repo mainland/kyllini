@@ -7,7 +7,7 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Label (
-    IsLabel,
+    IsLabel(..),
     Label(..)
   ) where
 
@@ -19,33 +19,30 @@ import Text.PrettyPrint.Mainland
 import KZC.Cg.Util
 import KZC.Uniq
 
-class (Ord l, Pretty l, C.ToIdent l) => IsLabel l where
+class (Ord l, IsString l, C.ToIdent l, Pretty l, Gensym l) => IsLabel l where
+    pairLabel :: l -> l -> l
 
 -- | A code label
-data Label = Label
-    { lblSym  :: !Symbol
-    , lblUniq :: Maybe Uniq
-    }
+data Label = L !Symbol (Maybe Uniq)
+           | PairL Label Label
   deriving (Eq, Ord, Read, Show)
 
 instance IsString Label where
-    fromString s = Label (fromString s) Nothing
+    fromString s = L (fromString s) Nothing
 
 instance Pretty Label where
-    ppr (Label s Nothing)  = text (unintern s)
-    ppr (Label s (Just u)) = text (unintern s) <> braces (ppr u)
+    ppr (L s Nothing)  = text (unintern s)
+    ppr (L s (Just u)) = text (unintern s) <> braces (ppr u)
+    ppr (PairL l1 l2)  = ppr (l1, l2)
 
 instance C.ToIdent Label where
     toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
 
-instance IsLabel Label where
-
-instance IsLabel (Label, Label) where
-
-instance C.ToIdent (Label, Label) where
-    toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
-
 instance Gensym Label where
-    gensym s = Label (intern s) <$> maybeNewUnique
+    gensym s = L (intern s) <$> maybeNewUnique
 
-    uniquify (Label s _) = Label s <$> maybeNewUnique
+    uniquify (L s _)       = L s <$> maybeNewUnique
+    uniquify (PairL l1 l2) = PairL <$> uniquify l1 <*> uniquify l2
+
+instance IsLabel Label where
+    pairLabel = PairL
