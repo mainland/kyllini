@@ -203,7 +203,10 @@ instance Eq CExp where
     CSlice q r s t == CSlice w x y z = (q,r,s,t) == (w,x,y,z)
     CBits x        == CBits y        = x == y
     CAlias r s     == CAlias x y     = (r,s) == (x,y)
-    _              == _              = error "Eq CExp: incomparable"
+    ce1            == ce2            = errordoc $
+                                       text "Eq CExp incomparable:" <+>
+                                       (text . show) ce1 <+>
+                                       (text . show) ce2
 
 instance Ord CExp where
     compare CVoid            CVoid            = EQ
@@ -215,7 +218,10 @@ instance Ord CExp where
     compare (CSlice q r s t) (CSlice w x y z) = compare (q,r,s,t) (w,x,y,z)
     compare (CBits x)        (CBits y)        = compare x y
     compare (CAlias r s)     (CAlias x y)     = compare (r,s) (x,y)
-    compare _                _                = error "Ord CExp: incomparable"
+    compare ce1              ce2              = errordoc $
+                                                text "Ord CExp incomparable:" <+>
+                                                (text . show) ce1 <+>
+                                                (text . show) ce2
 
 instance Enum CExp where
     toEnum n = CInt (fromIntegral n)
