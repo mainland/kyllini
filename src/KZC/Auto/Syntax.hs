@@ -371,7 +371,7 @@ setCompLabel l (Comp (step:steps)) = Comp (setStepLabel l step:steps)
 
 -- | Rewrite the label of the first step in a computation and ensure that any
 -- references to the old label are rewritten to refer to the new label.
-rewriteStepsLabel :: Monad m => Label -> [LStep] -> m [LStep]
+rewriteStepsLabel :: (IsLabel l, Monad m) => l -> [Step l] -> m [Step l]
 rewriteStepsLabel _ steps@[] =
     return steps
 
