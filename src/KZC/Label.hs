@@ -8,10 +8,7 @@
 
 module KZC.Label (
     IsLabel,
-    Label(..),
-
-    genLabel,
-    uniquifyLabel
+    Label(..)
   ) where
 
 import Data.String (IsString(..))
@@ -20,7 +17,6 @@ import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Cg.Util
-import KZC.Flags
 import KZC.Uniq
 
 class (Ord l, Pretty l, C.ToIdent l) => IsLabel l where
@@ -49,18 +45,7 @@ instance IsLabel (Label, Label) where
 instance C.ToIdent (Label, Label) where
     toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
 
-genLabel :: MonadUnique m => String -> m Label
-genLabel s = do
-    noGensym <- asksFlags $ testDynFlag NoGensym
-    if noGensym
-      then return $ Label (intern s) Nothing
-      else do u <- newUnique
-              return $ Label (intern s) (Just u)
+instance Gensym Label where
+    gensym s = Label (intern s) <$> maybeNewUnique
 
-uniquifyLabel :: MonadUnique m => Label -> m Label
-uniquifyLabel (Label l _) = do
-    noGensym <- asksFlags $ testDynFlag NoGensym
-    if noGensym
-      then return $ Label l Nothing
-      else do u <- newUnique
-              return $ Label l (Just u)
+    uniquify (Label s _) = Label s <$> maybeNewUnique

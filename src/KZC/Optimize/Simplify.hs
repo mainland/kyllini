@@ -48,7 +48,6 @@ import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Monad
-import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -204,7 +203,7 @@ withUniqVar :: Var
 withUniqVar v k = do
     inscope <- isInScope v
     if inscope
-      then do v' <- mkUniq v
+      then do v' <- uniquify v
               extendSubst v ((DoneExp . varE) v') $ k v'
       else killVars [v] $ k v
 
@@ -225,7 +224,7 @@ withUniqBoundVar :: BoundVar
 withUniqBoundVar v k = do
     inscope <- isInScope (bVar v)
     if inscope
-      then do v' <- mkUniq v
+      then do v' <- uniquify v
               extendSubst (bVar v) ((DoneExp . varE . bVar) v') $ k v'
       else killVars [bVar v] $ k v
 

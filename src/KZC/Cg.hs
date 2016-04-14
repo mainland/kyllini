@@ -318,10 +318,10 @@ cgTimed m = do
   where
     go :: Flags -> Cg a
     go flags | testDynFlag Timers flags = do
-        cpu_time_start  <- gensym "cpu_time_start"
-        cpu_time_end    <- gensym "cpu_time_end"
-        real_time_start <- gensym "real_time_start"
-        real_time_end   <- gensym "real_time_end"
+        cpu_time_start  :: C.Id <- gensym "cpu_time_start"
+        cpu_time_end    :: C.Id <- gensym "cpu_time_end"
+        real_time_start :: C.Id <- gensym "real_time_start"
+        real_time_end   :: C.Id <- gensym "real_time_end"
         appendTopDecl [cdecl|long double $id:cpu_time_start, $id:cpu_time_end;|]
         appendTopDecl [cdecl|long double $id:real_time_start, $id:real_time_end;|]
         appendStm [cstm|$id:cpu_time_start = kz_get_cpu_time();|]
@@ -382,7 +382,7 @@ cgThread takek emitk emitsk tau comp k = do
         useLabel l_start
         appendThreadDecl [cdecl|typename KONT $id:cUR_KONT = LABELADDR($id:l_start);|]
         -- Create a label for the end of the computation
-        l_done <- genLabel "done"
+        l_done <- gensym "done"
         useLabel l_done
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
@@ -687,8 +687,8 @@ cgExp e k =
       where
         cgConstExp :: Type -> CExp -> Cg a
         cgConstExp tau (CInit cinit) = do
-            cv   <- gensym "__const"
-            ctau <- cgType tau
+            cv :: C.Id <- gensym "__const"
+            ctau       <- cgType tau
             appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
             runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
 
@@ -974,9 +974,9 @@ cgExp e k =
       where
         cgArrayExp :: Cg a
         cgArrayExp = do
-            (_, tau) <- inferExp e >>= checkArrT
-            cv       <- gensym "__arr"
-            ctau     <- cgType tau
+            (_, tau)   <- inferExp e >>= checkArrT
+            cv :: C.Id <- gensym "__arr"
+            ctau       <- cgType tau
             appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
             forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
                 ce <- cgExpOneshot e
@@ -1530,7 +1530,7 @@ cgStorage isTopLevel cv tau =
 -- @maybe_cinit@.
 cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgCTemp l s ctau maybe_cinit = do
-    cv <- gensym ("__" ++ s)
+    cv :: C.Id <- gensym ("__" ++ s)
     case maybe_cinit of
       Nothing    -> appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
       Just cinit -> appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
@@ -1541,7 +1541,7 @@ cgCTemp l s ctau maybe_cinit = do
 -- @maybe_cinit@.
 cgTopCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg CExp
 cgTopCTemp l s ctau maybe_cinit = do
-    cv <- gensym ("__" ++ s)
+    cv :: C.Id <- gensym ("__" ++ s)
     case maybe_cinit of
       Nothing    -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
       Just cinit -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
@@ -1670,7 +1670,7 @@ cgComp takek emitk emitsk comp klbl k =
     cgStep (WhileC l e_test c_body sloc) _ k = do
         (citems_test, ce_test) <- inNewBlock $ cgExpOneshot e_test
         citems_body            <- inNewBlock_ $ do
-                                  l_inner <- genLabel "inner_whilek"
+                                  l_inner <- gensym "inner_whilek"
                                   cgCompVoid takek emitk emitsk c_body l_inner
                                   cgLabel l_inner
         cgWithLabel l $ do
@@ -1687,7 +1687,7 @@ cgComp takek emitk emitsk comp klbl k =
         ce_start <- cgExpOneshot e_start
         ce_len   <- cgExpOneshot e_len
         citems   <- inNewBlock_ $ do
-                    l_inner <- genLabel "inner_fork"
+                    l_inner <- gensym "inner_fork"
                     cgCompVoid takek emitk emitsk c_body l_inner
                     cgLabel l_inner
         cgWithLabel l $
@@ -1789,7 +1789,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTemp "par_res" tau_res
     -- Create the computation that follows the par.
-    l_pardone <- genLabel "par_done"
+    l_pardone <- gensym "par_done"
     useLabel l_pardone
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
@@ -1853,7 +1853,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     takek' cleftk crightk _cbuf cbufp n tau _k = do
         ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
         carr     <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
-        klbl     <- genLabel "inner_takesk"
+        klbl     <- gensym "inner_takesk"
         useLabel klbl
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         cgFor 0 (fromIntegral n) $ \ci -> do
@@ -1877,7 +1877,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
 
     emitsk' cleftk crightk cbuf cbufp iota tau ce _k = do
         cn    <- cgIota iota
-        loopl <- genLabel "emitsk_next"
+        loopl <- gensym "emitsk_next"
         useLabel loopl
         appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
         cgFor 0 cn $ \ci -> do
@@ -1932,14 +1932,14 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTemp "par_res" tau_res
     -- Create a label for the computation that follows the par.
-    l_pardone <- genLabel "par_done"
+    l_pardone <- gensym "par_done"
     useLabel l_pardone
     -- Re-label the consumer computation. We have to do this because we need to
     -- generate code that initializes the par construct, and this initialization
     -- code needs to have the label of the consumer computation because that is
     -- the label that will be jumped to to run the consumer computation.
     l_consumer  <- compLabel right
-    l_consumer' <- genLabel "consumer"
+    l_consumer' <- gensym "consumer"
     let right'  =  setCompLabel l_consumer' right
     -- Generate to initialize the thread
     when (not (isUnitT tau_res)) $
@@ -2381,7 +2381,7 @@ cgFor cfrom@(CInt i) (CInt j) k
     | j == i + 1 = k cfrom
 
 cgFor cfrom cto k = do
-    ci <- gensym "__i"
+    ci :: C.Id <- gensym "__i"
     appendThreadDecl [cdecl|int $id:ci;|]
     (cbody, x) <- inNewBlock $
                   k (CExp [cexp|$id:ci|])

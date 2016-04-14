@@ -48,17 +48,17 @@ import KZC.Uniq
 
 varC :: MonadUnique m => Var -> m LComp
 varC v = do
-    l <- genLabel "vark"
+    l <- gensym "vark"
     return $ Comp [VarC l v (srclocOf v)]
 
 callC :: MonadUnique m => Var -> [Iota] -> [LArg] -> m LComp
 callC f is args = do
-    l <- genLabel "callk"
+    l <- gensym "callk"
     return $ Comp [CallC l f is args (f `srcspan` is `srcspan` args)]
 
 ifC :: MonadUnique m => Exp -> LComp -> LComp -> m LComp
 ifC e thenc elsec = do
-    l <- genLabel "ifk"
+    l <- gensym "ifk"
     return $ ifC' l e thenc elsec
 
 ifC' :: Label -> Exp -> LComp -> LComp -> LComp
@@ -69,7 +69,7 @@ letC v tau e = letDC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
 
 letDC :: MonadUnique m => LocalDecl -> m LComp
 letDC decl = do
-    l <- genLabel "letk"
+    l <- gensym "letk"
     return $ Comp [LetC l decl (srclocOf decl)]
 
 letDC' :: Label -> LocalDecl -> LComp
@@ -77,27 +77,27 @@ letDC' l decl = Comp [LetC l decl (srclocOf decl)]
 
 whileC :: MonadUnique m => Exp -> LComp -> m LComp
 whileC e c  = do
-    l <- genLabel "whilek"
+    l <- gensym "whilek"
     return $ Comp [WhileC l e c (e `srcspan` c)]
 
 forC :: MonadUnique m => UnrollAnn -> Var -> Type -> Exp -> Exp -> LComp -> m LComp
 forC ann v tau e1 e2 c = do
-    l <- genLabel "fork"
+    l <- gensym "fork"
     return $ Comp [ForC l ann v tau e1 e2 c (v `srcspan` tau `srcspan` e1 `srcspan` e2 `srcspan` c)]
 
 liftC :: MonadUnique m  => Exp -> m LComp
 liftC e = do
-    l <- genLabel "liftk"
+    l <- gensym "liftk"
     return $ Comp [LiftC l e (srclocOf e)]
 
 returnC :: MonadUnique m => Exp -> m LComp
 returnC e = do
-    l <- genLabel "returnk"
+    l <- gensym "returnk"
     return $ Comp [ReturnC l e (srclocOf e)]
 
 bindC :: MonadUnique m => WildVar -> Type -> m LComp
 bindC wv tau = do
-    l <- genLabel "bindk"
+    l <- gensym "bindk"
     return $ Comp [BindC l wv tau (srclocOf tau)]
 
 bindC' :: Label -> WildVar -> Type -> LComp
@@ -105,27 +105,27 @@ bindC' l wv tau = Comp [BindC l wv tau (srclocOf tau)]
 
 takeC ::  MonadUnique m => Type -> m LComp
 takeC tau = do
-    l <- genLabel "takek"
+    l <- gensym "takek"
     return $ Comp [TakeC l tau (srclocOf tau)]
 
 takesC :: MonadUnique m => Int -> Type -> m LComp
 takesC i tau = do
-    l <- genLabel "takesk"
+    l <- gensym "takesk"
     return $ Comp [TakesC l i tau (srclocOf tau)]
 
 emitC :: MonadUnique m => Exp -> m LComp
 emitC e = do
-    l <- genLabel "emitk"
+    l <- gensym "emitk"
     return $ Comp [EmitC l e (srclocOf e)]
 
 emitsC :: MonadUnique m => Exp -> m LComp
 emitsC e = do
-    l <- genLabel "emitk"
+    l <- gensym "emitk"
     return $ Comp [EmitsC l e (srclocOf e)]
 
 repeatC :: MonadUnique m => VectAnn -> LComp -> m LComp
 repeatC ann c = do
-    l <- genLabel "repeatk"
+    l <- gensym "repeatk"
     return $ Comp [RepeatC l ann c (srclocOf c)]
 
 parC :: MonadUnique m => PipelineAnn -> Type -> LComp -> LComp -> m LComp
@@ -229,4 +229,4 @@ mapCompLabels f comp =
 
 uniquifyCompLabels :: forall m . (Applicative m, MonadUnique m)
                    => Comp Label -> m (Comp Label)
-uniquifyCompLabels comp = mapCompLabels uniquifyLabel comp
+uniquifyCompLabels comp = mapCompLabels uniquify comp

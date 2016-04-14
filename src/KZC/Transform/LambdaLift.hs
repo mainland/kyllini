@@ -20,7 +20,6 @@ import qualified Data.Set as Set
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Name
 import KZC.Summary
 import KZC.Transform.LambdaLift.Monad
 import KZC.Uniq
@@ -55,7 +54,7 @@ liftDecl decl@(LetD v tau e l) k | isPureT tau = do
     withDecl (LetD v tau e' l) k
 
 liftDecl decl@(LetD v tau e l) k = do
-    v'   <- uniquify v
+    v'   <- uniquifyLifted v
     fvbs <- nonFunFvs decl
     extendFunFvs [(v, (v', map fst fvbs))] $ do
     e'   <- withSummaryContext decl $
@@ -79,7 +78,7 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
 
 liftDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
-    f'   <- uniquify f
+    f'   <- uniquifyLifted f
     fvbs <- nonFunFvs decl
     extendFunFvs [(f, (f', map fst fvbs))] $ do
     e' <- withSummaryContext decl $
@@ -117,13 +116,12 @@ nonFunFvs decl = do
     tau_allVs <- mapM lookupVar allVs
     return $ [(v, tau) | (v, tau) <- allVs `zip` tau_allVs, not (isFunT tau)]
 
-uniquify :: Var -> Lift Var
-uniquify f@(Var n) = do
+uniquifyLifted :: Var -> Lift Var
+uniquifyLifted f = do
     atTop <- isInTopScope
     if atTop
       then return f
-      else do u <- newUnique
-              return $ Var $ n { nameSort = Internal u }
+      else uniquify f
 
 liftExp :: Exp -> Lift Exp
 liftExp e@(ConstE {}) =

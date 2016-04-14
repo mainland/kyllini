@@ -41,7 +41,6 @@ module KZC.Core.Smart (
 
     splitArrT,
 
-    mkUniqVar,
     mkVar,
 
     notE,
@@ -72,7 +71,6 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Syntax
 import KZC.Name
 import KZC.Platform
-import KZC.Uniq
 
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
@@ -183,9 +181,6 @@ splitArrT (ArrT iota tau _) =
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
-
-mkUniqVar :: (Located a, Applicative m, MonadUnique m) => String -> a -> m Var
-mkUniqVar s l = Var <$> mkUniqName s (locOf l)
 
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)

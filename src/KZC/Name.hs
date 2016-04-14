@@ -10,9 +10,7 @@ module KZC.Name (
     NameSort(..),
     Named(..),
     mkName,
-    mkSymName,
-    mkUniqName,
-    mkUniq
+    mkSymName
   ) where
 
 import Data.Loc
@@ -64,6 +62,15 @@ instance Pretty Name where
 instance IsString Name where
     fromString s = Name Orig (intern s) noLoc
 
+instance Gensym Name where
+    gensymAt s l = do
+        u <- newUnique
+        return $ Name (Internal u) (intern s) (srclocOf l)
+
+    uniquify n = do
+        u <- newUnique
+        return $ mapName (\n -> n { nameSort = Internal u }) n
+
 data NameSort = Orig
               | Internal {-# UNPACK #-} !Uniq
   deriving (Eq, Ord, Read, Show)
@@ -85,14 +92,3 @@ mkName s l = Name Orig (intern s) (SrcLoc l)
 
 mkSymName :: Symbol -> Loc -> Name
 mkSymName s l = Name Orig s (SrcLoc l)
-
-mkUniqName :: MonadUnique m => String -> Loc -> m Name
-mkUniqName s l = do
-    u <- newUnique
-    return $ Name (Internal u) (intern s) (SrcLoc l)
-
-mkUniq :: (MonadUnique m, Named n)
-       => n -> m n
-mkUniq n = do
-    u <- newUnique
-    return $ mapName (\n -> n { nameSort = Internal u }) n

@@ -64,6 +64,7 @@ import KZC.Flags
 import KZC.Platform
 import KZC.Summary
 import KZC.Trace
+import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -616,7 +617,7 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
             checkExp e2 tau
     instType tau exp_ty
     return $ do ce1       <- mce1
-                cx        <- C.mkUniqVar "x" l
+                cx        <- gensymAt "x" l
                 ce2       <- mce2
                 let ctest =  C.bindE cx C.boolT ce1 (C.returnE (C.notE (C.varE cx)))
                 return $ C.WhileE ctest ce2 l
@@ -629,7 +630,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
             checkExp e2 tau
     instType tau exp_ty
     return $ do cann <- trans ann
-                cx   <- C.mkUniqVar "x" l
+                cx   <- gensymAt "x" l
                 ce1  <- mce1
                 ce2  <- mce2
                 return $ C.ForE cann cx C.intT (C.intE 1) ce1 ce2 l
@@ -856,7 +857,7 @@ tcExp (Z.ParE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     unifyTypes tau' tau
     instType (stT (T l) tau tau tau) exp_ty
     return $ do ctau <- trans tau
-                cx   <- C.mkUniqVar "x" l
+                cx   <- gensymAt "x" l
                 return $ C.repeatE $
                          C.bindE cx ctau (C.takeE ctau) $
                          C.emitE (C.varE cx)
@@ -940,8 +941,8 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
     unifyTypes tau' tau
     (a, b, co) <- checkMapFunT f tau
     instType (stT (T l) a a b) exp_ty
-    return $ do cx     <- C.mkUniqVar "x" l
-                cy     <- C.mkUniqVar "y" l
+    return $ do cx     <- gensymAt "x" l
+                cy     <- gensymAt "y" l
                 ccalle <- co $ return $ C.varE cx
                 ca     <- trans a
                 cb     <- trans b
@@ -1171,7 +1172,7 @@ tcVal e exp_ty = do
     go (RefT tau _) mce = do
         let mce' = do
             ce1  <- mce
-            cx   <- C.mkUniqVar "x" ce1
+            cx   <- gensymAt "x" ce1
             ctau <- trans tau
             tellValCtx $ \ce2 -> C.bindE cx ctau (C.derefE ce1) ce2
             return $ C.varE cx
@@ -1185,7 +1186,7 @@ tcVal e exp_ty = do
         instType tau exp_ty
         return $ do
             ce1  <- mce
-            cx   <- C.mkUniqVar "x" ce1
+            cx   <- gensymAt "x" ce1
             ctau <- trans tau
             tellValCtx $ \ce2 -> C.bindE cx ctau ce1 ce2
             return $ C.varE cx
@@ -1764,7 +1765,7 @@ mkCastT tau1 tau2 = do
         co <- mkCast tau1 tau2
         let mkPipe = do
             ctau1 <- trans tau1
-            cx    <- C.mkUniqVar "x" (srclocOf tau1)
+            cx    <- gensymAt "x" tau1
             cxe   <- co $ return (C.varE cx)
             return $ C.repeatE $
                      C.bindE cx ctau1 (C.takeE ctau1) $

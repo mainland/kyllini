@@ -26,9 +26,9 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Syntax
 
 import KZC.Error
-import KZC.Name
 import KZC.Rename.Monad
 import KZC.Summary
+import KZC.Uniq
 import KZC.Util.Env
 
 renameProgram :: [CompLet] -> Rn [CompLet]
@@ -70,7 +70,7 @@ lookupMaybeCompVar v = do
 ensureUniq :: Var -> Rn Var
 ensureUniq v = do
     ins <- inscope v
-    if ins then mkUniq v else return v
+    if ins then uniquify v else return v
 
 inscope :: Var -> Rn Bool
 inscope v = do

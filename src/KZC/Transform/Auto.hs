@@ -43,7 +43,6 @@ import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
 import KZC.Monad
-import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -83,7 +82,7 @@ ensureUnique :: Var -> (Var -> Auto a) -> Auto a
 ensureUnique v k = do
      inscope <- isInScope v
      if inscope
-       then do v' <- mkUniq v
+       then do v' <- uniquify v
                local (\env -> env { autoSubst = Map.insert v v' (autoSubst env) }) (k v')
        else k v
 

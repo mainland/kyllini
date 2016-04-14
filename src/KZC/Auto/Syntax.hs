@@ -147,6 +147,7 @@ import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
+import KZC.Uniq
 import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
@@ -161,6 +162,13 @@ instance Named BoundVar where
     namedSymbol (BoundV v _) = namedSymbol v
 
     mapName f (BoundV v occ) = BoundV (mapName f v) occ
+
+instance Gensym BoundVar where
+    gensymAt s l = BoundV <$> gensymAt s l <*> pure Nothing
+
+    uniquify bv = do
+        u <- newUnique
+        return $ mapName (\n -> n { nameSort = Internal u }) bv
 
 mkBoundVar :: Var -> BoundVar
 mkBoundVar v = BoundV v Nothing

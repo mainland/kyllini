@@ -80,6 +80,7 @@ import KZC.Name
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
+import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -93,6 +94,11 @@ instance Named Var where
     namedSymbol (Var n) = namedSymbol n
 
     mapName f (Var n) = Var (f n)
+
+instance Gensym Var where
+    gensymAt s l = Var <$> gensymAt s (locOf l)
+
+    uniquify (Var n) = Var <$> uniquify n
 
 data WildVar = WildV
              | TameV Var

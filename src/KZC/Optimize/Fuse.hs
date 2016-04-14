@@ -417,7 +417,7 @@ fuse left right = do
         -- one and try to fuse the rewritten computation.
         emitsNTake :: Int -> F m ([LStep], [Step (Label, Label)])
         emitsNTake n = do
-            i    <- mkUniqVar "i" s1
+            i    <- gensymAt "i" s1
             -- XXX We need the empty return so that the emit has a
             -- continuation...so that we can take its label to find a joint
             -- label.

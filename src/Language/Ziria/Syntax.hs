@@ -58,6 +58,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Name
 import KZC.Pretty
 import KZC.Summary
+import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -71,6 +72,11 @@ instance Named Var where
     namedSymbol (Var n) = namedSymbol n
 
     mapName f (Var n) = Var (f n)
+
+instance Gensym Var where
+    gensymAt s l = Var <$> gensymAt s (locOf l)
+
+    uniquify (Var n) = Var <$> uniquify n
 
 newtype Field = Field Name
   deriving (Eq, Ord, Read, Show)

@@ -80,7 +80,6 @@ import KZC.Core.Smart (tyVarT,
 
                        splitArrT,
 
-                       mkUniqVar,
                        mkVar)
 import KZC.Platform
 

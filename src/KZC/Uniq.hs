@@ -10,7 +10,10 @@
 
 module KZC.Uniq (
     Uniq(..),
-    MonadUnique(..)
+    MonadUnique(..),
+    maybeNewUnique,
+
+    Gensym(..)
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -22,9 +25,14 @@ import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import Data.Loc (Located,
+                 Loc,
+                 noLoc,
+                 srclocOf)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Flags
@@ -37,6 +45,13 @@ instance Pretty Uniq where
 
 class (Monad m, MonadFlags m) => MonadUnique m where
     newUnique :: m Uniq
+
+maybeNewUnique :: MonadUnique m => m (Maybe Uniq)
+maybeNewUnique = do
+    noGensym <- asksFlags $ testDynFlag NoGensym
+    if noGensym
+        then return Nothing
+        else Just <$> newUnique
 
 instance MonadUnique m => MonadUnique (MaybeT m) where
     newUnique = lift newUnique
@@ -57,3 +72,31 @@ instance MonadUnique m => MonadUnique (StateT s m) where
 
 instance (Monoid w, MonadUnique m) => MonadUnique (WriterT w m) where
     newUnique = lift newUnique
+
+class Gensym a where
+    -- | Gensym a symbol using the given string as a basis.
+    gensym :: MonadUnique m => String -> m a
+    gensym s = gensymAt s (noLoc :: Loc)
+
+    -- | Gensym a symbol using the given string and location as a basis.
+    gensymAt :: (MonadUnique m, Located l) => String -> l -> m a
+    gensymAt s _ = gensym s
+
+    -- | Ensure the symbol is unique
+    uniquify :: MonadUnique m => a -> m a
+
+instance Gensym C.Id where
+    gensymAt s l = do
+        maybe_u <- maybeNewUnique
+        case maybe_u of
+          Nothing       -> return $ C.Id s (srclocOf l)
+          Just (Uniq u) -> return $ C.Id (s ++ "__" ++ show u) (srclocOf l)
+
+    uniquify cid@(C.Id s l) = do
+        maybe_u <- maybeNewUnique
+        case maybe_u of
+          Nothing       -> return cid
+          Just (Uniq u) -> return $ C.Id (s ++ "__" ++ show u) l
+
+    uniquify cid =
+        return cid

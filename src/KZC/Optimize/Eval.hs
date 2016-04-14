@@ -52,6 +52,7 @@ import qualified KZC.Optimize.Eval.PArray as P
 import KZC.Optimize.Eval.Val
 import KZC.Summary
 import KZC.Trace
+import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -980,7 +981,7 @@ lutExp e = do
         genLUT :: (Var -> EvalM Exp)
                -> EvalM Exp
         genLUT k = do
-            v_lut         <- mkUniqVar "lut" e
+            v_lut         <- gensymAt "lut" e
             w_in          <- sum <$> mapM typeSize taus_in
             w_entry       <- sum <$> mapM typeSize taus_result
             let tau_entry =  arrKnownT w_entry bitT
@@ -1045,7 +1046,7 @@ lutExp e = do
             k []
 
         lookupInVars ((v,tau):vtaus) k | isRefT tau = do
-            v'       <- mkUniqVar (namedString v) (locOf v)
+            v'       <- gensymAt (namedString v) (locOf v)
             let tau' =  unRefT tau
             lookupInVars vtaus $ \vtaus' -> do
             e <- k ((v', tau'):vtaus')
