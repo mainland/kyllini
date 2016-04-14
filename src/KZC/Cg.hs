@@ -2405,33 +2405,37 @@ cgAddrOf tau ce = do
     return $ CExp [cexp|&$ctemp|]
 
 -- | Generate code for an if statement.
-cgIf :: Type
+cgIf :: forall a . Type
      -> Exp
      -> (forall a . Kont a -> Cg a)
      -> (forall a . Kont a -> Cg a)
      -> Kont a
      -> Cg a
-cgIf tau e1 me2 me3 k | isPureT tau = do
-    ce1 <- cgExpOneshot e1
-    -- We need to lower ce2 and ce3 in case they are structs...
-    ce2 <- me2 $ oneshot tau $ cgLower tau
-    ce3 <- me3 $ oneshot tau $ cgLower tau
-    runKont k $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
-
-cgIf _tau e1 me2 me3 k | isOneshot k = do
-    (oneshotk, k') <- splitOneshot k
+-- Our strategy is to first attempt to run @me2@ and @me3@ and see if they
+-- generate any side effects. If not, we can generate a ternary if. Otherwise,
+-- we have to generate an if statement.
+cgIf tau e1 me2 me3 k = do
     ce1            <- cgExpOneshot e1
-    citems2        <- inNewBlock_ (me2 oneshotk)
-    citems3        <- inNewBlock_ (me3 oneshotk)
-    appendStm $ cif ce1 citems2 citems3
-    k'
+    (citems2, ce2) <- inNewBlock (me2 $ multishot $ cgLower tau)
+    (citems3, ce3) <- inNewBlock (me3 $ multishot $ cgLower tau)
+    go ce1 citems2 ce2 citems3 ce3
+  where
+    go :: CExp -> [C.BlockItem] -> CExp -> [C.BlockItem] -> CExp -> Cg a
+    go ce1 [] ce2 [] ce3 =
+        runKont k $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
 
-cgIf _tau e1 me2 me3 k = do
-    ce1          <- cgExpOneshot e1
-    (citems2, x) <- inNewBlock (me2 k)
-    (citems3, _) <- inNewBlock (me3 k)
-    appendStm $ cif ce1 citems2 citems3
-    return x
+    go ce1 _ _ _ _ | isOneshot k = do
+        (oneshotk, k') <- splitOneshot k
+        citems2        <- inNewBlock_ (me2 oneshotk)
+        citems3        <- inNewBlock_ (me3 oneshotk)
+        appendStm $ cif ce1 citems2 citems3
+        k'
+
+    go ce1 _ _ _ _ = do
+        (citems2, x) <- inNewBlock (me2 k)
+        (citems3, _) <- inNewBlock (me3 k)
+        appendStm $ cif ce1 citems2 citems3
+        return x
 
 -- | Generate C code for a @for@ loop. @cfrom@ and @cto@ are the loop bounds,
 -- and @k@ is a continuation that takes an expression representing the loop
