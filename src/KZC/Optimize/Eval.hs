@@ -425,10 +425,10 @@ evalStep (LetC {}) =
     panicdoc $ text "evalStep: saw LetC"
 
 evalStep (WhileC _ e c _) =
-    evalWhile e c
+    evalWhileC e c
 
 evalStep (ForC _ ann v tau e1 e2 c _) =
-    evalFor ann v tau e1 e2 c
+    evalForC ann v tau e1 e2 c
 
 evalStep (LiftC l e s) = do
     val <- withSummaryContext e $ evalExp e
@@ -832,10 +832,10 @@ evalExp e =
             partialCmd $ AssignE (toExp val1) (toExp val2) s
 
     eval _flags (WhileE e1 e2 _) =
-        evalWhile e1 e2
+        evalWhileE e1 e2
 
     eval _flags (ForE ann v tau e1 e2 e3 _) =
-        evalFor ann v tau e1 e2 e3
+        evalForE ann v tau e1 e2 e3
 
     eval flags e@(ArrayE es _) = do
         (_, tau)   <- inferExp e >>= checkArrT
@@ -1128,133 +1128,6 @@ refUpdate (ProjR r f) old new = do
     go _ _ _ =
         fail "Cannot project non-StructV"
 
-class Eval a where
-    eval :: a -> EvalM (Val a)
-
-    returnUnit :: Val a
-
-    residualWhile :: Exp -> a -> EvalM (Val a)
-
-    -- | Construct a residual for loop. The loop bounds have already been
-    -- residualized.
-    residualFor :: UnrollAnn -> Var -> Type -> Exp -> Exp -> a -> EvalM (Val a)
-
-instance Eval Exp where
-    eval =
-        evalExp
-
-    returnUnit = ReturnV UnitV
-
-    residualWhile e1 e2 =
-        savingHeap $ do
-        killVars e1
-        killVars e2
-        e1' <- evalFullCmd e1
-        e2' <- evalFullCmd e2
-        partialCmd $ whileE e1' e2'
-
-    residualFor ann v tau e1 e2 e3 =
-        savingHeap $
-        extendVarBinds [(v, UnknownV)] $ do
-        killVars e3
-        e3' <- evalFullCmd e3
-        partialCmd $ forE ann v tau e1 e2 e3'
-
-instance Eval LComp where
-    eval =
-        evalComp
-
-    returnUnit =
-        CompReturnV UnitV
-
-    residualWhile e c = do
-        savingHeap $ do
-        killVars e
-        killVars c
-        e' <- evalFullCmd e
-        c' <- evalFullComp c
-        whileC e' c' >>= partialComp
-
-    residualFor ann v tau e1 e2 e3 =
-        savingHeap $
-        extendVarBinds [(v, UnknownV)] $ do
-        killVars e3
-        e3' <- evalFullComp e3
-        forC ann v tau e1 e2 e3' >>= partialComp
-
-evalWhile :: forall a . (ModifiedVars a Var, Eval a)
-          => Exp
-          -> a
-          -> EvalM (Val a)
-evalWhile e_cond body =
-    evalLoop body $
-    evalCond >>= loop
-  where
-    loop :: Val Exp -> EvalM (Val a)
-    loop (ReturnV val) | isTrue val = do
-        val2 <- evalBody
-        case val2 of
-          ReturnV {} -> evalCond >>= loop
-          CmdV {}    -> residualWhile e_cond body
-          CompV {}   -> residualWhile e_cond body
-          _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
-
-    loop (ReturnV val) | isFalse val =
-        return $ returnUnit
-
-    loop (CmdV {}) =
-        residualWhile e_cond body
-
-    loop val =
-        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
-
-    evalCond :: EvalM (Val Exp)
-    evalCond = eval e_cond
-
-    evalBody :: EvalM (Val a)
-    evalBody = eval body
-
-evalFor :: forall a . (ModifiedVars a Var, Eval a)
-        => UnrollAnn
-        -> Var
-        -> Type
-        -> Exp
-        -> Exp
-        -> a
-        -> EvalM (Val a)
-evalFor ann v tau e1 e2 body = do
-    start <- evalExp e1
-    len   <- evalExp e2
-    withUniqVar v $ \v' ->
-        evalLoop body $
-        extendVars [(v, tau)] $
-        go v' start len
-  where
-    go :: Var -> Val Exp -> Val Exp -> EvalM (Val a)
-    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
-        loop (numerator r_start) (numerator (r_start + r_len))
-      where
-        loop :: Integer -> Integer -> EvalM (Val a)
-        loop !i !end | i < end = do
-            val3 <- extendVarBinds [(v', toIdxVal i)] $ eval body
-            case val3 of
-              ReturnV {}     -> loop (i+1) end
-              CompReturnV {} -> loop (i+1) end
-              CmdV {}        -> residualFor ann v' tau (toExp start) (toExp len) body
-              CompV {}       -> residualFor ann v' tau (toExp start) (toExp len) body
-              _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
-
-        loop _ _ =
-            return $ returnUnit
-
-    go v' start len =
-        residualFor ann v' tau (toExp start) (toExp len) body
-
-    toIdxVal :: Integral i => i -> Val Exp
-    toIdxVal i = FixV sc s w bp (fromIntegral i)
-      where
-        FixT sc s w bp _ = tau
-
 -- | Attempt to execute a loop. If the loop cannot be fully evaluated, we
 -- perform the following steps:
 --
@@ -1279,6 +1152,159 @@ evalLoop body m = do
                            killVars body
                            partial $ CompV h c'
       _              -> faildoc $ text "Bad loop:" <+> ppr val
+
+evalWhileE :: Exp
+           -> Exp
+           -> EvalM (Val Exp)
+evalWhileE e1 e2 =
+    evalLoop e2 $
+    evalExp e1 >>= loop
+  where
+    loop :: Val Exp -> EvalM (Val Exp)
+    loop (ReturnV val) | isTrue val = do
+        val2 <- evalExp e2
+        case val2 of
+          ReturnV {} -> evalExp e1 >>= loop
+          CmdV {}    -> residualWhile
+          _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
+
+    loop (ReturnV val) | isFalse val =
+        return $ ReturnV UnitV
+
+    loop (CmdV {}) =
+        residualWhile
+
+    loop val =
+        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
+
+    residualWhile :: EvalM (Val Exp)
+    residualWhile =
+        savingHeap $ do
+        killVars e1
+        killVars e2
+        e1' <- evalFullCmd e1
+        e2' <- evalFullCmd e2
+        partialCmd $ whileE e1' e2'
+
+evalWhileC :: Exp
+           -> LComp
+           -> EvalM (Val LComp)
+evalWhileC e1 c2 =
+    evalLoop c2 $
+    evalExp e1 >>= loop
+  where
+    loop :: Val Exp -> EvalM (Val LComp)
+    loop (ReturnV val) | isTrue val = do
+        val2 <- evalComp c2
+        case val2 of
+          CompReturnV {} -> evalExp e1 >>= loop
+          CompV {}       -> residualWhile
+          _              -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
+
+    loop (ReturnV val) | isFalse val =
+        return $ CompReturnV UnitV
+
+    loop (CmdV {}) =
+        residualWhile
+
+    loop val =
+        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
+
+    residualWhile :: EvalM (Val LComp)
+    residualWhile = do
+        savingHeap $ do
+        killVars e1
+        killVars c2
+        e1' <- evalFullCmd e1
+        c2' <- evalFullComp c2
+        whileC e1' c2' >>= partialComp
+
+-- | Convert an integral value to a 'Val Exp' of the given (fixpoint) type.
+toFixVal :: Integral i => Type -> i -> Val Exp
+toFixVal ~(FixT sc s w bp _) i =
+    FixV sc s w bp (fromIntegral i)
+
+evalForE :: UnrollAnn
+         -> Var
+         -> Type
+         -> Exp
+         -> Exp
+         -> Exp
+         -> EvalM (Val Exp)
+evalForE ann v tau e1 e2 e3 = do
+    start <- evalExp e1
+    len   <- evalExp e2
+    withUniqVar v $ \v' ->
+        evalLoop e3 $
+        extendVars [(v, tau)] $
+        go v' start len
+  where
+    go :: Var -> Val Exp -> Val Exp -> EvalM (Val Exp)
+    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
+        loop (numerator r_start) (numerator (r_start + r_len))
+      where
+        loop :: Integer -> Integer -> EvalM (Val Exp)
+        loop !i !end | i < end = do
+            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalExp e3
+            case val3 of
+              ReturnV {} -> loop (i+1) end
+              CmdV {}    -> residualFor v' (toExp start) (toExp len)
+              _          -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
+
+        loop _ _ =
+            return $ ReturnV UnitV
+
+    go v' start len =
+        residualFor v' (toExp start) (toExp len)
+
+    residualFor :: Var -> Exp -> Exp -> EvalM (Val Exp)
+    residualFor v' e1' e2' =
+        savingHeap $
+        extendVarBinds [(v', UnknownV)] $ do
+        killVars e3
+        e3' <- evalFullCmd e3
+        partialCmd $ forE ann v' tau e1' e2' e3'
+
+evalForC :: UnrollAnn
+         -> Var
+         -> Type
+         -> Exp
+         -> Exp
+         -> LComp
+         -> EvalM (Val LComp)
+evalForC ann v tau e1 e2 c3 = do
+    start <- evalExp e1
+    len   <- evalExp e2
+    withUniqVar v $ \v' ->
+        evalLoop c3 $
+        extendVars [(v, tau)] $
+        go v' start len
+  where
+    go :: Var -> Val Exp -> Val Exp -> EvalM (Val LComp)
+    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
+        loop (numerator r_start) (numerator (r_start + r_len))
+      where
+        loop :: Integer -> Integer -> EvalM (Val LComp)
+        loop !i !end | i < end = do
+            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalComp c3
+            case val3 of
+              CompReturnV {} -> loop (i+1) end
+              CompV {}       -> residualFor v' (toExp start) (toExp len)
+              _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
+
+        loop _ _ =
+            return $ CompReturnV UnitV
+
+    go v' start len =
+        residualFor v' (toExp start) (toExp len)
+
+    residualFor :: Var -> Exp -> Exp -> EvalM (Val LComp)
+    residualFor v' e1' e2' =
+        savingHeap $
+        extendVarBinds [(v', UnknownV)] $ do
+        killVars c3
+        c3' <- evalFullComp c3
+        forC ann v' tau e1' e2' c3' >>= partialComp
 
 evalIdx :: Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
 evalIdx (RefV r) start len =
