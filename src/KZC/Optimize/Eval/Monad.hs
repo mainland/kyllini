@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 -- |
@@ -110,12 +111,12 @@ import Data.Set (Set)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
-import KZC.Auto.Label
 import KZC.Auto.Lint
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Label
 import KZC.Monad
 import KZC.Optimize.Eval.Val
 import KZC.Trace
@@ -124,12 +125,12 @@ import KZC.Util.Env
 import KZC.Util.SetLike
 import KZC.Vars
 
-data ArgVal = ExpAV (Val Exp)
-            | CompAV (Val LComp)
+data ArgVal l = ExpAV (Val l Exp)
+              | CompAV (Val l (Comp l))
 
-deriving instance Eq ArgVal
-deriving instance Ord ArgVal
-deriving instance Show ArgVal
+deriving instance Eq l => Eq (ArgVal l)
+deriving instance Ord l => Ord (ArgVal l)
+deriving instance Show l => Show (ArgVal l)
 
 type Theta = Map Var Var
 
@@ -137,20 +138,20 @@ type Phi = Map IVar Iota
 
 type Psi = Map TyVar Type
 
-data EvalEnv = EvalEnv
+data EvalEnv l = EvalEnv
     { evalTcEnv  :: TcEnv
     , varSubst   :: Theta
     , ivarSubst  :: Phi
     , tyVarSubst :: Psi
-    , varBinds   :: Map Var (Val Exp)
-    , cvarBinds  :: Map Var (Val LComp)
+    , varBinds   :: Map Var (Val l Exp)
+    , cvarBinds  :: Map Var (Val l (Comp l))
     }
 
-deriving instance Eq EvalEnv
-deriving instance Ord EvalEnv
-deriving instance Show EvalEnv
+deriving instance Eq l => Eq (EvalEnv l)
+deriving instance Ord l => Ord (EvalEnv l)
+deriving instance Show l => Show (EvalEnv l)
 
-defaultEvalEnv :: TcEnv -> EvalEnv
+defaultEvalEnv :: TcEnv -> EvalEnv l
 defaultEvalEnv tcenv = EvalEnv
     { evalTcEnv  = tcenv
     , varSubst   = mempty
@@ -160,72 +161,72 @@ defaultEvalEnv tcenv = EvalEnv
     , cvarBinds  = mempty
     }
 
-data EvalState = EvalState
+data EvalState l = EvalState
     { heapLoc :: !VarPtr
-    , heap    :: !Heap
+    , heap    :: !(Heap l)
     }
   deriving (Eq, Ord, Show)
 
-defaultEvalState :: EvalState
+defaultEvalState :: EvalState l
 defaultEvalState = EvalState
     { heapLoc = 1
     , heap    = mempty
     }
 
-newtype EvalM a = EvalM { unEvalM :: ReaderT EvalEnv (StateT EvalState KZC) a }
+newtype EvalM l a = EvalM { unEvalM :: ReaderT (EvalEnv l) (StateT (EvalState l) KZC) a }
     deriving (Functor, Applicative, Monad, MonadIO,
               MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader EvalEnv,
-              MonadState EvalState,
+              MonadReader (EvalEnv l),
+              MonadState (EvalState l),
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
               MonadTrace)
 
-instance MonadTc EvalM where
+instance MonadTc (EvalM l) where
     askTc       = EvalM $ asks evalTcEnv
     localTc f m = EvalM $ local (\env -> env { evalTcEnv = f (evalTcEnv env) }) (unEvalM m)
 
-evalEvalM :: EvalM a -> TcEnv -> KZC a
+evalEvalM :: EvalM l a -> TcEnv -> KZC a
 evalEvalM m tcenv = evalStateT (runReaderT (unEvalM m) (defaultEvalEnv tcenv)) defaultEvalState
 
-partial :: a -> EvalM a
+partial :: a -> EvalM l a
 partial x = return x
 
-maybePartialVal :: Val a -> EvalM (Val a)
+maybePartialVal :: Val l a -> EvalM l (Val l a)
 maybePartialVal val = return val
 
-partialExp :: Exp -> EvalM (Val Exp)
+partialExp :: Exp -> EvalM l (Val l Exp)
 partialExp e = return $ ExpV e
 
-partialCmd :: Exp -> EvalM (Val Exp)
+partialCmd :: Exp -> EvalM l (Val l Exp)
 partialCmd e = do
     h <- getHeap
     return $ CmdV h e
 
-partialComp :: LComp -> EvalM (Val LComp)
+partialComp :: Comp l -> EvalM l (Val l (Comp l))
 partialComp c = do
     h <- getHeap
     return $ CompV h (unComp c)
 
-askSubst :: EvalM Theta
+askSubst :: EvalM l Theta
 askSubst = asks varSubst
 
-withSubst :: Theta -> EvalM a -> EvalM a
+withSubst :: Theta -> EvalM l a -> EvalM l a
 withSubst _theta k = k
     --local (\env -> env { varSubst = theta }) k
 
-lookupSubst :: Var -> EvalM (Maybe Var)
+lookupSubst :: Var -> EvalM l (Maybe Var)
 lookupSubst v = asks (Map.lookup v . varSubst)
 
-extendSubst :: Var -> Var -> EvalM a -> EvalM a
+extendSubst :: Var -> Var -> EvalM l a -> EvalM l a
 extendSubst v v' k =
     local (\env -> env { varSubst = Map.insert v v' (varSubst env) }) k
 
 withUniqVar :: Var
-            -> (Var -> EvalM a)
-            -> EvalM a
+            -> (Var -> EvalM l a)
+            -> EvalM l a
 withUniqVar v k = do
     inscope <- isInScope v
     if inscope
@@ -234,8 +235,8 @@ withUniqVar v k = do
       else k v
 
 withUniqVars :: [Var]
-             -> ([Var] -> EvalM a)
-             -> EvalM a
+             -> ([Var] -> EvalM l a)
+             -> EvalM l a
 withUniqVars [] k =
     k []
 
@@ -245,8 +246,8 @@ withUniqVars (v:vs) k =
     k (v':vs')
 
 withUniqBoundVar :: BoundVar
-                 -> (BoundVar -> EvalM a)
-                 -> EvalM a
+                 -> (BoundVar -> EvalM l a)
+                 -> EvalM l a
 withUniqBoundVar v k = do
     inscope <- isInScope (bVar v)
     if inscope
@@ -255,28 +256,28 @@ withUniqBoundVar v k = do
       else k v
 
 withUniqWildVar :: WildVar
-                -> (WildVar -> EvalM a)
-                -> EvalM a
+                -> (WildVar -> EvalM l a)
+                -> EvalM l a
 withUniqWildVar WildV     k = k WildV
 withUniqWildVar (TameV v) k = withUniqBoundVar v $ \v' -> k (TameV v')
 
-askIVarSubst :: EvalM Phi
+askIVarSubst :: EvalM l Phi
 askIVarSubst = asks ivarSubst
 
-extendIVarSubst :: [(IVar, Iota)] -> EvalM a -> EvalM a
+extendIVarSubst :: [(IVar, Iota)] -> EvalM l a -> EvalM l a
 extendIVarSubst ivs m =
     extendEnv ivarSubst (\env x -> env { ivarSubst = x }) ivs m
 
-askTyVarSubst :: EvalM Psi
+askTyVarSubst :: EvalM l Psi
 askTyVarSubst = asks tyVarSubst
 
-extendTyVarSubst :: [(TyVar, Type)] -> EvalM a -> EvalM a
+extendTyVarSubst :: [(TyVar, Type)] -> EvalM l a -> EvalM l a
 extendTyVarSubst ivs m =
     extendEnv tyVarSubst (\env x -> env { tyVarSubst = x }) ivs m
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
-withInstantiatedTyVars :: Type -> EvalM a ->EvalM a
+withInstantiatedTyVars :: Type -> EvalM l a ->EvalM l a
 withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
     ST _ _ s' a' b' _ <- appSTScope tau
     extendTyVarSubst [(alpha, tau) | (TyVarT alpha _, tau) <-
@@ -285,10 +286,10 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-isInScope :: Var -> EvalM Bool
+isInScope :: Var -> EvalM l Bool
 isInScope v = asks (Map.member v . varBinds)
 
-lookupVarBind :: Var -> EvalM (Val Exp)
+lookupVarBind :: Var -> EvalM l (Val l Exp)
 lookupVarBind v = do
   maybe_val <- asks (Map.lookup v . varBinds)
   case maybe_val of
@@ -296,19 +297,19 @@ lookupVarBind v = do
     Just UnknownV -> partialExp $ varE v
     Just val      -> return val
 
-extendVarBinds :: [(Var, Val Exp)] -> EvalM a -> EvalM a
+extendVarBinds :: [(Var, Val l Exp)] -> EvalM l a -> EvalM l a
 extendVarBinds vbs m =
     extendEnv varBinds (\env x -> env { varBinds = x }) vbs m
 
-extendWildVarBinds :: [(WildVar, Val Exp)] -> EvalM a -> EvalM a
+extendWildVarBinds :: [(WildVar, Val l Exp)] -> EvalM l a -> EvalM l a
 extendWildVarBinds wvbs m =
     extendVarBinds [(bVar v, val) | (TameV v, val) <- wvbs] m
 
-lookupVarValue :: Var -> EvalM (Val Exp)
+lookupVarValue :: Var -> EvalM l (Val l Exp)
 lookupVarValue v =
     lookupVarBind v >>= extract
   where
-    extract :: Val Exp -> EvalM (Val Exp)
+    extract :: Val l Exp -> EvalM l (Val l Exp)
     extract (RefV (VarR _ ptr)) =
         readVarPtr ptr >>= extract
 
@@ -318,11 +319,11 @@ lookupVarValue v =
     extract val =
         return val
 
-extendVarValues :: [(Var, Type, Val Exp)] -> EvalM a -> EvalM a
+extendVarValues :: [(Var, Type, Val l Exp)] -> EvalM l a -> EvalM l a
 extendVarValues vbs m =
     savingHeap $ go vbs m
   where
-    go :: [(Var, Type, Val Exp)] -> EvalM a -> EvalM a
+    go :: [(Var, Type, Val l Exp)] -> EvalM l a -> EvalM l a
     go [] m =
         m
 
@@ -344,21 +345,21 @@ extendVarValues vbs m =
         extendVarBinds [(v', val)] $ do
         go vbs m
 
-lookupCVarBind :: Var -> EvalM (Val LComp)
+lookupCVarBind :: Var -> EvalM l (Val l (Comp l))
 lookupCVarBind v = do
   maybe_val <- asks (Map.lookup v . cvarBinds)
   case maybe_val of
     Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
     Just val -> return val
 
-extendCVarBinds :: [(Var, Val LComp)] -> EvalM a -> EvalM a
+extendCVarBinds :: [(Var, Val l (Comp l))] -> EvalM l a -> EvalM l a
 extendCVarBinds vbs m =
     extendEnv cvarBinds (\env x -> env { cvarBinds = x }) vbs m
 
 -- | Extend the set of variable bindings. The given variables are all specified
 -- as having unknown values. We use this when partially evaluating function
 -- bodies.
-extendUnknownVarBinds :: [(Var, Type)] -> EvalM a -> EvalM a
+extendUnknownVarBinds :: [(Var, Type)] -> EvalM l a -> EvalM l a
 extendUnknownVarBinds vbs m =
     extendVarBinds  [(v, UnknownV)   | (v, _) <- pvbs] $
     extendCVarBinds [(v, CompVarV v) | (v, _) <- ipvbs] $
@@ -370,37 +371,44 @@ extendUnknownVarBinds vbs m =
     isPure :: (Var, Type) -> Bool
     isPure (_, tau) = isPureT tau
 
-getHeap :: EvalM Heap
+getHeap :: EvalM l (Heap l)
 getHeap = gets heap
 
-putHeap :: Heap -> EvalM ()
+putHeap :: Heap l -> EvalM l ()
 putHeap h = modify $ \s -> s { heap = h }
 
-savingHeap :: EvalM a -> EvalM a
+savingHeap :: EvalM l a -> EvalM l a
 savingHeap m = do
     h <- getHeap
     x <- m
     putHeap h
     return x
 
-heapLookup :: Heap -> VarPtr -> EvalM (Val Exp)
+heapLookup :: Heap l -> VarPtr -> EvalM l (Val l Exp)
 heapLookup h ptr =
     case IntMap.lookup ptr h of
       Nothing  -> faildoc $ text "Unknown variable reference in heap!"
       Just val -> return val
 
-diffHeapExp :: Heap -> Heap -> Exp -> EvalM Exp
+diffHeapExp :: IsLabel l => Heap l -> Heap l -> Exp -> EvalM l Exp
 diffHeapExp h h' e =
     foldr seqE e <$> diffHeapExps h h'
 
-diffHeapComp :: Heap -> Heap -> LComp -> EvalM LComp
+diffHeapComp :: IsLabel l
+             => Heap l
+             -> Heap l
+             -> Comp l
+             -> EvalM l (Comp l)
 diffHeapComp h h' comp = do
     comps_diff <- diffHeapExps h h' >>= mapM liftC
     return $ Comp $ concatMap unComp comps_diff ++ unComp comp
 
 -- | Generate a list of expressions that captures all the heap changes from @h1@
 -- to @h2@
-diffHeapExps :: Heap -> Heap -> EvalM [Exp]
+diffHeapExps :: forall l . IsLabel l
+             => Heap l
+             -> Heap l
+             -> EvalM l [Exp]
 diffHeapExps h1 h2 = do
     -- Get a list of all variables currently in scope. We assume that this list
     -- contains all variables that may have changed from @h1@ to @h2@. This
@@ -412,7 +420,7 @@ diffHeapExps h1 h2 = do
         mapMaybe update $
         [(v, maybe UnknownV id (IntMap.lookup ptr h1), maybe UnknownV id (IntMap.lookup ptr h2)) | (_, RefV (VarR v ptr)) <- vvals]
   where
-    update :: (Var, Val Exp, Val Exp) -> Maybe Exp
+    update :: (Var, Val l Exp, Val l Exp) -> Maybe Exp
     -- This case occurs when the variable @v@ is killed. If this happens, all
     -- changes to @v@ are captured by the expression in the 'CmdV' associated
     -- with @h2@, so we don't need to do anything.
@@ -427,24 +435,24 @@ diffHeapExps h1 h2 = do
         | otherwise   = Just $ v .:=. toExp val'
 
 
-newVarPtr :: EvalM VarPtr
+newVarPtr :: EvalM l VarPtr
 newVarPtr = do
     ptr <- gets heapLoc
     modify $ \s -> s { heapLoc = heapLoc s + 1 }
     return ptr
 
-readVarPtr :: VarPtr -> EvalM (Val Exp)
+readVarPtr :: VarPtr -> EvalM l (Val l Exp)
 readVarPtr ptr = do
     maybe_val <- gets (IntMap.lookup ptr . heap)
     case maybe_val of
       Nothing  -> faildoc $ text "Unknown variable reference!"
       Just val -> return val
 
-writeVarPtr :: VarPtr -> Val Exp -> EvalM ()
+writeVarPtr :: VarPtr -> Val l Exp -> EvalM l ()
 writeVarPtr ptr val =
     modify $ \s -> s { heap = IntMap.insert ptr val (heap s) }
 
-killVars :: ModifiedVars e Var => e -> EvalM ()
+killVars :: ModifiedVars e Var => e -> EvalM l ()
 killVars e = do
     vs       <- mapM (\v -> maybe v id <$> lookupSubst v) (toList (mvs e :: Set Var))
     vbs      <- asks varBinds
@@ -453,19 +461,19 @@ killVars e = do
 
 -- | Kill the entire heap. We use this when partially evaluating function
 -- bodies.
-killHeap :: EvalM a -> EvalM a
+killHeap :: EvalM l a -> EvalM l a
 killHeap m =
     savingHeap $ do
     modify $ \s -> s { heap = IntMap.map (const UnknownV) (heap s) }
     m
 
-simplType :: Type -> EvalM Type
+simplType :: Type -> EvalM l Type
 simplType tau = do
     phi <- askTyVarSubst
     psi <- askIVarSubst
     return $ subst psi mempty (subst phi mempty tau)
 
-simplIota :: Iota -> EvalM Iota
+simplIota :: Iota -> EvalM l Iota
 simplIota iota = do
     psi <- askIVarSubst
     return $ subst psi mempty iota

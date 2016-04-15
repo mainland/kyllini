@@ -19,6 +19,7 @@ import KZC.Uniq
 import KZC.Vars
 
 class ( Ord l
+      , Show l
       , IsString l
       , C.ToIdent l
       , Pretty l
