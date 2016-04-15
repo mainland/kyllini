@@ -43,6 +43,7 @@ import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Analysis.Occ
+import qualified KZC.Auto.Label as A
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Cg

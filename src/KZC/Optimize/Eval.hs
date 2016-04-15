@@ -3,7 +3,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -46,6 +48,7 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Label
 import KZC.Name
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P
@@ -60,7 +63,7 @@ import KZC.Vars
 peval :: Flags -> Bool
 peval = testDynFlag PartialEval
 
-evalProgram :: LProgram -> EvalM LProgram
+evalProgram :: IsLabel l => Program l -> EvalM l (Program l)
 evalProgram (Program decls comp tau) =
   evalDecls decls $ \mkDecls ->
   inSTScope tau $
@@ -78,7 +81,10 @@ evalProgram (Program decls comp tau) =
   decls' <- mkDecls h'
   return $ Program decls' comp' tau
 
-evalDecls :: [LDecl] -> ((Heap -> EvalM [LDecl]) -> EvalM a) -> EvalM a
+evalDecls :: IsLabel l
+          => [Decl l]
+          -> ((Heap l -> EvalM l [Decl l]) -> EvalM l a)
+          -> EvalM l a
 evalDecls [] k =
     k $ \_h -> return []
 
@@ -87,11 +93,14 @@ evalDecls (decl:decls) k =
     evalDecls decls $ \mkDecls' ->
     k $ \h -> (:) <$> mkDecl' h <*> mkDecls' h
 
-evalDecl :: forall a . LDecl -> ((Heap -> EvalM LDecl) -> EvalM a) -> EvalM a
+evalDecl :: forall l a . IsLabel l
+         => Decl l
+         -> ((Heap l -> EvalM l (Decl l)) -> EvalM l a)
+         -> EvalM l a
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
   where
-    go :: LocalLetVal -> EvalM a
+    go :: LocalLetVal l -> EvalM l a
     go (DeclVal decl') =
         k $ \_h -> return $ LetD decl' s
 
@@ -122,7 +131,7 @@ evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     taus :: [Type]
     (vs, taus) = unzip vbs
 
-    eval :: EvalM (Val Exp)
+    eval :: EvalM l (Val l Exp)
     eval =
         extendIVars (ivs `zip` repeat IotaK) $
         extendVars vbs $
@@ -154,7 +163,7 @@ evalDecl decl@(LetCompD v tau comp s) k =
     extendCVarBinds [(bVar v', CompClosV theta tau eval)] $ do
     k $ const . return $ LetCompD v' tau comp' s
   where
-    eval :: EvalM (Val LComp)
+    eval :: EvalM l (Val l (Comp l))
     eval =
         withInstantiatedTyVars tau $
         withSummaryContext comp $
@@ -183,7 +192,7 @@ evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     taus :: [Type]
     (vs, taus) = unzip vbs
 
-    eval :: EvalM (Val LComp)
+    eval :: EvalM l (Val l (Comp l))
     eval =
         withSummaryContext comp $
         extendIVars (ivs `zip` repeat IotaK) $
@@ -191,13 +200,16 @@ evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
         withInstantiatedTyVars tau_ret $
         uniquifyCompLabels comp >>= evalComp
 
-data LocalLetVal -- | Local declaration is pure and produces a declaration
-                 = DeclVal LocalDecl
-                 -- | Local declaration requires a heap so it can push the heap
-                 -- through the declaration.
-                 | HeapDeclVal (Heap -> EvalM LocalDecl)
+data LocalLetVal l  -- | Local declaration is pure and produces a declaration
+                   = DeclVal LocalDecl
+                   -- | Local declaration requires a heap so it can push the heap
+                   -- through the declaration.
+                   | HeapDeclVal (Heap l -> EvalM l LocalDecl)
 
-evalLocalDecl :: forall a . LocalDecl -> (LocalLetVal -> EvalM a) -> EvalM a
+evalLocalDecl :: forall l a . IsLabel l
+              => LocalDecl
+              -> (LocalLetVal l -> EvalM l a)
+              -> EvalM l a
 evalLocalDecl (LetLD v tau e1 s1) k =
     extendVars [(bVar v, tau)] $ do
     -- Bind v to the value of e2
@@ -224,7 +236,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
         maybe_e1' <- mkInit h ptr val1
         return $ LetRefLD v' tau' maybe_e1' s1
   where
-    mkInit :: Heap -> VarPtr -> Val Exp -> EvalM (Maybe Exp)
+    mkInit :: Heap l -> VarPtr -> Val l Exp -> EvalM l (Maybe Exp)
     mkInit h ptr dflt = do
         val      <- heapLookup h ptr
         let val' =  if isKnown val then val else dflt
@@ -233,10 +245,12 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
           _ | isDefaultValue val' -> return Nothing
             | otherwise           -> return $ Just (toExp val')
 
-evalComp :: LComp -> EvalM (Val LComp)
+evalComp :: forall l . IsLabel l
+         => Comp l
+         -> EvalM l (Val l (Comp l))
 evalComp (Comp steps) = evalSteps steps
   where
-    evalSteps :: [LStep] -> EvalM (Val LComp)
+    evalSteps :: [Step l] -> EvalM l (Val l (Comp l))
     evalSteps [] =
         faildoc $ text "Cannot evaluate empty sequence of steps"
 
@@ -246,7 +260,7 @@ evalComp (Comp steps) = evalSteps steps
     evalSteps (LetC l decl s : steps) = do
         evalLocalDecl decl go
       where
-        go :: LocalLetVal -> EvalM (Val LComp)
+        go :: LocalLetVal l -> EvalM l (Val l (Comp l))
         go (DeclVal decl') = do
             val <- evalSteps steps
             case val of
@@ -271,7 +285,7 @@ evalComp (Comp steps) = evalSteps steps
                             text "Step did not return CompReturnV or CompV:" </>
                             ppr val
 
-    evalBind :: LStep -> Val LComp -> [LStep] -> EvalM (Val LComp)
+    evalBind :: Step l -> Val l (Comp l) -> [Step l] -> EvalM l (Val l (Comp l))
     evalBind _step (CompReturnV val1) (BindC l wv tau s : k) =
         extendWildVars [(wv, tau)] $
         withUniqWildVar wv $ \wv' -> do
@@ -310,7 +324,7 @@ evalComp (Comp steps) = evalSteps steps
         text "Command did not return CmdV or ReturnV:" </>
         (text . show) val
 
-    evalFullBind :: [LStep] -> EvalM [LStep]
+    evalFullBind :: [Step l] -> EvalM l [Step l]
     evalFullBind (BindC l wv tau s : steps) =
         extendWildVars [(wv, tau)] $
         withUniqWildVar wv $ \wv' -> do
@@ -322,11 +336,13 @@ evalComp (Comp steps) = evalSteps steps
     evalFullBind steps =
         evalFullSteps steps
 
-evalStep :: LStep -> EvalM (Val LComp)
+evalStep :: forall l . IsLabel l
+         => Step l
+         -> EvalM l (Val l (Comp l))
 evalStep (VarC _ v _) =
     lookupCVarBind v >>= go
   where
-    go :: Val a -> EvalM (Val LComp)
+    go :: Val l a -> EvalM l (Val l (Comp l))
     go (CompClosV theta _tau k) =
         withSubst theta $
         k
@@ -349,7 +365,7 @@ evalStep step@(CallC _ f iotas args _) =
     v_args  <- mapM evalArg args
     go v_f iotas' v_args
   where
-    go :: Val a -> [Iota] -> [ArgVal] -> EvalM (Val LComp)
+    go :: Val l a -> [Iota] -> [ArgVal l] -> EvalM l (Val l (Comp l))
     go (FunCompClosV theta ivs vbs _tau_ret k) iotas' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' -> do
@@ -366,24 +382,24 @@ evalStep step@(CallC _ f iotas args _) =
         -- keep them around. This is exactly what we need to do in the @CallE@
         -- case, but here we need to add bindings to a computation rather than
         -- to an expression.
-        wrapLetArgs :: [Var] -> [Type] -> Val LComp -> EvalM (Val LComp)
+        wrapLetArgs :: [Var] -> [Type] -> Val l (Comp l) -> EvalM l (Val l (Comp l))
         wrapLetArgs vs' taus' val = do
             bs <- filterM isFree (zip3 vs' taus' v_args)
             if null bs
               then return val
               else transformCompVal (letBinds bs) val
           where
-            letBinds :: [(Var, Type, ArgVal)] -> LComp -> EvalM LComp
+            letBinds :: [(Var, Type, ArgVal l)] -> Comp l -> EvalM l (Comp l)
             letBinds bs (Comp steps) = do
               bindsSteps <- mapM letBind bs
               return $ Comp $ concat bindsSteps ++ steps
 
-            letBind :: (Var, Type, ArgVal) -> EvalM [LStep]
+            letBind :: (Var, Type, ArgVal l) -> EvalM l [Step l]
             letBind (_v, RefT {}, _e1)      = return []
             letBind (v,  tau,     ExpAV e1) = unComp <$> letC v tau (toExp e1)
             letBind (_v, _tau,    _e1)      = return []
 
-            isFree :: (Var, Type, ArgVal) -> EvalM Bool
+            isFree :: (Var, Type, ArgVal l) -> EvalM l Bool
             isFree (v, _, _) = do
                 comp <- toComp val
                 return $ v `member` (fvs comp :: Set Var)
@@ -391,13 +407,13 @@ evalStep step@(CallC _ f iotas args _) =
     go _val _iotas' _v_es = do
       faildoc $ text "Cannot call computation function" <+> ppr f
 
-    evalArg :: LArg -> EvalM ArgVal
+    evalArg :: Arg l -> EvalM l (ArgVal l)
     evalArg (ExpA e)  = ExpAV <$> evalExp e
     evalArg (CompA c) = do tau   <- inferComp c
                            theta <- askSubst
                            return $ CompAV $ CompClosV theta tau (evalComp c)
 
-    extendArgBinds :: [(Var, ArgVal)] -> EvalM a -> EvalM a
+    extendArgBinds :: [(Var, ArgVal l)] -> EvalM l a -> EvalM l a
     extendArgBinds []                   m = m
     extendArgBinds ((v, ExpAV e):args)  m = extendVarBinds [(v, e)] $
                                             extendArgBinds args m
@@ -410,7 +426,7 @@ evalStep (IfC l e1 c2 c3 s) = do
   where
     -- Note that @e1@ is pure, so we don't have to worry about it changing the
     -- heap.
-    evalIfBody :: Heap -> Val Exp -> EvalM (Val LComp)
+    evalIfBody :: Heap l -> Val l Exp -> EvalM l (Val l (Comp l))
     evalIfBody h val
         | isTrue  val = evalComp c2
         | isFalse val = evalComp c3
@@ -424,10 +440,10 @@ evalStep (LetC {}) =
     panicdoc $ text "evalStep: saw LetC"
 
 evalStep (WhileC _ e c _) =
-    evalWhile e c
+    evalWhileC e c
 
 evalStep (ForC _ ann v tau e1 e2 c _) =
-    evalFor ann v tau e1 e2 c
+    evalForC ann v tau e1 e2 c
 
 evalStep (LiftC l e s) = do
     val <- withSummaryContext e $ evalExp e
@@ -486,7 +502,7 @@ evalStep (LoopC {}) =
 
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
-evalFullSteps :: [LStep] -> EvalM [LStep]
+evalFullSteps :: IsLabel l => [Step l] -> EvalM l [Step l]
 evalFullSteps steps = do
     h            <- getHeap
     val          <- evalComp (Comp steps)
@@ -501,10 +517,12 @@ evalFullSteps steps = do
                                          ppr val
     unComp <$> diffHeapComp h h' (Comp steps')
 
-evalFullComp :: LComp -> EvalM LComp
+evalFullComp :: IsLabel l => Comp l -> EvalM l (Comp l)
 evalFullComp comp = Comp <$> evalFullSteps (unComp comp)
 
-evalConst :: Const -> EvalM (Val Exp)
+evalConst :: forall l . IsLabel l
+          => Const
+          -> EvalM l (Val l Exp)
 evalConst UnitC              = return UnitV
 evalConst (BoolC f)          = return $ BoolV f
 evalConst (FixC sc s w bp r) = return $ FixV sc s w bp r
@@ -525,13 +543,15 @@ evalConst (StructC s flds) = do
     cs :: [Const]
     (fs, cs) = unzip  flds
 
-evalExp :: Exp -> EvalM (Val Exp)
+evalExp :: forall l . IsLabel l
+        => Exp
+        -> EvalM l (Val l Exp)
 evalExp e =
     withSummaryContext e $ do
     flags <- askFlags
     eval flags e
   where
-    eval :: Flags -> Exp -> EvalM (Val Exp)
+    eval :: Flags -> Exp -> EvalM l (Val l Exp)
     eval flags (ConstE c _) | peval flags =
         evalConst c
 
@@ -561,7 +581,7 @@ evalExp e =
         val <- eval flags e
         unop op val
       where
-        unop :: Unop -> Val Exp -> EvalM (Val Exp)
+        unop :: Unop -> Val l Exp -> EvalM l (Val l Exp)
         unop Lnot val =
             maybePartialVal $ liftBool op not val
 
@@ -605,7 +625,7 @@ evalExp e =
         val2 <- eval flags e2
         binop op val1 val2
       where
-        binop :: Binop -> Val Exp -> Val Exp -> EvalM (Val Exp)
+        binop :: Binop -> Val l Exp -> Val l Exp -> EvalM l (Val l Exp)
         binop Lt val1 val2 =
             maybePartialVal $ liftOrd op (<) val1 val2
 
@@ -684,7 +704,7 @@ evalExp e =
       where
         -- Note that @e1@ is pure, so we don't have to worry about it changing the
         -- heap.
-        evalIfExp :: Type -> Heap -> Val Exp -> EvalM (Val Exp)
+        evalIfExp :: Type -> Heap l -> Val l Exp -> EvalM l (Val l Exp)
         evalIfExp tau h val
             | isTrue  val = eval flags e2
             | isFalse val = eval flags e3
@@ -700,7 +720,7 @@ evalExp e =
     eval _flags (LetE decl e2 s2) =
         evalLocalDecl decl go
       where
-        go :: LocalLetVal -> EvalM (Val Exp)
+        go :: LocalLetVal l -> EvalM l (Val l Exp)
         go (DeclVal decl) = do
             val2 <- evalExp e2
             case val2 of
@@ -718,7 +738,7 @@ evalExp e =
               _          -> do decl <- getHeap >>= k
                                wrapLet decl val2
 
-        wrapLet :: LocalDecl -> Val Exp -> EvalM (Val Exp)
+        wrapLet :: LocalDecl -> Val l Exp -> EvalM l (Val l Exp)
         wrapLet decl val2
             | v `Set.member` fvs e2 = partialExp $ LetE decl e2 s2
             | otherwise             = return val2
@@ -739,7 +759,7 @@ evalExp e =
         tau     <- inferExp e
         go tau v_f iotas' v_es
       where
-        go :: Type -> Val Exp -> [Iota] -> [Val Exp] -> EvalM (Val Exp)
+        go :: Type -> Val l Exp -> [Iota] -> [Val l Exp] -> EvalM l (Val l Exp)
         go _tau (FunClosV theta ivs vbs _tau_ret k) iotas' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' -> do
@@ -755,7 +775,7 @@ evalExp e =
             -- If @val@ uses any of the function's parameter bindings, we need to
             -- keep them around. This can happen if we decide not to inline a
             -- variable, e.g., if the variable is bound to an array constant.
-            wrapLetArgs :: [Var] -> [Type] -> Val Exp -> EvalM (Val Exp)
+            wrapLetArgs :: [Var] -> [Type] -> Val l Exp -> EvalM l (Val l Exp)
             wrapLetArgs vs' taus' val =
                 -- We must be careful here not to apply transformExpVal if the list
                 -- of free variables is null because @transformExpVal id@ is not the
@@ -764,14 +784,14 @@ evalExp e =
                   [] -> return val
                   bs -> transformExpVal (letBinds bs) val
               where
-                letBinds :: [(Var, Type, Val Exp)] -> Exp -> Exp
+                letBinds :: [(Var, Type, Val l Exp)] -> Exp -> Exp
                 letBinds bs e = foldr letBind e bs
 
-                letBind :: (Var, Type, Val Exp) -> Exp -> Exp
+                letBind :: (Var, Type, Val l Exp) -> Exp -> Exp
                 letBind (_v, RefT {}, _e1) e2 = e2
                 letBind (v,  tau,      e1) e2 = letE v tau (toExp e1) e2
 
-                isFree :: (Var, Type, Val Exp) -> Bool
+                isFree :: (Var, Type, Val l Exp) -> Bool
                 isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
 
         -- Note that the heap cannot change as the result of evaluating function
@@ -796,7 +816,7 @@ evalExp e =
     eval flags (DerefE e s) =
         eval flags e >>= go
       where
-        go :: Val Exp -> EvalM (Val Exp)
+        go :: Val l Exp -> EvalM l (Val l Exp)
         go (RefV r) = do
             val <- readVarPtr (refVarPtr r)
             if isKnown val
@@ -811,7 +831,7 @@ evalExp e =
         val2 <- eval flags e2
         go val1 val2
       where
-        go :: Val Exp -> Val Exp -> EvalM (Val Exp)
+        go :: Val l Exp -> Val l Exp -> EvalM l (Val l Exp)
         go (RefV r) val2 = do
             h         <- getHeap
             old       <- readVarPtr ptr
@@ -831,10 +851,10 @@ evalExp e =
             partialCmd $ AssignE (toExp val1) (toExp val2) s
 
     eval _flags (WhileE e1 e2 _) =
-        evalWhile e1 e2
+        evalWhileE e1 e2
 
     eval _flags (ForE ann v tau e1 e2 e3 _) =
-        evalFor ann v tau e1 e2 e3
+        evalForE ann v tau e1 e2 e3
 
     eval flags e@(ArrayE es _) = do
         (_, tau)   <- inferExp e >>= checkArrT
@@ -850,7 +870,7 @@ evalExp e =
         v       <- evalIdx v_arr v_start len
         uninlineArrayConstant v arr v_arr v_start len
       where
-        uninlineArrayConstant :: Val Exp -> Exp -> Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
+        uninlineArrayConstant :: Val l Exp -> Exp -> Val l Exp -> Val l Exp -> Maybe Int -> EvalM l (Val l Exp)
         uninlineArrayConstant v _ _ _ _ | isValue v =
             return v
 
@@ -914,7 +934,7 @@ evalExp e =
         -- If @val2@ uses the binding, we need to keep it around. This can happen if
         -- we decide not to inline a variable, e.g., if the variable is bound to an
         -- array constant.
-        wrapBind :: WildVar -> Type -> Val Exp -> Val Exp -> EvalM (Val Exp)
+        wrapBind :: WildVar -> Type -> Val l Exp -> Val l Exp -> EvalM l (Val l Exp)
         wrapBind (TameV bv) tau val1 val2 | v `Set.member` fvs e2 =
             partialCmd $ letE v tau e1 e2
           where
@@ -935,7 +955,9 @@ evalExp e =
     eval flags (LutE e) =
         eval flags e
 
-lutExp :: Exp -> EvalM Exp
+lutExp :: forall l . IsLabel l
+       => Exp
+       -> EvalM l Exp
 lutExp e = do
     info       <- lutInfo e
     let vs_in  =  toList $ lutInVars info
@@ -959,7 +981,7 @@ lutExp e = do
        -> [(Var, Type)]
        -> Type
        -> Maybe Var
-       -> EvalM Exp
+       -> EvalM l Exp
     go vtaus_in vtaus_out tau_ret v_ret =
         localFlags (setDynFlag PartialEval) $ do
         genLUT genLookup
@@ -978,8 +1000,8 @@ lutExp e = do
         taus_result | Just v <- v_ret, v `elem` vs_out = map unRefT taus_out
                     | otherwise                        = map unRefT $ taus_out ++ [unSTC tau_ret]
 
-        genLUT :: (Var -> EvalM Exp)
-               -> EvalM Exp
+        genLUT :: (Var -> EvalM l Exp)
+               -> EvalM l Exp
         genLUT k = do
             v_lut         <- gensymAt "lut" e
             w_in          <- sum <$> mapM typeSize taus_in
@@ -994,7 +1016,7 @@ lutExp e = do
                        1 -> letE v_lut tau_entry (toExp (head entries)) e_body
                        _ -> letE v_lut (arrKnownT n tau_entry) (arrayE (map toExp entries)) e_body
           where
-            lutResult :: Val Exp -> EvalM [Val Exp]
+            lutResult :: Val l Exp -> EvalM l [Val l Exp]
             lutResult _val_out | Just v <- v_ret, v `elem` vs_out =
                 mapM lookupVarValue vs_out
 
@@ -1002,7 +1024,7 @@ lutExp e = do
                 vals <- mapM lookupVarValue vs_out
                 return $ vals ++ [val_out]
 
-            genLUTEntry :: Int -> Integer -> EvalM (Val Exp)
+            genLUTEntry :: Int -> Integer -> EvalM l (Val l Exp)
             genLUTEntry w_in i = do
                 lut_in <- bitcastV (FixV I U (W w_in) (BP 0) (fromIntegral i))
                                    (FixT I U (W w_in) (BP 0) noLoc)
@@ -1017,31 +1039,35 @@ lutExp e = do
                     traceLUT $ text "Output value:" <+> ppr (vals_result `zip` taus_result)
                     packValues (vals_result `zip` taus_result)
 
-            unCompV :: Val Exp -> Val Exp
+            unCompV :: Val l Exp -> Val l Exp
             unCompV (ReturnV val) = val
             unCompV val           = val
 
         genLookup :: Var
-                  -> EvalM Exp
+                  -> EvalM l Exp
         genLookup v_lut =
             lookupInVars vtaus_in $ \vtaus -> do
             w_in        <- sum <$> mapM typeSize taus_in
             let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
-            idx         <- packValues [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
-            vals        <- if null vs_in
-                           then unpackValues (ExpV $ varE v_lut) taus_result
-                           else unpackValues (ExpV $ idxE (varE v_lut) (bitcastE tau_idx (toExp idx))) taus_result
+            let args :: [(Val l Exp, Type)]
+                args = [(ExpV $ varE v :: Val l Exp, tau) | (v, tau) <- vtaus]
+            idx <- packValues args
+            let result :: Val l Exp
+                result | null vs_in = ExpV $ varE v_lut
+                       | otherwise  = ExpV $ idxE (varE v_lut) (bitcastE tau_idx (toExp idx))
+            vals <- unpackValues result taus_result
             traceLUT $ text "Looked-up values:" <+> ppr vals
             if isCompT tau_ret
               then do let e_res = case v_ret of
                                     Just v | v `elem` vs_out -> derefE (varE v)
                                     _ -> returnE (bitcastE (unSTC tau_ret) (toExp (last vals)))
-                      return $ foldr seqE e_res [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
+                      let cs = [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
+                      return $ foldr seqE e_res cs
               else return $ bitcastE (unSTC tau_ret) (toExp (last vals))
 
         lookupInVars :: [(Var, Type)]
-                     -> ([(Var, Type)] -> EvalM Exp)
-                     -> EvalM Exp
+                     -> ([(Var, Type)] -> EvalM l Exp)
+                     -> EvalM l Exp
         lookupInVars [] k =
             k []
 
@@ -1061,7 +1087,7 @@ lutExp e = do
 -- heap. We use this when we need to sequence two commands and the first command
 -- produced a residual, meaning we can't push the prefix heap of the second
 -- command past the first command.
-evalFullCmd :: Exp -> EvalM Exp
+evalFullCmd :: IsLabel l => Exp -> EvalM l Exp
 evalFullCmd e =
     withSummaryContext e $ do
     h        <- getHeap
@@ -1075,12 +1101,12 @@ evalFullCmd e =
                                 (text . show) val
     diffHeapExp h h' e'
 
-refVarPtr :: Ref -> VarPtr
+refVarPtr :: Ref l -> VarPtr
 refVarPtr (VarR _ ptr) = ptr
 refVarPtr (IdxR r _ _) = refVarPtr r
 refVarPtr (ProjR r _)  = refVarPtr r
 
-refView :: Ref -> Val Exp -> EvalM (Val Exp)
+refView :: IsLabel l => Ref l -> Val l Exp -> EvalM l (Val l Exp)
 refView (VarR {})      val = return val
 refView (IdxR r i len) val = do val' <- refView r val
                                 evalIdx val' i len
@@ -1089,7 +1115,11 @@ refView (ProjR r f)    val = do val' <- refView r val
 
 -- | Update a reference to an object given the old value of the entire object
 -- and the new value of the pointed-to part.
-refUpdate :: Ref -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+refUpdate :: forall l . IsLabel l
+          => Ref l
+          -> Val l Exp
+          -> Val l Exp
+          -> MaybeT (EvalM l) (Val l Exp)
 refUpdate (VarR {}) _ new =
     return new
 
@@ -1097,7 +1127,7 @@ refUpdate (IdxR r i len) old new = do
     old' <- lift $ refView r old
     go i len old' new
   where
-    go :: Val Exp -> Maybe Int -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+    go :: Val l Exp -> Maybe Int -> Val l Exp -> Val l Exp -> MaybeT (EvalM l) (Val l Exp)
     go (FixV I _ _ (BP 0) n) Nothing (ArrayV vs) new = do
         new' <- ArrayV <$> vs P.// [(start, new)]
         refUpdate r old new'
@@ -1119,140 +1149,13 @@ refUpdate (ProjR r f) old new = do
     old' <- lift $ refView r old
     go f old' new
   where
-    go :: Field -> Val Exp -> Val Exp -> MaybeT EvalM (Val Exp)
+    go :: Field -> Val l Exp -> Val l Exp -> MaybeT (EvalM l) (Val l Exp)
     go f (StructV s flds) new = do
         let new' = StructV s (Map.insert f new flds)
         refUpdate r old new'
 
     go _ _ _ =
         fail "Cannot project non-StructV"
-
-class Eval a where
-    eval :: a -> EvalM (Val a)
-
-    returnUnit :: Val a
-
-    residualWhile :: Exp -> a -> EvalM (Val a)
-
-    -- | Construct a residual for loop. The loop bounds have already been
-    -- residualized.
-    residualFor :: UnrollAnn -> Var -> Type -> Exp -> Exp -> a -> EvalM (Val a)
-
-instance Eval Exp where
-    eval =
-        evalExp
-
-    returnUnit = ReturnV UnitV
-
-    residualWhile e1 e2 =
-        savingHeap $ do
-        killVars e1
-        killVars e2
-        e1' <- evalFullCmd e1
-        e2' <- evalFullCmd e2
-        partialCmd $ whileE e1' e2'
-
-    residualFor ann v tau e1 e2 e3 =
-        savingHeap $
-        extendVarBinds [(v, UnknownV)] $ do
-        killVars e3
-        e3' <- evalFullCmd e3
-        partialCmd $ forE ann v tau e1 e2 e3'
-
-instance Eval LComp where
-    eval =
-        evalComp
-
-    returnUnit =
-        CompReturnV UnitV
-
-    residualWhile e c = do
-        savingHeap $ do
-        killVars e
-        killVars c
-        e' <- evalFullCmd e
-        c' <- evalFullComp c
-        whileC e' c' >>= partialComp
-
-    residualFor ann v tau e1 e2 e3 =
-        savingHeap $
-        extendVarBinds [(v, UnknownV)] $ do
-        killVars e3
-        e3' <- evalFullComp e3
-        forC ann v tau e1 e2 e3' >>= partialComp
-
-evalWhile :: forall a . (ModifiedVars a Var, Eval a)
-          => Exp
-          -> a
-          -> EvalM (Val a)
-evalWhile e_cond body =
-    evalLoop body $
-    evalCond >>= loop
-  where
-    loop :: Val Exp -> EvalM (Val a)
-    loop (ReturnV val) | isTrue val = do
-        val2 <- evalBody
-        case val2 of
-          ReturnV {} -> evalCond >>= loop
-          CmdV {}    -> residualWhile e_cond body
-          CompV {}   -> residualWhile e_cond body
-          _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
-
-    loop (ReturnV val) | isFalse val =
-        return $ returnUnit
-
-    loop (CmdV {}) =
-        residualWhile e_cond body
-
-    loop val =
-        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
-
-    evalCond :: EvalM (Val Exp)
-    evalCond = eval e_cond
-
-    evalBody :: EvalM (Val a)
-    evalBody = eval body
-
-evalFor :: forall a . (ModifiedVars a Var, Eval a)
-        => UnrollAnn
-        -> Var
-        -> Type
-        -> Exp
-        -> Exp
-        -> a
-        -> EvalM (Val a)
-evalFor ann v tau e1 e2 body = do
-    start <- evalExp e1
-    len   <- evalExp e2
-    withUniqVar v $ \v' ->
-        evalLoop body $
-        extendVars [(v, tau)] $
-        go v' start len
-  where
-    go :: Var -> Val Exp -> Val Exp -> EvalM (Val a)
-    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
-        loop (numerator r_start) (numerator (r_start + r_len))
-      where
-        loop :: Integer -> Integer -> EvalM (Val a)
-        loop !i !end | i < end = do
-            val3 <- extendVarBinds [(v', toIdxVal i)] $ eval body
-            case val3 of
-              ReturnV {}     -> loop (i+1) end
-              CompReturnV {} -> loop (i+1) end
-              CmdV {}        -> residualFor ann v' tau (toExp start) (toExp len) body
-              CompV {}       -> residualFor ann v' tau (toExp start) (toExp len) body
-              _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
-
-        loop _ _ =
-            return $ returnUnit
-
-    go v' start len =
-        residualFor ann v' tau (toExp start) (toExp len) body
-
-    toIdxVal :: Integral i => i -> Val Exp
-    toIdxVal i = FixV sc s w bp (fromIntegral i)
-      where
-        FixT sc s w bp _ = tau
 
 -- | Attempt to execute a loop. If the loop cannot be fully evaluated, we
 -- perform the following steps:
@@ -1264,7 +1167,10 @@ evalFor ann v tau e1 e2 body = do
 --
 -- 3. Return a command consisting of the initial heap and the
 -- partially-evaluated loop.
-evalLoop :: ModifiedVars e Var => e -> EvalM (Val a) -> EvalM (Val a)
+evalLoop :: (IsLabel l, ModifiedVars e Var)
+         => e
+         -> EvalM l (Val l a)
+         -> EvalM l (Val l a)
 evalLoop body m = do
     h   <- getHeap
     val <- m
@@ -1279,7 +1185,168 @@ evalLoop body m = do
                            partial $ CompV h c'
       _              -> faildoc $ text "Bad loop:" <+> ppr val
 
-evalIdx :: Val Exp -> Val Exp -> Maybe Int -> EvalM (Val Exp)
+evalWhileE :: forall l . IsLabel l
+           => Exp
+           -> Exp
+           -> EvalM l (Val l Exp)
+evalWhileE e1 e2 =
+    evalLoop e2 $
+    evalExp e1 >>= loop
+  where
+    loop :: Val l Exp -> EvalM l (Val l Exp)
+    loop (ReturnV val) | isTrue val = do
+        val2 <- evalExp e2
+        case val2 of
+          ReturnV {} -> evalExp e1 >>= loop
+          CmdV {}    -> residualWhile
+          _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
+
+    loop (ReturnV val) | isFalse val =
+        return $ ReturnV UnitV
+
+    loop (CmdV {}) =
+        residualWhile
+
+    loop val =
+        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
+
+    residualWhile :: EvalM l (Val l Exp)
+    residualWhile =
+        savingHeap $ do
+        killVars e1
+        killVars e2
+        e1' <- evalFullCmd e1
+        e2' <- evalFullCmd e2
+        partialCmd $ whileE e1' e2'
+
+evalWhileC :: forall l . IsLabel l
+           => Exp
+           -> Comp l
+           -> EvalM l (Val l (Comp l))
+evalWhileC e1 c2 =
+    evalLoop c2 $
+    evalExp e1 >>= loop
+  where
+    loop :: Val l Exp -> EvalM l (Val l (Comp l))
+    loop (ReturnV val) | isTrue val = do
+        val2 <- evalComp c2
+        case val2 of
+          CompReturnV {} -> evalExp e1 >>= loop
+          CompV {}       -> residualWhile
+          _              -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
+
+    loop (ReturnV val) | isFalse val =
+        return $ CompReturnV UnitV
+
+    loop (CmdV {}) =
+        residualWhile
+
+    loop val =
+        faildoc $ text "Bad condition evaluation in while:" <+> ppr val
+
+    residualWhile :: EvalM l (Val l (Comp l))
+    residualWhile = do
+        savingHeap $ do
+        killVars e1
+        killVars c2
+        e1' <- evalFullCmd e1
+        c2' <- evalFullComp c2
+        whileC e1' c2' >>= partialComp
+
+-- | Convert an integral value to a 'Val Exp' of the given (fixpoint) type.
+toFixVal :: Integral i => Type -> i -> Val l Exp
+toFixVal ~(FixT sc s w bp _) i =
+    FixV sc s w bp (fromIntegral i)
+
+evalForE :: forall l . IsLabel l
+         => UnrollAnn
+         -> Var
+         -> Type
+         -> Exp
+         -> Exp
+         -> Exp
+         -> EvalM l (Val l Exp)
+evalForE ann v tau e1 e2 e3 = do
+    start <- evalExp e1
+    len   <- evalExp e2
+    withUniqVar v $ \v' ->
+        evalLoop e3 $
+        extendVars [(v, tau)] $
+        go v' start len
+  where
+    go :: Var -> Val l Exp -> Val l Exp -> EvalM l (Val l Exp)
+    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
+        loop (numerator r_start) (numerator (r_start + r_len))
+      where
+        loop :: Integer -> Integer -> EvalM l (Val l Exp)
+        loop !i !end | i < end = do
+            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalExp e3
+            case val3 of
+              ReturnV {} -> loop (i+1) end
+              CmdV {}    -> residualFor v' (toExp start) (toExp len)
+              _          -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
+
+        loop _ _ =
+            return $ ReturnV UnitV
+
+    go v' start len =
+        residualFor v' (toExp start) (toExp len)
+
+    residualFor :: Var -> Exp -> Exp -> EvalM l (Val l Exp)
+    residualFor v' e1' e2' =
+        savingHeap $
+        extendVarBinds [(v', UnknownV)] $ do
+        killVars e3
+        e3' <- evalFullCmd e3
+        partialCmd $ forE ann v' tau e1' e2' e3'
+
+evalForC :: forall l . IsLabel l
+         => UnrollAnn
+         -> Var
+         -> Type
+         -> Exp
+         -> Exp
+         -> Comp l
+         -> EvalM l (Val l (Comp l))
+evalForC ann v tau e1 e2 c3 = do
+    start <- evalExp e1
+    len   <- evalExp e2
+    withUniqVar v $ \v' ->
+        evalLoop c3 $
+        extendVars [(v, tau)] $
+        go v' start len
+  where
+    go :: Var -> Val l Exp -> Val l Exp -> EvalM l (Val l (Comp l))
+    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
+        loop (numerator r_start) (numerator (r_start + r_len))
+      where
+        loop :: Integer -> Integer -> EvalM l (Val l (Comp l))
+        loop !i !end | i < end = do
+            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalComp c3
+            case val3 of
+              CompReturnV {} -> loop (i+1) end
+              CompV {}       -> residualFor v' (toExp start) (toExp len)
+              _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
+
+        loop _ _ =
+            return $ CompReturnV UnitV
+
+    go v' start len =
+        residualFor v' (toExp start) (toExp len)
+
+    residualFor :: Var -> Exp -> Exp -> EvalM l (Val l (Comp l))
+    residualFor v' e1' e2' =
+        savingHeap $
+        extendVarBinds [(v', UnknownV)] $ do
+        killVars c3
+        c3' <- evalFullComp c3
+        forC ann v' tau e1' e2' c3' >>= partialComp
+
+evalIdx :: IsLabel l
+        => Val l Exp
+        -> Val l Exp
+        -> Maybe Int
+        -> EvalM l (Val l Exp)
 evalIdx (RefV r) start len =
     return $ RefV $ IdxR r start len
 
@@ -1311,7 +1378,10 @@ evalIdx v_arr v_start Nothing =
 evalIdx v_arr v_start (Just len) =
     return $ SliceV v_arr v_start len
 
-evalProj :: Val Exp -> Field -> EvalM (Val Exp)
+evalProj :: IsLabel l
+         => Val l Exp
+         -> Field
+         -> EvalM l (Val l Exp)
 evalProj (RefV r) f =
     return $ RefV $ ProjR r f
 
@@ -1325,13 +1395,16 @@ evalProj val f =
 
 -- | @'transformExpVal' f val'@ transforms a value of type @'Val' Exp@ by
 -- applying f. Note that 'transformExpVal' will convert some sub-term of its
--- @Val Exp@ to an 'ExpV' if it isn't already, so even if @f@ is the identity
+-- @Val l Exp@ to an 'ExpV' if it isn't already, so even if @f@ is the identity
 -- function, 'transformExpVal' /is not/ the identity function.
-transformExpVal :: (Exp -> Exp) -> Val Exp -> EvalM (Val Exp)
+transformExpVal :: forall l . IsLabel l
+                => (Exp -> Exp)
+                -> Val l Exp
+                -> EvalM l (Val l Exp)
 transformExpVal f val0 =
     go val0
   where
-    go :: Val Exp -> EvalM (Val Exp)
+    go :: Val l Exp -> EvalM l (Val l Exp)
     go (ReturnV val) = ReturnV <$> go val
     go (ExpV e)      = partial $ ExpV   $ f e
     go (CmdV h e)    = partial $ CmdV h $ f e
@@ -1341,14 +1414,17 @@ transformExpVal f val0 =
 -- applying f. Note that 'transformCompVal' will convert some sub-term of its
 -- @Val Comp@ to a 'CompV' if it isn't already, so even if @f@ is the identity
 -- function, 'transformCompVal' /is not/ the identity function.
-transformCompVal :: (LComp -> EvalM LComp) -> Val LComp -> EvalM (Val LComp)
+transformCompVal :: IsLabel l
+                 => (Comp l -> EvalM l (Comp l))
+                 -> Val l (Comp l)
+                 -> EvalM l (Val l (Comp l))
 transformCompVal f val =
     toComp val >>= f >>= partialComp
 
 -- | Like 'compToExp', 'compValToExpVal' attempts to convert a 'Val Comp'
--- representing a pureish computation to a 'Val Exp' representing the same
+-- representing a pureish computation to a 'Val l Exp' representing the same
 -- computation.
-compValToExpVal :: Val LComp -> EvalM (Val Exp)
+compValToExpVal :: IsLabel l => Val l (Comp l) -> EvalM l (Val l Exp)
 compValToExpVal (CompReturnV e) =
     return $ ReturnV e
 

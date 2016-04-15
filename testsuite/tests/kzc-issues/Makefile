@@ -36,3 +36,6 @@ issue07-simplified.c : issue07-simplified.wpl $(KZC)
 
 issue09.c : issue09.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval --fautolut --flut $< -o $@
+
+issue16.c : issue16.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) --ffuse $< -o $@

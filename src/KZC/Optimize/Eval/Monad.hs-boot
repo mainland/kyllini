@@ -17,16 +17,18 @@ import Control.Applicative (Applicative)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 
+import KZC.Flags
 import KZC.Monad
 import KZC.Uniq
 
-data EvalEnv
+data EvalEnv l
 
-data EvalState
+data EvalState l
 
-newtype EvalM a = EvalM { unEvalM :: ReaderT EvalEnv (StateT EvalState KZC) a }
+newtype EvalM l a = EvalM { unEvalM :: ReaderT (EvalEnv l) (StateT (EvalState l) KZC) a }
 
-instance Functor EvalM where
-instance Applicative EvalM where
-instance Monad EvalM where
-instance MonadUnique EvalM where
+instance Functor (EvalM l) where
+instance Applicative (EvalM l) where
+instance Monad (EvalM l) where
+instance MonadFlags (EvalM l) where
+instance MonadUnique (EvalM l) where

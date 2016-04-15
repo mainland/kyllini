@@ -60,12 +60,6 @@ module KZC.Auto.Syntax (
     setStepLabel,
 #endif /* !defined(ONLY_TYPEDEFS) */
 
-    LProgram,
-    LDecl,
-    LComp,
-    LArg,
-    LStep,
-
     isComplexStruct,
 
     Stm(..),
@@ -265,16 +259,6 @@ data Step l = VarC l Var !SrcLoc
 newtype Comp l = Comp { unComp :: [Step l] }
   deriving (Eq, Ord, Read, Show, Monoid)
 
-type LProgram = Program Label
-
-type LDecl = Decl Label
-
-type LComp = Comp Label
-
-type LArg = Arg Label
-
-type LStep = Step Label
-
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
  -
@@ -331,7 +315,7 @@ setCompLabel l (Comp (step:steps)) = Comp (setStepLabel l step:steps)
 
 -- | Rewrite the label of the first step in a computation and ensure that any
 -- references to the old label are rewritten to refer to the new label.
-rewriteStepsLabel :: Monad m => Label -> [LStep] -> m [LStep]
+rewriteStepsLabel :: (IsLabel l, Monad m) => l -> [Step l] -> m [Step l]
 rewriteStepsLabel _ steps@[] =
     return steps
 
@@ -928,7 +912,7 @@ instance Subst a b Exp => Subst a b (Field, Exp) where
  -
  ------------------------------------------------------------------------------}
 
-instance IsLabel l => Subst l l (Step l) where
+instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
     substM (VarC l v s) =
         VarC <$> substM l <*> pure v <*> pure s
 
@@ -977,7 +961,7 @@ instance IsLabel l => Subst l l (Step l) where
     substM step@(LoopC {}) =
         return step
 
-instance IsLabel l => Subst l l (Comp l) where
+instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
     substM comp = Comp <$> substM (unComp comp)
 
 {------------------------------------------------------------------------------
