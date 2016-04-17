@@ -222,9 +222,9 @@ data Exp = ConstE Const !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Stm e = ReturnS InlineAnn e !SrcLoc
-           | BindS (Maybe Var) Type e !SrcLoc
-           | ExpS e !SrcLoc
+data Stm v e = ReturnS InlineAnn e !SrcLoc
+             | BindS (Maybe v) Type e !SrcLoc
+             | ExpS e !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
@@ -564,7 +564,7 @@ instance Pretty PipelineAnn where
     ppr AlwaysPipeline = text "|>>>|"
     ppr _              = text ">>>"
 
-expToStms :: Exp -> [Stm Exp]
+expToStms :: Exp -> [Stm Var Exp]
 expToStms (ReturnE ann e l)             = [ReturnS ann e l]
 expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
 expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
@@ -576,7 +576,7 @@ pprBody e =
       [_]  -> line <> align (ppr e)
       stms -> space <> semiEmbraceWrap (map ppr stms)
 
-instance Pretty e => Pretty (Stm e) where
+instance (Pretty v, Pretty e) => Pretty (Stm v e) where
     pprPrec p (ReturnS ann e _) =
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
