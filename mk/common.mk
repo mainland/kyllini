@@ -26,7 +26,7 @@ endif
 
 ifeq ($(SANITIZE), 1)
 ifeq ($(CLANG), 1)
-SANITIZEFLAGS+=-fsanitize=address -fsanitize=leak -fsanitize=undefined
+SANITIZEFLAGS+=-fsanitize=address -fsanitize=leak -fsanitize=undefined -fno-sanitize-recover=undefined,integer
 CFLAGS+=$(SANITIZEFLAGS)
 LDFLAGS+=$(SANITIZEFLAGS)
 LIBS+=-lstdc++
