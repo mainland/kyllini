@@ -2427,25 +2427,25 @@ cgIf :: forall l a . IsLabel l
 -- we have to generate an if statement.
 cgIf tau e1 me2 me3 k = do
     ce1            <- cgExpOneshot e1
-    (citems2, ce2) <- inNewBlock (me2 $ multishot $ cgLower tau)
-    (citems3, ce3) <- inNewBlock (me3 $ multishot $ cgLower tau)
+    (citems2, ce2) <- inNewBlock (me2 $ oneshot tau $ cgLower tau)
+    (citems3, ce3) <- inNewBlock (me3 $ oneshot tau $ cgLower tau)
     go ce1 citems2 ce2 citems3 ce3
   where
     go :: CExp l -> [C.BlockItem] -> CExp l -> [C.BlockItem] -> CExp l -> Cg l a
     go ce1 [] ce2 [] ce3 =
         runKont k $ CExp [cexp|$ce1 ? $ce2 : $ce3|]
 
-    go ce1 _ _ _ _ | isOneshot k = do
+    go ce1 citems2 ce2 citems3 ce3 | isOneshot k = do
         (oneshotk, k') <- splitOneshot k
-        citems2        <- inNewBlock_ (me2 oneshotk)
-        citems3        <- inNewBlock_ (me3 oneshotk)
-        appendStm $ cif ce1 citems2 citems3
+        citems2'       <- inNewBlock_ (runKont oneshotk ce2)
+        citems3'       <- inNewBlock_ (runKont oneshotk ce3)
+        appendStm $ cif ce1 (citems2 <> citems2') (citems3 <> citems3')
         k'
 
-    go ce1 _ _ _ _ = do
-        (citems2, x) <- inNewBlock (me2 k)
-        (citems3, _) <- inNewBlock (me3 k)
-        appendStm $ cif ce1 citems2 citems3
+    go ce1 citems2 ce2 citems3 ce3 = do
+        (citems2', x) <- inNewBlock (runKont k ce2)
+        (citems3', _) <- inNewBlock (runKont k ce3)
+        appendStm $ cif ce1 (citems2 <> citems2') (citems3 <> citems3')
         return x
 
 -- | Generate C code for a @for@ loop. @cfrom@ and @cto@ are the loop bounds,
