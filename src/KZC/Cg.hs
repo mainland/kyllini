@@ -2231,6 +2231,10 @@ cgAssign tau ce1 ce2 = do
             fastPath _cdst _csrc _i 0 =
                 return ()
 
+            -- The following generates code with unaligned accesses, so we can't
+            -- use it.
+
+{-
             fastPath cdst csrc i n | q /= 0 = do
                 forM_ [0..q - 1] $ \j ->
                     appendStm [cstm|((typename uint64_t*) &$cdst[$int:i])[$int:j] = ((typename uint64_t*) &$csrc[$int:i])[$int:j];|]
@@ -2251,6 +2255,7 @@ cgAssign tau ce1 ce2 = do
                 fastPath cdst csrc (i + 2*q) r
               where
                 (q, r) = n `quotRem` 16
+-}
 
             fastPath cdst csrc i n | q /= 0 = do
                 forM_ [0..q - 1] $ \j ->
