@@ -520,8 +520,11 @@ instance Pretty Exp where
 
     pprPrec p (LetE decl body _) =
         parensIf (p > appPrec) $
-        ppr decl </>
-        nest 2 (text "in" </> pprPrec doPrec1 body)
+        case body of
+          LetE{} -> ppr decl <+> text "in" </>
+                    pprPrec doPrec1 body
+          _      -> ppr decl </>
+                    nest 2 (text "in" </> pprPrec doPrec1 body)
 
     pprPrec _ (CallE f is es _) =
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
