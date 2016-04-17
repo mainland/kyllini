@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
 
 -- |
 -- Module      :  KZC.Optimize.Eval.Monad
@@ -14,21 +15,28 @@ module KZC.Optimize.Eval.Monad (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Exception (MonadException(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 
-import KZC.Flags
-import KZC.Monad
-import KZC.Uniq
+import KZC.Auto.Lint (MonadTc)
+import KZC.Error (MonadErr)
+import KZC.Flags (MonadFlags)
+import KZC.Trace (MonadTrace)
+import KZC.Uniq (MonadUnique)
 
-data EvalEnv l
+data EvalEnv l (m :: * -> *)
 
-data EvalState l
+data EvalState l (m :: * -> *)
 
-newtype EvalM l a = EvalM { unEvalM :: ReaderT (EvalEnv l) (StateT (EvalState l) KZC) a }
+newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
 
-instance Functor (EvalM l) where
-instance Applicative (EvalM l) where
-instance Monad (EvalM l) where
-instance MonadFlags (EvalM l) where
-instance MonadUnique (EvalM l) where
+instance Monad m => Applicative (EvalM l m) where
+instance Functor m => Functor (EvalM l m) where
+instance Monad m => Monad (EvalM l m) where
+instance MonadException m => MonadException (EvalM l m) where
+instance MonadErr m => MonadErr (EvalM l m) where
+instance MonadFlags m => MonadFlags (EvalM l m) where
+instance MonadUnique m => MonadUnique (EvalM l m) where
+instance MonadTrace m => MonadTrace (EvalM l m) where
+instance MonadTc m => MonadTc (EvalM l m) where

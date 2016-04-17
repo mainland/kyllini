@@ -23,15 +23,13 @@ import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
-import Control.Monad.Ref (MonadRef(..),
-                          MonadAtomicRef(..))
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             modify)
-import Data.IORef
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -48,7 +46,6 @@ import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label
-import KZC.Monad
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -111,15 +108,14 @@ instance Monoid SimplStats where
                    }
 
 data SimplEnv l = SimplEnv
-    { simplTcEnv   :: !TcEnv
-    , simplTheta   :: !(Theta l)
+    { simplTheta   :: !(Theta l)
     , simplVarDefs :: !(VarDefs l)
     , simplPhi     :: !Phi
     , simplPsi     :: !Psi
     }
 
-defaultSimplEnv :: TcEnv -> SimplEnv l
-defaultSimplEnv tcenv = SimplEnv tcenv mempty mempty mempty mempty
+defaultSimplEnv :: SimplEnv l
+defaultSimplEnv = SimplEnv mempty mempty mempty mempty
 
 data SimplState = SimplState
     { simplStats :: SimplStats }
@@ -128,79 +124,94 @@ defaultSimplState :: SimplState
 defaultSimplState = SimplState
     { simplStats = mempty }
 
-newtype SimplM l a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv l) KZC) a }
+newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv l) m) a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
               MonadReader (SimplEnv l),
               MonadState SimplState,
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
-              MonadTrace)
+              MonadTrace,
+              MonadTc)
 
-runSimplM :: SimplM l a -> TcEnv -> KZC (a, SimplStats)
-runSimplM m tcenv = do
-    (x, st) <- runReaderT (runStateT (unSimplM m) defaultSimplState) (defaultSimplEnv tcenv)
+instance MonadTrans (SimplM l) where
+    lift m = SimplM $ lift $ lift m
+
+runSimplM :: MonadTc m => SimplM l m a -> m (a, SimplStats)
+runSimplM m = do
+    (x, st) <- runReaderT (runStateT (unSimplM m) defaultSimplState) defaultSimplEnv
     return (x, simplStats st)
 
-instance MonadTc (SimplM l) where
-    askTc = SimplM $ asks simplTcEnv
-    localTc f m =
-        SimplM $ local (\env -> env { simplTcEnv = f (simplTcEnv env) }) $
-        unSimplM m
-
-mappendStats :: SimplStats -> SimplM l ()
+mappendStats :: MonadTc m => SimplStats -> SimplM l m ()
 mappendStats stats =
     modify $ \s -> s { simplStats = simplStats s <> stats }
 
-dropBinding :: BoundVar -> SimplM l ()
+dropBinding :: MonadTc m => BoundVar -> SimplM l m ()
 dropBinding _ =
     mappendStats mempty { simplDrop = 1 }
 
-inlineBinding :: Var -> SimplM l ()
+inlineBinding :: MonadTc m => Var -> SimplM l m ()
 inlineBinding _v =
     mappendStats mempty { simplInline = 1 }
 
-rewrite :: SimplM l ()
+rewrite :: MonadTc m => SimplM l m ()
 rewrite =
     mappendStats mempty { simplRewrites = 1 }
 
-askSubst :: SimplM l (Theta l)
+askSubst :: MonadTc m => SimplM l m (Theta l)
 askSubst = asks simplTheta
 
-lookupSubst :: InVar -> SimplM l (Maybe (SubstRng l))
+lookupSubst :: MonadTc m => InVar -> SimplM l m (Maybe (SubstRng l))
 lookupSubst v = asks (Map.lookup v . simplTheta)
 
-killVars :: [InVar] -> SimplM l a -> SimplM l a
+killVars :: MonadTc m
+         => [InVar]
+         -> SimplM l m a
+         -> SimplM l m a
 killVars vs k =
     local
     (\env -> env { simplTheta = foldl' (flip Map.delete) (simplTheta env) vs }) k
 
-extendSubst :: InVar -> SubstRng l -> SimplM l a -> SimplM l a
+extendSubst :: MonadTc m
+            => InVar
+            -> SubstRng l
+            -> SimplM l m a
+            -> SimplM l m a
 extendSubst v rng k =
     local (\env -> env { simplTheta = Map.insert v rng (simplTheta env) }) k
 
-withSubst :: Theta l -> SimplM l a -> SimplM l a
+withSubst :: MonadTc m
+          => Theta l
+          -> SimplM l m a
+          -> SimplM l m a
 withSubst theta k =
     local (\env -> env { simplTheta = theta }) k
 
-isInScope :: InVar -> SimplM l Bool
+isInScope :: MonadTc m
+          => InVar
+          -> SimplM l m Bool
 isInScope v = asks (Map.member v . simplVarDefs)
 
-lookupDefinition :: InVar -> SimplM l (Maybe (Definition l))
+lookupDefinition :: MonadTc m
+                 => InVar
+                 -> SimplM l m (Maybe (Definition l))
 lookupDefinition v = asks (Map.lookup v . simplVarDefs)
 
-extendDefinitions :: [(OutVar, Definition l)] -> SimplM l a -> SimplM l a
+extendDefinitions :: MonadTc m
+                  => [(OutVar, Definition l)]
+                  -> SimplM l m a
+                  -> SimplM l m a
 extendDefinitions defs k =
     local (\env -> env { simplVarDefs = foldl' insert (simplVarDefs env) defs }) k
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
 
-withUniqVar :: Var
-            -> (Var -> SimplM l a)
-            -> SimplM l a
+withUniqVar :: MonadTc m
+            => Var
+            -> (Var -> SimplM l m a)
+            -> SimplM l m a
 withUniqVar v k = do
     inscope <- isInScope v
     if inscope
@@ -208,9 +219,10 @@ withUniqVar v k = do
               extendSubst v ((DoneExp . varE) v') $ k v'
       else killVars [v] $ k v
 
-withUniqVars :: [Var]
-             -> ([Var] -> SimplM l a)
-             -> SimplM l a
+withUniqVars :: MonadTc m
+             => [Var]
+             -> ([Var] -> SimplM l m a)
+             -> SimplM l m a
 withUniqVars [] k =
     k []
 
@@ -219,9 +231,10 @@ withUniqVars (v:vs) k =
     withUniqVars vs $ \vs' ->
     k (v':vs')
 
-withUniqBoundVar :: BoundVar
-                 -> (BoundVar -> SimplM l a)
-                 -> SimplM l a
+withUniqBoundVar :: MonadTc m
+                 => BoundVar
+                 -> (BoundVar -> SimplM l m a)
+                 -> SimplM l m a
 withUniqBoundVar v k = do
     inscope <- isInScope (bVar v)
     if inscope
@@ -229,20 +242,23 @@ withUniqBoundVar v k = do
               extendSubst (bVar v) ((DoneExp . varE . bVar) v') $ k v'
       else killVars [bVar v] $ k v
 
-askIVarSubst :: SimplM l Phi
+askIVarSubst :: MonadTc m => SimplM l m Phi
 askIVarSubst = asks simplPhi
 
-extendIVarSubst :: [(IVar, Iota)] -> SimplM l a -> SimplM l a
+extendIVarSubst :: MonadTc m => [(IVar, Iota)] -> SimplM l m a -> SimplM l m a
 extendIVarSubst ivs k =
     local (\env -> env { simplPhi = foldl' insert (simplPhi env) ivs }) k
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
 
-askTyVarSubst :: SimplM l Psi
+askTyVarSubst :: MonadTc m => SimplM l m Psi
 askTyVarSubst = asks simplPsi
 
-extendTyVarSubst :: [(TyVar, Type)] -> SimplM l a -> SimplM l a
+extendTyVarSubst :: MonadTc m
+                 => [(TyVar, Type)]
+                 -> SimplM l m a
+                 -> SimplM l m a
 extendTyVarSubst tvs k =
     local (\env -> env { simplPsi = foldl' insert (simplPsi env) tvs }) k
   where
@@ -251,7 +267,10 @@ extendTyVarSubst tvs k =
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
-withInstantiatedTyVars :: Type -> SimplM l a ->SimplM l a
+withInstantiatedTyVars :: MonadTc m
+                       => Type
+                       -> SimplM l m a
+                       -> SimplM l m a
 withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
     ST _ _ s' a' b' _ <- appSTScope tau
     extendTyVarSubst [(alpha, tau) | (TyVarT alpha _, tau) <-
@@ -260,7 +279,9 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-simplProgram :: IsLabel l => Program l -> SimplM l (Program l)
+simplProgram :: (IsLabel l, MonadTc m)
+             => Program l
+             -> SimplM l m (Program l)
 simplProgram (Program decls comp tau) = do
   (decls', comp') <-
       simplDecls decls $
@@ -270,21 +291,21 @@ simplProgram (Program decls comp tau) = do
       simplComp comp
   return $ Program decls' comp' tau
 
-simplType :: Type -> SimplM l Type
+simplType :: MonadTc m => Type -> SimplM l m Type
 simplType tau = do
     phi <- askTyVarSubst
     psi <- askIVarSubst
     return $ subst psi mempty (subst phi mempty tau)
 
-simplIota :: Iota -> SimplM l Iota
+simplIota :: MonadTc m => Iota -> SimplM l m Iota
 simplIota iota = do
     psi <- askIVarSubst
     return $ subst psi mempty iota
 
-simplDecls :: IsLabel l
+simplDecls :: (IsLabel l, MonadTc m)
            => [Decl l]
-           -> SimplM l a
-           -> SimplM l ([Decl l], a)
+           -> SimplM l m a
+           -> SimplM l m ([Decl l], a)
 simplDecls [] m = do
     x <- m
     return ([], x)
@@ -293,10 +314,10 @@ simplDecls (d:ds) m = do
     (maybe_d', (ds', x)) <- simplDecl d $ simplDecls ds $ m
     return (maybe ds' (:ds') maybe_d', x)
 
-simplDecl :: forall l a . IsLabel l
+simplDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
-          -> SimplM l a
-          -> SimplM l (Maybe (Decl l), a)
+          -> SimplM l m a
+          -> SimplM l m (Maybe (Decl l), a)
 simplDecl (LetD decl s) m = do
     (maybe_decl', x) <- simplLocalDecl decl m
     case maybe_decl' of
@@ -309,7 +330,7 @@ simplDecl decl m = do
   where
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
-    preInlineUnconditionally :: Bool -> Decl l -> SimplM l (Maybe (Decl l), a)
+    preInlineUnconditionally :: Bool -> Decl l -> SimplM l m (Maybe (Decl l), a)
     preInlineUnconditionally _mayInline (LetD {}) =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
@@ -367,7 +388,7 @@ simplDecl decl m = do
     -- inline it unconditionally. If so, add it to the current
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
-    postInlineUnconditionally :: Bool -> Decl l -> SimplM l (Maybe (Decl l), a)
+    postInlineUnconditionally :: Bool -> Decl l -> SimplM l m (Maybe (Decl l), a)
     postInlineUnconditionally _mayInline (LetD {}) =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
@@ -462,21 +483,21 @@ simplDecl decl m = do
         tau :: Type
         tau = FunT ivs (map snd vbs) tau_ret l
 
-    withoutBinding :: SimplM l a -> SimplM l (Maybe (Decl l), a)
+    withoutBinding :: SimplM l m a -> SimplM l m (Maybe (Decl l), a)
     withoutBinding m = (,) <$> pure Nothing <*> m
 
-    withBinding :: Decl l -> SimplM l a -> SimplM l (Maybe (Decl l), a)
+    withBinding :: Decl l -> SimplM l m a -> SimplM l m (Maybe (Decl l), a)
     withBinding decl m = (,) <$> pure (Just decl) <*> m
 
-simplLocalDecl :: forall a l . IsLabel l
+simplLocalDecl :: forall a l m . (IsLabel l, MonadTc m)
                => LocalDecl
-               -> SimplM l a
-               -> SimplM l (Maybe LocalDecl, a)
+               -> SimplM l m a
+               -> SimplM l m (Maybe LocalDecl, a)
 simplLocalDecl decl m = do
     mayInline <- asksFlags (testDynFlag MayInline)
     preInlineUnconditionally mayInline decl
   where
-    preInlineUnconditionally :: Bool -> LocalDecl -> SimplM l (Maybe LocalDecl, a)
+    preInlineUnconditionally :: Bool -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     preInlineUnconditionally mayInline decl@(LetLD v _ e _)
         | isDead    = dropBinding v >> withoutBinding m
         | isOnce &&
@@ -497,7 +518,7 @@ simplLocalDecl decl m = do
         isDead :: Bool
         isDead = bOccInfo v == Just Dead
 
-    postInlineUnconditionally :: Bool -> LocalDecl -> SimplM l (Maybe LocalDecl, a)
+    postInlineUnconditionally :: Bool -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     postInlineUnconditionally _mayInline (LetLD v tau e s) = do
         e'       <- simplExp e
         tau'     <- simplType tau
@@ -519,16 +540,18 @@ simplLocalDecl decl m = do
             extendDefinitions [(bVar v', Unknown)] $
             withBinding (LetRefLD v' tau' e' s) m
 
-    withoutBinding :: SimplM l a -> SimplM l (Maybe LocalDecl, a)
+    withoutBinding :: SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
     withoutBinding m = (,) <$> pure Nothing <*> m
 
-    withBinding :: LocalDecl -> SimplM l a -> SimplM l (Maybe LocalDecl, a)
+    withBinding :: LocalDecl -> SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
     withBinding decl m = (,) <$> pure (Just decl) <*> m
 
-simplComp :: IsLabel l => Comp l -> SimplM l (Comp l)
+simplComp :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
 simplComp (Comp steps) = Comp <$> simplSteps steps
 
-simplSteps :: forall l . IsLabel l => [Step l] -> SimplM l [Step l]
+simplSteps :: forall l m . (IsLabel l, MonadTc m)
+           => [Step l]
+           -> SimplM l m [Step l]
 simplSteps [] =
     return []
 
@@ -548,7 +571,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
     tau'  <- simplType tau
     go step' tau' wv
   where
-    go :: [Step l] -> Type -> WildVar -> SimplM l [Step l]
+    go :: [Step l] -> Type -> WildVar -> SimplM l m [Step l]
     go [step'] tau' (TameV v) | bOccInfo v == Just Dead = do
         dropBinding v
         go [step'] tau' WildV
@@ -612,11 +635,13 @@ label. Note that we must always perform this operation, even for a computation
 that is inlined only once.
 -}
 
-simplStep :: forall l . IsLabel l => Step l -> SimplM l [Step l]
+simplStep :: forall l m . (IsLabel l, MonadTc m)
+          => Step l
+          -> SimplM l m [Step l]
 simplStep step@(VarC l v _) =
     lookupSubst v >>= go
   where
-    go :: Maybe (SubstRng l) -> SimplM l [Step l]
+    go :: Maybe (SubstRng l) -> SimplM l m [Step l]
     go Nothing = do
         mayInline <- asksFlags (testDynFlag MayInline)
         lookupDefinition v >>= callSiteInline mayInline
@@ -634,7 +659,7 @@ simplStep step@(VarC l v _) =
         text "Variable" <+> ppr v <+>
         text "substituted with non-computation."
 
-    callSiteInline :: Bool -> Maybe (Definition l) -> SimplM l [Step l]
+    callSiteInline :: Bool -> Maybe (Definition l) -> SimplM l m [Step l]
     callSiteInline mayInline (Just (BoundToComp occ rhs)) | mayInline && inline occ rhs =
         inlineCompRhs rhs
 
@@ -644,7 +669,7 @@ simplStep step@(VarC l v _) =
     inline :: Maybe OccInfo -> OutComp l -> Bool
     inline _occ _rhs = True
 
-    inlineCompRhs :: Comp l -> SimplM l [Step l]
+    inlineCompRhs :: Comp l -> SimplM l m [Step l]
     inlineCompRhs comp =
         withSubst mempty $ do
         inlineBinding v
@@ -655,7 +680,7 @@ simplStep (CallC l f0 iotas0 args0 s) = do
     args  <- mapM simplArg args0
     lookupSubst f0 >>= go f0 iotas args
   where
-    go :: Var -> [Iota] -> [Arg l] -> Maybe (SubstRng l) -> SimplM l [Step l]
+    go :: Var -> [Iota] -> [Arg l] -> Maybe (SubstRng l) -> SimplM l m [Step l]
     go f iotas args Nothing = do
         mayInline <- asksFlags (testDynFlag MayInline)
         lookupDefinition f >>= callSiteInline mayInline f iotas args
@@ -686,7 +711,7 @@ simplStep (CallC l f0 iotas0 args0 s) = do
                    -> [Iota]
                    -> [Arg l]
                    -> Maybe (Definition l)
-                   -> SimplM l [Step l]
+                   -> SimplM l m [Step l]
     callSiteInline mayInline _ iotas args (Just (BoundToFunComp occ ivs vbs tau_ret rhs))
         | mayInline && inline occ iotas args ivs vbs tau_ret rhs =
             inlineFunCompRhs iotas args ivs vbs tau_ret rhs
@@ -710,7 +735,7 @@ simplStep (CallC l f0 iotas0 args0 s) = do
                      -> [(Var, Type)]
                      -> Type
                      -> Comp l
-                     -> SimplM l [Step l]
+                     -> SimplM l m [Step l]
     inlineFunCompRhs iotas args ivs vbs tau_ret comp =
         withSubst mempty $
         extendIVarSubst (ivs `zip` iotas) $
@@ -719,11 +744,11 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         inlineBinding f0
         unComp <$> (simplComp comp >>= uniquifyCompLabels) >>= rewriteStepsLabel l
 
-    simplArg :: Arg l -> SimplM l (Arg l)
+    simplArg :: Arg l -> SimplM l m (Arg l)
     simplArg (ExpA e)  = ExpA  <$> simplExp e
     simplArg (CompA c) = CompA <$> simplComp c
 
-    extendArgs :: [(Var, Arg l)] -> SimplM l a -> SimplM l a
+    extendArgs :: [(Var, Arg l)] -> SimplM l m a -> SimplM l m a
     extendArgs []                   k = k
     extendArgs ((v, ExpA e):vargs)  k = extendSubst v (DoneExp e)  $
                                         extendArgs vargs k
@@ -788,14 +813,16 @@ simplStep (ParC ann b c1 c2 sloc) = do
 simplStep (LoopC {}) =
     faildoc $ text "simplStep: saw LoopC"
 
-simplExp :: forall l . IsLabel l => Exp -> SimplM l Exp
+simplExp :: forall l m . (IsLabel l, MonadTc m)
+         => Exp
+         -> SimplM l m Exp
 simplExp e@(ConstE {}) =
     return e
 
 simplExp e0@(VarE v _) =
     lookupSubst v >>= go
   where
-    go :: Maybe (SubstRng l) -> SimplM l Exp
+    go :: Maybe (SubstRng l) -> SimplM l m Exp
     go Nothing = do
         mayInline <- asksFlags (testDynFlag MayInline)
         lookupDefinition v >>= callSiteInline mayInline
@@ -823,7 +850,7 @@ simplExp e0@(VarE v _) =
         text "Variable" <+> ppr v <+>
         text "substituted with non-expression."
 
-    callSiteInline :: Bool -> Maybe (Definition l) -> SimplM l Exp
+    callSiteInline :: Bool -> Maybe (Definition l) -> SimplM l m Exp
     callSiteInline mayInline (Just (BoundToExp occ lvl rhs)) | mayInline && inline rhs occ lvl =
         inlineRhs rhs
 
@@ -838,7 +865,7 @@ simplExp e0@(VarE v _) =
     inline _rhs (Just ManyBranch)  _lvl = False
     inline _rhs (Just Many)        _lvl = False
 
-    inlineRhs :: Exp -> SimplM l Exp
+    inlineRhs :: Exp -> SimplM l m Exp
     inlineRhs rhs =
         withSubst mempty $ do
         inlineBinding v
@@ -848,7 +875,7 @@ simplExp (UnopE op e s) = do
     e' <- simplExp e
     simplUnop op e'
   where
-    simplUnop :: Unop -> Exp -> SimplM l Exp
+    simplUnop :: Unop -> Exp -> SimplM l m Exp
     simplUnop Neg e' = return $ negate e'
     simplUnop op  e' = return $ UnopE op e' s
 
@@ -857,7 +884,7 @@ simplExp (BinopE op e1 e2 s) = do
     e2' <- simplExp e2
     simplBinop op e1' e2'
   where
-    simplBinop :: Binop -> Exp -> Exp -> SimplM l Exp
+    simplBinop :: Binop -> Exp -> Exp -> SimplM l m Exp
     simplBinop Add e1' e2' = return $ e1' + e2'
     simplBinop Sub e1' e2' = return $ e1' - e2'
     simplBinop Mul e1' e2' = return $ e1' * e2'
@@ -869,7 +896,7 @@ simplExp (IfE e1 e2 e3 s) = do
     e3' <- simplExp e3
     simplIf e1' e2' e3'
   where
-    simplIf :: Exp -> Exp -> Exp -> SimplM l Exp
+    simplIf :: Exp -> Exp -> Exp -> SimplM l m Exp
     simplIf e1' e2' e3'
         | isTrue e1'  = return e2'
         | isFalse e1' = return e3'
@@ -894,7 +921,7 @@ simplExp (CallE f0 iotas0 es0 s) = do
     es    <- mapM simplExp es0
     lookupSubst f0 >>= go f0 iotas es
   where
-    go :: Var -> [Iota] -> [Exp] -> Maybe (SubstRng l) -> SimplM l Exp
+    go :: Var -> [Iota] -> [Exp] -> Maybe (SubstRng l) -> SimplM l m Exp
     go f iotas args Nothing = do
         mayInline <- asksFlags (testDynFlag MayInline)
         lookupDefinition f >>= callSiteInline mayInline f iotas args
@@ -919,7 +946,7 @@ simplExp (CallE f0 iotas0 es0 s) = do
         text "Function" <+> ppr f <+>
         text "substituted with non-function."
 
-    callSiteInline :: Bool -> Var -> [Iota] -> [Exp] -> Maybe (Definition l) -> SimplM l Exp
+    callSiteInline :: Bool -> Var -> [Iota] -> [Exp] -> Maybe (Definition l) -> SimplM l m Exp
     callSiteInline mayInline _ iotas args (Just (BoundToFun occ ivs vbs tau_ret rhs))
         | mayInline && inline occ iotas args ivs vbs tau_ret rhs =
             inlineFunRhs iotas args ivs vbs tau_ret rhs
@@ -943,7 +970,7 @@ simplExp (CallE f0 iotas0 es0 s) = do
                  -> [(Var, Type)]
                  -> Type
                  -> Exp
-                 -> SimplM l Exp
+                 -> SimplM l m Exp
     inlineFunRhs iotas args ivs vbs _tau_ret e =
         withSubst mempty $
         extendIVarSubst (ivs `zip` iotas) $
@@ -951,7 +978,7 @@ simplExp (CallE f0 iotas0 es0 s) = do
         inlineBinding f0
         simplExp e
 
-    extendArgs :: [(Var, Exp)] -> SimplM l a -> SimplM l a
+    extendArgs :: [(Var, Exp)] -> SimplM l m a -> SimplM l m a
     extendArgs []             k = k
     extendArgs ((v, e):vargs) k = extendSubst v (DoneExp e) $
                                   extendArgs vargs k
@@ -1002,7 +1029,7 @@ simplExp (BindE wv tau e1 e2 s) = do
     tau' <- simplType tau
     go e1' tau' wv
   where
-    go :: Exp -> Type -> WildVar -> SimplM l Exp
+    go :: Exp -> Type -> WildVar -> SimplM l m Exp
     go e tau' (TameV v) | bOccInfo v == Just Dead = do
         dropBinding v
         go e tau' WildV
@@ -1040,32 +1067,36 @@ isSimple (ConstE {}) = True
 isSimple (VarE {})   = True
 isSimple _           = False
 
-shouldInlineExpUnconditionally :: InExp -> SimplM l Bool
+shouldInlineExpUnconditionally :: MonadTc m
+                               => InExp -> SimplM l m Bool
 shouldInlineExpUnconditionally e | isSimple e =
     asksFlags (testDynFlag MayInline)
 
 shouldInlineExpUnconditionally _ =
     return False
 
-shouldInlineFunUnconditionally :: [IVar]
+shouldInlineFunUnconditionally :: MonadTc m
+                               => [IVar]
                                -> [(Var, Type)]
                                -> Type
                                -> OutExp
-                               -> SimplM l Bool
+                               -> SimplM l m Bool
 shouldInlineFunUnconditionally _ _ _ e | isSimple e =
     asksFlags (testDynFlag MayInline)
 
 shouldInlineFunUnconditionally _ _ _ _ =
     return False
 
-shouldInlineCompUnconditionally :: InComp l -> SimplM l Bool
+shouldInlineCompUnconditionally :: MonadTc m
+                                => InComp l -> SimplM l m Bool
 shouldInlineCompUnconditionally _ =
   asksFlags (testDynFlag Fuse)
 
-shouldInlineCompFunUnconditionally :: [IVar]
+shouldInlineCompFunUnconditionally :: MonadTc m
+                                   => [IVar]
                                    -> [(Var, Type)]
                                    -> Type
                                    -> OutComp l
-                                   -> SimplM l Bool
+                                   -> SimplM l m Bool
 shouldInlineCompFunUnconditionally _ _ _ _ =
   asksFlags (testDynFlag Fuse)

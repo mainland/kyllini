@@ -22,12 +22,10 @@ import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
-import Control.Monad.Ref (MonadRef(..),
-                          MonadAtomicRef(..))
-import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 #if !MIN_VERSION_base(4,8,0)
@@ -43,43 +41,38 @@ import qualified KZC.Core.Syntax as C
 import KZC.Error
 import KZC.Flags
 import KZC.Label
-import KZC.Monad
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 
-data AutoEnv = AutoEnv
-    { autoTcEnv :: TcEnv
-    , autoSubst :: Map Var Var
-    }
+data AutoEnv = AutoEnv { autoSubst :: Map Var Var }
 
-defaultAutoEnv :: TcEnv -> AutoEnv
-defaultAutoEnv tcenv = AutoEnv tcenv mempty
+defaultAutoEnv :: AutoEnv
+defaultAutoEnv = AutoEnv mempty
 
-newtype Auto a = Auto { unAuto :: ReaderT AutoEnv KZC a }
+newtype Auto m a = Auto { unAuto :: ReaderT AutoEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
               MonadReader AutoEnv,
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
-              MonadTrace)
+              MonadTrace,
+              MonadTc)
 
-runAuto :: Auto a -> TcEnv -> KZC a
-runAuto m tcenv = runReaderT (unAuto m) (defaultAutoEnv tcenv)
+instance MonadTrans Auto where
+    lift m = Auto $ lift m
 
-instance MonadTc Auto where
-    askTc       = Auto $ asks autoTcEnv
-    localTc f m = Auto $ local (\env -> env { autoTcEnv = f (autoTcEnv env) }) (unAuto m)
+runAuto :: MonadTc m => Auto m a -> m a
+runAuto m = runReaderT (unAuto m) defaultAutoEnv
 
-isInScope :: Var -> Auto Bool
+isInScope :: MonadTc m => Var -> Auto m Bool
 isInScope v = asks (Map.member v . autoSubst)
 
-lookupVarSubst :: Var -> Auto Var
+lookupVarSubst :: MonadTc m => Var -> Auto m Var
 lookupVarSubst v = maybe v id <$> asks (Map.lookup v . autoSubst)
 
-ensureUnique :: Var -> (Var -> Auto a) -> Auto a
+ensureUnique :: MonadTc m => Var -> (Var -> Auto m a) -> Auto m a
 ensureUnique v k = do
      inscope <- isInScope v
      if inscope
@@ -87,13 +80,15 @@ ensureUnique v k = do
                local (\env -> env { autoSubst = Map.insert v v' (autoSubst env) }) (k v')
        else k v
 
-autoProgram :: forall l . IsLabel l => [C.Decl] -> Auto (Program l)
+autoProgram :: forall l m . (IsLabel l, MonadTc m)
+            => [C.Decl]
+            -> Auto m (Program l)
 autoProgram cdecls = do
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
   where
-    findMain :: [Decl l] -> Auto (Comp l, Type)
+    findMain :: [Decl l] -> Auto m (Comp l, Type)
     findMain decls =
         case filter isMain decls of
           [] -> faildoc $ text "Cannot find main computation."
@@ -104,7 +99,10 @@ autoProgram cdecls = do
     isMain (LetCompD v _ _ _) = v == "main"
     isMain _                  = False
 
-transDecls :: IsLabel l => [C.Decl] -> ([Decl l] -> Auto a) -> Auto a
+transDecls :: (IsLabel l, MonadTc m)
+           => [C.Decl]
+           -> ([Decl l] -> Auto m a)
+           -> Auto m a
 transDecls [] k =
     k []
 
@@ -113,7 +111,10 @@ transDecls (cdecl:cdecls) k =
     transDecls cdecls $ \decls ->
     k (decl:decls)
 
-transDecl :: IsLabel l => C.Decl -> (Decl l -> Auto a) -> Auto a
+transDecl :: (IsLabel l, MonadTc m)
+          => C.Decl
+          -> (Decl l -> Auto m a)
+          -> Auto m a
 transDecl decl@(C.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
@@ -168,7 +169,10 @@ transDecl (C.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
     k $ LetStructD s flds l
 
-transLocalDecl :: C.Decl -> (LocalDecl -> Auto a) -> Auto a
+transLocalDecl :: MonadTc m
+               => C.Decl
+               -> (LocalDecl -> Auto m a)
+               -> Auto m a
 transLocalDecl decl@(C.LetD v tau e l) k | isPureT tau =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $ transExp e
@@ -201,7 +205,9 @@ transLocalDecl decl _ =
     pprDeclType (C.LetRefD {})    = text "letref"
     pprDeclType (C.LetStructD {}) = text "letstruct"
 
-transExp :: C.Exp -> Auto Exp
+transExp :: forall m . MonadTc m
+         => C.Exp
+         -> Auto m Exp
 transExp (C.ConstE c l) =
     return $ ConstE c l
 
@@ -253,7 +259,7 @@ transExp (C.IdxE e1 e2 i l) =
 transExp (C.StructE s flds l) =
     StructE s <$> mapM transField flds <*> pure l
   where
-    transField :: (Field, C.Exp) -> Auto (Field, Exp)
+    transField :: (Field, C.Exp) -> Auto m (Field, Exp)
     transField (f, e) = (,) <$> pure f <*> transExp e
 
 transExp (C.ProjE e f l) =
@@ -304,7 +310,9 @@ transExp e@(C.ParE {}) =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
-transComp :: forall l . IsLabel l => C.Exp -> Auto (Comp l)
+transComp :: forall l m . (IsLabel l, MonadTc m)
+          => C.Exp
+          -> Auto m (Comp l)
 transComp e@(C.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
@@ -317,7 +325,7 @@ transComp e@(C.IfE e1 e2 e3 l) = do
     e1' <- transExp e1
     go tau e1'
   where
-    go :: Type -> Exp -> Auto (Comp l)
+    go :: Type -> Exp -> Auto m (Comp l)
     go tau e1' | isPureishT tau = do
         e2' <- transExp e2
         e3' <- transExp e3
@@ -340,7 +348,7 @@ transComp e@(C.CallE f iotas es _) = do
       else do args <- mapM transArg es
               callC f' iotas args
   where
-    transArg :: C.Exp -> Auto (Arg l)
+    transArg :: C.Exp -> Auto m (Arg l)
     transArg e = do
         tau <- inferExp e
         if isPureT tau

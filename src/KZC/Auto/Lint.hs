@@ -16,7 +16,7 @@ module KZC.Auto.Lint (
     Tc(..),
     runTc,
     liftTc,
-    withTcEnv,
+    withTc,
 
     extendWildVars,
 
@@ -84,7 +84,7 @@ import KZC.Check.Path
 import KZC.Core.Lint (Tc(..),
                       runTc,
                       liftTc,
-                      withTcEnv,
+                      withTc,
 
                       checkConst,
                       inferConst,

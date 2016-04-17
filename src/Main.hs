@@ -161,16 +161,16 @@ runPipeline filepath =
 
     autoPhase :: [C.Decl] -> MaybeT KZC A.LProgram
     autoPhase =
-        lift . A.withTcEnv . runAuto . autoProgram >=>
+        lift . A.withTc . runAuto . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
 
     occPhase :: A.LProgram -> MaybeT KZC A.LProgram
     occPhase =
-        lift . A.withTcEnv . runOccM . occProgram
+        lift . A.withTc . runOccM . occProgram
 
     simplPhase :: A.LProgram -> MaybeT KZC (A.LProgram, SimplStats)
     simplPhase =
-        lift . A.withTcEnv . runSimplM . simplProgram
+        lift . A.withTc . runSimplM . simplProgram
 
     iterateSimplPhase :: String -> A.LProgram -> MaybeT KZC A.LProgram
     iterateSimplPhase desc prog0 = do
@@ -194,17 +194,17 @@ runPipeline filepath =
 
     fusionPhase :: A.LProgram -> MaybeT KZC A.LProgram
     fusionPhase =
-        lift . A.withTcEnv . A.runTc . SEFKT.runSEFKT . fuseProgram >=>
+        lift . A.withTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
 
     autolutPhase :: A.LProgram -> MaybeT KZC A.LProgram
     autolutPhase =
-        lift . A.withTcEnv . runAutoM . autolutProgram >=>
+        lift . A.withTc . runAutoM . autolutProgram >=>
         dumpPass DumpAutoLUT "acore" "autolut"
 
     evalPhase :: A.LProgram -> MaybeT KZC A.LProgram
     evalPhase =
-        lift . A.withTcEnv . evalEvalM . evalProgram >=>
+        lift . A.withTc . evalEvalM . evalProgram >=>
         dumpPass DumpEval "acore" "peval"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
@@ -215,7 +215,7 @@ runPipeline filepath =
     lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            C.withTcEnv (C.runTc (C.checkDecls decls))
+            C.withTc (C.checkDecls decls)
         return decls
 
     lintAuto :: IsLabel l
@@ -223,7 +223,7 @@ runPipeline filepath =
              -> MaybeT KZC (A.Program l)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
-            A.withTcEnv (A.runTc (A.checkProgram p))
+            A.withTc (A.checkProgram p)
         return p
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a

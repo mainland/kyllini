@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Analysis.Occ
@@ -21,14 +22,10 @@ import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Reader (MonadReader(..),
-                             ReaderT(..))
-import Control.Monad.Ref (MonadRef(..),
-                          MonadAtomicRef(..))
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Writer (MonadWriter(..),
                              WriterT(..),
                              censor)
-import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 #if !MIN_VERSION_base(4,8,0)
@@ -42,7 +39,6 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
-import KZC.Monad
 import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Lattice
@@ -61,31 +57,29 @@ lookupOccInfo v env =
       Nothing  -> Dead
       Just occ -> occ
 
-newtype OccM a = OccM { unOccM :: ReaderT TcEnv (WriterT OccEnv KZC) a }
+newtype OccM m a = OccM { unOccM :: WriterT OccEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader TcEnv,
               MonadWriter OccEnv,
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
-              MonadTrace)
+              MonadTrace,
+              MonadTc)
 
-runOccM :: OccM a -> TcEnv -> KZC a
-runOccM m env = fst <$> runWriterT (runReaderT (unOccM m) env)
+instance MonadTrans OccM where
+    lift m = OccM $ lift m
 
-instance MonadTc OccM where
-    askTc       = OccM $ ask
-    localTc f m = OccM $ local f (unOccM m)
+runOccM :: MonadTc m => OccM m a -> m a
+runOccM m = fst <$> runWriterT (unOccM m)
 
-occVar :: Var -> OccM ()
+occVar :: MonadTc m => Var -> OccM m ()
 occVar v = tell $ Occ (Map.singleton v Once)
 
 -- | Return occurrence information for the given variable after running the
 -- specified action, after which the variable is purged from the occurrence
 -- environment.
-withOccInfo :: BoundVar -> OccM a -> OccM (a, OccInfo)
+withOccInfo :: MonadTc m => BoundVar -> OccM m a -> OccM m (a, OccInfo)
 withOccInfo v m =
     censor f $ do
     (x, env) <- listen m
@@ -97,7 +91,7 @@ withOccInfo v m =
 updOccInfo :: BoundVar -> OccInfo -> BoundVar
 updOccInfo v occ = v { bOccInfo = Just occ }
 
-occProgram :: Program l -> OccM (Program l)
+occProgram :: MonadTc m => Program l -> OccM m (Program l)
 occProgram (Program decls comp tau) = do
   (decls', comp') <-
       occDecls decls $
@@ -107,9 +101,10 @@ occProgram (Program decls comp tau) = do
       occComp comp
   return $ Program decls' comp' tau
 
-occDecls :: [Decl l]
-         -> OccM a
-         -> OccM ([Decl l], a)
+occDecls :: MonadTc m
+         => [Decl l]
+         -> OccM m a
+         -> OccM m ([Decl l], a)
 occDecls [] m = do
     x <- m
     return ([], x)
@@ -118,9 +113,10 @@ occDecls (d:ds) m = do
     (d', (ds', x)) <- occDecl d $ occDecls ds $ m
     return (d':ds', x)
 
-occDecl :: Decl l
-        -> OccM a
-        -> OccM (Decl l, a)
+occDecl :: MonadTc m
+        => Decl l
+        -> OccM m a
+        -> OccM m (Decl l, a)
 occDecl (LetD decl s) m = do
     (decl', x) <- occLocalDecl decl m
     return (LetD decl' s, x)
@@ -174,9 +170,10 @@ occDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-occLocalDecl :: LocalDecl
-             -> OccM a
-             -> OccM (LocalDecl, a)
+occLocalDecl :: MonadTc m
+             => LocalDecl
+             -> OccM m a
+             -> OccM m (LocalDecl, a)
 occLocalDecl (LetLD v tau e s) m = do
     e'       <- occExp e
     (x, occ) <- extendVars [(bVar v, tau)] $ withOccInfo v m
@@ -187,10 +184,10 @@ occLocalDecl (LetRefLD v tau e s) m = do
     (x, occ) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
     return (LetRefLD (updOccInfo v occ) tau e' s, x)
 
-occComp :: Comp l -> OccM (Comp l)
+occComp :: MonadTc m => Comp l -> OccM m (Comp l)
 occComp (Comp steps) = Comp <$> occSteps steps
 
-occSteps :: [Step l] -> OccM [Step l]
+occSteps :: MonadTc m => [Step l] -> OccM m [Step l]
 occSteps [] =
     return []
 
@@ -210,7 +207,7 @@ occSteps (BindC l (TameV v) tau s : steps) = do
 occSteps (step : steps) =
     (:) <$> occStep step <*> occSteps steps
 
-occStep :: Step l -> OccM (Step l)
+occStep :: forall l m . MonadTc m => Step l -> OccM m (Step l)
 occStep step@(VarC _ v _) = do
     occVar v
     return step
@@ -220,7 +217,7 @@ occStep (CallC l f iotas args s) = do
     args' <- mapM occArg args
     return $ CallC l f iotas args' s
   where
-    occArg :: Arg l -> OccM (Arg l)
+    occArg :: Arg l -> OccM m (Arg l)
     occArg (ExpA e)  = ExpA  <$> occExp e
     occArg (CompA c) = CompA <$> occComp c
 
@@ -266,7 +263,7 @@ occStep (ParC ann tau c1 c2 s) = do
 occStep (LoopC {}) =
     faildoc $ text "occStep: saw LoopC"
 
-occExp :: Exp -> OccM Exp
+occExp :: MonadTc m => Exp -> OccM m Exp
 occExp e@(ConstE {}) =
     return e
 

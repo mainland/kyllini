@@ -22,12 +22,7 @@ import Control.Applicative (Applicative, (<$>), (<*>), pure)
 import Control.Monad (liftM)
 import Control.Monad.Exception (MonadException(..), SomeException)
 import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Reader (MonadReader(..),
-                             ReaderT(..),
-                             asks)
-import Control.Monad.Ref (MonadRef(..),
-                          MonadAtomicRef(..))
-import Data.IORef
+import Control.Monad.Trans.Class (MonadTrans(..))
 #if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -41,45 +36,35 @@ import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label
-import KZC.Monad
 import KZC.Trace
 import KZC.Uniq
 
-data AutoEnv = AutoEnv
-    { autoTcEnv :: !TcEnv }
-
-defaultAutoEnv :: TcEnv -> AutoEnv
-defaultAutoEnv tcenv = AutoEnv tcenv
-
-newtype AutoM a = AutoM { unAutoM :: ReaderT AutoEnv KZC a }
+newtype AutoM m a = AutoM { unAutoM :: m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader AutoEnv,
               MonadException,
               MonadUnique,
               MonadErr,
               MonadFlags,
-              MonadTrace)
+              MonadTrace,
+              MonadTc)
 
-runAutoM :: AutoM a -> TcEnv -> KZC a
-runAutoM m tcenv =
-    runReaderT (unAutoM m) (defaultAutoEnv tcenv)
+instance MonadTrans AutoM where
+    lift m = AutoM m
 
-instance MonadTc AutoM where
-    askTc = AutoM $ asks autoTcEnv
-    localTc f m =
-        AutoM $ local (\env -> env { autoTcEnv = f (autoTcEnv env) }) $
-        unAutoM m
+runAutoM :: MonadTc m => AutoM m a -> m a
+runAutoM m = unAutoM m
 
-autolutProgram :: IsLabel l => Program l -> AutoM (Program l)
+autolutProgram :: (IsLabel l, MonadTc m)
+               => Program l
+               -> AutoM m (Program l)
 autolutProgram (Program decls comp tau) =
     autoDecls decls $ \decls' ->
     Program decls' <$> autoComp comp <*> pure tau
 
-autoDecls :: IsLabel l
+autoDecls :: (IsLabel l, MonadTc m)
           => [Decl l]
-          -> ([Decl l] -> AutoM a)
-          -> AutoM a
+          -> ([Decl l] -> AutoM m a)
+          -> AutoM m a
 autoDecls [] k =
     k []
 
@@ -88,10 +73,10 @@ autoDecls (decl:decls) k =
     autoDecls decls $ \decls' ->
     k (decl' : decls')
 
-autoDecl :: IsLabel l
+autoDecl :: (IsLabel l, MonadTc m)
          => Decl l
-         -> (Decl l -> AutoM a)
-         -> AutoM a
+         -> (Decl l -> AutoM m a)
+         -> AutoM m a
 autoDecl (LetD ldecl l) k =
     autoLocalDecl ldecl $ \ldecl' -> do
     k $ LetD ldecl' l
@@ -132,9 +117,10 @@ autoDecl (LetFunCompD f iotas vbs tau_ret comp l) k =
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-autoLocalDecl :: LocalDecl
-              -> (LocalDecl -> AutoM a)
-              -> AutoM a
+autoLocalDecl :: MonadTc m
+              => LocalDecl
+              -> (LocalDecl -> AutoM m a)
+              -> AutoM m a
 autoLocalDecl (LetLD v tau e l) k = do
     e' <- autoE e
     extendVars [(bVar v, tau)] $ do
@@ -145,11 +131,13 @@ autoLocalDecl (LetRefLD v tau e l) k = do
     extendVars [(bVar v, refT tau)] $ do
     k $ LetRefLD v tau e' l
 
-autoComp :: IsLabel l => Comp l -> AutoM (Comp l)
+autoComp :: (IsLabel l, MonadTc m) => Comp l -> AutoM m (Comp l)
 autoComp (Comp steps) =
     Comp <$> autoSteps steps
 
-autoSteps :: forall l . IsLabel l => [Step l] -> AutoM [Step l]
+autoSteps :: forall l m . (IsLabel l, MonadTc m)
+          => [Step l]
+          -> AutoM m [Step l]
 autoSteps [] =
     return []
 
@@ -164,7 +152,7 @@ autoSteps (step@(BindC _ wv tau _) : k) =
 autoSteps (step : k) =
     (:) <$> autoStep step <*> autoSteps k
   where
-    autoStep :: Step l -> AutoM (Step l)
+    autoStep :: Step l -> AutoM m (Step l)
     autoStep step@(VarC {}) =
         pure step
 
@@ -216,11 +204,13 @@ autoSteps (step : k) =
     autoStep step@(LoopC {}) =
         pure step
 
-autoArg :: IsLabel l => Arg l -> AutoM (Arg l)
+autoArg :: (IsLabel l, MonadTc m) => Arg l -> AutoM m (Arg l)
 autoArg (ExpA e)     = ExpA <$> autoE e
 autoArg (CompA comp) = CompA <$> autoComp comp
 
-autoE :: Exp -> AutoM Exp
+autoE :: forall m . MonadTc m
+      => Exp
+     -> AutoM m Exp
 autoE e = do
     traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
     maybe_info <- liftM Right (lutInfo e) `catch` \(err :: SomeException) -> return (Left err)
@@ -234,7 +224,7 @@ autoE e = do
                                  return $ LutE e
                          else go e
   where
-    go :: Exp -> AutoM Exp
+    go :: Exp -> AutoM m Exp
     go e@(ConstE {}) =
         pure e
 
@@ -281,7 +271,7 @@ autoE e = do
     go (StructE sname flds s) =
         StructE sname <$> traverse mapField flds <*> pure s
       where
-        mapField :: (Field, Exp) -> AutoM (Field, Exp)
+        mapField :: (Field, Exp) -> AutoM m (Field, Exp)
         mapField (f, e) = (,) <$> pure f <*> autoE e
 
     go (ProjE e f s) =
