@@ -81,22 +81,21 @@ autoDecl (LetD ldecl l) k =
     autoLocalDecl ldecl $ \ldecl' -> do
     k $ LetD ldecl' l
 
-autoDecl (LetFunD f iotas vbs tau_ret e l) k =
+autoDecl (LetFunD f ivs vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
-    e' <- extendIVars (iotas `zip` repeat IotaK) $
-          extendVars vbs $
+    e' <- extendLetFun f ivs vbs tau_ret $
           autoE e
-    k $ LetFunD f iotas vbs tau_ret e' l
+    k $ LetFunD f ivs vbs tau_ret e' l
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
-autoDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
+autoDecl decl@(LetExtFunD f ivs vbs tau_ret l) k =
     extendVars [(bVar f, tau)] $
     k decl
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
 autoDecl decl@(LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
@@ -107,15 +106,15 @@ autoDecl (LetCompD v tau comp l) k = do
     extendVars [(bVar v, tau)] $ do
     k $ LetCompD v tau comp' l
 
-autoDecl (LetFunCompD f iotas vbs tau_ret comp l) k =
+autoDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
-    comp' <- extendIVars (iotas `zip` repeat IotaK) $
-             extendVars vbs $
+    comp' <- inSTScope tau_ret $
+             inLocalScope $
              autoComp comp
-    k $ LetFunCompD f iotas vbs tau_ret comp' l
+    k $ LetFunCompD f ivs vbs tau_ret comp' l
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
 autoLocalDecl :: MonadTc m
               => LocalDecl

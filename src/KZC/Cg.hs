@@ -411,17 +411,14 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     extendVars [(bVar f, tau)] $ do
     extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
-    withSummaryContext decl $ do
-        inSTScope tau_ret $ do
-        extendIVars (iotas `zip` repeat IotaK) $ do
-        extendVars vbs $ do
+    withSummaryContext decl $
+        extendLetFun f iotas vbs tau_ret $ do
         (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
         (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
         cres_ident         <- gensym "let_res"
         citems <- inNewThreadBlock_ $
                   extendIVarCExps (iotas `zip` ciotas) $
-                  extendVarCExps  (map fst vbs `zip` cvbs) $
-                  inLocalScope $ do
+                  extendVarCExps  (map fst vbs `zip` cvbs) $ do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
                           else cgTemp "let_res" tau_res

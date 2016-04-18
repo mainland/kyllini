@@ -394,13 +394,9 @@ simplDecl decl m = do
 
     postInlineUnconditionally _mayInline (LetFunD f ivs vbs tau_ret e l) = do
         (ivs', vbs', tau_ret', e') <-
-            extendVars [(bVar f, tau)] $
-            extendIVars (ivs `zip` repeat IotaK) $
-            extendVars vbs $
+            extendLetFun f ivs vbs tau_ret $
             withUniqVars vs $ \vs' ->
-            extendDefinitions (vs `zip` repeat Unknown) $
-            inSTScope tau_ret $
-            inLocalScope $ do
+            extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             e'       <- simplExp e
             return (ivs, (vs' `zip` taus), tau_ret', e')
@@ -437,8 +433,7 @@ simplDecl decl m = do
         m
 
     postInlineUnconditionally _mayInline (LetCompD v tau comp l) = do
-        comp' <- inSTScope tau $
-                 inLocalScope $
+        comp' <- extendLet v tau $
                  simplComp comp
         inlineIt <- shouldInlineCompUnconditionally comp'
         if inlineIt
@@ -453,13 +448,9 @@ simplDecl decl m = do
 
     postInlineUnconditionally _mayInline (LetFunCompD f ivs vbs tau_ret comp l) = do
         (ivs', vbs', tau_ret', comp') <-
-            extendVars [(bVar f, tau)] $
-            extendIVars (ivs `zip` repeat IotaK) $
-            extendVars vbs $
+            extendLetFun f ivs vbs tau_ret $
             withUniqVars vs $ \vs' ->
-            extendDefinitions (vs `zip` repeat Unknown) $
-            inSTScope tau_ret $
-            inLocalScope $ do
+            extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             comp'    <- simplComp comp
             return (ivs, (vs' `zip` taus), tau_ret', comp')

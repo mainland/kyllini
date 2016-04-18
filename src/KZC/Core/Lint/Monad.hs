@@ -45,6 +45,9 @@ module KZC.Core.Lint.Monad (
     askSTIndTypes,
     inSTScope,
 
+    extendLet,
+    extendLetFun,
+
     inScopeTyVars,
 
     typeSize,
@@ -68,7 +71,7 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import Data.List (foldl')
-import Data.Loc (Located, noLoc)
+import Data.Loc (Located, noLoc, srclocOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 #if !MIN_VERSION_base(4,8,0)
@@ -322,6 +325,33 @@ inScopeTyVars = do
     case maybe_idxs of
       Nothing         -> return mempty
       Just (s',a',b') -> return $ fvs [s',a',b']
+
+extendLet :: MonadTc m
+          => v
+          -> Type
+          -> m a
+          -> m a
+extendLet _v tau k =
+    inSTScope tau $
+    inLocalScope $
+    k
+
+extendLetFun :: MonadTc m
+             => v
+             -> [IVar]
+             -> [(Var, Type)]
+             -> Type
+             -> m a
+             -> m a
+extendLetFun _f ivs vbs tau_ret k =
+    extendIVars (ivs `zip` repeat IotaK) $
+    extendVars vbs $
+    inSTScope tau_ret $
+    inLocalScope $
+    k
+  where
+    _tau :: Type
+    _tau = FunT ivs (map snd vbs) tau_ret (srclocOf tau_ret)
 
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int

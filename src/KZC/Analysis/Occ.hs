@@ -124,10 +124,7 @@ occDecl (LetD decl s) m = do
 occDecl (LetFunD f iotas vbs tau_ret e l) m = do
     (x, e', occ) <-
         extendVars [(bVar f, tau)] $ do
-        e' <- extendIVars (iotas `zip` repeat IotaK) $
-              extendVars vbs $
-              inSTScope tau_ret $
-              inLocalScope $
+        e' <- extendLetFun f iotas vbs tau_ret $
               occExp e
         (x, occ) <- withOccInfo f m
         return (x, e', occ)
@@ -149,8 +146,7 @@ occDecl decl@(LetStructD s flds l) m = do
     return (decl, x)
 
 occDecl (LetCompD v tau comp l) m = do
-    comp' <- inSTScope tau $
-             inLocalScope $
+    comp' <- extendLet v tau $
              occComp comp
     (x, occ) <- extendVars [(bVar v, tau)] $ withOccInfo v m
     return (LetCompD (updOccInfo v occ) tau comp' l, x)
@@ -158,10 +154,7 @@ occDecl (LetCompD v tau comp l) m = do
 occDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
     (x, comp', occ) <-
         extendVars [(bVar f, tau)] $ do
-        comp' <- extendIVars (iotas `zip` repeat IotaK) $
-                 extendVars vbs $
-                 inSTScope tau_ret $
-                 inLocalScope $
+        comp' <- extendLetFun f iotas vbs tau_ret $
                  occComp comp
         (x, occ) <- withOccInfo f m
         return (x, comp', occ)

@@ -159,15 +159,12 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
 checkDecl (LetD decl _) k =
     checkLocalDecl decl k
 
-checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
+checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
     alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
-        tau_ret' <- withFvContext e $
-                    extendIVars (iotas `zip` repeat IotaK) $
-                    extendVars vbs $
-                    inSTScope tau_ret $
-                    inLocalScope $
+        tau_ret' <- extendLetFun f ivs vbs tau_ret $
+                    withFvContext e $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
         when (not (isPureishT tau_ret)) $
@@ -175,14 +172,14 @@ checkDecl decl@(LetFunD f iotas vbs tau_ret e l) k =
     k
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
-checkDecl decl@(LetExtFunD f iotas vbs tau_ret l) k = do
+checkDecl decl@(LetExtFunD f ivs vbs tau_ret l) k = do
     alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendVars [(bVar f, tau)] k
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
@@ -204,22 +201,18 @@ checkDecl decl@(LetStructD s flds l) k = do
 checkDecl decl@(LetCompD v tau comp _) k = do
     alwaysWithSummaryContext decl $ do
         checkKind tau MuK
-        tau' <- withSummaryContext comp $
-                inSTScope tau $
-                inLocalScope $
+        tau' <- extendLet v tau $
+                withSummaryContext comp $
                 inferComp comp >>= absSTScope
         checkTypeEquality tau' tau
     extendVars [(bVar v, tau)] k
 
-checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
+checkDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
     alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
-        tau_ret' <- withFvContext comp $
-                    extendIVars (iotas `zip` repeat IotaK) $
-                    extendVars vbs $
-                    inSTScope tau_ret $
-                    inLocalScope $
+        tau_ret' <- extendLetFun f ivs vbs tau_ret $
+                    withFvContext comp $
                     inferComp comp >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
         when (isPureishT tau_ret) $
@@ -227,7 +220,7 @@ checkDecl decl@(LetFunCompD f iotas vbs tau_ret comp l) k =
     k
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do

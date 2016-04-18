@@ -116,11 +116,8 @@ evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
     e' <- killHeap $
-          extendIVars (ivs `zip` repeat IotaK) $
-          extendVars vbs $
+          extendLetFun f' ivs vbs tau_ret $
           extendUnknownVarBinds vbs $
-          inSTScope tau_ret $
-          inLocalScope $
           withSummaryContext e $
           toExp <$> evalExp e
     extendVarBinds [(bVar f', FunClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
@@ -158,9 +155,8 @@ evalDecl decl@(LetCompD v tau comp s) k =
     extendVars [(bVar v, tau)] $ do
     theta <- askSubst
     withUniqBoundVar v $ \v' -> do
-    comp' <- killHeap $
-             inSTScope tau $
-             inLocalScope $
+    comp' <- extendLet v tau $
+             killHeap $
              evalComp comp >>= toComp
     extendCVarBinds [(bVar v', CompClosV theta tau eval)] $ do
     k $ const . return $ LetCompD v' tau comp' s
@@ -178,11 +174,8 @@ evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     withUniqBoundVar f $ \f' -> do
     withUniqVars vs $ \vs' -> do
     comp' <- killHeap $
-             extendIVars (ivs `zip` repeat IotaK) $
-             extendVars vbs $
+             extendLetFun f ivs vbs tau_ret $
              extendUnknownVarBinds vbs $
-             inSTScope tau_ret $
-             inLocalScope $
              evalComp comp >>= toComp
     extendCVarBinds [(bVar f', FunCompClosV theta ivs (vs' `zip` taus) tau_ret eval)] $ do
     k $ const . return $ LetFunCompD f' ivs (vs' `zip` taus) tau_ret comp' l

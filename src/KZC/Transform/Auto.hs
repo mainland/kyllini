@@ -121,10 +121,9 @@ transDecl decl@(C.LetD v tau e l) k
     k $ LetD decl' l
 
   | otherwise = ensureUnique v $ \v' -> do
-    c <- withSummaryContext decl $
+    c <- extendLet v tau $
+         withSummaryContext decl $
          withFvContext e $
-         inSTScope tau $
-         inLocalScope $
          transComp e
     extendVars [(v,tau)] $ do
     k $ LetCompD (mkBoundVar v') tau c l
@@ -133,37 +132,31 @@ transDecl decl@(C.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
 
-transDecl decl@(C.LetFunD f iotas vbs tau_ret e l) k
+transDecl decl@(C.LetFunD f ivs vbs tau_ret e l) k
   | isPureishT tau_ret = ensureUnique f $ \f' -> do
     extendVars [(f, tau)] $ do
     e' <- withSummaryContext decl $
           withFvContext e $
-          extendIVars (iotas `zip` repeat IotaK) $
-          extendVars vbs $
-          inSTScope tau_ret $
-          inLocalScope $
+          extendLetFun f ivs vbs tau_ret $
           transExp e
-    k $ LetFunD (mkBoundVar f') iotas vbs tau_ret e' l
+    k $ LetFunD (mkBoundVar f') ivs vbs tau_ret e' l
   | otherwise = ensureUnique f $ \f' -> do
     extendVars [(f, tau)] $ do
     c <- withSummaryContext decl $
          withFvContext e $
-         extendIVars (iotas `zip` repeat IotaK) $
-         extendVars vbs $
-         inSTScope tau_ret $
-         inLocalScope $
+         extendLetFun f ivs vbs tau_ret $
          transComp e
-    k $ LetFunCompD (mkBoundVar f') iotas vbs tau_ret c l
+    k $ LetFunCompD (mkBoundVar f') ivs vbs tau_ret c l
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
-transDecl (C.LetExtFunD f iotas vbs tau_ret l) k =
+transDecl (C.LetExtFunD f ivs vbs tau_ret l) k =
     extendVars [(f, tau)] $
-    k $ LetExtFunD (mkBoundVar f) iotas vbs tau_ret l
+    k $ LetExtFunD (mkBoundVar f) ivs vbs tau_ret l
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = FunT ivs (map snd vbs) tau_ret l
 
 transDecl (C.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
