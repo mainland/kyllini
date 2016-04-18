@@ -31,6 +31,7 @@ module KZC.Core.Lint.Monad (
     inLocalScope,
     isInTopScope,
     askTopVars,
+    isTopVar,
 
     extendVars,
     lookupVar,
@@ -251,6 +252,9 @@ isInTopScope = asksTc topScope
 
 askTopVars :: MonadTc m => m (Set Var)
 askTopVars = asksTc topVars
+
+isTopVar :: MonadTc m => Var -> m Bool
+isTopVar v = asksTc (Set.member v . topVars)
 
 extendVars :: forall m a . MonadTc m => [(Var, Type)] -> m a -> m a
 extendVars vtaus m = do
