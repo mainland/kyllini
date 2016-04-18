@@ -217,32 +217,8 @@ localRefFlowModVars vs k =
 askRefFlowModVar :: Var -> Cg l Bool
 askRefFlowModVar v = asks $ \env -> Set.member v (refFlowModVars env)
 
-tell :: ToCode a => a -> Cg l ()
-tell c = modify $ \s -> s { code = code s <> toCode c }
-
-class ToCode a where
-    toCode :: a -> Code
-
-instance ToCode Code where
-    toCode code = code
-
-instance ToCode C.Definition where
-    toCode cdef = mempty { codeDefs = Seq.singleton cdef }
-
-instance ToCode [C.Definition] where
-    toCode cdefs = mempty { codeDefs = Seq.fromList cdefs }
-
-instance ToCode C.InitGroup where
-    toCode cdecl = mempty { codeDecls = Seq.singleton cdecl }
-
-instance ToCode [C.InitGroup] where
-    toCode cdecls = mempty { codeDecls = Seq.fromList cdecls }
-
-instance ToCode C.Stm where
-    toCode cstm = mempty { codeStms = Seq.singleton cstm }
-
-instance ToCode [C.Stm] where
-    toCode cstms = mempty { codeStms = Seq.fromList cstms }
+tell :: Code -> Cg l ()
+tell c = modify $ \s -> s { code = code s <> c }
 
 collect :: Cg l a -> Cg l (Code, a)
 collect m = do
@@ -312,7 +288,7 @@ inNewMainThreadBlock_ m =
 inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewThreadBlock m = do
     (c, x) <- collect m
-    tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms  = mempty }
+    tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms = mempty }
     return ((map C.BlockDecl . toList . codeThreadDecls) c ++
             (map C.BlockDecl . toList . codeDecls) c ++
             (map C.BlockStm .  toList . codeStms) c, x)
@@ -363,16 +339,16 @@ appendThreadDecls :: [C.InitGroup] -> Cg l ()
 appendThreadDecls cdecls = tell mempty { codeThreadDecls = Seq.fromList cdecls }
 
 appendDecl :: C.InitGroup -> Cg l ()
-appendDecl cdecl = tell cdecl
+appendDecl cdecl = tell mempty { codeDecls = Seq.singleton cdecl }
 
 appendDecls :: [C.InitGroup] -> Cg l ()
-appendDecls cdecls = tell cdecls
+appendDecls cdecls = tell mempty { codeDecls = Seq.fromList cdecls }
 
 appendStm :: C.Stm -> Cg l ()
-appendStm cstm = tell cstm
+appendStm cstm = tell mempty { codeStms = Seq.singleton cstm }
 
 appendStms :: [C.Stm] -> Cg l ()
-appendStms cstms = tell cstms
+appendStms cstms = tell mempty { codeStms = Seq.fromList cstms }
 
 appendBlock :: [C.BlockItem] -> Cg l ()
 appendBlock citems
