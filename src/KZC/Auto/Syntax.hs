@@ -146,26 +146,31 @@ import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
 
-data BoundVar = BoundV { bVar :: Var, bOccInfo :: Maybe OccInfo }
+data BoundVar = BoundV
+    { bVar     :: Var
+    , bOccInfo :: Maybe OccInfo
+    , bTainted :: Maybe Bool
+    }
   deriving (Eq, Ord, Read, Show)
 
 instance IsString BoundVar where
     fromString s = mkBoundVar (fromString s)
 
 instance Named BoundVar where
-    namedSymbol (BoundV v _) = namedSymbol v
+    namedSymbol bv = namedSymbol (bVar bv)
 
-    mapName f (BoundV v occ) = BoundV (mapName f v) occ
+    mapName f bv = bv { bVar = mapName f (bVar bv) }
 
 instance Gensym BoundVar where
-    gensymAt s l = BoundV <$> gensymAt s l <*> pure Nothing
+    gensymAt s l =
+        BoundV <$> gensymAt s l <*> pure Nothing <*> pure Nothing
 
     uniquify bv = do
         u <- newUnique
         return $ mapName (\n -> n { nameSort = Internal u }) bv
 
 mkBoundVar :: Var -> BoundVar
-mkBoundVar v = BoundV v Nothing
+mkBoundVar v = BoundV v Nothing Nothing
 
 data WildVar = WildV
              | TameV BoundVar
@@ -425,8 +430,17 @@ instance Pretty WildVar where
     ppr (TameV v) = ppr v
 
 instance Pretty BoundVar where
-    ppr (BoundV v Nothing)    = ppr v
-    ppr (BoundV v (Just occ)) = ppr v <> braces (ppr occ)
+    ppr bv = ppr (bVar bv) <> occdoc <> taintdoc
+      where
+        occdoc, taintdoc :: Doc
+        occdoc = case (bOccInfo bv) of
+                   Nothing  -> empty
+                   Just occ -> braces (ppr occ)
+
+        taintdoc = case (bTainted bv) of
+                     Nothing    -> empty
+                     Just False -> empty
+                     Just True  -> braces (text "tainted")
 
 instance Pretty OccInfo where
     ppr Dead       = text "0"
@@ -730,9 +744,9 @@ pprComp comp =
  ------------------------------------------------------------------------------}
 
 instance Freshen BoundVar Exp Var where
-    freshen (BoundV v occ) k =
-        freshen v $ \v' ->
-        k $ BoundV v' occ
+    freshen bv k =
+        freshen (bVar bv) $ \v' ->
+        k $ bv { bVar = v' }
 
 {------------------------------------------------------------------------------
  -
@@ -1657,7 +1671,7 @@ instance IsBits Exp where
 #include "KZC/Auto/Syntax-instances.hs"
 
 instance Located BoundVar where
-    locOf (BoundV v _) = locOf v
+    locOf bv = locOf (bVar bv)
 
 instance Located (Arg l) where
     locOf (ExpA e)  = locOf e

@@ -225,6 +225,7 @@ dTraceFlagOpts =
   , (TraceEval,     "eval",      "trace evaluator")
   , (TraceAutoLUT,  "autolut",   "trace auto-LUTter")
   , (TraceLUT,      "lut",       "trace LUTter")
+  , (TraceRefFlow,  "rflow",     "trace ref-flow")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

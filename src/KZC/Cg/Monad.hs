@@ -27,9 +27,6 @@ module KZC.Cg.Monad (
     lookupTyVarType,
     askTyVarTypeSubst,
 
-    localRefFlowModVars,
-    askRefFlowModVar,
-
     tell,
     collect,
     collectDefinitions,
@@ -108,9 +105,6 @@ data CgEnv l = CgEnv
     { varCExps    :: Map Var (CExp l)
     , ivarCExps   :: Map IVar (CExp l)
     , tyvarTypes  :: Map TyVar Type
-    , -- | Variables defined using refs that are then modified before some use
-      -- of the variable.
-      refFlowModVars :: Set Var
     }
 
 instance Show (CgEnv l) where
@@ -118,10 +112,9 @@ instance Show (CgEnv l) where
 
 defaultCgEnv :: CgEnv l
 defaultCgEnv = CgEnv
-    { varCExps       = mempty
-    , ivarCExps      = mempty
-    , tyvarTypes     = mempty
-    , refFlowModVars = mempty
+    { varCExps   = mempty
+    , ivarCExps  = mempty
+    , tyvarTypes = mempty
     }
 
 data CgStats = CgStats
@@ -203,17 +196,6 @@ lookupTyVarType alpha =
 -- instantiation.
 askTyVarTypeSubst :: Cg l (Map TyVar Type)
 askTyVarTypeSubst = asks tyvarTypes
-
--- | Specify the set of variables defined using refs that are then modified
--- before some use of the variable they flow to.
-localRefFlowModVars :: Set Var -> Cg l a -> Cg l a
-localRefFlowModVars vs k =
-    local (\env -> env { refFlowModVars = vs }) k
-
--- | Ask if a variable is defined by a ref that is then modified before some use
--- of the variable.
-askRefFlowModVar :: Var -> Cg l Bool
-askRefFlowModVar v = asks $ \env -> Set.member v (refFlowModVars env)
 
 tell :: Code -> Cg l ()
 tell c = modify $ \s -> s { code = code s <> c }

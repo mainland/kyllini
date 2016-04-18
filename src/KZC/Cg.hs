@@ -37,7 +37,6 @@ import qualified Language.C.Syntax as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
-import KZC.Analysis.RefFlow
 import KZC.Auto.Comp
 import KZC.Auto.Lint
 import KZC.Auto.Smart
@@ -147,16 +146,6 @@ mapKont f (MultishotBindK tau cv g) = MultishotBindK tau cv (f g)
 restrict, static :: C.TypeQual
 restrict = C.EscTypeQual "RESTRICT" noLoc
 static   = C.EscTypeQual "STATIC" noLoc
-
-localExpRefFlowModVars :: Exp -> Cg l a -> Cg l a
-localExpRefFlowModVars e k = do
-    vs <- refFlowModExp e
-    localRefFlowModVars vs k
-
-localCompRefFlowModVars :: Comp l -> Cg l a -> Cg l a
-localCompRefFlowModVars c k = do
-    vs <- refFlowModComp c
-    localRefFlowModVars vs k
 
 compileProgram :: forall l . IsLabel l => Program l -> Cg l ()
 compileProgram (Program decls comp tau) = do
@@ -387,8 +376,7 @@ cgThread takek emitk emitsk tau comp k = do
         useLabel l_done
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
-        localCompRefFlowModVars comp $
-          cgComp takek emitk emitsk comp l_done $ oneshot tau $ runKont k
+        cgComp takek emitk emitsk comp l_done $ oneshot tau $ runKont k
     appendDecls [decl | C.BlockDecl decl <- cblock]
     appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
   where
@@ -422,8 +410,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
                           else cgTemp "let_res" tau_res
-                  localExpRefFlowModVars e $
-                      cgExp e $ multishotBind tau_res cres $ \_ce -> return ()
+                  cgExp e $ multishotBind tau_res cres $ \_ce -> return ()
                   when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
@@ -487,8 +474,7 @@ cgDecl (LetCompD v tau comp _) k =
         withInstantiatedTyVars tau $ do
         comp' <- uniquifyCompLabels comp
         useLabels (compUsedLabels comp')
-        localCompRefFlowModVars comp' $
-            cgComp takek emitk emitsk comp' klbl k
+        cgComp takek emitk emitsk comp' klbl k
 
 cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
@@ -513,8 +499,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
         extendIVarCExps (ivs `zip` ciotas) $ do
         extendVarCExps  (map fst vbs `zip` ces) $ do
         useLabels (compUsedLabels comp')
-        localCompRefFlowModVars comp' $
-            cgComp takek emitk emitsk comp' klbl k
+        cgComp takek emitk emitsk comp' klbl k
       where
         cgArg :: Arg l -> Cg l (CExp l)
         cgArg (ExpA e) =
@@ -928,7 +913,8 @@ cgExp e k =
     go (DerefE e _) k =
         cgExp e $ mapKont (\f ce -> f (cgDeref ce)) k
 
-    go (AssignE e1 e2 _) k = do
+    go e@(AssignE e1 e2 _) k = do
+        appendComment $ ppr e
         tau <- inferExp e1
         ce1 <- cgExpOneshot e1
         cgExp e2 $ multishotBind tau ce1 $ \_ce -> return ()
@@ -1411,53 +1397,52 @@ cgMonadicBinding :: BoundVar        -- ^ The binder
                  -> Type            -- ^ The type of the binder
                  -> Kont l (CExp l) -- ^ The continuation that receives the binding.
 cgMonadicBinding bv tau =
-    oneshotBinder bv tau oneshotk
+    oneshotBinder bv tau $ oneshotk (bTainted bv)
   where
-    oneshotk :: CExp l -> Cg l (CExp l)
-    oneshotk ce = do
-        refFlowMod <- askRefFlowModVar (bVar bv)
-        go refFlowMod ce
-      where
-        go :: Bool -> CExp l -> Cg l (CExp l)
-        go _ ce@CVoid =
-            return ce
+    oneshotk :: Maybe Bool -> CExp l -> Cg l (CExp l)
+    oneshotk _ ce@CVoid =
+        return ce
 
-        go _ ce@(CBool {}) =
-            return ce
+    oneshotk _ ce@(CBool {}) =
+        return ce
 
-        go _ ce@(CInt {}) =
-            return ce
+    oneshotk _ ce@(CInt {}) =
+        return ce
 
-        go _ ce@(CFloat {}) =
-            return ce
+    oneshotk _ ce@(CFloat {}) =
+        return ce
 
-        go _ (CComp {}) =
-            panicdoc $ text "cgMonadicBinding: cannot bind a computation."
+    oneshotk _ (CComp {}) =
+        panicdoc $ text "cgMonadicBinding: cannot bind a computation."
 
-        go _ (CFunComp {}) =
-            panicdoc $ text "cgMonadicBinding: cannot bind a computation function."
+    oneshotk _ (CFunComp {}) =
+        panicdoc $ text "cgMonadicBinding: cannot bind a computation function."
 
-        -- If our first argument is @True@, then we will create a new binding, so we
-        -- can forget the alias.
-        go True (CAlias _ ce) =
-            go True ce
+    -- If our first argument is @True@, then we will create a new binding, so we
+    -- can forget the alias.
+    oneshotk taint (CAlias _ ce) | isTainted taint =
+        oneshotk taint ce
 
-        -- Otherwise we have to remember the alias.
-        go False (CAlias e ce) =
-            calias e <$> go False ce
+    -- Otherwise we have to remember the alias.
+    oneshotk taint (CAlias e ce) =
+        calias e <$> oneshotk taint ce
 
-        -- Right now we bind values when they are derived from a reference that
-        -- may be modified before the derived value is used or when the value
-        -- may have a side-effect, e.g., it is the result of a function
-        -- call. Perhaps we should be more aggressive about binding
-        -- computationally expensive values here?
-        go refFlowMod ce | refFlowMod || mayHaveEffect ce = do
-            cv <- cgBinder (bVar bv) tau
-            cgAssign tau cv ce
-            return cv
+    -- Right now we bind values when they are derived from a reference that
+    -- may be modified before the derived value is used or when the value
+    -- may have a side-effect, e.g., it is the result of a function
+    -- call. Perhaps we should be more aggressive about binding
+    -- computationally expensive values here?
+    oneshotk taint ce | isTainted taint || mayHaveEffect ce = do
+        cv <- cgBinder (bVar bv) tau
+        cgAssign tau cv ce
+        return cv
 
-        go _ ce =
-            return ce
+    oneshotk _ ce =
+        return ce
+
+    isTainted :: Maybe Bool -> Bool
+    isTainted Nothing      = True
+    isTainted (Just taint) = taint
 
 -- | Allocate storage for a binder with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
