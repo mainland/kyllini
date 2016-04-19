@@ -165,7 +165,7 @@ compileProgram (Program decls comp tau) = do
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
     (clabels, cblock) <-
         collectLabels $
-        inNewMainThreadBlock_ $
+        inNewThreadBlock_ $
         cgDecls decls $ do
         -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
@@ -233,10 +233,10 @@ void kz_main(const typename kz_params_t* $id:params)
         cgBufferCleanup "kz_cleanup_output" tau cp cbuf
 
     cgBufferInit :: String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferInit = cgBufferConfig appendInitStm
+    cgBufferInit = cgBufferConfig appendThreadInitStm
 
     cgBufferCleanup :: String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferCleanup = cgBufferConfig appendCleanupStm
+    cgBufferCleanup = cgBufferConfig appendThreadCleanupStm
 
     cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
     cgBufferConfig appStm f tau cp cbuf =
@@ -357,7 +357,7 @@ cgLabels ls = do
 -- | Generate code to check return value of a function call.
 cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
 cgInitCheckErr ce msg x =
-    appendInitStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
+    appendThreadInitStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 -- | Generate code to check return value of a function call.
 cgCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
@@ -1945,7 +1945,7 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     let right'  =  setCompLabel l_consumer' right
     -- Generate to initialize the thread
     when (not (isUnitT tau_res)) $
-        appendInitStm [cstm|ctinfo.result = &$cres;|]
+        appendThreadInitStm [cstm|ctinfo.result = &$cres;|]
     cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
     -- Generate to start the thread
     cgWithLabel l_consumer $

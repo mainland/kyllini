@@ -28,12 +28,12 @@ import KZC.Quote.C
 data Code = Code
     { -- | Top-level definitions
       codeDefs :: !(Seq C.Definition)
-    , -- | Initialization
-      codeInitStms :: !(Seq C.Stm)
-    , -- | Cleanup
-      codeCleanupStms :: !(Seq C.Stm)
     , -- | Thread-level declarations
       codeThreadDecls :: !(Seq C.InitGroup)
+    , -- | Initialization
+      codeThreadInitStms :: !(Seq C.Stm)
+    , -- | Cleanup
+      codeThreadCleanupStms :: !(Seq C.Stm)
     , -- | Local declarations
       codeDecls :: !(Seq C.InitGroup)
     , -- | Local statements
@@ -44,29 +44,29 @@ data Code = Code
 instance Pretty Code where
     ppr c = stack $
             (map ppr . toList . codeDefs) c ++
-            (map ppr . toList . codeInitStms) c ++
-            (map ppr . toList . codeCleanupStms) c ++
             (map ppr . toList . codeThreadDecls) c ++
+            (map ppr . toList . codeThreadInitStms) c ++
+            (map ppr . toList . codeThreadCleanupStms) c ++
             (map ppr . toList . codeDecls) c ++
             (map ppr . toList . codeStms) c
 
 instance Monoid Code where
-    mempty = Code { codeDefs        = mempty
-                  , codeInitStms    = mempty
-                  , codeCleanupStms = mempty
-                  , codeThreadDecls = mempty
-                  , codeDecls       = mempty
-                  , codeStms        = mempty
+    mempty = Code { codeDefs              = mempty
+                  , codeThreadDecls       = mempty
+                  , codeThreadInitStms    = mempty
+                  , codeThreadCleanupStms = mempty
+                  , codeDecls             = mempty
+                  , codeStms              = mempty
                   }
 
     a `mappend` b =
-        Code { codeDefs        = codeDefs a <> codeDefs b
-             , codeInitStms    = codeInitStms a <> codeInitStms b
-             , codeCleanupStms = codeCleanupStms a <> codeCleanupStms b
-             , codeThreadDecls = codeThreadDecls a <> codeThreadDecls b
-             , codeDecls       = codeDecls a <> codeDecls b
-             , codeStms        = case (viewr (codeStms a), viewl (codeStms b)) of
-                                   (stms1 :> [cstm|$id:lbl: ;|], stm :< stms2) ->
-                                        stms1 <> ([cstm|$id:lbl: $stm:stm|] <| stms2)
-                                   _ -> codeStms a <> codeStms b
+        Code { codeDefs              = codeDefs a <> codeDefs b
+             , codeThreadDecls       = codeThreadDecls a <> codeThreadDecls b
+             , codeThreadInitStms    = codeThreadInitStms a <> codeThreadInitStms b
+             , codeThreadCleanupStms = codeThreadCleanupStms a <> codeThreadCleanupStms b
+             , codeDecls             = codeDecls a <> codeDecls b
+             , codeStms              = case (viewr (codeStms a), viewl (codeStms b)) of
+                                         (stms1 :> [cstm|$id:lbl: ;|], stm :< stms2) ->
+                                              stms1 <> ([cstm|$id:lbl: $stm:stm|] <| stms2)
+                                         _ -> codeStms a <> codeStms b
              }

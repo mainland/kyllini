@@ -41,8 +41,6 @@ module KZC.Cg.Monad (
     collectStms,
     collectStms_,
 
-    inNewMainThreadBlock,
-    inNewMainThreadBlock_,
     inNewThreadBlock,
     inNewThreadBlock_,
     inNewBlock,
@@ -52,10 +50,10 @@ module KZC.Cg.Monad (
     appendTopDefs,
     appendTopDecl,
     appendTopDecls,
-    appendInitStm,
-    appendCleanupStm,
     appendThreadDecl,
     appendThreadDecls,
+    appendThreadInitStm,
+    appendThreadCleanupStm,
     appendDecl,
     appendDecls,
     appendStm,
@@ -265,33 +263,21 @@ collectStms m = do
 collectStms_ :: Cg l () -> Cg l ([C.Stm])
 collectStms_ m = fst <$> collectStms m
 
-inNewMainThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
-inNewMainThreadBlock m = do
-    (c, x) <- collect m
-    tell c { codeInitStms    = mempty
-           , codeCleanupStms = mempty
-           , codeThreadDecls = mempty
-           , codeDecls       = mempty
-           , codeStms        = mempty
-           }
-    return ((map C.BlockDecl . toList . codeThreadDecls) c ++
-            (map C.BlockDecl . toList . codeDecls) c ++
-            (map C.BlockStm .  toList . codeInitStms) c ++
-            (map C.BlockStm .  toList . codeStms) c ++
-            (map C.BlockStm .  toList . codeCleanupStms) c
-           ,x)
-
-inNewMainThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
-inNewMainThreadBlock_ m =
-    fst <$> inNewMainThreadBlock m
-
 inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewThreadBlock m = do
     (c, x) <- collect m
-    tell c { codeThreadDecls = mempty, codeDecls = mempty, codeStms = mempty }
+    tell c { codeThreadDecls       = mempty
+           , codeThreadInitStms    = mempty
+           , codeThreadCleanupStms = mempty
+           , codeDecls             = mempty
+           , codeStms              = mempty
+           }
     return ((map C.BlockDecl . toList . codeThreadDecls) c ++
             (map C.BlockDecl . toList . codeDecls) c ++
-            (map C.BlockStm .  toList . codeStms) c, x)
+            (map C.BlockStm .  toList . codeThreadInitStms) c ++
+            (map C.BlockStm .  toList . codeStms) c ++
+            (map C.BlockStm .  toList . codeThreadCleanupStms) c
+           ,x)
 
 inNewThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewThreadBlock_ m =
@@ -324,19 +310,19 @@ appendTopDecls :: [C.InitGroup] -> Cg l ()
 appendTopDecls cdecls =
   tell mempty { codeDefs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
 
-appendInitStm :: C.Stm -> Cg l ()
-appendInitStm cstm =
-  tell mempty { codeInitStms = Seq.singleton cstm }
-
-appendCleanupStm :: C.Stm -> Cg l ()
-appendCleanupStm cstm =
-  tell mempty { codeCleanupStms = Seq.singleton cstm }
-
 appendThreadDecl :: C.InitGroup -> Cg l ()
 appendThreadDecl cdecl = tell mempty { codeThreadDecls = Seq.singleton cdecl }
 
 appendThreadDecls :: [C.InitGroup] -> Cg l ()
 appendThreadDecls cdecls = tell mempty { codeThreadDecls = Seq.fromList cdecls }
+
+appendThreadInitStm :: C.Stm -> Cg l ()
+appendThreadInitStm cstm =
+  tell mempty { codeThreadInitStms = Seq.singleton cstm }
+
+appendThreadCleanupStm :: C.Stm -> Cg l ()
+appendThreadCleanupStm cstm =
+  tell mempty { codeThreadCleanupStms = Seq.singleton cstm }
 
 appendDecl :: C.InitGroup -> Cg l ()
 appendDecl cdecl = tell mempty { codeDecls = Seq.singleton cdecl }
