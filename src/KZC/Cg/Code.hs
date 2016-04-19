@@ -28,16 +28,16 @@ import KZC.Quote.C
 data Code = Code
     { -- | Top-level definitions
       codeDefs :: !(Seq C.Definition)
-      -- | Initialization
-    , codeInitStms :: !(Seq C.Stm)
-      -- | Cleanup
-    , codeCleanupStms :: !(Seq C.Stm)
-      -- | Thread-level declarations
-    , codeThreadDecls :: !(Seq C.InitGroup)
-      -- | Local declarations
-    , codeDecls :: !(Seq C.InitGroup)
-      -- | Local statements
-    , codeStms :: !(Seq C.Stm)
+    , -- | Initialization
+      codeInitStms :: !(Seq C.Stm)
+    , -- | Cleanup
+      codeCleanupStms :: !(Seq C.Stm)
+    , -- | Thread-level declarations
+      codeThreadDecls :: !(Seq C.InitGroup)
+    , -- | Local declarations
+      codeDecls :: !(Seq C.InitGroup)
+    , -- | Local statements
+      codeStms :: !(Seq C.Stm)
     }
   deriving (Eq, Ord, Show)
 
