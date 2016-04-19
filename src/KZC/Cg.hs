@@ -1047,11 +1047,11 @@ cgExp e k =
         cgExpVoid e1
         cgExp e2 k
 
-    go (BindE (TameV v) tau e1 e2 _) k = do
-        cv <- cgExp e1 $ cgMonadicBinding v tau
-        extendVars [(bVar v, tau)] $ do
-        extendVarCExps [(bVar v, cv)] $ do
-        cgExp e2 k
+    go (BindE (TameV v) tau e1 e2 _) k =
+        cgExp e1 $ cgMonadicBinding v tau $ \cv ->
+          extendVars [(bVar v, tau)] $
+          extendVarCExps [(bVar v, cv)] $
+          cgExp e2 k
 
     go (LutE e) k =
         cgExp e k
@@ -1392,52 +1392,53 @@ cgLetBinding bv tau =
 -- binding has refs flow to it that are modified before some use of the
 -- variable, a condition we check by calling 'askRefFlowModVar', we create a
 -- binding no matter what.
-cgMonadicBinding :: BoundVar        -- ^ The binder
-                 -> Type            -- ^ The type of the binder
-                 -> Kont l (CExp l) -- ^ The continuation that receives the binding.
-cgMonadicBinding bv tau =
-    oneshotBinder bv tau $ oneshotk (bTainted bv)
+cgMonadicBinding :: forall l a . BoundVar -- ^ The binder
+                 -> Type                  -- ^ The type of the binder
+                 -> (CExp l -> Cg l a)    -- ^ Our continuation
+                 -> Kont l a              -- ^ The continuation that receives the binding.
+cgMonadicBinding bv tau k =
+    oneshotBinder bv tau $ oneshotk (bTainted bv) id
   where
-    oneshotk :: Maybe Bool -> CExp l -> Cg l (CExp l)
-    oneshotk _ ce@CVoid =
-        return ce
+    oneshotk :: Maybe Bool -> (CExp l -> CExp l) -> CExp l -> Cg l a
+    oneshotk _ f ce@CVoid =
+        k (f ce)
 
-    oneshotk _ ce@(CBool {}) =
-        return ce
+    oneshotk _ f ce@(CBool {}) =
+        k (f ce)
 
-    oneshotk _ ce@(CInt {}) =
-        return ce
+    oneshotk _ f ce@(CInt {}) =
+        k (f ce)
 
-    oneshotk _ ce@(CFloat {}) =
-        return ce
+    oneshotk _ f ce@(CFloat {}) =
+        k (f ce)
 
-    oneshotk _ (CComp {}) =
+    oneshotk _ _ (CComp {}) =
         panicdoc $ text "cgMonadicBinding: cannot bind a computation."
 
-    oneshotk _ (CFunComp {}) =
+    oneshotk _ _ (CFunComp {}) =
         panicdoc $ text "cgMonadicBinding: cannot bind a computation function."
 
     -- If our first argument is @True@, then we will create a new binding, so we
     -- can forget the alias.
-    oneshotk taint (CAlias _ ce) | isTainted taint =
-        oneshotk taint ce
+    oneshotk taint f (CAlias _ ce) | isTainted taint =
+        oneshotk taint f ce
 
     -- Otherwise we have to remember the alias.
-    oneshotk taint (CAlias e ce) =
-        calias e <$> oneshotk taint ce
+    oneshotk taint f (CAlias e ce) =
+        oneshotk taint (f . calias e) ce
 
     -- Right now we bind values when they are derived from a reference that
     -- may be modified before the derived value is used or when the value
     -- may have a side-effect, e.g., it is the result of a function
     -- call. Perhaps we should be more aggressive about binding
     -- computationally expensive values here?
-    oneshotk taint ce | isTainted taint || mayHaveEffect ce = do
+    oneshotk taint f ce | isTainted taint || mayHaveEffect ce = do
         cv <- cgBinder (bVar bv) tau
         cgAssign tau cv ce
-        return cv
+        k (f cv)
 
-    oneshotk _ ce =
-        return ce
+    oneshotk _ f ce =
+        k (f ce)
 
     isTainted :: Maybe Bool -> Bool
     isTainted Nothing      = True
@@ -1604,13 +1605,13 @@ cgComp takek emitk emitsk comp klbl k =
         cgStepVoid step l
         cgWithLabel l $ cgSteps steps k
 
-    cgSteps (step : BindC l (TameV v) tau _ : steps) k = do
-        cv <- cgStep step l $
-              mapKont cgBind $
-              cgMonadicBinding v tau
-        extendVars [(bVar v, tau)] $
-            extendVarCExps [(bVar v, cv)] $
-            cgSteps steps k
+    cgSteps (step : BindC l (TameV v) tau _ : steps) k =
+        cgStep step l $
+        mapKont cgBind $
+        cgMonadicBinding v tau $ \cv ->
+          extendVars [(bVar v, tau)] $
+          extendVarCExps [(bVar v, cv)] $
+          cgSteps steps k
       where
         -- @e@ could be a pureish computation, in which case we need to compile
         -- it here before we call the continuation with the result. See issue
