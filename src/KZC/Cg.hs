@@ -1443,69 +1443,70 @@ cgMonadicBinding bv tau =
     isTainted Nothing      = True
     isTainted (Just taint) = taint
 
--- | Allocate storage for a binder with the given core type. The first
--- argument is a boolean flag that is 'True' if this binding corresponds to a
--- top-level core binding and 'False' otherwise.
+-- | Declare C storage for the given variable. If we are in top scope, declare
+-- the storage at top level; otherwise, declare it at thread scope.
 cgBinder :: Var -> Type -> Cg l (CExp l)
+cgBinder _ (UnitT {}) =
+    return CVoid
+
 cgBinder v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau = do
     cgBinder v tau'
 
 cgBinder v tau = do
-    isTopLevel <- isInTopScope
-    cv         <- cvar v
-    cgStorage isTopLevel cv tau
+    isTop       <- isInTopScope
+    cv          <- cvar v
+    (cdecl, ce) <- cgStorage cv tau
+    if isTop
+      then appendTopDecl cdecl
+      else appendThreadDecl cdecl
+    return ce
 
 -- | Allocate storage for a temporary of the given core type. The name of the
 -- temporary is gensym'd using @s@ with a prefix of @__@.
 cgTemp :: String -> Type -> Cg l (CExp l)
+cgTemp _ (UnitT {}) =
+    return CVoid
+
 cgTemp s tau = do
-    cv <- gensym ("__" ++ s)
-    cgStorage False cv tau
+    cv          <- gensym ("__" ++ s)
+    (cdecl, ce) <- cgStorage cv tau
+    appendThreadDecl cdecl
+    return ce
 
 -- | Allocate storage for a C identifier with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
-cgStorage :: Bool -> C.Id -> Type -> Cg l (CExp l)
-cgStorage isTopLevel cv tau =
-    go tau
+cgStorage :: C.Id -> Type -> Cg l (C.InitGroup, CExp l)
+cgStorage _ (UnitT {}) =
+    faildoc $ "cgStorage: asked to allocate storage for unit type."
+
+cgStorage cv (ArrT iota tau _) | isBitT tau = do
+    cn        <- cgIota iota
+    let cinit =  case cn of
+                   CInt n -> rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+                   _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
+    return (cinit, CExp $ rl cv [cexp|$id:cv|])
   where
-    go :: Type -> Cg l (CExp l)
-    go (UnitT {}) =
-        return CVoid
+    ctau :: C.Type
+    ctau = bIT_ARRAY_ELEM_TYPE
 
-    go (ArrT iota tau _) | isBitT tau = do
-        cn <- cgIota iota
-        case cn of
-          CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
-          _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
-        return $ CExp $ rl cv [cexp|$id:cv|]
-      where
-        ctau :: C.Type
-        ctau = bIT_ARRAY_ELEM_TYPE
+cgStorage cv (ArrT iota tau _) = do
+    ctau      <- cgType tau
+    cn        <- cgIota iota
+    let cinit =  case cn of
+                   CInt n -> rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
+                   _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
+    return (cinit, CExp $ rl cv [cexp|$id:cv|])
 
-    go (ArrT iota tau _) = do
-        ctau <- cgType tau
-        cn <- cgIota iota
-        case cn of
-          CInt n -> appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
-          _      -> appendLetDecl $ rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
-        return $ CExp $ rl cv [cexp|$id:cv|]
+cgStorage cv tau@(RefT {}) = do
+    ctau      <- cgType tau
+    let cinit =  rl cv [cdecl|$ty:ctau $id:cv;|]
+    return (cinit, CPtr $ CExp $ rl cv [cexp|$id:cv|])
 
-    go tau@(RefT {}) = do
-        ctau <- cgType tau
-        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv;|]
-        return $ CPtr $ CExp $ rl cv [cexp|$id:cv|]
-
-    go tau = do
-        ctau <- cgType tau
-        appendLetDecl $ rl cv [cdecl|$ty:ctau $id:cv;|]
-        return $ CExp $ rl cv [cexp|$id:cv|]
-
-    -- Append a C declaration. If we are at top-level, make this a top-level C
-    -- declaration; otherwise, make it a local C declaration.
-    appendLetDecl :: C.InitGroup -> Cg l ()
-    appendLetDecl decl | isTopLevel = appendTopDecl decl
-                       | otherwise  = appendThreadDecl decl
+cgStorage cv tau = do
+    ctau      <- cgType tau
+    let cinit =  rl cv [cdecl|$ty:ctau $id:cv;|]
+    return (cinit, CExp $ rl cv [cexp|$id:cv|])
 
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer
