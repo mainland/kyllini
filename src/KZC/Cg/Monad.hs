@@ -27,6 +27,15 @@ module KZC.Cg.Monad (
     lookupTyVarType,
     askTyVarTypeSubst,
 
+    getStats,
+    incMemCopies,
+    incBitArrayCopies,
+
+    collectLabels,
+    useLabel,
+    useLabels,
+    isLabelUsed,
+
     tell,
     collect,
     collectDefinitions,
@@ -55,16 +64,7 @@ module KZC.Cg.Monad (
     appendDecls,
     appendStm,
     appendStms,
-    appendBlock,
-
-    collectLabels,
-    useLabel,
-    useLabels,
-    isLabelUsed,
-
-    getStats,
-    incMemCopies,
-    incBitArrayCopies
+    appendBlock
   ) where
 
 import Prelude hiding (elem)
@@ -136,16 +136,16 @@ instance Pretty CgStats where
         text "Bit array copies:" <+> ppr (bitArrayCopies stats)
 
 data CgState l = CgState
-    { labels :: Set l
+    { stats  :: CgStats
+    , labels :: Set l
     , code   :: Code
-    , stats  :: CgStats
     }
 
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
-    { labels = mempty
+    { stats  = mempty
+    , labels = mempty
     , code   = mempty
-    , stats  = mempty
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -193,6 +193,41 @@ lookupTyVarType alpha =
 -- instantiation.
 askTyVarTypeSubst :: Cg l (Map TyVar Type)
 askTyVarTypeSubst = asks tyvarTypes
+
+getStats :: Cg l CgStats
+getStats = gets stats
+
+modifyStats :: (CgStats -> CgStats) -> Cg l ()
+modifyStats f = modify $ \s -> s { stats = f (stats s) }
+
+incMemCopies :: Cg l ()
+incMemCopies =
+    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
+
+incBitArrayCopies :: Cg l ()
+incBitArrayCopies =
+    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
+
+collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
+collectLabels m = do
+    old_labels <- gets labels
+    modify $ \s -> s { labels = mempty }
+    x    <- m
+    lbls <- gets labels
+    modify $ \s -> s { labels = old_labels }
+    return (lbls, x)
+
+useLabel :: IsLabel l => l -> Cg l ()
+useLabel lbl =
+    modify $ \s -> s { labels = Set.insert lbl (labels s) }
+
+useLabels :: IsLabel l => Set l -> Cg l ()
+useLabels lbls =
+    modify $ \s -> s { labels = labels s `Set.union` lbls }
+
+isLabelUsed :: IsLabel l => l -> Cg l Bool
+isLabelUsed lbl =
+    gets (Set.member lbl . labels)
 
 tell :: Code -> Cg l ()
 tell c = modify $ \s -> s { code = code s <> c }
@@ -323,41 +358,6 @@ appendBlock citems
     isBlockStm :: C.BlockItem -> Bool
     isBlockStm (C.BlockStm {}) = True
     isBlockStm _               = False
-
-collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
-collectLabels m = do
-    old_labels <- gets labels
-    modify $ \s -> s { labels = mempty }
-    x    <- m
-    lbls <- gets labels
-    modify $ \s -> s { labels = old_labels }
-    return (lbls, x)
-
-useLabel :: IsLabel l => l -> Cg l ()
-useLabel lbl =
-    modify $ \s -> s { labels = Set.insert lbl (labels s) }
-
-useLabels :: IsLabel l => Set l -> Cg l ()
-useLabels lbls =
-    modify $ \s -> s { labels = labels s `Set.union` lbls }
-
-isLabelUsed :: IsLabel l => l -> Cg l Bool
-isLabelUsed lbl =
-    gets (Set.member lbl . labels)
-
-getStats :: Cg l CgStats
-getStats = gets stats
-
-modifyStats :: (CgStats -> CgStats) -> Cg l ()
-modifyStats f = modify $ \s -> s { stats = f (stats s) }
-
-incMemCopies :: Cg l ()
-incMemCopies =
-    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
-
-incBitArrayCopies :: Cg l ()
-incBitArrayCopies =
-    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
 
 instance IfThenElse (CExp l) (Cg l ()) where
     ifThenElse (CBool True)  t _ = t
