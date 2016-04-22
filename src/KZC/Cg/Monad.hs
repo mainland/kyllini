@@ -57,8 +57,6 @@ module KZC.Cg.Monad (
     appendStms,
     appendBlock,
 
-    gensym,
-
     collectLabels,
     useLabel,
     useLabels,
@@ -95,7 +93,6 @@ import KZC.Monad
 import KZC.Monad.SEFKT
 import KZC.Quote.C
 import KZC.Staged
-import KZC.Uniq
 import KZC.Util.Env
 
 -- | The 'Cg' monad.

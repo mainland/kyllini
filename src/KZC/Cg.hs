@@ -55,6 +55,7 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Summary
 import KZC.Trace
+import KZC.Uniq
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a
