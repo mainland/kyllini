@@ -70,14 +70,13 @@ type EmitsK l = Iota -> Type -> CExp l -> l -> Cg l ()
 -- executes an action in the 'Cg' monad. This is distinct from a 'LabelKont',
 -- which represents /the continuation of the code being generated/, not the
 -- continuation of the code generator.
-data Kont l a -- | A continuation that may only be called once because calling it
-              -- more than once may generate duplicate code. The 'Type' of the
-              -- 'CExp' expected as an argument is specified.
-              = OneshotK Type (CExp l -> Cg l a)
-
-              -- | Like 'OneshotK', but give a binder name to use if we need to
-              -- convert this continuation into a multishot continuation.
-              | OneshotBinderK BoundVar Type (CExp l -> Cg l a)
+data Kont l a -- | A continuation that may only be called once because calling
+              -- it more than once may generate duplicate code. The 'Type' of
+              -- the 'CExp' expected as an argument is specified. An optional
+              -- binder name can be provided, which will be used if this
+              -- continuation needs to be converted into a multishot
+              -- continuation.
+              = OneshotK (Maybe BoundVar) Type (CExp l -> Cg l a)
 
               -- | A continuation that may be called multiple times, i.e., it does
               -- not generate duplicate code. Note that the result of the

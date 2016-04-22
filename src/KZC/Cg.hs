@@ -58,24 +58,24 @@ import KZC.Trace
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a
-oneshot tau f = OneshotK tau f
+oneshot tau f = OneshotK Nothing tau f
 
 -- | Create a oneshot continuation with the name of a binder to use.
 oneshotBinder :: BoundVar -> Type -> (CExp l -> Cg l a) -> Kont l a
-oneshotBinder bv tau f = OneshotBinderK bv tau f
+oneshotBinder bv tau f = OneshotK (Just bv) tau f
 
 -- | Create a multishot continuation.
 multishot :: (CExp l -> Cg l a) -> Kont l a
 multishot f = MultishotK f
 
--- | Create a multishot continuation that binds its argument to the given '.
-multishotBind :: Type -> CExp l -> (CExp l -> Cg l a) -> Kont l a
-multishotBind tau cv f = MultishotBindK tau cv f
+-- | Create a multishot continuation that binds its argument to the given
+-- 'CExp'.
+multishotBind :: Type -> CExp l -> Kont l ()
+multishotBind tau cv = MultishotBindK tau cv (const $ return ())
 
 -- | Return 'True' if the continuation is oneshot, 'False' otherwise.
 isOneshot :: Kont l a -> Bool
 isOneshot (OneshotK {})       = True
-isOneshot (OneshotBinderK {}) = True
 isOneshot (MultishotK {})     = False
 isOneshot (MultishotBindK {}) = False
 
@@ -83,14 +83,14 @@ isOneshot (MultishotBindK {}) = False
 -- stores values in a temporary, and a new oneshot continuation that consumes
 -- the temporary and does the real work.
 splitOneshot :: Kont l a -> Cg l (Kont l (), Cg l a)
-splitOneshot (OneshotK tau f) = do
+splitOneshot (OneshotK Nothing tau f) = do
     ctemp <- cgTemp "oneshot" tau_res
     return (MultishotK $ cgAssign tau_res ctemp, f ctemp)
   where
     tau_res :: Type
     tau_res = resultType tau
 
-splitOneshot (OneshotBinderK bv tau f) = do
+splitOneshot (OneshotK (Just bv) tau f) = do
     cv <- cgBinder (bVar bv) tau
     return (MultishotK $ cgAssign tau cv, f cv)
 
@@ -104,14 +104,14 @@ splitOneshot (MultishotBindK {}) =
 -- result, and a continuation to be called after the result has been placed into
 -- the 'CExp'.
 splitMultishotBind :: String -> Type -> Bool -> Kont l a -> Cg l (CExp l, Cg l a)
-splitMultishotBind v _ _needsLvalue (OneshotK tau f) = do
+splitMultishotBind v _ _needsLvalue (OneshotK Nothing tau f) = do
     ctemp <- cgTemp v tau_res
     return (ctemp, f ctemp)
   where
     tau_res :: Type
     tau_res = resultType tau
 
-splitMultishotBind _v _tau _needsLvalue (OneshotBinderK bv tau f) = do
+splitMultishotBind _v _tau _needsLvalue (OneshotK (Just bv) tau f) = do
     cv <- cgBinder (bVar bv) tau
     return (cv, f cv)
 
@@ -128,8 +128,7 @@ splitMultishotBind _v _tau _ (MultishotBindK _tau' cv f) =
 
 -- | Run a 'Kont l a' by giving it a 'CExp'.
 runKont :: Kont l a -> CExp l -> Cg l a
-runKont (OneshotK _ k)            ce = k ce
-runKont (OneshotBinderK _ _ k)    ce = k ce
+runKont (OneshotK _ _ k)          ce = k ce
 runKont (MultishotK k)            ce = k ce
 runKont (MultishotBindK tau cv k) ce = do cgAssign tau cv ce
                                           k cv
@@ -138,8 +137,7 @@ runKont (MultishotBindK tau cv k) ce = do cgAssign tau cv ce
 mapKont :: ((CExp l -> Cg l a) -> (CExp l -> Cg l a))
         -> Kont l a
         -> Kont l a
-mapKont f (OneshotK tau g)          = OneshotK tau (f g)
-mapKont f (OneshotBinderK bv tau g) = OneshotBinderK bv tau (f g)
+mapKont f (OneshotK bv tau g)       = OneshotK bv tau (f g)
 mapKont f (MultishotK g)            = MultishotK (f g)
 mapKont f (MultishotBindK tau cv g) = MultishotBindK tau cv (f g)
 
@@ -164,7 +162,7 @@ compileProgram (Program decls comp tau) = do
         cres <- cgTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
         cgTimed $ cgThread takek emitk emitsk tau comp $
-            multishotBind (resultType tau) cres $ \_ce -> return ()
+            multishotBind (resultType tau) cres
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -410,7 +408,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
                           else cgTemp "let_res" tau_res
-                  cgExp e $ multishotBind tau_res cres $ \_ce -> return ()
+                  cgExp e $ multishotBind tau_res cres
                   when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
@@ -545,7 +543,7 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
 
     cgLetRefBinding (Just e) = do
         cve <- cgBinder (bVar v) tau
-        inLocalScope $ cgExp e $ multishotBind tau cve $ \_ce -> return ()
+        inLocalScope $ cgExp e $ multishotBind tau cve
         return cve
 
 -- | Generate a 'CExp' representing a constant. The 'CExp' produced is
@@ -917,7 +915,7 @@ cgExp e k =
         appendComment $ ppr e
         tau <- inferExp e1
         ce1 <- cgExpOneshot e1
-        cgExp e2 $ multishotBind tau ce1 $ \_ce -> return ()
+        cgExp e2 $ multishotBind tau ce1
         runKont k CVoid
 
     {- Note [Compiling While Loops]
@@ -2036,7 +2034,7 @@ void* $id:cf(void* _tinfo)
     cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
         cgComp takek' emitk' emitsk' comp klbl $
-            multishotBind tau_res cres $ \_ce -> return ()
+            multishotBind tau_res cres
         appendStm [cstm|$ctinfo.done = 1;|]
         appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
         appendStm [cstm|JUMP($id:l_pardone);|]
