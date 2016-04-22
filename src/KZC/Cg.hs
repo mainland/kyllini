@@ -1402,52 +1402,52 @@ cgMonadicBinding :: forall l a . BoundVar -- ^ The binder
                  -> (CExp l -> Cg l a)    -- ^ Our continuation
                  -> Kont l a              -- ^ The continuation that receives the binding.
 cgMonadicBinding bv tau k =
-    oneshotBinder bv tau $ oneshotk (bTainted bv) id
+    oneshotBinder bv tau $ oneshotk id
   where
-    oneshotk :: Maybe Bool -> (CExp l -> CExp l) -> CExp l -> Cg l a
-    oneshotk _ f ce@CVoid =
+    oneshotk :: (CExp l -> CExp l) -> CExp l -> Cg l a
+    oneshotk f ce@CVoid =
         k (f ce)
 
-    oneshotk _ f ce@(CBool {}) =
+    oneshotk f ce@(CBool {}) =
         k (f ce)
 
-    oneshotk _ f ce@(CInt {}) =
+    oneshotk f ce@(CInt {}) =
         k (f ce)
 
-    oneshotk _ f ce@(CFloat {}) =
+    oneshotk f ce@(CFloat {}) =
         k (f ce)
 
-    oneshotk _ _ (CComp {}) =
+    oneshotk _ (CComp {}) =
         panicdoc $ text "cgMonadicBinding: cannot bind a computation."
 
-    oneshotk _ _ (CFunComp {}) =
+    oneshotk _ (CFunComp {}) =
         panicdoc $ text "cgMonadicBinding: cannot bind a computation function."
 
-    -- If our first argument is @True@, then we will create a new binding, so we
-    -- can forget the alias.
-    oneshotk taint f (CAlias _ ce) | isTainted taint =
-        oneshotk taint f ce
+    -- If the binder is tainted, then we will create a new binding, so we can
+    -- forget the alias.
+    oneshotk f (CAlias _ ce) | isTainted bv =
+        oneshotk f ce
 
     -- Otherwise we have to remember the alias.
-    oneshotk taint f (CAlias e ce) =
-        oneshotk taint (f . calias e) ce
+    oneshotk f (CAlias e ce) =
+        oneshotk (f . calias e) ce
 
     -- Right now we bind values when they are derived from a reference that
     -- may be modified before the derived value is used or when the value
     -- may have a side-effect, e.g., it is the result of a function
     -- call. Perhaps we should be more aggressive about binding
     -- computationally expensive values here?
-    oneshotk taint f ce | isTainted taint || mayHaveEffect ce = do
+    oneshotk f ce | isTainted bv || mayHaveEffect ce = do
         cv <- cgBinder (bVar bv) tau
         cgAssign tau cv ce
         k (f cv)
 
-    oneshotk _ f ce =
+    oneshotk f ce =
         k (f ce)
 
-    isTainted :: Maybe Bool -> Bool
-    isTainted Nothing      = True
-    isTainted (Just taint) = taint
+isTainted :: BoundVar -> Bool
+isTainted BoundV{ bTainted = Nothing }    = True
+isTainted BoundV{ bTainted = Just taint } = taint
 
 -- | Declare C storage for the given variable. If we are in top scope, declare
 -- the storage at top level; otherwise, declare it at thread scope.
