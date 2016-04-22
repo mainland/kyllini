@@ -524,28 +524,20 @@ withInstantiatedTyVars _tau k =
     k
 
 cgLocalDecl :: forall l a . IsLabel l => LocalDecl -> Cg l a -> Cg l a
-cgLocalDecl decl@(LetLD v tau e _) k = do
-    withSummaryContext decl $ do
-    cve <- inSTScope tau $ cgExp e $ cgLetBinding v tau
-    extendVars [(bVar v, tau)] $ do
-    extendVarCExps [(bVar v, cve)] $ do
+cgLocalDecl decl@(LetLD v tau e _) k =
+    withSummaryContext decl $
+    cgExp e $
+    cgLetBinding v tau $ \cv ->
+    extendVars [(bVar v, tau)] $
+    extendVarCExps [(bVar v, cv)] $
     k
 
-cgLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
-    withSummaryContext decl $ do
-    cve <- cgLetRefBinding maybe_e
-    extendVars [(bVar v, refT tau)] $ do
-    extendVarCExps [(bVar v, cve)] $ do
+cgLocalDecl decl@(LetRefLD v tau maybe_e _) k =
+    withSummaryContext decl $
+    cgLetRefBinding v tau maybe_e $ \cve ->
+    extendVars [(bVar v, refT tau)] $
+    extendVarCExps [(bVar v, cve)] $
     k
-  where
-    cgLetRefBinding :: Maybe Exp -> Cg l (CExp l)
-    cgLetRefBinding Nothing =
-        cgDefaultLetBinding v tau
-
-    cgLetRefBinding (Just e) = do
-        cve <- cgBinder (bVar v) tau
-        inLocalScope $ cgExp e $ multishotBind tau cve
-        return cve
 
 -- | Generate a 'CExp' representing a constant. The 'CExp' produced is
 -- guaranteed to be a legal C initializer, so it can be used in an array or
@@ -1322,69 +1314,82 @@ cgRetParam tau maybe_cv = do
 
     cgRetParamType tau = cgType tau
 
--- | Generate code to initialize a let binding to its default value.
-cgDefaultLetBinding :: BoundVar -> Type -> Cg l (CExp l)
-cgDefaultLetBinding bv tau = do
-    cv <- cgBinder (bVar bv) tau
-    go cv tau
-    return cv
+-- | Generate code to bind a variable to a value in a let binding.
+cgLetBinding :: forall l a . BoundVar -- ^ The binder
+             -> Type                  -- ^ The type of the binder
+             -> (CExp l -> Cg l a)    -- ^ Our continuation
+             -> Kont l a              -- ^ The continuation that receives the binding.
+cgLetBinding bv tau k =
+    oneshotBinder bv tau $ oneshotk id
   where
-    go :: CExp l -> Type -> Cg l ()
-    go cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
-    go cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
-    go cv (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
+    oneshotk :: (CExp l -> CExp l) -> CExp l -> Cg l a
+    oneshotk f ce@CVoid =
+        k (f ce)
 
-    go cv (ArrT iota tau _) | isBitT tau = do
+    oneshotk f ce@(CBool {}) =
+        k (f ce)
+
+    oneshotk f ce@(CInt {}) =
+        k (f ce)
+
+    oneshotk f ce@(CFloat {}) =
+        k (f ce)
+
+    oneshotk _ (CComp {}) =
+        panicdoc $ text "cgLetBinding: cannot bind a computation."
+
+    oneshotk _ (CFunComp {}) =
+        panicdoc $ text "cgLetBinding: cannot bind a computation function."
+
+    -- Otherwise we have to remember the alias.
+    oneshotk  f (CAlias e ce) =
+        oneshotk (f . calias e) ce
+
+    oneshotk f ce = do
+        cv <- cgBinder (bVar bv) tau
+        cgAssign tau cv ce
+        k (f cv)
+
+-- | Generate code to bind a variable to a value in a let ref binding. If an
+-- initial value is not provided, the variable is bound to the default value for
+-- its type.
+cgLetRefBinding :: forall l a . IsLabel l
+                => BoundVar           -- ^ The binder
+                -> Type               -- ^ The type of the binder
+                -> Maybe Exp          -- ^ The expression possibly being bound
+                -> (CExp l -> Cg l a) -- ^ Our continuation
+                -> Cg l a
+cgLetRefBinding bv tau Nothing k = do
+    cv <- cgBinder (bVar bv) tau
+    init cv tau
+    k cv
+  where
+    init :: CExp l -> Type -> Cg l ()
+    init cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
+    init cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])
+    init cv (FloatT {}) = cgAssign tau cv (CExp [cexp|0.0|])
+
+    init cv (ArrT iota tau _) | isBitT tau = do
         cn <- cgIota iota
         appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
       where
         ctau :: C.Type
         ctau = bIT_ARRAY_ELEM_TYPE
 
-    go cv (ArrT iota tau _) = do
+    init cv (ArrT iota tau _) = do
         cn    <- cgIota iota
         ctau  <- cgType tau
         appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
 
-    go cv tau = do
+    init cv tau = do
         ctau  <- cgType tau
         caddr <- cgAddrOf tau cv
         appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
--- | Generate code to bind a variable to a value in a let binding.
-cgLetBinding :: BoundVar -> Type -> Kont l (CExp l)
-cgLetBinding bv tau =
-    oneshotBinder bv tau oneshotk
-  where
-    oneshotk :: CExp l -> Cg l (CExp l)
-    oneshotk ce@CVoid =
-        return ce
-
-    oneshotk ce@(CBool {}) =
-        return ce
-
-    oneshotk ce@(CInt {}) =
-        return ce
-
-    oneshotk ce@(CFloat {}) =
-        return ce
-
-    oneshotk (CComp {}) =
-        panicdoc $ text "cgLetBinding: cannot bind a computation."
-
-    oneshotk (CFunComp {}) =
-        panicdoc $ text "cgLetBinding: cannot bind a computation function."
-
-    oneshotk ce@(CExp [cexp|$id:_|]) =
-        return ce
-
-    oneshotk (CAlias e ce) =
-        calias e <$> oneshotk ce
-
-    oneshotk ce = do
-        cv <- cgBinder (bVar bv) tau
-        cgAssign tau cv ce
-        return cv
+cgLetRefBinding bv tau (Just e) k = do
+    cve <- cgBinder (bVar bv) tau
+    inLocalScope $ cgExp e $ multishotBind tau cve
+    k cve
 
 -- | Generate code to bind a variable to a value in a monadic binding. We do a
 -- little abstract interpretation here as usual to avoid, e.g., creating a new
