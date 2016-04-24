@@ -185,7 +185,7 @@ void kz_main(const typename kz_params_t* $id:params)
     takek n tau _k = do
         -- Generate a pointer to the current element in the buffer.
         ctau   <- cgType tau
-        cbuf   <- cgCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
+        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
@@ -1483,7 +1483,9 @@ cgTemp s tau = do
 -- | Allocate storage for a C identifier with the given core type. The first
 -- argument is a boolean flag that is 'True' if this binding corresponds to a
 -- top-level core binding and 'False' otherwise.
-cgStorage :: C.Id -> Type -> Cg l (C.InitGroup, CExp l)
+cgStorage :: C.Id
+          -> Type
+          -> Cg l (C.InitGroup, CExp l)
 cgStorage _ (UnitT {}) =
     faildoc $ "cgStorage: asked to allocate storage for unit type."
 
@@ -1518,24 +1520,54 @@ cgStorage cv tau = do
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer
 -- @maybe_cinit@.
-cgCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg l (CExp l)
-cgCTemp l s ctau maybe_cinit = do
+cgCTempDecl :: Located a
+            => a
+            -> String
+            -> C.Type
+            -> Maybe C.Initializer
+            -> Cg l (C.InitGroup, CExp l)
+cgCTempDecl l s ctau maybe_cinit = do
     cv :: C.Id <- gensym ("__" ++ s)
-    case maybe_cinit of
-      Nothing    -> appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
-      Just cinit -> appendThreadDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
-    return $ CExp $ rl l [cexp|$id:cv|]
+    let decl = case maybe_cinit of
+                 Nothing    -> rl l [cdecl|$ty:ctau $id:cv;|]
+                 Just cinit -> rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
+    return (decl, CExp $ rl l [cexp|$id:cv|])
 
--- | Generate code for a top-level C temporary with a gensym'd name, based on @s@
--- and prefixed with @__@, having C type @ctau@, and with the initializer
--- @maybe_cinit@.
-cgTopCTemp :: Located a => a -> String -> C.Type -> Maybe C.Initializer -> Cg l (CExp l)
+-- | Generate code for a C temporary.
+cgCTemp :: Located a
+        => a
+        -> String
+        -> C.Type
+        -> Maybe C.Initializer
+        -> Cg l (CExp l)
+cgCTemp l s ctau maybe_cinit = do
+    (decl, ce) <- cgCTempDecl l s ctau maybe_cinit
+    appendDecl decl
+    return ce
+
+-- | Generate code for a thread-level C temporary.
+cgThreadCTemp :: Located a
+              => a
+              -> String
+              -> C.Type
+              -> Maybe C.Initializer
+              -> Cg l (CExp l)
+cgThreadCTemp l s ctau maybe_cinit = do
+    (decl, ce) <- cgCTempDecl l s ctau maybe_cinit
+    appendThreadDecl decl
+    return ce
+
+-- | Generate code for a top-level C temporary.
+cgTopCTemp :: Located a
+           => a
+           -> String
+           -> C.Type
+           -> Maybe C.Initializer
+           -> Cg l (CExp l)
 cgTopCTemp l s ctau maybe_cinit = do
-    cv :: C.Id <- gensym ("__" ++ s)
-    case maybe_cinit of
-      Nothing    -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv;|]
-      Just cinit -> appendTopDecl $ rl l [cdecl|$ty:ctau $id:cv = $init:cinit;|]
-    return $ CExp $ rl l [cexp|$id:cv|]
+    (decl, ce) <- cgCTempDecl l s ctau maybe_cinit
+    appendTopDecl decl
+    return ce
 
 -- | Generate an empty label statement if the label argument is required.
 cgLabel :: IsLabel l => l -> Cg l ()
@@ -1796,13 +1828,13 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     useLabel leftl
     rightl  <- compLabel right
     useLabel rightl
-    cleftk  <- cgCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
-    crightk <- cgCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
+    cleftk  <- cgThreadCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
+    crightk <- cgThreadCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
     -- Generate a pointer to the current element in the buffer.
     ctau    <- cgType b
     ctauptr <- cgBufPtrType b
-    cbuf    <- cgCTemp b "par_buf"  ctau    Nothing
-    cbufp   <- cgCTemp b "par_bufp" ctauptr Nothing
+    cbuf    <- cgThreadCTemp b "par_buf"  ctau    Nothing
+    cbufp   <- cgThreadCTemp b "par_bufp" ctauptr Nothing
     -- Generate code for the left and right computations.
     localSTIndTypes (Just (b, b, c)) $
         cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right klbl donek
@@ -1845,7 +1877,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- without forcing its label to be required---we don't need the label!
     takek' cleftk crightk _cbuf cbufp n tau _k = do
         ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
-        carr     <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
+        carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
         klbl     <- gensym "inner_takesk"
         useLabel klbl
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
@@ -1920,9 +1952,9 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- Generate a name for the producer thread function
     cf <- gensym "producer"
     -- Generate a temporary to hold the thread info.
-    ctinfo <- cgCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
+    ctinfo <- cgThreadCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
     -- Generate a temporary to hold the thread.
-    cthread <- cgCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
+    cthread <- cgThreadCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTemp "par_res" tau_res
     -- Create a label for the computation that follows the par.
@@ -2055,7 +2087,7 @@ void* $id:cf(void* _tinfo)
 
         takek' n tau _k = do
             ctau  <- cgType tau
-            carr  <- cgCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
+            carr  <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci -> do
                 cgConsume ctinfo cbuf exitk $ \ce ->
