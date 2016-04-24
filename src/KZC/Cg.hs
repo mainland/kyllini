@@ -1035,8 +1035,9 @@ cgExp e k =
     go (ReturnE _ e _) k =
         cgExp e k
 
-    go (BindE WildV _ e1 e2 _) k = do
-        cgExpVoid e1
+    go (BindE WildV tau e1 e2 _) k = do
+        cgExp e1 $ oneshot tau $ \ce -> do
+        cgVoid ce
         cgExp e2 k
 
     go (BindE (TameV v) tau e1 e2 _) k =
@@ -1606,8 +1607,9 @@ cgComp takek emitk emitsk comp klbl k =
         cgLocalDecl decl $
         cgSteps steps k
 
-    cgSteps (step : BindC l WildV _ _ : steps) k = do
-        cgStepVoid step l
+    cgSteps (step : BindC l WildV tau _ : steps) k = do
+        cgStep step l $ oneshot tau $ \ce -> do
+        cgVoid ce
         cgWithLabel l $ cgSteps steps k
 
     cgSteps (step : BindC l (TameV v) tau _ : steps) k =
@@ -1629,12 +1631,11 @@ cgComp takek emitk emitsk comp klbl k =
               _           -> k ce
 
     cgSteps (step : steps) k = do
-        l <- stepLabel (head steps)
-        cgStepVoid step l
-        cgSteps steps k
-
-    cgStepVoid :: Step l -> l -> Cg l ()
-    cgStepVoid step klbl = cgStep step klbl $ multishot cgVoid
+        l   <- stepLabel (head steps)
+        tau <- inferStep step
+        cgStep step l $ oneshot tau $ \ce -> do
+            cgVoid ce
+            cgSteps steps k
 
     cgStep :: forall a . Step l -> l -> Kont l a -> Cg l a
     cgStep (VarC l v _) klbl k =
@@ -1807,8 +1808,8 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
         cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right klbl donek
     localSTIndTypes (Just (s, a, b)) $
         cgComp takek (emitk' cleftk crightk cbuf cbufp) (emitsk' cleftk crightk cbuf cbufp) left klbl donek
-    cgLabel l_pardone
-    runKont k cres
+    cgWithLabel l_pardone $
+        runKont k cres
   where
     cgBufPtrType :: Type -> Cg l C.Type
     cgBufPtrType (ArrT _ tau _) = do
@@ -1948,8 +1949,8 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     localSTIndTypes (Just (s, a, b)) $
         cgProducer cf cbuf left
     -- Label the end of the computation
-    cgLabel l_pardone
-    runKont k cres
+    cgWithLabel l_pardone $
+        runKont k cres
   where
     cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
     cgExitWhenDone ctinfo exitk = do
