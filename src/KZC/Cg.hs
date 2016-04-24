@@ -1566,7 +1566,7 @@ cgCompVoid :: IsLabel l
            => TakeK  l -- ^ Code generator for take
            -> EmitK  l -- ^ Code generator for emit
            -> EmitsK l -- ^ Code generator for emits
-           -> Comp l            -- ^ Computation to compiled
+           -> Comp l   -- ^ Computation to compiled
            -> l        -- ^ Label of our continuation
            -> Cg l ()
 cgCompVoid takek emitk emitsk comp klbl =
@@ -1580,9 +1580,9 @@ cgComp :: forall a l . IsLabel l
        => TakeK l  -- ^ Code generator for take
        -> EmitK l  -- ^ Code generator for emit
        -> EmitsK l -- ^ Code generator for emit
-       -> Comp l           -- ^ Computation to compiled
+       -> Comp l   -- ^ Computation to compiled
        -> l        -- ^ Label of our continuation
-       -> Kont l a           -- ^ Continuation accepting the compilation result
+       -> Kont l a -- ^ Continuation accepting the compilation result
        -> Cg l a
 cgComp takek emitk emitsk comp klbl k =
     cgSteps (unComp comp) k
@@ -1762,12 +1762,12 @@ cgParSingleThreaded :: forall a l . IsLabel l
                     => TakeK  l -- ^ Code generator for /producer's/ take
                     -> EmitK  l -- ^ Code generator for /consumer's/ emit
                     -> EmitsK l -- ^ Code generator for /consumer's/ emit
-                    -> Type             -- ^ The type of the result of the par
-                    -> Type             -- ^ The type of the par's internal buffer
-                    -> Comp l            -- ^ The producer computation
-                    -> Comp l            -- ^ The consumer computation
+                    -> Type     -- ^ The type of the result of the par
+                    -> Type     -- ^ The type of the par's internal buffer
+                    -> Comp l   -- ^ The producer computation
+                    -> Comp l   -- ^ The consumer computation
                     -> l        -- ^ The computation's continuation
-                    -> Kont l a           -- ^ Continuation accepting the compilation result
+                    -> Kont l a -- ^ Continuation accepting the compilation result
                     -> Cg l a
 cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     (s, a, c) <- askSTIndTypes
