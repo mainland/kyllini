@@ -182,7 +182,7 @@ void kz_main(const typename kz_params_t* $id:params)
     params = "params"
 
     takek :: TakeK l
-    takek n tau _k = do
+    takek n tau _klbl k = do
         -- Generate a pointer to the current element in the buffer.
         ctau   <- cgType tau
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
@@ -190,19 +190,21 @@ void kz_main(const typename kz_params_t* $id:params)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
         case (tau, n) of
-            (_, 1) | isBitT tau -> return $ CExp [cexp|*$cbuf & 1|]
-                   | otherwise  -> return $ CExp [cexp|*$cbuf|]
-            _                   -> return $ CExp [cexp|$cbuf|]
+            (_, 1) | isBitT tau -> k $ CExp [cexp|*$cbuf & 1|]
+                   | otherwise  -> k $ CExp [cexp|*$cbuf|]
+            _                   -> k $ CExp [cexp|$cbuf|]
 
     emitk :: EmitK l
-    emitk tau ce _k = do
+    emitk tau ce _klbl k = do
         ceAddr <- cgAddrOf tau ce
         cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        k
 
     emitsk :: EmitsK l
-    emitsk iota tau ce _k = do
+    emitsk iota tau ce _klbl k = do
         ceAddr <- cgAddrOf (arrT iota tau) ce
         cgOutput (arrT iota tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        k
 
     cgInitInput :: Type -> CExp l -> CExp l -> Cg l ()
     cgInitInput tau cp cbuf =
@@ -1732,25 +1734,23 @@ cgComp takek emitk emitsk comp klbl k =
 
     cgStep (TakeC l tau _) klbl k =
         cgWithLabel l $
-        takek 1 tau klbl >>= runKont k
+        takek 1 tau klbl $ runKont k
 
     cgStep (TakesC l n tau _) klbl k =
         cgWithLabel l $
-        takek n tau klbl >>= runKont k
+        takek n tau klbl $ runKont k
 
     cgStep (EmitC l e _) klbl k =
         cgWithLabel l $ do
         tau <- inferExp e
         ce  <- cgExpOneshot e
-        emitk tau ce klbl
-        runKont k CVoid
+        emitk tau ce klbl $ runKont k CVoid
 
     cgStep (EmitsC l e _) klbl k =
         cgWithLabel l $ do
         (iota, tau) <- inferExp e >>= checkArrT
         ce          <- cgExpOneshot e
-        emitsk iota tau ce klbl
-        runKont k CVoid
+        emitsk iota tau ce klbl $ runKont k CVoid
 
     cgStep (RepeatC l _ c_body sloc) _ k = do
         citems <- inNewBlock_ $ do
@@ -1864,18 +1864,18 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- label of @ccomp@, since it is the continuation, generate code to jump
     -- to the left computation's continuation, and then call @k2@ with
     -- @ccomp@ suitably modified to have a required label.
-    takek' cleftk crightk _cbuf cbufp 1 _tau k = do
-        useLabel k
-        appendStm [cstm|$crightk = LABELADDR($id:k);|]
+    takek' cleftk crightk _cbuf cbufp 1 _tau klbl k = do
+        useLabel klbl
+        appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         appendStm [cstm|INDJUMP($cleftk);|]
-        return $ cgDerefBufPtr b cbufp
+        k $ cgDerefBufPtr b cbufp
 
     -- The multi-element take is a bit tricker. We allocate a buffer to hold
     -- all the elements, and then loop, jumping to the left computation's
     -- continuation repeatedly, until the buffer is full. Then we fall
     -- through to the next action, which is why we call @k2@ with @ccomp@
     -- without forcing its label to be required---we don't need the label!
-    takek' cleftk crightk _cbuf cbufp n tau _k = do
+    takek' cleftk crightk _cbuf cbufp n tau _klbl k = do
         ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
         carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
         klbl     <- gensym "inner_takesk"
@@ -1885,22 +1885,23 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel klbl $
                 cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
-        return carr
+        k carr
 
     emitk' :: CExp l -> CExp l -> CExp l -> CExp l -> EmitK l
     -- @tau@ must be a base (scalar) type
-    emitk' cleftk crightk cbuf cbufp tau ce k = do
-        useLabel k
-        appendStm [cstm|$cleftk = LABELADDR($id:k);|]
+    emitk' cleftk crightk cbuf cbufp tau ce klbl k = do
+        useLabel klbl
+        appendStm [cstm|$cleftk = LABELADDR($id:klbl);|]
         cgAssignBufp tau cbuf cbufp ce
         appendStm [cstm|INDJUMP($crightk);|]
+        k
 
     emitsk' :: CExp l -> CExp l -> CExp l -> CExp l -> EmitsK l
-    emitsk' cleftk crightk cbuf cbufp (ConstI 1 _) tau ce k = do
+    emitsk' cleftk crightk cbuf cbufp (ConstI 1 _) tau ce klbl k = do
         ce' <- cgIdx tau ce 1 0
-        emitk' cleftk crightk cbuf cbufp tau ce' k
+        emitk' cleftk crightk cbuf cbufp tau ce' klbl k
 
-    emitsk' cleftk crightk cbuf cbufp iota tau ce _k = do
+    emitsk' cleftk crightk cbuf cbufp iota tau ce _klbl k = do
         cn    <- cgIota iota
         loopl <- gensym "emitsk_next"
         useLabel loopl
@@ -1912,6 +1913,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
             -- Because we need a statement to label, but the continuation is
             -- the next loop iteration...
             cgLabel loopl
+        k
 
     -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
     -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
@@ -2024,23 +2026,25 @@ void* $id:cf(void* _tinfo)
         -- asked for more data than we have given it, so we spin until the
         -- consumer requests data.
         takek' :: TakeK l
-        takek' n tau k = do
+        takek' n tau klbl k = do
             cgWaitForConsumerRequest ctinfo exitk
-            takek n tau k
+            takek n tau klbl k
 
         emitk' :: EmitK l
         -- @tau@ must be a base (scalar) type
-        emitk' tau ce _k =
+        emitk' tau ce _klbl k = do
             cgProduce ctinfo cbuf exitk tau ce
+            k
 
         emitsk' :: EmitsK l
         -- Right now we just loop and write the elements one by one---it would
         -- be better to write them all at once.
-        emitsk' iota tau ce _k = do
+        emitsk' iota tau ce _klbl k = do
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
                 cidx <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf exitk tau cidx
+            k
 
         exitk :: Cg l ()
         exitk = appendStm [cstm|BREAK;|]
@@ -2081,18 +2085,18 @@ void* $id:cf(void* _tinfo)
         appendStm [cstm|JUMP($id:l_pardone);|]
       where
         takek' :: TakeK l
-        takek' 1 _tau _k = do
+        takek' 1 _tau _klbl k = do
             cgRequestData ctinfo 1
-            cgConsume ctinfo cbuf exitk return
+            cgConsume ctinfo cbuf exitk k
 
-        takek' n tau _k = do
+        takek' n tau _klbl k = do
             ctau  <- cgType tau
             carr  <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci -> do
                 cgConsume ctinfo cbuf exitk $ \ce ->
                     appendStm [cstm|$carr[$ci] = $ce;|]
-            return carr
+            k carr
 
         emitk' :: EmitK l
         emitk' = emitk
