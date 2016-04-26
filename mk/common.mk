@@ -58,7 +58,7 @@ CXXFLAGS+=-std=c++11
 
 LDFLAGS+=
 
-LIBS+=-lm -lpthread
+LIBS+=-lm -lpthread -lstdc++
 
 GHC=ghc
 GHCFLAGS+=-O -Wall -fno-warn-name-shadowing -Werror
