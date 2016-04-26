@@ -27,6 +27,15 @@ module KZC.Cg.Monad (
     lookupTyVarType,
     askTyVarTypeSubst,
 
+    getStats,
+    incMemCopies,
+    incBitArrayCopies,
+
+    collectLabels,
+    useLabel,
+    useLabels,
+    isLabelUsed,
+
     tell,
     collect,
     collectDefinitions,
@@ -37,6 +46,8 @@ module KZC.Cg.Monad (
     collectDecls_,
     collectStms,
     collectStms_,
+    collectThreadBlock,
+    collectBlock,
 
     inNewThreadBlock,
     inNewThreadBlock_,
@@ -57,14 +68,15 @@ module KZC.Cg.Monad (
     appendStms,
     appendBlock,
 
-    collectLabels,
-    useLabel,
-    useLabels,
-    isLabelUsed,
+    collectUsed,
+    taintScope,
+    newScope,
+    taintAndUseCExp,
+    useCIds,
+    useCId,
+    useCExp,
 
-    getStats,
-    incMemCopies,
-    incBitArrayCopies
+    hasLabel
   ) where
 
 import Prelude hiding (elem)
@@ -78,13 +90,14 @@ import Data.Foldable (toList)
 import Data.Loc
 import Data.Map (Map)
 import Data.Monoid
+import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Lint (Tc, liftTc)
+import KZC.Auto.Lint (Tc, liftTc, isInTopScope)
 import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
@@ -136,16 +149,31 @@ instance Pretty CgStats where
         text "Bit array copies:" <+> ppr (bitArrayCopies stats)
 
 data CgState l = CgState
-    { labels :: Set l
-    , code   :: Code
-    , stats  :: CgStats
+    { -- | Codegen statistics
+      stats   :: CgStats
+    , -- | All labels used
+      labels  :: Set l
+    , -- | Current code block being generated
+      code    :: Code
+    , -- | C identifiers that are currently declared
+      declared :: Set C.Id
+    , -- | C identifiers that have been used
+      used :: Set C.Id
+    , -- | C identifiers that were declared prior to a code label
+      tainted :: Set C.Id
+    , -- | The set of tainted variables that have been used
+      usedTainted :: Set C.Id
     }
 
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
-    { labels = mempty
-    , code   = mempty
-    , stats  = mempty
+    { stats       = mempty
+    , labels      = mempty
+    , code        = mempty
+    , declared    = mempty
+    , used        = mempty
+    , tainted     = mempty
+    , usedTainted = mempty
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -159,8 +187,10 @@ extendVarCExps ves m =
     extendEnv varCExps (\env x -> env { varCExps = x }) ves m
 
 lookupVarCExp :: Var -> Cg l (CExp l)
-lookupVarCExp v =
-    lookupEnv varCExps onerr v
+lookupVarCExp v = do
+    ce <- lookupEnv varCExps onerr v
+    useCExp ce
+    return ce
   where
     onerr = faildoc $
             text "Compiled variable" <+> ppr v <+> text "not in scope"
@@ -193,6 +223,41 @@ lookupTyVarType alpha =
 -- instantiation.
 askTyVarTypeSubst :: Cg l (Map TyVar Type)
 askTyVarTypeSubst = asks tyvarTypes
+
+getStats :: Cg l CgStats
+getStats = gets stats
+
+modifyStats :: (CgStats -> CgStats) -> Cg l ()
+modifyStats f = modify $ \s -> s { stats = f (stats s) }
+
+incMemCopies :: Cg l ()
+incMemCopies =
+    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
+
+incBitArrayCopies :: Cg l ()
+incBitArrayCopies =
+    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
+
+collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
+collectLabels m = do
+    old_labels <- gets labels
+    modify $ \s -> s { labels = mempty }
+    x    <- m
+    lbls <- gets labels
+    modify $ \s -> s { labels = old_labels }
+    return (lbls, x)
+
+useLabel :: IsLabel l => l -> Cg l ()
+useLabel lbl =
+    modify $ \s -> s { labels = Set.insert lbl (labels s) }
+
+useLabels :: IsLabel l => Set l -> Cg l ()
+useLabels lbls =
+    modify $ \s -> s { labels = labels s `Set.union` lbls }
+
+isLabelUsed :: IsLabel l => l -> Cg l Bool
+isLabelUsed lbl =
+    gets (Set.member lbl . labels)
 
 tell :: Code -> Cg l ()
 tell c = modify $ \s -> s { code = code s <> c }
@@ -242,8 +307,8 @@ collectStms m = do
 collectStms_ :: Cg l () -> Cg l ([C.Stm])
 collectStms_ m = fst <$> collectStms m
 
-inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
-inNewThreadBlock m = do
+collectThreadBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
+collectThreadBlock m = do
     (c, x) <- collect m
     tell c { codeThreadDecls       = mempty
            , codeThreadInitStms    = mempty
@@ -251,11 +316,54 @@ inNewThreadBlock m = do
            , codeDecls             = mempty
            , codeStms              = mempty
            }
-    return ((map C.BlockDecl . toList . codeThreadDecls) c ++
-            (map C.BlockDecl . toList . codeDecls) c ++
-            (map C.BlockStm .  toList . codeThreadInitStms) c ++
-            (map C.BlockStm .  toList . codeStms) c ++
-            (map C.BlockStm .  toList . codeThreadCleanupStms) c
+    return (codeThreadDecls c <> codeDecls c
+           ,codeThreadInitStms c <> codeStms c <> codeThreadCleanupStms c
+           ,x)
+
+collectBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
+collectBlock m = do
+    (c, x) <- collect m
+    tell c { codeDecls = mempty
+           , codeStms  = mempty
+           }
+
+    -- Figure out the set of variables that were used after a label that
+    -- occurred between their use and their declaration.
+    usedAfterTaint <- gets usedTainted
+
+    -- Partition the declarations into those that involve tainted variables and
+    -- those that do not
+    let isTainted :: C.InitGroup -> Bool
+        isTainted decl = not $ Set.null $ cids `Set.intersection` usedAfterTaint
+          where
+            cids :: Set C.Id
+            cids = Set.fromList (initIdents decl)
+
+        taintedDecls, untaintedDecl :: Seq C.InitGroup
+        (taintedDecls, untaintedDecl) = Seq.partition isTainted (codeDecls c)
+
+    -- Any tainted declaration gets promoted to a thread-level declaration. The
+    -- rest end up being returned.
+    tell mempty { codeThreadDecls = taintedDecls }
+
+    -- Remove declared variables from the state
+    let vs :: Set C.Id
+        vs = Set.fromList (initsIdents (toList (codeDecls c)))
+
+    modify $ \s -> s { used        = used s Set.\\ vs
+                     , declared    = declared s Set.\\ vs
+                     , tainted     = tainted s Set.\\ vs
+                     , usedTainted = usedTainted s Set.\\ vs
+                     }
+
+    -- Return the untainted declarations
+    return (untaintedDecl, codeStms c, x)
+
+inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
+inNewThreadBlock m = do
+    (decls, stms, x) <- collectThreadBlock m
+    return ((map C.BlockDecl . toList) decls ++
+            (map C.BlockStm .  toList) stms
            ,x)
 
 inNewThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
@@ -264,10 +372,10 @@ inNewThreadBlock_ m =
 
 inNewBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewBlock m = do
-    (c, x) <- collect m
-    tell c { codeDecls = mempty, codeStms  = mempty }
-    return ((map C.BlockDecl . toList . codeDecls) c ++
-            (map C.BlockStm .  toList . codeStms) c, x)
+    (decls, stms, x) <- collectBlock m
+    return ((map C.BlockDecl . toList) decls ++
+            (map C.BlockStm .  toList) stms
+           ,x)
 
 inNewBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewBlock_ m =
@@ -304,10 +412,16 @@ appendThreadCleanupStm cstm =
   tell mempty { codeThreadCleanupStms = Seq.singleton cstm }
 
 appendDecl :: C.InitGroup -> Cg l ()
-appendDecl cdecl = tell mempty { codeDecls = Seq.singleton cdecl }
+appendDecl cdecl = do
+    tell mempty { codeDecls = Seq.singleton cdecl }
+    modify $ \s ->
+        s { declared = declared s <> Set.fromList (initIdents cdecl) }
 
 appendDecls :: [C.InitGroup] -> Cg l ()
-appendDecls cdecls = tell mempty { codeDecls = Seq.fromList cdecls }
+appendDecls cdecls = do
+    tell mempty { codeDecls = Seq.fromList cdecls }
+    modify $ \s ->
+        s { declared = declared s <> Set.fromList (initsIdents cdecls) }
 
 appendStm :: C.Stm -> Cg l ()
 appendStm cstm = tell mempty { codeStms = Seq.singleton cstm }
@@ -324,40 +438,142 @@ appendBlock citems
     isBlockStm (C.BlockStm {}) = True
     isBlockStm _               = False
 
-collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
-collectLabels m = do
-    old_labels <- gets labels
-    modify $ \s -> s { labels = mempty }
-    x    <- m
-    lbls <- gets labels
-    modify $ \s -> s { labels = old_labels }
-    return (lbls, x)
+-- | Collect the C identifiers used in a computation.
+collectUsed :: Cg l a -> Cg l (Set C.Id, a)
+collectUsed m = do
+    vs_old <- gets used
+    modify $ \s -> s { used = mempty }
+    x <- m
+    vs <- gets used
+    modify $ \s -> s { used = vs_old <> vs }
+    return (vs, x)
 
-useLabel :: IsLabel l => l -> Cg l ()
-useLabel lbl =
-    modify $ \s -> s { labels = Set.insert lbl (labels s) }
+-- | Taint current declarations.
+taintScope :: Cg l ()
+taintScope = do
+    cids <- gets declared
+    modify $ \s -> s { tainted = tainted s <> cids }
 
-useLabels :: IsLabel l => Set l -> Cg l ()
-useLabels lbls =
-    modify $ \s -> s { labels = labels s `Set.union` lbls }
+-- | Run the continuation, enclosing the code it produces in a single block.
+newScope :: Cg l a -> Cg l a
+newScope k = do
+    isTop <- isInTopScope
+    if isTop
+      then k
+      else do
+        (decls, stms, x) <- collectBlock k
+        appendStms $ mkBlock decls stms
+        return x
+  where
+    mkBlock :: Seq C.InitGroup -> Seq C.Stm -> [C.Stm]
+    mkBlock decls stms | Seq.null decls =
+        toList stms
 
-isLabelUsed :: IsLabel l => l -> Cg l Bool
-isLabelUsed lbl =
-    gets (Set.member lbl . labels)
+    mkBlock decls stms =
+        [cstm|{ $items:citems }|] : toList cafter
+      where
+        cbefore, cafter :: Seq C.Stm
+        (cbefore, cafter) = Seq.spanl (not . hasLabel) stms
 
-getStats :: Cg l CgStats
-getStats = gets stats
+        citems :: [C.BlockItem]
+        citems = (map C.BlockDecl . toList) decls ++
+                 (map C.BlockStm .toList) cbefore
 
-modifyStats :: (CgStats -> CgStats) -> Cg l ()
-modifyStats f = modify $ \s -> s { stats = f (stats s) }
+-- | Taint and use a 'CExp'.
+taintAndUseCExp :: forall l . CExp l -> Cg l ()
+taintAndUseCExp ce = do
+    cid <- taint ce
+    modify $ \s -> s { tainted     = tainted s <> Set.singleton cid
+                     , usedTainted = Set.insert cid (usedTainted s)
+                     }
+  where
+    taint :: CExp l -> Cg l C.Id
+    taint (CExp ce) = go ce
+      where
+        go :: C.Exp -> Cg l C.Id
+        go (C.Var cid _)        = return cid
+        go (C.Member ce _ _)    = go ce
+        go (C.PtrMember ce _ _) = go ce
+        go (C.Index ce _ _)     = go ce
+        go _                    = faildoc $ text "Cannot taint:" <+> ppr ce
 
-incMemCopies :: Cg l ()
-incMemCopies =
-    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
+    taint (CPtr ce)         = taint ce
+    taint (CIdx _ ce _)     = taint ce
+    taint (CSlice _ ce _ _) = taint ce
+    taint (CAlias _ ce)     = taint ce
+    taint ce                = faildoc $ text "Cannot taint:" <+> ppr ce
 
-incBitArrayCopies :: Cg l ()
-incBitArrayCopies =
-    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
+-- | Mark a set of C identifiers as used. This allows us to
+-- track which C declarations are used after they have been tainted by an
+-- intervening label.
+useCIds :: Set C.Id -> Cg l ()
+useCIds cids = do
+    modify $ \s -> s { used = used s <> cids }
+    taint <- gets tainted
+    modify $ \s ->
+        s { usedTainted = usedTainted s <>
+                          Set.filter (`Set.member` taint) cids }
+
+-- | Mark a C identifier as used.
+useCId :: C.Id -> Cg l ()
+useCId cid =
+    useCIds (Set.singleton cid)
+
+-- | Mark a 'CExp' as having been used. This allows us to track which C
+-- declarations are used after they have been tainted by an intervening label.
+useCExp :: forall l . CExp l -> Cg l ()
+useCExp ce =
+    use ce
+  where
+    use ::CExp l -> Cg l ()
+    use (CExp ce) = go ce
+      where
+        go :: C.Exp -> Cg l ()
+        go (C.Var cid _)          = useCId cid
+        go (C.BinOp _ ce1 ce2 _)  = go ce1 >> go ce2
+        go (C.Assign ce1 _ ce2 _) = go ce1 >> go ce2
+        go (C.PreInc ce _)        = go ce
+        go (C.PostInc ce _)       = go ce
+        go (C.PreDec ce _)        = go ce
+        go (C.PostDec ce _)       = go ce
+        go (C.UnOp _ ce _)        = go ce
+        go (C.Cast _ ce _)        = go ce
+        go (C.Cond ce1 ce2 ce3 _) = go ce1 >> go ce2 >> go ce3
+        go (C.Member ce _ _)      = go ce
+        go (C.PtrMember ce _ _)   = go ce
+        go (C.Index ce1 ce2 _)    = go ce1 >> go ce2
+        go _                      = return ()
+
+    use (CPtr ce)            = use ce
+    use (CIdx _ ce1 ce2)     = use ce1 >> use ce2
+    use (CSlice _ ce1 ce2 _) = use ce1 >> use ce2
+    use (CStruct flds)       = mapM_ (use . snd) flds
+    use (CAlias _ ce)        = use ce
+    use _                    = return ()
+
+initIdents :: C.InitGroup -> [C.Id]
+initIdents (C.InitGroup _ _ inits _) = [ident | C.Init ident _ _ _ _ _ <- inits]
+initIdents _                         = []
+
+initsIdents :: [C.InitGroup] -> [C.Id]
+initsIdents decls = [ident | C.InitGroup _ _ inits _ <- decls,
+                             C.Init ident _ _ _ _ _ <- inits]
+
+-- | Return 'True' if the given 'C.Stm' contains a label.
+hasLabel :: C.Stm -> Bool
+hasLabel C.Label{}               = True
+hasLabel (C.Case _ s _)          = hasLabel s
+hasLabel (C.Default s _)         = hasLabel s
+hasLabel (C.Block items _)       = any hasLabel [s | C.BlockStm s <- items]
+hasLabel (C.If _ s Nothing _)    = hasLabel s
+hasLabel (C.If _ s1 (Just s2) _) = hasLabel s1 || hasLabel s2
+hasLabel (C.Switch _ s _)        = hasLabel s
+hasLabel (C.While _ s _)         = hasLabel s
+hasLabel (C.DoWhile s _ _)       = hasLabel s
+hasLabel (C.For _ _ _ s _)       = hasLabel s
+hasLabel (C.Comment _ s _)       = hasLabel s
+hasLabel (C.AntiComment _ s _)   = hasLabel s
+hasLabel _                       = False
 
 instance IfThenElse (CExp l) (Cg l ()) where
     ifThenElse (CBool True)  t _ = t

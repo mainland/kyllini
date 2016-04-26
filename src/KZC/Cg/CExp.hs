@@ -52,24 +52,24 @@ import KZC.Staged
 -- type, jumping to the specified label when the take is complete. A 'CExp'
 -- representing the taken value(s) is returned. We assume that the continuation
 -- labels the code that will be generated immediately after the take.
-type TakeK l = Int -> Type -> l -> Cg l (CExp l)
+type TakeK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
 
 -- | Generate code to emit the specified value at the specified type, jumping to
 -- the specified label when the take is complete. We assume that the
 -- continuation labels the code that will be generated immediately after the
 -- emit.
-type EmitK l = Type -> CExp l -> l -> Cg l ()
+type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
 
 -- | Generate code to emit the specified arrays of values at the specified type,
 -- jumping to the specified label when the take is complete. We assume that the
 -- continuation labels the code that will be generated immediately after the
 -- emit.
-type EmitsK l = Iota -> Type -> CExp l -> l -> Cg l ()
+type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 
 -- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
--- executes an action in the 'Cg' monad. This is distinct from a 'LabelKont',
--- which represents /the continuation of the code being generated/, not the
--- continuation of the code generator.
+-- executes an action in the 'Cg' monad. This is distinct from a continuation
+-- 'Label', as passed to take/emit/emits, which represents /the continuation of
+-- the code being generated/, not the code generator's continuation.
 data Kont l a -- | A continuation that may only be called once because calling
               -- it more than once may generate duplicate code. The 'Type' of
               -- the 'CExp' expected as an argument is specified. An optional
