@@ -56,6 +56,7 @@ SOURCE = \
 	KZC/Analysis/Occ.hs \
 	KZC/Analysis/Range.hs \
 	KZC/Analysis/RefFlow.hs \
+	KZC/Analysis/NeedDefault.hs \
 	KZC/Auto/Comp.hs \
 	KZC/Auto/Label.hs \
 	KZC/Auto/Lint.hs \

@@ -115,6 +115,7 @@ data TraceFlag = TracePhase
                | TraceAutoLUT
                | TraceLUT
                | TraceRefFlow
+               | TraceNeedDefault
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32

@@ -44,6 +44,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Analysis.Occ
 import KZC.Analysis.RefFlow
+import KZC.Analysis.NeedDefault
 import qualified KZC.Auto.Label as A
 import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
@@ -107,6 +108,7 @@ runPipeline filepath =
         runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         tracePhase "refFlow" refFlowPhase >=>
+        tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
 
@@ -213,6 +215,11 @@ runPipeline filepath =
     refFlowPhase =
         lift . A.liftTc . runRF . rfProgram >=>
         dumpPass DumpEval "acore" "rflow"
+
+    needDefaultPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    needDefaultPhase =
+        lift . A.liftTc . runND . needDefaultProgram >=>
+        dumpPass DumpEval "acore" "needdefault"
 
     compilePhase :: A.LProgram -> MaybeT KZC ()
     compilePhase =

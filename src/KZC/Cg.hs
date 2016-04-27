@@ -1434,9 +1434,14 @@ cgLetRefBinding :: forall l a . IsLabel l
                 -> Cg l a
 cgLetRefBinding bv tau Nothing k = do
     cv <- cgBinder (bVar bv) tau
-    init cv tau
+    when (needDefault bv) $
+        init cv tau
     k cv
   where
+    needDefault :: BoundVar -> Bool
+    needDefault BoundV{ bNeedDefault = Just False} = False
+    needDefault _                                  = True
+
     init :: CExp l -> Type -> Cg l ()
     init cv (BoolT {})  = cgAssign tau cv (CExp [cexp|0|])
     init cv (FixT {})   = cgAssign tau cv (CExp [cexp|0|])

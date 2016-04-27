@@ -147,9 +147,10 @@ import KZC.Util.SetLike
 import KZC.Vars
 
 data BoundVar = BoundV
-    { bVar     :: Var
-    , bOccInfo :: Maybe OccInfo
-    , bTainted :: Maybe Bool
+    { bVar         :: Var
+    , bOccInfo     :: Maybe OccInfo
+    , bTainted     :: Maybe Bool
+    , bNeedDefault :: Maybe Bool
     }
   deriving (Eq, Ord, Read, Show)
 
@@ -163,14 +164,17 @@ instance Named BoundVar where
 
 instance Gensym BoundVar where
     gensymAt s l =
-        BoundV <$> gensymAt s l <*> pure Nothing <*> pure Nothing
+        BoundV <$> gensymAt s l
+               <*> pure Nothing
+               <*> pure Nothing
+               <*> pure Nothing
 
     uniquify bv = do
         u <- newUnique
         return $ mapName (\n -> n { nameSort = Internal u }) bv
 
 mkBoundVar :: Var -> BoundVar
-mkBoundVar v = BoundV v Nothing Nothing
+mkBoundVar v = BoundV v Nothing Nothing Nothing
 
 data WildVar = WildV
              | TameV BoundVar
@@ -430,7 +434,7 @@ instance Pretty WildVar where
     ppr (TameV v) = ppr v
 
 instance Pretty BoundVar where
-    ppr bv = ppr (bVar bv) <> occdoc <> taintdoc
+    ppr bv = ppr (bVar bv) <> occdoc <> taintdoc <> dfltdoc
       where
         occdoc, taintdoc :: Doc
         occdoc = case (bOccInfo bv) of
@@ -441,6 +445,11 @@ instance Pretty BoundVar where
                      Nothing    -> empty
                      Just False -> empty
                      Just True  -> braces (text "tainted")
+
+        dfltdoc = case (bNeedDefault bv) of
+                     Nothing    -> empty
+                     Just False -> empty
+                     Just True  -> braces (text "default")
 
 instance Pretty OccInfo where
     ppr Dead       = text "0"
