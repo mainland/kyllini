@@ -318,19 +318,24 @@ rfStep c@(VarC _ v _) = do
     useVar v
     return c
 
-rfStep (CallC l f iotas args s) =
-    CallC l f iotas <$> mapM rfArg args <*> pure s
+rfStep (CallC l f iotas args s) = do
+    e' <- CallC l f iotas <$> mapM rfArg args <*> pure s
+    mapM_ taintArg args
+    return e'
   where
     rfArg :: Arg l -> RF m (Arg l)
-    rfArg (CompA comp) =
-        CompA <$> rfComp comp
+    rfArg (CompA comp) = CompA <$> rfComp comp
+    rfArg (ExpA e)     = ExpA <$> rfExp e
 
-    rfArg (ExpA e) = do
+    taintArg :: Arg l -> RF m ()
+    taintArg CompA{} =
+        return ()
+
+    taintArg (ExpA e) = do
         tau <- inferExp e
         when (isRefT tau) $ do
             v <- refRoot e
             refModified $ VarR v
-        ExpA <$> rfExp e
 
 rfStep (IfC l e1 c2 c3 s) = do
     e1'        <- rfExp e1
@@ -407,15 +412,16 @@ rfExp (LetE decl e2 s) = do
     return $ LetE decl' e2' s
 
 rfExp (CallE f iotas es s) = do
-    CallE f iotas <$> mapM rfArg es <*> pure s
+    e' <- CallE f iotas <$> mapM rfExp es <*> pure s
+    mapM_ taintArg es
+    return e'
   where
-    rfArg :: Exp -> RF m Exp
-    rfArg e = do
+    taintArg :: Exp -> RF m ()
+    taintArg e = do
         tau <- inferExp e
         when (isRefT tau) $ do
             v <- refRoot e
             refModified $ VarR v
-        rfExp e
 
 rfExp (DerefE e s) =
     DerefE <$> rfExp e <*> pure s
