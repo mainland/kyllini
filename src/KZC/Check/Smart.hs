@@ -8,7 +8,29 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Check.Smart where
+module KZC.Check.Smart (
+    tyVarT,
+
+    unitT,
+    boolT,
+    bitT,
+    intT,
+    int8T,
+    int16T,
+    int32T,
+    int64T,
+    refT,
+    arrT,
+    stT,
+    cT,
+    funT,
+
+    structName,
+
+    isUnitT,
+    isRefT,
+    isPureT
+  ) where
 
 import Data.Loc
 
@@ -16,6 +38,9 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Types
 import KZC.Platform
+
+tyVarT :: TyVar -> Type
+tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
 
 unitT :: Type
 unitT = UnitT noLoc
@@ -41,14 +66,11 @@ int32T = FixT I S 32 0 noLoc
 int64T :: Type
 int64T = FixT I S 64 0 noLoc
 
-tyVarT :: TyVar -> Type
-tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
+refT :: Type -> Type
+refT tau = RefT tau (srclocOf tau)
 
 arrT :: Type -> Type -> Type
 arrT iota tau = ArrT iota tau (iota `srcspan` tau)
-
-refT :: Type -> Type
-refT tau = RefT tau (srclocOf tau)
 
 stT :: Type -> Type -> Type -> Type -> Type
 stT omega sigma alpha beta =
@@ -63,13 +85,13 @@ funT taus tau = FunT [] taus tau (taus `srcspan` tau)
 structName :: StructDef -> Z.Struct
 structName (StructDef s _ _) = s
 
-isRefT :: Type -> Bool
-isRefT (RefT {}) = True
-isRefT _         = False
-
 isUnitT :: Type -> Bool
 isUnitT (UnitT {}) = True
 isUnitT _          = False
+
+isRefT :: Type -> Bool
+isRefT (RefT {}) = True
+isRefT _         = False
 
 isPureT :: Type -> Bool
 isPureT (ST {}) = False
