@@ -606,7 +606,7 @@ evalExp e =
             return $ FloatV fp r
 
         unop Len val = do
-            (iota, _) <- inferExp e >>= checkArrT
+            (iota, _) <- inferExp e >>= checkArrOrRefArrT
             psi       <- askIVarSubst
             case subst psi mempty iota of
               ConstI n _ -> evalConst $ intC n

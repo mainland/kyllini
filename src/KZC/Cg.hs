@@ -741,6 +741,9 @@ cgExp e k =
         cgUnop tau_from ce (Bitcast tau_to) =
             cgBitcast ce tau_from tau_to
 
+        cgUnop (RefT (ArrT iota _ _) _) _ Len =
+            cgIota iota
+
         cgUnop (ArrT iota _ _) _ Len =
             cgIota iota
 
@@ -1168,15 +1171,6 @@ cgComplex cre cim =
 -- and imaginary parts.
 unComplex :: CExp l -> Cg l (CExp l, CExp l)
 unComplex ce = (,) <$> cgProj ce "re" <*> cgProj ce "im"
-
--- | Check that the argument is either an array or a reference to an array and
--- return the array's size and the type of its elements.
-checkArrOrRefArrT :: Monad m => Type -> m (Iota, Type)
-checkArrOrRefArrT (ArrT iota tau _)          = return (iota, tau)
-checkArrOrRefArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
-checkArrOrRefArrT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected array type but got:" <+/> ppr tau
 
 unCComp :: CExp l -> Cg l (CompC l a)
 unCComp (CComp compc) =

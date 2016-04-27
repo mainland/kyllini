@@ -45,6 +45,7 @@ module KZC.Core.Lint (
     checkIntT,
     checkNumT,
     checkArrT,
+    checkArrOrRefArrT,
     checkStructT,
     checkStructFieldT,
     checkRefT,
@@ -273,7 +274,7 @@ inferExp (UnopE op e1 _) = do
         return tau2
 
     unop Len tau = do
-        _ <- checkArrT tau
+        _ <- checkArrOrRefArrT tau
         return intT
 
 inferExp (BinopE op e1 e2 _) = do
@@ -1008,6 +1009,15 @@ checkArrT (ArrT iota alpha _) =
     return (iota, alpha)
 
 checkArrT tau =
+    faildoc $ nest 2 $ group $
+    text "Expected array type but got:" <+/> ppr tau
+
+-- | Check that the argument is either an array or a reference to an array and
+-- return the array's size and the type of its elements.
+checkArrOrRefArrT :: Monad m => Type -> m (Iota, Type)
+checkArrOrRefArrT (ArrT iota tau _)          = return (iota, tau)
+checkArrOrRefArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
+checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 

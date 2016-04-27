@@ -47,6 +47,7 @@ module KZC.Auto.Lint (
     checkIntT,
     checkNumT,
     checkArrT,
+    checkArrOrRefArrT,
     checkStructT,
     checkStructFieldT,
     checkRefT,
@@ -104,6 +105,7 @@ import KZC.Core.Lint (Tc(..),
                       checkIntT,
                       checkNumT,
                       checkArrT,
+                      checkArrOrRefArrT,
                       checkStructT,
                       checkStructFieldT,
                       checkRefT,
@@ -276,7 +278,7 @@ inferExp (UnopE op e1 _) = do
         return tau2
 
     unop Len tau = do
-        _ <- checkArrT tau
+        _ <- checkArrOrRefArrT tau
         return intT
 
 inferExp (BinopE op e1 e2 _) = do

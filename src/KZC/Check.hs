@@ -414,7 +414,7 @@ tcExp (Z.UnopE op e l) exp_ty =
         return $ C.UnopE <$> (C.Cast <$> trans tau2) <*> mce <*> pure l
 
     unop Z.Len = do
-        (tau, mce) <- inferVal e
+        (tau, mce) <- inferExp e
         _          <- checkArrT tau
         instType intT exp_ty
         return $ C.UnopE C.Len <$> mce <*> pure l
