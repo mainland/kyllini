@@ -68,7 +68,8 @@ module KZC.Auto.Lint (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (when,
+import Control.Monad (unless,
+                      when,
                       zipWithM,
                       zipWithM_,
                       void)
@@ -698,7 +699,9 @@ inferStep (VarC _ v _) =
 inferStep (CallC _ f ies args _) = do
     (taus, tau_ret) <- inferCall f ies args
     zipWithM_ checkArg args taus
-    zipWithM argRefs args taus >>= checkNoAliasing . concat
+    unless (isPureishT tau_ret) $ do
+        args' <- concat <$> zipWithM argRefs args taus
+        checkNoAliasing args'
     appSTScope tau_ret
   where
     checkArg :: Arg l -> Type -> m ()

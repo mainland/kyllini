@@ -66,7 +66,8 @@ module KZC.Core.Lint (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (when,
+import Control.Monad (unless,
+                      when,
                       zipWithM_,
                       void)
 import Control.Monad.Exception (MonadException(..))
@@ -421,7 +422,8 @@ inferExp (CallE f ies es _) = do
     let theta = Map.fromList (ivs `zip` ies)
     let phi   = fvs taus
     zipWithM_ checkArg es (subst theta phi taus)
-    checkNoAliasing (es `zip` taus)
+    unless (isPureishT tau_ret) $
+        checkNoAliasing (es `zip` taus)
     return $ subst theta phi tau_ret
   where
     checkIotaArg :: Iota -> m ()

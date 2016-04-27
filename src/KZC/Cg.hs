@@ -142,9 +142,9 @@ mapKont f (OneshotK bv tau g)       = OneshotK bv tau (f g)
 mapKont f (MultishotK g)            = MultishotK (f g)
 mapKont f (MultishotBindK tau cv g) = MultishotBindK tau cv (f g)
 
-restrict, static :: C.TypeQual
-restrict = C.EscTypeQual "RESTRICT" noLoc
-static   = C.EscTypeQual "STATIC" noLoc
+_restrict, static :: C.TypeQual
+_restrict = C.EscTypeQual "RESTRICT" noLoc
+static    = C.EscTypeQual "STATIC" noLoc
 
 compileProgram :: forall l . IsLabel l => Program l -> Cg l ()
 compileProgram (Program decls comp tau) = do
@@ -677,13 +677,55 @@ translation that can result in aliasing, we potentially tag it with
 
 When can the compiler introduce aliasing that doesn't exist in the source
 language? When it elides creating new storage for bindings, so a source language
-dereference may actually be a reference to the dereferenced expression.
+dereference may actually be a reference to the dereferenced expression, i.e., a
+source language dereference may just be a pointer to the original ref!
 
-The two remaining issues we don't yet properly deal with are function arguments
-and par computations. The source language requires that function arguments don't
-alias and that branches of a par don't share any mutable state. We may be able
-to deal with these by modifying the reference flow analysis in
-KZC.Analysis.RefFlow.
+How do we manage to still adhere to the language's semantics? The semantics say
+that the left and right halves of a par must have disjoint sets of free ref
+variables. The type checker checks this property, but to properly enforce it, we
+must also check that /calls/ to computation functions do not have arguments that
+alias.
+
+The tricky bit is that we may dereference a value and then either use this
+dereferenced value in a call to a computation function, passing it along with
+the original ref as an argument, or we may use both the original ref and the
+dereferenced value in different halves of a par. If we avoid copying on
+dereference, we've now violated the semantics! Consider this example, where
+@foo@ is a computation function:
+
+@
+(y : struct complex32[32]) <- !x
+foo(x, y);
+@
+
+If we try to be too smart in the code generator, x and y will alias!
+
+Fortunately, the ref flow analysis takes care of this. In a call to a
+computation, it marks ref arguments as modified /before/ using any of the
+arguments. This way, when y is "used", we see that its source "x", was
+"modified", so we actually copy x into y before calling foo. For regular
+functions, we allow aliasing, so we don't need to perform the copy.
+
+For par, if either the left or right branch modifies a ref, then we need to see
+it as having been modified in both branches. Therefore, when performing the ref
+data flow analysis, we look at both branches, collect the set of modified refs,
+and then, if these sets overlap, go back and examine both branches again to
+check for variables that are used after their source ref was modified. Consider
+this example:
+
+@
+(y : struct complex32[32]) <- !x
+{computation using y} >>> {computation using x};
+@
+
+If the right branch writes to x, then we need to make a copy in y. If it
+/doesn't/ modify x, then we don't need to make the copy! But if we analyze the
+left branch first in isolation, we don't know that y is potentially used after x
+is modified. That's why we need to collect the sets of modified refs from /both
+branches/ and test for overlap.
+
+Regardless, we must be sure to insert a memory barrier before launching threads
+to make sure any changes to x are written before y is used.
 -}
 
 cgExpOneshot :: IsLabel l => Exp -> Cg l (CExp l)
@@ -1321,8 +1363,9 @@ cgType (TyVarT alpha _) =
 
 {- Note [Type Qualifiers for Array Arguments]
 
-We use the restrict and static type qualifiers to declare that the arrays have
-at least a certain size and that there is no aliasing between pointers.
+We use the static type qualifiers to declare that the arrays have at least a
+certain size. We no longer use restrict, because we can't guarantee that there
+is no aliasing between pointers.
 
 See:
   http://stackoverflow.com/questions/3430315/purpose-of-static-keyword-in-array-parameter-of-function
@@ -1338,7 +1381,7 @@ cgParam tau maybe_cv = do
   where
     cgParamType :: Type -> Cg l C.Type
     cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
@@ -1346,22 +1389,22 @@ cgParam tau maybe_cv = do
 
     cgParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|const $ty:ctau* $tyqual:restrict|]
+        return [cty|const $ty:ctau*|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau = do
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:restrict $tyqual:static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:static $int:n]|]
 
     cgParamType (RefT (ArrT _ tau _) _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* $tyqual:restrict|]
+        return [cty|$ty:ctau*|]
 
     cgParamType (RefT tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* $tyqual:restrict|]
+        return [cty|$ty:ctau*|]
 
     cgParamType tau = cgType tau
 
@@ -1375,15 +1418,15 @@ cgRetParam tau maybe_cv = do
   where
     cgRetParamType :: Type -> Cg l C.Type
     cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:restrict $tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:restrict $tyqual:static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:static $int:n]|]
 
     cgRetParamType (ArrT _ tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau* $tyqual:restrict|]
+        return [cty|$ty:ctau*|]
 
     cgRetParamType tau = cgType tau
 

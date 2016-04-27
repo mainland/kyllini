@@ -34,6 +34,7 @@ import Control.Applicative hiding ((<|>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (filterM,
                       replicateM,
+                      unless,
                       void,
                       when,
                       zipWithM,
@@ -531,7 +532,8 @@ tcExp e@(Z.CallE f es l) exp_ty =
     (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
     mces <- zipWithM checkArg es taus
-    checkNoAliasing (es `zip` taus)
+    unless (isPureishT tau_ret) $
+        checkNoAliasing (es `zip` taus)
     return $ co2 $ co1 $ do
         cf  <- trans f
         ces <- sequence mces

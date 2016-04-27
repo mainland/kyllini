@@ -29,10 +29,12 @@ module KZC.Check.Smart (
 
     isUnitT,
     isRefT,
-    isPureT
+    isPureT,
+    isPureishT
   ) where
 
 import Data.Loc
+import Data.List (sort)
 
 import qualified Language.Ziria.Syntax as Z
 
@@ -93,6 +95,20 @@ isRefT :: Type -> Bool
 isRefT (RefT {}) = True
 isRefT _         = False
 
+-- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
 isPureT (ST {}) = False
 isPureT _       = True
+
+-- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation,
+-- @False@ otherwise. A pureish computation may use references, but it may not
+-- take or emit, so it has type @forall s a b . ST omega s a b@.
+isPureishT :: Type -> Bool
+isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
+    True
+
+isPureishT (ST {}) =
+    False
+
+isPureishT _ =
+    True

@@ -319,8 +319,11 @@ rfStep c@(VarC _ v _) = do
     return c
 
 rfStep (CallC l f iotas args s) = do
-    e' <- CallC l f iotas <$> mapM rfArg args <*> pure s
+    -- We taint arguments /before/ we call 'rfArg' so that any arguments that
+    -- may be derived from a ref dereference are actually dereferenced. See Note
+    -- [Aliasing] in Cg.hs.
     mapM_ taintArg args
+    e' <- CallC l f iotas <$> mapM rfArg args <*> pure s
     return e'
   where
     rfArg :: Arg l -> RF m (Arg l)
@@ -379,8 +382,17 @@ rfStep (EmitsC l e s) =
 rfStep (RepeatC l ann c s) =
     RepeatC l ann <$> rfComp c <*> pure s
 
-rfStep (ParC ann tau c1 c2 s) =
-    ParC ann tau <$> rfComp c1 <*> rfComp c2 <*> pure s
+rfStep (ParC ann tau c1 c2 s) = do
+    -- We need to make sure any refs modified in /either/ branch are seen as
+    -- modified in both branches. If the two branches use the same source ref,
+    -- we need to re-analyze them to look for use-after-modify. See Note
+    -- [Aliasing] in Cg.hs.
+    (c1', refs1) <- collectUseInfo $ rfComp c1
+    (c2', refs2) <- collectUseInfo $ rfComp c2
+    tell $ refs1 <> refs2
+    if Set.null (refs1 `Set.intersection` refs2)
+      then return $ ParC ann tau c1' c2' s
+      else ParC ann tau <$> rfComp c1 <*> rfComp c2 <*> pure s
 
 rfStep LoopC{} =
     faildoc $ text "rfStep: saw LoopC"
