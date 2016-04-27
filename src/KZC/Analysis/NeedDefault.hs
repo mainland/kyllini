@@ -374,8 +374,22 @@ useExp (LetE decl e s) = do
 
 useExp (CallE f iotas es s) = do
     useVar f
-    es' <- mapM (fmap fst . useExp) es
+    isExt <- isExtFun f
+    es'   <- mapM (fmap fst . useArg isExt) es
     return (CallE f iotas es' s, top)
+  where
+    useArg :: Bool -> Exp -> ND m (Exp, Val)
+    -- We assume that external functions fully initialize any ref passed to
+    -- them.
+    useArg True e@(VarE v _) = do
+        tau <- inferExp e
+        if isRefT tau
+            then do putVal v Any
+                    return (e, top)
+            else useExp e
+
+    useArg _ e =
+        useExp e
 
 useExp (DerefE e s) =
     topA $ DerefE <$> (fst <$> useExp e) <*> pure s
