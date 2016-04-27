@@ -428,7 +428,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(bVar f, tau)] $
+    extendExtFuns [(bVar f, tau)] $
     extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do

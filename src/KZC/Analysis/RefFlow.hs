@@ -231,7 +231,7 @@ rfDecl (LetFunD f ivs vbs tau_ret e l) m = do
     tau = FunT ivs (map snd vbs) tau_ret l
 
 rfDecl (LetExtFunD f ivs vbs tau_ret l) m = do
-    x <- extendVars [(bVar f, tau)] m
+    x <- extendExtFuns [(bVar f, tau)] m
     return (LetExtFunD f ivs vbs tau_ret l, x)
   where
     tau :: Type

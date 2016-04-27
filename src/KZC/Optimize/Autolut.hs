@@ -91,7 +91,7 @@ autoDecl (LetFunD f ivs vbs tau_ret e l) k =
     tau = FunT ivs (map snd vbs) tau_ret l
 
 autoDecl decl@(LetExtFunD f ivs vbs tau_ret l) k =
-    extendVars [(bVar f, tau)] $
+    extendExtFuns [(bVar f, tau)] $
     k decl
   where
     tau :: Type

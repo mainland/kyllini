@@ -178,7 +178,7 @@ useDecl (LetFunD f iotas vbs tau_ret e l) m = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 useDecl (LetExtFunD f iotas vbs tau_ret l) m = do
-    x <- extendVars [(bVar f, tau)] $
+    x <- extendExtFuns [(bVar f, tau)] $
          extendVals [(bVar f, Any)] $
          m
     return (LetExtFunD f iotas vbs tau_ret l, x)

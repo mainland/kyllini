@@ -134,7 +134,7 @@ occDecl (LetFunD f iotas vbs tau_ret e l) m = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 occDecl (LetExtFunD f iotas vbs tau_ret l) m = do
-    (x, occ) <- extendVars [(bVar f, tau)] $
+    (x, occ) <- extendExtFuns [(bVar f, tau)] $
                 withOccInfo f m
     return (LetExtFunD (updOccInfo f occ) iotas vbs tau_ret l, x)
   where

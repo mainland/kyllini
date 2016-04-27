@@ -139,7 +139,7 @@ evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
         evalExp e
 
 evalDecl (LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(bVar f, tau)] $
+    extendExtFuns [(bVar f, tau)] $
     extendVarBinds [(bVar f, UnknownV)] $
     k $ const . return $ LetExtFunD f iotas vbs tau_ret l
   where

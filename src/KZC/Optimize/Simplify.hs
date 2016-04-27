@@ -420,7 +420,7 @@ simplDecl decl m = do
         tau = FunT ivs (map snd vbs) tau_ret l
 
     postInlineUnconditionally _mayInline (LetExtFunD f iotas vbs tau_ret l) =
-        extendVars [(bVar f, tau)] $
+        extendExtFuns [(bVar f, tau)] $
         withBinding (LetExtFunD f iotas vbs tau_ret l) $
         m
       where

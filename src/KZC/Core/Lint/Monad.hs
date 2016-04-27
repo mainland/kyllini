@@ -33,6 +33,9 @@ module KZC.Core.Lint.Monad (
     askTopVars,
     isTopVar,
 
+    extendExtFuns,
+    isExtFun,
+
     extendVars,
     lookupVar,
 
@@ -97,6 +100,7 @@ data TcEnv = TcEnv
     , structs    :: !(Map Struct StructDef)
     , topScope   :: !Bool
     , topVars    :: !(Set Var)
+    , extFuns    :: !(Set Var)
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , iVars      :: !(Map IVar Kind)
@@ -110,6 +114,7 @@ defaultTcEnv = TcEnv
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , topScope   = True
     , topVars    = mempty
+    , extFuns    = mempty
     , varTypes   = mempty
     , tyVars     = mempty
     , iVars      = mempty
@@ -255,6 +260,17 @@ askTopVars = asksTc topVars
 
 isTopVar :: MonadTc m => Var -> m Bool
 isTopVar v = asksTc (Set.member v . topVars)
+
+extendExtFuns :: MonadTc m => [(Var, Type)] -> m a -> m a
+extendExtFuns vtaus k =
+    localTc (\env -> env { extFuns = fs <> extFuns env }) $
+    extendVars vtaus k
+  where
+    fs :: Set Var
+    fs = Set.fromList $ map fst vtaus
+
+isExtFun :: MonadTc m => Var -> m Bool
+isExtFun f = asksTc (Set.member f . extFuns)
 
 extendVars :: forall m a . MonadTc m => [(Var, Type)] -> m a -> m a
 extendVars vtaus m = do

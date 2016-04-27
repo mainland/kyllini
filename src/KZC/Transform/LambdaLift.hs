@@ -90,7 +90,7 @@ liftDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     tau = FunT ivs (map snd vbs) tau_ret l
 
 liftDecl (LetExtFunD f ivs vbs tau_ret l) k =
-    extendVars [(f, tau)] $ do
+    extendExtFuns [(f, tau)] $ do
     extendFunFvs [(f, (f, []))] $ do
     appendTopDecl $ LetExtFunD f ivs vbs tau_ret l
     k Nothing

@@ -152,7 +152,7 @@ transDecl decl@(C.LetFunD f ivs vbs tau_ret e l) k
     tau = FunT ivs (map snd vbs) tau_ret l
 
 transDecl (C.LetExtFunD f ivs vbs tau_ret l) k =
-    extendVars [(f, tau)] $
+    extendExtFuns [(f, tau)] $
     k $ LetExtFunD (mkBoundVar f) ivs vbs tau_ret l
   where
     tau :: Type

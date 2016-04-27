@@ -178,7 +178,7 @@ checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
 
 checkDecl decl@(LetExtFunD f ivs vbs tau_ret l) k = do
     alwaysWithSummaryContext decl $ checkKind tau PhiK
-    extendVars [(bVar f, tau)] k
+    extendExtFuns [(bVar f, tau)] k
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
