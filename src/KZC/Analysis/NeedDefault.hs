@@ -26,7 +26,7 @@ module KZC.Analysis.NeedDefault (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (when)
+import Control.Monad (unless)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -52,22 +52,35 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Pretty
 import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Lattice
 
-type Val = Known (Iota, Iota)
+data Val = RangeV Iota Iota
+         | StructV (Map Field (Known Val))
+  deriving (Eq, Ord, Show)
 
-instance Pretty (Known (Iota, Iota)) where
-    ppr Unknown          = text "unknown"
-    ppr (Known (lo, hi)) = ppr (lo, hi)
-    ppr Any              = text "any"
+instance Pretty Val where
+    ppr (RangeV lo hi) = ppr (lo, hi)
+    ppr (StructV flds) = pprStruct (Map.toList flds)
 
-instance Poset (Iota, Iota) where
+instance Poset Val where
     x <= y = x == y
 
+instance Pretty (Known Val) where
+    ppr Unknown     = text "unknown"
+    ppr (Known val) = ppr val
+    ppr Any         = text "any"
+
+isKnown :: Known Val -> Bool
+isKnown Unknown                = False
+isKnown (Known RangeV{})       = True
+isKnown (Known (StructV flds)) = all isKnown (Map.elems flds)
+isKnown Any                    = True
+
 data NDState = NDState
-    { vals        :: Map Var Val
+    { vals        :: Map Var (Known Val)
     , usedDefault :: Set Var
     }
 
@@ -98,14 +111,14 @@ instance MonadTrans ND where
 runND :: MonadTc m => ND m a -> m a
 runND m = evalStateT (unND m) mempty
 
-lookupVal :: MonadTc m => Var -> ND m Val
+lookupVal :: MonadTc m => Var -> ND m (Known Val)
 lookupVal v = do
     maybe_val <- gets (Map.lookup v . vals)
     case maybe_val of
       Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope ZZZ"
       Just val -> return val
 
-extendVals :: MonadTc m => [(Var, Val)] -> ND m a -> ND m a
+extendVals :: MonadTc m => [(Var, Known Val)] -> ND m a -> ND m a
 extendVals vvals m = do
     modify $ \s -> s { vals = Map.fromList vvals `Map.union` vals s }
     x <- m
@@ -117,7 +130,7 @@ extendVals vvals m = do
     vs :: [Var]
     vs = map fst vvals
 
-putVal :: MonadTc m => Var -> Val -> ND m ()
+putVal :: MonadTc m => Var -> Known Val -> ND m ()
 putVal v val =
     modify $ \s -> s { vals = Map.insert v val (vals s) }
 
@@ -130,8 +143,20 @@ updateNeedDefault bv m = do
 useVar :: MonadTc m => Var -> ND m ()
 useVar v = do
     val <- lookupVal v
-    when (val == Unknown) $
+    unless (isKnown val) $
         modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
+
+useField :: MonadTc m => Var -> Field -> ND m ()
+useField v f = do
+    val  <- lookupVal v
+    val' <- case val of
+              Known (StructV flds) -> maybe err return $ Map.lookup f flds
+              _ -> return val
+    unless (isKnown val') $
+        modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
+  where
+    err :: Monad m => m a
+    err = faildoc $ text "Struct does not have field" <+> ppr f
 
 needDefaultProgram :: MonadTc m => Program l -> ND m (Program l)
 needDefaultProgram (Program decls comp tau) = do
@@ -286,12 +311,12 @@ useStep (ForC l ann v tau e1 e2 c s) = do
     (e2', val2) <- useExp e2
     go e1' val1 e2' val2
   where
-    go :: Exp -> Val -> Exp -> Val -> ND m (Step l)
-    go e1' (Known (lo, lo')) e2' (Known (hi, hi')) | lo' == lo && hi' == hi =
+    go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Step l)
+    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi =
        ForC l ann v tau <$> pure e1'
                         <*> pure e2'
                         <*> (extendVars [(v, tau)] $
-                             extendVals [(v, Known (lo, hi))] $
+                             extendVals [(v, Known (RangeV lo hi))] $
                              useComp c)
                         <*> pure s
 
@@ -335,9 +360,9 @@ useStep (LoopC {}) =
 
 useExp :: forall m . MonadTc m
        => Exp
-       -> ND m (Exp, Val)
+       -> ND m (Exp, Known Val)
 useExp e@(ConstE (FixC I _ _ 0 r) s) =
-    return (e, Known (iota, iota))
+    return (e, Known (RangeV iota iota))
   where
     iota :: Iota
     iota = ConstI (fromIntegral (numerator r)) s
@@ -352,7 +377,7 @@ useExp e@(VarE v _) = do
 
 useExp e@(UnopE Len (VarE v _) _) = do
     (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-    return (e, Known (iota, iota))
+    return (e, Known (RangeV iota iota))
 
 useExp (UnopE op e s) =
     topA $  UnopE op <$> (fst <$> useExp e) <*> pure s
@@ -378,13 +403,13 @@ useExp (CallE f iotas es s) = do
     es'   <- mapM (fmap fst . useArg isExt) es
     return (CallE f iotas es' s, top)
   where
-    useArg :: Bool -> Exp -> ND m (Exp, Val)
+    useArg :: Bool -> Exp -> ND m (Exp, Known Val)
     -- We assume that external functions fully initialize any ref passed to
     -- them.
     useArg True e@(VarE v _) = do
         tau <- inferExp e
         if isRefT tau
-            then do putVal v Any
+            then do putVal v top
                     return (e, top)
             else useExp e
 
@@ -399,18 +424,39 @@ useExp (AssignE e1 e2 s) = do
     x <- go e1 e2' val
     return x
   where
-    go :: Exp -> Exp -> Val -> ND m (Exp, Val)
+    go :: Exp -> Exp -> Known Val -> ND m (Exp, Known Val)
     go e1@(VarE v _) e2' val = do
         putVal v val
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
-    go e1@(IdxE (VarE v _) (VarE i _) Nothing _)  e2' _ = do
+    go e1@(IdxE (VarE v _) (VarE i _) Nothing _) e2' _ = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         i_val     <- lookupVal i
         case i_val of
-          Known (ConstI 0 _, iota_hi) | iota_hi == iota -> putVal v top
+          Known (RangeV (ConstI 0 _) iota_hi) | iota_hi == iota -> putVal v top
           _ -> return ()
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+
+    go e1@(ProjE (VarE v _) f _) e2' val2 =
+        lookupVal v >>= go
+      where
+        go :: Known Val -> ND m (Exp, Known Val)
+        go Unknown = do
+            StructDef _ flds _ <- lookupVar v >>=
+                                  checkRefT >>=
+                                  checkStructT >>=
+                                  lookupStruct
+            putVal v $ Known $ StructV $
+                Map.insert f val2 $
+                Map.fromList (map fst flds `zip` repeat Unknown)
+            return (AssignE e1 e2' s, top)
+
+        go (Known (StructV flds)) = do
+            putVal v $ Known $ StructV $ Map.insert f val2 flds
+            return (AssignE e1 e2' s, top)
+
+        go _ =
+            topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
     go e1 e2' _  =
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
@@ -423,12 +469,12 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
     (e2', val2) <- useExp e2
     go e1' val1 e2' val2
   where
-    go :: Exp -> Val -> Exp -> Val -> ND m (Exp, Val)
-    go e1' (Known (lo, lo')) e2' (Known (hi, hi')) | lo' == lo && hi' == hi = do
+    go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Exp, Known Val)
+    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi = do
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
-                                  extendVals [(v, Known (lo, hi))] $
+                                  extendVals [(v, Known (RangeV lo hi))] $
                                   fst <$> useExp e3)
                              <*> pure s
 
@@ -452,6 +498,10 @@ useExp (StructE struct flds s) =
     fs :: [Field]
     es :: [Exp]
     (fs, es) = unzip flds
+
+useExp (ProjE e@(VarE v _) f s) = do
+    useField v f
+    return (ProjE e f s, top)
 
 useExp (ProjE e f s) =
     topA $ ProjE <$> (fst <$> useExp e) <*> pure f <*> pure s
@@ -494,5 +544,5 @@ useIf ma mb = do
                 }
     return (x, y)
 
-topA :: Applicative f => f a -> f (a, Val)
+topA :: Applicative f => f a -> f (a, Known Val)
 topA m = (,) <$> m <*> pure top
