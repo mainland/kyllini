@@ -166,9 +166,9 @@ useDecl (LetD decl s) m = do
 useDecl (LetFunD f iotas vbs tau_ret e l) m = do
     (x, e') <-
         extendVars [(bVar f, tau)] $ do
-        extendVals [(bVar f, Any)] $ do
+        extendVals [(bVar f, top)] $ do
         e' <- extendLetFun f iotas vbs tau_ret $
-              extendVals (map fst vbs `zip` repeat Any) $ do
+              extendVals (map fst vbs `zip` repeat top) $ do
               fst <$> useExp e
         x  <- m
         return (x, e')
@@ -179,7 +179,7 @@ useDecl (LetFunD f iotas vbs tau_ret e l) m = do
 
 useDecl (LetExtFunD f iotas vbs tau_ret l) m = do
     x <- extendExtFuns [(bVar f, tau)] $
-         extendVals [(bVar f, Any)] $
+         extendVals [(bVar f, top)] $
          m
     return (LetExtFunD f iotas vbs tau_ret l, x)
   where
@@ -192,19 +192,19 @@ useDecl (LetStructD s flds l) m = do
 
 useDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $
-             extendVals [(bVar v, Any)] $
+             extendVals [(bVar v, top)] $
              useComp comp
     x     <- extendVars [(bVar v, tau)] $
-             extendVals [(bVar v, Any)] $
+             extendVals [(bVar v, top)] $
              m
     return (LetCompD v tau comp' l, x)
 
 useDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
     (x, comp') <-
         extendVars [(bVar f, tau)] $
-        extendVals [(bVar f, Any)] $ do
+        extendVals [(bVar f, top)] $ do
         comp' <- extendLetFun f iotas vbs tau_ret $
-                 extendVals (map fst vbs `zip` repeat Any) $
+                 extendVals (map fst vbs `zip` repeat top) $
                  useComp comp
         x     <- m
         return (x, comp')
@@ -227,7 +227,7 @@ useLocalDecl (LetLD v tau e s) m = do
 useLocalDecl (LetRefLD v tau e s) m = do
     e'      <- traverse (fmap fst . useExp) e
     (x, v') <- extendVars [(bVar v, refT tau)] $
-               extendVals [(bVar v, maybe Unknown (const Any) e)] $ do
+               extendVals [(bVar v, maybe Unknown (const top) e)] $ do
                updateNeedDefault v m
     return (LetRefLD v' tau e' s, x)
 
@@ -251,7 +251,7 @@ useSteps (BindC l WildV tau s : steps) = do
 
 useSteps (BindC l (TameV v) tau s : steps) = do
     steps' <- extendVars [(bVar v, tau)] $
-              extendVals [(bVar v, Any)] $
+              extendVals [(bVar v, top)] $
               useSteps steps
     return $ BindC l (TameV v) tau s : steps'
 
@@ -299,7 +299,7 @@ useStep (ForC l ann v tau e1 e2 c s) = do
        ForC l ann v tau <$> pure e1'
                         <*> pure e2'
                         <*> (extendVars [(v, tau)] $
-                             extendVals [(v, Any)] $
+                             extendVals [(v, top)] $
                              useComp c)
                         <*> pure s
 
@@ -394,7 +394,7 @@ useExp (AssignE e1 e2 s) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         i_val     <- lookupVal i
         case i_val of
-          Known (ConstI 0 _, iota_hi) | iota_hi == iota -> putVal v Any
+          Known (ConstI 0 _, iota_hi) | iota_hi == iota -> putVal v top
           _ -> return ()
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
@@ -422,7 +422,7 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
-                                  extendVals [(v, Any)] $
+                                  extendVals [(v, top)] $
                                   fst <$> useExp e3)
                              <*> pure s
 
@@ -460,7 +460,7 @@ useExp (BindE WildV tau e1 e2 s) =
 useExp (BindE (TameV v) tau e1 e2 s) =
     topA $ BindE (TameV v) tau <$> (fst <$> useExp e1)
                                <*> (extendVars [(bVar v, tau)] $
-                                    extendVals [(bVar v, Any)] $
+                                    extendVals [(bVar v, top)] $
                                     fst <$> useExp e2)
                                <*> pure s
 
