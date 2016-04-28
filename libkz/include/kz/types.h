@@ -42,4 +42,10 @@ typedef struct complex64_t {
 #define RESTRICT restrict
 #endif /* !defined(WHOLEPROGRAM) */
 
+#if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
+#define ALIGN __attribute__((aligned(16)))
+#else
+#define ALIGN
+#endif
+
 #endif /* !defined(KZ_TYPES_H) */

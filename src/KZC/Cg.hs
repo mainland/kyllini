@@ -142,9 +142,10 @@ mapKont f (OneshotK bv tau g)       = OneshotK bv tau (f g)
 mapKont f (MultishotK g)            = MultishotK (f g)
 mapKont f (MultishotBindK tau cv g) = MultishotBindK tau cv (f g)
 
-_restrict, static :: C.TypeQual
-_restrict = C.EscTypeQual "RESTRICT" noLoc
-static    = C.EscTypeQual "STATIC" noLoc
+calign, _crestrict, cstatic :: C.TypeQual
+calign     = C.EscTypeQual "ALIGN" noLoc
+_crestrict = C.EscTypeQual "RESTRICT" noLoc
+cstatic    = C.EscTypeQual "STATIC" noLoc
 
 compileProgram :: forall l . IsLabel l => Program l -> Cg l ()
 compileProgram (Program decls comp tau) = do
@@ -185,7 +186,7 @@ void kz_main(const typename kz_params_t* $id:params)
     takek n tau _klbl k = do
         -- Generate a pointer to the current element in the buffer.
         ctau   <- cgType tau
-        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|const $ty:ctau*|] (Just [cinit|NULL|])
+        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
@@ -1064,7 +1065,7 @@ cgExp e k =
             (_, tau)   <- inferExp e >>= checkArrT
             cv :: C.Id <- gensym "__arr"
             ctau       <- cgType tau
-            appendDecl $ rl l [cdecl|$ty:ctau $id:cv[$int:(length es)];|]
+            appendDecl $ rl l [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(length es)];|]
             forM_ (es `zip` [(0::Integer)..]) $ \(e,i) -> do
                 ce <- cgExpOneshot e
                 cgAssign (refT tau) (CIdx tau (CExp [cexp|$id:cv|]) (fromIntegral i)) ce
@@ -1381,7 +1382,7 @@ cgParam tau maybe_cv = do
   where
     cgParamType :: Type -> Cg l C.Type
     cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
@@ -1392,11 +1393,11 @@ cgParam tau maybe_cv = do
         return [cty|const $ty:ctau*|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau = do
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (RefT (ArrT (ConstI n _) tau _) _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
 
     cgParamType (RefT (ArrT _ tau _) _) = do
         ctau <- cgType tau
@@ -1418,11 +1419,11 @@ cgRetParam tau maybe_cv = do
   where
     cgRetParamType :: Type -> Cg l C.Type
     cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:static $int:(bitArrayLen n)]|]
+        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (ConstI n _) tau _) = do
         ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:static $int:n]|]
+        return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
 
     cgRetParamType (ArrT _ tau _) = do
         ctau <- cgType tau
@@ -1612,7 +1613,7 @@ cgStorage _ (UnitT {}) =
 cgStorage cv (ArrT iota tau _) | isBitT tau = do
     cn        <- cgIota iota
     let cinit =  case cn of
-                   CInt n -> rl cv [cdecl|$ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+                   CInt n -> rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)];|]
                    _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
     return (cinit, CExp $ rl cv [cexp|$id:cv|])
   where
@@ -1623,7 +1624,7 @@ cgStorage cv (ArrT iota tau _) = do
     ctau      <- cgType tau
     cn        <- cgIota iota
     let cinit =  case cn of
-                   CInt n -> rl cv [cdecl|$ty:ctau $id:cv[$int:n];|]
+                   CInt n -> rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:n];|]
                    _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
     return (cinit, CExp $ rl cv [cexp|$id:cv|])
 
@@ -1964,8 +1965,8 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- Generate a pointer to the current element in the buffer.
     ctau    <- cgType b
     ctauptr <- cgBufPtrType b
-    cbuf    <- cgThreadCTemp b "par_buf"  ctau    Nothing
-    cbufp   <- cgThreadCTemp b "par_bufp" ctauptr Nothing
+    cbuf    <- cgThreadCTemp b "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
+    cbufp   <- cgThreadCTemp b "par_bufp" ctauptr                        Nothing
     -- Generate code for the left and right computations.
     localSTIndTypes (Just (b, b, c)) $
         cgComp (takek' cleftk crightk cbuf cbufp) emitk emitsk right klbl donek
@@ -2008,7 +2009,7 @@ cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k = do
     -- without forcing its label to be required---we don't need the label!
     takek' cleftk crightk _cbuf cbufp n tau _klbl k = do
         ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
-        carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau_arr|] Nothing
+        carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
         klbl     <- gensym "inner_takesk"
         useLabel klbl
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
@@ -2085,7 +2086,7 @@ cgParMultiThreaded takek emitk emitsk tau_res b left right klbl k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the par buffer.
     cb   <- cgType b
-    cbuf <- cgTopCTemp b "par_buf" [cty|$ty:cb[KZ_BUFFER_SIZE]|] Nothing
+    cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
     -- Generate a name for the producer thread function
     cf <- gensym "producer"
     -- Generate a temporary to hold the thread info.
