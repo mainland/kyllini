@@ -149,7 +149,7 @@ RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 
 ifeq ($(WHOLEPROGRAM), 1)
 %.exe : %.c $(RUNTIME_SRC)
-	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(CFLAGS) $(LIBS) $< -o $@
+	$(_QUIET)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(CFLAGS) $< $(LIBS) -o $@
 else
 %.exe : %.o $(RUNTIME_OBJ)
 	$(_QUIET)$(LD) $(LDFLAGS) $< $(RUNTIME_OBJ) $(LIBS) -o $@
