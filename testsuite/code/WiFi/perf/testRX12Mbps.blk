@@ -18,7 +18,7 @@
 --
 --
 
--- Run the same code as Sora's implementation
+-- Run the same code as Soras implementation
 #define SORA_COMPAT
 #include "blocks/ReceiverInfinite.blk"
 
