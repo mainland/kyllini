@@ -248,8 +248,8 @@ flagImplications fs =
          (imp MayInline (setDynFlag Simplify))
 
     imp :: DynFlag
-         -> (Flags -> Flags)
-         -> Flags -> Flags
+        -> (Flags -> Flags)
+        -> Flags -> Flags
     imp f g fs =
         if testDynFlag f fs then g fs else fs
 
