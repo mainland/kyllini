@@ -480,7 +480,7 @@ void kz_cleanup_output_bit(const kz_params_t* params, kz_buf_t* buf)
     free_buf(buf);
 }
 
-inline const size_t bit_array_len(size_t n)
+inline size_t bit_array_len(size_t n)
 {
     return (n + (sizeof(bit_t) - 1))/sizeof(bit_t);
 }
