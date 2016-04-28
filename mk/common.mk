@@ -44,7 +44,10 @@ endif
 #
 ifeq ($(WHOLEPROGRAM), 1)
 CPPFLAGS+=-DWHOLEPROGRAM -I$(TOP)/libkz/src
+
+ifeq ($(GCC), 1)
 CFLAGS+=-fwhole-program
+endif
 endif
 
 #
