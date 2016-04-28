@@ -246,7 +246,8 @@ template<typename T> void cleanup_output(const kz_params_t* params, kz_buf_t* bu
 template<typename T> const T* input(kz_buf_t* buf, size_t n)
 {
     if (buf->dev == DEV_DUMMY) {
-        if (buf->dummy_samples-- > 0)
+        buf->dummy_samples -= n;
+        if (buf->dummy_samples >= 0)
             return (T*) buf->buf;
         else
             return NULL;
@@ -492,7 +493,8 @@ const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
     static size_t bitbuf_len = 0;
 
     if (buf->dev == DEV_DUMMY) {
-        if (buf->dummy_samples-- > 0)
+        buf->dummy_samples -= n;
+        if (buf->dummy_samples >= 0)
             return &dummy_bitbuf;
         else
             return NULL;
