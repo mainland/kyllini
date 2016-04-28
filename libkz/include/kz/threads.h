@@ -15,7 +15,7 @@ extern "C" {
 #endif /* !defined(_MSC_VER) */
 
 #if defined(__INTEL_COMPILER)
-#include <ia64intrin.h>
+#include <x86intrin.h>
 #endif /* !defined(__INTEL_COMPILER) */
 
 #if defined(_MSC_VER)
