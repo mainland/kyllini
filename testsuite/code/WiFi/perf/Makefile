@@ -34,3 +34,15 @@ clean :
 	./$< --input-dev=dummy \
              --output-dev=dummy \
 	     --dummy-samples=100000000
+
+%.amplxe : %.exe
+	amplxe-cl -collect hotspots -collect general-exploration ./$< -- \
+	     --input-dev=dummy \
+             --output-dev=dummy \
+	     --dummy-samples=10000000000
+
+%.advixe : %.exe
+	advixe-cl --collect survey ./$< -- \
+	     --input-dev=dummy \
+             --output-dev=dummy \
+	     --dummy-samples=10000000000
