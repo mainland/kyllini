@@ -31,6 +31,7 @@ module KZC.Core.Smart (
     isBitArrT,
     isComplexT,
     isFunT,
+    isArrT,
     isRefT,
     isSTUnitT,
     isCompT,
@@ -140,6 +141,10 @@ isComplexT _             = False
 isFunT :: Type -> Bool
 isFunT (FunT {}) = True
 isFunT _         = False
+
+isArrT :: Type -> Bool
+isArrT (ArrT {}) = True
+isArrT _         = False
 
 isRefT :: Type -> Bool
 isRefT (RefT {}) = True
