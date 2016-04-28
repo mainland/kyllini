@@ -6,16 +6,19 @@
 
 #include <kz/ext.h>
 
+FORCEINLINE
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src)
 {
     memcpy(dst, src, n);
 }
 
+FORCEINLINE
 void __kz_int8_to_bits(int n, int m, uint8_t *dst, const int8_t *src)
 {
     memcpy(dst, src, m);
 }
 
+FORCEINLINE
 void __kz_hexprint_int8(int n, const int8_t *a, int32_t len)
 {
     int i;
@@ -24,6 +27,7 @@ void __kz_hexprint_int8(int n, const int8_t *a, int32_t len)
         printf("%02X ", a[i]);
 }
 
+FORCEINLINE
 void __kz_zero_bit(int n, bit_t *x)
 {
     memset(x, 0, n / BIT_ARRAY_ELEM_BITS);
@@ -35,61 +39,73 @@ void __kz_zero_bit(int n, bit_t *x)
     }
 }
 
+FORCEINLINE
 void __kz_zero_int8(int n, int8_t *x)
 {
     memset(x, 0, n*sizeof(int8_t));
 }
 
+FORCEINLINE
 void __kz_zero_int16(int n, int16_t *x)
 {
     memset(x, 0, n*sizeof(int16_t));
 }
 
+FORCEINLINE
 void __kz_zero_int32(int n, int32_t *x)
 {
     memset(x, 0, n*sizeof(int32_t));
 }
 
+FORCEINLINE
 void __kz_zero_complex8(int n, complex8_t *x)
 {
     memset(x, 0, n*sizeof(complex8_t));
 }
 
+FORCEINLINE
 void __kz_zero_complex16(int n, complex16_t *x)
 {
     memset(x, 0, n*sizeof(complex16_t));
 }
 
+FORCEINLINE
 void __kz_zero_complex32(int n, complex32_t *x)
 {
     memset(x, 0, n*sizeof(complex32_t));
 }
 
+FORCEINLINE
 void __kz_copy_int16(int n, int m, int16_t *dst, const int16_t *src, int32_t len)
 {
     memcpy(dst, src, len*sizeof(int16_t));
 }
 
+FORCEINLINE
 double __kz_sqrt(double d)
 {
     return sqrt(d);
 }
 
+FORCEINLINE
 double __kz_log2(double d)
 {
     return log(d) / log(2.0);
 }
 
+FORCEINLINE
 int32_t __kz_round_int32(double d)
 {
     return round(d);
 }
 
+FORCEINLINE
 int32_t __kz_ceil_int32(double d)
 {
     return ceil(d);
 }
 
+FORCEINLINE
 complex32_t __kz_sumc32(const complex32_t x[4])
 {
     complex32_t res = { 0, 0 };
@@ -103,6 +119,7 @@ complex32_t __kz_sumc32(const complex32_t x[4])
     return res;
 }
 
+FORCEINLINE
 void __kz_v_add_int16(int n, int16_t *c, const int16_t *a, const int16_t *b)
 {
     int i;
@@ -111,6 +128,7 @@ void __kz_v_add_int16(int n, int16_t *c, const int16_t *a, const int16_t *b)
         c[i] = a[i] + b[i];
 }
 
+FORCEINLINE
 void __kz_v_add_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
 {
     int i;
@@ -119,6 +137,7 @@ void __kz_v_add_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
         c[i] = a[i] + b[i];
 }
 
+FORCEINLINE
 void __kz_v_add_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
 {
     int i;
@@ -129,6 +148,7 @@ void __kz_v_add_complex16(int n, complex16_t *c, const complex16_t *a, const com
     }
 }
 
+FORCEINLINE
 void __kz_v_add_complex32(int n, complex32_t *c, const complex32_t *a, const complex32_t *b)
 {
     int i;
@@ -139,6 +159,7 @@ void __kz_v_add_complex32(int n, complex32_t *c, const complex32_t *a, const com
     }
 }
 
+FORCEINLINE
 void __kz_v_sub_int16(int n, int16_t *c, const int16_t *a, const int16_t *b)
 {
     int i;
@@ -147,6 +168,7 @@ void __kz_v_sub_int16(int n, int16_t *c, const int16_t *a, const int16_t *b)
         c[i] = a[i] - b[i];
 }
 
+FORCEINLINE
 void __kz_v_sub_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
 {
     int i;
@@ -155,6 +177,7 @@ void __kz_v_sub_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
         c[i] = a[i] - b[i];
 }
 
+FORCEINLINE
 void __kz_v_sub_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
 {
     int i;
@@ -165,6 +188,7 @@ void __kz_v_sub_complex16(int n, complex16_t *c, const complex16_t *a, const com
     }
 }
 
+FORCEINLINE
 void __kz_v_sub_complex32(int n, complex32_t *c, const complex32_t *a, const complex32_t *b)
 {
     int i;
@@ -175,6 +199,7 @@ void __kz_v_sub_complex32(int n, complex32_t *c, const complex32_t *a, const com
     }
 }
 
+FORCEINLINE
 void __kz_v_hadd_int32(int32_t *z, const int32_t x[4])
 {
     int32_t y;
@@ -187,6 +212,7 @@ void __kz_v_hadd_int32(int32_t *z, const int32_t x[4])
     z[3] = y;
 }
 
+FORCEINLINE
 void __kz_v_hadd_complex16(complex16_t *z, const complex16_t x[4])
 {
     int16_t re;
@@ -206,6 +232,7 @@ void __kz_v_hadd_complex16(complex16_t *z, const complex16_t x[4])
     z[3].im = im;
 }
 
+FORCEINLINE
 void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b, int32_t shift)
 {
     int i;
@@ -216,6 +243,7 @@ void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const com
     }
 }
 
+FORCEINLINE
 void __kz_v_mul_complex16_int32(int n, int32_t *re, int32_t *im, const complex16_t *a, const complex16_t *b)
 {
     int i;
@@ -226,6 +254,7 @@ void __kz_v_mul_complex16_int32(int n, int32_t *re, int32_t *im, const complex16
     }
 }
 
+FORCEINLINE
 void __kz_v_conj_mul_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b, int32_t shift)
 {
     int i;
@@ -236,6 +265,7 @@ void __kz_v_conj_mul_complex16(int n, complex16_t *c, const complex16_t *a, cons
     }
 }
 
+FORCEINLINE
 void __kz_v_conj_mul_complex16_int32(int n, int32_t *re, int32_t *im, const complex16_t *a, const complex16_t *b)
 {
     int i;
@@ -246,6 +276,7 @@ void __kz_v_conj_mul_complex16_int32(int n, int32_t *re, int32_t *im, const comp
     }
 }
 
+FORCEINLINE
 void __kz_v_shift_right_int16(int n, int16_t *z, const int16_t *x, int32_t shift)
 {
     int i;
@@ -254,6 +285,7 @@ void __kz_v_shift_right_int16(int n, int16_t *z, const int16_t *x, int32_t shift
         z[i] = x[i] >> shift;
 }
 
+FORCEINLINE
 void __kz_v_shift_right_int32(int n, int32_t *z, const int32_t *x, int32_t shift)
 {
     int i;
@@ -262,6 +294,7 @@ void __kz_v_shift_right_int32(int n, int32_t *z, const int32_t *x, int32_t shift
         z[i] = x[i] >> shift;
 }
 
+FORCEINLINE
 void __kz_v_shift_right_complex16(int n, complex16_t *z, const complex16_t *x, int32_t shift)
 {
     int i;
@@ -272,6 +305,7 @@ void __kz_v_shift_right_complex16(int n, complex16_t *z, const complex16_t *x, i
     }
 }
 
+FORCEINLINE
 void __kz_v_shift_right_complex32(int n, complex32_t *z, const complex32_t *x, int32_t shift)
 {
     int i;
@@ -282,6 +316,7 @@ void __kz_v_shift_right_complex32(int n, complex32_t *z, const complex32_t *x, i
     }
 }
 
+FORCEINLINE
 void __kz_v_shift_left_int16(int n, int16_t *z, const int16_t *x, int32_t shift)
 {
     int i;
@@ -290,6 +325,7 @@ void __kz_v_shift_left_int16(int n, int16_t *z, const int16_t *x, int32_t shift)
         z[i] = x[i] << shift;
 }
 
+FORCEINLINE
 void __kz_v_shift_left_int32(int n, int32_t *z, const int32_t *x, int32_t shift)
 {
     int i;
@@ -298,6 +334,7 @@ void __kz_v_shift_left_int32(int n, int32_t *z, const int32_t *x, int32_t shift)
         z[i] = x[i] << shift;
 }
 
+FORCEINLINE
 void __kz_v_shift_left_complex16(int n, complex16_t *z, const complex16_t *x, int32_t shift)
 {
     int i;
@@ -308,6 +345,7 @@ void __kz_v_shift_left_complex16(int n, complex16_t *z, const complex16_t *x, in
     }
 }
 
+FORCEINLINE
 void __kz_v_shift_left_complex32(int n, complex32_t *z, const complex32_t *x, int32_t shift)
 {
     int i;
@@ -318,6 +356,7 @@ void __kz_v_shift_left_complex32(int n, complex32_t *z, const complex32_t *x, in
     }
 }
 
+FORCEINLINE
 int16_t __kz_v_sum_int16(int n, const int16_t *xs)
 {
     int16_t sum = 0;
@@ -329,6 +368,7 @@ int16_t __kz_v_sum_int16(int n, const int16_t *xs)
     return sum;
 }
 
+FORCEINLINE
 int32_t __kz_v_sum_int32(int n, const int32_t *xs)
 {
     int32_t sum = 0;
@@ -340,6 +380,7 @@ int32_t __kz_v_sum_int32(int n, const int32_t *xs)
     return sum;
 }
 
+FORCEINLINE
 complex16_t __kz_v_sum_complex16(int n, const complex16_t *xs)
 {
     complex16_t res = { 0, 0 };
@@ -353,6 +394,7 @@ complex16_t __kz_v_sum_complex16(int n, const complex16_t *xs)
     return res;
 }
 
+FORCEINLINE
 complex32_t __kz_v_sum_complex32(int n, const complex32_t *xs)
 {
     complex32_t res = { 0, 0 };
@@ -366,6 +408,7 @@ complex32_t __kz_v_sum_complex32(int n, const complex32_t *xs)
     return res;
 }
 
+FORCEINLINE
 void __kz_v_or(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
     int i;
@@ -374,6 +417,7 @@ void __kz_v_or(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
         out[i] = xs[i] | ys[i];
 }
 
+FORCEINLINE
 void __kz_v_and(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
     int i;
@@ -382,6 +426,7 @@ void __kz_v_and(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
         out[i] = xs[i] & ys[i];
 }
 
+FORCEINLINE
 void __kz_v_xor(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
     int i;
@@ -390,6 +435,7 @@ void __kz_v_xor(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
         out[i] = xs[i] ^ ys[i];
 }
 
+FORCEINLINE
 void __kz_v_andnot(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
     int i;

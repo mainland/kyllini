@@ -41,12 +41,14 @@ typedef short FP_RAD;  // fixed point radians
 //
 typedef short FP_FRAC; // fixed point fraction
 
+FORCEINLINE
 void __kz_permutatew1313(const complex16_t x[4], complex16_t *y)
 {
     __m128i mx = _mm_loadu_si128((__m128i*) x);
     _mm_storeu_si128((__m128i*) y, _mm_shuffle_epi32(mx, _MM_SHUFFLE(3, 1, 3, 1)));
 }
 
+FORCEINLINE
 void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], complex16_t* z)
 {
     __m128i mx = _mm_loadu_si128((__m128i*) x);
@@ -54,22 +56,26 @@ void __kz_interleave_loww(const complex16_t x[4], const complex16_t y[4], comple
     _mm_storeu_si128((__m128i*) z, _mm_unpacklo_epi64(mx, my));
 }
 
+FORCEINLINE
 int16_t __kz_sin_int16(int16_t r)
 {
     return sinx_lut[(unsigned short)r];
 }
 
+FORCEINLINE
 int16_t __kz_cos_int16(int16_t r)
 {
     return cosx_lut[(unsigned short)r];
 }
 
 // bit_scope - find the highest bit position of an integer
+FORCEINLINE
 unsigned char bit_scope_ub(unsigned char x)
 {
     return bit_high_pos_lutx[x];
 }
 
+FORCEINLINE
 unsigned char bit_scope_us(unsigned short x)
 {
     unsigned char tt;
@@ -79,6 +85,7 @@ unsigned char bit_scope_us(unsigned short x)
         return bit_scope_ub ((unsigned char)(x));
 }
 
+FORCEINLINE
 unsigned char bit_scope_ui(unsigned int x)
 {
     unsigned short tt;
@@ -89,6 +96,7 @@ unsigned char bit_scope_ui(unsigned int x)
         return bit_scope_us ((unsigned short)(x));
 }
 
+FORCEINLINE
 unsigned char bit_scope_s(int x)
 {
     if (x>0)
@@ -99,6 +107,7 @@ unsigned char bit_scope_s(int x)
         return bit_scope_ui ((unsigned int)(-x));
 }
 
+FORCEINLINE
 int16_t __kz_atan2_int16(int16_t y, int16_t x)
 {
     int ys = bit_scope_s(y);
@@ -112,11 +121,13 @@ int16_t __kz_atan2_int16(int16_t y, int16_t x)
         return atan2x_lut[(unsigned char)(y)][(unsigned char)(x)];
 }
 
+FORCEINLINE
 int32_t __kz_atan2_int32(int32_t y, int32_t x)
 {
     return __kz_atan2_int16(y, x);
 }
 
+FORCEINLINE
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
 {
     // We use the safe version to respect Blink's semantic
@@ -255,6 +266,7 @@ void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
     }
 }
 
+FORCEINLINE
 void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out)
 {
     //// We use the safe version to respect Blink's semantic
@@ -492,6 +504,7 @@ int16_t __kz_viterbi_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *
     return total_byte_count * 8;
 }
 
+FORCEINLINE
 int16_t __kz_viterbiSig11a_brick_decode_fast(int n, const int8_t svalue[48], uint8_t *bitValue)
 {
     static const int state_size = 64;

@@ -48,4 +48,14 @@ typedef struct complex64_t {
 #define ALIGN
 #endif
 
+#if defined(WHOLEPROGRAM)
+#if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
+#define FORCEINLINE inline __attribute__((always_inline))
+#else
+#define FORCEINLINE
+#endif
+#else /* !defined(WHOLEPROGRAM) */
+#define FORCEINLINE
+#endif /* !defined(WHOLEPROGRAM) */
+
 #endif /* !defined(KZ_TYPES_H) */
