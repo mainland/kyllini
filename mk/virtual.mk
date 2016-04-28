@@ -55,8 +55,17 @@ endif
 
 MAKECMDGOALS := $(filter-out clang, $(MAKECMDGOALS))
 
+ifeq ($(filter icc, $(MAKECMDGOALS)), icc)
+VIRTUAL_GOALS += icc
+ICC := 1
+endif
+
+MAKECMDGOALS := $(filter-out clang, $(MAKECMDGOALS))
+
 ifneq ($(CLANG), 1)
+ifneq ($(ICC), 1)
 GCC := 1
+endif
 endif
 
 # sanitizer

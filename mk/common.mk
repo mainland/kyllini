@@ -24,6 +24,12 @@ CXX=clang++
 LD=clang
 endif
 
+ifeq ($(ICC), 1)
+CC=icc
+CXX=icpc
+LD=icc
+endif
+
 ifeq ($(SANITIZE), 1)
 ifeq ($(CLANG), 1)
 SANITIZEFLAGS+=-fsanitize=address -fsanitize=leak -fsanitize=undefined -fno-sanitize-recover=undefined,integer
