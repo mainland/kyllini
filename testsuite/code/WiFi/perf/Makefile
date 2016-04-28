@@ -9,8 +9,18 @@ WHOLEPROGRAM=1
 include $(TOP)/mk/common.mk
 
 KZCFLAGS+=--ftimer --fautolut --flut --ffuse
-CFLAGS+=-march=native -mtune=native -Ofast -pipe
-LDFLAGS+=-march=native -mtune=native -Ofast
+
+ifeq ($(GCC), 1)
+CFLAGS+=-pipe -march=native -Ofast -g
+endif
+
+ifeq ($(CLANG), 1)
+CFLAGS+=-march=native -Ofast -g
+endif
+
+ifeq ($(ICC), 1)
+CFLAGS+=-march=native -Ofast -g
+endif
 
 .PHONY : clean
 clean :
