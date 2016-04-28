@@ -70,7 +70,10 @@ data DynFlag = Quiet
              | Fuse
              | AutoLint
              | Simplify
-             | MayInline
+             | MayInlineVal
+             | MayInlineFun
+             | MayInlineComp
+             | AlwaysInlineComp
              | BoundsCheck
              | PartialEval
              | Timers
@@ -244,8 +247,11 @@ flagImplications fs =
         x' = f x
 
     go :: Flags -> Flags
-    go = (imp Fuse (setDynFlag MayInline)) .
-         (imp MayInline (setDynFlag Simplify))
+    go = (imp Fuse (setDynFlag AlwaysInlineComp)) .
+         (imp MayInlineVal (setDynFlag Simplify)) .
+         (imp MayInlineFun (setDynFlag Simplify)) .
+         (imp MayInlineComp (setDynFlag Simplify)) .
+         (imp AlwaysInlineComp (setDynFlag Simplify))
 
     imp :: DynFlag
         -> (Flags -> Flags)

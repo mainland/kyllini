@@ -56,6 +56,9 @@ options =
         , Option [] ["fmin-lut-ops"]
             (ReqArg minLUTOpsOpt "N")
             "set minimum operation count to consider a LUT"
+        , Option [] ["finline"]
+            (NoArg doInline)
+            "inline when simplifying"
         ]
 
     setDynFlagM :: DynFlag -> Flags -> m Flags
@@ -100,6 +103,13 @@ options =
         case reads s of
           [(n, "")]  -> return fs { minLUTOps = n }
           _          -> fail "argument to --fmin-lut-ops must be an integer"
+
+    doInline :: Flags -> m Flags
+    doInline fs = return $
+                  setDynFlag MayInlineVal $
+                  setDynFlag MayInlineFun $
+                  setDynFlag MayInlineComp $
+                  fs
 
     outOpt :: String -> Flags -> m Flags
     outOpt path fs = return fs { output = Just path }
@@ -167,18 +177,20 @@ modeFlagOpts =
 
 fDynFlagOpts :: [(DynFlag, String, String)]
 fDynFlagOpts =
-  [ (PrettyPrint, "pprint",       "pretty-print file")
-  , (LinePragmas, "line-pragmas", "print line pragmas in generated C")
-  , (Fuse,        "fuse",         "run the par fuser")
-  , (Simplify,    "simpl",        "run the simplifier")
-  , (MayInline,   "inline",       "inline when simplifying")
-  , (BoundsCheck, "bounds-check", "generate bounds checks")
-  , (PartialEval, "peval",        "run the partial evaluator")
-  , (Timers,      "timers",       "insert code to track elapsed time")
-  , (AutoLUT,     "autolut",      "run the auto-LUTter")
-  , (LUT,         "lut",          "run the LUTter")
-  , (NoGensym,    "no-gensym",    "don't gensym (for debugging)")
-  , (Pipeline,    "pipeline",     "pipeline computations")
+  [ (PrettyPrint,   "pprint",       "pretty-print file")
+  , (LinePragmas,   "line-pragmas", "print line pragmas in generated C")
+  , (Fuse,          "fuse",         "run the par fuser")
+  , (Simplify,      "simpl",        "run the simplifier")
+  , (MayInlineVal,  "inline-val",   "inline values when simplifying")
+  , (MayInlineFun,  "inline-fun",   "inline functions when simplifying")
+  , (MayInlineComp, "inline-comp",  "inline computation functions when simplifying")
+  , (BoundsCheck,   "bounds-check", "generate bounds checks")
+  , (PartialEval,   "peval",        "run the partial evaluator")
+  , (Timers,        "timers",       "insert code to track elapsed time")
+  , (AutoLUT,       "autolut",      "run the auto-LUTter")
+  , (LUT,           "lut",          "run the LUTter")
+  , (NoGensym,      "no-gensym",    "don't gensym (for debugging)")
+  , (Pipeline,      "pipeline",     "pipeline computations")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
