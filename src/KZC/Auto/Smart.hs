@@ -108,27 +108,8 @@ unConstE :: forall m . Monad m => Exp -> m Const
 unConstE (ConstE c _) =
     return c
 
-unConstE e0@(UnopE (Cast tau) e _) =
-    unConstE e >>= go tau
-  where
-    go :: Type -> Const -> m Const
-    go tau (FixC _ _ _ (BP 0) r) | isBitT tau =
-        return $ FixC I U (W 1) (BP 0) (if r == 0 then 0 else 1)
-
-    go (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r < 2^w - 1 =
-        return $ FixC I U (W w) (BP 0) r
-
-    go (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r < 2^(w-1) - 1 && r > -(2^(w-1)) =
-        return $ FixC I S (W w) (BP 0) r
-
-    go (FixT I s w (BP 0) _) (FloatC _ r) =
-        return $ FixC I s w (BP 0) (fromIntegral (truncate r :: Integer))
-
-    go (FloatT fp _) (FixC I _ _ (BP 0) r) =
-        return $ FloatC fp r
-
-    go _ _ =
-        faildoc $ text "Expression" <+> ppr e0 <+> text "is non-constant."
+unConstE (UnopE (Cast tau) (ConstE c _) _) | Just c' <- liftCast tau c =
+    return c'
 
 unConstE (ArrayE es _) = do
     cs <- mapM unConstE es
