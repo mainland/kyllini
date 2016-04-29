@@ -1140,9 +1140,14 @@ return1 :: Monad m => a -> m [a]
 return1 x = return [x]
 
 isSimple :: Exp -> Bool
-isSimple (ConstE {}) = True
-isSimple (VarE {})   = True
-isSimple _           = False
+isSimple ConstE{}           = True
+isSimple VarE{}             = True
+isSimple (UnopE Len _ _)    = True
+isSimple (UnopE _ e _)      = isSimple e
+isSimple (BinopE _ e1 e2 _) = isSimple e1 && isSimple e2
+isSimple (IfE e1 e2 e3 _)   = isSimple e1 && isSimple e2 && isSimple e3
+isSimple (ProjE e _ _)      = isSimple e
+isSimple _                  = False
 
 shouldInlineExpUnconditionally :: MonadTc m
                                => InExp -> SimplM l m Bool
