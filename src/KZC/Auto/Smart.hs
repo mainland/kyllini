@@ -43,7 +43,9 @@ module KZC.Auto.Smart (
     seqE,
 
     (.:=.),
-    (.>>.)
+    (.>>.),
+
+    isArrE
   ) where
 
 import Data.Loc
@@ -214,3 +216,8 @@ m1 .>>. m2 = do
     m1' <- m1
     m2' <- m2
     return $ m1' <> m2'
+
+isArrE :: Exp -> Bool
+isArrE (ConstE ArrayC{} _) = True
+isArrE ArrayE{}            = True
+isArrE _                   = False
