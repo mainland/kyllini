@@ -57,7 +57,7 @@ options =
             (ReqArg minLUTOpsOpt "N")
             "set minimum operation count to consider a LUT"
         , Option [] ["finline"]
-            (NoArg doInline)
+            (NoArg inlineOpt)
             "inline when simplifying"
         ]
 
@@ -104,12 +104,11 @@ options =
           [(n, "")]  -> return fs { minLUTOps = n }
           _          -> fail "argument to --fmin-lut-ops must be an integer"
 
-    doInline :: Flags -> m Flags
-    doInline fs = return $
-                  setDynFlag MayInlineVal $
-                  setDynFlag MayInlineFun $
-                  setDynFlag MayInlineComp $
-                  fs
+    inlineOpt :: Flags -> m Flags
+    inlineOpt fs = return $
+                   setDynFlag MayInlineFun $
+                   setDynFlag MayInlineComp $
+                   fs
 
     outOpt :: String -> Flags -> m Flags
     outOpt path fs = return fs { output = Just path }
