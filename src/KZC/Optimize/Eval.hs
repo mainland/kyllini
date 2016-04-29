@@ -846,11 +846,13 @@ evalExp e =
           Nothing   -> partialExp $ arrayE (map toExp vals)
           Just dflt -> return $ ArrayV $ P.fromList dflt vals
 
-    eval flags (IdxE arr start len _) = do
+    eval flags (IdxE arr start len s) = do
         v_arr   <- eval flags arr
         v_start <- eval flags start
-        v       <- evalIdx v_arr v_start len
-        uninlineArrayConstant v arr v_arr v_start len
+        if peval flags
+          then do v <- evalIdx v_arr v_start len
+                  uninlineArrayConstant v arr v_arr v_start len
+          else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
       where
         uninlineArrayConstant :: Val l m Exp -> Exp -> Val l m Exp -> Val l m Exp -> Maybe Int -> EvalM l m (Val l m Exp)
         uninlineArrayConstant v _ _ _ _ | isValue v =
@@ -878,9 +880,11 @@ evalExp e =
         es :: [Exp]
         (fs, es) = unzip  flds
 
-    eval flags (ProjE e f _) = do
+    eval flags (ProjE e f s) = do
         val <- eval flags e
-        evalProj val f
+        if peval flags
+          then evalProj val f
+          else partialExp $ ProjE (toExp val) f s
 
     eval flags (PrintE nl es s) = do
         vals <- mapM (eval flags) es
