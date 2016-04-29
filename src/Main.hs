@@ -102,11 +102,12 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintCore >=>
         tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase1") >=>
-        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ onlyInliningValues $ iterateSimplPhase "-phase1") >=>
         runIf (testDynFlag AutoLUT) (tracePhase "autolut" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
-        runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
+        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
@@ -239,6 +240,13 @@ runPipeline filepath =
         whenDynFlag AutoLint $
             A.withTc (A.checkProgram p)
         return p
+
+    onlyInliningValues :: (a -> MaybeT KZC a) -> a -> MaybeT KZC a
+    onlyInliningValues k x =
+        localFlags (unsetDynFlag MayInlineFun .
+                    unsetDynFlag MayInlineComp .
+                    unsetDynFlag AlwaysInlineComp) $
+        k x
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
     stopIf f x = do
