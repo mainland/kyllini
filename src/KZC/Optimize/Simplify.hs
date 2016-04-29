@@ -743,8 +743,17 @@ simplStep (CallC l f0 iotas0 args0 s) = do
     extendArgs ((v, CompA c):vargs) k = extendSubst v (DoneComp c) $
                                         extendArgs vargs k
 
-simplStep (IfC l e c1 c2 s) =
-    IfC l <$> simplExp e <*> simplComp c1 <*> simplComp c2 <*> pure s >>= return1
+simplStep (IfC l e1 c2 c3 s) = do
+    e1' <- simplExp e1
+    c2' <- simplComp c2
+    c3' <- simplComp c3
+    simplIf e1' c2' c3'
+  where
+    simplIf :: Exp -> Comp l -> Comp l -> SimplM l m [Step l]
+    simplIf e1' c2' c3'
+        | isTrue e1'  = return $ unComp c2'
+        | isFalse e1' = return $ unComp c3'
+        | otherwise   = return1 $ IfC l e1' c2' c3' s
 
 simplStep (LetC {}) =
     faildoc $ text "Cannot occ let step."
@@ -896,14 +905,6 @@ simplExp (IfE e1 e2 e3 s) = do
         | isFalse e1' = return e3'
         | otherwise   = return $ IfE e1' e2' e3' s
 
-    isTrue :: Exp -> Bool
-    isTrue (ConstE (BoolC True) _) = True
-    isTrue _                       = False
-
-    isFalse :: Exp -> Bool
-    isFalse (ConstE (BoolC False) _) = True
-    isFalse _                        = False
-
 simplExp (LetE decl e s) = do
     (maybe_decl', e') <- simplLocalDecl decl $ simplExp e
     case maybe_decl' of
@@ -1050,6 +1051,14 @@ simplExp (BindE wv tau e1 e2 s) = do
 
 simplExp (LutE e) =
     LutE <$> simplExp e
+
+isTrue :: Exp -> Bool
+isTrue (ConstE (BoolC True) _) = True
+isTrue _                       = False
+
+isFalse :: Exp -> Bool
+isFalse (ConstE (BoolC False) _) = True
+isFalse _                        = False
 
 return1 :: Monad m => a -> m [a]
 return1 x = return [x]
