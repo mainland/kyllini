@@ -328,4 +328,4 @@ occExp (BindE (TameV v) tau e1 e2 s) = do
     return $ BindE (TameV (updOccInfo v occ)) tau e1' e2' s
 
 occExp (LutE e) =
-    occExp e
+    LutE <$> occExp e
