@@ -55,7 +55,9 @@ shouldLUT info e = do
     stats  <- lutStats e
     return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
              lutBytes info <= fromIntegral (maxLUT dflags) &&
+             lutInBits info <= 64 &&
              lutOutBits info + lutResultBits info > 0 &&
+             lutOutBits info + lutResultBits info <= 64 &&
              (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
              not (lutHasSideEffect stats)
 
