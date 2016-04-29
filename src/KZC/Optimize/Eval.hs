@@ -587,7 +587,7 @@ evalExp e =
             maybePartialVal $ liftBits op complement val
 
         unop Neg val =
-            maybePartialVal $ liftNum Neg negate val
+            maybePartialVal $ liftNum op negate val
 
         unop (Cast tau) val =
             maybePartialVal $ liftCast tau val
@@ -632,11 +632,11 @@ evalExp e =
 
         binop Land val1 val2
             | isTrue  val1 = maybePartialVal val2
-            | isFalse val1 = return $ ConstV $ BoolC False
+            | isFalse val1 = maybePartialVal val1
             | otherwise    = maybePartialVal $ liftBool2 op (&&) val1 val2
 
         binop Lor val1 val2
-            | isTrue  val1 = return $ ConstV $ BoolC True
+            | isTrue  val1 = maybePartialVal val1
             | isFalse val1 = maybePartialVal val2
             | otherwise    = maybePartialVal $ liftBool2 op (||) val1 val2
 
@@ -656,19 +656,19 @@ evalExp e =
             maybePartialVal $ liftShift op shiftR val1 val2
 
         binop Add val1 val2 =
-            maybePartialVal $ liftNum2 Add (+) val1 val2
+            maybePartialVal $ liftNum2 op (+) val1 val2
 
         binop Sub val1 val2 =
-            maybePartialVal $ liftNum2 Sub (-) val1 val2
+            maybePartialVal $ liftNum2 op (-) val1 val2
 
         binop Mul val1 val2 =
-            maybePartialVal $ liftNum2 Mul (*) val1 val2
+            maybePartialVal $ liftNum2 op (*) val1 val2
 
         binop Div val1 val2 =
-            maybePartialVal $ liftIntegral2 Div quot val1 val2
+            maybePartialVal $ liftIntegral2 op quot val1 val2
 
         binop Rem val1 val2 =
-            maybePartialVal $ liftIntegral2 Rem rem val1 val2
+            maybePartialVal $ liftIntegral2 op rem val1 val2
 
         binop op val1 val2 =
             partialExp $ BinopE op (toExp val1) (toExp val2) s
