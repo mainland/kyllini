@@ -537,6 +537,16 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
     liftIntegral2 op f (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op f c1 c2 =
         ConstV c'
 
+    liftIntegral2 Div _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+        complexV sn ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
+      where
+        a, b, c, d :: Val l m Exp
+        (a, b) = uncomplexV x
+        (c, d) = uncomplexV y
+
+        (/) :: Val l m Exp -> Val l m Exp -> Val l m Exp
+        x / y = liftIntegral2 Div (quot) x y
+
     liftIntegral2 op _f val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 

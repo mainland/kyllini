@@ -458,6 +458,18 @@ instance LiftedIntegral Const (Maybe Const) where
     liftIntegral2 Rem _ (FixC I s w (BP 0) r1) (FixC _ _ _ _ r2) =
         Just $ FixC I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
 
+    liftIntegral2 Div _ x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn = do
+        re <- (a*c + b*d)/(c*c + d*d)
+        im <- (b*c - a*d)/(c*c + d*d)
+        return $ complexC sn re im
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+        (/) :: Const -> Const -> Maybe Const
+        x / y = liftIntegral2 Div (quot) x y
+
     liftIntegral2 _ _ _ _ =
         Nothing
 
