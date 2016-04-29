@@ -115,7 +115,7 @@ lookupVal :: MonadTc m => Var -> ND m (Known Val)
 lookupVal v = do
     maybe_val <- gets (Map.lookup v . vals)
     case maybe_val of
-      Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope ZZZ"
+      Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
       Just val -> return val
 
 extendVals :: MonadTc m => [(Var, Known Val)] -> ND m a -> ND m a
