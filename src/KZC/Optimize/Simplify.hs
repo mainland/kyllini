@@ -17,6 +17,7 @@ module KZC.Optimize.Simplify (
   ) where
 
 import Prelude hiding ((<=))
+import qualified Prelude
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
@@ -30,6 +31,7 @@ import Control.Monad.Reader (MonadReader(..),
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             modify)
+import Data.Bits
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -876,22 +878,82 @@ simplExp e0@(VarE v _) =
 
 simplExp (UnopE op e s) = do
     e' <- simplExp e
-    simplUnop op e'
+    unop op e'
   where
-    simplUnop :: Unop -> Exp -> SimplM l m Exp
-    simplUnop Neg e' = return $ negate e'
-    simplUnop op  e' = return $ UnopE op e' s
+    unop :: Unop -> Exp -> SimplM l m Exp
+    unop Lnot (ConstE c _) | Just c' <- liftBool op not c =
+        return $ ConstE c' s
+
+    unop Bnot (ConstE c _) | Just c' <- liftBits op complement c =
+        return $ ConstE c' s
+
+    unop Neg (ConstE c _) | Just c' <- liftNum op negate c =
+        return $ ConstE c' s
+
+    unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c =
+        return $ ConstE c' s
+
+    unop Len e' = do
+        (iota, _) <- inferExp e' >>= checkArrOrRefArrT
+        iota'     <- simplIota iota
+        case iota' of
+          ConstI n _ -> return $ ConstE (intC n) s
+          _          -> return $ UnopE op e' s
+
+    unop op e' =
+        return $ UnopE op e' s
 
 simplExp (BinopE op e1 e2 s) = do
     e1' <- simplExp e1
     e2' <- simplExp e2
-    simplBinop op e1' e2'
+    binop op e1' e2'
   where
-    simplBinop :: Binop -> Exp -> Exp -> SimplM l m Exp
-    simplBinop Add e1' e2' = return $ e1' + e2'
-    simplBinop Sub e1' e2' = return $ e1' - e2'
-    simplBinop Mul e1' e2' = return $ e1' * e2'
-    simplBinop op  e1' e2' = return $ BinopE op e1' e2' s
+    binop :: Binop -> Exp -> Exp -> SimplM l m Exp
+    binop Lt (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftOrd op (<) x y) s
+
+    binop Le (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftOrd op (Prelude.<=) x y) s
+
+    binop Eq (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftEq op (==) x y) s
+
+    binop Ge (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftOrd op (>=) x y) s
+
+    binop Gt (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftOrd op (>) x y) s
+
+    binop Ne (ConstE x _) (ConstE y _) =
+        return $ ConstE (liftEq op (/=) x y) s
+
+    binop Land e1@(ConstE x _) e2@(ConstE y _)
+        | isTrue e1                        = return e2
+        | isFalse e1                       = return e1
+        | Just c' <- liftBool2 op (&&) x y = return $ ConstE c' s
+
+    binop Lor e1@(ConstE x _) e2@(ConstE y _)
+        | isTrue e1                        = return e1
+        | isFalse e2                       = return e2
+        | Just c' <- liftBool2 op (&&) x y = return $ ConstE c' s
+
+    binop Add (ConstE x _) (ConstE y _) | Just c' <- liftNum2 op (+) x y =
+        return $ ConstE c' s
+
+    binop Sub (ConstE x _) (ConstE y _) | Just c' <- liftNum2 op (-) x y =
+        return $ ConstE c' s
+
+    binop Mul (ConstE x _) (ConstE y _) | Just c' <- liftNum2 op (*) x y =
+        return $ ConstE c' s
+
+    binop Div (ConstE x _) (ConstE y _) | Just c' <- liftIntegral2 op quot x y =
+        return $ ConstE c' s
+
+    binop Rem (ConstE x _) (ConstE y _) | Just c' <- liftIntegral2 op rem x y =
+        return $ ConstE c' s
+
+    binop op  e1' e2' =
+        return $ BinopE op e1' e2' s
 
 simplExp (IfE e1 e2 e3 s) = do
     e1' <- simplExp e1
