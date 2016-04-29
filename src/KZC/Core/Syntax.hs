@@ -47,15 +47,15 @@ module KZC.Core.Syntax (
     Iota(..),
     Kind(..),
 
+    isComplexStruct,
+
+#if !defined(ONLY_TYPEDEFS)
     LiftedBool(..),
     LiftedEq(..),
     LiftedOrd(..),
     LiftedNum(..),
     LiftedBits(..),
 
-    isComplexStruct,
-
-#if !defined(ONLY_TYPEDEFS)
     arrPrec,
     doPrec,
     doPrec1,
@@ -86,6 +86,7 @@ import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
+import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
@@ -166,10 +167,6 @@ data Scale = I
 data Signedness = S
                 | U
   deriving (Eq, Ord, Read, Show)
-
--- | Fixed-point width
-newtype W = W Int
-  deriving (Eq, Ord, Read, Show, Num)
 
 -- | Fixed-point binary point
 newtype BP = BP Int
@@ -320,6 +317,44 @@ data Kind = TauK   -- ^ Base types, including arrays of base types
           | IotaK  -- ^ Array index types
   deriving (Eq, Ord, Read, Show)
 
+-- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
+isComplexStruct :: Struct -> Bool
+isComplexStruct "complex"   = True
+isComplexStruct "complex8"  = True
+isComplexStruct "complex16" = True
+isComplexStruct "complex32" = True
+isComplexStruct "complex64" = True
+isComplexStruct _           = False
+
+#if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Staging
+ -
+ ------------------------------------------------------------------------------}
+
+instance Num Const where
+    x + y = case liftNum2 Add (+) x y of
+              Nothing -> error "Num Const: + did not result in a constant"
+              Just z  -> z
+
+    x - y = case liftNum2 Sub (-) x y of
+              Nothing -> error "Num Const: - did not result in a constant"
+              Just z  -> z
+
+    x * y = case liftNum2 Mul (*) x y of
+              Nothing -> error "Num Const: * did not result in a constant"
+              Just z  -> z
+
+    negate x = case liftNum Neg negate x of
+                 Nothing -> error "Num Const: negate did not result in a constant"
+                 Just z  -> z
+
+    fromInteger i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+    abs _    = error "Num Const: abs not implemented"
+    signum _ = error "Num Const: signum not implemented"
+
 -- | A type to which operations on the 'Bool' type can be lifted.
 class LiftedBool a b | a -> b where
     liftBool  :: Unop  -> (Bool -> Bool)         -> a -> b
@@ -344,16 +379,60 @@ class LiftedBits a b | a -> b where
     liftBits2 :: Binop -> (forall a . Bits a => a -> a -> a)   -> a -> a -> b
     liftShift :: Binop -> (forall a . Bits a => a -> Int -> a) -> a -> a -> b
 
--- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
-isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
+instance LiftedNum Const (Maybe Const) where
+    liftNum _op f (FixC sc s w bp r) =
+        Just $ FixC sc s w bp (f r)
 
-#if !defined(ONLY_TYPEDEFS)
+    liftNum _op f (FloatC fp r) =
+        Just $ FloatC fp (f r)
+
+    liftNum _op _f _c =
+        Nothing
+
+    liftNum2 _op f (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
+        Just $ FixC sc s w bp (f r1 r2)
+
+    liftNum2 _op f (FloatC fp r1) (FloatC _ r2) =
+        Just $ FloatC fp (f r1 r2)
+
+    liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a+c) (b+d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a-c) (b-d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a*c - b*d) (b*c + a*d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 _ _ _ _ =
+        Nothing
+
+complexC :: Struct -> Const -> Const -> Const
+complexC sname a b =
+    StructC sname [("re", a), ("im", b)]
+
+uncomplexC :: Const -> (Const, Const)
+uncomplexC c@(StructC sname x) | isComplexStruct sname =
+    maybe (errordoc $ text "Bad complex value:" <+> ppr c) id $ do
+      re <- lookup "re" x
+      im <- lookup "im" x
+      return (re, im)
+
+uncomplexC c =
+    errordoc $ text "Not a complex value:" <+> ppr c
+
 {------------------------------------------------------------------------------
  -
  - Summaries
@@ -393,9 +472,6 @@ instance Pretty TyVar where
 
 instance Pretty IVar where
     ppr (IVar n) = ppr n
-
-instance Pretty W where
-    ppr (W w) = ppr w
 
 instance Pretty BP where
     ppr (BP bp) = ppr bp

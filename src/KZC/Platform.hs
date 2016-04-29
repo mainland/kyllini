@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 -- |
@@ -7,6 +8,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Platform (
+    W(..),
+
     dEFAULT_INT_WIDTH,
 
     bIT_ARRAY_ELEM_TYPE,
@@ -16,9 +19,16 @@ module KZC.Platform (
   ) where
 
 import qualified Language.C.Syntax as C
+import Text.PrettyPrint.Mainland
 
-import KZC.Core.Syntax
 import KZC.Quote.C
+
+-- | Fixed-point width
+newtype W = W Int
+  deriving (Eq, Ord, Read, Show, Num)
+
+instance Pretty W where
+    ppr (W w) = ppr w
 
 dEFAULT_INT_WIDTH :: W
 dEFAULT_INT_WIDTH = W 32

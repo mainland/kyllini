@@ -6,7 +6,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
 -- Module      : KZC.Auto.Syntax
@@ -46,12 +45,6 @@ module KZC.Auto.Syntax (
     Iota(..),
     Kind(..),
 
-    LiftedBool(..),
-    LiftedEq(..),
-    LiftedOrd(..),
-    LiftedNum(..),
-    LiftedBits(..),
-
     mkBoundVar,
 
     Arg(..),
@@ -71,6 +64,12 @@ module KZC.Auto.Syntax (
     Stm(..),
 
 #if !defined(ONLY_TYPEDEFS)
+    LiftedBool(..),
+    LiftedEq(..),
+    LiftedOrd(..),
+    LiftedNum(..),
+    LiftedBits(..),
+
     arrPrec,
     doPrec,
     doPrec1,
@@ -109,7 +108,6 @@ import KZC.Core.Syntax (Var(..),
                         IVar(..),
                         Scale(..),
                         Signedness(..),
-                        W(..),
                         BP(..),
                         FP(..),
                         Const(..),
@@ -125,17 +123,17 @@ import KZC.Core.Syntax (Var(..),
                         Iota(..),
                         Kind(..),
 
+                        isComplexStruct,
+
+                        Stm(..),
+
+#if !defined(ONLY_TYPEDEFS)
                         LiftedBool(..),
                         LiftedEq(..),
                         LiftedOrd(..),
                         LiftedNum(..),
                         LiftedBits(..),
 
-                        isComplexStruct,
-
-                        Stm(..),
-
-#if !defined(ONLY_TYPEDEFS)
                         arrPrec,
                         doPrec,
                         doPrec1,
@@ -1549,28 +1547,6 @@ instance Freshen WildVar Exp Var where
  -
  ------------------------------------------------------------------------------}
 
-instance Num Const where
-    x + y = case liftNum2 Add (+) x y of
-              Nothing -> error "Num Const: + did not result in a constant"
-              Just z  -> z
-
-    x - y = case liftNum2 Sub (-) x y of
-              Nothing -> error "Num Const: - did not result in a constant"
-              Just z  -> z
-
-    x * y = case liftNum2 Mul (*) x y of
-              Nothing -> error "Num Const: * did not result in a constant"
-              Just z  -> z
-
-    negate x = case liftNum Neg negate x of
-                 Nothing -> error "Num Const: negate did not result in a constant"
-                 Just z  -> z
-
-    fromInteger i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
-
-    abs _    = error "Num Const: abs not implemented"
-    signum _ = error "Num Const: signum not implemented"
-
 instance Num Exp where
     x + y = liftNum2 Add (+) x y
     x - y = liftNum2 Sub (-) x y
@@ -1583,20 +1559,6 @@ instance Num Exp where
     abs _    = error "Num Exp: abs not implemented"
     signum _ = error "Num Exp: signum not implemented"
 
-complexC :: Struct -> Const -> Const -> Const
-complexC sname a b =
-    StructC sname [("re", a), ("im", b)]
-
-uncomplexC :: Const -> (Const, Const)
-uncomplexC c@(StructC sname x) | isComplexStruct sname =
-    maybe (errordoc $ text "Bad complex value:" <+> ppr c) id $ do
-      re <- lookup "re" x
-      im <- lookup "im" x
-      return (re, im)
-
-uncomplexC c =
-    errordoc $ text "Not a complex value:" <+> ppr c
-
 isZero :: Exp -> Bool
 isZero (ConstE (FixC _ _ _ _ 0) _) = True
 isZero (ConstE (FloatC _ 0) _)     = True
@@ -1606,46 +1568,6 @@ isOne :: Exp -> Bool
 isOne (ConstE (FixC I _ _ (BP 0) 1) _) = True
 isOne (ConstE (FloatC _ 1) _)          = True
 isOne _                                = False
-
-instance LiftedNum Const (Maybe Const) where
-    liftNum _op f (FixC sc s w bp r) =
-        Just $ FixC sc s w bp (f r)
-
-    liftNum _op f (FloatC fp r) =
-        Just $ FloatC fp (f r)
-
-    liftNum _op _f _c =
-        Nothing
-
-    liftNum2 _op f (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
-        Just $ FixC sc s w bp (f r1 r2)
-
-    liftNum2 _op f (FloatC fp r1) (FloatC _ r2) =
-        Just $ FloatC fp (f r1 r2)
-
-    liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a+c) (b+d)
-      where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
-
-    liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a-c) (b-d)
-      where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
-
-    liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a*c - b*d) (b*c + a*d)
-      where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
-
-    liftNum2 _ _ _ _ =
-        Nothing
 
 instance LiftedNum Exp Exp where
     liftNum op f e@(ConstE c _) | Just c' <- liftNum op f c =

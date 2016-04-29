@@ -48,7 +48,6 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Core.Syntax (Scale(..),
                         Signedness(..),
-                        W(..),
                         BP(..),
                         FP(..))
 import KZC.Globals
