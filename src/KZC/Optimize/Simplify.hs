@@ -1068,7 +1068,21 @@ simplExp (StructE struct flds s) =
                    <*> pure s
 
 simplExp (ProjE e f s) =
-    ProjE <$> simplExp e <*> pure f <*> pure s
+    simplExp e >>= go
+  where
+    go :: Exp -> SimplM l m Exp
+    go (StructE _ flds _) =
+        case lookup f flds of
+          Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
+          Just e' -> return e'
+
+    go (ConstE (StructC _ flds) _) =
+        case lookup f flds of
+          Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
+          Just c  -> return $ ConstE c s
+
+    go e' =
+        return $ ProjE e' f s
 
 simplExp (PrintE nl es s) =
     PrintE nl <$> mapM simplExp es <*> pure s
