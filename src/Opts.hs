@@ -56,6 +56,9 @@ options =
         , Option [] ["fmin-lut-ops"]
             (ReqArg minLUTOpsOpt "N")
             "set minimum operation count to consider a LUT"
+        , Option [] ["fsimpl"]
+            (NoArg simplOpt)
+            "run the simplifier"
         , Option [] ["finline"]
             (NoArg inlineOpt)
             "inline when simplifying"
@@ -103,6 +106,12 @@ options =
         case reads s of
           [(n, "")]  -> return fs { minLUTOps = n }
           _          -> fail "argument to --fmin-lut-ops must be an integer"
+
+    simplOpt :: Flags -> m Flags
+    simplOpt fs = return $
+                  setDynFlag Simplify $
+                  setDynFlag MayInlineVal $
+                  fs
 
     inlineOpt :: Flags -> m Flags
     inlineOpt fs = return $
@@ -179,7 +188,6 @@ fDynFlagOpts =
   [ (PrettyPrint,   "pprint",       "pretty-print file")
   , (LinePragmas,   "line-pragmas", "print line pragmas in generated C")
   , (Fuse,          "fuse",         "run the par fuser")
-  , (Simplify,      "simpl",        "run the simplifier")
   , (MayInlineVal,  "inline-val",   "inline values when simplifying")
   , (MayInlineFun,  "inline-fun",   "inline functions when simplifying")
   , (MayInlineComp, "inline-comp",  "inline computation functions when simplifying")
