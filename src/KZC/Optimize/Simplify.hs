@@ -491,7 +491,7 @@ simplLocalDecl decl m = do
     preInlineUnconditionally :: Flags -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     preInlineUnconditionally flags decl@(LetLD v _ e _)
         | isDead = dropBinding v >> withoutBinding m
-        | isOnce && testDynFlag MayInlineVal flags = do
+        | isOnce && not (isArrE e) && testDynFlag MayInlineVal flags = do
               theta <- askSubst
               extendSubst (bVar v) (SuspExp theta e) $ do
               dropBinding v
@@ -851,8 +851,10 @@ simplExp e0@(VarE v _) =
 
     inline :: OutExp -> Maybe OccInfo -> Level -> Bool
     inline _rhs Nothing            _lvl = False
-    inline _rhs (Just Dead)        _lvl = error "inline: Dead"
-    inline _rhs (Just Once)        _lvl = error "inline: Once"
+    inline _rhs (Just Dead)        _lvl = error "inline: saw Dead binding"
+    inline rhs (Just Once)         _lvl
+        | isArrE rhs                    = False
+        | otherwise                     = error "inline: saw Once binding"
     inline _rhs (Just OnceInFun)   _lvl = False
     inline _rhs (Just ManyBranch)  _lvl = False
     inline _rhs (Just Many)        _lvl = False
