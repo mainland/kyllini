@@ -1550,19 +1550,19 @@ instance Freshen WildVar Exp Var where
  ------------------------------------------------------------------------------}
 
 instance Num Const where
-    x + y = case unConstE (constE x + constE y) of
+    x + y = case liftNum2 Add (+) x y of
               Nothing -> error "Num Const: + did not result in a constant"
               Just z  -> z
 
-    x - y = case unConstE (constE x - constE y) of
+    x - y = case liftNum2 Sub (-) x y of
               Nothing -> error "Num Const: - did not result in a constant"
               Just z  -> z
 
-    x * y = case unConstE (constE x * constE y) of
-              Nothing -> error "Num Const: - did not result in a constant"
+    x * y = case liftNum2 Mul (*) x y of
+              Nothing -> error "Num Const: * did not result in a constant"
               Just z  -> z
 
-    negate x = case unConstE (negate (constE x)) of
+    negate x = case liftNum Neg negate x of
                  Nothing -> error "Num Const: negate did not result in a constant"
                  Just z  -> z
 
@@ -1572,17 +1572,9 @@ instance Num Const where
     signum _ = error "Num Const: signum not implemented"
 
 instance Num Exp where
-    x + y | isZero x  = y
-          | isZero y  = x
-          | otherwise = liftNum2 Add (+) x y
-
-    x - y | isZero x  = - y
-          | isZero y  = x
-          | otherwise = liftNum2 Sub (-) x y
-
-    x * y | isOne x   = y
-          | isOne y   = x
-          | otherwise = liftNum2 Mul (*) x y
+    x + y = liftNum2 Add (+) x y
+    x - y = liftNum2 Sub (-) x y
+    x * y = liftNum2 Mul (*) x y
 
     negate x = liftNum Neg negate x
 
@@ -1605,15 +1597,6 @@ uncomplexC c@(StructC sname x) | isComplexStruct sname =
 uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
 
-unConstE :: forall m . Monad m => Exp -> m Const
-unConstE (ConstE c _) =
-    return c
-unConstE e =
-    faildoc $ text "Expression" <+> ppr e <+> text "is non-constant."
-
-constE :: Const -> Exp
-constE c = ConstE c noLoc
-
 isZero :: Exp -> Bool
 isZero (ConstE (FixC _ _ _ _ 0) _) = True
 isZero (ConstE (FloatC _ 0) _)     = True
@@ -1624,51 +1607,68 @@ isOne (ConstE (FixC I _ _ (BP 0) 1) _) = True
 isOne (ConstE (FloatC _ 1) _)          = True
 isOne _                                = False
 
+instance LiftedNum Const (Maybe Const) where
+    liftNum _op f (FixC sc s w bp r) =
+        Just $ FixC sc s w bp (f r)
+
+    liftNum _op f (FloatC fp r) =
+        Just $ FloatC fp (f r)
+
+    liftNum _op _f _c =
+        Nothing
+
+    liftNum2 _op f (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
+        Just $ FixC sc s w bp (f r1 r2)
+
+    liftNum2 _op f (FloatC fp r1) (FloatC _ r2) =
+        Just $ FloatC fp (f r1 r2)
+
+    liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a+c) (b+d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a-c) (b-d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+        Just $ complexC sn (a*c - b*d) (b*c + a*d)
+      where
+        a, b, c, d :: Const
+        (a, b) = uncomplexC x
+        (c, d) = uncomplexC y
+
+    liftNum2 _ _ _ _ =
+        Nothing
+
 instance LiftedNum Exp Exp where
-    liftNum _ f (ConstE (FixC sc s w bp r) l) =
-        ConstE (FixC sc s w bp (f r)) l
+    liftNum op f e@(ConstE c _) | Just c' <- liftNum op f c =
+        ConstE c' (srclocOf e)
 
-    liftNum _ f (ConstE (FloatC fp r) l) =
-        ConstE (FloatC fp (f r)) l
-
-    liftNum op _ e =
+    liftNum op _f e =
         UnopE op e (srclocOf e)
 
-    liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) =
-        go op c1 c2
-      where
-        go :: Binop -> Const -> Const -> Exp
-        go _ (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
-            ConstE (FixC sc s w bp (f r1 r2)) (e1 `srcspan` e2)
+    liftNum2 Add _ e1 e2 | isZero e1 = e2
+                         | isZero e2 = e1
 
-        go _ (FloatC fp r1) (FloatC _ r2) =
-            ConstE (FloatC fp (f r1 r2)) (e1 `srcspan` e2)
+    liftNum2 Sub _ e1 e2 | isZero e1 = negate e2
+                         | isZero e2 = e1
 
-        go Add x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-            constE $ complexC sn (a+c) (b+d)
-          where
-            a, b, c, d :: Const
-            (a, b) = uncomplexC x
-            (c, d) = uncomplexC y
+    liftNum2 Mul _ e1 e2 | isZero e1 = 0
+                         | isZero e2 = 0
+                         | isOne  e1 = e2
+                         | isOne  e2 = e1
 
-        go Sub x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-            constE $ complexC sn (a-c) (b-d)
-          where
-            a, b, c, d :: Const
-            (a, b) = uncomplexC x
-            (c, d) = uncomplexC y
+    liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) | Just c' <- liftNum2 op f c1 c2 =
+        ConstE c' (e1 `srcspan` e2)
 
-        go Mul x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-            constE $ complexC sn (a*c - b*d) (b*c + a*d)
-          where
-            a, b, c, d :: Const
-            (a, b) = uncomplexC x
-            (c, d) = uncomplexC y
-
-        go _op _c1 _c2 =
-            BinopE op e1 e2 (e1 `srcspan` e2)
-
-    liftNum2 op _ e1 e2 =
+    liftNum2 op _f e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)
 
 instance IsEq Exp where
