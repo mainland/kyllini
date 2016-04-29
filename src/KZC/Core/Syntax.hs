@@ -1,9 +1,11 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- |
 -- Module      : KZC.Core.Syntax
@@ -45,6 +47,12 @@ module KZC.Core.Syntax (
     Iota(..),
     Kind(..),
 
+    LiftedBool(..),
+    LiftedEq(..),
+    LiftedOrd(..),
+    LiftedNum(..),
+    LiftedBits(..),
+
     isComplexStruct,
 
 #if !defined(ONLY_TYPEDEFS)
@@ -64,6 +72,7 @@ module KZC.Core.Syntax (
 import Control.Applicative ((<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader
+import Data.Bits
 #if !MIN_VERSION_base(4,8,0)
 import Data.Foldable (foldMap)
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -310,6 +319,30 @@ data Kind = TauK   -- ^ Base types, including arrays of base types
           | PhiK   -- ^ Function types
           | IotaK  -- ^ Array index types
   deriving (Eq, Ord, Read, Show)
+
+-- | A type to which operations on the 'Bool' type can be lifted.
+class LiftedBool a b | a -> b where
+    liftBool  :: Unop  -> (Bool -> Bool)         -> a -> b
+    liftBool2 :: Binop -> (Bool -> Bool -> Bool) -> a -> a -> b
+
+-- | A type to which operations on 'Eq' types can be lifted.
+class LiftedEq a b | a -> b where
+    liftEq :: Binop -> (forall a . Eq a => a -> a -> Bool) -> a -> a -> b
+
+-- | A type to which operations on 'Ord' types can be lifted.
+class LiftedOrd a b | a -> b where
+    liftOrd :: Binop -> (forall a . Ord a => a -> a -> Bool) -> a -> a -> b
+
+-- | A type to which operations on 'Num' types can be lifted.
+class LiftedNum a b | a -> b where
+    liftNum  :: Unop  -> (forall a . Num a => a -> a)      -> a -> b
+    liftNum2 :: Binop -> (forall a . Num a => a -> a -> a) -> a -> a -> b
+
+-- | A type to which operations on 'Bits' types can be lifted.
+class LiftedBits a b | a -> b where
+    liftBits  :: Unop  -> (forall a . Bits a => a -> a)        -> a -> b
+    liftBits2 :: Binop -> (forall a . Bits a => a -> a -> a)   -> a -> a -> b
+    liftShift :: Binop -> (forall a . Bits a => a -> Int -> a) -> a -> a -> b
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool

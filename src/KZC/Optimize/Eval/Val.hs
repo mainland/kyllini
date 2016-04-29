@@ -50,16 +50,6 @@ module KZC.Optimize.Eval.Val (
     isDefaultValue,
     isKnown,
 
-    liftBool,
-    liftBool2,
-    liftEq,
-    liftOrd,
-    liftNum,
-    liftNum2,
-    liftBits,
-    liftBits2,
-    liftShift,
-
     ToExp(..),
     ToComp(..),
     toConst
@@ -477,114 +467,91 @@ uncomplexV (StructV sname x) | isComplexStruct sname =
 uncomplexV val =
     errordoc $ text "Not a complex value:" <+> ppr val
 
-liftBool :: IsLabel l => Unop -> (Bool -> Bool) -> Val l m Exp -> Val l m Exp
-liftBool _ f (BoolV b) =
-    BoolV (f b)
+instance IsLabel l => LiftedBool (Val l m Exp) (Val l m Exp) where
+    liftBool _ f (BoolV b) =
+        BoolV (f b)
 
-liftBool op _ val =
-    ExpV $ UnopE op (toExp val) noLoc
+    liftBool op _ val =
+        ExpV $ UnopE op (toExp val) noLoc
 
-liftBool2 :: IsLabel l => Binop -> (Bool -> Bool -> Bool) -> Val l m Exp -> Val l m Exp -> Val l m Exp
-liftBool2 _ f (BoolV x) (BoolV y) =
-    BoolV (f x y)
+    liftBool2 _ f (BoolV x) (BoolV y) =
+        BoolV (f x y)
 
-liftBool2 op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftBool2 op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-liftEq :: IsLabel l => Binop -> (forall a . Eq a => a -> a -> Bool) -> Val l m Exp -> Val l m Exp -> Val l m Exp
-liftEq _ f val1 val2 | isValue val1 && isValue val2 =
-    BoolV (f val1 val2)
+instance IsLabel l => LiftedEq (Val l m Exp) (Val l m Exp) where
+    liftEq _ f val1 val2 | isValue val1 && isValue val2 =
+        BoolV (f val1 val2)
 
-liftEq op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftEq op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-liftOrd :: IsLabel l => Binop -> (forall a . Ord a => a -> a -> Bool) -> Val l m Exp -> Val l m Exp -> Val l m Exp
-liftOrd _ f val1 val2 | isValue val1 && isValue val2 =
-    BoolV (f val1 val2)
+instance IsLabel l => LiftedOrd (Val l m Exp) (Val l m Exp) where
+    liftOrd _ f val1 val2 | isValue val1 && isValue val2 =
+        BoolV (f val1 val2)
 
-liftOrd op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftOrd op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-liftNum :: IsLabel l => Unop -> (forall a . Num a => a -> a) -> Val l m Exp -> Val l m Exp
-liftNum _ f (FixV sc s w bp r) =
-    FixV sc s w bp (f r)
+instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
+    liftNum _ f (FixV sc s w bp r) =
+        FixV sc s w bp (f r)
 
-liftNum _ f (FloatV fp r) =
-    FloatV fp (f r)
+    liftNum _ f (FloatV fp r) =
+        FloatV fp (f r)
 
-liftNum op _ val =
-    ExpV $ UnopE op (toExp val) noLoc
+    liftNum op _ val =
+        ExpV $ UnopE op (toExp val) noLoc
 
-liftNum2 :: forall l m . IsLabel l
-         => Binop
-         -> (forall a . Num a => a -> a -> a)
-         -> Val l m Exp
-         -> Val l m Exp
-         -> Val l m Exp
-liftNum2 _ f (FixV sc s w bp r1) (FixV _ _ _ _ r2) =
-    FixV sc s w bp (f r1 r2)
+    liftNum2 _ f (FixV sc s w bp r1) (FixV _ _ _ _ r2) =
+        FixV sc s w bp (f r1 r2)
 
-liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
-    FloatV fp (f r1 r2)
+    liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
+        FloatV fp (f r1 r2)
 
-liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-    complexV sn (a+c) (b+d)
-  where
-    a, b, c, d :: Val l m Exp
-    (a, b) = uncomplexV x
-    (c, d) = uncomplexV y
+    liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+        complexV sn (a+c) (b+d)
+      where
+        a, b, c, d :: Val l m Exp
+        (a, b) = uncomplexV x
+        (c, d) = uncomplexV y
 
-liftNum2 Sub _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-    complexV sn (a-c) (b-d)
-  where
-    a, b, c, d :: Val l m Exp
-    (a, b) = uncomplexV x
-    (c, d) = uncomplexV y
+    liftNum2 Sub _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+        complexV sn (a-c) (b-d)
+      where
+        a, b, c, d :: Val l m Exp
+        (a, b) = uncomplexV x
+        (c, d) = uncomplexV y
 
-liftNum2 Mul _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-    complexV sn (a*c - b*d) (b*c + a*d)
-  where
-    a, b, c, d :: Val l m Exp
-    (a, b) = uncomplexV x
-    (c, d) = uncomplexV y
+    liftNum2 Mul _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
+        complexV sn (a*c - b*d) (b*c + a*d)
+      where
+        a, b, c, d :: Val l m Exp
+        (a, b) = uncomplexV x
+        (c, d) = uncomplexV y
 
-liftNum2 op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftNum2 op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-liftBits :: IsLabel l
-         => Unop
-         -> (forall a . Bits a => a -> a)
-         -> Val l m Exp
-         -> Val l m Exp
-liftBits _ f (FixV sc s w (BP 0) r) =
-    FixV sc s w (BP 0) (fromIntegral (f (numerator r)))
+instance IsLabel l => LiftedBits (Val l m Exp) (Val l m Exp) where
+    liftBits _ f (FixV sc s w (BP 0) r) =
+        FixV sc s w (BP 0) (fromIntegral (f (numerator r)))
 
-liftBits op _ val =
-    ExpV $ UnopE op (toExp val) noLoc
+    liftBits op _ val =
+        ExpV $ UnopE op (toExp val) noLoc
 
-liftBits2 :: IsLabel l
-          => Binop
-          -> (forall a . Bits a => a -> a -> a)
-          -> Val l m Exp
-          -> Val l m Exp
-          -> Val l m Exp
-liftBits2 _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
-    FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
+    liftBits2 _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
+        FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
 
-liftBits2 op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftBits2 op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-liftShift :: IsLabel l
-          => Binop
-          -> (forall a . Bits a => a -> Int -> a)
-          -> Val l m Exp
-          -> Val l m Exp
-          -> Val l m Exp
-liftShift _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
-    FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
+    liftShift _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
+        FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
 
-liftShift op _ val1 val2 =
-    ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+    liftShift op _ val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 toConst :: forall l m . IsLabel l => Val l m Exp -> Const
 toConst UnitV =

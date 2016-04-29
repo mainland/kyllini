@@ -46,6 +46,12 @@ module KZC.Auto.Syntax (
     Iota(..),
     Kind(..),
 
+    LiftedBool(..),
+    LiftedEq(..),
+    LiftedOrd(..),
+    LiftedNum(..),
+    LiftedBits(..),
+
     mkBoundVar,
 
     Arg(..),
@@ -118,6 +124,12 @@ import KZC.Core.Syntax (Var(..),
                         Omega(..),
                         Iota(..),
                         Kind(..),
+
+                        LiftedBool(..),
+                        LiftedEq(..),
+                        LiftedOrd(..),
+                        LiftedNum(..),
+                        LiftedBits(..),
 
                         isComplexStruct,
 
@@ -1612,53 +1624,52 @@ isOne (ConstE (FixC I _ _ (BP 0) 1) _) = True
 isOne (ConstE (FloatC _ 1) _)          = True
 isOne _                                = False
 
-liftNum :: Unop -> (forall a . Num a => a -> a) -> Exp -> Exp
-liftNum _ f (ConstE (FixC sc s w bp r) l) =
-    ConstE (FixC sc s w bp (f r)) l
+instance LiftedNum Exp Exp where
+    liftNum _ f (ConstE (FixC sc s w bp r) l) =
+        ConstE (FixC sc s w bp (f r)) l
 
-liftNum _ f (ConstE (FloatC fp r) l) =
-    ConstE (FloatC fp (f r)) l
+    liftNum _ f (ConstE (FloatC fp r) l) =
+        ConstE (FloatC fp (f r)) l
 
-liftNum op _ e =
-    UnopE op e (srclocOf e)
+    liftNum op _ e =
+        UnopE op e (srclocOf e)
 
-liftNum2 :: Binop -> (forall a . Num a => a -> a -> a) -> Exp -> Exp -> Exp
-liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) =
-    go op c1 c2
-  where
-    go :: Binop -> Const -> Const -> Exp
-    go _ (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
-        ConstE (FixC sc s w bp (f r1 r2)) (e1 `srcspan` e2)
-
-    go _ (FloatC fp r1) (FloatC _ r2) =
-        ConstE (FloatC fp (f r1 r2)) (e1 `srcspan` e2)
-
-    go Add x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        constE $ complexC sn (a+c) (b+d)
+    liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) =
+        go op c1 c2
       where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
+        go :: Binop -> Const -> Const -> Exp
+        go _ (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
+            ConstE (FixC sc s w bp (f r1 r2)) (e1 `srcspan` e2)
 
-    go Sub x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        constE $ complexC sn (a-c) (b-d)
-      where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
+        go _ (FloatC fp r1) (FloatC _ r2) =
+            ConstE (FloatC fp (f r1 r2)) (e1 `srcspan` e2)
 
-    go Mul x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        constE $ complexC sn (a*c - b*d) (b*c + a*d)
-      where
-        a, b, c, d :: Const
-        (a, b) = uncomplexC x
-        (c, d) = uncomplexC y
+        go Add x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+            constE $ complexC sn (a+c) (b+d)
+          where
+            a, b, c, d :: Const
+            (a, b) = uncomplexC x
+            (c, d) = uncomplexC y
 
-    go _op _c1 _c2 =
+        go Sub x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+            constE $ complexC sn (a-c) (b-d)
+          where
+            a, b, c, d :: Const
+            (a, b) = uncomplexC x
+            (c, d) = uncomplexC y
+
+        go Mul x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+            constE $ complexC sn (a*c - b*d) (b*c + a*d)
+          where
+            a, b, c, d :: Const
+            (a, b) = uncomplexC x
+            (c, d) = uncomplexC y
+
+        go _op _c1 _c2 =
+            BinopE op e1 e2 (e1 `srcspan` e2)
+
+    liftNum2 op _ e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)
-
-liftNum2 op _ e1 e2 =
-    BinopE op e1 e2 (e1 `srcspan` e2)
 
 instance IsEq Exp where
     e1 .==. e2 = BinopE Eq e1 e2 (e1 `srcspan` e2)
