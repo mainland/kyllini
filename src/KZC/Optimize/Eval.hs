@@ -522,17 +522,13 @@ evalFullComp comp = Comp <$> evalFullSteps (unComp comp)
 evalConst :: forall l m . (IsLabel l, MonadTc m)
           => Const
           -> EvalM l m (Val l m Exp)
-evalConst UnitC              = return UnitV
-evalConst (BoolC f)          = return $ BoolV f
-evalConst (FixC sc s w bp r) = return $ FixV sc s w bp r
-evalConst (FloatC fp r)      = return $ FloatV fp r
-evalConst (StringC s)        = return $ StringV s
-evalConst c@(ArrayC cs)      = do (_, tau)   <- inferConst noLoc c >>= checkArrT
-                                  vals       <- mapM evalConst cs
-                                  maybe_dflt <- runMaybeT $ defaultValue tau
-                                  case maybe_dflt of
-                                    Nothing   -> partialExp $ arrayE (map toExp vals)
-                                    Just dflt -> return $ ArrayV $ P.fromList dflt vals
+evalConst c@(ArrayC cs) = do
+    (_, tau)   <- inferConst noLoc c >>= checkArrT
+    vals       <- mapM evalConst cs
+    maybe_dflt <- runMaybeT $ defaultValue tau
+    case maybe_dflt of
+      Nothing   -> partialExp $ arrayE (map toExp vals)
+      Just dflt -> return $ ArrayV $ P.fromList dflt vals
 
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs
@@ -541,6 +537,9 @@ evalConst (StructC s flds) = do
     fs :: [Field]
     cs :: [Const]
     (fs, cs) = unzip  flds
+
+evalConst c =
+    return $ ConstV c
 
 evalExp :: forall l m . (IsLabel l, MonadTc m)
         => Exp
@@ -588,22 +587,10 @@ evalExp e =
             maybePartialVal $ liftBits op complement val
 
         unop Neg val =
-            maybePartialVal $ negate val
+            maybePartialVal $ liftNum Neg negate val
 
-        unop (Cast tau) (FixV _ _ _ (BP 0) r) | isBitT tau =
-            return $ FixV I U (W 1) (BP 0) (if r == 0 then 0 else 1)
-
-        unop (Cast (FixT I U (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^w - 1 =
-            return $ FixV I U (W w) (BP 0) r
-
-        unop (Cast (FixT I S (W w) (BP 0) _)) (FixV I _ _ (BP 0) r) | r <= 2^(w-1) - 1 && r >= -(2^(w-1)) =
-            return $ FixV I S (W w) (BP 0) r
-
-        unop (Cast (FixT I s w (BP 0) _)) (FloatV _ r) =
-            return $ FixV I s w (BP 0) (fromIntegral (truncate r :: Integer))
-
-        unop (Cast (FloatT fp _)) (FixV I _ _ (BP 0) r) =
-            return $ FloatV fp r
+        unop (Cast tau) val =
+            maybePartialVal $ liftCast tau val
 
         unop Len val = do
             (iota, _) <- inferExp e >>= checkArrOrRefArrT
@@ -645,26 +632,22 @@ evalExp e =
 
         binop Land val1 val2
             | isTrue  val1 = maybePartialVal val2
-            | isFalse val1 = return $ BoolV False
+            | isFalse val1 = return $ ConstV $ BoolC False
             | otherwise    = maybePartialVal $ liftBool2 op (&&) val1 val2
 
         binop Lor val1 val2
-            | isTrue  val1 = return $ BoolV True
+            | isTrue  val1 = return $ ConstV $ BoolC True
             | isFalse val1 = maybePartialVal val2
             | otherwise    = maybePartialVal $ liftBool2 op (||) val1 val2
 
         binop Band val1 val2 =
             maybePartialVal $ liftBits2 op (.&.) val1 val2
 
-        binop Bor val1 val2
-            | isZero val1 = maybePartialVal val2
-            | isZero val2 = maybePartialVal val1
-            | otherwise   = maybePartialVal $ liftBits2 op (.|.) val1 val2
+        binop Bor val1 val2 =
+            maybePartialVal $ liftBits2 op (.|.) val1 val2
 
-        binop Bxor val1 val2
-            | isZero val1 = maybePartialVal val2
-            | isZero val2 = maybePartialVal val1
-            | otherwise   = maybePartialVal $ liftBits2 op xor val1 val2
+        binop Bxor val1 val2 =
+            maybePartialVal $ liftBits2 op xor val1 val2
 
         binop LshL val1 val2 =
             maybePartialVal $ liftShift op shiftL val1 val2
@@ -672,20 +655,20 @@ evalExp e =
         binop AshR val1 val2 =
             maybePartialVal $ liftShift op shiftR val1 val2
 
-        binop Add val1 val2 = maybePartialVal $ val1 + val2
+        binop Add val1 val2 =
+            maybePartialVal $ liftNum2 Add (+) val1 val2
 
-        binop Sub val1 val2 = maybePartialVal $ val1 - val2
+        binop Sub val1 val2 =
+            maybePartialVal $ liftNum2 Sub (-) val1 val2
 
-        binop Mul val1 val2 = maybePartialVal $ val1 * val2
+        binop Mul val1 val2 =
+            maybePartialVal $ liftNum2 Mul (*) val1 val2
 
-        binop Div (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
-            return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
+        binop Div val1 val2 =
+            maybePartialVal $ liftIntegral2 Div quot val1 val2
 
-        binop Div (FloatV fp x) (FloatV _ y) =
-            return $ FloatV fp (x / y)
-
-        binop Rem (FixV I s w (BP 0) r1) (FixV _ _ _ _ r2) =
-            return $ FixV I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
+        binop Rem val1 val2 =
+            maybePartialVal $ liftIntegral2 Rem rem val1 val2
 
         binop op val1 val2 =
             partialExp $ BinopE op (toExp val1) (toExp val2) s
@@ -838,7 +821,7 @@ evalExp e =
             case maybe_new of
               Just new | isValue new ->
                   do writeVarPtr ptr new
-                     return $ ReturnV UnitV
+                     return $ ReturnV unitV
               _ ->
                   do killVars e
                      partial $ CmdV h $ AssignE (toExp r) (toExp val2) s
@@ -1025,7 +1008,7 @@ lutExp e = do
 
             genLUTEntry :: Int -> Integer -> EvalM l m (Val l m Exp)
             genLUTEntry w_in i = do
-                lut_in <- bitcastV (FixV I U (W w_in) (BP 0) (fromIntegral i))
+                lut_in <- bitcastV (ConstV (FixC I U (W w_in) (BP 0) (fromIntegral i)))
                                    (FixT I U (W w_in) (BP 0) noLoc)
                                    (arrKnownT w_in bitT)
                 vals_in <- unpackValues lut_in taus_in
@@ -1132,14 +1115,14 @@ refUpdate (IdxR r i len) old new = do
     go i len old' new
   where
     --go :: Val l m Exp -> Maybe Int -> Val l m Exp -> Val l m Exp -> t m (Val l m Exp)
-    go (FixV I _ _ (BP 0) n) Nothing (ArrayV vs) new = do
+    go (ConstV (FixC I _ _ (BP 0) n)) Nothing (ArrayV vs) new = do
         new' <- ArrayV <$> vs P.// [(start, new)]
         refUpdate r old new'
       where
         start :: Int
         start = fromIntegral (numerator n)
 
-    go (FixV I _ _ (BP 0) n) (Just len) (ArrayV vs) (ArrayV vs') = do
+    go (ConstV (FixC I _ _ (BP 0) n)) (Just len) (ArrayV vs) (ArrayV vs') = do
         new' <- ArrayV <$> vs P.// ([start..start+len-1] `zip` P.toList vs')
         refUpdate r old new'
       where
@@ -1206,7 +1189,7 @@ evalWhileE e1 e2 =
           _          -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
 
     loop (ReturnV val) | isFalse val =
-        return $ ReturnV UnitV
+        return $ ReturnV unitV
 
     loop (CmdV {}) =
         residualWhile
@@ -1240,7 +1223,7 @@ evalWhileC e1 c2 =
           _              -> faildoc $ text "Bad body evaluation in while:" <+> ppr val2
 
     loop (ReturnV val) | isFalse val =
-        return $ CompReturnV UnitV
+        return $ CompReturnV unitV
 
     loop (CmdV {}) =
         residualWhile
@@ -1260,7 +1243,7 @@ evalWhileC e1 c2 =
 -- | Convert an integral value to a 'Val Exp' of the given (fixpoint) type.
 toFixVal :: Integral i => Type -> i -> Val l m Exp
 toFixVal ~(FixT sc s w bp _) i =
-    FixV sc s w bp (fromIntegral i)
+    ConstV $ FixC sc s w bp (fromIntegral i)
 
 evalForE :: forall l m . (IsLabel l, MonadTc m)
          => UnrollAnn
@@ -1279,8 +1262,9 @@ evalForE ann v tau e1 e2 e3 = do
         go v' start len
   where
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
-    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
-        loop (numerator r_start) (numerator (r_start + r_len))
+    go v' start len | Just r_start <- fromIntV start,
+                      Just r_len   <- fromIntV len =
+        loop r_start (r_start + r_len)
       where
         loop :: Integer -> Integer -> EvalM l m (Val l m Exp)
         loop !i !end | i < end = do
@@ -1291,7 +1275,7 @@ evalForE ann v tau e1 e2 e3 = do
               _          -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
 
         loop _ _ =
-            return $ ReturnV UnitV
+            return $ ReturnV unitV
 
     go v' start len =
         residualFor v' (toExp start) (toExp len)
@@ -1321,8 +1305,9 @@ evalForC ann v tau e1 e2 c3 = do
         go v' start len
   where
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m (Comp l))
-    go v' start@(FixV I _ _ (BP 0) r_start) len@(FixV I _ _ (BP 0) r_len) =
-        loop (numerator r_start) (numerator (r_start + r_len))
+    go v' start len | Just r_start <- fromIntV start,
+                      Just r_len   <- fromIntV len =
+        loop r_start (r_start + r_len)
       where
         loop :: Integer -> Integer -> EvalM l m (Val l m (Comp l))
         loop !i !end | i < end = do
@@ -1333,7 +1318,7 @@ evalForC ann v tau e1 e2 c3 = do
               _              -> faildoc $ text "Bad body evaluation in for:" <+> ppr val3
 
         loop _ _ =
-            return $ CompReturnV UnitV
+            return $ CompReturnV unitV
 
     go v' start len =
         residualFor v' (toExp start) (toExp len)
@@ -1354,21 +1339,21 @@ evalIdx :: (IsLabel l, MonadTc m)
 evalIdx (RefV r) start len =
     return $ RefV $ IdxR r start len
 
-evalIdx (ArrayV vs) (FixV I _ _ (BP 0) r) Nothing =
-    case vs P.!? start of
-      Nothing  -> faildoc $
-                  text "Array index" <+> ppr start <+>
-                  text "out of bounds" <+> parens (ppr (P.length vs))
-      Just val -> return val
-  where
-    start :: Int
-    start = fromIntegral (numerator r)
+evalIdx (ArrayV vs) start Nothing | Just r <- fromIntV start =
+    let start :: Int
+        start = fromIntegral r
+    in
+      case vs P.!? start of
+        Nothing  -> faildoc $
+                    text "Array index" <+> ppr start <+>
+                    text "out of bounds" <+> parens (ppr (P.length vs))
+        Just val -> return val
 
-evalIdx (ArrayV vs) (FixV I _ _ (BP 0) r) (Just len) =
-    ArrayV <$> P.slice start len vs
-  where
-    start :: Int
-    start = fromIntegral (numerator r)
+evalIdx (ArrayV vs) start (Just len) | Just r <- fromIntV start =
+    let start :: Int
+        start = fromIntegral r
+    in
+      ArrayV <$> P.slice start len vs
 
 evalIdx (SliceV arr start _len) i Nothing =
     return $ IdxV arr (start + i)

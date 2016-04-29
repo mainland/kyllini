@@ -11,6 +11,7 @@ module KZC.Auto.Smart (
     module KZC.Core.Smart,
 
     intC,
+    uintC,
     arrayC,
     structC,
 
@@ -86,6 +87,9 @@ import KZC.Platform
 
 intC :: Integral i => i -> Const
 intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+uintC :: Integral i => i -> Const
+uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
 arrayC :: [Const] -> Const
 arrayC cs = ArrayC cs

@@ -19,8 +19,11 @@ module KZC.Optimize.Eval.Val (
     VarPtr,
     Heap,
 
+    unitV,
+
     uintV,
     intV,
+    fromIntV,
 
     zeroBitV,
     oneBitV,
@@ -82,18 +85,13 @@ import KZC.Auto.Syntax
 import KZC.Label
 import {-# SOURCE #-} KZC.Optimize.Eval.Monad (EvalM)
 import qualified KZC.Optimize.Eval.PArray as P
-import KZC.Platform
 
 type Theta = Map Var Var
 
 data Val l m a where
     UnknownV :: Val l m Exp
 
-    UnitV   :: Val l m Exp
-    BoolV   :: !Bool -> Val l m Exp
-    FixV    :: !Scale -> !Signedness -> !W -> !BP -> !Rational -> Val l m Exp
-    FloatV  :: !FP -> !Rational -> Val l m Exp
-    StringV :: !String -> Val l m Exp
+    ConstV  :: !Const -> Val l m Exp
     StructV :: !Struct -> !(Map Field (Val l m Exp)) -> Val l m Exp
     ArrayV  :: !(P.PArray (Val l m Exp)) -> Val l m Exp
 
@@ -141,17 +139,9 @@ deriving instance Ord l => Ord (Val l m a)
 deriving instance Show l => Show (Val l m a)
 
 instance IsLabel l => Num (Val l m Exp) where
-    x + y | isZero x  = y
-          | isZero y  = x
-          | otherwise = liftNum2 Add (+) x y
-
-    x - y | isZero x  = - y
-          | isZero y  = x
-          | otherwise = liftNum2 Sub (-) x y
-
-    x * y | isOne x   = y
-          | isOne y   = x
-          | otherwise = liftNum2 Mul (*) x y
+    x + y = liftNum2 Add (+) x y
+    x - y = liftNum2 Sub (-) x y
+    x * y = liftNum2 Mul (*) x y
 
     negate x = liftNum Neg negate x
 
@@ -170,42 +160,48 @@ type VarPtr = Int
 
 type Heap l m = IntMap (Val l m Exp)
 
+unitV :: Val l m Exp
+unitV  = ConstV UnitC
+
 uintV :: Integral a => a -> Val l m Exp
-uintV i = FixV I U dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
+uintV i = ConstV $ uintC i
 
 intV :: Integral a => a -> Val l m Exp
-intV i = FixV I S dEFAULT_INT_WIDTH (BP 0) (fromIntegral i)
+intV i = ConstV $ intC i
+
+fromIntV :: Val l m Exp -> Maybe Integer
+fromIntV (ConstV (FixC I _ _ (BP 0) r)) =
+    Just $ numerator r
+
+fromIntV _ =
+    Nothing
 
 zeroBitV, oneBitV :: Val l m Exp
-zeroBitV = FixV I U (W 1) (BP 0) 0
-oneBitV  = FixV I U (W 1) (BP 0) 1
+zeroBitV = ConstV $ FixC I U (W 1) (BP 0) 0
+oneBitV  = ConstV $ FixC I U (W 1) (BP 0) 1
 
 isTrue :: Val l m Exp -> Bool
-isTrue (BoolV True) = True
-isTrue _            = False
+isTrue (ConstV (BoolC b)) = b
+isTrue _                  = False
 
 isFalse :: Val l m Exp -> Bool
-isFalse (BoolV False) = True
-isFalse _             = False
+isFalse (ConstV (BoolC b)) = not b
+isFalse _                  = False
 
 isZero :: Val l m Exp -> Bool
-isZero (FixV _ _ _ _ 0) = True
-isZero (FloatV _ 0)     = True
-isZero _                = False
+isZero (ConstV (FixC _ _ _ _ 0)) = True
+isZero (ConstV (FloatC _ 0))     = True
+isZero _                         = False
 
 isOne :: Val l m Exp -> Bool
-isOne (FixV _ _ _ _ 1) = True
-isOne (FloatV _ 1)     = True
-isOne _                = False
+isOne (ConstV (FixC _ _ _ _ 1)) = True
+isOne (ConstV (FloatC _ 1))     = True
+isOne _                         = False
 
 -- | Return 'True' if a 'Val l m Exp' is actually a value and 'False'
 -- otherwise.
 isValue :: Val l m Exp -> Bool
-isValue UnitV            = True
-isValue (BoolV {})       = True
-isValue (FixV {})        = True
-isValue (FloatV {})      = True
-isValue (StringV {})     = True
+isValue ConstV{}         = True
 isValue (StructV _ flds) = all isValue (Map.elems flds)
 isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
                            all (isValue . snd) (P.nonDefaultValues vals)
@@ -219,11 +215,11 @@ defaultValue tau =
     go tau
   where
     go :: Type -> m' (Val l m Exp)
-    go (UnitT {})         = return UnitV
-    go (BoolT {})         = return $ BoolV False
-    go (FixT sc s w bp _) = return $ FixV sc s w bp 0
-    go (FloatT fp _)      = return $ FloatV fp 0
-    go (StringT {})       = return $ StringV ""
+    go (UnitT {})         = return $ ConstV $ UnitC
+    go (BoolT {})         = return $ ConstV $ BoolC False
+    go (FixT sc s w bp _) = return $ ConstV $ FixC sc s w bp 0
+    go (FloatT fp _)      = return $ ConstV $ FloatC fp 0
+    go (StringT {})       = return $ ConstV $ StringC ""
 
     go (StructT s _) = do
         StructDef s flds _ <- lookupStruct s
@@ -241,29 +237,26 @@ defaultValue tau =
 -- | Given a type and a value, return 'True' if the value is the
 -- default of that type and 'False' otherwise.
 isDefaultValue :: Val l m Exp -> Bool
-isDefaultValue UnitV            = True
-isDefaultValue (BoolV False)    = True
-isDefaultValue (FixV _ _ _ _ 0) = True
-isDefaultValue (FloatV _ 0)     = True
-isDefaultValue (StringV "")     = True
-isDefaultValue (StructV _ flds) = all isDefaultValue (Map.elems flds)
-isDefaultValue (ArrayV vals)    = all isDefaultValue (P.toList vals)
-isDefaultValue _                = False
+isDefaultValue (ConstV UnitC)            = True
+isDefaultValue (ConstV (BoolC False))    = True
+isDefaultValue (ConstV (FixC _ _ _ _ 0)) = True
+isDefaultValue (ConstV (FloatC _ 0))     = True
+isDefaultValue (ConstV (StringC ""))     = True
+isDefaultValue (StructV _ flds)          = all isDefaultValue (Map.elems flds)
+isDefaultValue (ArrayV vals)             = all isDefaultValue (P.toList vals)
+isDefaultValue _                         = False
 
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
 isKnown :: Val l m Exp -> Bool
 isKnown UnknownV         = False
-isKnown (BoolV {})       = True
-isKnown (FixV {})        = True
-isKnown (FloatV {})      = True
-isKnown (StringV {})     = True
+isKnown ConstV{}         = True
 isKnown (StructV _ flds) = all isKnown (Map.elems flds)
 isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
                            all (isKnown . snd) (P.nonDefaultValues vals)
 isKnown (IdxV arr i)     = isKnown arr && isKnown i
 isKnown (SliceV arr i _) = isKnown arr && isKnown i
-isKnown (ExpV {})        = True
+isKnown ExpV{}           = True
 isKnown _                = False
 
 catV :: IsLabel l => Val l m Exp -> Val l m Exp -> Val l m Exp
@@ -303,23 +296,23 @@ toBitsV val tau =
     go val tau
   where
     go :: Val l m Exp -> Type -> EvalM l m (Val l m Exp)
-    go (UnitV {}) _ =
+    go (ConstV UnitC) _ =
         return $ ArrayV $ P.replicateDefault 0 zeroBitV
 
-    go (BoolV f) _ =
+    go (ConstV (BoolC f)) _ =
         toBitArr (fromIntegral (fromEnum f)) 1
 
-    go (FixV I U (W w) (BP 0) r) _ =
+    go (ConstV (FixC I U (W w) (BP 0) r)) _ =
         toBitArr (numerator r) w
 
-    go (FixV I S (W w) (BP 0) r) _
+    go (ConstV (FixC I S (W w) (BP 0) r)) _
         | r >= 0    = toBitArr (numerator r) w
         | otherwise = toBitArr (numerator r + 2^w) w
 
-    go (FloatV FP32 r) _ =
+    go (ConstV (FloatC FP32 r)) _ =
         toBitArr (fromIntegral (floatToWord (fromRational r))) 32
 
-    go (FloatV FP64 r) _ =
+    go(ConstV  (FloatC FP64 r)) _ =
         toBitArr (fromIntegral (doubleToWord (fromRational r))) 64
 
     go (StructV _ m) (StructT sname _) = do
@@ -365,25 +358,26 @@ fromBitsV (ArrayV vs) tau =
   where
     go :: P.PArray (Val l m Exp) -> Type -> EvalM l m (Val l m Exp)
     go _ (UnitT {}) =
-        return UnitV
+        return $ ConstV UnitC
 
     go vs (BoolT {}) =
-        BoolV . toEnum . fromIntegral <$> fromBitArr vs
+        ConstV . BoolC . toEnum . fromIntegral <$> fromBitArr vs
 
     go vs (FixT I U (W w) (BP 0) _) =
-        FixV I U (W w) (BP 0) . fromIntegral <$> fromBitArr vs
+        ConstV . FixC I U (W w) (BP 0) . fromIntegral <$> fromBitArr vs
 
     go vs (FixT I S (W w) (BP 0) _) = do
         i <- fromBitArr vs
-        return $ if i < 2^(w-1)
-                 then FixV I S (W w) (BP 0) (fromIntegral i)
-                 else FixV I S (W w) (BP 0) (fromIntegral (i - 2^w))
+        return $ ConstV $
+            if i < 2^(w-1)
+            then FixC I S (W w) (BP 0) (fromIntegral i)
+            else FixC I S (W w) (BP 0) (fromIntegral (i - 2^w))
 
     go vs (FloatT FP32 _) =
-        FloatV FP32 . toRational . wordToFloat . fromIntegral <$> fromBitArr vs
+        ConstV . FloatC FP32 . toRational . wordToFloat . fromIntegral <$> fromBitArr vs
 
     go vs (FloatT FP64 _) =
-        FloatV FP64 . toRational . wordToDouble . fromIntegral <$> fromBitArr vs
+        ConstV . FloatC FP64 . toRational . wordToDouble . fromIntegral <$> fromBitArr vs
 
     go vs (RefT tau _) =
         go vs tau
@@ -405,9 +399,9 @@ fromBitsV (ArrayV vs) tau =
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
         set :: Integer -> Val l m Exp -> EvalM l m Integer
-        set i (FixV I U (W 1) (BP 0) 0) = return $ i `shiftL` 1
-        set i (FixV I U (W 1) (BP 0) 1) = return $ i `shiftL` 1 .|. 1
-        set _ val                       = faildoc $ text "Not a bit:" <+> ppr val
+        set i (ConstV (FixC I U (W 1) (BP 0) 0)) = return $ i `shiftL` 1
+        set i (ConstV (FixC I U (W 1) (BP 0) 1)) = return $ i `shiftL` 1 .|. 1
+        set _ val                                = faildoc $ text "Not a bit:" <+> ppr val
 
 fromBitsV val tau = do
     w <- typeSize tau
@@ -426,7 +420,7 @@ unpackValues bits taus = do
 
     go n (UnitT {}:taus) = do
         vals <- go n taus
-        return $ UnitV : vals
+        return $ ConstV UnitC : vals
 
     go n (tau:taus) = do
         w    <- typeSize tau
@@ -468,47 +462,52 @@ uncomplexV val =
     errordoc $ text "Not a complex value:" <+> ppr val
 
 instance IsLabel l => LiftedBool (Val l m Exp) (Val l m Exp) where
-    liftBool _ f (BoolV b) =
-        BoolV (f b)
+    liftBool op f (ConstV c) | Just c' <- liftBool op f c =
+        ConstV c'
 
     liftBool op _ val =
         ExpV $ UnopE op (toExp val) noLoc
 
-    liftBool2 _ f (BoolV x) (BoolV y) =
-        BoolV (f x y)
+    liftBool2 op f (ConstV x) (ConstV y) | Just c' <- liftBool2 op f x y =
+        ConstV c'
 
     liftBool2 op _ val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 instance IsLabel l => LiftedEq (Val l m Exp) (Val l m Exp) where
     liftEq _ f val1 val2 | isValue val1 && isValue val2 =
-        BoolV (f val1 val2)
+        ConstV $ BoolC $ f val1 val2
 
     liftEq op _ val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 instance IsLabel l => LiftedOrd (Val l m Exp) (Val l m Exp) where
     liftOrd _ f val1 val2 | isValue val1 && isValue val2 =
-        BoolV (f val1 val2)
+        ConstV $ BoolC $ f val1 val2
 
     liftOrd op _ val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
-    liftNum _ f (FixV sc s w bp r) =
-        FixV sc s w bp (f r)
+    liftNum op f (ConstV c) | Just c' <- liftNum op f c =
+        ConstV c'
 
-    liftNum _ f (FloatV fp r) =
-        FloatV fp (f r)
-
-    liftNum op _ val =
+    liftNum op _f val =
         ExpV $ UnopE op (toExp val) noLoc
 
-    liftNum2 _ f (FixV sc s w bp r1) (FixV _ _ _ _ r2) =
-        FixV sc s w bp (f r1 r2)
+    liftNum2 Add _ val1 val2 | isZero val1 = val2
+                             | isZero val2 = val1
 
-    liftNum2 _ f (FloatV fp r1) (FloatV _ r2) =
-        FloatV fp (f r1 r2)
+    liftNum2 Sub _ val1 val2 | isZero val1 = negate val2
+                             | isZero val2 = val1
+
+    liftNum2 Mul _ val1 val2 | isZero val1 = val1
+                             | isZero val2 = val2
+                             | isOne  val1 = val2
+                             | isOne  val2 = val1
+
+    liftNum2 op f (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op f c1 c2 =
+        ConstV c'
 
     liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
         complexV sn (a+c) (b+d)
@@ -531,43 +530,51 @@ instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
-    liftNum2 op _ val1 val2 =
+    liftNum2 op _f val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
+    liftIntegral2 op f (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op f c1 c2 =
+        ConstV c'
+
+    liftIntegral2 op _f val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 instance IsLabel l => LiftedBits (Val l m Exp) (Val l m Exp) where
-    liftBits _ f (FixV sc s w (BP 0) r) =
-        FixV sc s w (BP 0) (fromIntegral (f (numerator r)))
+    liftBits op f (ConstV c) | Just c' <- liftBits op f c =
+        ConstV c'
 
     liftBits op _ val =
         ExpV $ UnopE op (toExp val) noLoc
 
-    liftBits2 _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
-        FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
+    liftBits2 Bor _ val1 val2 | isZero val1 = val2
+                              | isZero val2 = val1
+
+    liftBits2 Bxor _ val1 val2 | isZero val1 = val2
+                               | isZero val2 = val1
+
+    liftBits2 op f (ConstV x) (ConstV y) | Just c' <- liftBits2 op f x y =
+        ConstV c'
 
     liftBits2 op _ val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
-    liftShift _ f (FixV sc s w (BP 0) r1) (FixV _ _ _ _ r2) =
-        FixV sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
+    liftShift op f (ConstV x) (ConstV y) | Just c' <- liftShift op f x y =
+        ConstV c'
 
     liftShift op _ val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
+instance IsLabel l => LiftedCast (Val l m Exp) (Val l m Exp) where
+    liftCast tau (ConstV c) | Just c' <- liftCast tau c =
+        ConstV c'
+
+    liftCast tau val =
+        ExpV $ UnopE (Cast tau) (toExp val) noLoc
+
 toConst :: forall l m . IsLabel l => Val l m Exp -> Const
-toConst UnitV =
-    UnitC
-
-toConst (BoolV f) =
-    BoolC f
-
-toConst (FixV sc s w bp r) =
-    FixC sc s w bp r
-
-toConst (FloatV fp r) =
-    FloatC fp r
-
-toConst (StringV s) =
-    StringC s
+toConst (ConstV c) =
+    c
 
 toConst (StructV s flds) =
     structC s (fs `zip` map toConst vals)
@@ -595,20 +602,8 @@ instance IsLabel l => ToExp (Val l m Exp) where
     toExp UnknownV =
         errordoc $ text "toExp: Cannot convert unknown value to expression"
 
-    toExp UnitV =
-        constE UnitC
-
-    toExp (BoolV f) =
-        constE $ BoolC f
-
-    toExp (FixV sc s w bp r) =
-        constE $ FixC sc s w bp r
-
-    toExp (FloatV fp r) =
-        constE $ FloatC fp r
-
-    toExp (StringV s) =
-        constE $ StringC s
+    toExp (ConstV c) =
+        constE c
 
     toExp (StructV s flds) =
         structE s (fs `zip` map toExp vals)
@@ -683,19 +678,15 @@ instance Show (EvalM l m (Val l m a)) where
     show _ = "<evaluation action>"
 
 instance IsLabel l => Pretty (Val l m a) where
-    ppr UnknownV         = text "<unknown>"
-    ppr val@UnitV        = ppr (toExp val)
-    ppr val@(BoolV {})   = ppr (toExp val)
-    ppr val@(FixV {})    = ppr (toExp val)
-    ppr val@(FloatV {})  = ppr (toExp val)
-    ppr val@(StringV {}) = ppr (toExp val)
-    ppr val@(StructV {}) = ppr (toExp val)
-    ppr val@(ArrayV {})  = ppr (toExp val)
-    ppr val@(IdxV {})    = ppr (toExp val)
-    ppr val@(SliceV {})  = ppr (toExp val)
-    ppr (RefV ref)       = ppr ref
-    ppr val@(ExpV {})    = ppr (toExp val)
-    ppr val@(ReturnV {}) = ppr (toExp val)
+    ppr UnknownV      = text "<unknown>"
+    ppr val@ConstV{}  = ppr (toExp val)
+    ppr val@StructV{} = ppr (toExp val)
+    ppr val@ArrayV{}  = ppr (toExp val)
+    ppr val@IdxV{}    = ppr (toExp val)
+    ppr val@SliceV{}  = ppr (toExp val)
+    ppr (RefV ref)    = ppr ref
+    ppr val@ExpV{}    = ppr (toExp val)
+    ppr val@ReturnV{} = ppr (toExp val)
 
     ppr (CmdV h e) =
         nest 2 $ pprPrec appPrec1 e <+> text "with heap" <+/> pprHeap h

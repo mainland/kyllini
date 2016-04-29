@@ -54,7 +54,9 @@ module KZC.Core.Syntax (
     LiftedEq(..),
     LiftedOrd(..),
     LiftedNum(..),
+    LiftedIntegral(..),
     LiftedBits(..),
+    LiftedCast(..),
 
     arrPrec,
     doPrec,
@@ -373,11 +375,38 @@ class LiftedNum a b | a -> b where
     liftNum  :: Unop  -> (forall a . Num a => a -> a)      -> a -> b
     liftNum2 :: Binop -> (forall a . Num a => a -> a -> a) -> a -> a -> b
 
+-- | A type to which operations on 'Integral' types can be lifted.
+class LiftedIntegral a b | a -> b where
+    liftIntegral2 :: Binop -> (forall a . Integral a => a -> a -> a) -> a -> a -> b
+
 -- | A type to which operations on 'Bits' types can be lifted.
 class LiftedBits a b | a -> b where
     liftBits  :: Unop  -> (forall a . Bits a => a -> a)        -> a -> b
     liftBits2 :: Binop -> (forall a . Bits a => a -> a -> a)   -> a -> a -> b
     liftShift :: Binop -> (forall a . Bits a => a -> Int -> a) -> a -> a -> b
+
+-- | A type which can be cast.
+class LiftedCast a b | a -> b where
+    liftCast  :: Type -> a -> b
+
+instance LiftedBool Const (Maybe Const) where
+    liftBool _ f (BoolC b) =
+        Just $ BoolC (f b)
+
+    liftBool _ _ _ =
+        Nothing
+
+    liftBool2 _ f (BoolC x) (BoolC y) =
+        Just $ BoolC (f x y)
+
+    liftBool2 _ _ _ _ =
+        Nothing
+
+instance LiftedEq Const Const where
+    liftEq _ f x y = BoolC (f x y)
+
+instance LiftedOrd Const Const where
+    liftOrd _ f x y = BoolC (f x y)
 
 instance LiftedNum Const (Maybe Const) where
     liftNum _op f (FixC sc s w bp r) =
@@ -419,6 +448,43 @@ instance LiftedNum Const (Maybe Const) where
     liftNum2 _ _ _ _ =
         Nothing
 
+instance LiftedIntegral Const (Maybe Const) where
+    liftIntegral2 Div _ (FixC I s w (BP 0) r1) (FixC _ _ _ _ r2) =
+        Just $ FixC I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
+
+    liftIntegral2 Div _ (FloatC fp x) (FloatC _ y) =
+        Just $ FloatC fp (x / y)
+
+    liftIntegral2 Rem _ (FixC I s w (BP 0) r1) (FixC _ _ _ _ r2) =
+        Just $ FixC I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
+
+    liftIntegral2 _ _ _ _ =
+        Nothing
+
+instance LiftedCast Const (Maybe Const) where
+    -- Cast to a bit type
+    liftCast (FixT I U (W 1) (BP 0) _) (FixC _ _ _ (BP 0) r) =
+        Just $ FixC I U (W 1) (BP 0) (if r == 0 then 0 else 1)
+
+    -- Cast int to unsigned int
+    liftCast (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r <= 2^w - 1 =
+        Just $ FixC I U (W w) (BP 0) r
+
+    -- Cast int to signed int
+    liftCast (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r <= 2^(w-1) - 1 && r >= -(2^(w-1)) =
+        Just $ FixC I S (W w) (BP 0) r
+
+    -- Cast float to int
+    liftCast (FixT I s w (BP 0) _) (FloatC _ r) =
+        Just $ FixC I s w (BP 0) (fromIntegral (truncate r :: Integer))
+
+    -- Cast int to float
+    liftCast (FloatT fp _) (FixC I _ _ (BP 0) r) =
+        Just $ FloatC fp r
+
+    liftCast _ _ =
+        Nothing
+
 complexC :: Struct -> Const -> Const -> Const
 complexC sname a b =
     StructC sname [("re", a), ("im", b)]
@@ -432,6 +498,25 @@ uncomplexC c@(StructC sname x) | isComplexStruct sname =
 
 uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
+
+instance LiftedBits Const (Maybe Const) where
+    liftBits _ f (FixC sc s w (BP 0) r) =
+        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r)))
+
+    liftBits _ _ _ =
+        Nothing
+
+    liftBits2 _ f (FixC sc s w (BP 0) r1) (FixC _ _ _ _ r2) =
+        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
+
+    liftBits2 _ _ _ _ =
+        Nothing
+
+    liftShift _ f (FixC sc s w (BP 0) r1) (FixC _ _ _ _ r2) =
+        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
+
+    liftShift _ _ _ _ =
+        Nothing
 
 {------------------------------------------------------------------------------
  -
