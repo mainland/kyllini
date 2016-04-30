@@ -58,7 +58,9 @@ module KZC.Core.Lint.Monad (
 
     withFvContext,
 
-    relevantBindings
+    relevantBindings,
+
+    castStruct
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -437,3 +439,25 @@ relevantBindings =
 
     pprBinding :: (Var, Type) -> Doc
     pprBinding (v, tau) = nest 2 $ ppr v <+> text ":" <+> ppr tau
+
+{------------------------------------------------------------------------------
+ -
+ - Struct Casting
+ -
+ ------------------------------------------------------------------------------}
+
+castStruct :: forall a m . MonadTc m
+           => (Type -> a -> m a)
+           -> Struct
+           -> [(Field, a)]
+           -> m [(Field, a)]
+castStruct cast sn flds = do
+    StructDef _ fldtaus _ <- lookupStruct sn
+    mapM (castField fldtaus) flds
+  where
+    castField :: [(Field, Type)] -> (Field, a) -> m (Field, a)
+    castField fldtaus (f, val) = do
+        tau <- case lookup f fldtaus of
+                 Nothing  -> faildoc $ text "Unknown struct field" <+> ppr f
+                 Just tau -> return tau
+        (,) <$> pure f <*> cast tau val

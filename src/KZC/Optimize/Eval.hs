@@ -589,6 +589,13 @@ evalExp e =
         unop Neg val =
             maybePartialVal $ liftNum op negate val
 
+        unop (Cast (StructT sn' _)) (StructV sn flds) | isComplexStruct sn && isComplexStruct sn' = do
+            flds' <- castStruct cast sn' (Map.toList flds)
+            return $ StructV sn' (Map.fromList flds')
+          where
+            cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
+            cast tau val = unop (Cast tau) val
+
         unop (Cast tau) val =
             maybePartialVal $ liftCast tau val
 

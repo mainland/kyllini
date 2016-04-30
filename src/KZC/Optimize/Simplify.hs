@@ -890,6 +890,22 @@ simplExp (UnopE op e s) = do
     unop Neg (ConstE c _) | Just c' <- liftNum op negate c =
         return $ ConstE c' s
 
+    unop (Cast (StructT sn' _)) (ConstE (StructC sn flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+        flds' <- castStruct cast sn' flds
+        return $ ConstE (StructC sn' flds') s
+      where
+        cast :: Type -> Const -> SimplM l m Const
+        cast tau c = do
+            ConstE c' _ <- unop (Cast tau) (ConstE c s)
+            return c'
+
+    unop (Cast (StructT sn' _)) (StructE sn flds s) | isComplexStruct sn && isComplexStruct sn' = do
+        flds' <- castStruct cast sn' flds
+        return $ StructE sn' flds' s
+      where
+        cast :: Type -> Exp -> SimplM l m Exp
+        cast tau e = unop (Cast tau) e
+
     unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c =
         return $ ConstE c' s
 
