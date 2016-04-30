@@ -745,6 +745,17 @@ mayHaveEffect :: CExp l -> Bool
 mayHaveEffect (CExp [cexp|$id:_($args:_)|]) = True
 mayHaveEffect _                             = False
 
+-- | Return 'True' if the given 'CExp' is "simple", i.e., if it doesn't cause
+-- any work to be done.
+isSimple :: CExp l -> Bool
+isSimple CVoid     = True
+isSimple CBool{}   = True
+isSimple CInt{}    = True
+isSimple CFloat{}  = True
+isSimple ce
+    | isLvalue ce  = True
+isSimple _         = False
+
 -- | Throw away a 'CExp' while ensuring that any side effects are performed.
 cgVoid :: CExp l -> Cg l ()
 cgVoid ce | mayHaveEffect ce = appendStm [cstm|$ce;|]
@@ -1440,27 +1451,23 @@ cgLetBinding bv tau k =
     oneshotBinder bv tau $ oneshotk id
   where
     oneshotk :: (CExp l -> CExp l) -> CExp l -> Cg l a
-    oneshotk f ce@CVoid =
-        k (f ce)
-
-    oneshotk f ce@(CBool {}) =
-        k (f ce)
-
-    oneshotk f ce@(CInt {}) =
-        k (f ce)
-
-    oneshotk f ce@(CFloat {}) =
-        k (f ce)
-
     oneshotk _ (CComp {}) =
         panicdoc $ text "cgLetBinding: cannot bind a computation."
 
     oneshotk _ (CFunComp {}) =
         panicdoc $ text "cgLetBinding: cannot bind a computation function."
 
+    -- If the binder is tainted, then we will create a new binding, so we can
+    -- forget the alias.
+    oneshotk f (CAlias _ ce) | isTainted bv =
+        oneshotk f ce
+
     -- Otherwise we have to remember the alias.
     oneshotk  f (CAlias e ce) =
         oneshotk (f . calias e) ce
+
+    oneshotk f ce | not (isTainted bv) && isSimple ce =
+        k (f ce)
 
     oneshotk f ce = do
         cv <- cgBinder (bVar bv) tau
