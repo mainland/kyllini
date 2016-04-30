@@ -426,7 +426,10 @@ useExp (AssignE e1 e2 s) = do
   where
     go :: Exp -> Exp -> Known Val -> ND m (Exp, Known Val)
     go e1@(VarE v _) e2' val = do
-        putVal v val
+        let val' = case val of
+                     Unknown -> Any
+                     _       -> val
+        putVal v val'
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
     go e1@(IdxE (VarE v _) (VarE i _) Nothing _) e2' _ = do
