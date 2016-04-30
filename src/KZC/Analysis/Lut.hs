@@ -53,6 +53,7 @@ shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
     dflags <- askFlags
     stats  <- lutStats e
+    traceAutoLUT $ ppr stats
     return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
              lutBytes info <= fromIntegral (maxLUT dflags) &&
              lutInBits info <= 64 &&
@@ -148,6 +149,12 @@ data LUTStats = LUTStats
     , lutHasLoop       :: !Bool
     , lutHasSideEffect :: !Bool
     }
+
+instance Pretty LUTStats where
+    ppr info =
+        nest 2 (text "Op count:" <+> ppr (lutOpCount info)) </>
+        nest 2 (text "Has loop:" <+> ppr (lutHasLoop info)) </>
+        nest 2 (text "Has side effect:" <+> ppr (lutHasSideEffect info))
 
 defaultLUTStats :: LUTStats
 defaultLUTStats = LUTStats
