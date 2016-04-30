@@ -556,10 +556,16 @@ useIf ma mb = do
     put s
     y   <- mb
     s_b <- get
-    put NDState { vals        = vals s_a `glb` vals s_b
+    put NDState { vals        = joinWith myglb bot (vals s_a) (vals s_b)
                 , usedDefault = usedDefault s_a <> usedDefault s_b
                 }
     return (x, y)
+  where
+    --- XXX: this is gross gross gross, but when we join to branches that both
+    --- set a ref, we want the value of the ref to be determined, not unknown!
+    myglb :: Known Val -> Known Val -> Known Val
+    myglb (Known RangeV{}) (Known RangeV{}) = Any
+    myglb val1             val2             = val1 `glb` val2
 
 topA :: Applicative f => f a -> f (a, Known Val)
 topA m = (,) <$> m <*> pure top
