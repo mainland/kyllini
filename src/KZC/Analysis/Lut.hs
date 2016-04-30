@@ -39,8 +39,8 @@ import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.Abs (absEval)
 import KZC.Analysis.Dataflow (DState(..),
-                              fromBoundedSet,
                               runD)
+import KZC.Analysis.NeedDefault (defaultsUsedExp)
 import KZC.Analysis.Range ()
 import KZC.Auto.Lint
 import KZC.Auto.Syntax
@@ -123,7 +123,7 @@ lutInfo :: MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
     (_, st)     <- runD (absEval e)
     tau_res     <- inferExp e
-    inVars      <- fromBoundedSet $ usefree st
+    inVars      <- defaultsUsedExp e
     let outVars =  (Map.keysSet . usedefs) st
     let retVar  =  returnedVar e
     taus_in     <- mapM lookupVar (Set.toList inVars)
