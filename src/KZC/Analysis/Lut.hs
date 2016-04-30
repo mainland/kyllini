@@ -82,6 +82,9 @@ returnedVar (IfE _ e1 e2 _) = do
       then return v1
       else fail "Different variables returned"
 
+returnedVar (DerefE (VarE v   _) _) =
+    return v
+
 returnedVar (BindE (TameV v') _
                    (DerefE    (VarE v   _) _)
                    (ReturnE _ (VarE v'' _) _) _)
