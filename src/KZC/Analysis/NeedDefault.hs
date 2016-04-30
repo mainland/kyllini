@@ -20,13 +20,16 @@ module KZC.Analysis.NeedDefault (
     ND,
     runND,
 
+    defaultsUsedExp,
+
     needDefaultProgram
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (unless)
+import Control.Monad (unless,
+                      void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -56,6 +59,7 @@ import KZC.Pretty
 import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Lattice
+import KZC.Vars
 
 data Val = RangeV Iota Iota
          | StructV (Map Field (Known Val))
@@ -157,6 +161,16 @@ useField v f = do
   where
     err :: Monad m => m a
     err = faildoc $ text "Struct does not have field" <+> ppr f
+
+defaultsUsedExp :: MonadTc m => Exp -> m (Set Var)
+defaultsUsedExp e =
+    runND $
+    extendVals (Set.toList vs `zip` repeat Unknown) $ do
+    void $ useExp e
+    gets usedDefault
+  where
+    vs :: Set Var
+    vs = fvs e
 
 needDefaultProgram :: MonadTc m => Program l -> ND m (Program l)
 needDefaultProgram (Program decls comp tau) = do
