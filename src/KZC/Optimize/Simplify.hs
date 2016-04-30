@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -33,9 +34,12 @@ import Control.Monad.State (MonadState(..),
                             modify)
 import Data.Bits
 import Data.List (foldl')
+import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.Set (Set)
+import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -554,7 +558,7 @@ simplSteps (LetC l decl s : steps) = do
                              simplSteps steps
     case maybe_decl' of
       Nothing    -> return steps'
-      Just decl' -> return $ LetC l decl' s : steps'
+      Just decl' -> simplLift $ LetC l decl' s : steps'
 
 simplSteps (BindC {} : _) =
     panicdoc $ text "simplSteps: leading BindC"
@@ -577,24 +581,24 @@ simplSteps (step : BindC l wv tau s : steps) = do
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', BoundToExp Nothing Nested e)] $ do
         steps' <- simplSteps steps
-        return $ LetC l (LetLD v' tau' e s) s : steps'
+        simplLift $ LetC l (LetLD v' tau' e s) s : steps'
 
     go [step'] tau' WildV = do
         steps' <- simplSteps steps
-        return $ step' : BindC l WildV tau' s : steps'
+        simplLift $ step' : BindC l WildV tau' s : steps'
 
     go [step'] tau' (TameV v) =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', Unknown)] $ do
         steps' <- simplSteps steps
-        return $ step' : BindC l (TameV v') tau' s : steps'
+        simplLift $ step' : BindC l (TameV v') tau' s : steps'
 
     go [] _tau' _wv =
         faildoc $ text "simplSteps: can't happen"
 
     go step' tau' wv = do
-        (++) <$> pure hd <*> go [tl] tau' wv
+        (++) <$> pure hd <*> go [tl] tau' wv >>= simplLift
       where
         hd :: [Step l]
         tl :: Step l
@@ -606,7 +610,60 @@ simplSteps (step : steps) = do
     (omega, _, _, _) <- inferComp (Comp step') >>= checkST
     case (omega, steps) of
       (C (UnitT {}), [ReturnC _ (ConstE UnitC _) _]) -> rewrite >> return step'
-      _ -> (++) <$> pure step' <*> simplSteps steps
+      _ -> (++) <$> pure step' <*> simplSteps steps >>= simplLift
+
+-- | Return 'True' if the binders of @x@ are used in @y@, 'False' otherwise.
+notUsedIn :: (Binders a Var, Fvs b Var) => a -> b -> Bool
+notUsedIn x y = Set.null (vs1 `Set.intersection` vs2)
+  where
+    vs1 :: Set Var
+    vs1 = binders x
+
+    vs2 :: Set Var
+    vs2 = fvs y
+
+-- | Coalesce lifted expressions whenever possible. This is critical for the
+-- auto-LUTter. The argument to 'simplLift' should already have been simplified;
+-- we assume that the tail of the argument has already been through 'simplLift',
+-- which is the case as it is currently used in 'simplSteps'
+simplLift :: forall l m . (IsLabel l, MonadTc m)
+          => [Step l]
+          -> SimplM l m [Step l]
+simplLift [] =
+    return []
+
+simplLift [step] =
+    return [step]
+
+simplLift (IfC l e1 (Comp [LiftC _ e2 _]) (Comp [LiftC _ e3 _]) s : steps) =
+    simplLift $ LiftC l (IfE e1 e2 e3 s) s : steps
+
+simplLift (LetC _ decl _ : LiftC l2 e _ : steps) | decl `notUsedIn` steps =
+    return $ LiftC l2 (LetE decl e s) s : steps
+  where
+    s :: SrcLoc
+    s = decl `srcspan` e
+
+simplLift (WhileC l e1 (Comp [LiftC _ e2 _]) s : steps) =
+    simplLift $ LiftC l (WhileE e1 e2 s) s : steps
+
+simplLift (ForC l ann v tau e1 e2 (Comp [LiftC _ e3 _]) s : steps) =
+    simplLift $ LiftC l (ForE ann v tau e1 e2 e3 s) s : steps
+
+simplLift (LiftC l e1 _ : LiftC _ e2 _ : steps) =
+    simplLift $ LiftC l (seqE e1 e2) s : steps
+  where
+    s :: SrcLoc
+    s = e1 `srcspan` e2
+
+simplLift (LiftC l e1 _ : BindC _ wv tau _ : LiftC _ e2 _ : steps) | wv `notUsedIn` steps =
+    simplLift $ LiftC l (BindE wv tau e1 e2 s) s : steps
+  where
+    s :: SrcLoc
+    s = e1 `srcspan` e2
+
+simplLift steps =
+    return steps
 
 {- Note [Inlining Computations]
 
