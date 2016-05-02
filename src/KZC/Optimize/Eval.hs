@@ -324,7 +324,7 @@ evalComp (Comp steps) = evalSteps steps
         extendWildVars [(wv, tau)] $
         withUniqWildVar wv $ \wv' -> do
         tau'   <- simplType tau
-        steps' <- extendWildVarBinds [(wv, UnknownV)] $
+        steps' <- extendWildVarBinds [(wv', UnknownV)] $
                   evalFullSteps steps
         return $ BindC l wv' tau' s : steps'
 
