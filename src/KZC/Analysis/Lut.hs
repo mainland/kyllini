@@ -213,6 +213,12 @@ lutStats e =
     go (VarE {}) =
         return ()
 
+    go (UnopE Bitcast{} e _) =
+        go e
+
+    go (UnopE Len{} e _) =
+        go e
+
     go (UnopE _ e _) = do
         go e
         incOpCount
@@ -242,8 +248,9 @@ lutStats e =
     go (CallE _ _ es _) =
         mapM_ go es
 
-    go (DerefE e _) =
+    go (DerefE e _) = do
         go e
+        incOpCount
 
     go (AssignE e1 e2 _) = do
         go e1
