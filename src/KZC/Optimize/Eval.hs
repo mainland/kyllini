@@ -961,8 +961,6 @@ lutExp e = do
     e'         <- go (vs_in `zip` taus_in) (vs_out `zip` taus_out) tau_ret (returnedVar e)
     traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
     traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
-    tau_ret'   <- inferExp e'
-    traceLUT $ nest 2 $ text "LUTted expression:" <+> ppr tau_ret' </> ppr e'
     killVars e'
     return e'
   where
@@ -1023,13 +1021,9 @@ lutExp e = do
                                    (FixT I U (W w_in) (BP 0) noLoc)
                                    (arrKnownT w_in bitT)
                 vals_in <- unpackValues lut_in taus_in
-                traceLUT $ text "Variables:" <+> (text . show) (zip3 vs_in taus_in vals_in)
                 extendVarValues (zip3 vs_in taus_in vals_in) $ do
                     val_ret <- evalExp e
-                    traceLUT $ text "Return value:" <+> ppr val_ret
                     vals_result <- lutResult (unCompV val_ret)
-                    traceLUT $ text "Output variables:" <+> ppr (vs_out `zip` map unRefT taus_out)
-                    traceLUT $ text "Output value:" <+> ppr (vals_result `zip` taus_result)
                     packValues (vals_result `zip` taus_result)
 
             unCompV :: Val l m Exp -> Val l m Exp
