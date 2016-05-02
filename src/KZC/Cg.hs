@@ -865,6 +865,13 @@ cgExp e k =
             ctau_to <- cgBitcastType tau_from
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
+        -- When casting a bit array to a Bool, we need to mask off the high
+        -- bits, which are left undefined!
+        cgBitcast ce tau_from tau_to@BoolT{} | isBitArrT tau_from = do
+            ctau_to   <- cgType tau_to
+            caddr     <- cgAddrOf tau_from ce
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr) & 0x1|]
+
         cgBitcast ce tau_from tau_to = do
             ctau_to <- cgType tau_to
             caddr   <- cgAddrOf tau_from ce
