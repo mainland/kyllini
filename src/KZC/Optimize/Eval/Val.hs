@@ -72,6 +72,7 @@ import qualified Data.IntMap as IntMap
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Ratio (numerator)
 import Data.String (fromString)
@@ -616,17 +617,27 @@ instance IsLabel l => ToExp (Val l m Exp) where
         constE c
 
     toExp (StructV s flds) =
-        structE s (fs `zip` map toExp vals)
+        fromMaybe (structE s (fs `zip` es)) $ do
+            cs <- mapM unConstE es
+            return $ constE $ structC s (fs `zip` cs)
       where
         fs :: [Field]
         vals :: [Val l m Exp]
         (fs, vals) = unzip $ Map.assocs flds
 
+        es :: [Exp]
+        es = map toExp vals
+
     toExp (ArrayV vvals) =
-        arrayE (map toExp vals)
+        fromMaybe (arrayE es) $ do
+            cs <- mapM unConstE es
+            return $ constE $ arrayC cs
       where
         vals :: [Val l m Exp]
         vals = P.toList vvals
+
+        es :: [Exp]
+        es = map toExp vals
 
     toExp (IdxV arr i) =
         idxE (toExp arr) (toExp i)
