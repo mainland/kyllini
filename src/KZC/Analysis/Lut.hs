@@ -46,6 +46,7 @@ import KZC.Auto.Lint
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 
@@ -119,17 +120,15 @@ instance Pretty LUTInfo where
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
         nest 2 (text "LUT size in bytes (log 2):" <+> ppr (lutBytesLog2 info))
 
-lutInfo :: MonadTc m => Exp -> m LUTInfo
+lutInfo :: forall m . MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
     (_, st)     <- runD (absEval e)
     tau_res     <- inferExp e
     inVars      <- defaultsUsedExp e
     let outVars =  (Map.keysSet . usedefs) st
     let retVar  =  returnedVar e
-    taus_in     <- mapM lookupVar (Set.toList inVars)
-    inbits      <- sum <$> mapM typeSize taus_in
-    taus_out    <- mapM lookupVar (Set.toList outVars)
-    outbits     <- sum <$> mapM typeSize taus_out
+    inbits      <- sum <$> mapM varSize (Set.toList inVars)
+    outbits     <- sum <$> mapM varSize (Set.toList outVars)
     resbits     <- case retVar of
                      Just v | v `Set.member` outVars -> return 0
                      _ -> typeSize tau_res
@@ -146,6 +145,11 @@ lutInfo e = withFvContext e $ do
                      , lutBytes      = 2^inbits * fromIntegral outbytes
                      , lutBytesLog2  = inbits + ceiling (log (fromIntegral outbytes) / log (2 :: Double))
                      }
+  where
+    varSize :: Var -> m Int
+    varSize v = withSummaryContext v $ do
+        tau <- lookupVar v
+        typeSize tau
 
 data LUTStats = LUTStats
     { lutOpCount       :: !Int
