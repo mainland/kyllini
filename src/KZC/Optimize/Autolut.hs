@@ -20,7 +20,8 @@ module KZC.Optimize.Autolut (
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (liftM)
-import Control.Monad.Exception (MonadException(..), SomeException)
+import Control.Monad.Exception (MonadException(..),
+                                SomeException)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 #if !MIN_VERSION_base(4,8,0)
