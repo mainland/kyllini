@@ -1130,15 +1130,26 @@ simplExp (ForE ann v tau e1 e2 e3 s) = do
         e3' <- simplExp e3
         return $ ForE ann v' tau e1' e2' e3' s
 
-simplExp (ArrayE es s) =
-    ArrayE <$> mapM simplExp es <*> pure s
+simplExp (ArrayE es s) = do
+    es <- mapM simplExp es
+    if (all isConstE es)
+      then do cs <- mapM unConstE es
+              return $ ConstE (ArrayC cs) s
+      else return $ ArrayE es s
 
 simplExp (IdxE e1 e2 len s) =
     IdxE <$> simplExp e1 <*> simplExp e2 <*> pure len <*> pure s
 
-simplExp (StructE struct flds s) =
-    StructE struct <$> (zip (map fst flds) <$> mapM (simplExp . snd) flds)
-                   <*> pure s
+simplExp (StructE struct flds s) = do
+    es <- mapM simplExp es
+    if (all isConstE es)
+      then do cs <- mapM unConstE es
+              return $ ConstE (StructC struct (fs `zip` cs)) s
+      else return $ StructE struct (fs `zip` es) s
+  where
+    fs :: [Field]
+    es :: [Exp]
+    (fs, es) = unzip flds
 
 simplExp (ProjE e f s) =
     simplExp e >>= go
