@@ -1015,23 +1015,32 @@ lutExp e = do
                   -> EvalM l m Exp
         genLookup v_lut =
             lookupInVars vtaus_in $ \vtaus -> do
+            -- Construct a binder for the LUT index (if it is needed)
             w_in        <- sum <$> mapM typeSize taus_in
+            v_idx       <- gensym "lutidx"
             let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
             let args :: [(Val l m Exp, Type)]
                 args = [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
             idx <- packValues args
+            let letIdx :: Exp -> Exp
+                letIdx | null vs_in = id
+                       | otherwise  = letE v_idx tau_idx (bitcastE tau_idx (toExp idx))
+            -- Construct the values of the LUT entry
             let result :: Val l m Exp
                 result | null vs_in = ExpV $ varE v_lut
-                       | otherwise  = ExpV $ idxE (varE v_lut) (bitcastE tau_idx (toExp idx))
+                       | otherwise  = ExpV $ idxE (varE v_lut) (varE v_idx)
             vals <- unpackValues result taus_result
-            traceLUT $ text "Looked-up values:" <+> ppr vals
-            if isCompT tau_ret
-              then do let e_res = case v_ret of
-                                    Just v | v `elem` vs_out -> derefE (varE v)
-                                    _ -> returnE (bitcastE (unSTC tau_ret) (toExp (last vals)))
-                      let cs = [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
-                      return $ foldr seqE e_res cs
-              else return $ bitcastE (unSTC tau_ret) (toExp (last vals))
+            -- Return the LUT lookup expression
+            return $
+                letIdx $
+                if isCompT tau_ret
+                then let e_res = case v_ret of
+                                   Just v | v `elem` vs_out -> derefE (varE v)
+                                   _ -> returnE (bitcastE (unSTC tau_ret) (toExp (last vals)))
+                         cs = [assignE (varE v) (bitcastE (unRefT tau) (toExp val)) | (v, tau, val) <- zip3 vs_out taus_out vals]
+                     in
+                       foldr seqE e_res cs
+                else bitcastE (unSTC tau_ret) (toExp (last vals))
 
         lookupInVars :: [(Var, Type)]
                      -> ([(Var, Type)] -> EvalM l m Exp)
