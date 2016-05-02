@@ -536,6 +536,9 @@ instance LiftedBits Const (Maybe Const) where
  -
  ------------------------------------------------------------------------------}
 
+instance Summary Var where
+    summary v = text "variable:" <+> align (ppr v)
+
 instance Summary Decl where
     summary (LetD v _ _ _)         = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
