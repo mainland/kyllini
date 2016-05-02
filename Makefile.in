@@ -92,6 +92,7 @@ SOURCE = \
 	KZC/Optimize/Eval/PArray.hs \
 	KZC/Optimize/Eval/Val.hs \
 	KZC/Optimize/Fuse.hs \
+	KZC/Optimize/HashConsConsts.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \
 	KZC/Pretty.hs \

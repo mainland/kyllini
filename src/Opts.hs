@@ -214,17 +214,18 @@ dDynFlagOpts =
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]
 dDumpFlagOpts =
-  [ (DumpCPP,     "cpp",     "dump CPP output")
-  , (DumpRename,  "rn",      "dump renamer output")
-  , (DumpLift,    "lift",    "dump lambda lifter output")
-  , (DumpFusion,  "fusion",  "dump fusion output")
-  , (DumpCore,    "core",    "dump core")
-  , (DumpAuto,    "auto",    "dump automata")
-  , (DumpOcc,     "occ",     "dump occurrence info")
-  , (DumpSimpl,   "simpl",   "dump simplifier output")
-  , (DumpEval,    "peval",   "dump partial evaluator output")
-  , (DumpAutoLUT, "autolut", "dump auto-LUTter")
-  , (DumpLUT,     "lut",     "dump LUTter")
+  [ (DumpCPP,      "cpp",      "dump CPP output")
+  , (DumpRename,   "rn",       "dump renamer output")
+  , (DumpLift,     "lift",     "dump lambda lifter output")
+  , (DumpFusion,   "fusion",   "dump fusion output")
+  , (DumpCore,     "core",     "dump core")
+  , (DumpAuto,     "auto",     "dump automata")
+  , (DumpOcc,      "occ",      "dump occurrence info")
+  , (DumpSimpl,    "simpl",    "dump simplifier output")
+  , (DumpEval,     "peval",    "dump partial evaluator output")
+  , (DumpAutoLUT,  "autolut",  "dump auto-LUTter")
+  , (DumpLUT,      "lut",      "dump LUTter")
+  , (DumpHashCons, "hashcons", "dump hashcons of constants")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]

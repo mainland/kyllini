@@ -61,6 +61,7 @@ import KZC.Optimize.Autolut (runAutoM,
                              autolutProgram)
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
+import KZC.Optimize.HashConsConsts
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
@@ -108,6 +109,7 @@ runPipeline filepath =
         runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
+        tracePhase "hashcons" hashconsPhase >=> tracePhase "lintAuto" lintAuto >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
@@ -196,6 +198,11 @@ runPipeline filepath =
                       void $ dumpPass DumpSimpl "acore" ("simpl" ++ desc) prog''
                       go (i+1) n prog''
               else return prog
+
+    hashconsPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    hashconsPhase =
+        lift . A.withTc . runHCM . hashConsConsts >=>
+        dumpPass DumpHashCons "acore" "hashcons"
 
     fusionPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
     fusionPhase =
