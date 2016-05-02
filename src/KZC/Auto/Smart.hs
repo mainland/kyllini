@@ -45,6 +45,7 @@ module KZC.Auto.Smart (
     (.:=.),
     (.>>.),
 
+    isConstE,
     isArrE
   ) where
 
@@ -216,6 +217,10 @@ m1 .>>. m2 = do
     m1' <- m1
     m2' <- m2
     return $ m1' <> m2'
+
+isConstE :: Exp -> Bool
+isConstE ConstE{} = True
+isConstE _        = False
 
 isArrE :: Exp -> Bool
 isArrE (ConstE ArrayC{} _) = True
