@@ -1224,14 +1224,18 @@ return1 :: Monad m => a -> m [a]
 return1 x = return [x]
 
 isSimple :: Exp -> Bool
-isSimple ConstE{}           = True
-isSimple VarE{}             = True
-isSimple (UnopE Len _ _)    = True
-isSimple (UnopE _ e _)      = isSimple e
-isSimple (BinopE _ e1 e2 _) = isSimple e1 && isSimple e2
-isSimple (IfE e1 e2 e3 _)   = isSimple e1 && isSimple e2 && isSimple e3
-isSimple (ProjE e _ _)      = isSimple e
-isSimple _                  = False
+isSimple e =
+    go e && Set.size (fvs e :: Set Var) Prelude.<= 1
+  where
+    go :: Exp -> Bool
+    go VarE{}             = True
+    go ConstE{}           = True
+    go (UnopE Len _ _)    = True
+    go (UnopE _ e _)      = go e
+    go (BinopE _ e1 e2 _) = go e1 && go e2
+    go (IfE e1 e2 e3 _)   = go e1 && go e2 && go e3
+    go (ProjE e _ _)      = go e
+    go _                  = False
 
 shouldInlineExpUnconditionally :: MonadTc m
                                => InExp -> SimplM l m Bool
