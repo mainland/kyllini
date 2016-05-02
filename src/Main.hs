@@ -103,12 +103,22 @@ runPipeline filepath =
         stopIf (testDynFlag StopAfterCheck) >=>
         tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintCore >=>
         tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
+        -- Simplify, but don't inline functions or computations
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ onlyInliningValues $ iterateSimplPhase "-phase1") >=>
-        runIf (testDynFlag AutoLUT) (tracePhase "autolut" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        -- AutoLUT
+        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase1" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        -- Simplify again, allowing inlining. This may inline LUTted functions.
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
+        -- Fuse pars
         runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
-        runIf runEval (tracePhase "eval" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        -- Partially evaluate and simplify
+        runIf runEval (tracePhase "eval-phase1" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
+        -- Auto-LUT, partially evaluate, and simplify once more
+        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase2" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase4") >=>
+        -- Clean up the code, do some analysis, and codegen
         tracePhase "hashcons" hashconsPhase >=> tracePhase "lintAuto" lintAuto >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
