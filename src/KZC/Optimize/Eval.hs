@@ -567,7 +567,7 @@ evalExp e =
           else lookupCVarBind v' >>= compValToExpVal
 
     eval _flags (VarE v s) = do
-        v'  <- maybe v id <$> lookupSubst v
+        v' <- maybe v id <$> lookupSubst v
         -- If @v@ is a pureish computation, we need to return a 'CmdV' instead
         -- of a 'ExpV'. This is part of the fix to #13.
         tau <- lookupVar v
