@@ -2389,7 +2389,7 @@ cgAssign tau ce1 ce2 = do
         -- [cexp|!!$ce2|] here.
         cbit = ce2 `shiftL'` cbitOff
 
-    assign _ tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
+    assign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
         clen <- cgIota iota
         cgAssignBitArray ce1 ce2 clen
       where
@@ -2404,45 +2404,46 @@ cgAssign tau ce1 ce2 = do
                      ((cdst, cdstIdx), (csrc, csrcIdx), clen) ->
                          slowPath cdst cdstIdx csrc csrcIdx clen
           where
-            fastPath :: CExp l -> CExp l -> Integer -> Integer -> Cg l ()
+            -- | We take the fast path when the source and destination are
+            -- aligned on 'bIT_ARRAY_ELEM_BITS' bits.
+            fastPath :: CExp l  -- ^ Destination
+                     -> CExp l  -- ^ Source
+                     -> Integer -- ^ Source/destination index, in bits
+                     -> Integer -- ^ Number of bits to copy
+                     -> Cg l ()
             fastPath _cdst _csrc _i 0 =
                 return ()
 
-            -- The following generates code with unaligned accesses, so we can't
-            -- use it.
+            fastPath cdst csrc i n
+                | q == 1 = do appendStm [cstm|$cdst[$int:i] = $csrc[$int:i];|]
+                              fastPath cdst csrc (i + q) r
 
-{-
-            fastPath cdst csrc i n | q /= 0 = do
-                forM_ [0..q - 1] $ \j ->
-                    appendStm [cstm|((typename uint64_t*) &$cdst[$int:i])[$int:j] = ((typename uint64_t*) &$csrc[$int:i])[$int:j];|]
-                fastPath cdst csrc (i + 8*q) r
+                -- Unrolling the assignment loop is slower than calling
+                -- memmove/memcpy
+                | q /= 0 && False = do forM_ [0..q - 1] $ \j ->
+                                           appendStm [cstm|$cdst[$int:(i+j)] = $csrc[$int:(i+j)];|]
+                                       fastPath cdst csrc (i + q) r
+
+                | q /= 0 = do incMemCopies
+                              if mayAlias
+                                  then appendStm [cstm|memmove(&$cdst[$int:i], &$csrc[$int:i], $int:qbytes);|]
+                                  else appendStm [cstm|memcpy(&$cdst[$int:i], &$csrc[$int:i], $int:qbytes);|]
+                              fastPath cdst csrc (i + q) r
               where
-                (q, r) = n `quotRem` 64
+                q, r, qbytes :: Integer
+                (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
+                qbytes = (q*bIT_ARRAY_ELEM_BITS) `quot` 8
 
-            fastPath cdst csrc i n | q /= 0 = do
-                forM_ [0..q - 1] $ \j ->
-                    appendStm [cstm|((typename uint32_t*) &$cdst[$int:i])[$int:j] = ((typename uint32_t*) &$csrc[$int:i])[$int:j];|]
-                fastPath cdst csrc (i + 4*q) r
-              where
-                (q, r) = n `quotRem` 32
-
-            fastPath cdst csrc i n | q /= 0 = do
-                forM_ [0..q - 1] $ \j ->
-                    appendStm [cstm|((typename uint16_t*) &$cdst[$int:i])[$int:j] = ((typename uint16_t*) &$csrc[$int:i])[$int:j];|]
-                fastPath cdst csrc (i + 2*q) r
-              where
-                (q, r) = n `quotRem` 16
--}
-
-            fastPath cdst csrc i n | q /= 0 = do
-                forM_ [0..q - 1] $ \j ->
-                    appendStm [cstm|$cdst[$int:(i+j)] = $csrc[$int:(i+j)];|]
-                fastPath cdst csrc (i + q) r
-              where
-                (q, r) = n `quotRem` 8
-
-            fastPath cdst csrc i n | n < 8 =
+            fastPath cdst csrc i n | n < bIT_ARRAY_ELEM_BITS =
                 maskedAssign (CExp [cexp|$cdst[$int:i]|]) (CExp [cexp|$csrc[$int:i]|]) n
+              where
+                maskedAssign :: CExp l -> CExp l -> Integer -> Cg l ()
+                maskedAssign cdst csrc n =
+                    appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc ..&.. cmask);|]
+                  where
+                    cmask, cnotmask :: CExp l
+                    cmask    = CExp $ chexconst (2^n - 1)
+                    cnotmask = CExp $ [cexp|~$(chexconst (2^n - 1))|]
 
             fastPath _ _ i _ =
                 slowPath cdst (cdstIdx + fromIntegral i) csrc (csrcIdx + fromIntegral i) clen
@@ -2453,17 +2454,38 @@ cgAssign tau ce1 ce2 = do
                 csrc, csrcIdx :: CExp l
                 (csrc, csrcIdx) = unCSlice ce2
 
-            mediumPath :: CExp l -> Integer -> CExp l -> Integer -> Integer -> Cg l ()
-            mediumPath cdst dstIdx csrc srcIdx len =
-                slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt len)
-
-            maskedAssign :: CExp l -> CExp l -> Integer -> Cg l ()
-            maskedAssign cdst csrc n =
-                appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc ..&.. cmask);|]
+            -- | We take the medium oath when the source and destination are not
+            -- both aligned on 'bIT_ARRAY_ELEM_BITS' bits, but when we
+            -- statically know the indices into the source and destination and
+            -- the number of bits to copy.
+            mediumPath :: CExp l  -- ^ Destination
+                       -> Integer -- ^ Destination index
+                       -> CExp l  -- ^ Source
+                       -> Integer -- ^ Source index
+                       -> Integer -- ^ Number of bits to copy
+                       -> Cg l ()
+            mediumPath cdst dstIdx csrc srcIdx 1 =
+                appendStm [cstm|$cdst' = $cres;|]
               where
-                cmask, cnotmask :: CExp l
-                cmask    = CExp $ chexconst (2^n - 1)
-                cnotmask = CExp $ [cexp|~$(chexconst (2^n - 1))|]
+                cdst', csrc', cres :: CExp l
+                cdst' = CExp [cexp|$cdst[$dq]|]
+                csrc' = CExp [cexp|$csrc[$sq]|]
+                cres  = cdst' ..&.. cdstmask ..|..
+                        ((csrc' ..&.. csrcmask) `shift` csrcshift)
+
+                cdstmask, csrcmask :: CExp l
+                cdstmask  = CExp $ [cexp|~$(chexconst (1 `shiftL` fromIntegral dr))|]
+                csrcmask  = CExp $ chexconst (1 `shiftL` fromIntegral sr)
+
+                csrcshift :: Int
+                csrcshift = fromIntegral (dr - sr)
+
+                sq, sr, dq, dr :: Integer
+                (sq, sr) = srcIdx `quotRem` bIT_ARRAY_ELEM_BITS
+                (dq, dr) = dstIdx `quotRem` bIT_ARRAY_ELEM_BITS
+
+            mediumPath cdst dstIdx csrc srcIdx n =
+                slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt n)
 
             slowPath :: CExp l -> CExp l -> CExp l -> CExp l -> CExp l -> Cg l ()
             slowPath cdst cdstIdx csrc csrcIdx clen = do
