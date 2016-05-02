@@ -592,7 +592,7 @@ instance Pretty Const where
     pprPrec _ (StringC s)          = text (show s)
     pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
     pprPrec _ (ArrayC cs)
-        | not (null cs) && all isBit cs = char '\'' <> cat (map bitDoc (reverse cs))
+        | not (null cs) && all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse cs))
         | otherwise                     = text "arr" <+> embrace commasep (map ppr cs)
       where
         isBit :: Const -> Bool
