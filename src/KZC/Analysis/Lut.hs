@@ -13,9 +13,6 @@ module KZC.Analysis.Lut (
     LUTInfo(..),
     lutInfo,
 
-    LUTStats(..),
-    lutStats,
-
     shouldLUT,
 
     returnedVar
@@ -24,7 +21,8 @@ module KZC.Analysis.Lut (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Exception (MonadException(..),
+                                SomeException)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
@@ -53,15 +51,22 @@ import KZC.Uniq
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
     dflags <- askFlags
-    stats  <- lutStats e
-    traceAutoLUT $ ppr stats
-    return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
-             lutBytes info <= fromIntegral (maxLUT dflags) &&
-             lutInBits info <= 64 &&
-             lutOutBits info + lutResultBits info > 0 &&
-             lutOutBits info + lutResultBits info <= 64 &&
-             (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
-             not (lutHasSideEffect stats)
+    ((Right <$> lutStats e) `catch`
+        \(err :: SomeException) -> return (Left err)) >>= go dflags
+  where
+    go :: Flags -> Either SomeException LUTStats -> m Bool
+    go _ Left{} =
+        return False
+
+    go dflags (Right stats) = do
+        traceAutoLUT $ ppr stats
+        return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
+                 lutBytes info <= fromIntegral (maxLUT dflags) &&
+                 lutInBits info <= 64 &&
+                 lutOutBits info + lutResultBits info > 0 &&
+                 lutOutBits info + lutResultBits info <= 64 &&
+                 (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
+                 not (lutHasSideEffect stats)
 
 -- | Compute the variable that is returned by an expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its
@@ -217,8 +222,8 @@ lutStats e =
     go (VarE {}) =
         return ()
 
-    go (UnopE Bitcast{} e _) =
-        go e
+    go (UnopE Bitcast{} _ _) =
+        fail "Cannot LUT bitcast"
 
     go (UnopE Len{} e _) =
         go e
@@ -226,6 +231,9 @@ lutStats e =
     go (UnopE _ e _) = do
         go e
         incOpCount
+
+    go (BinopE Cat _ _ _) =
+        fail "Cannot LUT array concatenation"
 
     go (BinopE _ e1 e2 _) = do
         go e1
