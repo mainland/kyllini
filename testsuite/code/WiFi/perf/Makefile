@@ -35,6 +35,10 @@ clean :
              --output-dev=dummy \
 	     --dummy-samples=100000000
 
+.PHONY : perf.all
+perf.all :
+	$(MAKE) all | awk -f perf.awk | sort >$@
+
 %.amplxe : %.exe
 	amplxe-cl -collect hotspots -collect general-exploration -- ./$< \
 	     --input-dev=dummy \
