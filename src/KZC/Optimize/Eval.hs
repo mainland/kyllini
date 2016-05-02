@@ -857,27 +857,8 @@ evalExp e =
         v_arr   <- eval flags arr
         v_start <- eval flags start
         if peval flags
-          then do v <- evalIdx v_arr v_start len
-                  uninlineArrayConstant v arr v_arr v_start len
+          then do evalIdx v_arr v_start len
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
-      where
-        uninlineArrayConstant :: Val l m Exp -> Exp -> Val l m Exp -> Val l m Exp -> Maybe Int -> EvalM l m (Val l m Exp)
-        uninlineArrayConstant v _ _ _ _ | isValue v =
-            return v
-
-        uninlineArrayConstant v@(RefV {}) _ _ _ _ =
-            return v
-
-        uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start Nothing | isValue arr = do
-            v' <- maybe v id <$> lookupSubst v
-            return $ IdxV (ExpV $ varE v') v_start
-
-        uninlineArrayConstant _ (VarE v _) arr@(ArrayV {}) v_start (Just len) | isValue arr = do
-            v' <- maybe v id <$> lookupSubst v
-            return $ SliceV (ExpV $ varE v') v_start len
-
-        uninlineArrayConstant v _ _ _ _ =
-            return v
 
     eval flags (StructE s flds _) = do
         vals <- mapM (eval flags) es
