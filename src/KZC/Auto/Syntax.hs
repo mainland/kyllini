@@ -571,7 +571,8 @@ instance Pretty Exp where
 
     pprPrec p (AssignE v e _) =
         parensIf (p > appPrec) $
-        ppr v <+> text ":=" <+> pprPrec appPrec1 e
+        group $
+        nest 4 $ ppr v <+> text ":=" <+/> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
         nest 2 $
@@ -739,8 +740,9 @@ pprComp comp =
 
     pprSteps (ParC ann tau e1 e2 _ : k) =
         pprBind k $
-        pprPrec arrPrec e1 <+>
-        ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
+        group $
+        pprPrec arrPrec e1 </>
+        ppr ann <> text "@" <> pprPrec appPrec1 tau </>
         pprPrec arrPrec e2
 
     pprSteps (LoopC l : _) =
