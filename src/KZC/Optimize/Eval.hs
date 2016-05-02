@@ -986,7 +986,7 @@ lutExp e = do
             e_body  <- k v_lut
             return $ case n of
                        1 -> letE v_lut tau_entry (toExp (head entries)) e_body
-                       _ -> letE v_lut (arrKnownT n tau_entry) (arrayE (map toExp entries)) e_body
+                       _ -> letE v_lut (arrKnownT n tau_entry) (constE $ arrayC (map toConst entries)) e_body
           where
             lutResult :: Val l m Exp -> EvalM l m [Val l m Exp]
             lutResult _val_out | Just v <- v_ret, v `elem` vs_out =
