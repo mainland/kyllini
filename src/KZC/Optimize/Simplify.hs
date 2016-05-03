@@ -823,8 +823,7 @@ simplStep (WhileC l e c s) = do
 simplStep (ForC l ann v tau e1 e2 c s) = do
     e1' <- simplExp e1
     e2' <- simplExp e2
-    extendVars [(v, tau)] $
-        withUniqVar v $ \v' ->
+    withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplComp c
@@ -1123,8 +1122,7 @@ simplExp (WhileE e1 e2 s) =
 simplExp (ForE ann v tau e1 e2 e3 s) = do
     e1' <- simplExp e1
     e2' <- simplExp e2
-    extendVars [(v, tau)] $
-        withUniqVar v $ \v' ->
+    withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplExp e3
