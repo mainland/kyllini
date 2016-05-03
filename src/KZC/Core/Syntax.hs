@@ -127,6 +127,11 @@ instance Named Field where
 
     mapName f (Field n) = Field (f n)
 
+instance Gensym Field where
+    gensymAt s l = Field <$> gensymAt s (locOf l)
+
+    uniquify (Field n) = Field <$> uniquify n
+
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show)
 
@@ -137,6 +142,11 @@ instance Named Struct where
     namedSymbol (Struct n) = namedSymbol n
 
     mapName f (Struct n) = Struct (f n)
+
+instance Gensym Struct where
+    gensymAt s l = Struct <$> gensymAt s (locOf l)
+
+    uniquify (Struct n) = Struct <$> uniquify n
 
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Read, Show)
@@ -149,6 +159,11 @@ instance Named TyVar where
 
     mapName f (TyVar n) = TyVar (f n)
 
+instance Gensym TyVar where
+    gensymAt s l = TyVar <$> gensymAt s (locOf l)
+
+    uniquify (TyVar n) = TyVar <$> uniquify n
+
 newtype IVar = IVar Name
   deriving (Eq, Ord, Read, Show)
 
@@ -159,6 +174,11 @@ instance Named IVar where
     namedSymbol (IVar n) = namedSymbol n
 
     mapName f (IVar n) = IVar (f n)
+
+instance Gensym IVar where
+    gensymAt s l = IVar <$> gensymAt s (locOf l)
+
+    uniquify (IVar n) = IVar <$> uniquify n
 
 -- | Fixed point scale factor
 data Scale = I
