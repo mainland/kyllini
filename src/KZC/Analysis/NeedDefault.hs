@@ -3,7 +3,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 {-|
 Module      :  KZC.Analysis.NeedDefault
@@ -71,11 +70,6 @@ instance Pretty Val where
 
 instance Poset Val where
     x <= y = x == y
-
-instance Pretty (Known Val) where
-    ppr Unknown     = text "unknown"
-    ppr (Known val) = ppr val
-    ppr Any         = text "any"
 
 isKnown :: Known Val -> Bool
 isKnown Unknown                = False

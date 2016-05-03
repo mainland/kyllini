@@ -24,6 +24,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Text.PrettyPrint.Mainland hiding (empty)
 
 infix 4 <=
 
@@ -91,6 +92,11 @@ data Known a = Unknown
              | Known a
              | Any
   deriving (Eq, Ord, Show)
+
+instance Pretty a => Pretty (Known a) where
+    ppr Unknown   = text "unknown"
+    ppr (Known a) = ppr a
+    ppr Any       = text "top"
 
 instance Functor Known where
     fmap f x = x >>= return . f
