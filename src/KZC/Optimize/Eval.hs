@@ -80,8 +80,9 @@ evalProgram (Program decls comp tau) =
                    _               -> faildoc $ nest 2 $
                                       text "Computation did not return CompReturnV or CompV:" </>
                                       ppr val
-  decls' <- mkDecls h'
-  return $ Program decls' comp' tau
+  decls1 <- getTopDecls
+  decls2 <- mkDecls h'
+  return $ Program (decls1 ++ decls2) comp' tau
 
 evalDecls :: (IsLabel l, MonadTc m)
           => [Decl l]

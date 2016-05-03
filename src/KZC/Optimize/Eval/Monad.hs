@@ -58,6 +58,9 @@ module KZC.Optimize.Eval.Monad (
 
     extendUnknownVarBinds,
 
+    appendTopDecl,
+    getTopDecls,
+
     getHeap,
     putHeap,
     savingHeap,
@@ -105,6 +108,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Data.Monoid
+import Data.Sequence ((|>),
+                      Seq)
 import Data.Set (Set)
 import Text.PrettyPrint.Mainland
 
@@ -157,15 +162,17 @@ defaultEvalEnv = EvalEnv
     }
 
 data EvalState l m = EvalState
-    { heapLoc :: !VarPtr
-    , heap    :: !(Heap l m)
+    { topDecls :: !(Seq (Decl l))
+    , heapLoc  :: !VarPtr
+    , heap     :: !(Heap l m)
     }
   deriving (Eq, Ord, Show)
 
 defaultEvalState :: EvalState l m
 defaultEvalState = EvalState
-    { heapLoc = 1
-    , heap    = mempty
+    { topDecls = mempty
+    , heapLoc  = 1
+    , heap     = mempty
     }
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
@@ -392,6 +399,12 @@ extendUnknownVarBinds vbs m =
 
     isPure :: (Var, Type) -> Bool
     isPure (_, tau) = isPureT tau
+
+appendTopDecl :: MonadTc m => Decl l -> EvalM l m ()
+appendTopDecl decl = modify $ \s -> s { topDecls = topDecls s |> decl }
+
+getTopDecls :: MonadTc m => EvalM l m [Decl l]
+getTopDecls = toList <$> gets topDecls
 
 getHeap :: MonadTc m => EvalM l m (Heap l m)
 getHeap = gets heap
