@@ -2715,7 +2715,7 @@ cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
 
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
-cstruct s l = C.Id (namedString s ++ "_t") l
+cstruct s l = C.Id (zencode ((displayS . renderCompact . ppr) s "") ++ "_t") l
 
 -- | Construct a prettier if statement
 cif :: ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm
