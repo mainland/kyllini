@@ -11,15 +11,18 @@ include $(TOP)/mk/common.mk
 KZCFLAGS+=--ftimer --finline --fsimpl --fautolut --flut --ffuse
 
 ifeq ($(GCC), 1)
-CFLAGS+=-pipe -march=native -Ofast -g
+CFLAGS+=-pipe -march=native -Ofast -ggdb
+LDFLAGS+=-ggdb
 endif
 
 ifeq ($(CLANG), 1)
-CFLAGS+=-march=native -Ofast -g
+CFLAGS+=-march=native -Ofast -ggdb
+LDFLAGS+=-ggdb
 endif
 
 ifeq ($(ICC), 1)
-CFLAGS+=-march=native -Ofast -g
+CFLAGS+=-march=native -Ofast -ggdb
+LDFLAGS+=-ggdb
 endif
 
 .PHONY : clean
