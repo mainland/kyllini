@@ -97,7 +97,7 @@ hashConsConsts :: forall l m . (IsLabel l, MonadTc m)
 hashConsConsts (Program decls comp tau) =
     hconsDecls decls $ \decls' -> do
     comp' <- hconsComp comp
-    let (structDecls, otherDecls) = partition isStruct decls'
+    let (structDecls, otherDecls) = partition isStructD decls'
     constDecls <- gets hconsTopConsts >>= mapM topConst . toList
     return $ Program (structDecls ++ constDecls ++ otherDecls) comp' tau
   where
@@ -105,10 +105,6 @@ hashConsConsts (Program decls comp tau) =
     topConst (v, c) = do
         tau <- inferConst noLoc c
         return $ LetD (letD v tau (constE c)) noLoc
-
-    isStruct :: Decl l -> Bool
-    isStruct LetStructD{} = True
-    isStruct _            = False
 
 hconsDecls :: (IsLabel l, MonadTc m)
            => [Decl l]
