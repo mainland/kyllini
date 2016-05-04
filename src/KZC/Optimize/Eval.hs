@@ -858,7 +858,7 @@ evalExp e =
         v_arr   <- eval flags arr
         v_start <- eval flags start
         if peval flags
-          then do evalIdx v_arr v_start len
+          then evalIdx v_arr v_start len
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
 
     eval flags (StructE s flds _) = do
