@@ -1009,15 +1009,16 @@ lutExp e = do
                -> EvalM l m (Var, Type, Exp)
         genLUT sname fs = do
             v_lut         <- gensymAt "lut" e
-            w_in          <- sum <$> mapM typeSize taus_in
             let tau_entry =  StructT sname noLoc
             traceLUT $ text "Returned variable:" <+> ppr v_ret
             traceLUT $ text "LUT entry type:" <+> ppr tau_entry
-            entries <- mapM (genLUTEntry w_in) [0..2^w_in-1]
-            let n   =  length entries
-            case n of
-              1 -> return (v_lut, tau_entry, constE $ head entries)
-              _ -> return (v_lut, arrKnownT n tau_entry, constE $ arrayC entries)
+            if null taus_in
+              then do entry <- genLUTEntry []
+                      return (v_lut, tau_entry, constE entry)
+              else do entries   <- enumValsList taus_in >>= mapM genLUTEntry
+                      let n     =  length entries
+                      let e_lut =  constE $ arrayC entries
+                      return (v_lut, arrKnownT n tau_entry, e_lut)
           where
             lutResult :: Val l m Exp -> EvalM l m [Val l m Exp]
             lutResult val_out | not resultInOutVars && not (isUnitT tau_ret') = do
@@ -1027,21 +1028,13 @@ lutExp e = do
             lutResult _val_out =
                 mapM lookupVarValue vs_out
 
-            genLUTEntry :: Int -> Integer -> EvalM l m Const
-            genLUTEntry w_in i = do
-                lut_in  <- bitcastV (entryV i) entryT (arrKnownT w_in bitT)
-                vals_in <- unpackValues lut_in taus_in
+            genLUTEntry :: [Val l m Exp] -> EvalM l m Const
+            genLUTEntry vals_in =
                 extendVarValues (zip3 vs_in taus_in vals_in) $ do
                     val_ret     <- evalExp e
                     val_results <- lutResult (unCompV val_ret)
                     return $ StructC sname (fs `zip` map toConst val_results)
               where
-                entryV :: Integer -> Val l m Exp
-                entryV i = ConstV $ FixC I U (W w_in) (BP 0) (fromIntegral i)
-
-                entryT :: Type
-                entryT = FixT I U (W w_in) (BP 0) noLoc
-
                 unCompV :: Val l m Exp -> Val l m Exp
                 unCompV (ReturnV val) = val
                 unCompV val           = val

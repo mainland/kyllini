@@ -38,6 +38,9 @@ module KZC.Optimize.Eval.Val (
     fromBitsV,
     unpackValues,
 
+    enumVals,
+    enumValsList,
+
     bitcastV,
 
     complexV,
@@ -75,6 +78,8 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Ratio (numerator)
 import Data.String (fromString)
+import Data.Word (Word32,
+                  Word64)
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Comp
@@ -428,6 +433,73 @@ unpackValues bits taus = do
         val  <- bitcastV slc (arrKnownT w bitT) tau
         vals <- go (n + w) taus
         return $ val : vals
+
+-- | Enumerate all values of a type /in bit order/.
+enumVals :: (IsLabel l, MonadTc m)
+         => Type
+         -> EvalM l m [Val l m Exp]
+enumVals UnitT{} =
+    return [ConstV UnitC]
+
+enumVals BoolT{} =
+    return $ map (ConstV    . BoolC) [(minBound :: Bool)..]
+
+enumVals (FixT I U (W w) (BP 0) _) =
+    return $ map (ConstV . FixC I U (W w) (BP 0) . fromInteger)
+                 [0..hi]
+  where
+    hi :: Integer
+    hi = 2^w-1
+
+enumVals (FixT I S (W w) (BP 0) _) =
+    return $ map (ConstV . FixC I U (W w) (BP 0) . fromInteger) $
+                 [0..hi] ++ [lo..0]
+  where
+    hi, lo :: Integer
+    hi = 2^(w-1)-1
+    lo = -(2^(w-1))
+
+enumVals (FloatT FP32 _) =
+    return $ map (ConstV . FloatC FP32 . toRational . wordToFloat)
+                 [(minBound :: Word32)..]
+
+enumVals (FloatT FP64 _) =
+    return $ map (ConstV . FloatC FP64 . toRational . wordToDouble)
+                [(minBound :: Word64)..]
+
+enumVals (RefT tau _) =
+    enumVals tau
+
+enumVals (StructT sname _) = do
+    StructDef _ flds _ <- lookupStruct sname
+    let fs :: [Field]
+        taus :: [Type]
+        (fs, taus) = unzip flds
+    valss <- enumValsList taus
+    return [StructV sname (Map.fromList (fs `zip` vs)) | vs <- valss]
+
+enumVals (ArrT (ConstI n _) tau _) = do
+    valss <- enumValsList (replicate n tau)
+    dflt  <- defaultValue tau
+    return [ArrayV (P.fromList dflt vs) | vs <- valss]
+
+enumVals tau =
+    faildoc $ text "Cannot enumerate values of type" <+> ppr tau
+
+enumValsList :: (IsLabel l, MonadTc m)
+             => [Type]
+             -> EvalM l m [[Val l m Exp]]
+enumValsList [] =
+    return []
+
+enumValsList [tau] = do
+    vals <- enumVals tau
+    return [[v] | v <- vals]
+
+enumValsList (tau:taus) = do
+    vals  <- enumVals tau
+    valss <- enumValsList taus
+    return [v:vs | vs <- valss, v <- vals]
 
 -- | Bitcast a value from one type to another
 bitcastV :: forall l m . (IsLabel l, MonadTc m)
