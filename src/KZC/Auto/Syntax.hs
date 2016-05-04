@@ -33,6 +33,7 @@ module KZC.Auto.Syntax (
     BoundVar(..),
     OccInfo(..),
     Exp(..),
+    ToExp(..),
     UnrollAnn(..),
     InlineAnn(..),
     PipelineAnn(..),
@@ -245,6 +246,9 @@ data Exp = ConstE Const !SrcLoc
          -- LUT
          | LutE Exp
   deriving (Eq, Ord, Read, Show)
+
+class ToExp a where
+    toExp :: a -> Exp
 
 -- | An argument to a call to a computation function. Arguments may be
 -- expressions or computations.

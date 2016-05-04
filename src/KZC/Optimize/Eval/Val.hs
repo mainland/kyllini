@@ -53,7 +53,6 @@ module KZC.Optimize.Eval.Val (
     isDefaultValue,
     isKnown,
 
-    ToExp(..),
     ToComp(..),
     toConst
   ) where
@@ -602,9 +601,6 @@ toConst (ArrayV vvals) =
 
 toConst val =
     errordoc $ text "toConst: not a constant:" <+> ppr val
-
-class ToExp a where
-    toExp :: a -> Exp
 
 instance IsLabel l => ToExp (Val l m Exp) where
     toExp val | isValue val =
