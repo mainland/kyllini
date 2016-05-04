@@ -36,7 +36,7 @@ import Prelude hiding (elem)
 import Data.Bits
 import Data.Loc
 import Data.Monoid
-import qualified Language.C.Syntax as C
+import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Lint (refPath)
@@ -403,7 +403,7 @@ instance IsBits (CExp l) where
     x      `shiftR'` CInt 0 = x
     ce     `shiftR'` i      = CExp [cexp|$ce >> $i|]
 
-instance ToExp (CExp l) where
+instance C.ToExp (CExp l) where
     toExp CVoid                      = locatedError $
                                        text "toExp: void compiled expression"
     toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
@@ -412,13 +412,13 @@ instance ToExp (CExp l) where
     toExp (CExp e)                   = \_ -> e
     toExp ce@(CInit _)               = locatedError $
                                        text "toExp: cannot convert CInit to a C expression" </> ppr ce
-    toExp (CPtr e)                   = toExp e
+    toExp (CPtr e)                   = C.toExp e
     toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
     toExp ce@(CStruct {})            = locatedError $
                                        text "toExp: cannot convert CStruct to a C expression" </> ppr ce
-    toExp (CBits ce)                 = toExp ce
-    toExp (CAlias _ ce)              = toExp ce
+    toExp (CBits ce)                 = C.toExp ce
+    toExp (CAlias _ ce)              = C.toExp ce
     toExp ce@(CComp {})              = locatedError $
                                        text "toExp: cannot convert CComp to a C expression" </> ppr ce
     toExp ce@(CFunComp {})           = locatedError $
@@ -501,7 +501,7 @@ toInit ce            = [cinit|$ce|]
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: forall l . Type -> CExp l -> CExp l -> C.Exp
 lowerIdx tau carr ci
-    | isBitT tau = toExp (CExp [cexp|($carr[$cbitIdx] & $cbitMask)|] `shiftR'` cbitOff) l
+    | isBitT tau = C.toExp (CExp [cexp|($carr[$cbitIdx] & $cbitMask)|] `shiftR'` cbitOff) l
     | otherwise  = [cexp|$carr[$ci]|]
   where
     cbitIdx, cbitOff :: CExp l

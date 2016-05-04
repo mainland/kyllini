@@ -33,7 +33,7 @@ import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
-import qualified Language.C.Syntax as C
+import qualified Language.C.Quote as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
@@ -1735,7 +1735,7 @@ cgWithLabel lbl k = do
 
     ident :: String
     l :: SrcLoc
-    C.Id ident l = toIdent lbl noLoc
+    C.Id ident l = C.toIdent lbl noLoc
 
 -- | Compile a computation and throw away he result.
 cgCompVoid :: IsLabel l
@@ -2718,7 +2718,7 @@ cstruct :: Struct -> SrcLoc -> C.Id
 cstruct s l = C.Id (zencode ((displayS . renderCompact . ppr) s "") ++ "_t") l
 
 -- | Construct a prettier if statement
-cif :: ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm
+cif :: C.ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm
 cif ce1 [C.BlockStm cstm2] [] =
     [cstm|if ($ce1) $stm:cstm2|]
 cif ce1 [C.BlockStm cstm2] [C.BlockStm cstm3] =

@@ -19,9 +19,6 @@ source code file where the quasioquote was written. Defining @DEBUG@ enables thi
 -}
 
 module KZC.Quote.C (
-    ToIdent(..),
-    ToConst(..),
-    ToExp(..),
     cexp,
     cedecl,
     cdecl,
@@ -51,7 +48,7 @@ import Data.Loc (Pos(..))
 #endif /* defined(DEBUG) */
 import qualified Language.C.Parser as P
 import qualified Language.C.Syntax as C
-import Language.C.Quote.Base (ToIdent(..), ToConst(..), ToExp(..), qqExp, qqPat)
+import Language.C.Quote.Base (qqExp, qqPat)
 import Language.Haskell.TH (Q)
 #if defined(DEBUG)
 import Language.Haskell.TH (Loc(..), location)
