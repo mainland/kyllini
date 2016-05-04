@@ -257,8 +257,8 @@ lutStats e =
         go e1
         go e2
 
-    go (CallE _ _ es _) =
-        mapM_ go es
+    go CallE{} =
+        fail "Cannot LUT function call"
 
     go (DerefE e _) = do
         go e
