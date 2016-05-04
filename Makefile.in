@@ -136,6 +136,7 @@ SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 clean : clean-tests clean-runtime
 	$(_QUIET)cabal clean
 	$(_QUIET)rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
+	$(_QUIET)rm -f TAGS
 
 .PHONY : clean-runtime
 clean-runtime : 
@@ -161,6 +162,12 @@ distclean : clean
 	    dist \
 	    autom4te.cache configure config.log config.status \
 	    include/KzcConfig.h include/KzcSysTools.h Makefile kzc.buildinfo
+
+.PHONY : tags
+tags : TAGS
+
+TAGS : $(SRC)
+	$(_QUIET)hasktags -cx $(SRC) -o $@
 
 #
 # kzc compiler
