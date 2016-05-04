@@ -21,6 +21,7 @@ module KZC.Analysis.Lut (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad (filterM)
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
 import Control.Monad.IO.Class (MonadIO)
@@ -30,23 +31,21 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
+import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
-import KZC.Analysis.Abs (absEval)
-import KZC.Analysis.Dataflow (DState(..),
-                              runD)
-import KZC.Analysis.NeedDefault (defaultsUsedExp)
-import KZC.Analysis.Range ()
+import KZC.Analysis.ReadWriteSet
 import KZC.Auto.Lint
-import KZC.Auto.Syntax
+import KZC.Auto.Syntax hiding (PI)
 import KZC.Error
 import KZC.Flags
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
+import KZC.Util.Lattice (Known(..))
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
@@ -106,6 +105,8 @@ data LUTInfo = LUTInfo
     { lutInVars      :: Set Var
     , lutOutVars     :: Set Var
     , lutReturnedVar :: Maybe Var
+    , lutReadSet     :: Map Var (Known RWSet)
+    , lutWriteSet    :: Map Var (Known RWSet)
 
     , lutInBits     :: Int
     , lutOutBits    :: Int
@@ -120,6 +121,8 @@ instance Pretty LUTInfo where
         nest 2 (text "In vars:" </> ppr (lutInVars info)) </>
         nest 2 (text "Out vars:" </> ppr (lutOutVars info)) </>
         nest 2 (text "Returned var:" <+> ppr (lutReturnedVar info)) </>
+        nest 2 (text "Read set:" </> ppr (lutReadSet info)) </>
+        nest 2 (text "Write set:" </> ppr (lutWriteSet info)) </>
         nest 2 (text "In bits:    " <+> ppr (lutInBits info)) </>
         nest 2 (text "Out bits:   " <+> ppr (lutOutBits info)) </>
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
@@ -127,21 +130,23 @@ instance Pretty LUTInfo where
 
 lutInfo :: forall m . MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
-    (_, st)     <- runD (absEval e)
-    tau_res     <- inferExp e
-    inVars      <- defaultsUsedExp e
-    let outVars =  (Map.keysSet . usedefs) st
-    let retVar  =  returnedVar e
-    inbits      <- sum <$> mapM varSize (Set.toList inVars)
-    outbits     <- sum <$> mapM varSize (Set.toList outVars)
-    resbits     <- case retVar of
-                     Just v | v `Set.member` outVars -> return 0
-                     _ -> typeSize tau_res
+    tau_res      <- inferExp e
+    let retVar   =  returnedVar e
+    (rset, wset) <- readWriteSets e
+    inVars       <- (<>) <$> pure (Map.keysSet rset) <*> weaklyUpdatedVars wset
+    let outVars  =  Map.keysSet wset
+    inbits       <- sum <$> mapM varSize (Set.toList inVars)
+    outbits      <- sum <$> mapM varSize (Set.toList outVars)
+    resbits      <- case retVar of
+                      Just v | v `Set.member` outVars -> return 0
+                      _ -> typeSize tau_res
     let outbytes :: Int
         outbytes = (outbits + resbits + 7) `div` 8
     return $ LUTInfo { lutInVars      = inVars
                      , lutOutVars     = outVars
                      , lutReturnedVar = retVar
+                     , lutReadSet     = rset
+                     , lutWriteSet    = wset
 
                      , lutInBits     = inbits
                      , lutOutBits    = outbits
@@ -155,6 +160,27 @@ lutInfo e = withFvContext e $ do
     varSize v = withSummaryContext v $ do
         tau <- lookupVar v
         typeSize tau
+
+    -- | Return the set of weakly update variables. We must add these variables
+    -- to our in variables.
+    weaklyUpdatedVars :: Map Var (Known RWSet) -> m (Set Var)
+    weaklyUpdatedVars wset = do
+        (vs_weak, _) <- unzip <$> filterM (fmap not . stronglyUpdated) (Map.assocs wset)
+        return $ Set.fromList vs_weak
+      where
+        -- | Return 'True' if the variable is strongly updated.
+        stronglyUpdated :: (Var, Known RWSet) -> m Bool
+        stronglyUpdated (_, Any) =
+            return True
+
+        stronglyUpdated (v, Known (ArrayS _ (PI (Known (RangeI 0 hi))))) = do
+            (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+            case iota of
+              ConstI n _ -> return $ hi == fromIntegral n - 1
+              _ -> return False
+
+        stronglyUpdated _ =
+            return False
 
 data LUTStats = LUTStats
     { lutOpCount       :: !Int
