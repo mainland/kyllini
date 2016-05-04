@@ -276,7 +276,7 @@ catV val1 val2 =
 
 -- | Extract a slice of an array
 idxV :: (IsLabel l, Applicative m, Monad m)
-      => Val l m Exp -> Int -> m (Val l m Exp)
+      => Val l m Exp -> Int -> EvalM l m (Val l m Exp)
 idxV (ArrayV vs) off = vs P.!? off
 idxV val off         = return $ ExpV $ idxE (toExp val) (fromIntegral off)
 
