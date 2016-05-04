@@ -31,6 +31,7 @@ import Control.Monad.Trans.Class (MonadTrans)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Bits
 import Data.Foldable (toList)
+import Data.List (partition)
 import Data.Loc
 import qualified Data.Map as Map
 #if !MIN_VERSION_base(4,8,0)
@@ -67,22 +68,22 @@ evalProgram :: (IsLabel l, MonadTc m)
             => Program l
             -> EvalM l m (Program l)
 evalProgram (Program decls comp tau) =
-  evalDecls decls $ \mkDecls ->
-  inSTScope tau $
-  inLocalScope $
-  withLocContext comp (text "In definition of main") $ do
-  val         <- evalComp comp
-  (h', comp') <- case val of
-                   CompReturnV {}  -> do h'    <- getHeap
-                                         comp' <- toComp val
-                                         return (h', comp')
-                   CompV h' steps' -> return (h', Comp steps')
-                   _               -> faildoc $ nest 2 $
-                                      text "Computation did not return CompReturnV or CompV:" </>
-                                      ppr val
-  decls1 <- getTopDecls
-  decls2 <- mkDecls h'
-  return $ Program (decls1 ++ decls2) comp' tau
+    evalDecls decls $ \mkDecls ->
+    inSTScope tau $
+    inLocalScope $
+    withLocContext comp (text "In definition of main") $ do
+    val         <- evalComp comp
+    (h', comp') <- case val of
+                     CompReturnV {}  -> do h'    <- getHeap
+                                           comp' <- toComp val
+                                           return (h', comp')
+                     CompV h' steps' -> return (h', Comp steps')
+                     _               -> faildoc $ nest 2 $
+                                        text "Computation did not return CompReturnV or CompV:" </>
+                                        ppr val
+    (sdecls1, decls1) <- partition isStructD <$> mkDecls h'
+    (sdecls2, decls2) <- partition isStructD <$> getTopDecls
+    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) comp' tau
 
 evalDecls :: (IsLabel l, MonadTc m)
           => [Decl l]
