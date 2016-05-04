@@ -136,7 +136,7 @@ constE c = ConstE c noLoc
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 
-intE :: Integer -> Exp
+intE :: Integral a => a -> Exp
 intE i = ConstE (intC i) noLoc
 
 varE :: Var -> Exp
