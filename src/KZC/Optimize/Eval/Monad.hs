@@ -128,7 +128,7 @@ import KZC.Util.SetLike
 import KZC.Vars
 
 data ArgVal l m = ExpAV (Val l m Exp)
-              | CompAV (Val l m (Comp l))
+                | CompAV (Val l m (Comp l))
 
 deriving instance Eq l => Eq (ArgVal l m)
 deriving instance Ord l => Ord (ArgVal l m)
