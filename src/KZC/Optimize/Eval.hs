@@ -417,17 +417,17 @@ evalStep step@(CallC _ f iotas args _) =
     extendArgBinds ((v, CompAV c):args) m = extendCVarBinds [(v, c)] $
                                             extendArgBinds args m
 
-evalStep (IfC l e1 c2 c3 s) = do
-    h <- getHeap
-    evalExp e1 >>= evalIfBody h
+evalStep (IfC l e1 c2 c3 s) =
+    evalExp e1 >>= evalIfBody
   where
     -- Note that @e1@ is pure, so we don't have to worry about it changing the
     -- heap.
-    evalIfBody :: Heap l m -> Val l m Exp -> EvalM l m (Val l m (Comp l))
-    evalIfBody h val
+    evalIfBody :: Val l m Exp -> EvalM l m (Val l m (Comp l))
+    evalIfBody val
         | isTrue  val = evalComp c2
         | isFalse val = evalComp c3
-        | otherwise   = do c2' <- savingHeap $ evalFullSteps $ unComp c2
+        | otherwise   = do h   <- getHeap
+                           c2' <- savingHeap $ evalFullSteps $ unComp c2
                            c3' <- savingHeap $ evalFullSteps $ unComp c3
                            killVars c2'
                            killVars c3'
@@ -689,20 +689,20 @@ evalExp e =
 
     eval flags e@(IfE e1 e2 e3 s) = do
         tau  <- inferExp e
-        h    <- getHeap
         val1 <- eval flags e1
-        evalIfExp tau h val1
+        evalIfExp tau val1
       where
         -- Note that @e1@ is pure, so we don't have to worry about it changing the
         -- heap.
-        evalIfExp :: Type -> Heap l m -> Val l m Exp -> EvalM l m (Val l m Exp)
-        evalIfExp tau h val
+        evalIfExp :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
+        evalIfExp tau val
             | isTrue  val = eval flags e2
             | isFalse val = eval flags e3
             | isPureT tau = do val2 <- eval flags e2
                                val3 <- eval flags e3
                                partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
-            | otherwise   = do e2' <- savingHeap $ evalFullCmd e2
+            | otherwise   = do h   <- getHeap
+                               e2' <- savingHeap $ evalFullCmd e2
                                e3' <- savingHeap $ evalFullCmd e3
                                killVars e2'
                                killVars e3'
