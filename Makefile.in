@@ -31,7 +31,8 @@ GHCFLAGS += \
 	-package symbol \
 	-package text \
 	-package template-haskell \
-	-package transformers
+	-package transformers \
+	-package vector
 
 GHCFLAGS_OPT = -O2 -funbox-strict-fields
 

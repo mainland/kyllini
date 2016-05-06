@@ -200,7 +200,7 @@ isOne _                         = False
 
 -- | Return 'True' if a 'Val l m Exp' is actually a value and 'False'
 -- otherwise.
-isValue :: Val l m Exp -> Bool
+isValue :: Eq l => Val l m Exp -> Bool
 isValue ConstV{}         = True
 isValue (StructV _ flds) = all isValue (Map.elems flds)
 isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
@@ -248,7 +248,7 @@ isDefaultValue _                         = False
 
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
-isKnown :: Val l m Exp -> Bool
+isKnown :: Eq l => Val l m Exp -> Bool
 isKnown UnknownV         = False
 isKnown ConstV{}         = True
 isKnown (StructV _ flds) = all isKnown (Map.elems flds)
