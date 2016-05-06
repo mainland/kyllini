@@ -42,6 +42,12 @@ module KZC.Core.Smart (
 
     splitArrT,
 
+    bitC,
+    intC,
+    uintC,
+    arrayC,
+    structC,
+
     mkVar,
 
     notE,
@@ -186,6 +192,21 @@ splitArrT (ArrT iota tau _) =
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
+
+bitC :: Bool -> Const
+bitC b = FixC I U 1 0 (if b then 1 else 0)
+
+intC :: Integral i => i -> Const
+intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+uintC :: Integral i => i -> Const
+uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
+
+arrayC :: [Const] -> Const
+arrayC cs = ArrayC cs
+
+structC :: Struct -> [(Field, Const)] -> Const
+structC s fs = StructC s fs
 
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
