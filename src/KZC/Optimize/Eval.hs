@@ -1375,11 +1375,7 @@ evalIdx (ArrayV vs) start Nothing | Just r <- fromIntV start =
     let start :: Int
         start = fromIntegral r
     in
-      case vs P.!? start of
-        Nothing  -> faildoc $
-                    text "Array index" <+> ppr start <+>
-                    text "out of bounds" <+> parens (ppr (P.length vs))
-        Just val -> return val
+        vs P.!? start
 
 evalIdx (ArrayV vs) start (Just len) | Just r <- fromIntV start =
     let start :: Int
