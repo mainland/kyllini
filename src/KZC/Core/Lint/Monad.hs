@@ -73,6 +73,7 @@ import Control.Monad (liftM)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
 import Control.Monad.Reader (ReaderT(..))
@@ -146,7 +147,8 @@ class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUn
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 
 -- | A 'MonadTc' with support for IO references.
-class (MonadTc m, MonadRef IORef m, PrimMonad m, PrimState m ~ RealWorld)
+class (MonadTc m, MonadIO m, MonadRef IORef m,
+       PrimMonad m, PrimState m ~ RealWorld)
     => MonadTcRef m
 
 asksTc :: MonadTc m => (TcEnv -> a) -> m a

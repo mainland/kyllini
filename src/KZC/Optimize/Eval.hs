@@ -30,6 +30,7 @@ import Control.Monad ((>=>),
                       filterM,
                       zipWithM,
                       zipWithM_)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Primitive (RealWorld)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Class (MonadTrans)
@@ -56,8 +57,7 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
-import KZC.Interp (I,
-                   evalI)
+import KZC.Interp (evalI)
 import qualified KZC.Interp as I
 import KZC.Label
 import KZC.Name
@@ -1049,20 +1049,21 @@ lutExp e = do
             let tau_entry =  StructT sname noLoc
             traceLUT $ text "Returned variable:" <+> ppr v_ret
             traceLUT $ text "LUT entry type:" <+> ppr tau_entry
-            evalI $ I.extendRefs [(v, ref) | (v, ref, _) <- v_refs] $
-              if null taus_in
-                then do entry <- genLUTEntry []
-                        return (v_lut, tau_entry, constE entry)
-                else do entries   <- I.enumValsList taus_in >>= mapM genLUTEntry
-                        let n     =  length entries
-                        let e_lut =  constE $ arrayC entries
-                        return (v_lut, arrKnownT n tau_entry, e_lut)
+            mval <- evalI $ I.extendRefs [(v, ref) | (v, ref, _) <- v_refs] $
+                            I.compileExp e
+            if null taus_in
+              then do entry <- genLUTEntry mval []
+                      return (v_lut, tau_entry, constE entry)
+              else do entries   <- I.enumValsList taus_in >>= mapM (genLUTEntry mval)
+                      let n     =  length entries
+                      let e_lut =  constE $ arrayC entries
+                      return (v_lut, arrKnownT n tau_entry, e_lut)
           where
             -- Generate one LUT entry
-            genLUTEntry :: [I.Val] -> I s (EvalM l m) Const
-            genLUTEntry vals_in = do
+            genLUTEntry :: IO I.Val -> [I.Val] -> EvalM l m Const
+            genLUTEntry mval vals_in = do
                 zipWithM_ I.assign refs_in vals_in
-                c_ret  <- I.toConst <$> I.evalExp e
+                c_ret  <- I.toConst <$> liftIO mval
                 cs_vs  <- mapM (I.fromRef >=> return . I.toConst) refs_out
                 let cs =  cs_vs ++ [c_ret | nonUnitResult]
                 return $ StructC sname (fs `zip` cs)

@@ -41,13 +41,16 @@ module KZC.Interp (
 
     assign,
 
-    evalExp
+    evalExp,
+
+    compileExp
   ) where
 
 import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Primitive (PrimMonad(..))
+import Control.Monad.Primitive (PrimMonad(..),
+                                RealWorld)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
@@ -659,4 +662,258 @@ evalExp (LutE e) =
     evalExp e
 
 evalExp e =
+    faildoc $ text "Cannot evaluate" <+> ppr e
+
+compileDecl :: forall a s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
+            => LocalDecl -> I s m (IO a) -> I s m (IO a)
+compileDecl (LetLD v tau e _) k = do
+    ref   <- defaultRef tau
+    mval1 <- compileExp e
+    mval2 <- extendRefs [(bVar v, ref)] k
+    return $ do mval1 >>= assign ref
+                mval2
+
+compileDecl (LetRefLD v tau e _) k = do
+    ref   <- defaultRef tau
+    mval1 <- compileInit e
+    mval2 <- extendRefs [(bVar v, ref)] k
+    return $ do mval1 >>= assign ref
+                mval2
+  where
+    compileInit :: Maybe Exp -> I s m (IO Val)
+    compileInit Nothing  = do val <- defaultVal tau
+                              return $ return val
+    compileInit (Just e) = compileExp e
+
+compileRef :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
+           => Exp -> I s m (IO (Ref s))
+compileRef (VarE v _) = do
+    ref <- lookupRef v
+    return $ return ref
+
+compileRef (IdxE e1 e2 len _) = do
+    mref <- compileRef e1
+    mi   <- compileExp e2
+    return $ do ref <- mref
+                i   <- mi >>= fromIntV
+                idxR ref i len
+
+compileRef (ProjE e f _) = do
+    mref <- compileRef e
+    return $ do ref <- mref
+                projR ref f
+
+compileRef e =
+    faildoc $ text "Expression is not a valid reference:" <+> ppr e
+
+compileExp :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
+           => Exp -> I s m (IO Val)
+compileExp (ConstE c _) = do
+    val <- evalConst c
+    return $ return val
+
+compileExp (VarE v _) = do
+    ref <- lookupRef v
+    return $ fromRef ref
+
+compileExp e0@(UnopE op e _) = do
+    mval <- compileExp e
+    return $ mval >>= unop op
+  where
+    unop :: Unop -> Val -> IO Val
+    unop Lnot (ConstV c) | Just c' <- liftBool op not c =
+        return $ ConstV c'
+
+    unop Bnot (ConstV c) | Just c' <- liftBits op complement c =
+        return $ ConstV c'
+
+    unop Neg (ConstV c) | Just c' <- liftNum op negate c =
+        return $ ConstV c'
+
+    unop (Cast tau) (ConstV c) | Just c' <- liftCast tau c =
+        return $ ConstV c'
+
+    unop Len (ArrayV v) =
+        return $ ConstV $ intC $ V.length v
+
+    unop _ _ =
+        faildoc $ text "Could not evaluate" <+> ppr e0
+
+compileExp e0@(BinopE op e1 e2 _) = do
+    mval1 <- compileExp e1
+    mval2 <- compileExp e2
+    return $ do val1 <- mval1
+                val2 <- mval2
+                binop op val1 val2
+  where
+    binop :: Binop -> Val -> Val -> IO Val
+    binop Lt (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftOrd op (<) c1 c2
+
+    binop Le (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftOrd op (<=) c1 c2
+
+    binop Eq (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftEq op (==) c1 c2
+
+    binop Ge (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftOrd op (>=) c1 c2
+
+    binop Gt (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftOrd op (>) c1 c2
+
+    binop Ne (ConstV c1) (ConstV c2) =
+        return $ ConstV $ liftEq op (/=) c1 c2
+
+    binop Land (ConstV (BoolC False)) _ =
+        return $ ConstV $ BoolC False
+
+    binop Land _ val2 =
+        return val2
+
+    binop Lor (ConstV (BoolC True)) _ =
+        return $ ConstV $ BoolC True
+
+    binop Lor _ val2 =
+        return val2
+
+    binop Band (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.&.) c1 c2 =
+        return $ ConstV c'
+
+    binop Bor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.|.) c1 c2 =
+        return $ ConstV c'
+
+    binop Bxor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op xor c1 c2 =
+        return $ ConstV c'
+
+    binop LshL (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftL c1 c2 =
+        return $ ConstV c'
+
+    binop AshR (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftR c1 c2 =
+        return $ ConstV c'
+
+    binop Add (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (+) c1 c2 =
+        return $ ConstV c'
+
+    binop Sub (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (-) c1 c2 =
+        return $ ConstV c'
+
+    binop Mul (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (*) c1 c2 =
+        return $ ConstV c'
+
+    binop Div (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op quot c1 c2 =
+        return $ ConstV c'
+
+    binop Rem (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op rem c1 c2 =
+        return $ ConstV c'
+
+    binop _ _ _ =
+        faildoc $ text "Could not evaluate" <+> ppr e0
+
+compileExp e0@(IfE e1 e2 e3 _) = do
+    mval1 <- compileExp e1
+    mval2 <- compileExp e2
+    mval3 <- compileExp e3
+    return $ do val1 <- mval1
+                case val1 of
+                  ConstV (BoolC True)  -> mval2
+                  ConstV (BoolC False) -> mval3
+                  _ -> faildoc $ text "Could not evaluate" <+> ppr e0
+
+compileExp (LetE decl e _) =
+    compileDecl decl $
+    compileExp e
+
+compileExp (DerefE e _) = do
+    mref <- compileRef e
+    return $ mref >>= fromRef
+
+compileExp (AssignE e1 e2 _) = do
+    mref <- compileRef e1
+    mval <- compileExp e2
+    return $ do ref <- mref
+                val <- mval
+                assign ref val
+                return $ ConstV UnitC
+
+compileExp (WhileE e1 e2 _) = do
+    mval1 <- compileExp e1
+    mval2 <- compileExp e2
+    let go :: Val -> IO Val
+        go (ConstV (BoolC True)) = do
+            void mval2
+            mval1 >>= go
+
+        go (ConstV (BoolC False)) =
+            return $ ConstV UnitC
+
+        go val =
+            faildoc $ text "Bad conditional:" <+> ppr val
+    return $ mval1 >>= go
+
+compileExp (ForE _ v tau e1 e2 e3 _) = do
+    mi    <- compileExp e1
+    mlen  <- compileExp e2
+    ref   <- newRef $ error "naughty"
+    mbody <- extendRefs [(v, ValR ref)] $
+             compileExp e3
+    let loop :: Int -> Int -> IO Val
+        loop !i !end | i < end = do
+            void mbody
+            writeRef ref $ intV tau (i+1)
+            loop (i+1) end
+
+        loop _ _ =
+            return $ ConstV UnitC
+    return $ do i   <- mi   >>= fromIntV
+                len <- mlen >>= fromIntV
+                writeRef ref $ intV tau i
+                loop i (i+len)
+
+compileExp (ArrayE es _) = do
+    mvals <- mapM compileExp es
+    return $ do vals <- sequence mvals
+                return $ ArrayV $ V.fromList vals
+
+compileExp (IdxE e1 e2 len _) = do
+    mval1 <- compileExp e1
+    mval2 <- compileExp e2
+    return $ do arr <- mval1
+                i   <- mval2 >>= fromIntV
+                idxV arr i len
+
+compileExp (StructE struct flds _) = do
+    mvals <- mapM compileExp es
+    return $ do vals <- sequence mvals
+                return $ StructV struct $ Map.fromList $ fs `zip` vals
+  where
+    (fs, es) = unzip flds
+
+compileExp (ProjE e f _) = do
+    mval <- compileExp e
+    return $ do val <- mval
+                projV val f
+
+compileExp (ReturnE _ e _) =
+    compileExp e
+
+compileExp (BindE WildV _ e1 e2 _) = do
+    mval1 <- compileExp e1
+    mval2 <- compileExp e2
+    return $ do void $ mval1
+                mval2
+
+compileExp (BindE (TameV v) tau e1 e2 _) = do
+    mval1 <- compileExp e1
+    ref   <- defaultRef tau
+    mval2 <- extendRefs [(bVar v, ref)] $
+             compileExp e2
+    return $ do val1 <- mval1
+                assign ref val1
+                mval2
+
+compileExp (LutE e) =
+    compileExp e
+
+compileExp e =
     faildoc $ text "Cannot evaluate" <+> ppr e
