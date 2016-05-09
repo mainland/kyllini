@@ -7,6 +7,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Optimize.Eval
@@ -25,7 +26,11 @@ module KZC.Optimize.Eval (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (filterM)
+import Control.Monad ((>=>),
+                      filterM,
+                      zipWithM,
+                      zipWithM_)
+import Control.Monad.Primitive (RealWorld)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Class (MonadTrans)
 import Control.Monad.Trans.Maybe (runMaybeT)
@@ -33,6 +38,7 @@ import Data.Bits
 import Data.Foldable (toList)
 import Data.List (partition)
 import Data.Loc
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
@@ -50,6 +56,9 @@ import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Interp (I,
+                   evalI)
+import qualified KZC.Interp as I
 import KZC.Label
 import KZC.Name
 import KZC.Optimize.Eval.Monad
@@ -65,7 +74,7 @@ import KZC.Vars
 peval :: Flags -> Bool
 peval = testDynFlag PartialEval
 
-evalProgram :: (IsLabel l, MonadTc m)
+evalProgram :: (IsLabel l, MonadTcRef m)
             => Program l
             -> EvalM l m (Program l)
 evalProgram (Program decls comp tau) =
@@ -86,7 +95,7 @@ evalProgram (Program decls comp tau) =
     (sdecls2, decls2) <- partition isStructD <$> getTopDecls
     return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) comp' tau
 
-evalDecls :: (IsLabel l, MonadTc m)
+evalDecls :: (IsLabel l, MonadTcRef m)
           => [Decl l]
           -> ((Heap l m -> EvalM l m [Decl l]) -> EvalM l m a)
           -> EvalM l m a
@@ -98,7 +107,7 @@ evalDecls (decl:decls) k =
     evalDecls decls $ \mkDecls' ->
     k $ \h -> (:) <$> mkDecl' h <*> mkDecls' h
 
-evalDecl :: forall l m a . (IsLabel l, MonadTc m)
+evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((Heap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
@@ -204,7 +213,7 @@ data LocalLetVal l m  -- | Local declaration is pure and produces a declaration
                    -- through the declaration.
                    | HeapDeclVal (Heap l m -> EvalM l m LocalDecl)
 
-evalLocalDecl :: forall l m a . (IsLabel l, MonadTc m)
+evalLocalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
               => LocalDecl
               -> (LocalLetVal l m -> EvalM l m a)
               -> EvalM l m a
@@ -249,7 +258,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
         new' :: Val l m Exp
         new' = if isKnown new then new else old
 
-evalComp :: forall l m . (IsLabel l, MonadTc m)
+evalComp :: forall l m . (IsLabel l, MonadTcRef m)
          => Comp l
          -> EvalM l m (Val l m (Comp l))
 evalComp (Comp steps) = evalSteps steps
@@ -340,7 +349,7 @@ evalComp (Comp steps) = evalSteps steps
     evalFullBind steps =
         evalFullSteps steps
 
-evalStep :: forall l m . (IsLabel l, MonadTc m)
+evalStep :: forall l m . (IsLabel l, MonadTcRef m)
          => Step l
          -> EvalM l m (Val l m (Comp l))
 evalStep (VarC _ v _) =
@@ -506,7 +515,7 @@ evalStep (LoopC {}) =
 
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
-evalFullSteps :: (IsLabel l, MonadTc m)
+evalFullSteps :: (IsLabel l, MonadTcRef m)
               => [Step l]
               -> EvalM l m [Step l]
 evalFullSteps steps = do
@@ -523,12 +532,12 @@ evalFullSteps steps = do
                                          ppr val
     unComp <$> diffHeapComp h h' (Comp steps')
 
-evalFullComp :: (IsLabel l, MonadTc m)
+evalFullComp :: (IsLabel l, MonadTcRef m)
              => Comp l
              -> EvalM l m (Comp l)
 evalFullComp comp = Comp <$> evalFullSteps (unComp comp)
 
-evalConst :: forall l m . (IsLabel l, MonadTc m)
+evalConst :: forall l m . (IsLabel l, MonadTcRef m)
           => Const
           -> EvalM l m (Val l m Exp)
 evalConst c@(ArrayC cs) = do
@@ -550,7 +559,7 @@ evalConst (StructC s flds) = do
 evalConst c =
     return $ ConstV c
 
-evalExp :: forall l m . (IsLabel l, MonadTc m)
+evalExp :: forall l m . (IsLabel l, MonadTcRef m)
         => Exp
         -> EvalM l m (Val l m Exp)
 evalExp e =
@@ -938,19 +947,21 @@ evalExp e =
     eval flags (LutE e) =
         eval flags e
 
-lutExp :: forall l m . (IsLabel l, MonadTc m)
+lutExp :: forall l s m . (s ~ RealWorld, IsLabel l, MonadTcRef m)
        => Exp
        -> EvalM l m Exp
 lutExp e = do
-    info       <- lutInfo e
-    let vs_in  =  toList $ lutInVars info
-    taus_in    <- mapM lookupVar vs_in
-    let vs_out =  toList $ lutOutVars info
-    taus_out   <- mapM lookupVar vs_out
-    tau_ret    <- inferExp e
-    e'         <- go (vs_in `zip` taus_in) (vs_out `zip` taus_out) tau_ret (returnedVar e)
+    info     <- lutInfo e
+    v_refs   <- varRefs $ toList $ lutInVars info <> lutOutVars info
+    in_refs  <- mapM (lutVarRef v_refs) $ toList $ lutInVars info
+    out_refs <- mapM (lutVarRef v_refs) $ toList $ lutOutVars info
+    ret_ref  <- traverse (lutVarRef v_refs) (lutReturnedVar info)
+    tau_ret  <- inferExp e
     traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
+    e'       <- go [(v, ref, tau) | (v, (ref, tau)) <- Map.assocs v_refs]
+                in_refs out_refs ret_ref tau_ret
     traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
+    -- Kill the variables we modified
     killVars e'
     return e'
   where
@@ -958,50 +969,76 @@ lutExp e = do
     unSTC (ST _ (C tau) _ _ _ _) = tau
     unSTC tau                    = tau
 
-    go :: [(Var, Type)]
-       -> [(Var, Type)]
+    varRefs :: [Var] -> EvalM l m (Map Var (I.Ref s, Type))
+    varRefs vs =
+        Map.fromList <$> mapM varRef vs
+      where
+        varRef :: Var -> EvalM l m (Var, (I.Ref s, Type))
+        varRef v = do
+            tau <- lookupVar v
+            ref <- I.defaultRef tau
+            return (v, (ref, tau))
+
+    lutVarRef :: Map Var (I.Ref s, Type)
+              -> Var
+              -> EvalM l m (Var, I.Ref s, Type)
+    lutVarRef v_refs v = do
+        (ref, tau) <- maybe err return (Map.lookup v v_refs)
+        return (v, ref, tau)
+      where
+        err = faildoc $ text "Cannot find in/out variable:" <+> ppr v
+
+    go :: [(Var, I.Ref s, Type)]
+       -> [(Var, I.Ref s, Type)]
+       -> [(Var, I.Ref s, Type)]
+       -> Maybe (Var, I.Ref s, Type)
        -> Type
-       -> Maybe Var
        -> EvalM l m Exp
-    go vtaus_in vtaus_out tau_ret v_ret =
-        localFlags (setDynFlag PartialEval) $ do
-        fs    <- (++) <$> mapM (gensym . namedString) vs_out
-                      <*> if not resultInOutVars && not (isUnitT tau_ret')
+    go v_refs in_refs out_refs ret_ref tau_ret = do
+        fs    <- (++) <$> mapM (gensym . namedString) lvs_out
+                      <*> if nonUnitResult
                           then (:[]) <$> gensym "ret"
                           else return []
         sname <- gensym "lut"
         appendTopDecl $ LetStructD sname (fs `zip` taus_result) noLoc
         (v_lut, tau_entry, e1) <- genLUT sname fs
         e2                     <- genLookup sname fs v_lut
-        return $
-            letE v_lut tau_entry e1 e2
+        return $ letE v_lut tau_entry e1 e2
       where
-        vs_in :: [Var]
+        lvs_in :: [Var]
+        refs_in :: [I.Ref s]
         taus_in :: [Type]
-        (vs_in, taus_in) = unzip vtaus_in
+        (lvs_in, refs_in, taus_in) = unzip3 in_refs
 
-        vs_out :: [Var]
+        lvs_out :: [Var]
+        refs_out :: [I.Ref s]
         taus_out :: [Type]
-        (vs_out, taus_out) = unzip vtaus_out
+        (lvs_out, refs_out, taus_out) = unzip3 out_refs
 
         tau_ret' :: Type
         tau_ret' = unSTC tau_ret
 
+        v_ret :: Maybe Var
+        v_ret = case ret_ref of
+                  Just (v, _, _) -> Just v
+                  _              -> Nothing
+
         -- 'True' if the value returned by the LUTted expression is also
         -- among the output variables.
         resultInOutVars :: Bool
-        resultInOutVars = case v_ret of
-                            Nothing -> False
-                            Just v  -> v `elem` vs_out
+        resultInOutVars = case ret_ref of
+                            Nothing         -> False
+                            Just (lv, _, _) -> lv `elem` lvs_out
+
+        -- 'True' if the LUTted expression has a non-unit value that /is not/
+        -- one of the output variables.
+        nonUnitResult :: Bool
+        nonUnitResult = not resultInOutVars && not (isUnitT tau_ret')
 
         -- If @e@ returns one of the output variables, we don't need to add
         -- it to the LUT entry because it will already be included.
         taus_result :: [Type]
-        taus_result =
-            map unRefT taus_out ++
-            if not resultInOutVars && not (isUnitT tau_ret')
-            then [tau_ret']
-            else []
+        taus_result = map unRefT taus_out ++ [tau_ret' | nonUnitResult]
 
         -- Generate the LUT
         genLUT :: Struct
@@ -1012,32 +1049,23 @@ lutExp e = do
             let tau_entry =  StructT sname noLoc
             traceLUT $ text "Returned variable:" <+> ppr v_ret
             traceLUT $ text "LUT entry type:" <+> ppr tau_entry
-            if null taus_in
-              then do entry <- genLUTEntry []
-                      return (v_lut, tau_entry, constE entry)
-              else do entries   <- enumValsList taus_in >>= mapM genLUTEntry
-                      let n     =  length entries
-                      let e_lut =  constE $ arrayC entries
-                      return (v_lut, arrKnownT n tau_entry, e_lut)
+            evalI $ I.extendRefs [(v, ref) | (v, ref, _) <- v_refs] $
+              if null taus_in
+                then do entry <- genLUTEntry []
+                        return (v_lut, tau_entry, constE entry)
+                else do entries   <- I.enumValsList taus_in >>= mapM genLUTEntry
+                        let n     =  length entries
+                        let e_lut =  constE $ arrayC entries
+                        return (v_lut, arrKnownT n tau_entry, e_lut)
           where
-            lutResult :: Val l m Exp -> EvalM l m [Val l m Exp]
-            lutResult val_out | not resultInOutVars && not (isUnitT tau_ret') = do
-                vals <- mapM lookupVarValue vs_out
-                return $ vals ++ [val_out]
-
-            lutResult _val_out =
-                mapM lookupVarValue vs_out
-
-            genLUTEntry :: [Val l m Exp] -> EvalM l m Const
-            genLUTEntry vals_in =
-                extendVarValues (zip3 vs_in taus_in vals_in) $ do
-                    val_ret     <- evalExp e
-                    val_results <- lutResult (unCompV val_ret)
-                    return $ StructC sname (fs `zip` map toConst val_results)
-              where
-                unCompV :: Val l m Exp -> Val l m Exp
-                unCompV (ReturnV val) = val
-                unCompV val           = val
+            -- Generate one LUT entry
+            genLUTEntry :: [I.Val] -> I s (EvalM l m) Const
+            genLUTEntry vals_in = do
+                zipWithM_ I.assign refs_in vals_in
+                c_ret  <- I.toConst <$> I.evalExp e
+                cs_vs  <- mapM (I.fromRef >=> return . I.toConst) refs_out
+                let cs =  cs_vs ++ [c_ret | nonUnitResult]
+                return $ StructC sname (fs `zip` cs)
 
         -- Generate the LUT lookup
         genLookup :: Struct
@@ -1045,63 +1073,92 @@ lutExp e = do
                   -> Var
                   -> EvalM l m Exp
         genLookup _sname fs v_lut =
-            lookupInVars vtaus_in $ \vtaus -> do
+            lookupInVars in_refs $ \etaus -> do
             -- Construct a binder for the LUT index (if it is needed)
             w_in        <- sum <$> mapM typeSize taus_in
             v_idx       <- gensym "lutidx"
             let tau_idx =  FixT I U (W w_in) (BP 0) noLoc
             let args :: [(Val l m Exp, Type)]
-                args = [(ExpV $ varE v, tau) | (v, tau) <- vtaus]
+                args = [(ExpV e, tau) | (e, tau) <- etaus]
             idx <- packValues args
             let letIdx :: Exp -> Exp
-                letIdx | null vs_in = id
-                       | otherwise  = letE v_idx tau_idx (bitcastE tau_idx (toExp idx))
+                letIdx | null lvs_in = id
+                       | otherwise   = letE v_idx tau_idx (bitcastE tau_idx (toExp idx))
             -- Construct the values of the LUT entry
             let entry :: Exp
-                entry | null vs_in = varE v_lut
-                      | otherwise  = idxE (varE v_lut) (varE v_idx)
+                entry | null lvs_in = varE v_lut
+                      | otherwise   = idxE (varE v_lut) (varE v_idx)
             let results :: [Exp]
                 results = [projE entry f | f <- fs]
             -- Return the LUT lookup expression
-            return $
-                letIdx $
-                if isCompT tau_ret
-                then let e_res = case v_ret of
-                                   Just v | v `elem` vs_out -> derefE (varE v)
-                                   _ | isUnitT tau_ret' -> returnE unitE
-                                     | otherwise        -> returnE $ last results
-                         cs = [assignE (varE v) result | (v, result) <- vs_out `zip` results]
-                     in
-                       foldr seqE e_res cs
-                else if isUnitT tau_ret'
-                     then unitE
-                     else last results
+            letIdx <$> if isCompT tau_ret
+                       then compLut results
+                       else pureLut results
+          where
+            compLut :: [Exp] -> EvalM l m Exp
+            compLut results = do
+                e_res <- case v_ret of
+                             Just v | resultInOutVars -> evalVarDeref v
+                             _ | isUnitT tau_ret'     -> return $ returnE unitE
+                               | otherwise            -> return $ returnE $
+                                                                  last results
+                es    <- zipWithM mkAssign lvs_out results
+                return $ foldr seqE e_res es
+              where
+                mkAssign :: Var -> Exp -> EvalM l m Exp
+                mkAssign v e = do
+                    v' <- toExp <$> evalExp (varE v)
+                    return $ assignE v' e
 
-        -- Get the values of all the input variables, dereferencing them if
-        -- needed.
-        lookupInVars :: [(Var, Type)]
-                     -> ([(Var, Type)] -> EvalM l m Exp)
-                     -> EvalM l m Exp
-        lookupInVars [] k =
-            k []
+            pureLut :: [Exp] -> EvalM l m Exp
+            pureLut _results | isUnitT tau_ret' =
+                return $ returnE unitE
 
-        lookupInVars ((v,tau):vtaus) k | isRefT tau = do
-            v'       <- gensymAt (namedString v) (locOf v)
-            let tau' =  unRefT tau
-            lookupInVars vtaus $ \vtaus' -> do
-            e <- k ((v', tau'):vtaus')
-            return $ bindE v' tau' (derefE (varE v)) e
+            pureLut results =
+                return $ last results
 
-        lookupInVars ((v,tau):vtaus) k = do
-            lookupInVars vtaus $ \vtaus' -> do
-            k ((v, tau):vtaus')
+            -- To find the expression representing a variable dereference, we
+            -- actually have to evaluate the variable dereference! Don't worry,
+            -- if the variable can't be fully evaluated, we'll get back a
+            -- residual expression...
+            --
+            -- Why can't we just use the variable firectly? Because it may be a
+            -- reference that is aliased via, e.g., a function parameter. In a
+            -- case like this, when we attempt to LUT an inlined function, the
+            -- function's named parameter will actually point to a variable in
+            -- the caller's context. Realizing this was the source of much pain.
+            -- See encode34 in test_encoding.blk for an example of where this
+            -- can happen.
+            evalVarDeref :: Var -> EvalM l m Exp
+            evalVarDeref v = toExp <$> evalExp (derefE (varE v))
+
+            -- Get the values of all the input variables, dereferencing them if
+            -- needed.
+            lookupInVars :: [(Var, I.Ref s, Type)]
+                         -> ([(Exp, Type)] -> EvalM l m Exp)
+                         -> EvalM l m Exp
+            lookupInVars [] k =
+                k []
+
+            lookupInVars ((lv,_,tau):lvtaus) k | isRefT tau = do
+                v'       <- gensymAt (namedString lv) (locOf lv)
+                let tau' =  unRefT tau
+                lookupInVars lvtaus $ \lvtaus' -> do
+                e1 <- toExp <$> evalExp (derefE (varE lv))
+                e2 <- k ((varE v', tau'):lvtaus')
+                return $ bindE v' tau' e1 e2
+
+            lookupInVars ((lv,_,tau):vtaus) k =
+                lookupInVars vtaus $ \vtaus' -> do
+                e <- toExp <$> evalExp (varE lv)
+                k ((e, tau):vtaus')
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
 -- current heap, and return a single expression representing all changes to the
 -- heap. We use this when we need to sequence two commands and the first command
 -- produced a residual, meaning we can't push the prefix heap of the second
 -- command past the first command.
-evalFullCmd :: (IsLabel l, MonadTc m)
+evalFullCmd :: (IsLabel l, MonadTcRef m)
             => Exp
             -> EvalM l m Exp
 evalFullCmd e =
@@ -1186,7 +1243,7 @@ refUpdate (ProjR r f) old new = do
 --
 -- 3. Return a command consisting of the initial heap and the
 -- partially-evaluated loop.
-evalLoop :: (IsLabel l, ModifiedVars e Var, MonadTc m)
+evalLoop :: (IsLabel l, ModifiedVars e Var, MonadTcRef m)
          => e
          -> EvalM l m (Val l m a)
          -> EvalM l m (Val l m a)
@@ -1204,7 +1261,7 @@ evalLoop body m = do
                            partial $ CompV h c'
       _              -> faildoc $ text "Bad loop:" <+> ppr val
 
-evalWhileE :: forall l m . (IsLabel l, MonadTc m)
+evalWhileE :: forall l m . (IsLabel l, MonadTcRef m)
            => Exp
            -> Exp
            -> EvalM l m (Val l m Exp)
@@ -1238,7 +1295,7 @@ evalWhileE e1 e2 =
         e2' <- evalFullCmd e2
         partialCmd $ whileE e1' e2'
 
-evalWhileC :: forall l m . (IsLabel l, MonadTc m)
+evalWhileC :: forall l m . (IsLabel l, MonadTcRef m)
            => Exp
            -> Comp l
            -> EvalM l m (Val l m (Comp l))
@@ -1277,7 +1334,7 @@ toFixVal :: Integral i => Type -> i -> Val l m Exp
 toFixVal ~(FixT sc s w bp _) i =
     ConstV $ FixC sc s w bp (fromIntegral i)
 
-evalForE :: forall l m . (IsLabel l, MonadTc m)
+evalForE :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type
@@ -1320,7 +1377,7 @@ evalForE ann v tau e1 e2 e3 = do
         e3' <- evalFullCmd e3
         partialCmd $ forE ann v' tau e1' e2' e3'
 
-evalForC :: forall l m . (IsLabel l, MonadTc m)
+evalForC :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type

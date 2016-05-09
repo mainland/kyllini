@@ -81,6 +81,7 @@ SOURCE = \
 	KZC/Error.hs \
 	KZC/Flags.hs \
 	KZC/Globals.hs \
+	KZC/Interp.hs \
 	KZC/Monad.hs \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
