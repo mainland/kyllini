@@ -1385,7 +1385,7 @@ evalIdx (ArrayV vs) start (Just len) | Just r <- fromIntV start =
     let start :: Int
         start = fromIntegral r
     in
-      ArrayV <$> P.slice start len vs
+        ArrayV <$> P.slice start len vs
 
 evalIdx (SliceV arr start _len) i Nothing =
     return $ IdxV arr (start + i)
