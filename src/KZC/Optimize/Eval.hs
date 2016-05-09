@@ -34,6 +34,7 @@ import Data.Foldable (toList)
 import Data.List (partition)
 import Data.Loc
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -210,37 +211,43 @@ evalLocalDecl :: forall l m a . (IsLabel l, MonadTc m)
 evalLocalDecl (LetLD v tau e1 s1) k =
     extendVars [(bVar v, tau)] $ do
     -- Bind v to the value of e2
-    val1 <- withSummaryContext e1 $ evalExp e1
-    withUniqBoundVar v $ \v' -> do
-    extendVarBinds [(bVar v', val1)] $ do
     tau' <- simplType tau
-    k $ DeclVal $ LetLD v' tau' (toExp val1) s1
+    val1 <- withSummaryContext e1 $ evalExp e1
+    withUniqBoundVar v $ \v' ->
+      extendVarBinds [(bVar v', val1)] $
+      k $ DeclVal $ LetLD v' tau' (toExp val1) s1
 
 evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     extendVars [(bVar v, refT tau)] $ do
-    withUniqBoundVar v $ \v' -> do
     tau' <- simplType tau
+    val1 <- evalRhs tau' maybe_e1
     -- Allocate heap storage for v and initialize it
     ptr  <- newVarPtr
-    val1 <- case maybe_e1 of
-              Nothing -> maybe UnknownV id <$> runMaybeT (defaultValue tau')
-              Just e1 -> withSummaryContext e1 $ evalExp e1
     writeVarPtr ptr val1
-    extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $ do
-    k $ HeapDeclVal $ \h ->
-        withSummaryContext decl $ do
-        tau'      <- simplType tau
-        maybe_e1' <- mkInit h ptr val1
-        return $ LetRefLD v' tau' maybe_e1' s1
+    withUniqBoundVar v $ \v' -> do
+      extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $
+        k $ HeapDeclVal $ \h ->
+            withSummaryContext decl $ do
+            val1'     <- heapLookup h ptr
+            maybe_e1' <- mkRhs val1' val1
+            return $ LetRefLD v' tau' maybe_e1' s1
   where
-    mkInit :: Heap l m -> VarPtr -> Val l m Exp -> EvalM l m (Maybe Exp)
-    mkInit h ptr dflt = do
-        val      <- heapLookup h ptr
-        let val' =  if isKnown val then val else dflt
-        case val' of
+    evalRhs :: Type -> Maybe Exp -> EvalM l m (Val l m Exp)
+    evalRhs tau' Nothing =
+      fromMaybe UnknownV <$> runMaybeT (defaultValue tau')
+
+    evalRhs _ (Just e1) =
+      withSummaryContext e1 $ evalExp e1
+
+    mkRhs :: Val l m Exp -> Val l m Exp -> EvalM l m (Maybe Exp)
+    mkRhs new old =
+        case new' of
           UnknownV                -> return Nothing
-          _ | isDefaultValue val' -> return Nothing
-            | otherwise           -> return $ Just (toExp val')
+          _ | isDefaultValue new' -> return Nothing
+            | otherwise           -> return $ Just (toExp new')
+      where
+        new' :: Val l m Exp
+        new' = if isKnown new then new else old
 
 evalComp :: forall l m . (IsLabel l, MonadTc m)
          => Comp l
