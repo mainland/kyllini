@@ -67,6 +67,7 @@ import KZC.Core.Smart (tyVarT,
                        arrKnownT,
                        stT,
 
+                       isBaseT,
                        isUnitT,
                        isBitT,
                        isBitArrT,
