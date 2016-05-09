@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Core.Lint.Monad
@@ -17,6 +18,7 @@ module KZC.Core.Lint.Monad (
     defaultTcEnv,
 
     MonadTc(..),
+    MonadTcRef,
     asksTc,
 
     defaultValueC,
@@ -71,11 +73,15 @@ import Control.Monad (liftM)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.Primitive (PrimMonad(..),
+                                RealWorld)
 import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.State (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import Data.IORef (IORef)
 import Data.List (foldl')
 import Data.Loc (Located, noLoc, srclocOf)
 import Data.Map (Map)
@@ -138,6 +144,10 @@ defaultTcEnv = TcEnv
 class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
+
+-- | A 'MonadTc' with support for IO references.
+class (MonadTc m, MonadRef IORef m, PrimMonad m, PrimState m ~ RealWorld)
+    => MonadTcRef m
 
 asksTc :: MonadTc m => (TcEnv -> a) -> m a
 asksTc f = liftM f askTc

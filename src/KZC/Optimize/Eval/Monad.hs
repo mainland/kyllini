@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Optimize.Eval.Monad
@@ -88,19 +89,22 @@ import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Trans.Class (MonadTrans(..))
+import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
+import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             evalStateT,
                             gets,
                             modify)
+import Control.Monad.Trans.Class (MonadTrans(..))
 #if !MIN_VERSION_base(4,8,0)
 import Data.Foldable (foldMap)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Foldable (toList)
+import Data.IORef (IORef)
 import qualified Data.IntMap as IntMap
 import Data.List (foldl',
                   partition)
@@ -186,8 +190,16 @@ newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalStat
               MonadTrace,
               MonadTc)
 
+deriving instance MonadRef IORef m => MonadRef IORef (EvalM l m)
+
+instance PrimMonad m => PrimMonad (EvalM l m) where
+    type PrimState (EvalM l m) = PrimState m
+    primitive = EvalM . primitive
+
 instance MonadTrans (EvalM l) where
     lift m = EvalM $ lift $ lift m
+
+deriving instance MonadTcRef m => MonadTcRef (EvalM l m)
 
 evalEvalM :: MonadTc m => EvalM l m a -> m a
 evalEvalM m = evalStateT (runReaderT (unEvalM m) defaultEvalEnv) defaultEvalState
