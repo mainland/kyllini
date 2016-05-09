@@ -144,7 +144,9 @@ lutInfo e = withFvContext e $ do
         outbytes = (outbits + resbits + 7) `div` 8
     return $ LUTInfo { lutInVars      = inVars
                      , lutOutVars     = outVars
-                     , lutReturnedVar = retVar
+                     , lutReturnedVar = case retVar of
+                                          Just v | v `Set.member` outVars -> Just v
+                                          _ -> Nothing
                      , lutReadSet     = rset
                      , lutWriteSet    = wset
 
