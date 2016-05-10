@@ -86,6 +86,7 @@ SOURCE = \
 	KZC/Monad.hs \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
+	KZC/LambdaLift.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Autolut.hs \
 	KZC/Optimize/Eval.hs \
@@ -105,8 +106,6 @@ SOURCE = \
 	KZC/Staged.hs \
 	KZC/SysTools.hs \
 	KZC/Trace.hs \
-	KZC/Transform/LambdaLift.hs \
-	KZC/Transform/LambdaLift/Monad.hs \
 	KZC/Uniq.hs \
 	KZC/Util/Lattice.hs \
 	KZC/Util/SetLike.hs \

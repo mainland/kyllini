@@ -58,6 +58,7 @@ import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
 import KZC.Flags
 import KZC.Label
+import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Autolut (runAutoM,
@@ -68,7 +69,6 @@ import KZC.Optimize.HashConsConsts
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
-import KZC.Transform.LambdaLift
 
 import Opts
 
@@ -175,7 +175,7 @@ runPipeline filepath =
 
     lambdaLiftPhase :: [E.Decl] -> MaybeT KZC [E.Decl]
     lambdaLiftPhase =
-        lift . runLift . liftProgram >=>
+        lift . C.withTc . runLift . liftProgram >=>
         dumpPass DumpLift "expr" "ll"
 
     exprToCorePhase :: IsLabel l => [E.Decl] -> MaybeT KZC (C.Program l)
