@@ -204,8 +204,6 @@ dDynFlagOpts :: [(DynFlag, String, String)]
 dDynFlagOpts =
   [ (Lint,          "lint",
                     "lint core")
-  , (AutoLint,      "auto-lint",
-                    "lint auto")
   , (PrintUniques,  "print-uniques",
                     "show uniques when pretty-printing")
   , (ExpertTypes,   "expert-types",
@@ -219,7 +217,6 @@ dDumpFlagOpts =
   , (DumpLift,     "lift",     "dump lambda lifter output")
   , (DumpFusion,   "fusion",   "dump fusion output")
   , (DumpCore,     "core",     "dump core")
-  , (DumpAuto,     "auto",     "dump automata")
   , (DumpOcc,      "occ",      "dump occurrence info")
   , (DumpSimpl,    "simpl",    "dump simplifier output")
   , (DumpEval,     "peval",    "dump partial evaluator output")
@@ -238,8 +235,7 @@ dTraceFlagOpts =
   , (TraceTc,          "tc",           "trace type checker")
   , (TraceCg,          "cg",           "trace code generation")
   , (TraceLint,        "lint",         "trace linter")
-  , (TraceAuto,        "auto",         "trace auto")
-  , (TraceAutoLint,    "auto-lint",    "trace auto linter")
+  , (TraceExprToCore,  "expr-to-core", "trace conversion from expr language to core")
   , (TraceFusion,      "fusion",       "trace fusion")
   , (TraceSimplify,    "simpl",        "trace simplifier")
   , (TraceEval,        "eval",         "trace evaluator")

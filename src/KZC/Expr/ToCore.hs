@@ -5,16 +5,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Transform.Auto
+-- Module      :  KZC.Expr.ToCore
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Transform.Auto (
-    Auto,
-    runAuto,
+module KZC.Expr.ToCore (
+    runTC,
 
-    autoProgram
+    exprToCore
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -46,14 +45,14 @@ import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 
-data AutoEnv = AutoEnv { autoSubst :: Map Var Var }
+data TCEnv = TCEnv { tcSubst :: Map Var Var }
 
-defaultAutoEnv :: AutoEnv
-defaultAutoEnv = AutoEnv mempty
+defaultTCEnv :: TCEnv
+defaultTCEnv = TCEnv mempty
 
-newtype Auto m a = Auto { unAuto :: ReaderT AutoEnv m a }
+newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader AutoEnv,
+              MonadReader TCEnv,
               MonadException,
               MonadUnique,
               MonadErr,
@@ -61,35 +60,35 @@ newtype Auto m a = Auto { unAuto :: ReaderT AutoEnv m a }
               MonadTrace,
               MonadTc)
 
-instance MonadTrans Auto where
-    lift m = Auto $ lift m
+instance MonadTrans TC where
+    lift m = TC $ lift m
 
-runAuto :: MonadTc m => Auto m a -> m a
-runAuto m = runReaderT (unAuto m) defaultAutoEnv
+runTC :: MonadTc m => TC m a -> m a
+runTC m = runReaderT (unTC m) defaultTCEnv
 
-isInScope :: MonadTc m => Var -> Auto m Bool
-isInScope v = asks (Map.member v . autoSubst)
+isInScope :: MonadTc m => Var -> TC m Bool
+isInScope v = asks (Map.member v . tcSubst)
 
-lookupVarSubst :: MonadTc m => Var -> Auto m Var
-lookupVarSubst v = fromMaybe v <$> asks (Map.lookup v . autoSubst)
+lookupVarSubst :: MonadTc m => Var -> TC m Var
+lookupVarSubst v = fromMaybe v <$> asks (Map.lookup v . tcSubst)
 
-ensureUnique :: MonadTc m => Var -> (Var -> Auto m a) -> Auto m a
+ensureUnique :: MonadTc m => Var -> (Var -> TC m a) -> TC m a
 ensureUnique v k = do
      inscope <- isInScope v
      if inscope
        then do v' <- uniquify v
-               local (\env -> env { autoSubst = Map.insert v v' (autoSubst env) }) (k v')
+               local (\env -> env { tcSubst = Map.insert v v' (tcSubst env) }) (k v')
        else k v
 
-autoProgram :: forall l m . (IsLabel l, MonadTc m)
-            => [E.Decl]
-            -> Auto m (Program l)
-autoProgram cdecls =
+exprToCore :: forall l m . (IsLabel l, MonadTc m)
+           => [E.Decl]
+           -> TC m (Program l)
+exprToCore cdecls =
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
   where
-    findMain :: [Decl l] -> Auto m (Comp l, Type)
+    findMain :: [Decl l] -> TC m (Comp l, Type)
     findMain decls =
         case filter isMain decls of
           [] -> faildoc $ text "Cannot find main computation."
@@ -102,8 +101,8 @@ autoProgram cdecls =
 
 transDecls :: (IsLabel l, MonadTc m)
            => [E.Decl]
-           -> ([Decl l] -> Auto m a)
-           -> Auto m a
+           -> ([Decl l] -> TC m a)
+           -> TC m a
 transDecls [] k =
     k []
 
@@ -114,8 +113,8 @@ transDecls (cdecl:cdecls) k =
 
 transDecl :: (IsLabel l, MonadTc m)
           => E.Decl
-          -> (Decl l -> Auto m a)
-          -> Auto m a
+          -> (Decl l -> TC m a)
+          -> TC m a
 transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
@@ -167,8 +166,8 @@ transDecl (E.LetStructD s flds l) k =
 
 transLocalDecl :: MonadTc m
                => E.Decl
-               -> (LocalDecl -> Auto m a)
-               -> Auto m a
+               -> (LocalDecl -> TC m a)
+               -> TC m a
 transLocalDecl decl@(E.LetD v tau e l) k | isPureT tau =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $ transExp e
@@ -203,7 +202,7 @@ transLocalDecl decl _ =
 
 transExp :: forall m . MonadTc m
          => E.Exp
-         -> Auto m Exp
+         -> TC m Exp
 transExp (E.ConstE c l) =
     return $ ConstE c l
 
@@ -255,7 +254,7 @@ transExp (E.IdxE e1 e2 i l) =
 transExp (E.StructE s flds l) =
     StructE s <$> mapM transField flds <*> pure l
   where
-    transField :: (Field, E.Exp) -> Auto m (Field, Exp)
+    transField :: (Field, E.Exp) -> TC m (Field, Exp)
     transField (f, e) = (,) <$> pure f <*> transExp e
 
 transExp (E.ProjE e f l) =
@@ -308,7 +307,7 @@ transExp e@E.ParE{} =
 
 transComp :: forall l m . (IsLabel l, MonadTc m)
           => E.Exp
-          -> Auto m (Comp l)
+          -> TC m (Comp l)
 transComp e@(E.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
@@ -321,7 +320,7 @@ transComp e@(E.IfE e1 e2 e3 l) = do
     e1' <- transExp e1
     go tau e1'
   where
-    go :: Type -> Exp -> Auto m (Comp l)
+    go :: Type -> Exp -> TC m (Comp l)
     go tau e1' | isPureishT tau = do
         e2' <- transExp e2
         e3' <- transExp e3
@@ -344,7 +343,7 @@ transComp e@(E.CallE f iotas es _) = do
       else do args <- mapM transArg es
               callC f' iotas args
   where
-    transArg :: E.Exp -> Auto m (Arg l)
+    transArg :: E.Exp -> TC m (Arg l)
     transArg e = do
         tau <- inferExp e
         if isPureT tau

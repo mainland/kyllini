@@ -18,8 +18,7 @@ module KZC.Trace (
     traceTc,
     traceCg,
     traceLint,
-    traceAuto,
-    traceAutoLint,
+    traceExprToCore,
     traceFusion,
     traceSimpl,
     traceEval,
@@ -112,11 +111,8 @@ traceCg = traceIfSet TraceCg "traceCg:"
 traceLint :: MonadTrace m => Doc -> m ()
 traceLint = traceIfSet TraceLint "traceLint:"
 
-traceAuto :: MonadTrace m => Doc -> m ()
-traceAuto = traceIfSet TraceAuto "traceAuto:"
-
-traceAutoLint :: MonadTrace m => Doc -> m ()
-traceAutoLint = traceIfSet TraceAutoLint "traceAutoLint:"
+traceExprToCore :: MonadTrace m => Doc -> m ()
+traceExprToCore = traceIfSet TraceExprToCore "traceExprToCore:"
 
 traceFusion :: MonadTrace m => Doc -> m ()
 traceFusion = traceIfSet TraceFusion "traceFusion:"

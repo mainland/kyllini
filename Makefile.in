@@ -79,6 +79,7 @@ SOURCE = \
 	KZC/Expr/Lint/Monad.hs \
 	KZC/Expr/Smart.hs \
 	KZC/Expr/Syntax.hs \
+	KZC/Expr/ToCore.hs \
 	KZC/Flags.hs \
 	KZC/Globals.hs \
 	KZC/Interp.hs \
@@ -104,7 +105,6 @@ SOURCE = \
 	KZC/Staged.hs \
 	KZC/SysTools.hs \
 	KZC/Trace.hs \
-	KZC/Transform/Auto.hs \
 	KZC/Transform/LambdaLift.hs \
 	KZC/Transform/LambdaLift/Monad.hs \
 	KZC/Uniq.hs \

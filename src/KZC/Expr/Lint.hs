@@ -1080,10 +1080,10 @@ which consist of the three ST index types. Whenever we type check a value with
 an ST type, we immediately instantiate it by applying it to the current ST
 context using the function 'appSTScope'.
 
-In the auto language, we differentiate syntactically between expressions, which
+In the core language, we differentiate syntactically between expressions, which
 may be pure or pureish, and computations that take and emit. In that language,
-we /do not/ instantiate ST types immediately in the expression
-language. Instead, we must instantiate any ST types when they become part of a
+we /do not/ instantiate ST types immediately in the expression language.
+Instead, we must instantiate any ST types when they become part of a
 computation.
 -}
 

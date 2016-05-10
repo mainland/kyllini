@@ -67,7 +67,6 @@ data DynFlag = Quiet
              | ExpertTypes
              | LinePragmas
              | Fuse
-             | AutoLint
              | Simplify
              | MayInlineVal
              | MayInlineFun
@@ -93,7 +92,6 @@ data DumpFlag = DumpCPP
               | DumpLift
               | DumpFusion
               | DumpCore
-              | DumpAuto
               | DumpOcc
               | DumpSimpl
               | DumpEval
@@ -110,8 +108,7 @@ data TraceFlag = TracePhase
                | TraceTc
                | TraceCg
                | TraceLint
-               | TraceAuto
-               | TraceAutoLint
+               | TraceExprToCore
                | TraceFusion
                | TraceSimplify
                | TraceEval
