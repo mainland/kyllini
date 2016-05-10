@@ -952,14 +952,16 @@ lutExp :: forall l s m . (s ~ RealWorld, IsLabel l, MonadTcRef m)
        -> EvalM l m Exp
 lutExp e = do
     info     <- lutInfo e
-    v_refs   <- varRefs $ toList $ lutInVars info <> lutOutVars info
+    v_refs   <- varRefs $ toList $
+                Set.map unLUTVar (lutInVars info) <>
+                Set.map unLUTVar (lutOutVars info)
     in_refs  <- mapM (lutVarRef v_refs) $ toList $ lutInVars info
     out_refs <- mapM (lutVarRef v_refs) $ toList $ lutOutVars info
-    ret_ref  <- traverse (lutVarRef v_refs) (lutReturnedVar info)
+    ret_ref  <- traverse (lutVarRef v_refs . VarL) (lutReturnedVar info)
     tau_ret  <- inferExp e
     traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
     e'       <- go [(v, ref, tau) | (v, (ref, tau)) <- Map.assocs v_refs]
-                in_refs out_refs ret_ref tau_ret
+                   in_refs out_refs ret_ref tau_ret
     traceLUT $ nest 2 $ text "LUTted expression:" </> ppr e'
     -- Kill the variables we modified
     killVars e'
@@ -980,18 +982,29 @@ lutExp e = do
             return (v, (ref, tau))
 
     lutVarRef :: Map Var (I.Ref s, Type)
-              -> Var
-              -> EvalM l m (Var, I.Ref s, Type)
-    lutVarRef v_refs v = do
+              -> LUTVar
+              -> EvalM l m (LUTVar, I.Ref s, Type)
+    lutVarRef v_refs lv@(VarL v) = do
         (ref, tau) <- maybe err return (Map.lookup v v_refs)
-        return (v, ref, tau)
+        return (lv, ref, tau)
       where
-        err = faildoc $ text "Cannot find in/out variable:" <+> ppr v
+        err = faildoc $ text "Cannot fiend in/out variable:" <+> ppr v
+
+    lutVarRef v_refs lv@(IdxL v i len) = do
+        (ref, tau)    <- maybe err return (Map.lookup v v_refs)
+        (_, tau_elem) <- checkArrOrRefArrT tau
+        ref'          <- I.idxR ref i len
+        return (lv, ref', arrKnownT n tau_elem)
+      where
+        n :: Int
+        n = fromMaybe 1 len
+
+        err = faildoc $ text "Cannot fiend in/out variable:" <+> ppr v
 
     go :: [(Var, I.Ref s, Type)]
-       -> [(Var, I.Ref s, Type)]
-       -> [(Var, I.Ref s, Type)]
-       -> Maybe (Var, I.Ref s, Type)
+       -> [(LUTVar, I.Ref s, Type)]
+       -> [(LUTVar, I.Ref s, Type)]
+       -> Maybe (LUTVar, I.Ref s, Type)
        -> Type
        -> EvalM l m Exp
     go v_refs in_refs out_refs ret_ref tau_ret = do
@@ -1005,12 +1018,12 @@ lutExp e = do
         e2                     <- genLookup sname fs v_lut
         return $ letE v_lut tau_entry e1 e2
       where
-        lvs_in :: [Var]
+        lvs_in :: [LUTVar]
         refs_in :: [I.Ref s]
         taus_in :: [Type]
         (lvs_in, refs_in, taus_in) = unzip3 in_refs
 
-        lvs_out :: [Var]
+        lvs_out :: [LUTVar]
         refs_out :: [I.Ref s]
         taus_out :: [Type]
         (lvs_out, refs_out, taus_out) = unzip3 out_refs
@@ -1020,8 +1033,8 @@ lutExp e = do
 
         v_ret :: Maybe Var
         v_ret = case ret_ref of
-                  Just (v, _, _) -> Just v
-                  _              -> Nothing
+                  Just (VarL v, _, _) -> Just v
+                  _                   -> Nothing
 
         -- 'True' if the value returned by the LUTted expression is also
         -- among the output variables.
@@ -1106,9 +1119,9 @@ lutExp e = do
                 es    <- zipWithM mkAssign lvs_out results
                 return $ foldr seqE e_res es
               where
-                mkAssign :: Var -> Exp -> EvalM l m Exp
+                mkAssign :: LUTVar -> Exp -> EvalM l m Exp
                 mkAssign v e = do
-                    v' <- toExp <$> evalExp (varE v)
+                    v' <- toExp <$> evalExp (toExp v)
                     return $ assignE v' e
 
             pureLut :: [Exp] -> EvalM l m Exp
@@ -1135,7 +1148,7 @@ lutExp e = do
 
             -- Get the values of all the input variables, dereferencing them if
             -- needed.
-            lookupInVars :: [(Var, I.Ref s, Type)]
+            lookupInVars :: [(LUTVar, I.Ref s, Type)]
                          -> ([(Exp, Type)] -> EvalM l m Exp)
                          -> EvalM l m Exp
             lookupInVars [] k =
@@ -1145,13 +1158,13 @@ lutExp e = do
                 v'       <- gensymAt (namedString lv) (locOf lv)
                 let tau' =  unRefT tau
                 lookupInVars lvtaus $ \lvtaus' -> do
-                e1 <- toExp <$> evalExp (derefE (varE lv))
+                e1 <- toExp <$> evalExp (derefE (toExp lv))
                 e2 <- k ((varE v', tau'):lvtaus')
                 return $ bindE v' tau' e1 e2
 
             lookupInVars ((lv,_,tau):vtaus) k =
                 lookupInVars vtaus $ \vtaus' -> do
-                e <- toExp <$> evalExp (varE lv)
+                e <- toExp <$> evalExp (toExp lv)
                 k ((e, tau):vtaus')
 
 -- | Fully evaluate an expression, which must be an effectful command, in the
