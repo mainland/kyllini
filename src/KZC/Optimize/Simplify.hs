@@ -1193,6 +1193,20 @@ simplExp (BindE wv tau e1 e2 s) = do
     go e1' tau' wv
   where
     go :: Exp -> Type -> WildVar -> SimplM l m Exp
+    go (BindE wv1' tau1' e1a' e1b' _) tau' WildV = do
+        e2' <- simplExp e2
+        rewrite
+        return $ BindE wv1' tau1' e1a' (BindE WildV tau' e1b' e2' s) s
+
+    go (BindE wv1' tau1' e1a' e1b' _) tau' (TameV v) =
+        extendWildVars [(wv1', tau1')] $
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', Unknown)] $ do
+        e2' <- simplExp e2
+        rewrite
+        return $ BindE wv1' tau1' e1a' (BindE (TameV v') tau' e1b' e2' s) s
+
     go e tau' (TameV v) | bOccInfo v == Just Dead = do
         dropBinding v
         go e tau' WildV
