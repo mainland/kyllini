@@ -7,12 +7,12 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- |
--- Module      :  KZC.Core.Lint.Monad
+-- Module      :  KZC.Expr.Lint.Monad
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Core.Lint.Monad (
+module KZC.Expr.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
 
@@ -92,9 +92,9 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Smart
-import KZC.Core.Syntax
 import KZC.Error
+import KZC.Expr.Smart
+import KZC.Expr.Syntax
 import KZC.Flags
 import KZC.Platform
 import KZC.Summary

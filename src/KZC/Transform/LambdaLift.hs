@@ -17,9 +17,9 @@ import Control.Applicative ((<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.Set as Set
 
-import KZC.Core.Lint
-import KZC.Core.Smart
-import KZC.Core.Syntax
+import KZC.Expr.Lint
+import KZC.Expr.Smart
+import KZC.Expr.Syntax
 import KZC.Summary
 import KZC.Transform.LambdaLift.Monad
 import KZC.Uniq

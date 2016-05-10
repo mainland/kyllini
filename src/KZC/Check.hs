@@ -58,9 +58,9 @@ import KZC.Check.Monad
 import KZC.Check.Path
 import KZC.Check.Smart
 import KZC.Check.Types
-import qualified KZC.Core.Smart as C
-import qualified KZC.Core.Syntax as C
 import KZC.Error
+import qualified KZC.Expr.Smart as E
+import qualified KZC.Expr.Syntax as E
 import KZC.Flags
 import KZC.Platform
 import KZC.Summary
@@ -69,9 +69,9 @@ import KZC.Uniq
 import KZC.Util.SetLike
 import KZC.Vars
 
-type CoDecl = Ti C.Decl -> Ti C.Decl
+type CoDecl = Ti E.Decl -> Ti E.Decl
 
-type Co = Ti C.Exp -> Ti C.Exp
+type Co = Ti E.Exp -> Ti E.Exp
 
 data Expected a = Infer (IORef a)
                 | Check a
@@ -81,7 +81,7 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.CompLet] -> Ti [C.Decl]
+checkProgram :: [Z.CompLet] -> Ti [E.Decl]
 checkProgram cls = checkCompLets cls sequence
 
 {- Note [Value Contexts]
@@ -114,7 +114,7 @@ context.
 -- | Perform the type checking action @k@ in a value context of type @tau@ and
 -- collect the resulting actions. Note that @tau@ has the form @ST (C _) _ _@
 -- because value contexts are all monadic.
-collectCheckValCtx :: Type -> Ti (Ti C.Exp) -> Ti (Ti C.Exp)
+collectCheckValCtx :: Type -> Ti (Ti E.Exp) -> Ti (Ti E.Exp)
 collectCheckValCtx tau k = do
     mce <- localValCtxType tau k
     return $ withValCtx mce
@@ -122,7 +122,7 @@ collectCheckValCtx tau k = do
 -- | Perform the type inference action @k@ in a value context and
 -- collect the resulting actions. Note that @tau@ has the form @ST (C _) _ _@
 -- because value contexts are all monadic.
-collectInferValCtx :: Ti (Type, Ti C.Exp) -> Ti (Type, Ti C.Exp)
+collectInferValCtx :: Ti (Type, Ti E.Exp) -> Ti (Type, Ti E.Exp)
 collectInferValCtx k = do
     tau         <- newMetaTvT MuK NoLoc
     (tau', mce) <- localValCtxType tau k
@@ -133,7 +133,7 @@ collectInferValCtx k = do
               return (tau'', mce)
 
 checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp -> SrcLoc
-         -> Ti (Type, Ti C.Decl)
+         -> Ti (Type, Ti E.Decl)
 checkLet v ztau TauK e l =
     withExpContext e $ do
     tau <- fromZ (ztau, TauK)
@@ -143,7 +143,7 @@ checkLet v ztau TauK e l =
         cv   <- trans v
         ctau <- trans tau
         ce   <- mce
-        return $ C.LetD cv ctau ce l
+        return $ E.LetD cv ctau ce l
     return (tau, mcdecl)
 
 checkLet f ztau MuK e l =
@@ -158,7 +158,7 @@ checkLet f ztau MuK e l =
         cf   <- trans f
         ctau <- trans tau_gen
         ce   <- mce
-        return $ C.LetD cf ctau ce l
+        return $ E.LetD cf ctau ce l
     return (tau_gen, mcdecl)
 
 checkLet _ _ kappa _ _ =
@@ -166,7 +166,7 @@ checkLet _ _ kappa _ _ =
     text "checkLet: expected kind tau or mu, but got:" <+> ppr kappa
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp -> SrcLoc
-            -> Ti (Type, Ti C.Decl)
+            -> Ti (Type, Ti E.Decl)
 checkLetRef v ztau e_init l =
     withMaybeExpContext e_init $ do
     tau <- fromZ ztau
@@ -179,7 +179,7 @@ checkLetRef v ztau e_init l =
         cv   <- trans v
         ctau <- trans tau
         ce   <- mce
-        return $ C.LetRefD cv ctau ce l
+        return $ E.LetRefD cv ctau ce l
     return (tau, mcdecl)
   where
     withMaybeExpContext :: Maybe Z.Exp -> Ti a -> Ti a
@@ -187,7 +187,7 @@ checkLetRef v ztau e_init l =
     withMaybeExpContext (Just e) m = withExpContext e m
 
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
-            -> Ti (Type, Ti C.Decl)
+            -> Ti (Type, Ti E.Decl)
 checkLetFun f ztau ps e l = do
     tau   <- fromZ (ztau, PhiK)
     ptaus <- fromZ ps
@@ -206,7 +206,7 @@ checkLetFun f ztau ps e l = do
         cptaus   <- mapM trans ptaus
         ctau_ret <- trans tau_ret
         ce       <- withSummaryContext e mce
-        return $ C.LetFunD cf [] cptaus ctau_ret ce l
+        return $ E.LetFunD cf [] cptaus ctau_ret ce l
     return (tau_gen, mkLetFun)
 
 {- Note [External Functions]
@@ -220,7 +220,7 @@ substantial changes to externals.blk, so we go for the minimal change.
 -}
 
 checkLetExtFun :: Z.Var -> [Z.VarBind] -> Z.Type -> Bool -> SrcLoc
-               -> Ti (Type, Ti C.Decl)
+               -> Ti (Type, Ti E.Decl)
 checkLetExtFun f ps ztau_ret isPure l = do
     ptaus         <- fromZ ps
     -- Note that the output type may depend on the parameters because of array
@@ -234,7 +234,7 @@ checkLetExtFun f ps ztau_ret isPure l = do
         cf       <- trans f
         cptaus   <- mapM trans ptaus
         ctau_ret <- trans tau_ret
-        return $ C.LetExtFunD cf [] cptaus ctau_ret l
+        return $ E.LetExtFunD cf [] cptaus ctau_ret l
     return (tau_gen, mkLetExtFun)
   where
     checkRetType :: Z.Type -> Ti Type
@@ -255,7 +255,7 @@ checkLetExtFun f ps ztau_ret isPure l = do
         fromZ ztau
 
 checkCompLet :: Z.CompLet
-             -> (Ti C.Decl -> Ti a)
+             -> (Ti E.Decl -> Ti a)
              -> Ti a
 checkCompLet cl@(Z.LetCL v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext cl $
@@ -290,7 +290,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
             cs      <- trans zs
             cfnames <- mapM trans zfnames
             ctaus   <- mapM trans taus
-            return $ C.LetStructD cs (cfnames `zip` ctaus) l
+            return $ E.LetStructD cs (cfnames `zip` ctaus) l
         return (taus, mkLetStruct)
     let mcdecl = alwaysWithSummaryContext cl mkLetStruct
     extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
@@ -317,7 +317,7 @@ checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
     extendVars [(f,tau)] $ k mcdecl
 
 checkCompLets :: [Z.CompLet]
-              -> ([Ti C.Decl] -> Ti a)
+              -> ([Ti E.Decl] -> Ti a)
               -> Ti a
 checkCompLets [] k =
     k []
@@ -335,23 +335,23 @@ mkUnsigned :: Type -> Type
 mkUnsigned (FixT sc S w bp l) = FixT sc U w bp l
 mkUnsigned tau                = tau
 
-tcExp :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
+tcExp :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
     cc <- tcConst zc
-    return $ return $ C.ConstE cc l
+    return $ return $ E.ConstE cc l
   where
-    tcConst :: Z.Const -> Ti C.Const
+    tcConst :: Z.Const -> Ti E.Const
     tcConst Z.UnitC = do
         instType (UnitT l) exp_ty
-        return C.UnitC
+        return E.UnitC
 
     tcConst (Z.BoolC b) = do
         instType (BoolT l) exp_ty
-        return $ C.BoolC b
+        return $ E.BoolC b
 
     tcConst (Z.BitC b)  = do
         instType (BitT l) exp_ty
-        return $ C.FixC C.I C.U (C.W 1) 0 (if b then 1 else 0)
+        return $ E.FixC E.I E.U (E.W 1) 0 (if b then 1 else 0)
 
     tcConst (Z.FixC zsc zs zw zbp r) = do
         sc  <- fromZ zsc
@@ -363,123 +363,123 @@ tcExp (Z.ConstE zc l) exp_ty = do
         cw  <- trans w
         cbp <- trans bp
         instType (FixT sc s w bp l) exp_ty
-        return $ C.FixC csc cs cw cbp r
+        return $ E.FixC csc cs cw cbp r
 
     tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
         cw <- trans w
         instType (FloatT w l) exp_ty
-        return $ C.FloatC cw (toRational f)
+        return $ E.FloatC cw (toRational f)
 
     tcConst (Z.StringC s)  = do
         instType (StringT l) exp_ty
-        return $ C.StringC s
+        return $ E.StringC s
 
 tcExp (Z.VarE v _) exp_ty = do
     (tau, co) <- lookupVar v >>= instantiate
     instType tau exp_ty
-    return $ co $ C.varE <$> trans v
+    return $ co $ E.varE <$> trans v
 
 tcExp (Z.UnopE op e l) exp_ty =
     withExpContext e $
     unop op
   where
-    unop :: Z.Unop -> Ti (Ti C.Exp)
+    unop :: Z.Unop -> Ti (Ti E.Exp)
     unop Z.Lnot = do
         (tau, mce) <- inferVal e
         checkBoolT tau
         instType tau exp_ty
-        return $ C.UnopE C.Lnot <$> mce <*> pure l
+        return $ E.UnopE E.Lnot <$> mce <*> pure l
 
     unop Z.Bnot = do
         (tau, mce) <- inferVal e
         (tau', co) <- mkBitCast e tau
         checkBitT tau'
         instType tau' exp_ty
-        return $ C.UnopE C.Bnot <$> co mce <*> pure l
+        return $ E.UnopE E.Bnot <$> co mce <*> pure l
 
     unop Z.Neg = do
         (tau, mce) <- inferVal e
         checkNumT tau
         instType (mkSigned tau) exp_ty
-        return $ C.UnopE C.Neg <$> mce <*> pure l
+        return $ E.UnopE E.Neg <$> mce <*> pure l
 
     unop (Z.Cast ztau2) = do
         (tau1, mce) <- inferVal e
         tau2        <- fromZ ztau2
         checkLegalCast tau1 tau2
         instType tau2 exp_ty
-        return $ C.UnopE <$> (C.Cast <$> trans tau2) <*> mce <*> pure l
+        return $ E.UnopE <$> (E.Cast <$> trans tau2) <*> mce <*> pure l
 
     unop Z.Len = do
         (tau, mce) <- inferExp e
         _          <- checkArrT tau
         instType intT exp_ty
-        return $ C.UnopE C.Len <$> mce <*> pure l
+        return $ E.UnopE E.Len <$> mce <*> pure l
 
 tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     withExpContext e $
     binop op
   where
-    binop :: Z.Binop -> Ti (Ti C.Exp)
-    binop Z.Lt   = checkOrdBinop C.Lt
-    binop Z.Le   = checkOrdBinop C.Le
-    binop Z.Eq   = checkEqBinop C.Eq
-    binop Z.Ge   = checkOrdBinop C.Ge
-    binop Z.Gt   = checkOrdBinop C.Gt
-    binop Z.Ne   = checkEqBinop C.Ne
-    binop Z.Land = checkBoolBinop C.Land
-    binop Z.Lor  = checkBoolBinop C.Lor
-    binop Z.Band = checkBitBinop C.Band
-    binop Z.Bor  = checkBitBinop C.Bor
-    binop Z.Bxor = checkBitBinop C.Bxor
-    binop Z.LshL = checkBitShiftBinop C.LshL
-    binop Z.LshR = checkBitShiftBinop C.LshR
-    binop Z.AshR = checkBitShiftBinop C.AshR
-    binop Z.Add  = checkNumBinop C.Add
-    binop Z.Sub  = checkNumBinop C.Sub
-    binop Z.Mul  = checkNumBinop C.Mul
-    binop Z.Div  = checkNumBinop C.Div
-    binop Z.Rem  = checkNumBinop C.Rem
-    binop Z.Pow  = checkNumBinop C.Pow
+    binop :: Z.Binop -> Ti (Ti E.Exp)
+    binop Z.Lt   = checkOrdBinop E.Lt
+    binop Z.Le   = checkOrdBinop E.Le
+    binop Z.Eq   = checkEqBinop E.Eq
+    binop Z.Ge   = checkOrdBinop E.Ge
+    binop Z.Gt   = checkOrdBinop E.Gt
+    binop Z.Ne   = checkEqBinop E.Ne
+    binop Z.Land = checkBoolBinop E.Land
+    binop Z.Lor  = checkBoolBinop E.Lor
+    binop Z.Band = checkBitBinop E.Band
+    binop Z.Bor  = checkBitBinop E.Bor
+    binop Z.Bxor = checkBitBinop E.Bxor
+    binop Z.LshL = checkBitShiftBinop E.LshL
+    binop Z.LshR = checkBitShiftBinop E.LshR
+    binop Z.AshR = checkBitShiftBinop E.AshR
+    binop Z.Add  = checkNumBinop E.Add
+    binop Z.Sub  = checkNumBinop E.Sub
+    binop Z.Mul  = checkNumBinop E.Mul
+    binop Z.Div  = checkNumBinop E.Div
+    binop Z.Rem  = checkNumBinop E.Rem
+    binop Z.Pow  = checkNumBinop E.Pow
 
-    checkEqBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkEqBinop :: E.Binop -> Ti (Ti E.Exp)
     checkEqBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkEqT tau
         instType boolT exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkOrdBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkOrdBinop :: E.Binop -> Ti (Ti E.Exp)
     checkOrdBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkOrdT tau
         instType boolT exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkBoolBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkBoolBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBoolBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkBoolT tau
         instType tau exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkNumBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkNumBinop :: E.Binop -> Ti (Ti E.Exp)
     checkNumBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
         checkNumT tau
         instType tau exp_ty
-        return $ C.BinopE cop <$> mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> mce1 <*> mce2 <*> pure l
 
-    checkBitBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkBitBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
         (tau', co)        <- mkBitCast e1 tau
         checkBitT tau'
         instType tau' exp_ty
-        return $ C.BinopE cop <$> co mce1 <*> co mce2 <*> pure l
+        return $ E.BinopE cop <$> co mce1 <*> co mce2 <*> pure l
 
-    checkBitShiftBinop :: C.Binop -> Ti (Ti C.Exp)
+    checkBitShiftBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
         (tau1', co)  <- mkBitCast e1 tau1
@@ -487,7 +487,7 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
         (tau2, mce2) <- inferVal e2
         checkIntT tau2
         instType tau1' exp_ty
-        return $ C.BinopE cop <$> co mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> co mce1 <*> mce2 <*> pure l
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
@@ -496,7 +496,7 @@ tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2
-                return $ C.IfE ce1 ce2 (C.returnE C.unitE) l
+                return $ E.IfE ce1 ce2 (E.returnE E.unitE) l
 
 tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
     mce1              <- checkVal e1 (BoolT l)
@@ -507,7 +507,7 @@ tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
     return $ do ce1 <- mce1
                 ce2 <- mce2
                 ce3 <- mce3
-                return $ C.IfE ce1 ce2 ce3 l
+                return $ E.IfE ce1 ce2 ce3 l
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
     (tau, mcdecl) <- checkLet v ztau TauK e1 l
@@ -517,7 +517,7 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
     return $ do
         cdecl <- mcdecl
         ce2   <- mce2
-        return $ C.LetE cdecl ce2 l
+        return $ E.LetE cdecl ce2 l
 
 tcExp e@(Z.CallE f es l) exp_ty =
     withCallContext f e $ do
@@ -534,7 +534,7 @@ tcExp e@(Z.CallE f es l) exp_ty =
     return $ co2 $ co1 $ do
         cf  <- trans f
         ces <- sequence mces
-        return $ C.CallE cf [] ces l
+        return $ E.CallE cf [] ces l
   where
     nargs :: Int
     nargs = length es
@@ -544,12 +544,12 @@ tcExp e@(Z.CallE f es l) exp_ty =
     -- reference. Similarly, if a parameter is an ST type, we do not want to
     -- implicitly run the corresponding argument. Otherwise, we assume we are in
     -- an r-value context.
-    checkArg :: Z.Exp -> Type -> Ti (Ti C.Exp)
+    checkArg :: Z.Exp -> Type -> Ti (Ti E.Exp)
     checkArg e tau =
         withArgContext e $
         compress tau >>= go
       where
-        go :: Type -> Ti (Ti C.Exp)
+        go :: Type -> Ti (Ti E.Exp)
         go RefT{} = checkExp e tau
         go ST{}   = checkExp e tau
         go _      = castVal tau e
@@ -580,7 +580,7 @@ tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
     return $ do
         cdecl <- mcdecl
         ce2   <- mce2
-        return $ C.LetE cdecl ce2 l
+        return $ E.LetE cdecl ce2 l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
     (gamma, mce1) <-
@@ -595,7 +595,7 @@ tcExp (Z.AssignE e1 e2 l) exp_ty = do
     return $ do
         ce1   <- mce1
         ce2   <- mce2
-        return $ C.AssignE ce1 ce2 l
+        return $ E.AssignE ce1 ce2 l
 
 tcExp (Z.WhileE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
@@ -606,7 +606,7 @@ tcExp (Z.WhileE e1 e2 l) exp_ty = do
     instType tau exp_ty
     return $ do ce1 <- mce1
                 ce2 <- mce2
-                return $ C.WhileE ce1 ce2 l
+                return $ E.WhileE ce1 ce2 l
 
 tcExp (Z.UntilE e1 e2 l) exp_ty = do
     tau  <- mkSTC (UnitT l)
@@ -618,8 +618,8 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
     return $ do ce1       <- mce1
                 cx        <- gensymAt "x" l
                 ce2       <- mce2
-                let ctest =  C.bindE cx C.boolT ce1 (C.returnE (C.notE (C.varE cx)))
-                return $ C.WhileE ctest ce2 l
+                let ctest =  E.bindE cx E.boolT ce1 (E.returnE (E.notE (E.varE cx)))
+                return $ E.WhileE ctest ce2 l
 
 tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
@@ -632,7 +632,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
                 cx   <- gensymAt "x" l
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ C.ForE cann cx C.intT (C.intE 1) ce1 ce2 l
+                return $ E.ForE cann cx E.intT (E.intE 1) ce1 ce2 l
 
 tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)
@@ -650,14 +650,14 @@ tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
                 ce1    <- mce1
                 ce2    <- mce2
                 ce3    <- mce3
-                return $ C.ForE cann ci ctau_i ce1 ce2 ce3 l
+                return $ E.ForE cann ci ctau_i ce1 ce2 ce3 l
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT TauK l
     instType (ArrT (ConstI (length es) l) tau l) exp_ty
     mces <- mapM (`checkExp` tau) es
     return $ do ces <- sequence mces
-                return $ C.ArrayE ces l
+                return $ E.ArrayE ces l
 
 tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     (tau, mce1) <- withSummaryContext e1 $
@@ -669,27 +669,27 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     checkIdxE tau mce1 mce2
   where
     checkIdxE :: Type
-              -> Ti C.Exp
-              -> Ti C.Exp
-              -> Ti (Ti C.Exp)
+              -> Ti E.Exp
+              -> Ti E.Exp
+              -> Ti (Ti E.Exp)
     checkIdxE tau mce1 mce2 =
         compress tau >>= go
       where
-        go :: Type -> Ti (Ti C.Exp)
+        go :: Type -> Ti (Ti E.Exp)
         -- Indexing into a reference to an array returns a reference to an
         -- element of the array.
         go (RefT (ArrT _ tau _) _) = do
             instType (RefT (mkArrSlice tau len) l) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
-                        return $ C.IdxE ce1 ce2 len l
+                        return $ E.IdxE ce1 ce2 len l
 
         -- A plain old array gets indexed as one would expect.
         go (ArrT _ tau _) = do
             instType (mkArrSlice tau len) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
-                        return $ C.IdxE ce1 ce2 len l
+                        return $ E.IdxE ce1 ce2 len l
 
         -- Otherwise we assert that the type of @e1@ should be an array type.
         go tau = do
@@ -712,9 +712,9 @@ tcExp e0@(Z.StructE s flds l) exp_ty =
     return $ do cs  <- trans s
                 cfs <- mapM trans fs
                 ces <- sequence mces
-                return $ C.StructE cs (cfs `zip` ces) l
+                return $ E.StructE cs (cfs `zip` ces) l
   where
-    checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti (Z.Field, Ti C.Exp)
+    checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti (Z.Field, Ti E.Exp)
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
                Nothing  -> panicdoc "checkField: missing field!"
@@ -751,19 +751,19 @@ tcExp (Z.ProjE e f l) exp_ty = do
     checkProjE tau mce
   where
     checkProjE :: Type
-               -> Ti C.Exp
-               -> Ti (Ti C.Exp)
+               -> Ti E.Exp
+               -> Ti (Ti E.Exp)
     checkProjE tau mce =
         compress tau >>= go
       where
-        go :: Type -> Ti (Ti C.Exp)
+        go :: Type -> Ti (Ti E.Exp)
         go (RefT tau _) = do
             sdef  <- checkStructT tau >>= lookupStruct
             tau_f <- checkStructFieldT sdef f
             instType (RefT tau_f l) exp_ty
             return $ do ce <- mce
                         cf <- trans f
-                        return $ C.ProjE ce cf l
+                        return $ E.ProjE ce cf l
 
         go tau = do
             sdef  <- checkStructT tau >>= lookupStruct
@@ -771,7 +771,7 @@ tcExp (Z.ProjE e f l) exp_ty = do
             instType tau_f exp_ty
             return $ do ce <- mce
                         cf <- trans f
-                        return $ C.ProjE ce cf l
+                        return $ E.ProjE ce cf l
 
 tcExp (Z.PrintE newline es l) exp_ty = do
     tau <- mkSTC (UnitT l)
@@ -779,9 +779,9 @@ tcExp (Z.PrintE newline es l) exp_ty = do
     mces <- mapM checkArg es
     return $ do
         ces <- sequence mces
-        return $ C.PrintE newline ces l
+        return $ E.PrintE newline ces l
   where
-    checkArg :: Z.Exp -> Ti (Ti C.Exp)
+    checkArg :: Z.Exp -> Ti (Ti E.Exp)
     checkArg e = do
         (tau, mce) <- inferVal e
         checkKind tau TauK
@@ -793,7 +793,7 @@ tcExp (Z.ErrorE s l) exp_ty = do
     instType tau exp_ty
     return $ do
         cnu <- trans nu
-        return $ C.ErrorE cnu s l
+        return $ E.ErrorE cnu s l
 
 tcExp (Z.ReturnE ann e l) exp_ty = do
     tau     <- newMetaTvT TauK l
@@ -804,21 +804,21 @@ tcExp (Z.ReturnE ann e l) exp_ty = do
     return $ do
         cann <- trans ann
         ce   <- mce
-        return $ C.ReturnE cann ce l
+        return $ E.ReturnE cann ce l
 
 tcExp (Z.TakeE l) exp_ty = do
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
     instType (stT (C a l) a a b) exp_ty
     return $ do ca <- trans a
-                return $ C.takeE ca
+                return $ E.takeE ca
 
 tcExp (Z.TakesE i l) exp_ty = do
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
     instType (stT (C (ArrT (ConstI i l) a l) l) a a b) exp_ty
     return $ do ca <- trans a
-                return $ C.takesE (fromIntegral i) ca
+                return $ E.takesE (fromIntegral i) ca
 
 tcExp (Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT TauK l
@@ -827,7 +827,7 @@ tcExp (Z.EmitE e l) exp_ty = do
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
     mce <- checkVal e b
-    return $ C.EmitE <$> mce <*> pure l
+    return $ E.EmitE <$> mce <*> pure l
 
 tcExp (Z.EmitsE e l) exp_ty = do
     iota    <- newMetaTvT IotaK l
@@ -837,7 +837,7 @@ tcExp (Z.EmitsE e l) exp_ty = do
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
     mce <- checkVal e (arrT iota b)
-    return $ C.EmitsE <$> mce <*> pure l
+    return $ E.EmitsE <$> mce <*> pure l
 
 tcExp (Z.RepeatE ann e l) exp_ty = do
     (sigma, alpha, beta, mce) <-
@@ -848,7 +848,7 @@ tcExp (Z.RepeatE ann e l) exp_ty = do
     instType (stT (T l) sigma alpha beta) exp_ty
     return $ do cann <- trans ann
                 ce   <- mce
-                return $ C.RepeatE cann ce l
+                return $ E.RepeatE cann ce l
 
 tcExp (Z.ParE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     tau  <- fromZ (zalpha, TauK)
@@ -857,9 +857,9 @@ tcExp (Z.ParE _ (Z.ReadE zalpha _) (Z.WriteE zbeta _) l) exp_ty = do
     instType (stT (T l) tau tau tau) exp_ty
     return $ do ctau <- trans tau
                 cx   <- gensymAt "x" l
-                return $ C.repeatE $
-                         C.bindE cx ctau (C.takeE ctau) $
-                         C.emitE (C.varE cx)
+                return $ E.repeatE $
+                         E.bindE cx ctau (E.takeE ctau) $
+                         E.emitE (E.varE cx)
 
 tcExp (Z.ParE _ (Z.ReadE ztau l) e _) tau_exp = do
     omega   <- newMetaTvT OmegaK l
@@ -902,7 +902,7 @@ tcExp e@(Z.ParE ann e1 e2 l) tau_exp = do
         cb   <- trans b
         ce1  <- mce1
         ce2  <- mce2
-        return $ C.ParE cann cb ce1 ce2 l
+        return $ E.ParE cann cb ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do
@@ -942,13 +942,13 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
     instType (stT (T l) a a b) exp_ty
     return $ do cx     <- gensymAt "x" l
                 cy     <- gensymAt "y" l
-                ccalle <- co $ return $ C.varE cx
+                ccalle <- co $ return $ E.varE cx
                 ca     <- trans a
                 cb     <- trans b
-                return $ C.repeatE $
-                         C.bindE cx ca (C.takeE ca) $
-                         C.bindE cy cb ccalle $
-                         C.emitE (C.varE cy)
+                return $ E.repeatE $
+                         E.bindE cx ca (E.takeE ca) $
+                         E.bindE cy cb ccalle $
+                         E.emitE (E.varE cy)
 
 tcExp (Z.CompLetE cl e l) exp_ty =
     checkCompLet cl $ \mcdecl -> do
@@ -958,7 +958,7 @@ tcExp (Z.CompLetE cl e l) exp_ty =
     return $ do
         cdecl <- mcdecl
         ce    <- mce
-        return $ C.LetE cdecl ce l
+        return $ E.LetE cdecl ce l
 
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
@@ -968,10 +968,10 @@ tcExp (Z.CmdE cmds _) exp_ty =
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
 
-checkExp :: Z.Exp -> Type -> Ti (Ti C.Exp)
+checkExp :: Z.Exp -> Type -> Ti (Ti E.Exp)
 checkExp e tau = tcExp e (Check tau)
 
-inferExp :: Z.Exp -> Ti (Type, Ti C.Exp)
+inferExp :: Z.Exp -> Ti (Type, Ti E.Exp)
 inferExp e = do
     ref <- newRef (error "inferExp: empty result")
     mce <- tcExp e (Infer ref)
@@ -1015,7 +1015,7 @@ refPath e =
     go e _ =
         faildoc $ text "refPath: Not a reference:" <+> ppr e
 
-tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti C.Exp)
+tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti E.Exp)
 tcStms [stm@Z.LetS{}] _ =
     withSummaryContext stm $
     faildoc $ text "Last statement in statement sequence must be an expression"
@@ -1031,7 +1031,7 @@ tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
     return $ do
         cdecl <- mcdecl
         ce2   <- mce2
-        return $ C.LetE cdecl ce2 l
+        return $ E.LetE cdecl ce2 l
 
 tcStms [stm@Z.LetRefS{}] _ =
     withSummaryContext stm $
@@ -1048,7 +1048,7 @@ tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
     return $ do
         cdecl <- mcdecl
         ce2   <- mce2
-        return $ C.LetE cdecl ce2 l
+        return $ E.LetE cdecl ce2 l
 
 tcStms [stm@(Z.ExpS e _)] exp_ty =
     withSummaryContext stm $ do
@@ -1070,15 +1070,15 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
     return $ do ce1 <- withSummaryContext stm mce1
                 cnu <- trans nu
                 ce2 <- mce2
-                return $ C.seqE cnu ce1 ce2
+                return $ E.seqE cnu ce1 ce2
 
 tcStms [] _ =
     panicdoc $ text "Empty statement sequence!"
 
-checkStms :: [Z.Stm] -> Type -> Ti (Ti C.Exp)
+checkStms :: [Z.Stm] -> Type -> Ti (Ti E.Exp)
 checkStms stms tau = tcStms stms (Check tau)
 
-tcCmds :: [Z.Cmd] -> Expected Type -> Ti (Ti C.Exp)
+tcCmds :: [Z.Cmd] -> Expected Type -> Ti (Ti E.Exp)
 tcCmds [cmd@Z.LetC{}] _ =
     withSummaryContext cmd $
     faildoc $ text "Last command in command sequence must be an expression"
@@ -1092,7 +1092,7 @@ tcCmds (Z.LetC cl l : cmds) exp_ty = do
       return $ do
           cdecl <- mcdecl
           ce    <- mce
-          return $ C.LetE cdecl ce l
+          return $ E.LetE cdecl ce l
 
 tcCmds [cmd@Z.BindC{}] _ =
     withSummaryContext cmd $
@@ -1114,7 +1114,7 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
                 ce1 <- withSummaryContext cmd mce1
                 cnu <- trans nu
                 ce2 <- mce2
-                return $ C.BindE (C.TameV cv) cnu ce1 ce2 l
+                return $ E.BindE (E.TameV cv) cnu ce1 ce2 l
   where
     checkForUnusedReturn :: Ti ()
     checkForUnusedReturn =
@@ -1150,31 +1150,31 @@ tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
     return $ do ce1 <- withSummaryContext cmd mce1
                 cnu <- trans nu
                 ce2 <- mce2
-                return $ C.seqE cnu ce1 ce2
+                return $ E.seqE cnu ce1 ce2
 
 tcCmds [] _ =
     panicdoc $ text "Empty command sequence!"
 
-checkCmds :: [Z.Cmd] -> Type -> Ti (Ti C.Exp)
+checkCmds :: [Z.Cmd] -> Type -> Ti (Ti E.Exp)
 checkCmds cmds tau = tcCmds cmds (Check tau)
 
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type
 -- @forall s a b . ST tau s a b@.
-tcVal :: Z.Exp -> Expected Type -> Ti (Ti C.Exp)
+tcVal :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcVal e exp_ty = do
     (tau, mce) <- inferExp e
     tau' <- compress tau
     go tau' mce
   where
-    go :: Type -> Ti C.Exp -> Ti (Ti C.Exp)
+    go :: Type -> Ti E.Exp -> Ti (Ti E.Exp)
     go (RefT tau _) mce = do
         let mce' = do
             ce1  <- mce
             cx   <- gensymAt "x" ce1
             ctau <- trans tau
-            tellValCtx $ \ce2 -> C.bindE cx ctau (C.derefE ce1) ce2
-            return $ C.varE cx
+            tellValCtx $ \ce2 -> E.bindE cx ctau (E.derefE ce1) ce2
+            return $ E.varE cx
         instType tau exp_ty
         return mce'
 
@@ -1187,28 +1187,28 @@ tcVal e exp_ty = do
             ce1  <- mce
             cx   <- gensymAt "x" ce1
             ctau <- trans tau
-            tellValCtx $ \ce2 -> C.bindE cx ctau ce1 ce2
-            return $ C.varE cx
+            tellValCtx $ \ce2 -> E.bindE cx ctau ce1 ce2
+            return $ E.varE cx
 
     go tau mce = do
         instType tau exp_ty
         return mce
 
-checkVal :: Z.Exp -> Type -> Ti (Ti C.Exp)
+checkVal :: Z.Exp -> Type -> Ti (Ti E.Exp)
 checkVal e tau = tcVal e (Check tau)
 
-inferVal :: Z.Exp -> Ti (Type, Ti C.Exp)
+inferVal :: Z.Exp -> Ti (Type, Ti E.Exp)
 inferVal e = do
     ref <- newRef (error "inferVal: empty result")
     mce <- tcVal e (Infer ref)
     tau <- readRef ref
     return (tau, mce)
 
-checkBoolVal :: Z.Exp -> Ti (Ti C.Exp)
+checkBoolVal :: Z.Exp -> Ti (Ti E.Exp)
 checkBoolVal e = do
     mce <- checkExp e (BoolT l)
     return $ do ce <- mce
-                return $ C.returnE ce
+                return $ E.returnE ce
   where
     l :: SrcLoc
     l = srclocOf e
@@ -1340,12 +1340,12 @@ generalize tau0 =
                         mcdecl >>= checkLetFunE ciotas
         return (tau, co)
       where
-        checkLetFunE :: [C.IVar] -> C.Decl -> Ti C.Decl
-        checkLetFunE ciotas (C.LetFunD cf [] cvtaus ctau ce l) =
-            return $ C.LetFunD cf ciotas cvtaus ctau ce l
+        checkLetFunE :: [E.IVar] -> E.Decl -> Ti E.Decl
+        checkLetFunE ciotas (E.LetFunD cf [] cvtaus ctau ce l) =
+            return $ E.LetFunD cf ciotas cvtaus ctau ce l
 
-        checkLetFunE ciotas (C.LetExtFunD cf [] cvtaus ctau l) =
-            return $ C.LetExtFunD cf ciotas cvtaus ctau l
+        checkLetFunE ciotas (E.LetExtFunD cf [] cvtaus ctau l) =
+            return $ E.LetExtFunD cf ciotas cvtaus ctau l
 
         checkLetFunE _ ce =
             panicdoc $
@@ -1377,11 +1377,11 @@ instantiate tau0 =
         let co mce = do
                 (cf, ces, l) <- mce >>= checkFunE
                 ciotas       <- compress mtvs >>= mapM trans
-                return $ C.CallE cf ciotas ces l
+                return $ E.CallE cf ciotas ces l
         return (tau, co)
       where
-        checkFunE :: C.Exp -> Ti (C.Var, [C.Exp], SrcLoc)
-        checkFunE (C.CallE cf [] ces l) =
+        checkFunE :: E.Exp -> Ti (E.Var, [E.Exp], SrcLoc)
+        checkFunE (E.CallE cf [] ces l) =
             return (cf, ces, l)
 
         checkFunE ce =
@@ -1619,7 +1619,7 @@ checkMapFunT f tau = do
     let co mce = co2 $ co1 $ do
         cf <- trans f
         ce <- mce
-        return $ C.callE cf [ce]
+        return $ E.callE cf [ce]
     return (a, b, co)
   where
     checkMapReturnType :: Type -> Ti ()
@@ -1683,7 +1683,7 @@ mkSTOmega = do
 -- between arrays types. This is all we need for the common case of arrays of
 -- integers that need to be represented as arrays on, say, int8's, and it is
 -- also the only case where we know we can make casting memory efficient.
-castVal :: Type -> Z.Exp -> Ti (Ti C.Exp)
+castVal :: Type -> Z.Exp -> Ti (Ti E.Exp)
 castVal tau2 e0 = do
     (tau1, mce) <- inferVal e
     co <- case (e, tau1, tau2) of
@@ -1703,10 +1703,10 @@ castVal tau2 e0 = do
         return $ \mce -> do
             (ces, l) <- mce >>= checkArrayE
             ces'     <- mapM (co . return) ces
-            return $ C.ArrayE ces' l
+            return $ E.ArrayE ces' l
 
-    checkArrayE :: C.Exp -> Ti ([C.Exp], SrcLoc)
-    checkArrayE (C.ArrayE ces l) =
+    checkArrayE :: E.Exp -> Ti ([E.Exp], SrcLoc)
+    checkArrayE (E.ArrayE ces l) =
         return (ces, l)
 
     checkArrayE e =
@@ -1728,7 +1728,7 @@ mkCast tau1 tau2 = do
     go _ tau2 mce = do
         ctau <- trans tau2
         ce   <- mce
-        return $ C.UnopE (C.Cast ctau) ce (srclocOf ce)
+        return $ E.UnopE (E.Cast ctau) ce (srclocOf ce)
 
 mkCheckedSafeCast :: Z.Exp -> Type -> Type -> Ti Co
 mkCheckedSafeCast e tau1 tau2 = do
@@ -1762,19 +1762,19 @@ mkCastT tau1 tau2 = do
         let mkPipe = do
             ctau1 <- trans tau1
             cx    <- gensymAt "x" tau1
-            cxe   <- co $ return (C.varE cx)
-            return $ C.repeatE $
-                     C.bindE cx ctau1 (C.takeE ctau1) $
-                     C.emitE cxe
+            cxe   <- co $ return (E.varE cx)
+            return $ E.repeatE $
+                     E.bindE cx ctau1 (E.takeE ctau1) $
+                     E.emitE cxe
         return $ \mce -> do
             (clhs, crhs, l) <- mce >>= checkParE
             ctau1           <- trans tau1
             ctau2           <- trans tau2
             cpipe           <- mkPipe
-            return $ C.ParE C.AutoPipeline ctau2 (C.ParE C.AutoPipeline ctau1 clhs cpipe l) crhs l
+            return $ E.ParE E.AutoPipeline ctau2 (E.ParE E.AutoPipeline ctau1 clhs cpipe l) crhs l
       where
-        checkParE :: C.Exp -> Ti (C.Exp, C.Exp, SrcLoc)
-        checkParE (C.ParE _ _ clhs crhs l) =
+        checkParE :: E.Exp -> Ti (E.Exp, E.Exp, SrcLoc)
+        checkParE (E.ParE _ _ clhs crhs l) =
             return (clhs, crhs, l)
 
         checkParE e =
@@ -2045,7 +2045,7 @@ unifyTypes tau1 tau2 = do
 
 -- | Type check two expressions, treating them as values, and attempt to unify their types. This may
 -- requires adding casts.
-unifyValTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyValTypes :: Z.Exp -> Z.Exp -> Ti (Type, Ti E.Exp, Ti E.Exp)
 unifyValTypes e1 e2 = do
     (tau1, mce1) <- inferVal e1
     (tau2, mce2) <- inferVal e2
@@ -2054,17 +2054,17 @@ unifyValTypes e1 e2 = do
 -- | Attempt to unify the types of two Ziria expressions that have already been
 -- type checked and elaborated, inserting appropriate coercions into the
 -- elaborated terms.
-unifyCompiledExpTypes :: Type -> Z.Exp -> Ti C.Exp
-                      -> Type -> Z.Exp -> Ti C.Exp
-                      -> Ti (Type, Ti C.Exp, Ti C.Exp)
+unifyCompiledExpTypes :: Type -> Z.Exp -> Ti E.Exp
+                      -> Type -> Z.Exp -> Ti E.Exp
+                      -> Ti (Type, Ti E.Exp, Ti E.Exp)
 unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
     go tau1' e1 mce1 tau2' e2 mce2
   where
-    go :: Type -> Z.Exp -> Ti C.Exp
-       -> Type -> Z.Exp -> Ti C.Exp
-       -> Ti (Type, Ti C.Exp, Ti C.Exp)
+    go :: Type -> Z.Exp -> Ti E.Exp
+       -> Type -> Z.Exp -> Ti E.Exp
+       -> Ti (Type, Ti E.Exp, Ti E.Exp)
     go tau1@MetaT{} _ mce1 tau2 _ mce2 = do
         unifyTypes tau1 tau2
         return (tau2, mce1, mce2)
@@ -2233,89 +2233,89 @@ instance FromZ [Z.VarBind] [(Z.Var, Type)] where
 class Trans a b | b -> a where
     trans :: a -> Ti b
 
-instance Trans Z.Var C.Var where
-    trans (Z.Var n) = pure $ C.Var n
+instance Trans Z.Var E.Var where
+    trans (Z.Var n) = pure $ E.Var n
 
-instance Trans Z.Field C.Field where
-    trans (Z.Field n) = pure $ C.Field n
+instance Trans Z.Field E.Field where
+    trans (Z.Field n) = pure $ E.Field n
 
-instance Trans Z.Struct C.Struct where
-    trans (Z.Struct n) = pure $ C.Struct n
+instance Trans Z.Struct E.Struct where
+    trans (Z.Struct n) = pure $ E.Struct n
 
-instance Trans TyVar C.TyVar where
-    trans (TyVar n) = pure $ C.TyVar n
+instance Trans TyVar E.TyVar where
+    trans (TyVar n) = pure $ E.TyVar n
 
-instance Trans IVar C.IVar where
-    trans (IVar n) = pure $ C.IVar n
+instance Trans IVar E.IVar where
+    trans (IVar n) = pure $ E.IVar n
 
-instance Trans Scale C.Scale where
-    trans I  = pure C.I
-    trans PI = pure C.PI
+instance Trans Scale E.Scale where
+    trans I  = pure E.I
+    trans PI = pure E.PI
 
-instance Trans Signedness C.Signedness where
-    trans S = pure C.S
-    trans U = pure C.U
+instance Trans Signedness E.Signedness where
+    trans S = pure E.S
+    trans U = pure E.U
 
-instance Trans W C.W where
+instance Trans W E.W where
     trans = pure
 
-instance Trans BP C.BP where
+instance Trans BP E.BP where
     trans = pure
 
-instance Trans FP C.FP where
+instance Trans FP E.FP where
     trans = pure
 
-instance Trans Type C.Type where
+instance Trans Type E.Type where
     trans tau = compress tau >>= go
       where
-        go :: Type -> Ti C.Type
-        go (UnitT l)          = C.UnitT <$> pure l
-        go (BoolT l)          = C.BoolT <$> pure l
-        go (BitT l)           = C.FixT C.I C.U (C.W 1) 0 <$> pure l
-        go (FixT sc s w bp l) = C.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
-        go (FloatT w l)       = C.FloatT <$> trans w <*> pure l
-        go (StringT l)        = pure $ C.StringT l
-        go (StructT s l)      = C.StructT <$> trans s <*> pure l
-        go (RefT tau l)       = C.RefT <$> go tau <*> pure l
-        go (ArrT i tau l)     = C.ArrT <$> trans i <*> go tau <*> pure l
+        go :: Type -> Ti E.Type
+        go (UnitT l)          = E.UnitT <$> pure l
+        go (BoolT l)          = E.BoolT <$> pure l
+        go (BitT l)           = E.FixT E.I E.U (E.W 1) 0 <$> pure l
+        go (FixT sc s w bp l) = E.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
+        go (FloatT w l)       = E.FloatT <$> trans w <*> pure l
+        go (StringT l)        = pure $ E.StringT l
+        go (StructT s l)      = E.StructT <$> trans s <*> pure l
+        go (RefT tau l)       = E.RefT <$> go tau <*> pure l
+        go (ArrT i tau l)     = E.ArrT <$> trans i <*> go tau <*> pure l
 
         go (ST alphas omega tau1 tau2 tau3 l) =
             extendTyVars (alphas `zip` repeat TauK) $
-            C.ST <$> mapM trans alphas <*>  trans omega <*>
+            E.ST <$> mapM trans alphas <*>  trans omega <*>
              go tau1 <*> go tau2 <*> go tau3 <*> pure l
 
         go (FunT iotas taus tau l) =
-            C.FunT <$> mapM trans iotas <*> mapM go taus <*> go tau <*> pure l
+            E.FunT <$> mapM trans iotas <*> mapM go taus <*> go tau <*> pure l
 
         go (TyVarT alpha l) =
-            C.TyVarT <$> trans alpha <*> pure l
+            E.TyVarT <$> trans alpha <*> pure l
 
         go tau =
             faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core type"
 
-instance Trans Type C.Omega where
-    trans (C omega _) = C.C <$> trans omega
-    trans (T _)       = pure C.T
+instance Trans Type E.Omega where
+    trans (C omega _) = E.C <$> trans omega
+    trans (T _)       = pure E.T
     trans tau         = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core omega"
 
-instance Trans Type C.Iota where
-    trans (ConstI i l)      = pure $ C.ConstI i l
-    trans (VarI (IVar n) l) = pure $ C.VarI (C.IVar n) l
+instance Trans Type E.Iota where
+    trans (ConstI i l)      = pure $ E.ConstI i l
+    trans (VarI (IVar n) l) = pure $ E.VarI (E.IVar n) l
     trans tau               = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core iota"
 
-instance Trans (Z.Var, Type) (C.Var, C.Type) where
+instance Trans (Z.Var, Type) (E.Var, E.Type) where
     trans (v, tau) = (,) <$> trans v <*> trans tau
 
-instance Trans Z.UnrollAnn C.UnrollAnn where
+instance Trans Z.UnrollAnn E.UnrollAnn where
     trans ann = pure $ (toEnum . fromEnum) ann
 
-instance Trans Z.InlineAnn C.InlineAnn where
+instance Trans Z.InlineAnn E.InlineAnn where
     trans ann = pure $ (toEnum . fromEnum) ann
 
-instance Trans Z.PipelineAnn C.PipelineAnn where
+instance Trans Z.PipelineAnn E.PipelineAnn where
     trans ann = pure $ (toEnum . fromEnum) ann
 
-instance Trans Z.VectAnn C.VectAnn where
-    trans Z.AutoVect      = pure C.AutoVect
-    trans (Z.Rigid f i j) = pure $ C.Rigid f i j
-    trans (Z.UpTo f i j)  = pure $ C.UpTo f i j
+instance Trans Z.VectAnn E.VectAnn where
+    trans Z.AutoVect      = pure E.AutoVect
+    trans (Z.Rigid f i j) = pure $ E.Rigid f i j
+    trans (Z.UpTo f i j)  = pure $ E.UpTo f i j

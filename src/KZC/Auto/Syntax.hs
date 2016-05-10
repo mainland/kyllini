@@ -105,7 +105,7 @@ import Data.String (IsString(..))
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Syntax (Var(..),
+import KZC.Expr.Syntax (Var(..),
                         Field(..),
                         Struct(..),
                         TyVar(..),

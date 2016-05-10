@@ -5,13 +5,13 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- |
--- Module      :  KZC.Core.Lint
+-- Module      :  KZC.Expr.Lint
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Core.Lint (
-    module KZC.Core.Lint.Monad,
+module KZC.Expr.Lint (
+    module KZC.Expr.Lint.Monad,
 
     Tc(..),
     runTc,
@@ -92,10 +92,10 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
-import KZC.Core.Lint.Monad
-import KZC.Core.Smart
-import KZC.Core.Syntax
 import KZC.Error
+import KZC.Expr.Lint.Monad
+import KZC.Expr.Smart
+import KZC.Expr.Syntax
 import KZC.Flags
 import KZC.Monad
 import KZC.Summary

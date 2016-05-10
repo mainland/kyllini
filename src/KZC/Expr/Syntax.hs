@@ -8,13 +8,13 @@
 {-# LANGUAGE RankNTypes #-}
 
 -- |
--- Module      : KZC.Core.Syntax
+-- Module      : KZC.Expr.Syntax
 -- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Core.Syntax (
+module KZC.Expr.Syntax (
     Var(..),
     WildVar(..),
     Field(..),
@@ -1712,6 +1712,6 @@ instance IsOrd Exp where
     e1 .>=. e2 = BinopE Ge e1 e2 (e1 `srcspan` e2)
     e1 .>.  e2 = BinopE Gt e1 e2 (e1 `srcspan` e2)
 
-#include "KZC/Core/Syntax-instances.hs"
+#include "KZC/Expr/Syntax-instances.hs"
 
 #endif /* !defined(ONLY_TYPEDEFS) */

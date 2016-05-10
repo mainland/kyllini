@@ -52,9 +52,9 @@ import qualified KZC.Auto.Lint as A
 import qualified KZC.Auto.Syntax as A
 import KZC.Cg
 import KZC.Check
-import qualified KZC.Core.Lint as C
-import qualified KZC.Core.Syntax as C
 import KZC.Error
+import qualified KZC.Expr.Lint as E
+import qualified KZC.Expr.Syntax as E
 import KZC.Flags
 import KZC.Label
 import KZC.Monad
@@ -168,17 +168,17 @@ runPipeline filepath =
         lift . runRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
-    checkPhase :: [Z.CompLet] -> MaybeT KZC [C.Decl]
+    checkPhase :: [Z.CompLet] -> MaybeT KZC [E.Decl]
     checkPhase =
         lift . withTi . checkProgram >=>
         dumpPass DumpCore "core" "tc"
 
-    lambdaLiftPhase :: [C.Decl] -> MaybeT KZC [C.Decl]
+    lambdaLiftPhase :: [E.Decl] -> MaybeT KZC [E.Decl]
     lambdaLiftPhase =
         lift . runLift . liftProgram >=>
         dumpPass DumpLift "core" "ll"
 
-    autoPhase :: IsLabel l => [C.Decl] -> MaybeT KZC (A.Program l)
+    autoPhase :: IsLabel l => [E.Decl] -> MaybeT KZC (A.Program l)
     autoPhase =
         lift . A.withTc . runAuto . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
@@ -246,10 +246,10 @@ runPipeline filepath =
         lift . evalCg . compileProgram >=>
         lift . writeOutput
 
-    lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
+    lintCore :: [E.Decl] -> MaybeT KZC [E.Decl]
     lintCore decls = lift $ do
         whenDynFlag Lint $
-            C.withTc (C.checkDecls decls)
+            E.withTc (E.checkDecls decls)
         return decls
 
     lintAuto :: IsLabel l

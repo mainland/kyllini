@@ -9,7 +9,7 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Auto.Smart (
-    module KZC.Core.Smart,
+    module KZC.Expr.Smart,
 
     letD,
     letrefD,
@@ -52,7 +52,7 @@ import Data.Loc
 import Text.PrettyPrint.Mainland
 
 import KZC.Auto.Syntax
-import KZC.Core.Smart (tyVarT,
+import KZC.Expr.Smart (tyVarT,
 
                        unitT,
                        boolT,

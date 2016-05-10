@@ -28,7 +28,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Smart
 import KZC.Check.Types
-import qualified KZC.Core.Syntax as C
+import qualified KZC.Expr.Syntax as E
 
 data TiEnv = TiEnv
     { curexp     :: Maybe Z.Exp
@@ -52,7 +52,7 @@ defaultTiEnv = TiEnv
     }
 
 data TiState = TiState
-    { valctx :: C.Exp -> C.Exp }
+    { valctx :: E.Exp -> E.Exp }
 
 defaultTiState :: TiState
 defaultTiState = TiState

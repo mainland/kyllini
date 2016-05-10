@@ -78,8 +78,8 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
-import qualified KZC.Core.Syntax as C
 import KZC.Error
+import qualified KZC.Expr.Syntax as E
 import KZC.Flags
 import KZC.Monad
 import KZC.Summary
@@ -156,9 +156,9 @@ localValCtxType tau = local $ \env -> env { valCtxType = tau }
 askValCtxType :: Ti Type
 askValCtxType = asks valCtxType
 
--- | Given a computation that produces a 'C.Exp', return a new computation that
--- produces the same 'C.Exp' modified to incorporate the value context.
-withValCtx :: Ti C.Exp -> Ti C.Exp
+-- | Given a computation that produces a 'E.Exp', return a new computation that
+-- produces the same 'E.Exp' modified to incorporate the value context.
+withValCtx :: Ti E.Exp -> Ti E.Exp
 withValCtx mce = do
     old_valctx <- gets valctx
     modify $ \s -> s { valctx = id }
@@ -167,9 +167,9 @@ withValCtx mce = do
     modify $ \s -> s { valctx = old_valctx }
     return $ f ce
 
--- | Specify a function for adding necessary value context to a 'C.Exp'
+-- | Specify a function for adding necessary value context to a 'E.Exp'
 -- representing a computation.
-tellValCtx :: (C.Exp -> C.Exp) -> Ti ()
+tellValCtx :: (E.Exp -> E.Exp) -> Ti ()
 tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
 
 extendStructs :: [StructDef] -> Ti a -> Ti a

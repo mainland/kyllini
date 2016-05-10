@@ -46,7 +46,7 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
-import KZC.Core.Syntax (Scale(..),
+import KZC.Expr.Syntax (Scale(..),
                         Signedness(..),
                         BP(..),
                         FP(..))

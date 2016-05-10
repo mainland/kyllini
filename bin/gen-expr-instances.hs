@@ -7,7 +7,7 @@ module Main where
 
 import Data.Generics
 
-import KZC.Core.Syntax
+import KZC.Expr.Syntax
 import KZC.Derive
 import KZC.Name
 import KZC.Uniq

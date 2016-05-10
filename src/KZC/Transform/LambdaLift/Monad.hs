@@ -33,8 +33,8 @@ import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import KZC.Core.Lint (Tc, liftTc, isInTopScope)
-import KZC.Core.Syntax
+import KZC.Expr.Lint (Tc, liftTc, isInTopScope)
+import KZC.Expr.Syntax
 import KZC.Monad
 import KZC.Util.Env
 

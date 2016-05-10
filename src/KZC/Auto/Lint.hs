@@ -11,7 +11,7 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Auto.Lint (
-    module KZC.Core.Lint.Monad,
+    module KZC.Expr.Lint.Monad,
 
     Tc(..),
     runTc,
@@ -83,7 +83,8 @@ import Text.PrettyPrint.Mainland
 import KZC.Auto.Smart
 import KZC.Auto.Syntax
 import KZC.Check.Path
-import KZC.Core.Lint (Tc(..),
+import KZC.Error
+import KZC.Expr.Lint (Tc(..),
                       runTc,
                       liftTc,
                       withTc,
@@ -122,8 +123,7 @@ import KZC.Core.Lint (Tc(..),
                       checkPureishST,
                       checkPureishSTC,
                       checkPureishSTCUnit)
-import KZC.Core.Lint.Monad
-import KZC.Error
+import KZC.Expr.Lint.Monad
 import KZC.Label
 import KZC.Summary
 import KZC.Vars
