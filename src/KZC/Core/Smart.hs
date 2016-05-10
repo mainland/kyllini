@@ -26,6 +26,7 @@ module KZC.Core.Smart (
     arrKnownT,
     stT,
 
+    isBaseT,
     isUnitT,
     isBitT,
     isBitArrT,
@@ -127,6 +128,14 @@ arrKnownT i tau = ArrT (ConstI i l) tau l
 
 stT :: Omega -> Type -> Type -> Type -> Type
 stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+
+-- | Return 'True' if a type is a base type.
+isBaseT :: Type -> Bool
+isBaseT UnitT{}  = True
+isBaseT BoolT{}  = True
+isBaseT FixT{}   = True
+isBaseT FloatT{} = True
+isBaseT _        = False
 
 isUnitT :: Type -> Bool
 isUnitT (UnitT {}) = True

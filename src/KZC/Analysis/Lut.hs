@@ -13,15 +13,16 @@ module KZC.Analysis.Lut (
     LUTInfo(..),
     lutInfo,
 
-    shouldLUT,
+    LUTVar(..),
+    unLUTVar,
+    inferLUTVar,
 
-    returnedVar
+    shouldLUT
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (filterM)
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
 import Control.Monad.IO.Class (MonadIO)
@@ -31,21 +32,27 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans (MonadTrans(..))
+import Data.Loc (Located(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (catMaybes,
+                   fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.ReadWriteSet
 import KZC.Auto.Lint
+import KZC.Auto.Smart
 import KZC.Auto.Syntax hiding (PI)
 import KZC.Error
 import KZC.Flags
+import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Lattice (Known(..))
+import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
@@ -59,51 +66,17 @@ shouldLUT info e = do
 
     go dflags (Right stats) = do
         traceAutoLUT $ ppr stats
-        return $ lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
-                 lutBytes info <= fromIntegral (maxLUT dflags) &&
+        return $ lutInBits info > 0 &&
                  lutInBits info <= 64 &&
                  lutOutBits info + lutResultBits info > 0 &&
-                 lutOutBits info + lutResultBits info <= 64 &&
                  (lutOpCount stats >= minLUTOps dflags || lutHasLoop stats) &&
-                 not (lutHasSideEffect stats)
-
--- | Compute the variable that is returned by an expression. This is a partial
--- operation. Note that the variable may have type ref, in which case its
--- dereferenced value is what is returned.
-returnedVar :: Monad m => Exp -> m Var
-returnedVar (VarE v _) = do
-    return v
-
-returnedVar (LetE _ e _) =
-    returnedVar e
-
-returnedVar (ReturnE _ e _) =
-    returnedVar e
-
-returnedVar (IfE _ e1 e2 _) = do
-    v1 <- returnedVar e1
-    v2 <- returnedVar e2
-    if v1 == v2
-      then return v1
-      else fail "Different variables returned"
-
-returnedVar (DerefE (VarE v   _) _) =
-    return v
-
-returnedVar (BindE (TameV v') _
-                   (DerefE    (VarE v   _) _)
-                   (ReturnE _ (VarE v'' _) _) _)
-    | v'' == bVar v' = return v
-
-returnedVar (BindE _ _ _ e _) =
-    returnedVar e
-
-returnedVar _ =
-    fail "No variable returned"
+                 not (lutHasSideEffect stats) &&
+                 lutBytesLog2 info <= fromIntegral (maxLUTLog2 dflags) &&
+                 lutBytes info <= fromIntegral (maxLUT dflags)
 
 data LUTInfo = LUTInfo
-    { lutInVars      :: Set Var
-    , lutOutVars     :: Set Var
+    { lutInVars      :: Set LUTVar
+    , lutOutVars     :: Set LUTVar
     , lutReturnedVar :: Maybe Var
     , lutReadSet     :: Map Var (Known RWSet)
     , lutWriteSet    :: Map Var (Known RWSet)
@@ -128,23 +101,77 @@ instance Pretty LUTInfo where
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
         nest 2 (text "LUT size in bytes (log 2):" <+> ppr (lutBytesLog2 info))
 
+data LUTVar = VarL Var
+            | IdxL Var Int (Maybe Int)
+  deriving (Eq, Ord, Show)
+
+instance Pretty LUTVar where
+    ppr (VarL v) =
+        ppr v
+
+    ppr (IdxL v i Nothing) =
+        ppr v <> brackets (ppr i)
+
+    ppr (IdxL v i (Just len)) =
+        ppr v <> brackets (commasep [ppr i, ppr len])
+
+instance Located LUTVar where
+    locOf (VarL v)     = locOf v
+    locOf (IdxL v _ _) = locOf v
+
+instance Named LUTVar where
+    namedSymbol (VarL v)     = namedSymbol v
+    namedSymbol (IdxL v _ _) = namedSymbol v
+
+    mapName f (VarL v)           = VarL (mapName f v)
+    mapName f (IdxL v start len) = IdxL (mapName f v) start len
+
+instance Summary LUTVar where
+    summary (VarL v)     = summary v
+    summary (IdxL v _ _) = summary v
+
+instance ToExp LUTVar where
+    toExp (VarL v)                  = varE v
+    toExp (IdxL v start Nothing)    = idxE (varE v) (intE start)
+    toExp (IdxL v start (Just len)) = sliceE (varE v) (intE start) len
+
+unLUTVar :: LUTVar -> Var
+unLUTVar (VarL v)     = v
+unLUTVar (IdxL v _ _) = v
+
+idxL :: Integral a => Var -> a -> LUTVar
+idxL v i = IdxL v (fromIntegral i) Nothing
+
+sliceL :: Integral a => Var -> a -> a -> LUTVar
+sliceL v i len = IdxL v (fromIntegral i) (Just (fromIntegral len))
+
+inferLUTVar :: MonadTc m => LUTVar -> m Type
+inferLUTVar (VarL v) =
+    lookupVar v
+
+inferLUTVar (IdxL v _ maybe_len) = do
+    (_, tau) <- lookupVar v >>= checkArrOrRefArrT
+    return $ arrKnownT n tau
+  where
+    n :: Int
+    n = fromMaybe 1 maybe_len
+
 lutInfo :: forall m . MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
-    tau_res      <- inferExp e
-    let retVar   =  returnedVar e
-    (rset, wset) <- readWriteSets e
-    inVars       <- (<>) <$> pure (Map.keysSet rset) <*> weaklyUpdatedVars wset
-    let outVars  =  Map.keysSet wset
-    inbits       <- sum <$> mapM varSize (Set.toList inVars)
-    outbits      <- sum <$> mapM varSize (Set.toList outVars)
-    resbits      <- case retVar of
-                      Just v | v `Set.member` outVars -> return 0
-                      _ -> typeSize tau_res
+    tau_res           <- inferExp e
+    let resVar        =  resultVar e
+    (rset, wset)      <- readWriteSets e
+    (inVars, outVars) <- lutVars (rset, wset)
+    inbits            <- sum <$> mapM lutVarSize (Set.toList inVars)
+    outbits           <- sum <$> mapM lutVarSize (Set.toList outVars)
+    resbits           <- case resVar of
+                           Just v | VarL v `Set.member` outVars -> return 0
+                           _ -> typeSize tau_res
     let outbytes :: Int
         outbytes = (outbits + resbits + 7) `div` 8
     return $ LUTInfo { lutInVars      = inVars
                      , lutOutVars     = outVars
-                     , lutReturnedVar = retVar
+                     , lutReturnedVar = resVar
                      , lutReadSet     = rset
                      , lutWriteSet    = wset
 
@@ -156,31 +183,104 @@ lutInfo e = withFvContext e $ do
                      , lutBytesLog2  = inbits + ceiling (log (fromIntegral outbytes) / log (2 :: Double))
                      }
   where
-    varSize :: Var -> m Int
-    varSize v = withSummaryContext v $ do
-        tau <- lookupVar v
+    lutVarSize :: LUTVar -> m Int
+    lutVarSize v =
+        withSummaryContext v $ do
+        tau <- inferLUTVar v
         typeSize tau
 
-    -- | Return the set of weakly update variables. We must add these variables
-    -- to our in variables.
-    weaklyUpdatedVars :: Map Var (Known RWSet) -> m (Set Var)
-    weaklyUpdatedVars wset = do
-        (vs_weak, _) <- unzip <$> filterM (fmap not . stronglyUpdated) (Map.assocs wset)
-        return $ Set.fromList vs_weak
+lutVars :: forall m . MonadTc m
+        => (Map Var (Known RWSet), Map Var (Known RWSet))
+        -> m (Set LUTVar, Set LUTVar)
+lutVars (rset, wset) = do
+    inVars   <- mapM lutVar (Map.assocs rset)
+    outVars  <- mapM lutVar (Map.assocs wset)
+    weakVars <- catMaybes <$> mapM weaklyUpdated (Map.assocs wset)
+    return (Set.fromList inVars <> Set.fromList weakVars, Set.fromList outVars)
+  where
+    -- | Convert a variable and its 'Known RWSet' to a 'LUTVar'.
+    lutVar :: (Var, Known RWSet) -> m LUTVar
+    lutVar (v, Any) =
+        return $ VarL v
+
+    lutVar (v, Known (ArrayS _ (PI (Known (RangeI lo hi))))) = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        go iota
       where
-        -- | Return 'True' if the variable is strongly updated.
-        stronglyUpdated :: (Var, Known RWSet) -> m Bool
-        stronglyUpdated (_, Any) =
-            return True
+        go :: Iota -> m LUTVar
+        -- We need the whole variable
+        go (ConstI n _) | lo == 0 && hi == fromIntegral n-1 =
+            return $ VarL v
 
-        stronglyUpdated (v, Known (ArrayS _ (PI (Known (RangeI 0 hi))))) = do
-            (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-            case iota of
-              ConstI n _ -> return $ hi == fromIntegral n - 1
-              _ -> return False
+        -- We need a single element
+        go _ | hi == lo =
+           return $ idxL v lo
 
-        stronglyUpdated _ =
-            return False
+        -- We need a slice
+        go _ =
+           return $ sliceL v lo (hi-lo+1)
+
+    lutVar (v, _) =
+        return $ VarL v
+
+    -- | Return an appropriate input 'LUTVar' if the variable is weakly updated.
+    weaklyUpdated :: (Var, Known RWSet) -> m (Maybe LUTVar)
+    weaklyUpdated (_, Any) =
+        return Nothing
+
+    weaklyUpdated (v, Known (ArrayS _ (PI (Known (RangeI lo hi))))) = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        go iota
+      where
+        go :: Iota -> m (Maybe LUTVar)
+        go (ConstI n _) | lo == 0 && hi == fromIntegral n-1 =
+            return Nothing
+
+        go _ | hi == lo =
+           return $ Just $ idxL v lo
+
+        go _ =
+           return $ Just $ sliceL v lo (hi-lo+1)
+
+    weaklyUpdated (v, _) =
+        return $ Just $ VarL v
+
+-- | Compute the variable that is the result expression. This is a partial
+-- operation. Note that the variable may have type ref, in which case its
+-- dereferenced value is the result of the expression.
+resultVar :: Monad m => Exp -> m Var
+resultVar (VarE v _) = do
+    return v
+
+resultVar (LetE decl e _) = do
+    v <- resultVar e
+    if v `Set.member` binders decl
+      then fail "Result is locally bound"
+      else return v
+
+resultVar (ReturnE _ e _) =
+    resultVar e
+
+resultVar (IfE _ e1 e2 _) = do
+    v1 <- resultVar e1
+    v2 <- resultVar e2
+    if v1 == v2
+      then return v1
+      else fail "Different variables returned"
+
+resultVar (DerefE (VarE v   _) _) =
+    return v
+
+resultVar (BindE (TameV v') _
+                   (DerefE    (VarE v   _) _)
+                   (ReturnE _ (VarE v'' _) _) _)
+    | v'' == bVar v' = return v
+
+resultVar (BindE _ _ _ e _) =
+    resultVar e
+
+resultVar _ =
+    fail "No variable returned"
 
 data LUTStats = LUTStats
     { lutOpCount       :: !Int

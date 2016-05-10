@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Monad
@@ -26,6 +27,8 @@ module KZC.Monad (
 import Control.Applicative
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
+import Control.Monad.Primitive (PrimMonad(..),
+                                RealWorld)
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
@@ -77,6 +80,10 @@ newtype KZC a = KZC { unKZC :: ReaderT KZCEnv IO a }
     deriving (Functor, Applicative, MonadIO,
               MonadRef IORef, MonadAtomicRef IORef,
               MonadReader KZCEnv)
+
+instance PrimMonad KZC where
+    type PrimState KZC = RealWorld
+    primitive = KZC . primitive
 
 runKZC :: KZC a -> KZCEnv -> IO a
 runKZC = runReaderT . unKZC

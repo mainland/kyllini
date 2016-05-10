@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Core.Lint
@@ -72,6 +73,8 @@ import Control.Monad (unless,
                       void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Primitive (PrimMonad(..),
+                                RealWorld)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
@@ -113,6 +116,12 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
 instance MonadTc Tc where
     askTc       = Tc $ ask
     localTc f m = Tc $ local f (unTc m)
+
+instance PrimMonad Tc where
+    type PrimState Tc = RealWorld
+    primitive = Tc . primitive
+
+instance MonadTcRef Tc where
 
 runTc :: Tc a -> TcEnv -> KZC a
 runTc m r = (runReaderT . unTc) m r
