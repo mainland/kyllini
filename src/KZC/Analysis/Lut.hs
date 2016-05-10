@@ -42,9 +42,9 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.ReadWriteSet
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax hiding (PI)
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax hiding (PI)
 import KZC.Error
 import KZC.Flags
 import KZC.Name

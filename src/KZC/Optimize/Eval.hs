@@ -51,10 +51,10 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lut
-import KZC.Auto.Comp
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
+import KZC.Core.Comp
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Interp (evalI)

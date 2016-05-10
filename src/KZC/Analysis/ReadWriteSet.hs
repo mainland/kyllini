@@ -44,9 +44,9 @@ import Data.Monoid
 import Data.Ratio (numerator)
 import Text.PrettyPrint.Mainland hiding (empty)
 
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax hiding (PI)
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax hiding (PI)
 import KZC.Error
 import KZC.Flags
 import KZC.Trace

@@ -47,16 +47,18 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Analysis.Occ
 import KZC.Analysis.RefFlow
 import KZC.Analysis.NeedDefault
-import qualified KZC.Auto.Label as A
-import qualified KZC.Auto.Lint as A
-import qualified KZC.Auto.Syntax as A
 import KZC.Cg
 import KZC.Check
+import qualified KZC.Core.Label as C
 import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
 import KZC.Error
+import qualified KZC.Expr.Lint as E
+import qualified KZC.Expr.Syntax as E
+import qualified KZC.Expr.ToCore as E
 import KZC.Flags
 import KZC.Label
+import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Autolut (runAutoM,
@@ -67,8 +69,6 @@ import KZC.Optimize.HashConsConsts
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
-import KZC.Transform.Auto
-import KZC.Transform.LambdaLift
 
 import Opts
 
@@ -101,27 +101,27 @@ runPipeline filepath =
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         tracePhase "rename" renamePhase >=>
-        tracePhase "typecheck" checkPhase >=> tracePhase "lint" lintCore >=>
+        tracePhase "typecheck" checkPhase >=> tracePhase "lint" lintExpr >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintCore >=>
-        tracePhase "auto" autoPhase >=> tracePhase "lintAuto" lintAuto >=>
+        tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintExpr >=>
+        tracePhase "exprToCore" exprToCorePhase >=> tracePhase "lint" lintCore >=>
         -- Simplify, but don't inline functions or computations
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ onlyInliningValues $ iterateSimplPhase "-phase1") >=>
         -- AutoLUT
-        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase1" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase1" autolutPhase >=> tracePhase "lintCore" lintCore) >=>
         -- Simplify again, allowing inlining. This may inline LUTted functions.
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         -- Fuse pars
-        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintCore" lintCore) >=>
         -- Partially evaluate and simplify
-        runIf runEval (tracePhase "eval-phase1" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf runEval (tracePhase "eval-phase1" evalPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
         -- Auto-LUT, partially evaluate, and simplify once more
-        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase2" autolutPhase >=> tracePhase "lintAuto" lintAuto) >=>
-        runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintAuto" lintAuto) >=>
+        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase2" autolutPhase >=> tracePhase "lintCore" lintCore) >=>
+        runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase4") >=>
         -- Clean up the code, do some analysis, and codegen
-        tracePhase "hashcons" hashconsPhase >=> tracePhase "lintAuto" lintAuto >=>
+        tracePhase "hashcons" hashconsPhase >=> tracePhase "lintCore" lintCore >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
@@ -168,96 +168,96 @@ runPipeline filepath =
         lift . runRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
-    checkPhase :: [Z.CompLet] -> MaybeT KZC [C.Decl]
+    checkPhase :: [Z.CompLet] -> MaybeT KZC [E.Decl]
     checkPhase =
         lift . withTi . checkProgram >=>
-        dumpPass DumpCore "core" "tc"
+        dumpPass DumpCore "expr" "tc"
 
-    lambdaLiftPhase :: [C.Decl] -> MaybeT KZC [C.Decl]
+    lambdaLiftPhase :: [E.Decl] -> MaybeT KZC [E.Decl]
     lambdaLiftPhase =
-        lift . runLift . liftProgram >=>
-        dumpPass DumpLift "core" "ll"
+        lift . C.withTc . runLift . liftProgram >=>
+        dumpPass DumpLift "expr" "ll"
 
-    autoPhase :: IsLabel l => [C.Decl] -> MaybeT KZC (A.Program l)
-    autoPhase =
-        lift . A.withTc . runAuto . autoProgram >=>
-        dumpPass DumpLift "acore" "auto"
+    exprToCorePhase :: IsLabel l => [E.Decl] -> MaybeT KZC (C.Program l)
+    exprToCorePhase =
+        lift . C.withTc . E.runTC . E.exprToCore >=>
+        dumpPass DumpLift "core" "exprToCore"
 
-    occPhase :: A.Program l -> MaybeT KZC (A.Program l)
+    occPhase :: C.Program l -> MaybeT KZC (C.Program l)
     occPhase =
-        lift . A.withTc . runOccM . occProgram
+        lift . C.withTc . runOccM . occProgram
 
-    simplPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l, SimplStats)
+    simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
-        lift . A.withTc . runSimplM . simplProgram
+        lift . C.withTc . runSimplM . simplProgram
 
-    iterateSimplPhase :: IsLabel l => String -> A.Program l -> MaybeT KZC (A.Program l)
+    iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
     iterateSimplPhase desc prog0 = do
         n <- asksFlags maxSimpl
         go 0 n prog0
       where
-        go :: IsLabel l => Int -> Int -> A.Program l -> MaybeT KZC (A.Program l)
+        go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
         go i n prog | i >= n = do
             warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
             return prog
 
         go i n prog = do
-            prog'           <- occPhase prog >>= lintAuto
+            prog'           <- occPhase prog >>= lintCore
             (prog'', stats) <- simplPhase prog'
-            void $ lintAuto prog'
+            void $ lintCore prog'
             if stats /= mempty
-              then do void $ dumpPass DumpOcc "acore" ("occ" ++ desc) prog'
-                      void $ dumpPass DumpSimpl "acore" ("simpl" ++ desc) prog''
+              then do void $ dumpPass DumpOcc "core" ("occ" ++ desc) prog'
+                      void $ dumpPass DumpSimpl "core" ("simpl" ++ desc) prog''
                       go (i+1) n prog''
               else return prog
 
-    hashconsPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =
-        lift . A.withTc . runHCM . hashConsConsts >=>
-        dumpPass DumpHashCons "acore" "hashcons"
+        lift . C.withTc . runHCM . hashConsConsts >=>
+        dumpPass DumpHashCons "core" "hashcons"
 
-    fusionPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =
-        lift . A.withTc . SEFKT.runSEFKT . fuseProgram >=>
-        dumpPass DumpFusion "acore" "fusion"
+        lift . C.withTc . SEFKT.runSEFKT . fuseProgram >=>
+        dumpPass DumpFusion "core" "fusion"
 
-    autolutPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     autolutPhase =
-        lift . A.withTc . runAutoM . autolutProgram >=>
-        dumpPass DumpAutoLUT "acore" "autolut"
+        lift . C.withTc . runAutoM . autolutProgram >=>
+        dumpPass DumpAutoLUT "core" "autolut"
 
-    evalPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     evalPhase =
-        lift . A.withTc . evalEvalM . evalProgram >=>
-        dumpPass DumpEval "acore" "peval"
+        lift . C.withTc . evalEvalM . evalProgram >=>
+        dumpPass DumpEval "core" "peval"
 
-    refFlowPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    refFlowPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     refFlowPhase =
-        lift . A.liftTc . runRF . rfProgram >=>
-        dumpPass DumpEval "acore" "rflow"
+        lift . C.liftTc . runRF . rfProgram >=>
+        dumpPass DumpEval "core" "rflow"
 
-    needDefaultPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    needDefaultPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     needDefaultPhase =
-        lift . A.liftTc . runND . needDefaultProgram >=>
-        dumpPass DumpEval "acore" "needdefault"
+        lift . C.liftTc . runND . needDefaultProgram >=>
+        dumpPass DumpEval "core" "needdefault"
 
-    compilePhase :: A.LProgram -> MaybeT KZC ()
+    compilePhase :: C.LProgram -> MaybeT KZC ()
     compilePhase =
         lift . evalCg . compileProgram >=>
         lift . writeOutput
 
-    lintCore :: [C.Decl] -> MaybeT KZC [C.Decl]
-    lintCore decls = lift $ do
+    lintExpr :: [E.Decl] -> MaybeT KZC [E.Decl]
+    lintExpr decls = lift $ do
         whenDynFlag Lint $
-            C.withTc (C.checkDecls decls)
+            E.withTc (E.checkDecls decls)
         return decls
 
-    lintAuto :: IsLabel l
-             => A.Program l
-             -> MaybeT KZC (A.Program l)
-    lintAuto p = lift $ do
-        whenDynFlag AutoLint $
-            A.withTc (A.checkProgram p)
+    lintCore :: IsLabel l
+             => C.Program l
+             -> MaybeT KZC (C.Program l)
+    lintCore p = lift $ do
+        whenDynFlag Lint $
+            C.withTc (C.checkProgram p)
         return p
 
     onlyInliningValues :: (a -> MaybeT KZC a) -> a -> MaybeT KZC a
@@ -290,8 +290,8 @@ runPipeline filepath =
         liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
 
-    dumpFinal :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
-    dumpFinal = dumpPass DumpAuto "acore" "final"
+    dumpFinal :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    dumpFinal = dumpPass DumpCore "core" "final"
 
     dumpPass :: Pretty a
              => DumpFlag

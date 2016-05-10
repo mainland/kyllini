@@ -4,12 +4,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Auto.Comp
+-- Module      :  KZC.Core.Comp
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Auto.Comp (
+module KZC.Core.Comp (
     varC,
     callC,
     ifC,
@@ -42,7 +42,7 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import KZC.Auto.Syntax
+import KZC.Core.Syntax
 import KZC.Label
 import KZC.Uniq
 

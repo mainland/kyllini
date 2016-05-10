@@ -83,11 +83,11 @@ import Data.Word (Word32,
                   Word64)
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Comp
-import KZC.Auto.Label
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
+import KZC.Core.Comp
+import KZC.Core.Label
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Label
 import {-# SOURCE #-} KZC.Optimize.Eval.Monad (EvalM)
 import qualified KZC.Optimize.Eval.PArray as P

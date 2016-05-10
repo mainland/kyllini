@@ -1,5 +1,4 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -10,233 +9,154 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Core.Smart (
-    tyVarT,
+    module KZC.Expr.Smart,
 
-    unitT,
-    boolT,
-    bitT,
-    intT,
-    int8T,
-    int16T,
-    int32T,
-    int64T,
-    refT,
-    unRefT,
-    arrT,
-    arrKnownT,
-    stT,
+    letD,
+    letrefD,
 
-    isBaseT,
-    isUnitT,
-    isBitT,
-    isBitArrT,
-    isComplexT,
-    isFunT,
-    isArrT,
-    isRefT,
-    isSTUnitT,
-    isCompT,
-    isPureT,
-    isPureishT,
-
-    structName,
-
-    splitArrT,
-
-    bitC,
-    intC,
-    uintC,
-    arrayC,
-    structC,
-
-    mkVar,
-
-    notE,
-    castE,
+    unConstE,
+    constE,
     unitE,
     intE,
     varE,
+    notE,
+    catE,
+    castE,
+    bitcastE,
     letE,
+    letrefE,
     callE,
     derefE,
+    assignE,
+    whileE,
+    forE,
+    arrayE,
+    structE,
+    idxE,
+    sliceE,
+    projE,
     returnE,
     bindE,
     seqE,
-    takeE,
-    takesE,
-    emitE,
-    emitsE,
-    repeatE
+
+    (.:=.),
+    (.>>.),
+
+    isStructD,
+
+    isConstE,
+    isArrE
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
-import Data.List (sort)
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
-import KZC.Name
-import KZC.Platform
+import KZC.Expr.Smart (tyVarT,
 
-tyVarT :: TyVar -> Type
-tyVarT alpha = TyVarT alpha noLoc
+                       unitT,
+                       boolT,
+                       bitT,
+                       intT,
+                       int8T,
+                       int16T,
+                       int32T,
+                       int64T,
+                       refT,
+                       unRefT,
+                       arrT,
+                       arrKnownT,
+                       stT,
 
-unitT :: Type
-unitT = UnitT noLoc
+                       isBaseT,
+                       isUnitT,
+                       isBitT,
+                       isBitArrT,
+                       isComplexT,
+                       isFunT,
+                       isArrT,
+                       isRefT,
+                       isSTUnitT,
+                       isCompT,
+                       isPureT,
+                       isPureishT,
 
-boolT :: Type
-boolT = BoolT noLoc
+                       structName,
 
-bitT :: Type
-bitT = FixT I U (W 1) (BP 0) noLoc
+                       splitArrT,
 
-intT :: Type
-intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
+                       bitC,
+                       intC,
+                       uintC,
+                       arrayC,
+                       structC,
 
-int8T :: Type
-int8T = FixT I S 8 0 noLoc
+                       mkVar)
 
-int16T :: Type
-int16T = FixT I S 16 0 noLoc
+letD :: Var -> Type -> Exp -> LocalDecl
+letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
 
-int32T :: Type
-int32T = FixT I S 32 0 noLoc
+letrefD :: Var -> Type -> Maybe Exp -> LocalDecl
+letrefD v tau e = LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
 
-int64T :: Type
-int64T = FixT I S 64 0 noLoc
+-- | @'unConstE' e@ returns a constant version of @e@ if possible.
+unConstE :: forall m . Monad m => Exp -> m Const
+unConstE (ConstE c _) =
+    return c
 
-refT :: Type -> Type
-refT tau = RefT tau noLoc
+unConstE (UnopE (Cast tau) (ConstE c _) _) | Just c' <- liftCast tau c =
+    return c'
 
-unRefT :: Type -> Type
-unRefT (RefT tau _) = tau
-unRefT tau          = tau
+unConstE (ArrayE es _) = do
+    cs <- mapM unConstE es
+    return $ ArrayC cs
 
-arrT :: Iota -> Type -> Type
-arrT iota tau = ArrT iota tau l
+unConstE (StructE s flds _) = do
+    cs <- mapM unConstE es
+    return $ StructC s (fs `zip` cs)
   where
-    l :: SrcLoc
-    l = iota `srcspan` tau
+    fs :: [Field]
+    es :: [Exp]
+    (fs, es) = unzip flds
 
-arrKnownT :: Int -> Type -> Type
-arrKnownT i tau = ArrT (ConstI i l) tau l
-  where
-    l :: SrcLoc
-    l = srclocOf tau
+unConstE e =
+    faildoc $ text "Expression" <+> ppr e <+> text "is non-constant."
 
-stT :: Omega -> Type -> Type -> Type -> Type
-stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
-
--- | Return 'True' if a type is a base type.
-isBaseT :: Type -> Bool
-isBaseT UnitT{}  = True
-isBaseT BoolT{}  = True
-isBaseT FixT{}   = True
-isBaseT FloatT{} = True
-isBaseT _        = False
-
-isUnitT :: Type -> Bool
-isUnitT UnitT{} = True
-isUnitT _       = False
-
-isBitT :: Type -> Bool
-isBitT (FixT I U (W 1) (BP 0) _) = True
-isBitT _                         = False
-
-isBitArrT :: Type -> Bool
-isBitArrT (ArrT _ tau _) = isBitT tau
-isBitArrT _              = False
-
-isComplexT :: Type -> Bool
-isComplexT (StructT s _) = isComplexStruct s
-isComplexT _             = False
-
-isFunT :: Type -> Bool
-isFunT FunT{} = True
-isFunT _      = False
-
-isArrT :: Type -> Bool
-isArrT ArrT{} = True
-isArrT _      = False
-
-isRefT :: Type -> Bool
-isRefT RefT{} = True
-isRefT _      = False
-
-isSTUnitT :: Type -> Bool
-isSTUnitT (ST [] (C UnitT{}) _ _ _ _) = True
-isSTUnitT _                           = False
-
--- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
-isCompT :: Type -> Bool
-isCompT ST{} = True
-isCompT _    = False
-
--- | Return 'True' if the type is pure.
-isPureT :: Type -> Bool
-isPureT ST{} = False
-isPureT _    = True
-
--- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
--- otherwise. A pureish computation may use references, but it may not take or
--- emit, so it has type @forall s a b . ST omega s a b@.
-isPureishT :: Type -> Bool
-isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
-
-isPureishT ST{} =
-    False
-
-isPureishT _ =
-    True
-
-structName :: StructDef -> Struct
-structName (StructDef s _ _) = s
-
-splitArrT :: Monad m => Type -> m (Iota, Type)
-splitArrT (ArrT iota tau _) =
-    return (iota, tau)
-
-splitArrT tau =
-    faildoc $ text "Expected array type, but got:" <+> ppr tau
-
-bitC :: Bool -> Const
-bitC b = FixC I U 1 0 (if b then 1 else 0)
-
-intC :: Integral i => i -> Const
-intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
-
-uintC :: Integral i => i -> Const
-uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
-
-arrayC :: [Const] -> Const
-arrayC = ArrayC
-
-structC :: Struct -> [(Field, Const)] -> Const
-structC = StructC
-
-mkVar :: String -> Var
-mkVar s = Var (mkName s noLoc)
-
-notE :: Exp -> Exp
-notE e = UnopE Lnot e (srclocOf e)
-
-castE :: Type -> Exp -> Exp
-castE tau e = UnopE (Cast tau) e (srclocOf e)
+constE :: Const -> Exp
+constE c = ConstE c noLoc
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 
-intE :: Integer -> Exp
-intE i = ConstE (FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
+intE :: Integral a => a -> Exp
+intE i = ConstE (intC i) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
-letE :: Decl -> Exp -> Exp
-letE d e = LetE d e (d `srcspan` e)
+notE :: Exp -> Exp
+notE e = UnopE Lnot e (srclocOf e)
+
+catE :: Exp -> Exp -> Exp
+catE e1 e2 = BinopE Cat e1 e2 (e1 `srcspan` e2)
+
+castE :: Type -> Exp -> Exp
+castE tau e = UnopE (Cast tau) e (srclocOf e)
+
+bitcastE :: Type -> Exp -> Exp
+bitcastE tau e = UnopE (Bitcast tau) e (srclocOf e)
+
+letE :: Var -> Type -> Exp -> Exp -> Exp
+letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
+  where
+    d :: LocalDecl
+    d = letD v tau e1
+
+letrefE :: Var -> Type -> Maybe Exp -> Exp -> Exp
+letrefE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
+  where
+    d :: LocalDecl
+    d = letrefD v tau e1
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
@@ -244,26 +164,65 @@ callE f es = CallE f [] es (f `srcspan` es)
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 
+assignE :: Exp -> Exp -> Exp
+assignE e1 e2 = AssignE e1 e2 (e1 `srcspan` e2)
+
+whileE :: Exp -> Exp -> Exp
+whileE e1 e2 = WhileE e1 e2 (e1 `srcspan` e2)
+
+forE :: UnrollAnn -> Var -> Type -> Exp -> Exp -> Exp -> Exp
+forE ann v tau e1 e2 e3 = ForE ann v tau e1 e2 e3 (e1 `srcspan` e2 `srcspan` e3)
+
+arrayE :: [Exp] -> Exp
+arrayE es = ArrayE es (srclocOf es)
+
+structE :: Struct -> [(Field, Exp)] -> Exp
+structE s fs = StructE s fs (srclocOf (map snd fs))
+
+idxE :: Exp -> Exp -> Exp
+idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
+
+sliceE :: Exp -> Exp -> Int -> Exp
+sliceE e1 e2 len = IdxE e1 e2 (Just len) (e1 `srcspan` e2)
+
+projE :: Exp -> Field -> Exp
+projE e f = ProjE e f (e `srcspan` f)
+
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)
 
 bindE :: Var -> Type -> Exp -> Exp -> Exp
-bindE v tau e1 e2 = BindE (TameV v) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
+bindE v tau e1 e2 = BindE (TameV (mkBoundVar v)) tau e1 e2 (v `srcspan` e1 `srcspan` e2)
 
-seqE :: Type -> Exp -> Exp -> Exp
-seqE tau e1 e2 = BindE WildV tau e1 e2 (e1 `srcspan` e2)
+seqE :: Exp -> Exp -> Exp
+seqE (ReturnE _ (ConstE UnitC _) _) e2 =
+    e2
 
-takeE :: Type -> Exp
-takeE tau = TakeE tau (srclocOf tau)
+seqE e1 e2 =
+    BindE WildV unitT e1 e2 (e1 `srcspan` e2)
 
-takesE :: Int -> Type -> Exp
-takesE n tau = TakesE n tau (srclocOf tau)
+infixr 1 .:=.
 
-emitE :: Exp -> Exp
-emitE e = EmitE e (srclocOf e)
+(.:=.) :: Var -> Exp -> Exp
+v .:=. e = AssignE (varE v) e (v `srcspan` e)
 
-emitsE :: Exp -> Exp
-emitsE e = EmitsE e (srclocOf e)
+infixl 1 .>>.
 
-repeatE :: Exp -> Exp
-repeatE e = RepeatE AutoVect e (srclocOf e)
+(.>>.) :: Monad m => m (Comp l) -> m (Comp l) -> m (Comp l)
+m1 .>>. m2 = do
+    m1' <- m1
+    m2' <- m2
+    return $ m1' <> m2'
+
+isStructD :: Decl l -> Bool
+isStructD LetStructD{} = True
+isStructD _            = False
+
+isConstE :: Exp -> Bool
+isConstE ConstE{} = True
+isConstE _        = False
+
+isArrE :: Exp -> Bool
+isArrE (ConstE ArrayC{} _) = True
+isArrE ArrayE{}            = True
+isArrE _                   = False

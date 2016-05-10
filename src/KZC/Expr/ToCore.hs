@@ -5,16 +5,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Transform.Auto
+-- Module      :  KZC.Expr.ToCore
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Transform.Auto (
-    Auto,
-    runAuto,
+module KZC.Expr.ToCore (
+    runTC,
 
-    autoProgram
+    exprToCore
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -34,26 +33,26 @@ import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Comp
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
-import KZC.Core.Lint
-import qualified KZC.Core.Syntax as C
+import KZC.Core.Comp
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
+import KZC.Expr.Lint
+import qualified KZC.Expr.Syntax as E
 import KZC.Flags
 import KZC.Label
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
 
-data AutoEnv = AutoEnv { autoSubst :: Map Var Var }
+data TCEnv = TCEnv { tcSubst :: Map Var Var }
 
-defaultAutoEnv :: AutoEnv
-defaultAutoEnv = AutoEnv mempty
+defaultTCEnv :: TCEnv
+defaultTCEnv = TCEnv mempty
 
-newtype Auto m a = Auto { unAuto :: ReaderT AutoEnv m a }
+newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader AutoEnv,
+              MonadReader TCEnv,
               MonadException,
               MonadUnique,
               MonadErr,
@@ -61,35 +60,35 @@ newtype Auto m a = Auto { unAuto :: ReaderT AutoEnv m a }
               MonadTrace,
               MonadTc)
 
-instance MonadTrans Auto where
-    lift m = Auto $ lift m
+instance MonadTrans TC where
+    lift m = TC $ lift m
 
-runAuto :: MonadTc m => Auto m a -> m a
-runAuto m = runReaderT (unAuto m) defaultAutoEnv
+runTC :: MonadTc m => TC m a -> m a
+runTC m = runReaderT (unTC m) defaultTCEnv
 
-isInScope :: MonadTc m => Var -> Auto m Bool
-isInScope v = asks (Map.member v . autoSubst)
+isInScope :: MonadTc m => Var -> TC m Bool
+isInScope v = asks (Map.member v . tcSubst)
 
-lookupVarSubst :: MonadTc m => Var -> Auto m Var
-lookupVarSubst v = fromMaybe v <$> asks (Map.lookup v . autoSubst)
+lookupVarSubst :: MonadTc m => Var -> TC m Var
+lookupVarSubst v = fromMaybe v <$> asks (Map.lookup v . tcSubst)
 
-ensureUnique :: MonadTc m => Var -> (Var -> Auto m a) -> Auto m a
+ensureUnique :: MonadTc m => Var -> (Var -> TC m a) -> TC m a
 ensureUnique v k = do
      inscope <- isInScope v
      if inscope
        then do v' <- uniquify v
-               local (\env -> env { autoSubst = Map.insert v v' (autoSubst env) }) (k v')
+               local (\env -> env { tcSubst = Map.insert v v' (tcSubst env) }) (k v')
        else k v
 
-autoProgram :: forall l m . (IsLabel l, MonadTc m)
-            => [C.Decl]
-            -> Auto m (Program l)
-autoProgram cdecls =
+exprToCore :: forall l m . (IsLabel l, MonadTc m)
+           => [E.Decl]
+           -> TC m (Program l)
+exprToCore cdecls =
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
   where
-    findMain :: [Decl l] -> Auto m (Comp l, Type)
+    findMain :: [Decl l] -> TC m (Comp l, Type)
     findMain decls =
         case filter isMain decls of
           [] -> faildoc $ text "Cannot find main computation."
@@ -101,9 +100,9 @@ autoProgram cdecls =
     isMain _                  = False
 
 transDecls :: (IsLabel l, MonadTc m)
-           => [C.Decl]
-           -> ([Decl l] -> Auto m a)
-           -> Auto m a
+           => [E.Decl]
+           -> ([Decl l] -> TC m a)
+           -> TC m a
 transDecls [] k =
     k []
 
@@ -113,10 +112,10 @@ transDecls (cdecl:cdecls) k =
     k (decl:decls)
 
 transDecl :: (IsLabel l, MonadTc m)
-          => C.Decl
-          -> (Decl l -> Auto m a)
-          -> Auto m a
-transDecl decl@(C.LetD v tau e l) k
+          => E.Decl
+          -> (Decl l -> TC m a)
+          -> TC m a
+transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
@@ -129,11 +128,11 @@ transDecl decl@(C.LetD v tau e l) k
     extendVars [(v,tau)] $
       k $ LetCompD (mkBoundVar v') tau c l
 
-transDecl decl@(C.LetRefD _ _ _ l) k =
+transDecl decl@(E.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
 
-transDecl decl@(C.LetFunD f ivs vbs tau_ret e l) k
+transDecl decl@(E.LetFunD f ivs vbs tau_ret e l) k
   | isPureishT tau_ret =
     ensureUnique f $ \f' ->
     extendVars [(f, tau)] $ do
@@ -154,33 +153,33 @@ transDecl decl@(C.LetFunD f ivs vbs tau_ret e l) k
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
 
-transDecl (C.LetExtFunD f ivs vbs tau_ret l) k =
+transDecl (E.LetExtFunD f ivs vbs tau_ret l) k =
     extendExtFuns [(f, tau)] $
     k $ LetExtFunD (mkBoundVar f) ivs vbs tau_ret l
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
 
-transDecl (C.LetStructD s flds l) k =
+transDecl (E.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
     k $ LetStructD s flds l
 
 transLocalDecl :: MonadTc m
-               => C.Decl
-               -> (LocalDecl -> Auto m a)
-               -> Auto m a
-transLocalDecl decl@(C.LetD v tau e l) k | isPureT tau =
+               => E.Decl
+               -> (LocalDecl -> TC m a)
+               -> TC m a
+transLocalDecl decl@(E.LetD v tau e l) k | isPureT tau =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $ transExp e
     extendVars [(v, tau)] $
       k $ LetLD (mkBoundVar v') tau e' l
 
-transLocalDecl (C.LetRefD v tau Nothing l) k =
+transLocalDecl (E.LetRefD v tau Nothing l) k =
     ensureUnique v $ \v' ->
     extendVars [(v, refT tau)] $
     k $ LetRefLD (mkBoundVar v') tau Nothing l
 
-transLocalDecl decl@(C.LetRefD v tau (Just e) l) k =
+transLocalDecl decl@(E.LetRefD v tau (Just e) l) k =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $
           inLocalScope $
@@ -192,52 +191,52 @@ transLocalDecl decl _ =
     withSummaryContext decl $
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
   where
-    pprDeclType :: C.Decl -> Doc
-    pprDeclType (C.LetD _ tau _ _)
+    pprDeclType :: E.Decl -> Doc
+    pprDeclType (E.LetD _ tau _ _)
         | isPureishT tau       = text "let"
         | otherwise            = text "letcomp"
-    pprDeclType C.LetFunD{}    = text "letfun"
-    pprDeclType C.LetExtFunD{} = text "letextfun"
-    pprDeclType C.LetRefD{}    = text "letref"
-    pprDeclType C.LetStructD{} = text "letstruct"
+    pprDeclType E.LetFunD{}    = text "letfun"
+    pprDeclType E.LetExtFunD{} = text "letextfun"
+    pprDeclType E.LetRefD{}    = text "letref"
+    pprDeclType E.LetStructD{} = text "letstruct"
 
 transExp :: forall m . MonadTc m
-         => C.Exp
-         -> Auto m Exp
-transExp (C.ConstE c l) =
+         => E.Exp
+         -> TC m Exp
+transExp (E.ConstE c l) =
     return $ ConstE c l
 
-transExp (C.VarE v l) = do
+transExp (E.VarE v l) = do
     v' <- lookupVarSubst v
     return $ VarE v' l
 
-transExp (C.UnopE op e l) =
+transExp (E.UnopE op e l) =
     UnopE op <$> transExp e <*> pure l
 
-transExp (C.BinopE op e1 e2 l) =
+transExp (E.BinopE op e1 e2 l) =
     BinopE op <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (C.IfE e1 e2 e3 l) =
+transExp (E.IfE e1 e2 e3 l) =
     IfE <$> transExp e1 <*> transExp e2 <*> transExp e3 <*> pure l
 
-transExp (C.LetE cdecl e l) =
+transExp (E.LetE cdecl e l) =
     transLocalDecl cdecl $ \decl ->
     LetE decl <$> transExp e <*> pure l
 
-transExp (C.CallE f iotas es l) = do
+transExp (E.CallE f iotas es l) = do
     f' <- lookupVarSubst f
     CallE f' iotas <$> mapM transExp es <*> pure l
 
-transExp (C.DerefE e l) =
+transExp (E.DerefE e l) =
     DerefE <$> transExp e <*> pure l
 
-transExp (C.AssignE e1 e2 l) =
+transExp (E.AssignE e1 e2 l) =
     AssignE <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (C.WhileE e1 e2 l) =
+transExp (E.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (C.ForE ann v tau e1 e2 e3 l) =
+transExp (E.ForE ann v tau e1 e2 e3 l) =
     ensureUnique v $ \v' -> do
     e1' <- withFvContext e1 $ transExp e1
     e2' <- withFvContext e2 $ transExp e2
@@ -246,82 +245,82 @@ transExp (C.ForE ann v tau e1 e2 e3 l) =
            transExp e3
     return $ ForE ann v' tau e1' e2' e3' l
 
-transExp (C.ArrayE es l) =
+transExp (E.ArrayE es l) =
     ArrayE <$> mapM transExp es <*> pure l
 
-transExp (C.IdxE e1 e2 i l) =
+transExp (E.IdxE e1 e2 i l) =
     IdxE <$> transExp e1 <*> transExp e2 <*> pure i <*> pure l
 
-transExp (C.StructE s flds l) =
+transExp (E.StructE s flds l) =
     StructE s <$> mapM transField flds <*> pure l
   where
-    transField :: (Field, C.Exp) -> Auto m (Field, Exp)
+    transField :: (Field, E.Exp) -> TC m (Field, Exp)
     transField (f, e) = (,) <$> pure f <*> transExp e
 
-transExp (C.ProjE e f l) =
+transExp (E.ProjE e f l) =
     ProjE <$> transExp e <*> pure f <*> pure l
 
-transExp (C.PrintE nl es l) =
+transExp (E.PrintE nl es l) =
     PrintE nl <$> mapM transExp es <*> pure l
 
-transExp (C.ErrorE tau s l) =
+transExp (E.ErrorE tau s l) =
     return $ ErrorE tau s l
 
-transExp (C.ReturnE ann e l) =
+transExp (E.ReturnE ann e l) =
     ReturnE ann <$> transExp e <*> pure l
 
-transExp (C.BindE C.WildV tau e1 e2 l) = do
+transExp (E.BindE E.WildV tau e1 e2 l) = do
     e1' <- transExp e1
     e2' <- transExp e2
     return $ BindE WildV tau e1' e2' l
 
-transExp (C.BindE (C.TameV v) tau e1 e2 l) =
+transExp (E.BindE (E.TameV v) tau e1 e2 l) =
     ensureUnique v $ \v' -> do
     e1' <- transExp e1
     e2' <- extendVars [(v, tau)] $
            transExp e2
     return $ BindE (TameV (mkBoundVar v')) tau e1' e2' l
 
-transExp e@C.TakeE{} =
+transExp e@E.TakeE{} =
     withSummaryContext e $
     faildoc $ text "take expression seen in pure-ish computation"
 
-transExp e@C.TakesE{} =
+transExp e@E.TakesE{} =
     withSummaryContext e $
     faildoc $ text "takes expression seen in pure-ish computation"
 
-transExp e@C.EmitE{} =
+transExp e@E.EmitE{} =
     withSummaryContext e $
     faildoc $ text "emit expression seen in pure-ish computation"
 
-transExp e@C.EmitsE{} =
+transExp e@E.EmitsE{} =
     withSummaryContext e $
     faildoc $ text "emits expression seen in pure-ish computation"
 
-transExp e@C.RepeatE{} =
+transExp e@E.RepeatE{} =
     withSummaryContext e $
     faildoc $ text "repeat expression seen in pure-ish computation"
 
-transExp e@C.ParE{} =
+transExp e@E.ParE{} =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
 transComp :: forall l m . (IsLabel l, MonadTc m)
-          => C.Exp
-          -> Auto m (Comp l)
-transComp e@(C.VarE v _) = do
+          => E.Exp
+          -> TC m (Comp l)
+transComp e@(E.VarE v _) = do
     v'  <- lookupVarSubst v
     tau <- lookupVar v
     if isPureishT tau
       then liftC =<< transExp e
       else varC v'
 
-transComp e@(C.IfE e1 e2 e3 l) = do
+transComp e@(E.IfE e1 e2 e3 l) = do
     tau <- inferExp e
     e1' <- transExp e1
     go tau e1'
   where
-    go :: Type -> Exp -> Auto m (Comp l)
+    go :: Type -> Exp -> TC m (Comp l)
     go tau e1' | isPureishT tau = do
         e2' <- transExp e2
         e3' <- transExp e3
@@ -332,11 +331,11 @@ transComp e@(C.IfE e1 e2 e3 l) = do
         e3' <- transComp e3
         ifC e1' e2' e3'
 
-transComp (C.LetE cdecl e _) =
+transComp (E.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
     letDC decl .>>. transComp e
 
-transComp e@(C.CallE f iotas es _) = do
+transComp e@(E.CallE f iotas es _) = do
     f'              <- lookupVarSubst f
     (_, _, tau_res) <- lookupVar f >>= checkFunT
     if isPureishT tau_res
@@ -344,19 +343,19 @@ transComp e@(C.CallE f iotas es _) = do
       else do args <- mapM transArg es
               callC f' iotas args
   where
-    transArg :: C.Exp -> Auto m (Arg l)
+    transArg :: E.Exp -> TC m (Arg l)
     transArg e = do
         tau <- inferExp e
         if isPureT tau
           then ExpA  <$> transExp e
           else CompA <$> transComp e
 
-transComp (C.WhileE e c _) = do
+transComp (E.WhileE e c _) = do
     e' <- transExp e
     c' <- transComp c
     whileC e' c'
 
-transComp (C.ForE ann v tau e1 e2 e3 _) =
+transComp (E.ForE ann v tau e1 e2 e3 _) =
     ensureUnique v $ \v' -> do
     e1' <- withFvContext e1 $ transExp e1
     e2' <- withFvContext e2 $ transExp e2
@@ -365,38 +364,38 @@ transComp (C.ForE ann v tau e1 e2 e3 _) =
            transComp e3
     forC ann v' tau e1' e2' c'
 
-transComp (C.ReturnE _ e _) = do
+transComp (E.ReturnE _ e _) = do
     e <- transExp e
     returnC e
 
-transComp (C.BindE C.WildV tau e1 e2 _) =
+transComp (E.BindE E.WildV tau e1 e2 _) =
     transComp e1 .>>. bindC WildV tau .>>. transComp e2
 
-transComp (C.BindE (C.TameV v) tau e1 e2 _) =
+transComp (E.BindE (E.TameV v) tau e1 e2 _) =
     ensureUnique v $ \v' ->
     transComp e1
         .>>. bindC (TameV (mkBoundVar v')) tau
         .>>. (extendVars [(v, tau)] $ transComp e2)
 
-transComp (C.TakeE tau _) =
+transComp (E.TakeE tau _) =
     takeC tau
 
-transComp (C.TakesE i tau _) =
+transComp (E.TakesE i tau _) =
     takesC i tau
 
-transComp (C.EmitE e _) = do
+transComp (E.EmitE e _) = do
     e' <- transExp e
     emitC e'
 
-transComp (C.EmitsE e _) = do
+transComp (E.EmitsE e _) = do
     e' <- transExp e
     emitsC e'
 
-transComp (C.RepeatE ann e _) = do
+transComp (E.RepeatE ann e _) = do
     c <- transComp e
     repeatC ann c
 
-transComp (C.ParE ann b e1 e2 _) = do
+transComp (E.ParE ann b e1 e2 _) = do
     (s, a, c) <- askSTIndTypes
     c1        <- withFvContext e1 $
                  localSTIndTypes (Just (s, a, b)) $

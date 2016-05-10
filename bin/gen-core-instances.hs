@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -16,6 +17,10 @@ import KZC.Uniq
 deriving instance Typeable a; \
 deriving instance Data a
 
+#define DERIVE1(f) \
+deriving instance Typeable f; \
+deriving instance Data a => Data (f a)
+
 DERIVE(Uniq)
 DERIVE(Name)
 DERIVE(NameSort)
@@ -31,7 +36,9 @@ DERIVE(W)
 DERIVE(BP)
 DERIVE(FP)
 DERIVE(Const)
-DERIVE(Decl)
+DERIVE(LocalDecl)
+DERIVE(BoundVar)
+DERIVE(OccInfo)
 DERIVE(Exp)
 DERIVE(UnrollAnn)
 DERIVE(InlineAnn)
@@ -44,18 +51,16 @@ DERIVE(Type)
 DERIVE(Omega)
 DERIVE(Iota)
 
+DERIVE1(Decl)
+DERIVE1(Arg)
+DERIVE1(Step)
+DERIVE1(Comp)
+
 main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
-    DERIVE(Var)
-    DERIVE(Field)
-    DERIVE(Struct)
-    DERIVE(TyVar)
-    DERIVE(IVar)
-    DERIVE(Decl)
+    DERIVE(Decl ())
+    DERIVE(Step ())
+    DERIVE(LocalDecl)
     DERIVE(Exp)
-    DERIVE(StructDef)
-    DERIVE(Type)
-    DERIVE(Omega)
-    DERIVE(Iota)

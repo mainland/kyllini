@@ -71,10 +71,10 @@ import Data.Word (Word32,
                   Word64)
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax hiding (I)
-import qualified KZC.Auto.Syntax as S
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax hiding (I)
+import qualified KZC.Core.Syntax as S
 import KZC.Error
 import KZC.Flags
 import KZC.Trace

@@ -30,9 +30,9 @@ import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.Lut (lutInfo,
                          shouldLUT)
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label

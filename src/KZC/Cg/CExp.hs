@@ -39,10 +39,10 @@ import Data.Monoid
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Lint (refPath)
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
 import {-# SOURCE #-} KZC.Cg.Monad
+import KZC.Core.Lint (refPath)
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Platform
 import KZC.Pretty
 import KZC.Quote.C

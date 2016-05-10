@@ -1,19 +1,30 @@
-instance Located Var where
-  locOf (Var l) = locOf l
-instance Located Field where
-  locOf (Field l) = locOf l
-instance Located Struct where
-  locOf (Struct l) = locOf l
-instance Located TyVar where
-  locOf (TyVar l) = locOf l
-instance Located IVar where
-  locOf (IVar l) = locOf l
-instance Located Decl where
-  locOf (LetD _ _ _ l) = locOf l
-  locOf (LetRefD _ _ _ l) = locOf l
+instance Located (Decl a) where
+  locOf (LetD _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l
   locOf (LetStructD _ _ l) = locOf l
+  locOf (LetCompD _ _ _ l) = locOf l
+  locOf (LetFunCompD _ _ _ _ _ l) = locOf l
+instance Located (Step a) where
+  locOf (VarC _ _ l) = locOf l
+  locOf (CallC _ _ _ _ l) = locOf l
+  locOf (IfC _ _ _ _ l) = locOf l
+  locOf (LetC _ _ l) = locOf l
+  locOf (WhileC _ _ _ l) = locOf l
+  locOf (ForC _ _ _ _ _ _ _ l) = locOf l
+  locOf (LiftC _ _ l) = locOf l
+  locOf (ReturnC _ _ l) = locOf l
+  locOf (BindC _ _ _ l) = locOf l
+  locOf (TakeC _ _ l) = locOf l
+  locOf (TakesC _ _ _ l) = locOf l
+  locOf (EmitC _ _ l) = locOf l
+  locOf (EmitsC _ _ l) = locOf l
+  locOf (RepeatC _ _ _ l) = locOf l
+  locOf (ParC _ _ _ _ l) = locOf l
+  locOf (LoopC _) = NoLoc
+instance Located LocalDecl where
+  locOf (LetLD _ _ _ l) = locOf l
+  locOf (LetRefLD _ _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l
@@ -34,29 +45,4 @@ instance Located Exp where
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
   locOf (BindE _ _ _ _ l) = locOf l
-  locOf (TakeE _ l) = locOf l
-  locOf (TakesE _ _ l) = locOf l
-  locOf (EmitE _ l) = locOf l
-  locOf (EmitsE _ l) = locOf l
-  locOf (RepeatE _ _ l) = locOf l
-  locOf (ParE _ _ _ _ l) = locOf l
-instance Located StructDef where
-  locOf (StructDef _ _ l) = locOf l
-instance Located Type where
-  locOf (UnitT l) = locOf l
-  locOf (BoolT l) = locOf l
-  locOf (FixT _ _ _ _ l) = locOf l
-  locOf (FloatT _ l) = locOf l
-  locOf (StringT l) = locOf l
-  locOf (StructT _ l) = locOf l
-  locOf (ArrT _ _ l) = locOf l
-  locOf (ST _ _ _ _ _ l) = locOf l
-  locOf (RefT _ l) = locOf l
-  locOf (FunT _ _ _ l) = locOf l
-  locOf (TyVarT _ l) = locOf l
-instance Located Omega where
-  locOf (C _) = NoLoc
-  locOf T = NoLoc
-instance Located Iota where
-  locOf (ConstI _ l) = locOf l
-  locOf (VarI _ l) = locOf l
+  locOf (LutE _) = NoLoc
