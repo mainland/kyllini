@@ -47,10 +47,10 @@ import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Comp
-import KZC.Auto.Lint
-import KZC.Auto.Smart
-import KZC.Auto.Syntax
+import KZC.Core.Comp
+import KZC.Core.Lint
+import KZC.Core.Smart
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label

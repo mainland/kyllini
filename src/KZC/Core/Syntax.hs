@@ -9,13 +9,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      : KZC.Auto.Syntax
+-- Module      : KZC.Core.Syntax
 -- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Auto.Syntax (
+module KZC.Core.Syntax (
     Var(..),
     WildVar(..),
     Field(..),
@@ -1620,7 +1620,7 @@ instance IsBits Exp where
     e1 `shiftL'`  e2 = BinopE LshL e1 e2 (e1 `srcspan` e2)
     e1 `shiftR'`  e2 = BinopE LshR e1 e2 (e1 `srcspan` e2)
 
-#include "KZC/Auto/Syntax-instances.hs"
+#include "KZC/Core/Syntax-instances.hs"
 
 instance Located BoundVar where
     locOf bv = locOf (bVar bv)

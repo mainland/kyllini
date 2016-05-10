@@ -57,11 +57,6 @@ SOURCE = \
 	KZC/Analysis/Occ.hs \
 	KZC/Analysis/ReadWriteSet.hs \
 	KZC/Analysis/RefFlow.hs \
-	KZC/Auto/Comp.hs \
-	KZC/Auto/Label.hs \
-	KZC/Auto/Lint.hs \
-	KZC/Auto/Smart.hs \
-	KZC/Auto/Syntax.hs \
 	KZC/Cg.hs \
 	KZC/Cg/CExp.hs \
 	KZC/Cg/Code.hs \
@@ -73,6 +68,11 @@ SOURCE = \
 	KZC/Check/Smart.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
+	KZC/Core/Comp.hs \
+	KZC/Core/Label.hs \
+	KZC/Core/Lint.hs \
+	KZC/Core/Smart.hs \
+	KZC/Core/Syntax.hs \
 	KZC/Derive.hs \
 	KZC/Error.hs \
 	KZC/Expr/Lint.hs \
@@ -123,7 +123,7 @@ SOURCE = \
 	Opts.hs
 
 GENERATED = \
-	KZC/Auto/Syntax-instances.hs \
+	KZC/Core/Syntax-instances.hs \
 	KZC/Check/Types-instances.hs \
 	KZC/Expr/Syntax-instances.hs \
 	Language/Ziria/Parser/Lexer.hs \
@@ -186,13 +186,13 @@ kzc : $(SRC) dist/build/autogen/cabal_macros.h
 $(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
+$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
+	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+
 $(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
-	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
-
-$(SRCDIR)KZC/Auto/Syntax-instances.hs : bin/gen-auto-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Auto/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #

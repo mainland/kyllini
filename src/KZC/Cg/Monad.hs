@@ -97,10 +97,10 @@ import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Lint (Tc, liftTc, isInTopScope)
-import KZC.Auto.Syntax
 import KZC.Cg.CExp
 import KZC.Cg.Code
+import KZC.Core.Lint (Tc, liftTc, isInTopScope)
+import KZC.Core.Syntax
 import KZC.Label
 import KZC.Monad
 import KZC.Monad.SEFKT

@@ -47,11 +47,11 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Analysis.Occ
 import KZC.Analysis.RefFlow
 import KZC.Analysis.NeedDefault
-import qualified KZC.Auto.Label as A
-import qualified KZC.Auto.Lint as A
-import qualified KZC.Auto.Syntax as A
 import KZC.Cg
 import KZC.Check
+import qualified KZC.Core.Label as C
+import qualified KZC.Core.Lint as C
+import qualified KZC.Core.Syntax as C
 import KZC.Error
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
@@ -178,25 +178,25 @@ runPipeline filepath =
         lift . runLift . liftProgram >=>
         dumpPass DumpLift "core" "ll"
 
-    autoPhase :: IsLabel l => [E.Decl] -> MaybeT KZC (A.Program l)
+    autoPhase :: IsLabel l => [E.Decl] -> MaybeT KZC (C.Program l)
     autoPhase =
-        lift . A.withTc . runAuto . autoProgram >=>
+        lift . C.withTc . runAuto . autoProgram >=>
         dumpPass DumpLift "acore" "auto"
 
-    occPhase :: A.Program l -> MaybeT KZC (A.Program l)
+    occPhase :: C.Program l -> MaybeT KZC (C.Program l)
     occPhase =
-        lift . A.withTc . runOccM . occProgram
+        lift . C.withTc . runOccM . occProgram
 
-    simplPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l, SimplStats)
+    simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
-        lift . A.withTc . runSimplM . simplProgram
+        lift . C.withTc . runSimplM . simplProgram
 
-    iterateSimplPhase :: IsLabel l => String -> A.Program l -> MaybeT KZC (A.Program l)
+    iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
     iterateSimplPhase desc prog0 = do
         n <- asksFlags maxSimpl
         go 0 n prog0
       where
-        go :: IsLabel l => Int -> Int -> A.Program l -> MaybeT KZC (A.Program l)
+        go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
         go i n prog | i >= n = do
             warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
             return prog
@@ -211,37 +211,37 @@ runPipeline filepath =
                       go (i+1) n prog''
               else return prog
 
-    hashconsPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =
-        lift . A.withTc . runHCM . hashConsConsts >=>
+        lift . C.withTc . runHCM . hashConsConsts >=>
         dumpPass DumpHashCons "acore" "hashcons"
 
-    fusionPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =
-        lift . A.withTc . SEFKT.runSEFKT . fuseProgram >=>
+        lift . C.withTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "acore" "fusion"
 
-    autolutPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     autolutPhase =
-        lift . A.withTc . runAutoM . autolutProgram >=>
+        lift . C.withTc . runAutoM . autolutProgram >=>
         dumpPass DumpAutoLUT "acore" "autolut"
 
-    evalPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     evalPhase =
-        lift . A.withTc . evalEvalM . evalProgram >=>
+        lift . C.withTc . evalEvalM . evalProgram >=>
         dumpPass DumpEval "acore" "peval"
 
-    refFlowPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    refFlowPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     refFlowPhase =
-        lift . A.liftTc . runRF . rfProgram >=>
+        lift . C.liftTc . runRF . rfProgram >=>
         dumpPass DumpEval "acore" "rflow"
 
-    needDefaultPhase :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    needDefaultPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     needDefaultPhase =
-        lift . A.liftTc . runND . needDefaultProgram >=>
+        lift . C.liftTc . runND . needDefaultProgram >=>
         dumpPass DumpEval "acore" "needdefault"
 
-    compilePhase :: A.LProgram -> MaybeT KZC ()
+    compilePhase :: C.LProgram -> MaybeT KZC ()
     compilePhase =
         lift . evalCg . compileProgram >=>
         lift . writeOutput
@@ -253,11 +253,11 @@ runPipeline filepath =
         return decls
 
     lintAuto :: IsLabel l
-             => A.Program l
-             -> MaybeT KZC (A.Program l)
+             => C.Program l
+             -> MaybeT KZC (C.Program l)
     lintAuto p = lift $ do
         whenDynFlag AutoLint $
-            A.withTc (A.checkProgram p)
+            C.withTc (C.checkProgram p)
         return p
 
     onlyInliningValues :: (a -> MaybeT KZC a) -> a -> MaybeT KZC a
@@ -290,7 +290,7 @@ runPipeline filepath =
         liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
 
-    dumpFinal :: IsLabel l => A.Program l -> MaybeT KZC (A.Program l)
+    dumpFinal :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     dumpFinal = dumpPass DumpAuto "acore" "final"
 
     dumpPass :: Pretty a

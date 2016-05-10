@@ -1,13 +1,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
--- Module      : KZC.Auto.Label
+-- Module      : KZC.Core.Label
 -- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Auto.Label (
+module KZC.Core.Label (
     Label(..),
 
     LProgram,
@@ -24,8 +24,8 @@ import Data.Symbol
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Syntax
 import KZC.Cg.Util
+import KZC.Core.Syntax
 import KZC.Label
 import KZC.Uniq
 import KZC.Util.SetLike

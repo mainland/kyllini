@@ -2,13 +2,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      : KZC.Auto.Smart
+-- Module      : KZC.Core.Smart
 -- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Auto.Smart (
+module KZC.Core.Smart (
     module KZC.Expr.Smart,
 
     letD,
@@ -51,7 +51,7 @@ module KZC.Auto.Smart (
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
-import KZC.Auto.Syntax
+import KZC.Core.Syntax
 import KZC.Expr.Smart (tyVarT,
 
                        unitT,
