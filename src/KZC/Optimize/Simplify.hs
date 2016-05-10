@@ -1197,7 +1197,8 @@ simplExp (BindE wv tau e1 e2 s) = do
         dropBinding v
         go e tau' WildV
 
-    go ReturnE{} _tau' WildV =
+    go ReturnE{} _tau' WildV = do
+        rewrite
         simplExp e2
 
     go (ReturnE _ e1' _) tau' (TameV v) = do
@@ -1206,6 +1207,7 @@ simplExp (BindE wv tau e1 e2 s) = do
                 extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $
                 return $ LetLD v' tau' e1' s
         e2'  <- simplExp e2
+        rewrite
         return $ LetE decl e2' s
 
     go e1' tau' WildV = do
