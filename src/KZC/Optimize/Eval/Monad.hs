@@ -110,7 +110,8 @@ import Data.List (foldl',
                   partition)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe,
+                   mapMaybe)
 import Data.Monoid
 import Data.Sequence ((|>),
                       Seq)
@@ -205,13 +206,13 @@ evalEvalM :: MonadTc m => EvalM l m a -> m a
 evalEvalM m = evalStateT (runReaderT (unEvalM m) defaultEvalEnv) defaultEvalState
 
 partial :: MonadTc m => a -> EvalM l m a
-partial x = return x
+partial = return
 
 maybePartialVal :: MonadTc m => Val l m a -> EvalM l m (Val l m a)
-maybePartialVal val = return val
+maybePartialVal = return
 
 partialExp :: MonadTc m => Exp -> EvalM l m (Val l m Exp)
-partialExp e = return $ ExpV e
+partialExp = return . ExpV
 
 partialCmd :: MonadTc m => Exp -> EvalM l m (Val l m Exp)
 partialCmd e = do
@@ -238,8 +239,8 @@ extendSubst :: MonadTc m
             -> Var
             -> EvalM l m a
             -> EvalM l m a
-extendSubst v v' k =
-    local (\env -> env { varSubst = Map.insert v v' (varSubst env) }) k
+extendSubst v v' =
+    local $ \env -> env { varSubst = Map.insert v v' (varSubst env) }
 
 withUniqVar :: MonadTc m
             => Var
@@ -289,8 +290,7 @@ extendIVarSubst :: MonadTc m
                 => [(IVar, Iota)]
                 -> EvalM l m a
                 -> EvalM l m a
-extendIVarSubst ivs m =
-    extendEnv ivarSubst (\env x -> env { ivarSubst = x }) ivs m
+extendIVarSubst = extendEnv ivarSubst (\env x -> env { ivarSubst = x })
 
 askTyVarSubst :: MonadTc m => EvalM l m Psi
 askTyVarSubst = asks tyVarSubst
@@ -299,8 +299,7 @@ extendTyVarSubst :: MonadTc m
                  => [(TyVar, Type)]
                  -> EvalM l m a
                  -> EvalM l m a
-extendTyVarSubst ivs m =
-    extendEnv tyVarSubst (\env x -> env { tyVarSubst = x }) ivs m
+extendTyVarSubst = extendEnv tyVarSubst (\env x -> env { tyVarSubst = x })
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
@@ -331,15 +330,14 @@ extendVarBinds :: MonadTc m
                => [(Var, Val l m Exp)]
                -> EvalM l m a
                -> EvalM l m a
-extendVarBinds vbs m =
-    extendEnv varBinds (\env x -> env { varBinds = x }) vbs m
+extendVarBinds = extendEnv varBinds (\env x -> env { varBinds = x })
 
 extendWildVarBinds :: MonadTc m
                    => [(WildVar, Val l m Exp)]
                    -> EvalM l m a
                    -> EvalM l m a
-extendWildVarBinds wvbs m =
-    extendVarBinds [(bVar v, val) | (TameV v, val) <- wvbs] m
+extendWildVarBinds wvbs =
+  extendVarBinds [(bVar v, val) | (TameV v, val) <- wvbs]
 
 lookupVarValue :: forall l m . MonadTc m
                => Var
@@ -369,7 +367,7 @@ extendVarValues vbs m =
         m
 
     go ((v, RefT {}, val):vbs) m = do
-        v'  <- maybe v id <$> lookupSubst v
+        v'  <- fromMaybe v <$> lookupSubst v
         old <- lookupVarBind v'
         case old of
           RefV (VarR _ ptr) ->
@@ -378,13 +376,13 @@ extendVarValues vbs m =
           _ ->
               do ptr <- newVarPtr
                  writeVarPtr ptr val
-                 extendVarBinds [(v', RefV (VarR v ptr))] $ do
-                 go vbs m
+                 extendVarBinds [(v', RefV (VarR v ptr))] $
+                   go vbs m
 
     go ((v, _tau, val):vbs) m = do
-        v' <- maybe v id <$> lookupSubst v
-        extendVarBinds [(v', val)] $ do
-        go vbs m
+        v' <- fromMaybe v <$> lookupSubst v
+        extendVarBinds [(v', val)] $
+          go vbs m
 
 lookupCVarBind :: MonadTc m => Var -> EvalM l m (Val l m (Comp l))
 lookupCVarBind v = do
@@ -394,8 +392,7 @@ lookupCVarBind v = do
     Just val -> return val
 
 extendCVarBinds :: MonadTc m => [(Var, Val l m (Comp l))] -> EvalM l m a -> EvalM l m a
-extendCVarBinds vbs m =
-    extendEnv cvarBinds (\env x -> env { cvarBinds = x }) vbs m
+extendCVarBinds = extendEnv cvarBinds (\env x -> env { cvarBinds = x })
 
 -- | Extend the set of variable bindings. The given variables are all specified
 -- as having unknown values. We use this when partially evaluating function
@@ -403,8 +400,8 @@ extendCVarBinds vbs m =
 extendUnknownVarBinds :: MonadTc m => [(Var, Type)] -> EvalM l m a -> EvalM l m a
 extendUnknownVarBinds vbs m =
     extendVarBinds  [(v, UnknownV)   | (v, _) <- pvbs] $
-    extendCVarBinds [(v, CompVarV v) | (v, _) <- ipvbs] $
-    m
+    extendCVarBinds [(v, CompVarV v) | (v, _) <- ipvbs]
+      m
   where
     pvbs, ipvbs :: [(Var, Type)]
     (pvbs, ipvbs) = partition isPure vbs
@@ -464,8 +461,11 @@ diffHeapExps h1 h2 = do
     -- since we should only be diffing heaps when we are sequencing actions.
     vvals <- asks (Map.assocs . varBinds)
     return $
-        mapMaybe update $
-        [(v, maybe UnknownV id (IntMap.lookup ptr h1), maybe UnknownV id (IntMap.lookup ptr h2)) | (_, RefV (VarR v ptr)) <- vvals]
+        mapMaybe update
+        [( v
+         , fromMaybe UnknownV (IntMap.lookup ptr h1)
+         , fromMaybe UnknownV (IntMap.lookup ptr h2)
+         ) | (_, RefV (VarR v ptr)) <- vvals]
   where
     update :: (Var, Val l m Exp, Val l m Exp) -> Maybe Exp
     -- This case occurs when the variable @v@ is killed. If this happens, all
@@ -480,7 +480,6 @@ diffHeapExps h1 h2 = do
     update (v, val, val')
         | val' == val = Nothing
         | otherwise   = Just $ v .:=. toExp val'
-
 
 newVarPtr :: MonadTc m => EvalM l m VarPtr
 newVarPtr = do
@@ -503,7 +502,8 @@ killVars :: (ModifiedVars e Var, MonadTc m)
          => e
          -> EvalM l m ()
 killVars e = do
-    vs       <- mapM (\v -> maybe v id <$> lookupSubst v) (toList (mvs e :: Set Var))
+    vs       <- mapM (\v -> fromMaybe v <$> lookupSubst v)
+                     (toList (mvs e :: Set Var))
     vbs      <- asks varBinds
     let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs]]
     modify $ \s -> s { heap = foldl' (\m ptr -> IntMap.insert ptr UnknownV m) (heap s) ptrs }
@@ -535,47 +535,47 @@ instance ModifiedVars x n => ModifiedVars (Maybe x) n where
     mvs = foldMap mvs
 
 instance ModifiedVars Exp Var where
-    mvs (ConstE {})           = mempty
-    mvs (VarE {})             = mempty
-    mvs (UnopE {})            = mempty
-    mvs (BinopE {})           = mempty
+    mvs ConstE{}              = mempty
+    mvs VarE{}                = mempty
+    mvs UnopE{}               = mempty
+    mvs BinopE{}              = mempty
     mvs (IfE _ e2 e3 _)       = mvs e2 <> mvs e3
     mvs (LetE decl body _)    = mvs body <\\> binders decl
     mvs (CallE _ _ es _)      = fvs es
-    mvs (DerefE {})           = mempty
+    mvs DerefE{}              = mempty
     mvs (AssignE e1 _ _)      = fvs e1
     mvs (WhileE e1 e2 _)      = mvs e1 <> mvs e2
     mvs (ForE _ _ _ _ _ e3 _) = mvs e3
-    mvs (ArrayE {})           = mempty
-    mvs (IdxE {})             = mempty
-    mvs (StructE {})          = mempty
-    mvs (ProjE {})            = mempty
-    mvs (PrintE {})           = mempty
-    mvs (ErrorE {})           = mempty
-    mvs (ReturnE {})          = mempty
+    mvs ArrayE{}              = mempty
+    mvs IdxE{}                = mempty
+    mvs StructE{}             = mempty
+    mvs ProjE{}               = mempty
+    mvs PrintE{}              = mempty
+    mvs ErrorE{}              = mempty
+    mvs ReturnE{}             = mempty
     mvs (BindE wv _ e1 e2 _)  = mvs e1 <> (mvs e2 <\\> binders wv)
     mvs (LutE e)              = mvs e
 
 instance ModifiedVars Exp v => ModifiedVars [Exp] v where
-    mvs es = foldMap mvs es
+    mvs = foldMap mvs
 
 instance ModifiedVars (Step l) Var where
-    mvs (VarC {})              = mempty
+    mvs VarC{}                 = mempty
     mvs (CallC _ _ _ es _)     = fvs es
     mvs (IfC _ _ e2 e3 _)      = mvs e2 <> mvs e3
-    mvs (LetC {})              = mempty
+    mvs LetC{}                 = mempty
     mvs (WhileC _ e c _)       = mvs e <> mvs c
     mvs (ForC _ _ _ _ _ _ c _) = mvs c
     mvs (LiftC _ e _)          = mvs e
-    mvs (ReturnC {})           = mempty
-    mvs (BindC {})             = mempty
-    mvs (TakeC {})             = mempty
-    mvs (TakesC {})            = mempty
-    mvs (EmitC {})             = mempty
-    mvs (EmitsC {})            = mempty
+    mvs ReturnC{}              = mempty
+    mvs BindC{}                = mempty
+    mvs TakeC{}                = mempty
+    mvs TakesC{}               = mempty
+    mvs EmitC{}                = mempty
+    mvs EmitsC{}               = mempty
     mvs (RepeatC _ _ c _)      = mvs c
     mvs (ParC _ _ e1 e2 _)     = mvs e1 <> mvs e2
-    mvs (LoopC {})             = mempty
+    mvs LoopC{}                = mempty
 
 instance ModifiedVars (Comp l) Var where
     mvs comp = go (unComp comp)

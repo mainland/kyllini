@@ -123,7 +123,7 @@ hconsDecl :: (IsLabel l, MonadTc m)
           -> (Decl l -> HCM m a)
           -> HCM m a
 hconsDecl (LetD ldecl l) k =
-    hconsLocalDecl True ldecl $ \ldecl' -> do
+    hconsLocalDecl True ldecl $ \ldecl' ->
     k $ LetD ldecl' l
 
 hconsDecl (LetFunD f ivs vbs tau_ret e l) k =
@@ -148,8 +148,8 @@ hconsDecl decl@(LetStructD s flds l) k =
 
 hconsDecl (LetCompD v tau comp l) k = do
     comp' <- hconsComp comp
-    extendVars [(bVar v, tau)] $ do
-    k $ LetCompD v tau comp' l
+    extendVars [(bVar v, tau)] $
+      k $ LetCompD v tau comp' l
 
 hconsDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
@@ -168,13 +168,13 @@ hconsLocalDecl :: MonadTc m
                -> HCM m a
 hconsLocalDecl bind (LetLD v tau e l) k = do
     e' <- hconsE bind e
-    extendVars [(bVar v, tau)] $ do
-    k $ LetLD v tau e' l
+    extendVars [(bVar v, tau)] $
+      k $ LetLD v tau e' l
 
 hconsLocalDecl bind (LetRefLD v tau e l) k = do
     e' <- traverse (hconsE bind) e
-    extendVars [(bVar v, refT tau)] $ do
-    k $ LetRefLD v tau e' l
+    extendVars [(bVar v, refT tau)] $
+      k $ LetRefLD v tau e' l
 
 hconsComp :: (IsLabel l, MonadTc m) => Comp l -> HCM m (Comp l)
 hconsComp (Comp steps) =
@@ -198,7 +198,7 @@ hconsSteps (step : k) =
     (:) <$> hconsStep step <*> hconsSteps k
   where
     hconsStep :: Step l -> HCM m (Step l)
-    hconsStep step@(VarC {}) =
+    hconsStep step@VarC{} =
         pure step
 
     hconsStep (CallC l v is args s) =
@@ -207,7 +207,7 @@ hconsSteps (step : k) =
     hconsStep (IfC l e c1 c2 s) =
         IfC l <$> hconsE False e <*> hconsComp c1 <*> hconsComp c2 <*> pure s
 
-    hconsStep (LetC {}) =
+    hconsStep LetC{} =
         panicdoc $ text "hconsStep: saw LetC"
 
     hconsStep (WhileC l e comp s) =
@@ -225,13 +225,13 @@ hconsSteps (step : k) =
     hconsStep (ReturnC l e s) =
         ReturnC l <$> hconsE False e <*> pure s
 
-    hconsStep (BindC {}) =
+    hconsStep BindC{} =
         panicdoc $ text "hconsStep: saw BindC"
 
-    hconsStep step@(TakeC {}) =
+    hconsStep step@TakeC{} =
         pure step
 
-    hconsStep step@(TakesC {}) =
+    hconsStep step@TakesC{} =
         pure step
 
     hconsStep (EmitC l e s) =
@@ -246,7 +246,7 @@ hconsSteps (step : k) =
     hconsStep (ParC ann tau c1 c2 s) =
         ParC ann tau <$> hconsComp c1 <*> hconsComp c2 <*> pure s
 
-    hconsStep step@(LoopC {}) =
+    hconsStep step@LoopC{} =
         pure step
 
 hconsArg :: (IsLabel l, MonadTc m) => Arg l -> HCM m (Arg l)
@@ -257,17 +257,16 @@ hconsE :: forall m . MonadTc m
        => Bool
        -> Exp
        -> HCM m Exp
-hconsE binder e = do
-    go binder e
+hconsE = go
   where
     go :: Bool -> Exp -> HCM m Exp
     go False (ConstE c@ArrayC{} _) =
         useConst c
 
-    go _ e@(ConstE {}) =
+    go _ e@ConstE{} =
         pure e
 
-    go _ e@(VarE {}) =
+    go _ e@VarE{} =
         pure e
 
     go _ (UnopE op e s) =
@@ -286,7 +285,7 @@ hconsE binder e = do
     go _ (CallE v is es s) =
         CallE v is <$> traverse (hconsE False) es <*> pure s
 
-    go _ e@(DerefE {}) =
+    go _ e@DerefE{} =
         pure e
 
     go _ (AssignE e1 e2 s) =
@@ -319,7 +318,7 @@ hconsE binder e = do
     go _ (PrintE nl es s) =
         PrintE nl <$> traverse (hconsE False) es <*> pure s
 
-    go _ e@(ErrorE {}) =
+    go _ e@ErrorE{} =
         pure e
 
     go _ (ReturnE ann e s) =
@@ -330,5 +329,5 @@ hconsE binder e = do
                      <*> extendWildVars [(wv, tau)] (hconsE False e2)
                      <*> pure s
 
-    go _ e@(LutE {}) =
+    go _ e@LutE{} =
         pure e

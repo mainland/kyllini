@@ -88,17 +88,17 @@ structName :: StructDef -> Z.Struct
 structName (StructDef s _ _) = s
 
 isUnitT :: Type -> Bool
-isUnitT (UnitT {}) = True
-isUnitT _          = False
+isUnitT UnitT{} = True
+isUnitT _       = False
 
 isRefT :: Type -> Bool
-isRefT (RefT {}) = True
-isRefT _         = False
+isRefT RefT{} = True
+isRefT _      = False
 
 -- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
-isPureT (ST {}) = False
-isPureT _       = True
+isPureT ST{} = False
+isPureT _    = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation,
 -- @False@ otherwise. A pureish computation may use references, but it may not
@@ -107,7 +107,7 @@ isPureishT :: Type -> Bool
 isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
     True
 
-isPureishT (ST {}) =
+isPureishT ST{} =
     False
 
 isPureishT _ =

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+-- Need this for haddock. See 7e88adcc.
 {-# LANGUAGE TemplateHaskell #-}
 
 {-|
@@ -38,9 +39,6 @@ module KZC.Quote.C (
   ) where
 
 import Control.Monad ((>=>))
-#if defined(DEBUG)
-import Control.Monad (liftM)
-#endif /* defined(DEBUG) */
 import qualified Data.ByteString.Char8 as B
 import Data.Data (Data)
 #if defined(DEBUG)
@@ -87,7 +85,7 @@ parse :: [C.Extensions]
       -> Q a
 parse exts typenames p s = do
 #if defined(DEBUG)
-    loc <- liftM (Just . locToPos )location
+    loc <- fmap (Just . locToPos) location
 #else /* !defined(DEBUG) */
     let loc = Nothing
 #endif /* !defined(DEBUG) */

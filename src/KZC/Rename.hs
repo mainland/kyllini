@@ -32,7 +32,7 @@ import KZC.Uniq
 import KZC.Util.Env
 
 renameProgram :: [CompLet] -> Rn [CompLet]
-renameProgram cls = rnCompLets cls
+renameProgram = rnCompLets
 
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
@@ -83,16 +83,16 @@ class Rename a where
     rn :: a -> Rn a
 
 instance (Rename a, Traversable f) => Rename (f a) where
-    rn x = mapM rn x
+    rn = mapM rn
 
 instance Rename Var where
-    rn v = lookupVar v
+    rn = lookupVar
 
 instance Rename VarBind where
     rn (VarBind v tau isRef) = VarBind <$> rn v <*> pure tau <*> pure isRef
 
 instance Rename Exp where
-    rn e@(ConstE {}) =
+    rn e@ConstE{} =
         pure e
 
     rn (VarE v l) =
@@ -285,8 +285,8 @@ rnStms (stm:stms) =
 
 rnCmd :: Cmd -> (Cmd -> Rn a) -> Rn a
 rnCmd (LetC cl l) k =
-    rnCompLet cl $ \cl' -> do
-    k (LetC cl' l)
+    rnCompLet cl $ \cl' ->
+      k (LetC cl' l)
 
 rnCmd (BindC v tau e l) k =
     extendVars (text "definition") [v] $ do

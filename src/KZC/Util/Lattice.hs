@@ -1,7 +1,5 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -76,8 +74,8 @@ instance Ord a => Lattice (Set a) where
     s1 `glb` s2 = s1 `Set.intersection` s2
 
 joinWith :: Ord k => (a -> a -> a) -> a -> Map k a -> Map k a -> Map k a
-joinWith f dflt m1 m2 =
-    Map.mergeWithKey (\_ a b -> Just (f a b)) (Map.map (f dflt)) (Map.map (f dflt)) m1 m2
+joinWith f dflt =
+    Map.mergeWithKey (\_ a b -> Just (f a b)) (Map.map (f dflt)) (Map.map (f dflt))
 
 instance (Ord k, BoundedLattice a) => Lattice (Map k a) where
     m1 `lub` m2 = joinWith lub bot m1 m2
@@ -106,7 +104,7 @@ instance Applicative Known where
     (<*>) = ap
 
 instance Monad Known where
-  return a = Known a
+  return = Known
 
   Unknown >>= _ = Unknown
   Known x >>= f = f x

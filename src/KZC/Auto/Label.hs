@@ -45,7 +45,7 @@ instance Pretty Label where
     ppr (ParL l1 l2)      = ppr (l1, l2)
 
 instance C.ToIdent Label where
-    toIdent l = (C.Id . zencode . flip displayS "" . renderCompact . ppr) l
+    toIdent = C.Id . zencode . flip displayS "" . renderCompact . ppr
 
 instance Gensym Label where
     gensym s = SeqL (intern s) <$> maybeNewUnique
@@ -57,7 +57,7 @@ instance IsLabel Label where
     pairLabel = ParL
 
 instance Fvs Label Label where
-    fvs l = singleton l
+    fvs = singleton
 
 instance Subst Label Label Label where
     substM x (theta, _) = fromMaybe x (Map.lookup x theta)

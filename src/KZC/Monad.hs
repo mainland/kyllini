@@ -106,7 +106,7 @@ instance Monad KZC where
     fail msg = throw (FailException (string msg))
 
 instance MonadException KZC where
-    throw e = throwContextException (KZC . throw) e
+    throw = throwContextException (KZC . throw)
 
     m `catch` h = KZC $ unKZC m `catchContextException` \e -> unKZC (h e)
 
@@ -120,18 +120,18 @@ instance MonadUnique KZC where
               u' `seq` (Uniq u', Uniq u)
 
 instance MonadErr KZC where
-    askErrCtx       = asks errctx
-    localErrCtx f m = local (\env -> env { errctx = f (errctx env) }) m
+    askErrCtx     = asks errctx
+    localErrCtx f = local $ \env -> env { errctx = f (errctx env) }
 
     displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
 
 instance MonadFlags KZC where
-    askFlags       = asks flags
-    localFlags f m = local (\env -> env { flags = f (flags env) }) m
+    askFlags     = asks flags
+    localFlags f = local (\env -> env { flags = f (flags env) })
 
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth
-    localTraceDepth f = local (\env -> env { tracedepth = f (tracedepth env) })
+    localTraceDepth f = local $ \env -> env { tracedepth = f (tracedepth env) }
 
 getPass :: KZC Int
 getPass = asks pass >>= readRef

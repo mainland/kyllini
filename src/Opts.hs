@@ -98,7 +98,7 @@ options =
                Just n  -> return n
                Nothing -> fail $ "bad argument to --fmax-lut option: " ++ s
         return fs { maxLUT     = n
-                  , maxLUTLog2 = ceiling (log (fromIntegral n) / log (2 :: Double))
+                  , maxLUTLog2 = ceiling (logBase (2::Double) (fromIntegral n))
                   }
 
     minLUTOpsOpt :: String -> Flags -> m Flags
@@ -110,13 +110,13 @@ options =
     simplOpt :: Flags -> m Flags
     simplOpt fs = return $
                   setDynFlag Simplify $
-                  setDynFlag MayInlineVal $
+                  setDynFlag MayInlineVal
                   fs
 
     inlineOpt :: Flags -> m Flags
     inlineOpt fs = return $
                    setDynFlag MayInlineFun $
-                   setDynFlag MayInlineComp $
+                   setDynFlag MayInlineComp
                    fs
 
     outOpt :: String -> Flags -> m Flags
@@ -129,7 +129,7 @@ options =
     defineOpt def fs = return fs { defines = defines fs ++ [splitOn '=' def] }
 
 splitOn :: Eq a => a -> [a] -> ([a], [a])
-splitOn x s = case span (not . (== x)) s of
+splitOn x s = case break (== x) s of
               (xs, []) -> (xs, [])
               (xs, ys) -> (xs, drop 1 ys)
 
@@ -262,7 +262,7 @@ fWarnFlagOpts =
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])
-compilerOpts argv = do
+compilerOpts argv =
     case getOpt Permute options argv of
       (fs,n,[])  -> do fs' <- flagImplications <$> foldl (>=>) return fs defaultFlags
                        setMaxErrContext (maxErrCtx fs')

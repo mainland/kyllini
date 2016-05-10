@@ -12,8 +12,8 @@ module KZC.Cg.Code (
 
 import Data.Foldable (toList)
 import Data.Monoid
-import Data.Sequence (Seq)
-import Data.Sequence (ViewL((:<)),
+import Data.Sequence (Seq,
+                      ViewL((:<)),
                       ViewR((:>)),
                       (<|),
                       viewl,

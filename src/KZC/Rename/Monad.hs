@@ -66,7 +66,7 @@ runRn :: Rn a -> KZC a
 runRn m = runReaderT (unRn m) defaultRnEnv
 
 inCompScope :: Rn a -> Rn a
-inCompScope m = local (\env -> env { compScope = True }) m
+inCompScope = local $ \env -> env { compScope = True }
 
 inPureScope :: Rn a -> Rn a
-inPureScope m = local (\env -> env { compScope = False }) m
+inPureScope = local $ \env -> env { compScope = False }

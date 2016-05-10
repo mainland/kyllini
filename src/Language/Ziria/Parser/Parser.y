@@ -15,10 +15,6 @@ module Language.Ziria.Parser.Parser (
   ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (forM_,
-                      when,
-                      unless,
-                      liftM)
 import Control.Monad.Exception
 import Data.List (foldl1',
                   intersperse)

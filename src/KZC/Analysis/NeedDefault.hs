@@ -185,7 +185,7 @@ useDecls [] m = do
     return ([], x)
 
 useDecls (d:ds) m = do
-    (d', (ds', x)) <- useDecl d $ useDecls ds $ m
+    (d', (ds', x)) <- useDecl d $ useDecls ds m
     return (d':ds', x)
 
 useDecl :: MonadTc m
@@ -198,10 +198,10 @@ useDecl (LetD decl s) m = do
 
 useDecl (LetFunD f iotas vbs tau_ret e l) m = do
     (x, e') <-
-        extendVars [(bVar f, tau)] $ do
+        extendVars [(bVar f, tau)] $
         extendVals [(bVar f, top)] $ do
         e' <- extendLetFun f iotas vbs tau_ret $
-              extendVals (map fst vbs `zip` repeat top) $ do
+              extendVals (map fst vbs `zip` repeat top) $
               fst <$> useExp e
         x  <- m
         return (x, e')
@@ -212,8 +212,7 @@ useDecl (LetFunD f iotas vbs tau_ret e l) m = do
 
 useDecl (LetExtFunD f iotas vbs tau_ret l) m = do
     x <- extendExtFuns [(bVar f, tau)] $
-         extendVals [(bVar f, top)] $
-         m
+         extendVals [(bVar f, top)] m
     return (LetExtFunD f iotas vbs tau_ret l, x)
   where
     tau :: Type
@@ -228,8 +227,7 @@ useDecl (LetCompD v tau comp l) m = do
              extendVals [(bVar v, top)] $
              useComp comp
     x     <- extendVars [(bVar v, tau)] $
-             extendVals [(bVar v, top)] $
-             m
+             extendVals [(bVar v, top)] m
     return (LetCompD v tau comp' l, x)
 
 useDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
@@ -260,7 +258,7 @@ useLocalDecl (LetLD v tau e s) m = do
 useLocalDecl (LetRefLD v tau e s) m = do
     e'      <- traverse (fmap fst . useExp) e
     (x, v') <- extendVars [(bVar v, refT tau)] $
-               extendVals [(bVar v, maybe Unknown (const top) e)] $ do
+               extendVals [(bVar v, maybe Unknown (const top) e)] $
                updateNeedDefault v m
     return (LetRefLD v' tau e' s, x)
 
@@ -308,10 +306,10 @@ useStep (IfC l e1 c2 c3 s) = do
     (c2', c3') <- useIf (useComp c2) (useComp c3)
     return $ IfC l e1' c2' c3' s
 
-useStep (LetC {}) =
+useStep LetC{} =
     faildoc $ text "Cannot use let step."
 
-useStep (WhileC l e c s) = do
+useStep (WhileC l e c s) =
     WhileC l <$> (fst <$> useExp e) <*> useComp c <*> pure s
 
 useStep (ForC l ann v tau e1 e2 c s) = do
@@ -328,7 +326,7 @@ useStep (ForC l ann v tau e1 e2 c s) = do
                              useComp c)
                         <*> pure s
 
-    go e1' _ e2' _ = do
+    go e1' _ e2' _ =
        ForC l ann v tau <$> pure e1'
                         <*> pure e2'
                         <*> (extendVars [(v, tau)] $
@@ -342,7 +340,7 @@ useStep (LiftC l e s) =
 useStep (ReturnC l e s) =
     ReturnC l <$> (fst <$> useExp e) <*> pure s
 
-useStep (BindC {}) =
+useStep BindC{} =
     faildoc $ text "Cannot use bind step."
 
 useStep (TakeC l tau s) =
@@ -360,10 +358,10 @@ useStep (EmitsC l e s) =
 useStep (RepeatC l ann c s) =
     RepeatC l ann <$> useComp c <*> pure s
 
-useStep (ParC ann tau c1 c2 s) = do
+useStep (ParC ann tau c1 c2 s) =
     ParC ann tau <$> useComp c1 <*> useComp c2 <*> pure s
 
-useStep (LoopC {}) =
+useStep LoopC{} =
     faildoc $ text "useStep: saw LoopC"
 
 useExp :: forall m . MonadTc m
@@ -375,7 +373,7 @@ useExp e@(ConstE (FixC I _ _ 0 r) s) =
     iota :: Iota
     iota = ConstI (fromIntegral (numerator r)) s
 
-useExp e@(ConstE {}) =
+useExp e@ConstE{} =
     return (e, top)
 
 useExp e@(VarE v _) = do
@@ -429,8 +427,7 @@ useExp (DerefE e s) =
 
 useExp (AssignE e1 e2 s) = do
     (e2', val) <- useExp e2
-    x <- go e1 e2' val
-    return x
+    go e1 e2' val
   where
     go :: Exp -> Exp -> Known Val -> ND m (Exp, Known Val)
     go e1@(VarE v _) e2' val = do
@@ -481,7 +478,7 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
     go e1' val1 e2' val2
   where
     go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Exp, Known Val)
-    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi = do
+    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi =
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
@@ -489,7 +486,7 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
                                   fst <$> useExp e3)
                              <*> pure s
 
-    go e1' _ e2' _ = do
+    go e1' _ e2' _ =
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
@@ -518,10 +515,10 @@ useExp (ProjE e f s) =
     topA $ ProjE <$> (fst <$> useExp e) <*> pure f <*> pure s
 
 useExp (PrintE nl es s) =
-    (,) <$> (PrintE nl <$> (mapM (fmap fst . useExp) es) <*> pure s)
+    (,) <$> (PrintE nl <$> mapM (fmap fst . useExp) es <*> pure s)
         <*> pure top
 
-useExp e@(ErrorE {}) =
+useExp e@ErrorE{} =
     return (e, top)
 
 useExp (ReturnE ann e s) =
@@ -539,7 +536,7 @@ useExp (BindE (TameV v) tau e1 e2 s) =
                                     fst <$> useExp e2)
                                <*> pure s
 
-useExp (LutE e) = do
+useExp (LutE e) =
     topA $ LutE <$> (fst <$> useExp e)
 
 useIf :: MonadTc m => ND m a -> ND m b -> ND m (a, b)

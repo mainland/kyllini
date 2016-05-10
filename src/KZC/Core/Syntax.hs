@@ -356,21 +356,21 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Num Const where
-    x + y = case liftNum2 Add (+) x y of
-              Nothing -> error "Num Const: + did not result in a constant"
-              Just z  -> z
+    x + y = fromMaybe err $ liftNum2 Add (+) x y
+      where
+        err = error "Num Const: + did not result in a constant"
 
-    x - y = case liftNum2 Sub (-) x y of
-              Nothing -> error "Num Const: - did not result in a constant"
-              Just z  -> z
+    x - y = fromMaybe err $ liftNum2 Sub (-) x y
+      where
+        err = error "Num Const: - did not result in a constant"
 
-    x * y = case liftNum2 Mul (*) x y of
-              Nothing -> error "Num Const: * did not result in a constant"
-              Just z  -> z
+    x * y =  fromMaybe err $ liftNum2 Mul (*) x y
+      where
+        err = error "Num Const: * did not result in a constant"
 
-    negate x = case liftNum Neg negate x of
-                 Nothing -> error "Num Const: negate did not result in a constant"
-                 Just z  -> z
+    negate x = fromMaybe err $ liftNum Neg negate x
+      where
+        err = error "Num Const: negate did not result in a constant"
 
     fromInteger i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
@@ -447,21 +447,18 @@ instance LiftedNum Const (Maybe Const) where
     liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a+c) (b+d)
       where
-        a, b, c, d :: Const
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
     liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a-c) (b-d)
       where
-        a, b, c, d :: Const
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
     liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a*c - b*d) (b*c + a*d)
       where
-        a, b, c, d :: Const
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
@@ -483,12 +480,11 @@ instance LiftedIntegral Const (Maybe Const) where
         im <- (b*c - a*d)/(c*c + d*d)
         return $ complexC sn re im
       where
-        a, b, c, d :: Const
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
         (/) :: Const -> Const -> Maybe Const
-        x / y = liftIntegral2 Div (quot) x y
+        x / y = liftIntegral2 Div quot x y
 
     liftIntegral2 _ _ _ _ =
         Nothing
@@ -523,10 +519,12 @@ complexC sname a b =
 
 uncomplexC :: Const -> (Const, Const)
 uncomplexC c@(StructC sname x) | isComplexStruct sname =
-    maybe (errordoc $ text "Bad complex value:" <+> ppr c) id $ do
+    fromMaybe err $ do
       re <- lookup "re" x
       im <- lookup "im" x
       return (re, im)
+  where
+    err = errordoc $ text "Bad complex value:" <+> ppr c
 
 uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
@@ -660,13 +658,13 @@ instance Pretty Decl where
     pprPrec p (LetFunD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
         text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
+        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
     pprPrec p (LetExtFunD f ibs vbs tau _) =
         parensIf (p > appPrec) $
         text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
+        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
@@ -683,11 +681,11 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
-    pprPrec p (UnopE op@(Cast {}) e _) =
+    pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
         ppr op <> parens (ppr e)
 
-    pprPrec p (UnopE op@(Bitcast {}) e _) =
+    pprPrec p (UnopE op@Bitcast{} e _) =
         parensIf (p > precOf op) $
         ppr op <> parens (ppr e)
 
@@ -761,7 +759,7 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
-    pprPrec _ e@(BindE {}) =
+    pprPrec _ e@BindE{} =
         ppr (expToStms e)
 
     pprPrec _ (TakeE tau _) =
@@ -840,8 +838,7 @@ instance Pretty VectAnn where
     ppr AutoVect              = empty
 
 pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
-pprFunParams ivs vbs =
-    go ivs vbs
+pprFunParams = go
   where
     go :: [IVar] -> [(Var, Type)] -> Doc
     go [] [] =
@@ -1070,28 +1067,28 @@ instance HasFixity Unop where
  ------------------------------------------------------------------------------}
 
 instance Fvs Type IVar where
-    fvs (UnitT {})                    = mempty
-    fvs (BoolT {})                    = mempty
-    fvs (FixT {})                     = mempty
-    fvs (FloatT {})                   = mempty
-    fvs (StringT {})                  = mempty
+    fvs UnitT{}                       = mempty
+    fvs BoolT{}                       = mempty
+    fvs FixT{}                        = mempty
+    fvs FloatT{}                      = mempty
+    fvs StringT{}                     = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT iota tau _)             = fvs iota <> fvs tau
     fvs (ST _ omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
     fvs (RefT tau _)                  = fvs tau
     fvs (FunT ivs taus tau _)         = (fvs taus <> fvs tau) <\\> fromList ivs
-    fvs (TyVarT {})                   = mempty
+    fvs TyVarT{}                      = mempty
 
 instance Fvs Omega IVar where
     fvs (C tau) = fvs tau
     fvs T       = mempty
 
 instance Fvs Iota IVar where
-    fvs (ConstI {}) = mempty
+    fvs ConstI{}    = mempty
     fvs (VarI iv _) = singleton iv
 
 instance Fvs Type n => Fvs [Type] n where
-    fvs taus = foldMap fvs taus
+    fvs = foldMap fvs
 
 {------------------------------------------------------------------------------
  -
@@ -1100,11 +1097,11 @@ instance Fvs Type n => Fvs [Type] n where
  ------------------------------------------------------------------------------}
 
 instance Fvs Type TyVar where
-    fvs (UnitT {})                         = mempty
-    fvs (BoolT {})                         = mempty
-    fvs (FixT {})                          = mempty
-    fvs (FloatT {})                        = mempty
-    fvs (StringT {})                       = mempty
+    fvs UnitT{}                            = mempty
+    fvs BoolT{}                            = mempty
+    fvs FixT{}                             = mempty
+    fvs FloatT{}                           = mempty
+    fvs StringT{}                          = mempty
     fvs (StructT _ _)                      = mempty
     fvs (ArrT _ tau _)                     = fvs tau
     fvs (ST alphas omega tau1 tau2 tau3 _) = fvs omega <>
@@ -1132,18 +1129,18 @@ instance Fvs Decl Var where
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetRefD v _ e _)       = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
-    fvs (LetExtFunD {})         = mempty
-    fvs (LetStructD {})         = mempty
+    fvs LetExtFunD{}            = mempty
+    fvs LetStructD{}            = mempty
 
 instance Binders Decl Var where
     binders (LetD v _ _ _)         = singleton v
     binders (LetRefD v _ _ _)      = singleton v
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
-    binders (LetStructD {})        = mempty
+    binders LetStructD{}           = mempty
 
 instance Fvs Exp Var where
-    fvs (ConstE {})             = mempty
+    fvs ConstE{}                = mempty
     fvs (VarE v _)              = singleton v
     fvs (UnopE _ e _)           = fvs e
     fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
@@ -1159,18 +1156,18 @@ instance Fvs Exp Var where
     fvs (StructE _ flds _)      = fvs (map snd flds)
     fvs (ProjE e _ _)           = fvs e
     fvs (PrintE _ es _)         = fvs es
-    fvs (ErrorE {})             = mempty
+    fvs ErrorE{}                = mempty
     fvs (ReturnE _ e _)         = fvs e
     fvs (BindE wv _ e1 e2 _)    = fvs e1 <> (fvs e2 <\\> binders wv)
-    fvs (TakeE {})              = mempty
-    fvs (TakesE {})             = mempty
+    fvs TakeE{}                 = mempty
+    fvs TakesE{}                = mempty
     fvs (EmitE e _)             = fvs e
     fvs (EmitsE e _)            = fvs e
     fvs (RepeatE _ e _)         = fvs e
     fvs (ParE _ _ e1 e2 _)      = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
-    fvs es = foldMap fvs es
+    fvs = foldMap fvs
 
 {------------------------------------------------------------------------------
  -
@@ -1187,10 +1184,10 @@ instance HasVars Decl Var where
     allVars (LetRefD v _ e _)        = singleton v <> allVars e
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
-    allVars (LetStructD {})          = mempty
+    allVars LetStructD{}             = mempty
 
 instance HasVars Exp Var where
-    allVars (ConstE {})             = mempty
+    allVars ConstE{}                = mempty
     allVars (VarE v _)              = singleton v
     allVars (UnopE _ e _)           = allVars e
     allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
@@ -1206,11 +1203,11 @@ instance HasVars Exp Var where
     allVars (StructE _ flds _)      = allVars (map snd flds)
     allVars (ProjE e _ _)           = allVars e
     allVars (PrintE _ es _)         = allVars es
-    allVars (ErrorE {})             = mempty
+    allVars ErrorE{}                = mempty
     allVars (ReturnE _ e _)         = allVars e
     allVars (BindE wv _ e1 e2 _)    = allVars wv <> allVars e1 <> allVars e2
-    allVars (TakeE {})              = mempty
-    allVars (TakesE {})             = mempty
+    allVars TakeE{}                 = mempty
+    allVars TakesE{}                = mempty
     allVars (EmitE e _)             = allVars e
     allVars (EmitsE e _)            = allVars e
     allVars (RepeatE _ e _)         = allVars e
@@ -1237,22 +1234,22 @@ instance Subst a b Type => Subst a b (Var, Type) where
  ------------------------------------------------------------------------------}
 
 instance Subst Iota IVar Type where
-    substM tau@(UnitT {}) =
+    substM tau@UnitT{}    =
         pure tau
 
-    substM tau@(BoolT {}) =
+    substM tau@BoolT{}    =
         pure tau
 
-    substM tau@(FixT {}) =
+    substM tau@FixT{}    =
         pure tau
 
-    substM tau@(FloatT {}) =
+    substM tau@FloatT{}    =
         pure tau
 
-    substM tau@(StringT {}) =
+    substM tau@StringT{}    =
         pure tau
 
-    substM tau@(StructT {}) =
+    substM tau@StructT{}    =
         pure tau
 
     substM (ArrT iota tau l) =
@@ -1268,7 +1265,7 @@ instance Subst Iota IVar Type where
         freshen iotas $ \iotas' ->
         FunT iotas' <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@(TyVarT {}) =
+    substM tau@TyVarT{}    =
         pure tau
 
 instance Subst Iota IVar Omega where
@@ -1276,7 +1273,7 @@ instance Subst Iota IVar Omega where
     substM T       = pure T
 
 instance Subst Iota IVar Iota where
-    substM iota@(ConstI {}) =
+    substM iota@ConstI{}    =
         pure iota
 
     substM iota@(VarI iv _) = do
@@ -1284,10 +1281,10 @@ instance Subst Iota IVar Iota where
         return $ fromMaybe iota (Map.lookup iv theta)
 
 instance Subst Iota IVar Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{}    =
         return e
 
-    substM e@(VarE {}) =
+    substM e@VarE{}    =
         return e
 
     substM (UnopE op e l) =
@@ -1367,22 +1364,22 @@ instance Subst Iota IVar Exp where
  ------------------------------------------------------------------------------}
 
 instance Subst Type TyVar Type where
-    substM tau@(UnitT {}) =
+    substM tau@UnitT{}    =
         pure tau
 
-    substM tau@(BoolT {}) =
+    substM tau@BoolT{}    =
         pure tau
 
-    substM tau@(FixT {}) =
+    substM tau@FixT{}    =
         pure tau
 
-    substM tau@(FloatT {}) =
+    substM tau@FloatT{}    =
         pure tau
 
-    substM tau@(StringT {}) =
+    substM tau@StringT{}    =
         pure tau
 
-    substM tau@(StructT {}) =
+    substM tau@StructT{}    =
         pure tau
 
     substM (ArrT iota tau l) =
@@ -1419,14 +1416,14 @@ instance Subst Type TyVar Decl where
     substM (LetExtFunD v ivs vbs tau l) =
         LetExtFunD v ivs <$> substM vbs <*> substM tau <*> pure l
 
-    substM decl@(LetStructD {}) =
+    substM decl@LetStructD{} =
         pure decl
 
 instance Subst Type TyVar Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{} =
         return e
 
-    substM e@(VarE {}) =
+    substM e@VarE{} =
         return e
 
     substM (UnopE op e l) =
@@ -1505,7 +1502,7 @@ instance Subst Type TyVar Exp where
  ------------------------------------------------------------------------------}
 
 instance Subst Exp Var Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{}    =
         return e
 
     substM e@(VarE v _) = do
@@ -1547,8 +1544,8 @@ instance Subst Exp Var Exp where
     substM (ForE ann v tau e1 e2 e3 l) = do
         e1' <- substM e1
         e2' <- substM e2
-        freshen v $ \v' -> do
-        ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+        freshen v $ \v' ->
+          ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
@@ -1565,7 +1562,7 @@ instance Subst Exp Var Exp where
     substM (PrintE nl es l) =
         PrintE nl <$> substM es <*> pure l
 
-    substM e@(ErrorE {}) =
+    substM e@ErrorE{} =
         pure e
 
     substM (ReturnE ann e l) =
@@ -1573,13 +1570,13 @@ instance Subst Exp Var Exp where
 
     substM (BindE wv tau e1 e2 l) = do
         e1' <- substM e1
-        freshen wv $ \wv' -> do
-        BindE wv' tau e1' <$> substM e2 <*> pure l
+        freshen wv $ \wv' ->
+          BindE wv' tau e1' <$> substM e2 <*> pure l
 
-    substM e@(TakeE {}) =
+    substM e@TakeE{} =
         pure e
 
-    substM e@(TakesE {}) =
+    substM e@TakesE{} =
         pure e
 
     substM (EmitE e l) =
@@ -1629,7 +1626,7 @@ instance Freshen Decl Iota IVar where
         decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
         k decl'
 
-    freshen decl@(LetStructD {}) k =
+    freshen decl@LetStructD{} k =
         k decl
 
 {------------------------------------------------------------------------------
@@ -1657,13 +1654,13 @@ instance Freshen TyVar Type TyVar where
 instance Freshen Decl Exp Var where
     freshen (LetD v tau e l) k = do
         e' <- substM e
-        freshen v $ \v' -> do
-        k (LetD v' tau e' l)
+        freshen v $ \v' ->
+          k (LetD v' tau e' l)
 
     freshen (LetRefD v tau e l) k = do
         e' <- substM e
-        freshen v $ \v' -> do
-        k (LetRefD v' tau e' l)
+        freshen v $ \v' ->
+          k (LetRefD v' tau e' l)
 
     freshen (LetFunD v ibs vbs tau e l) k =
         freshen v   $ \v'   ->
@@ -1677,7 +1674,7 @@ instance Freshen Decl Exp Var where
         decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
         k decl'
 
-    freshen decl@(LetStructD {}) k =
+    freshen decl@LetStructD{} k =
         k decl
 
 instance Freshen Var Exp Var where

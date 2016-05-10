@@ -175,18 +175,16 @@ instance (Monoid w, MonadErr m) => MonadErr (WriterT w m) where
     warn  = lift . warn
 
 withErrCtx :: MonadErr m => ErrorContext -> m a -> m a
-withErrCtx ctx m = localErrCtx (ctx :) m
+withErrCtx ctx = localErrCtx (ctx :)
 
 withLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
-withLocContext a doc m =
-    withErrCtx (ErrorContext False loc doc) m
+withLocContext a doc = withErrCtx (ErrorContext False loc doc)
   where
     loc :: Loc
     loc = locOf a
 
 alwaysWithLocContext :: (Located a, MonadErr m) => a -> Doc -> m b -> m b
-alwaysWithLocContext a doc m =
-    withErrCtx (ErrorContext True loc doc) m
+alwaysWithLocContext a doc = withErrCtx (ErrorContext True loc doc)
   where
     loc :: Loc
     loc = locOf a
@@ -216,8 +214,8 @@ data ContextException = ContextException [ErrorContext] SomeException
   deriving (Typeable)
 
 instance Pretty ContextException where
-    ppr (ContextException ctx e) = do
-        case [loc | ErrorContext _ loc@(Loc {}) _ <- ctx'] of
+    ppr (ContextException ctx e) =
+        case [loc | ErrorContext _ loc@Loc{} _ <- ctx'] of
           loc : _  -> nest 4 $
                       ppr loc <> text ":" </>
                       pprEx <> pprDocs (map ctxDoc ctx')

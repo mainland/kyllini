@@ -900,7 +900,7 @@ compileExp (ReturnE _ e _) =
 compileExp (BindE WildV _ e1 e2 _) = do
     mval1 <- compileExp e1
     mval2 <- compileExp e2
-    return $ do void $ mval1
+    return $ do void mval1
                 mval2
 
 compileExp (BindE (TameV v) tau e1 e2 _) = do

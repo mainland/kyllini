@@ -17,6 +17,7 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
+import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -31,6 +32,7 @@ import System.FilePath (replaceExtension,
                         takeExtension)
 import System.IO (IOMode(..),
                   hClose,
+                  hPrint,
                   hPutStr,
                   hPutStrLn,
                   openFile,
@@ -79,7 +81,7 @@ main = do
       else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
-    printFailure e = (hPutStrLn stderr . show) e >> exitFailure
+    printFailure e = hPrint stderr e >> exitFailure
 
 runPipeline :: FilePath -> KZC ()
 runPipeline filepath =
@@ -280,7 +282,7 @@ runPipeline filepath =
                 -> KZC ()
     writeOutput x = do
         let defaultOutpath = replaceExtension filepath ".c"
-        outpath     <- asksFlags (maybe defaultOutpath id . output)
+        outpath     <- asksFlags (fromMaybe defaultOutpath . output)
         linePragmas <- asksFlags (testDynFlag LinePragmas)
         let pprint | linePragmas = prettyPragmaLazyText 80 . ppr
                    | otherwise   = prettyLazyText 80 . ppr

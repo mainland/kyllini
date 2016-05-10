@@ -112,9 +112,9 @@ import KZC.Util.Env
 type Cg l a = SEFKT (ReaderT (CgEnv l) (StateT (CgState l) Tc)) a
 
 data CgEnv l = CgEnv
-    { varCExps    :: Map Var (CExp l)
-    , ivarCExps   :: Map IVar (CExp l)
-    , tyvarTypes  :: Map TyVar Type
+    { varCExps   :: Map Var (CExp l)
+    , ivarCExps  :: Map IVar (CExp l)
+    , tyvarTypes :: Map TyVar Type
     }
 
 instance Show (CgEnv l) where
@@ -183,8 +183,7 @@ evalCg m = do
     return $ (toList . codeDefs . code) s
 
 extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
-extendVarCExps ves m =
-    extendEnv varCExps (\env x -> env { varCExps = x }) ves m
+extendVarCExps = extendEnv varCExps (\env x -> env { varCExps = x })
 
 lookupVarCExp :: Var -> Cg l (CExp l)
 lookupVarCExp v = do
@@ -196,8 +195,7 @@ lookupVarCExp v = do
             text "Compiled variable" <+> ppr v <+> text "not in scope"
 
 extendIVarCExps :: [(IVar, CExp l)] -> Cg l a -> Cg l a
-extendIVarCExps ves m =
-    extendEnv ivarCExps (\env x -> env { ivarCExps = x }) ves m
+extendIVarCExps = extendEnv ivarCExps (\env x -> env { ivarCExps = x })
 
 lookupIVarCExp :: IVar -> Cg l (CExp l)
 lookupIVarCExp v =
@@ -208,8 +206,7 @@ lookupIVarCExp v =
             text "not in scope"
 
 extendTyVarTypes :: [(TyVar, Type)] -> Cg l a -> Cg l a
-extendTyVarTypes tvtaus m =
-    extendEnv tyvarTypes (\env x -> env { tyvarTypes = x }) tvtaus m
+extendTyVarTypes = extendEnv tyvarTypes (\env x -> env { tyvarTypes = x })
 
 lookupTyVarType :: TyVar -> Cg l Type
 lookupTyVarType alpha =
@@ -277,7 +274,7 @@ collectDefinitions m = do
     tell c { codeDefs = mempty }
     return (toList (codeDefs c), x)
 
-collectDefinitions_ :: Cg l () -> Cg l ([C.Definition])
+collectDefinitions_ :: Cg l () -> Cg l [C.Definition]
 collectDefinitions_ m = fst <$> collectDefinitions m
 
 collectThreadDecls :: Cg l a -> Cg l ([C.InitGroup], a)
@@ -286,7 +283,7 @@ collectThreadDecls m = do
     tell c { codeThreadDecls = mempty }
     return (toList (codeThreadDecls c), x)
 
-collectThreadDecls_ :: Cg l () -> Cg l ([C.InitGroup])
+collectThreadDecls_ :: Cg l () -> Cg l [C.InitGroup]
 collectThreadDecls_ m = fst <$> collectThreadDecls m
 
 collectDecls :: Cg l a -> Cg l ([C.InitGroup], a)
@@ -295,7 +292,7 @@ collectDecls m = do
     tell c { codeDecls = mempty }
     return (toList (codeDecls c), x)
 
-collectDecls_ :: Cg l () -> Cg l ([C.InitGroup])
+collectDecls_ :: Cg l () -> Cg l [C.InitGroup]
 collectDecls_ m = fst <$> collectDecls m
 
 collectStms :: Cg l a -> Cg l ([C.Stm], a)
@@ -304,7 +301,7 @@ collectStms m = do
     tell c { codeStms = mempty }
     return (toList (codeStms c), x)
 
-collectStms_ :: Cg l () -> Cg l ([C.Stm])
+collectStms_ :: Cg l () -> Cg l [C.Stm]
 collectStms_ m = fst <$> collectStms m
 
 collectThreadBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
@@ -435,8 +432,8 @@ appendBlock citems
     | otherwise             = appendStm [cstm|{ $items:citems }|]
   where
     isBlockStm :: C.BlockItem -> Bool
-    isBlockStm (C.BlockStm {}) = True
-    isBlockStm _               = False
+    isBlockStm C.BlockStm{} = True
+    isBlockStm _            = False
 
 -- | Collect the C identifiers used in a computation.
 collectUsed :: Cg l a -> Cg l (Set C.Id, a)
@@ -522,8 +519,7 @@ useCId cid =
 -- | Mark a 'CExp' as having been used. This allows us to track which C
 -- declarations are used after they have been tainted by an intervening label.
 useCExp :: forall l . CExp l -> Cg l ()
-useCExp ce =
-    use ce
+useCExp = use
   where
     use ::CExp l -> Cg l ()
     use (CExp ce) = go ce

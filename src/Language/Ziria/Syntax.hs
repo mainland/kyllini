@@ -287,7 +287,7 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Fvs Exp Var where
-    fvs (ConstE {})             = mempty
+    fvs ConstE{}                = mempty
     fvs (VarE v _)              = singleton v
     fvs (UnopE _ e _)           = fvs e
     fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
@@ -305,16 +305,16 @@ instance Fvs Exp Var where
     fvs (StructE _ flds _)      = fvs (map snd flds)
     fvs (ProjE e _ _)           = fvs e
     fvs (PrintE _ es _)         = fvs es
-    fvs (ErrorE {})             = mempty
+    fvs ErrorE{}                = mempty
     fvs (ReturnE _ e _)         = fvs e
-    fvs (TakeE {})              = mempty
-    fvs (TakesE {})             = mempty
+    fvs TakeE{}                 = mempty
+    fvs TakesE{}                = mempty
     fvs (EmitE e _)             = fvs e
     fvs (EmitsE e _)            = fvs e
     fvs (RepeatE _ e _)         = fvs e
     fvs (ParE _ e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (ReadE {})              = mempty
-    fvs (WriteE {})             = mempty
+    fvs ReadE{}                 = mempty
+    fvs WriteE{}                = mempty
     fvs (StandaloneE e _)       = fvs e
     fvs (MapE _ v _ _)          = singleton v
     fvs (FilterE v _ _)         = singleton v
@@ -323,7 +323,7 @@ instance Fvs Exp Var where
     fvs (CmdE cmds _)           = fvs cmds
 
 instance Fvs Exp v => Fvs [Exp] v where
-    fvs es = foldMap fvs es
+    fvs = foldMap fvs
 
 instance Fvs [Stm] Var where
     fvs []                       = mempty
@@ -341,8 +341,8 @@ instance Fvs CompLet Var where
     fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
     fvs cl@(LetRefCL _ _ e _)         = fvs e <\\> binders cl
     fvs cl@(LetFunCL _ _ _ e _)       = fvs e <\\> binders cl
-    fvs (LetFunExternalCL {})         = mempty
-    fvs (LetStructCL {})              = mempty
+    fvs LetFunExternalCL{}            = mempty
+    fvs LetStructCL{}                 = mempty
     fvs cl@(LetCompCL _ _ _ e _)      = fvs e <\\> binders cl
     fvs cl@(LetFunCompCL _ _ _ _ e _) = fvs e <\\> binders cl
 
@@ -351,7 +351,7 @@ instance Binders CompLet Var where
     binders (LetRefCL v _ _ _)            = singleton v
     binders (LetFunCL v _ ps _ _)         = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetFunExternalCL v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetStructCL {})              = mempty
+    binders LetStructCL{}                 = mempty
     binders (LetCompCL v _ _ _ _)         = singleton v
     binders (LetFunCompCL v _ _ ps _ _)   = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
@@ -446,7 +446,7 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
-    pprPrec p (UnopE op@(Cast {}) e _) =
+    pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
         ppr op <+> pprPrec (precOf op) e
 

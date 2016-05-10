@@ -138,8 +138,8 @@ isBaseT FloatT{} = True
 isBaseT _        = False
 
 isUnitT :: Type -> Bool
-isUnitT (UnitT {}) = True
-isUnitT _          = False
+isUnitT UnitT{} = True
+isUnitT _       = False
 
 isBitT :: Type -> Bool
 isBitT (FixT I U (W 1) (BP 0) _) = True
@@ -154,30 +154,30 @@ isComplexT (StructT s _) = isComplexStruct s
 isComplexT _             = False
 
 isFunT :: Type -> Bool
-isFunT (FunT {}) = True
-isFunT _         = False
+isFunT FunT{} = True
+isFunT _      = False
 
 isArrT :: Type -> Bool
-isArrT (ArrT {}) = True
-isArrT _         = False
+isArrT ArrT{} = True
+isArrT _      = False
 
 isRefT :: Type -> Bool
-isRefT (RefT {}) = True
-isRefT _         = False
+isRefT RefT{} = True
+isRefT _      = False
 
 isSTUnitT :: Type -> Bool
-isSTUnitT (ST [] (C (UnitT {})) _ _ _ _) = True
-isSTUnitT _                              = False
+isSTUnitT (ST [] (C UnitT{}) _ _ _ _) = True
+isSTUnitT _                           = False
 
 -- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
 isCompT :: Type -> Bool
-isCompT (ST {}) = True
-isCompT _       = False
+isCompT ST{} = True
+isCompT _    = False
 
 -- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
-isPureT (ST {}) = False
-isPureT _       = True
+isPureT ST{} = False
+isPureT _    = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
 -- otherwise. A pureish computation may use references, but it may not take or
@@ -186,7 +186,7 @@ isPureishT :: Type -> Bool
 isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
     True
 
-isPureishT (ST {}) =
+isPureishT ST{} =
     False
 
 isPureishT _ =
@@ -212,10 +212,10 @@ uintC :: Integral i => i -> Const
 uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
 arrayC :: [Const] -> Const
-arrayC cs = ArrayC cs
+arrayC = ArrayC
 
 structC :: Struct -> [(Field, Const)] -> Const
-structC s fs = StructC s fs
+structC = StructC
 
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)

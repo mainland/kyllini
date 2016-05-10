@@ -69,10 +69,10 @@ module KZC.Auto.Lint (
 import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (unless,
+                      void,
                       when,
                       zipWithM,
-                      zipWithM_,
-                      void)
+                      zipWithM_)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Ratio (numerator)
@@ -129,8 +129,7 @@ import KZC.Summary
 import KZC.Vars
 
 extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
-extendWildVars wvs m =
-    extendVars [(bVar v, tau) | (TameV v, tau) <- wvs] m
+extendWildVars wvs = extendVars [(bVar v, tau) | (TameV v, tau) <- wvs]
 
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
@@ -144,16 +143,7 @@ checkProgram (Program decls comp tau) =
 
 checkDecls :: forall l m a . (IsLabel l, MonadTc m)
            => [Decl l] -> m a -> m a
-checkDecls decls k =
-    go decls
-  where
-    go :: [Decl l] -> m a
-    go [] =
-        k
-
-    go (decl:decls) =
-        checkDecl decl $
-        go decls
+checkDecls decls k = foldr checkDecl k decls
 
 checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
@@ -170,7 +160,7 @@ checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
                     withFvContext e $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
-        when (not (isPureishT tau_ret)) $
+        unless (isPureishT tau_ret) $
           faildoc $ text "Function" <+> ppr f <+> text "is not pureish but is in a letfun!"
     k
   where
@@ -188,7 +178,7 @@ checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
-        mapM_ (\tau -> checkKind tau TauK) taus
+        mapM_ (`checkKind` TauK) taus
     extendStructs [StructDef s flds l] k
   where
     (fnames, taus) = unzip flds
@@ -421,7 +411,6 @@ inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
     return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -432,7 +421,6 @@ inferExp e@(AssignE e1 e2 l) = do
     withFvContext e $ checkTypeEquality tau' tau
     return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -474,7 +462,7 @@ inferExp (IdxE e1 e2 len l) = do
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l
 
-    go (ArrT _ tau _) = do
+    go (ArrT _ tau _) =
         return $ mkArrSlice tau len
 
     go tau =
@@ -497,8 +485,7 @@ inferExp (ProjE e f l) = do
 
     go tau = do
         sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
-        return tau_f
+        checkStructFieldT sdef f
 
 inferExp e0@(StructE s flds l) =
     withFvContext e0 $ do
@@ -511,13 +498,13 @@ inferExp e0@(StructE s flds l) =
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
-               Nothing  -> panicdoc $ "checkField: missing field!"
+               Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
 
     checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
     checkMissingFields flds fldDefs =
-        when (not (Set.null missing)) $
+        unless (Set.null missing) $
           faildoc $
             text "Struct definition has missing fields:" <+>
             (commasep . map ppr . Set.toList) missing
@@ -529,7 +516,7 @@ inferExp e0@(StructE s flds l) =
 
     checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
     checkExtraFields flds fldDefs =
-        when (not (Set.null extra)) $
+        unless (Set.null extra) $
           faildoc $
             text "Struct definition has extra fields:" <+>
             (commasep . map ppr . Set.toList) extra
@@ -543,7 +530,6 @@ inferExp (PrintE _ es l) = do
     mapM_ inferExp es
     return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -551,7 +537,6 @@ inferExp (PrintE _ es l) = do
 inferExp (ErrorE nu _ l) =
     return $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -560,7 +545,6 @@ inferExp (ReturnE _ e l) = do
     tau <- inferExp e
     return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -592,7 +576,7 @@ inferCall f ies args = do
     return (subst theta phi taus, subst theta phi tau_ret)
   where
     checkIotaArg :: Iota -> m ()
-    checkIotaArg (ConstI {}) =
+    checkIotaArg ConstI{} =
         return ()
 
     checkIotaArg (VarI iv _) =
@@ -742,7 +726,7 @@ inferStep (IfC _ e1 e2 e3 _) = do
     withFvContext e3 $ checkComp e3 tau
     return tau
 
-inferStep (LetC {}) =
+inferStep LetC{} =
     faildoc $ text "Let computation step does not have a type."
 
 inferStep (WhileC _ e c _) = do
@@ -770,29 +754,27 @@ inferStep (ForC _ _ v tau e1 e2 c _) = do
 inferStep (LiftC _ e _) =
     withFvContext e $ do
     tau <- inferExp e
-    when (not (isPureishT tau)) $
+    unless (isPureishT tau) $
         faildoc $ text "Lifted expression must be pureish but has type" <+> ppr tau
     appSTScope tau
 
 inferStep (ReturnC _ e _) =
     withFvContext e $ do
     tau <- inferExp e
-    when (not (isPureT tau)) $
+    unless (isPureT tau) $
         faildoc $ text "Returned expression must be pure but has type" <+> ppr tau
     appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
 
-inferStep (BindC {}) =
+inferStep BindC{} =
     faildoc $ text "Bind computation step does not have a type."
 
 inferStep (TakeC _ tau l) = do
     checkKind tau TauK
-    tau <- appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
-    return tau
+    appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
@@ -808,7 +790,6 @@ inferStep (EmitC _ e l) = do
     tau <- withFvContext e $ inferExp e
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
-    s, a :: TyVar
     s = "s"
     a = "a"
 
@@ -816,7 +797,6 @@ inferStep (EmitsC _ e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
-    s, a :: TyVar
     s = "s"
     a = "a"
 
@@ -841,14 +821,14 @@ inferStep step@(ParC _ b e1 e2 l) = do
     return $ ST [] omega s a c l
   where
     joinOmega :: Omega -> Omega -> m Omega
-    joinOmega omega1@(C {}) (T {})        = return omega1
-    joinOmega (T {})        omega2@(C {}) = return omega2
-    joinOmega omega1@(T {}) (T {})        = return omega1
+    joinOmega omega1@C{} T{}        = return omega1
+    joinOmega T{}        omega2@C{} = return omega2
+    joinOmega omega1@T{} T{}        = return omega1
 
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
-inferStep (LoopC {}) =
+inferStep LoopC{} =
     faildoc $ text "inferStep: saw LoopC"
 
 checkComp :: (IsLabel l, MonadTc m)

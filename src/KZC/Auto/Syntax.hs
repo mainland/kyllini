@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -397,7 +398,7 @@ setStepLabel l (EmitC _ e s)                = EmitC l e s
 setStepLabel l (EmitsC _ e s)               = EmitsC l e s
 setStepLabel l (RepeatC _ ann c s)          = RepeatC l ann c s
 setStepLabel l (ParC ann tau left right s)  = ParC ann tau left (setCompLabel l right) s
-setStepLabel _ step@(LoopC {})              = step
+setStepLabel _ step@LoopC{}                 = step
 
 {------------------------------------------------------------------------------
  -
@@ -455,16 +456,16 @@ instance Pretty BoundVar where
     ppr bv = ppr (bVar bv) <> occdoc <> taintdoc <> dfltdoc
       where
         occdoc, taintdoc :: Doc
-        occdoc = case (bOccInfo bv) of
+        occdoc = case bOccInfo bv of
                    Nothing  -> empty
                    Just occ -> braces (ppr occ)
 
-        taintdoc = case (bTainted bv) of
+        taintdoc = case bTainted bv of
                      Nothing    -> empty
                      Just False -> empty
                      Just True  -> braces (text "tainted")
 
-        dfltdoc = case (bNeedDefault bv) of
+        dfltdoc = case bNeedDefault bv of
                      Nothing    -> empty
                      Just False -> empty
                      Just True  -> braces (text "default")
@@ -488,13 +489,13 @@ instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetFunD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
         text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
+        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
     pprPrec p (LetExtFunD f ibs vbs tau _) =
         parensIf (p > appPrec) $
         text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau))
+        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
@@ -511,7 +512,7 @@ instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetFunCompD f ibs vbs tau e _) =
         parensIf (p > appPrec) $
         text "letfuncomp" <+> ppr f <+> pprFunParams ibs vbs <+>
-        nest 4 ((text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)) <+>
+        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
     pprList decls = stack (map ppr decls)
@@ -542,7 +543,7 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
-    pprPrec p (UnopE op@(Cast {}) e _) =
+    pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
         ppr op <+> pprPrec (precOf op) e
 
@@ -621,7 +622,7 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> pprPrec appPrec1 e
 
-    pprPrec _ e@(BindE {}) =
+    pprPrec _ e@BindE{} =
         ppr (expToStms e)
 
     pprPrec p (LutE e) =
@@ -635,8 +636,7 @@ pprBody e =
       stms -> space <> semiEmbraceWrap (map ppr stms)
 
 pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
-pprFunParams ivs vbs =
-    go ivs vbs
+pprFunParams = go
   where
     go :: [IVar] -> [(Var, Type)] -> Doc
     go []    []   = empty
@@ -790,8 +790,8 @@ instance Binders WildVar Var where
 instance Fvs (Decl l) Var where
     fvs (LetD decl _)               = fvs decl
     fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
-    fvs (LetExtFunD {})             = mempty
-    fvs (LetStructD {})             = mempty
+    fvs LetExtFunD{}                = mempty
+    fvs LetStructD{}                = mempty
     fvs (LetCompD v _ ccomp _)      = delete (bVar v) (fvs ccomp)
     fvs (LetFunCompD v _ vbs _ e _) = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
 
@@ -799,7 +799,7 @@ instance Binders (Decl l) Var where
     binders (LetD decl _)             = binders decl
     binders (LetFunD v _ _ _ _ _)     = singleton (bVar v)
     binders (LetExtFunD v _ _ _ _)    = singleton (bVar v)
-    binders (LetStructD {})           = mempty
+    binders LetStructD{}              = mempty
     binders (LetCompD v _ _ _)        = singleton (bVar v)
     binders (LetFunCompD v _ _ _ _ _) = singleton (bVar v)
 
@@ -812,7 +812,7 @@ instance Binders LocalDecl Var where
     binders (LetRefLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
-    fvs (ConstE {})                 = mempty
+    fvs ConstE{}                    = mempty
     fvs (VarE v _)                  = singleton v
     fvs (UnopE _ e _)               = fvs e
     fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
@@ -828,7 +828,7 @@ instance Fvs Exp Var where
     fvs (StructE _ flds _)          = fvs (map snd flds)
     fvs (ProjE e _ _)               = fvs e
     fvs (PrintE _ es _)             = fvs es
-    fvs (ErrorE {})                 = mempty
+    fvs ErrorE{}                    = mempty
     fvs (ReturnE _ e _)             = fvs e
     fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
     fvs (LutE e)                    = fvs e
@@ -846,14 +846,14 @@ instance Fvs (Step l) Var where
     fvs (ForC _ _ v _ e1 e2 c _) = fvs e1 <> fvs e2 <> delete v (fvs c)
     fvs (LiftC _ e _)            = fvs e
     fvs (ReturnC _ e _)          = fvs e
-    fvs (BindC {})               = mempty
-    fvs (TakeC {})               = mempty
-    fvs (TakesC {})              = mempty
+    fvs BindC{}                  = mempty
+    fvs TakeC{}                  = mempty
+    fvs TakesC{}                 = mempty
     fvs (EmitC _ e _)            = fvs e
     fvs (EmitsC _ e _)           = fvs e
     fvs (RepeatC _ _ c _)        = fvs c
     fvs (ParC _ _ e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (LoopC {})               = mempty
+    fvs LoopC{}                  = mempty
 
 instance Fvs (Comp l) Var where
     fvs comp = go (unComp comp)
@@ -865,10 +865,10 @@ instance Fvs (Comp l) Var where
         go (step : k)                  = fvs step <> go k
 
 instance Fvs Exp v => Fvs [Exp] v where
-    fvs es = foldMap fvs es
+    fvs = foldMap fvs
 
 instance Fvs (Arg l) v => Fvs [Arg l] v where
-    fvs es = foldMap fvs es
+    fvs = foldMap fvs
 
 instance Fvs (Comp l) v => Fvs [Step l] v where
     fvs steps = fvs (Comp steps)
@@ -887,7 +887,7 @@ instance HasVars (Decl l) Var where
     allVars (LetD decl _)               = allVars decl
     allVars (LetFunD v _ vbs _ e _)     = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _)    = singleton (bVar v) <> fromList (map fst vbs)
-    allVars (LetStructD {})             = mempty
+    allVars LetStructD{}                = mempty
     allVars (LetCompD v _ ccomp _)      = singleton (bVar v) <> allVars ccomp
     allVars (LetFunCompD v _ vbs _ e _) = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
 
@@ -896,7 +896,7 @@ instance HasVars LocalDecl Var where
     allVars (LetRefLD v _ e _) = singleton (bVar v) <> allVars e
 
 instance HasVars Exp Var where
-    allVars (ConstE {})                 = mempty
+    allVars ConstE{}                    = mempty
     allVars (VarE v _)                  = singleton v
     allVars (UnopE _ e _)               = allVars e
     allVars (BinopE _ e1 e2 _)          = allVars e1 <> allVars e2
@@ -912,7 +912,7 @@ instance HasVars Exp Var where
     allVars (StructE _ flds _)          = allVars (map snd flds)
     allVars (ProjE e _ _)               = allVars e
     allVars (PrintE _ es _)             = allVars es
-    allVars (ErrorE {})                 = mempty
+    allVars ErrorE{}                    = mempty
     allVars (ReturnE _ e _)             = allVars e
     allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
     allVars (LutE e)                    = allVars e
@@ -930,14 +930,14 @@ instance HasVars (Step l) Var where
     allVars (ForC _ _ v _ e1 e2 c _) = singleton v <> allVars e1 <> allVars e2 <> allVars c
     allVars (LiftC _ e _)            = allVars e
     allVars (ReturnC _ e _)          = allVars e
-    allVars (BindC {})               = mempty
-    allVars (TakeC {})               = mempty
-    allVars (TakesC {})              = mempty
+    allVars BindC{}                  = mempty
+    allVars TakeC{}                  = mempty
+    allVars TakesC{}                 = mempty
     allVars (EmitC _ e _)            = allVars e
     allVars (EmitsC _ e _)           = allVars e
     allVars (RepeatC _ _ c _)        = allVars c
     allVars (ParC _ _ e1 e2 _)       = allVars e1 <> allVars e2
-    allVars (LoopC {})               = mempty
+    allVars LoopC{}                  = mempty
 
 instance HasVars (Comp l) Var where
     allVars comp = allVars (unComp comp)
@@ -1004,7 +1004,7 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
 
-    substM step@(LoopC {}) =
+    substM step@LoopC{} =
         return step
 
 instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
@@ -1024,10 +1024,10 @@ instance Subst Iota IVar LocalDecl where
         LetRefLD v <$> substM tau <*> substM e <*> pure s
 
 instance Subst Iota IVar Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{} =
         return e
 
-    substM e@(VarE {}) =
+    substM e@VarE{} =
         return e
 
     substM (UnopE op e l) =
@@ -1089,7 +1089,7 @@ instance Subst Iota IVar (Arg l) where
     substM (CompA c) = CompA <$> substM c
 
 instance Subst Iota IVar (Step l) where
-    substM step@(VarC {}) =
+    substM step@VarC{} =
         pure step
 
     substM (CallC l v iotas es s) =
@@ -1134,7 +1134,7 @@ instance Subst Iota IVar (Step l) where
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
 
-    substM step@(LoopC {}) =
+    substM step@LoopC{} =
         return step
 
 instance Subst Iota IVar (Comp l) where
@@ -1154,10 +1154,10 @@ instance Subst Type TyVar LocalDecl where
         LetRefLD v <$> substM tau <*> substM e <*> pure l
 
 instance Subst Type TyVar Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{} =
         return e
 
-    substM e@(VarE {}) =
+    substM e@VarE{} =
         return e
 
     substM (UnopE op e l) =
@@ -1219,7 +1219,7 @@ instance Subst Type TyVar (Arg l) where
     substM (CompA c) = CompA <$> substM c
 
 instance Subst Type TyVar (Step l) where
-    substM step@(VarC {}) =
+    substM step@VarC{} =
         pure step
 
     substM (CallC l v iotas es s) =
@@ -1264,7 +1264,7 @@ instance Subst Type TyVar (Step l) where
     substM (ParC ann tau c1 c2 s) =
         ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
 
-    substM step@(LoopC {}) =
+    substM step@LoopC{} =
         return step
 
 instance Subst Type TyVar (Comp l) where
@@ -1277,7 +1277,7 @@ instance Subst Type TyVar (Comp l) where
  ------------------------------------------------------------------------------}
 
 instance Subst Exp Var Exp where
-    substM e@(ConstE {}) =
+    substM e@ConstE{} =
         return e
 
     substM e@(VarE v _) = do
@@ -1319,8 +1319,8 @@ instance Subst Exp Var Exp where
     substM (ForE ann v tau e1 e2 e3 l) = do
         e1' <- substM e1
         e2' <- substM e2
-        freshen v $ \v' -> do
-        ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+        freshen v $ \v' ->
+          ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
@@ -1337,7 +1337,7 @@ instance Subst Exp Var Exp where
     substM (PrintE nl es l) =
         PrintE nl <$> substM es <*> pure l
 
-    substM e@(ErrorE {}) =
+    substM e@ErrorE{} =
         pure e
 
     substM (ReturnE ann e l) =
@@ -1345,8 +1345,8 @@ instance Subst Exp Var Exp where
 
     substM (BindE wv tau e1 e2 l) = do
         e1' <- substM e1
-        freshen wv $ \wv' -> do
-        BindE wv' tau e1' <$> substM e2 <*> pure l
+        freshen wv $ \wv' ->
+          BindE wv' tau e1' <$> substM e2 <*> pure l
 
     substM (LutE e) =
         LutE <$> substM e
@@ -1375,7 +1375,7 @@ instance Subst Exp Var (Step l) where
     substM (IfC l e c1 c2 s) =
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
 
-    substM (LetC {}) =
+    substM LetC{} =
         faildoc $ text "Cannot substitute in a let computation step."
 
     substM (WhileC l e c s) =
@@ -1384,8 +1384,8 @@ instance Subst Exp Var (Step l) where
     substM (ForC l ann v tau e1 e2 c s) = do
         e1' <- substM e1
         e2' <- substM e2
-        freshen v $ \v' -> do
-        ForC l ann v' tau e1' e2' <$> substM c <*> pure s
+        freshen v $ \v' ->
+          ForC l ann v' tau e1' e2' <$> substM c <*> pure s
 
     substM (LiftC l e s) =
         LiftC l <$> substM e <*> pure s
@@ -1393,13 +1393,13 @@ instance Subst Exp Var (Step l) where
     substM (ReturnC l e s) =
         ReturnC l <$> substM e <*> pure s
 
-    substM (BindC {}) =
+    substM BindC{} =
         faildoc $ text "Cannot substitute in a bind computation step."
 
-    substM step@(TakeC {}) =
+    substM step@TakeC{} =
         return step
 
-    substM step@(TakesC {}) =
+    substM step@TakesC{} =
         return step
 
     substM (EmitC l e s) =
@@ -1414,7 +1414,7 @@ instance Subst Exp Var (Step l) where
     substM (ParC ann tau c1 c2 s) =
         ParC ann tau <$> substM c1 <*> substM c2 <*> pure s
 
-    substM step@(LoopC {}) =
+    substM step@LoopC{} =
         return step
 
 instance Subst Exp Var (Comp l) where
@@ -1434,7 +1434,7 @@ instance Subst Exp Var (Comp l) where
             steps' <- go steps
             return $ step : steps'
 
-        go (BindC l (TameV v) tau s : steps) = do
+        go (BindC l (TameV v) tau s : steps) =
             freshen v $ \v' -> do
             steps' <- go steps
             return $ BindC l (TameV v') tau s : steps'
@@ -1463,7 +1463,7 @@ instance Freshen (Decl l) Iota IVar where
         decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
         k decl'
 
-    freshen decl@(LetStructD {}) k =
+    freshen decl@LetStructD{} k =
         k decl
 
     freshen (LetCompD v tau comp l) k = do
@@ -1507,13 +1507,13 @@ instance Freshen (Decl l) Exp Var where
         decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
         k decl'
 
-    freshen decl@(LetStructD {}) k =
+    freshen decl@LetStructD{} k =
         k decl
 
     freshen (LetCompD v tau comp l) k = do
         comp' <- substM comp
-        freshen v $ \v' -> do
-        k (LetCompD v' tau comp' l)
+        freshen v $ \v' ->
+          k (LetCompD v' tau comp' l)
 
     freshen (LetFunCompD v ibs vbs tau comp l) k =
         freshen v   $ \v'   ->
@@ -1524,13 +1524,13 @@ instance Freshen (Decl l) Exp Var where
 instance Freshen LocalDecl Exp Var where
     freshen (LetLD v tau e l) k = do
         e' <- substM e
-        freshen v $ \v' -> do
-        k (LetLD v' tau e' l)
+        freshen v $ \v' ->
+          k (LetLD v' tau e' l)
 
     freshen (LetRefLD v tau e l) k = do
         e' <- substM e
-        freshen v $ \v' -> do
-        k (LetRefLD v' tau e' l)
+        freshen v $ \v' ->
+         k (LetRefLD v' tau e' l)
 
 instance Freshen Var Exp Var where
     freshen v@(Var n) =
@@ -1562,7 +1562,7 @@ instance Num Exp where
     x - y = liftNum2 Sub (-) x y
     x * y = liftNum2 Mul (*) x y
 
-    negate x = liftNum Neg negate x
+    negate = liftNum Neg negate
 
     fromInteger i = ConstE (fromInteger i) noLoc
 

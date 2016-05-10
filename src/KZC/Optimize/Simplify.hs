@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -176,24 +177,24 @@ killVars :: MonadTc m
          => [InVar]
          -> SimplM l m a
          -> SimplM l m a
-killVars vs k =
-    local
-    (\env -> env { simplTheta = foldl' (flip Map.delete) (simplTheta env) vs }) k
+killVars vs =
+    local $ \env ->
+      env { simplTheta = foldl' (flip Map.delete) (simplTheta env) vs }
 
 extendSubst :: MonadTc m
             => InVar
             -> SubstRng l
             -> SimplM l m a
             -> SimplM l m a
-extendSubst v rng k =
-    local (\env -> env { simplTheta = Map.insert v rng (simplTheta env) }) k
+extendSubst v rng =
+    local $ \env -> env { simplTheta = Map.insert v rng (simplTheta env) }
 
 withSubst :: MonadTc m
           => Theta l
           -> SimplM l m a
           -> SimplM l m a
-withSubst theta k =
-    local (\env -> env { simplTheta = theta }) k
+withSubst theta =
+    local $ \env -> env { simplTheta = theta }
 
 isInScope :: MonadTc m
           => InVar
@@ -209,8 +210,9 @@ extendDefinitions :: MonadTc m
                   => [(OutVar, Definition l)]
                   -> SimplM l m a
                   -> SimplM l m a
-extendDefinitions defs k =
-    local (\env -> env { simplVarDefs = foldl' insert (simplVarDefs env) defs }) k
+extendDefinitions defs =
+    local $ \env ->
+      env { simplVarDefs = foldl' insert (simplVarDefs env) defs }
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
@@ -253,8 +255,8 @@ askIVarSubst :: MonadTc m => SimplM l m Phi
 askIVarSubst = asks simplPhi
 
 extendIVarSubst :: MonadTc m => [(IVar, Iota)] -> SimplM l m a -> SimplM l m a
-extendIVarSubst ivs k =
-    local (\env -> env { simplPhi = foldl' insert (simplPhi env) ivs }) k
+extendIVarSubst ivs =
+    local $ \env -> env { simplPhi = foldl' insert (simplPhi env) ivs }
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
@@ -266,8 +268,8 @@ extendTyVarSubst :: MonadTc m
                  => [(TyVar, Type)]
                  -> SimplM l m a
                  -> SimplM l m a
-extendTyVarSubst tvs k =
-    local (\env -> env { simplPsi = foldl' insert (simplPsi env) tvs }) k
+extendTyVarSubst tvs =
+    local $ \env -> env { simplPsi = foldl' insert (simplPsi env) tvs }
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
@@ -318,7 +320,7 @@ simplDecls [] m = do
     return ([], x)
 
 simplDecls (d:ds) m = do
-    (maybe_d', (ds', x)) <- simplDecl d $ simplDecls ds $ m
+    (maybe_d', (ds', x)) <- simplDecl d $ simplDecls ds m
     return (maybe ds' (:ds') maybe_d', x)
 
 simplDecl :: forall l m a . (IsLabel l, MonadTc m)
@@ -338,7 +340,7 @@ simplDecl decl m = do
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
     preInlineUnconditionally :: Flags -> Decl l -> SimplM l m (Maybe (Decl l), a)
-    preInlineUnconditionally _flags (LetD {}) =
+    preInlineUnconditionally _flags LetD{} =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
     preInlineUnconditionally flags decl@(LetFunD f ivs vbs tau_ret e _)
@@ -350,7 +352,6 @@ simplDecl decl m = do
               withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
-        isDead, isOnce :: Bool
         isDead = bOccInfo f == Just Dead
         isOnce = bOccInfo f == Just Once
 
@@ -358,10 +359,9 @@ simplDecl decl m = do
         | isDead    = dropBinding f >> withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
-        isDead :: Bool
         isDead = bOccInfo f == Just Dead
 
-    preInlineUnconditionally flags decl@(LetStructD {}) =
+    preInlineUnconditionally flags decl@LetStructD{} =
         postInlineUnconditionally flags decl
 
     preInlineUnconditionally flags decl@(LetCompD v _ comp _)
@@ -373,7 +373,6 @@ simplDecl decl m = do
               withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
-        isDead, isOnce :: Bool
         isDead = bOccInfo v == Just Dead
         isOnce = bOccInfo v == Just Once
 
@@ -387,7 +386,6 @@ simplDecl decl m = do
               withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
-        isDead, isOnce :: Bool
         isDead = bOccInfo f == Just Dead
         isOnce = bOccInfo f == Just Once
 
@@ -396,7 +394,7 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Flags -> Decl l -> SimplM l m (Maybe (Decl l), a)
-    postInlineUnconditionally _flags (LetD {}) =
+    postInlineUnconditionally _flags LetD{} =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
     postInlineUnconditionally _flags (LetFunD f ivs vbs tau_ret e l) = do
@@ -406,7 +404,7 @@ simplDecl decl m = do
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             e'       <- simplExp e
-            return (ivs, (vs' `zip` taus), tau_ret', e')
+            return (ivs, vs' `zip` taus, tau_ret', e')
         inlineIt <- shouldInlineFunUnconditionally ivs' vbs' tau_ret' e'
         if inlineIt
           then extendSubst (bVar f) (DoneFun ivs' vbs' tau_ret' e') $ do
@@ -416,28 +414,20 @@ simplDecl decl m = do
                extendVars [(bVar f', tau)] $
                extendDefinitions
                    [(bVar f', BoundToFun (bOccInfo f') ivs' vbs' tau_ret' e')] $
-               withBinding (LetFunD f' ivs' vbs' tau_ret' e' l) $
-               m
+               withBinding (LetFunD f' ivs' vbs' tau_ret' e' l) m
       where
-        vs :: [Var]
-        taus :: [Type]
         (vs, taus) = unzip vbs
-
-        tau :: Type
-        tau = FunT ivs (map snd vbs) tau_ret l
+        tau        = FunT ivs (map snd vbs) tau_ret l
 
     postInlineUnconditionally _flags (LetExtFunD f iotas vbs tau_ret l) =
         extendExtFuns [(bVar f, tau)] $
-        withBinding (LetExtFunD f iotas vbs tau_ret l) $
-        m
+        withBinding (LetExtFunD f iotas vbs tau_ret l) m
       where
-        tau :: Type
         tau = FunT iotas (map snd vbs) tau_ret l
 
     postInlineUnconditionally _flags decl@(LetStructD s flds l) =
         extendStructs [StructDef s flds l] $
-        withBinding decl $
-        m
+        withBinding decl m
 
     postInlineUnconditionally _flags (LetCompD v tau comp l) = do
         comp' <- extendLet v tau $
@@ -450,8 +440,7 @@ simplDecl decl m = do
           else withUniqBoundVar v $ \v' ->
                extendVars [(bVar v', tau)] $
                extendDefinitions [(bVar v', BoundToComp (bOccInfo v') comp')] $
-               withBinding (LetCompD v' tau comp' l) $
-               m
+               withBinding (LetCompD v' tau comp' l) m
 
     postInlineUnconditionally _flags (LetFunCompD f ivs vbs tau_ret comp l) = do
         (ivs', vbs', tau_ret', comp') <-
@@ -460,7 +449,7 @@ simplDecl decl m = do
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             comp'    <- simplComp comp
-            return (ivs, (vs' `zip` taus), tau_ret', comp')
+            return (ivs, vs' `zip` taus, tau_ret', comp')
         inlineIt <- shouldInlineCompFunUnconditionally ivs' vbs' tau_ret' comp'
         if inlineIt
           then extendSubst (bVar f) (DoneFunComp ivs' vbs' tau_ret' comp') $ do
@@ -471,8 +460,7 @@ simplDecl decl m = do
                extendDefinitions
                    [(bVar f',
                      BoundToFunComp (bOccInfo f') ivs' vbs' tau_ret' comp')] $
-               withBinding (LetFunCompD f' ivs' vbs' tau_ret' comp' l) $
-               m
+               withBinding (LetFunCompD f' ivs' vbs' tau_ret' comp' l) m
       where
         vs :: [Var]
         taus :: [Type]
@@ -598,7 +586,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
     go [] _tau' _wv =
         faildoc $ text "simplSteps: can't happen"
 
-    go step' tau' wv = do
+    go step' tau' wv =
         (++) <$> pure hd <*> go [tl] tau' wv >>= simplLift
       where
         hd :: [Step l]
@@ -610,7 +598,7 @@ simplSteps (step : steps) = do
     step' <- simplStep step
     (omega, _, _, _) <- inferComp (Comp step') >>= checkST
     case (omega, steps) of
-      (C (UnitT {}), [ReturnC _ (ConstE UnitC _) _]) -> rewrite >> return step'
+      (C UnitT{}, [ReturnC _ (ConstE UnitC _) _]) -> rewrite >> return step'
       _ -> (++) <$> pure step' <*> simplSteps steps >>= simplLift
 
 -- | Return 'True' if the binders of @x@ are used in @y@, 'False' otherwise.
@@ -815,10 +803,10 @@ simplStep (IfC l e1 c2 c3 s) = do
         | isFalse e1' = return $ unComp c3'
         | otherwise   = return1 $ IfC l e1' c2' c3' s
 
-simplStep (LetC {}) =
+simplStep LetC{} =
     faildoc $ text "Cannot occ let step."
 
-simplStep (WhileC l e c s) = do
+simplStep (WhileC l e c s) =
     WhileC l <$> simplExp e <*> simplComp c <*> pure s >>= return1
 
 simplStep (ForC l ann v tau e1 e2 c s) = do
@@ -836,7 +824,7 @@ simplStep (LiftC l e s) =
 simplStep (ReturnC l e s) =
     ReturnC l <$> simplExp e <*> pure s >>= return1
 
-simplStep (BindC {}) =
+simplStep BindC{} =
     faildoc $ text "Cannot occ bind step."
 
 simplStep (TakeC l tau s) = do
@@ -866,13 +854,13 @@ simplStep (ParC ann b c1 c2 sloc) = do
                  simplComp c2
     return1 $ ParC ann b c1' c2' sloc
 
-simplStep (LoopC {}) =
+simplStep LoopC{} =
     faildoc $ text "simplStep: saw LoopC"
 
 simplExp :: forall l m . (IsLabel l, MonadTc m)
          => Exp
          -> SimplM l m Exp
-simplExp e@(ConstE {}) =
+simplExp e@ConstE{} =
     return e
 
 simplExp e0@(VarE v _) =
@@ -961,7 +949,7 @@ simplExp (UnopE op e s) = do
         return $ StructE sn' flds' s
       where
         cast :: Type -> Exp -> SimplM l m Exp
-        cast tau e = unop (Cast tau) e
+        cast tau = unop (Cast tau)
 
     unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c =
         return $ ConstE c' s
@@ -1154,7 +1142,7 @@ simplExp (ForE ann v tau e1 e2 e3 s) = do
 
 simplExp (ArrayE es s) = do
     es <- mapM simplExp es
-    if (all isConstE es)
+    if all isConstE es
       then do cs <- mapM unConstE es
               return $ ConstE (ArrayC cs) s
       else return $ ArrayE es s
@@ -1164,7 +1152,7 @@ simplExp (IdxE e1 e2 len s) =
 
 simplExp (StructE struct flds s) = do
     es <- mapM simplExp es
-    if (all isConstE es)
+    if all isConstE es
       then do cs <- mapM unConstE es
               return $ ConstE (StructC struct (fs `zip` cs)) s
       else return $ StructE struct (fs `zip` es) s
@@ -1193,7 +1181,7 @@ simplExp (ProjE e f s) =
 simplExp (PrintE nl es s) =
     PrintE nl <$> mapM simplExp es <*> pure s
 
-simplExp e@(ErrorE {}) =
+simplExp e@ErrorE{} =
     return e
 
 simplExp (ReturnE ann e s) =
@@ -1209,7 +1197,7 @@ simplExp (BindE wv tau e1 e2 s) = do
         dropBinding v
         go e tau' WildV
 
-    go (ReturnE {}) _tau' WildV =
+    go ReturnE{} _tau' WildV =
         simplExp e2
 
     go (ReturnE _ e1' _) tau' (TameV v) = do

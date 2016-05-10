@@ -39,8 +39,7 @@ module KZC.Flags (
     whenDumpFlag
   ) where
 
-import Control.Monad (liftM,
-                      when)
+import Control.Monad (when)
 #if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -212,7 +211,7 @@ instance Monoid Flags where
 defaultFlags :: Flags
 defaultFlags =
     setFlags setDynFlag  defaultDynFlags $
-    setFlags setWarnFlag defaultWarnFlags $
+    setFlags setWarnFlag defaultWarnFlags
     mempty
   where
     setFlags :: (a -> Flags -> Flags)
@@ -234,12 +233,11 @@ class Monad m => MonadFlags m where
     localFlags :: (Flags -> Flags) -> m a -> m a
 
 asksFlags :: MonadFlags m => (Flags -> a) -> m a
-asksFlags f = liftM f askFlags
+asksFlags f = fmap f askFlags
 
 -- | Set all flags implied by other flags
 flagImplications :: Flags -> Flags
-flagImplications fs =
-    fixpoint go fs
+flagImplications = fixpoint go
   where
     fixpoint :: Eq a => (a -> a) -> a -> a
     fixpoint f x | x' == x   = x
@@ -248,11 +246,11 @@ flagImplications fs =
         x' = f x
 
     go :: Flags -> Flags
-    go = (imp Fuse (setDynFlag AlwaysInlineComp)) .
-         (imp MayInlineVal (setDynFlag Simplify)) .
-         (imp MayInlineFun (setDynFlag Simplify)) .
-         (imp MayInlineComp (setDynFlag Simplify)) .
-         (imp AlwaysInlineComp (setDynFlag Simplify))
+    go = imp Fuse (setDynFlag AlwaysInlineComp) .
+         imp MayInlineVal (setDynFlag Simplify) .
+         imp MayInlineFun (setDynFlag Simplify) .
+         imp MayInlineComp (setDynFlag Simplify) .
+         imp AlwaysInlineComp (setDynFlag Simplify)
 
     imp :: DynFlag
         -> (Flags -> Flags)

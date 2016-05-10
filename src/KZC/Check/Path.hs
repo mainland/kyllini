@@ -17,7 +17,7 @@ module KZC.Check.Path (
     checkNoPathAliasing
   ) where
 
-import Control.Monad (when)
+import Control.Monad (unless)
 import Data.List (tails)
 import Text.PrettyPrint.Mainland
 
@@ -68,7 +68,7 @@ checkNoPathAliasing :: forall v f m . (Eq v, Eq f, Pretty v, Pretty f, Monad m)
                     => [RefPath v f]
                     -> m ()
 checkNoPathAliasing rpaths =
-    when (not (null mayAlias)) $
+    unless (null mayAlias) $
         faildoc $ nest 4 $
         text "Aliasing between arguments:" </>
         stack (map pprMayAlias mayAlias)

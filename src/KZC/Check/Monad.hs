@@ -101,7 +101,7 @@ newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
               MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)
-runTi m r s = runStateT (runReaderT (unTi m) r) s
+runTi m r = runStateT (runReaderT (unTi m) r)
 
 -- | Run a @Ti@ computation in the @KZC@ monad and update the @Ti@ environment.
 liftTi :: forall a . Ti a -> KZC a
@@ -149,7 +149,7 @@ askCurrentExp = asks curexp
 -- | Specify the type of the computational context in which we need to produce a
 -- value.
 localValCtxType :: Type -> Ti a -> Ti a
-localValCtxType tau m = local (\env -> env { valCtxType = tau }) m
+localValCtxType tau = local $ \env -> env { valCtxType = tau }
 
 -- | Ask the type of the computational context in which we need to produce a
 -- value.
@@ -173,9 +173,9 @@ tellValCtx :: (C.Exp -> C.Exp) -> Ti ()
 tellValCtx f = modify $ \s -> s { valctx = valctx s . f }
 
 extendStructs :: [StructDef] -> Ti a -> Ti a
-extendStructs ss m =
+extendStructs ss =
     extendEnv structs
-        (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+        (\env x -> env { structs = x }) [(structName s, s) | s <- ss]
 
 lookupStruct :: Z.Struct -> Ti StructDef
 lookupStruct s =
@@ -190,8 +190,8 @@ maybeLookupStruct s =
 extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do
     mtvs <- fvs <$> compress (map snd vtaus)
-    local (\env -> env { envMtvs = mtvs `Set.union` envMtvs env }) $ do
-    extendEnv varTypes (\env x -> env { varTypes = x }) vtaus m
+    local (\env -> env { envMtvs = mtvs `Set.union` envMtvs env }) $
+      extendEnv varTypes (\env x -> env { varTypes = x }) vtaus m
 
 lookupVar :: Z.Var -> Ti Type
 lookupVar v =
@@ -201,7 +201,7 @@ lookupVar v =
 
 askEnvMtvs :: Ti [MetaTv]
 askEnvMtvs =
-    asks (Set.toList . envMtvs) >>= mapM simplify >>= return . concat
+    concat <$> (asks (Set.toList . envMtvs) >>= mapM simplify)
   where
     simplify :: MetaTv -> Ti [MetaTv]
     simplify mtv = do
@@ -211,8 +211,7 @@ askEnvMtvs =
           Nothing   -> return [mtv]
 
 extendTyVars :: [(TyVar, Kind)] -> Ti a -> Ti a
-extendTyVars tvks m =
-    extendEnv tyVars (\env x -> env { tyVars = x }) tvks m
+extendTyVars = extendEnv tyVars (\env x -> env { tyVars = x })
 
 lookupTyVar :: TyVar -> Ti Kind
 lookupTyVar tv =
@@ -221,8 +220,7 @@ lookupTyVar tv =
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
 extendIVars :: [(IVar, Kind)] -> Ti a -> Ti a
-extendIVars ivks m =
-    extendEnv iVars (\env x -> env { iVars = x }) ivks m
+extendIVars = extendEnv iVars (\env x -> env { iVars = x })
 
 lookupIVar :: IVar -> Ti Kind
 lookupIVar iv =
@@ -265,12 +263,12 @@ relevantBindings =
         taus <- mapM lookupVar vs >>= sanitizeTypes
         return $ line <>
             nest 2 (text "Relevant bindings:" </>
-                    stack (map pprBinding (vs `zip` taus)))
+                    stack (zipWith pprBinding vs taus))
     go _ =
         return Text.PrettyPrint.Mainland.empty
 
-    pprBinding :: (Z.Var, Type) -> Doc
-    pprBinding (v, tau) = nest 2 $ ppr v <+> text ":" <+> ppr tau
+    pprBinding :: Z.Var -> Type -> Doc
+    pprBinding v tau = nest 2 $ ppr v <+> text ":" <+> ppr tau
 
 sanitizeTypes :: ( Pretty a, Compress a
                  , Located a
@@ -318,25 +316,25 @@ instance Compress a => Compress (L a) where
         L loc <$> compress a
 
 instance Compress Type where
-    compress tau@(UnitT {}) =
+    compress tau@UnitT{}    =
         pure tau
 
-    compress tau@(BoolT {}) =
+    compress tau@BoolT{}    =
         pure tau
 
-    compress tau@(BitT {}) =
+    compress tau@BitT{}    =
         pure tau
 
-    compress tau@(FixT {}) =
+    compress tau@FixT{}    =
         pure tau
 
-    compress tau@(FloatT {}) =
+    compress tau@FloatT{}    =
         pure tau
 
-    compress tau@(StringT {}) =
+    compress tau@StringT{}    =
         pure tau
 
-    compress tau@(StructT {}) =
+    compress tau@StructT{}    =
         pure tau
 
     compress (ArrT tau1 tau2 l) =
@@ -345,7 +343,7 @@ instance Compress Type where
     compress (C tau l) =
         C <$> compress tau <*> pure l
 
-    compress tau@(T {}) =
+    compress tau@T{}    =
         pure tau
 
     compress (ST alphas omega tau1 tau2 tau3 l) =
@@ -358,13 +356,13 @@ instance Compress Type where
     compress (FunT iotas taus tau l) =
         FunT <$> pure iotas <*> compress taus <*> compress tau <*> pure l
 
-    compress tau@(ConstI {}) =
+    compress tau@ConstI{}    =
         pure tau
 
-    compress tau@(VarI {}) =
+    compress tau@VarI{}    =
         pure tau
 
-    compress tau@(TyVarT {}) =
+    compress tau@TyVarT{}    =
         pure tau
 
     compress tau@(MetaT mtv _) = do

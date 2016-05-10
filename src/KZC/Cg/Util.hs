@@ -17,7 +17,7 @@ import Numeric (showHex)
 -- <https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames
 -- Z-Encoding>
 zencode :: String -> String
-zencode s = concatMap zenc s
+zencode = concatMap zenc
   where
     -- | Implementation of Z-encoding. See:
     -- https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/SymbolNames

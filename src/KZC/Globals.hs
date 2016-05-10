@@ -21,40 +21,34 @@ import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
 
 gPrintUniques :: IORef Bool
-gPrintUniques =
-    unsafePerformIO $ newIORef False
+{-# NOINLINE gPrintUniques #-}
+gPrintUniques = unsafePerformIO $ newIORef False
 
 setPrintUniques :: MonadIO m => Bool -> m ()
-setPrintUniques flag =
-    liftIO $ writeIORef gPrintUniques flag
+setPrintUniques flag = liftIO $ writeIORef gPrintUniques flag
 
 printUniques :: Bool
 {-# NOINLINE printUniques #-}
-printUniques =
-    unsafePerformIO $ readIORef gPrintUniques
+printUniques = unsafePerformIO $ readIORef gPrintUniques
 
 gMaxErrContext :: IORef Int
-gMaxErrContext =
-    unsafePerformIO $ newIORef 4
+{-# NOINLINE gMaxErrContext #-}
+gMaxErrContext = unsafePerformIO $ newIORef 4
 
 setMaxErrContext :: MonadIO m => Int -> m ()
-setMaxErrContext n =
-    liftIO $ writeIORef gMaxErrContext n
+setMaxErrContext n = liftIO $ writeIORef gMaxErrContext n
 
 maxErrContext :: Int
 {-# NOINLINE maxErrContext #-}
-maxErrContext =
-    unsafePerformIO $ readIORef gMaxErrContext
+maxErrContext = unsafePerformIO $ readIORef gMaxErrContext
 
 gExpertTypes :: IORef Bool
-gExpertTypes =
-    unsafePerformIO $ newIORef False
+{-# NOINLINE gExpertTypes #-}
+gExpertTypes = unsafePerformIO $ newIORef False
 
 setExpertTypes :: MonadIO m => Bool -> m ()
-setExpertTypes flag =
-    liftIO $ writeIORef gExpertTypes flag
+setExpertTypes flag = liftIO $ writeIORef gExpertTypes flag
 
 expertTypes :: Bool
 {-# NOINLINE expertTypes #-}
-expertTypes =
-    unsafePerformIO $ readIORef gExpertTypes
+expertTypes = unsafePerformIO $ readIORef gExpertTypes

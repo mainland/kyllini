@@ -22,7 +22,7 @@ import Control.Concurrent (forkIO,
                            putMVar,
                            takeMVar)
 import qualified Control.Exception as E
-import Control.Monad (when)
+import Control.Monad (unless)
 import Control.Monad.IO.Class
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
@@ -53,9 +53,9 @@ runCpp filepath txt = do
                       ["-I"++path | path <- takeDirectory filepath : includePaths] ++
                       ["-D"++d++"="++def | (d, def) <- defines ++ globalDefines]
     (ex, out, err) <- liftIO $ readProcessWithExitCode prog args' (prefix <> txt)
-    when (ex /= ExitSuccess) $ do
-       faildoc $  text "Cannot invoke cpp:" <+>
-                  (text . show) ex <+> (string . T.unpack) err
+    unless (ex == ExitSuccess) $
+       faildoc $ text "Cannot invoke cpp:" <+>
+                (text . show) ex <+> (string . T.unpack) err
     return out
   where
     prefix :: T.Text
@@ -86,7 +86,7 @@ readProcessWithExitCode cmd args input = do
     _ <- forkIO $ E.evaluate (T.length err) >> putMVar outMVar ()
 
     -- Write and flush input
-    when (not (T.null input)) $ do
+    unless (T.null input) $ do
         TIO.hPutStr inh input
         hFlush inh
     -- Done with stdin

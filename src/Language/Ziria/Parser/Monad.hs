@@ -6,7 +6,6 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -227,7 +226,7 @@ expected alts after = do
     expectedAt tok alts after
 
 expectedAt :: L Token -> [String] -> Maybe String -> P b
-expectedAt tok@(L loc _) alts after = do
+expectedAt tok@(L loc _) alts after =
     parserError (locStart loc) (text "expected" <+> pprAlts alts <+> pprGot tok <> pprAfter after)
   where
     pprAlts :: [String] -> Doc

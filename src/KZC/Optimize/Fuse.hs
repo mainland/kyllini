@@ -47,11 +47,11 @@ type F l m a = SEFKT (StateT (FState l) m) a
 
 runF :: MonadErr m
      => F l m a -> FState l -> m a
-runF m fstate = evalStateT (runSEFKT m) fstate
+runF m = evalStateT (runSEFKT m)
 
 runF1 :: MonadErr m
       => F l m a -> FState l -> m (Maybe a)
-runF1 m fstate = evalStateT (runSEFKT1 m) fstate
+runF1 m = evalStateT (runSEFKT1 m)
 
 sawLabel :: (IsLabel l, MonadPlus m, MonadTc m)
          => l -> F l m Bool
@@ -124,11 +124,7 @@ fuseProgram prog =
 
 fuseDecls :: (IsLabel l, MonadPlus m, MonadTc m)
           => [Decl l] -> m a -> m a
-fuseDecls [] k =
-    k
-
-fuseDecls (decl:decls) k =
-    fuseDecl decl $ fuseDecls decls k
+fuseDecls decls k = foldr fuseDecl k decls
 
 fuseDecl :: (IsLabel l, MonadPlus m, MonadTc m)
          => Decl l -> m a -> m a
@@ -185,17 +181,17 @@ fuseSteps (step : steps) =
     (++) <$> fuseStep step <*> fuseSteps steps
 
 fuseStep :: (IsLabel l, MonadPlus m, MonadTc m) => Step l -> m [Step l]
-fuseStep step@(VarC {}) =
+fuseStep step@VarC{} =
     return [step]
 
-fuseStep step@(CallC {}) =
+fuseStep step@CallC{} =
     return [step]
 
 fuseStep (IfC l e c1 c2 s) = do
     step <- IfC l e <$> fuseComp c1 <*> fuseComp c2 <*> pure s
     return [step]
 
-fuseStep (LetC {}) =
+fuseStep LetC{} =
     faildoc $ text "Cannot fuse let step."
 
 fuseStep (WhileC l e c s) = do
@@ -206,25 +202,25 @@ fuseStep (ForC l ann v tau e1 e2 c s) = do
     step <- ForC l ann v tau e1 e2 <$> fuseComp c <*> pure s
     return [step]
 
-fuseStep step@(LiftC {}) =
+fuseStep step@LiftC{} =
     return [step]
 
-fuseStep step@(ReturnC {}) =
+fuseStep step@ReturnC{} =
     return [step]
 
-fuseStep (BindC {}) =
+fuseStep BindC{} =
     faildoc $ text "Cannot fuse bind step."
 
-fuseStep step@(TakeC {}) =
+fuseStep step@TakeC{} =
     return [step]
 
-fuseStep step@(TakesC {}) =
+fuseStep step@TakesC{} =
     return [step]
 
-fuseStep step@(EmitC {}) =
+fuseStep step@EmitC{} =
     return [step]
 
-fuseStep step@(EmitsC {}) =
+fuseStep step@EmitsC{} =
     return [step]
 
 fuseStep (RepeatC l ann c s) = do
@@ -238,7 +234,7 @@ fuseStep step@(ParC _ann b c1 c2 _s) = do
     checkComp comp tau
     return $ unComp comp
 
-fuseStep (LoopC {}) =
+fuseStep LoopC{} =
     faildoc $ text "fuseStep: saw LoopC"
 
 fusePar :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
@@ -340,10 +336,10 @@ fuse left right = do
 
     runRight lss (rs:rss) = do
         l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-        relabelStep l' rs $ \step -> do
-        (lss', steps) <- runRight lss rss
-        return (lss', step:steps)
+        whenNotBeenThere lss l' $
+          relabelStep l' rs $ \step -> do
+          (lss', steps) <- runRight lss rss
+          return (lss', step:steps)
 
     runLeft :: [Step l] -> [Step l] -> F l m ([Step l], [Step l])
     runLeft [] rss =
@@ -463,11 +459,11 @@ fuse left right = do
         faildoc $ text "Saw nested par in producer during par fusion."
 
     runLeft (ls:lss) rss = do
-        l'  <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-        relabelStep l' ls $ \step -> do
-        (rss', steps) <- runLeft lss rss
-        return (rss', step:steps)
+        l' <- jointLabel (ls:lss) rss
+        whenNotBeenThere rss l' $
+          relabelStep l' ls $ \step -> do
+          (rss', steps) <- runLeft lss rss
+          return (rss', step:steps)
 
 dropBind :: [Step l] -> [Step l]
 dropBind (BindC {} : ss) = ss
@@ -485,11 +481,11 @@ relabelStep :: (IsLabel l1, MonadPlus m, MonadTc m)
             -> Step l1
             -> (Step l2 -> m a)
             -> m a
-relabelStep _ step@(VarC {}) _k =
+relabelStep _ step@VarC{} _k =
     withSummaryContext step $
     faildoc $ text "Saw variable bound to a computation during fusion"
 
-relabelStep _ step@(CallC {}) _k =
+relabelStep _ step@CallC{} _k =
     withSummaryContext step $
     faildoc $ text "Saw call to a computation function during fusion"
 

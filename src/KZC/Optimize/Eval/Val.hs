@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -148,9 +149,9 @@ instance IsLabel l => Num (Val l m Exp) where
     x - y = liftNum2 Sub (-) x y
     x * y = liftNum2 Mul (*) x y
 
-    negate x = liftNum Neg negate x
+    negate = liftNum Neg negate
 
-    fromInteger i = intV i
+    fromInteger = intV
 
     abs _ = error "Val: abs undefined"
 
@@ -216,15 +217,14 @@ isValue _                = False
 defaultValue :: forall l m m' . (MonadTc m, MonadTc m')
              => Type
              -> m' (Val l m Exp)
-defaultValue tau =
-    go tau
+defaultValue = go
   where
     go :: Type -> m' (Val l m Exp)
-    go (UnitT {})         = return $ ConstV $ UnitC
-    go (BoolT {})         = return $ ConstV $ BoolC False
+    go UnitT{}            = return $ ConstV UnitC
+    go BoolT{}            = return $ ConstV $ BoolC False
     go (FixT sc s w bp _) = return $ ConstV $ FixC sc s w bp 0
     go (FloatT fp _)      = return $ ConstV $ FloatC fp 0
-    go (StringT {})       = return $ ConstV $ StringC ""
+    go StringT{}          = return $ ConstV $ StringC ""
 
     go (StructT s _) = do
         StructDef s flds _ <- lookupStruct s
@@ -297,8 +297,7 @@ toBitsV :: forall l m . (IsLabel l, MonadTc m)
        => Val l m Exp
        -> Type
        -> EvalM l m (Val l m Exp)
-toBitsV val tau =
-    go val tau
+toBitsV = go
   where
     go :: Val l m Exp -> Type -> EvalM l m (Val l m Exp)
     go (ConstV UnitC) _ =
@@ -362,10 +361,10 @@ fromBitsV (ArrayV vs) tau =
     go vs tau
   where
     go :: P.PArray (Val l m Exp) -> Type -> EvalM l m (Val l m Exp)
-    go _ (UnitT {}) =
+    go _ UnitT{} =
         return $ ConstV UnitC
 
-    go vs (BoolT {}) =
+    go vs BoolT{} =
         ConstV . BoolC . toEnum . fromIntegral <$> fromBitArr vs
 
     go vs (FixT I U (W w) (BP 0) _) =
@@ -416,8 +415,7 @@ unpackValues :: forall l m . (IsLabel l, MonadTc m)
              => Val l m Exp
              -> [Type]
              -> EvalM l m [Val l m Exp]
-unpackValues bits taus = do
-    go 0 taus
+unpackValues bits = go 0
   where
     go :: Int -> [Type] -> EvalM l m [Val l m Exp]
     go _ [] =
@@ -584,21 +582,18 @@ instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
     liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
         complexV sn (a+c) (b+d)
       where
-        a, b, c, d :: Val l m Exp
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
     liftNum2 Sub _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
         complexV sn (a-c) (b-d)
       where
-        a, b, c, d :: Val l m Exp
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
     liftNum2 Mul _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
         complexV sn (a*c - b*d) (b*c + a*d)
       where
-        a, b, c, d :: Val l m Exp
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
@@ -612,12 +607,11 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
     liftIntegral2 Div _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
         complexV sn ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
       where
-        a, b, c, d :: Val l m Exp
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
         (/) :: Val l m Exp -> Val l m Exp -> Val l m Exp
-        x / y = liftIntegral2 Div (quot) x y
+        x / y = liftIntegral2 Div quot x y
 
     liftIntegral2 op _f val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
@@ -661,14 +655,11 @@ toConst (ConstV c) =
 toConst (StructV s flds) =
     structC s (fs `zip` map toConst vals)
   where
-    fs :: [Field]
-    vals :: [Val l m Exp]
     (fs, vals) = unzip $ Map.assocs flds
 
 toConst (ArrayV vvals) =
     arrayC (map toConst vals)
   where
-    vals :: [Val l m Exp]
     vals = P.toList vvals
 
 toConst val =
@@ -784,7 +775,7 @@ instance IsLabel l => Pretty (Val l m a) where
         langle <> text "fun" <+> ppr ivs <+> ppr vs <+> colon <+> ppr tau_ret <> rangle
 
     ppr (CompReturnV val) =
-        ppr ([ReturnC (fromString "" :: Label) (toExp val) noLoc])
+        ppr [ReturnC (fromString "" :: Label) (toExp val) noLoc]
 
     ppr (CompV h c) =
         nest 2 $ ppr c <> nest (-2) (line <> text "with heap") <+/> pprHeap h

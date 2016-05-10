@@ -43,14 +43,14 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
-liftDecl decl@(LetD v tau e l) k | isPureT tau = do
+liftDecl decl@(LetD v tau e l) k | isPureT tau =
     extendFunFvs [(v, (v, []))] $ do
     e' <- extendLet v tau $
           withSummaryContext decl $
           withFvContext e $
           liftExp e
-    extendVars [(v, tau)] $ do
-    withDecl (LetD v tau e' l) k
+    extendVars [(v, tau)] $
+      withDecl (LetD v tau e' l) k
 
 liftDecl decl@(LetD v tau e l) k = do
     v'   <- uniquifyLifted v
@@ -61,7 +61,7 @@ liftDecl decl@(LetD v tau e l) k = do
             withFvContext e $
             liftExp e
     extendVars [(v, tau)] $ do
-    if (null fvbs)
+    if null fvbs
       then appendTopDecl $ LetD v' tau e' l
       else appendTopDecl $ LetFunD v' [] fvbs tau e' l
     k Nothing
@@ -71,8 +71,8 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
                  case maybe_e of
                    Nothing -> return Nothing
                    Just e -> Just <$> inLocalScope (liftExp e)
-    extendVars [(v, refT tau)] $ do
-    withDecl (LetRefD v tau maybe_e' l) k
+    extendVars [(v, refT tau)] $
+      withDecl (LetRefD v tau maybe_e' l) k
 
 liftDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
@@ -90,7 +90,7 @@ liftDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     tau = FunT ivs (map snd vbs) tau_ret l
 
 liftDecl (LetExtFunD f ivs vbs tau_ret l) k =
-    extendExtFuns [(f, tau)] $ do
+    extendExtFuns [(f, tau)] $
     extendFunFvs [(f, (f, []))] $ do
     appendTopDecl $ LetExtFunD f ivs vbs tau_ret l
     k Nothing
@@ -109,7 +109,7 @@ nonFunFvs decl = do
     recurFvs  <- mapM lookupFvs (Set.toList vs)
     let allVs =  Set.toList $ Set.unions (vs : recurFvs)
     tau_allVs <- mapM lookupVar allVs
-    return $ [(v, tau) | (v, tau) <- allVs `zip` tau_allVs, not (isFunT tau)]
+    return [(v, tau) | (v, tau) <- allVs `zip` tau_allVs, not (isFunT tau)]
 
 uniquifyLifted :: Var -> Lift Var
 uniquifyLifted f = do
@@ -119,7 +119,7 @@ uniquifyLifted f = do
       else uniquify f
 
 liftExp :: Exp -> Lift Exp
-liftExp e@(ConstE {}) =
+liftExp e@ConstE{} =
     pure e
 
 liftExp (VarE v l) = do
@@ -128,10 +128,10 @@ liftExp (VarE v l) = do
       then return $ VarE v' l
       else return $ CallE v' [] (map varE fvs) l
 
-liftExp e@(UnopE {}) =
+liftExp e@UnopE{} =
     pure e
 
-liftExp e@(BinopE {}) =
+liftExp e@BinopE{} =
     pure e
 
 liftExp (IfE e1 e2 e3 l) =
@@ -178,7 +178,7 @@ liftExp (ProjE e f l) =
 liftExp (PrintE nl es l) =
     PrintE nl <$> mapM liftExp es <*> pure l
 
-liftExp e@(ErrorE {}) =
+liftExp e@ErrorE{} =
     pure e
 
 liftExp (ReturnE ann e l) =
@@ -187,10 +187,10 @@ liftExp (ReturnE ann e l) =
 liftExp (BindE v tau e1 e2 l) =
     BindE v tau <$> liftExp e1 <*> liftExp e2 <*> pure l
 
-liftExp e@(TakeE {}) =
+liftExp e@TakeE{} =
     pure e
 
-liftExp e@(TakesE {}) =
+liftExp e@TakesE{} =
     pure e
 
 liftExp (EmitE e l) =

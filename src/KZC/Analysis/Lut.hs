@@ -169,19 +169,21 @@ lutInfo e = withFvContext e $ do
                            _ -> typeSize tau_res
     let outbytes :: Int
         outbytes = (outbits + resbits + 7) `div` 8
-    return $ LUTInfo { lutInVars      = inVars
-                     , lutOutVars     = outVars
-                     , lutReturnedVar = resVar
-                     , lutReadSet     = rset
-                     , lutWriteSet    = wset
+    return LUTInfo { lutInVars      = inVars
+                   , lutOutVars     = outVars
+                   , lutReturnedVar = resVar
+                   , lutReadSet     = rset
+                   , lutWriteSet    = wset
 
-                     , lutInBits     = inbits
-                     , lutOutBits    = outbits
-                     , lutResultBits = resbits
+                   , lutInBits     = inbits
+                   , lutOutBits    = outbits
+                   , lutResultBits = resbits
 
-                     , lutBytes      = 2^inbits * fromIntegral outbytes
-                     , lutBytesLog2  = inbits + ceiling (log (fromIntegral outbytes) / log (2 :: Double))
-                     }
+                   , lutBytes      = 2^inbits * fromIntegral outbytes
+                   , lutBytesLog2  = inbits +
+                                     ceiling (logBase (2 :: Double)
+                                                      (fromIntegral outbytes))
+                   }
   where
     lutVarSize :: LUTVar -> m Int
     lutVarSize v =
@@ -249,7 +251,7 @@ lutVars (rset, wset) = do
 -- operation. Note that the variable may have type ref, in which case its
 -- dereferenced value is the result of the expression.
 resultVar :: Monad m => Exp -> m Var
-resultVar (VarE v _) = do
+resultVar (VarE v _) =
     return v
 
 resultVar (LetE decl e _) = do
@@ -342,10 +344,10 @@ lutStats e =
    execL $ go e
   where
     go :: Exp -> L m ()
-    go (ConstE {}) =
+    go ConstE{} =
         return ()
 
-    go (VarE {}) =
+    go VarE{} =
         return ()
 
     go (UnopE Bitcast{} _ _) =
@@ -413,15 +415,15 @@ lutStats e =
         go e2
 
     go (StructE _ flds _) =
-        mapM_ go (map snd flds)
+        mapM_ (go . snd) flds
 
     go (ProjE e _ _) =
         go e
 
-    go (PrintE {}) =
+    go PrintE{} =
         hasSideEffect
 
-    go (ErrorE {}) =
+    go ErrorE{} =
         hasSideEffect
 
     go (ReturnE _ e _) =

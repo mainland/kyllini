@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -68,7 +67,6 @@ module KZC.Core.Lint.Monad (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (liftM)
 #if !MIN_VERSION_base(4,8,0)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -152,7 +150,7 @@ class (MonadTc m, MonadIO m, MonadRef IORef m,
     => MonadTcRef m
 
 asksTc :: MonadTc m => (TcEnv -> a) -> m a
-asksTc f = liftM f askTc
+asksTc f = fmap f askTc
 
 instance MonadTc m => MonadTc (MaybeT m) where
     askTc       = lift askTc
@@ -188,7 +186,7 @@ extendTcEnv :: forall k v a m . (Ord k, MonadTc m)
             -> m a
 extendTcEnv _ _ [] m = m
 
-extendTcEnv proj upd kvs m = do
+extendTcEnv proj upd kvs m =
     localTc (\env -> upd env (foldl' insert (proj env) kvs)) m
   where
     insert :: Map k v -> (k, v) -> Map k v
@@ -207,11 +205,11 @@ lookupTcEnv proj onerr k = do
 
 -- | Given a type, produce a default (constant) value of that type
 defaultValueC :: MonadTc m => Type -> m Const
-defaultValueC (UnitT {})         = return UnitC
-defaultValueC (BoolT {})         = return $ BoolC False
+defaultValueC UnitT{}            = return UnitC
+defaultValueC BoolT{}            = return $ BoolC False
 defaultValueC (FixT sc s w bp _) = return $ FixC sc s w bp 0
 defaultValueC (FloatT fp _)      = return $ FloatC fp 0
-defaultValueC (StringT {})       = return $ StringC ""
+defaultValueC StringT{}          = return $ StringC ""
 
 defaultValueC (StructT s _) = do
     StructDef s flds _ <- lookupStruct s
@@ -223,19 +221,19 @@ defaultValueC (ArrT (ConstI n _) tau _) = do
     c <- defaultValueC tau
     return $ ArrayC (replicate n c)
 
-defaultValueC tau@(ArrT {}) =
+defaultValueC tau@ArrT{} =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
-defaultValueC tau@(ST {}) =
+defaultValueC tau@ST{} =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
-defaultValueC tau@(RefT {}) =
+defaultValueC tau@RefT{} =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
-defaultValueC tau@(FunT {}) =
+defaultValueC tau@FunT{} =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
-defaultValueC tau@(TyVarT {}) =
+defaultValueC tau@TyVarT{} =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
 
 localFvs :: (Fvs e Var, MonadTc m)
@@ -248,9 +246,9 @@ askCurrentFvs :: MonadTc m => m (Maybe (Set Var))
 askCurrentFvs = asksTc curfvs
 
 extendStructs :: MonadTc m => [StructDef] -> m a -> m a
-extendStructs ss m =
+extendStructs ss =
     extendTcEnv structs
-        (\env x -> env { structs = x }) [(structName s, s) | s <- ss] m
+        (\env x -> env { structs = x }) [(structName s, s) | s <- ss]
 
 lookupStruct :: MonadTc m => Struct -> m StructDef
 lookupStruct s =
@@ -263,8 +261,7 @@ maybeLookupStruct s =
     asksTc (Map.lookup s . structs)
 
 inLocalScope :: MonadTc m => m a -> m a
-inLocalScope k =
-    localTc (\env -> env { topScope = False }) k
+inLocalScope = localTc $ \env -> env { topScope = False }
 
 isInTopScope :: MonadTc m => m Bool
 isInTopScope = asksTc topScope
@@ -289,8 +286,8 @@ isExtFun f = asksTc (Set.member f . extFuns)
 extendVars :: forall m a . MonadTc m => [(Var, Type)] -> m a -> m a
 extendVars vtaus m = do
     topScope <- isInTopScope
-    extendTopVars topScope (map fst vtaus) $ do
-    extendTcEnv varTypes (\env x -> env { varTypes = x }) vtaus m
+    extendTopVars topScope (map fst vtaus) $
+      extendTcEnv varTypes (\env x -> env { varTypes = x }) vtaus m
   where
     extendTopVars :: Bool -> [Var] -> m a -> m a
     extendTopVars True vs k =
@@ -306,8 +303,7 @@ lookupVar v =
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
 extendTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
-extendTyVars tvks m =
-    extendTcEnv tyVars (\env x -> env { tyVars = x }) tvks m
+extendTyVars = extendTcEnv tyVars (\env x -> env { tyVars = x })
 
 lookupTyVar :: MonadTc m => TyVar -> m Kind
 lookupTyVar tv =
@@ -316,8 +312,7 @@ lookupTyVar tv =
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
 extendIVars :: MonadTc m => [(IVar, Kind)] -> m a -> m a
-extendIVars ivks m =
-    extendTcEnv iVars (\env x -> env { iVars = x }) ivks m
+extendIVars = extendTcEnv iVars (\env x -> env { iVars = x })
 
 lookupIVar :: MonadTc m => IVar -> m Kind
 lookupIVar iv =
@@ -336,8 +331,7 @@ localSTIndTypes taus m =
                Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
 
 inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
-inSTScope tau m =
-    scopeOver tau m
+inSTScope = scopeOver
   where
     scopeOver :: Type -> m a -> m a
     scopeOver (ST _ _ s a b _) m =
@@ -367,8 +361,7 @@ extendLet :: MonadTc m
           -> m a
 extendLet _v tau k =
     inSTScope tau $
-    inLocalScope $
-    k
+    inLocalScope k
 
 extendLetFun :: MonadTc m
              => v
@@ -381,27 +374,25 @@ extendLetFun _f ivs vbs tau_ret k =
     extendIVars (ivs `zip` repeat IotaK) $
     extendVars vbs $
     inSTScope tau_ret $
-    inLocalScope $
-    k
+    inLocalScope k
   where
     _tau :: Type
     _tau = FunT ivs (map snd vbs) tau_ret (srclocOf tau_ret)
 
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int
-typeSize tau =
-    go tau
+typeSize = go
   where
     go :: Type -> m Int
-    go (UnitT {})                = pure 0
-    go (BoolT {})                = pure 1
+    go UnitT{}                   = pure 0
+    go BoolT{}                   = pure 1
     go (FixT _ _ w _ _)          = pure $ width w
     go (FloatT fp _)             = pure $ fpWidth fp
     go (StructT "complex" _)     = pure $ 2 * width dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)    = pure $ 16
-    go (StructT "complex16" _)   = pure $ 32
-    go (StructT "complex32" _)   = pure $ 64
-    go (StructT "complex64" _)   = pure $ 128
+    go (StructT "complex8" _)    = pure 16
+    go (StructT "complex16" _)   = pure 32
+    go (StructT "complex32" _)   = pure 64
+    go (StructT "complex64" _)   = pure 128
     go (ArrT (ConstI n _) tau _) = (*) <$> pure n <*> go tau
     go (ST _ (C tau) _ _ _ _)    = go tau
     go (RefT tau _)              = go tau
@@ -444,13 +435,13 @@ relevantBindings =
         taus <- mapM lookupVar vs
         return $ line <>
             nest 2 (text "Relevant bindings:" </>
-                    stack (map pprBinding (vs `zip` taus)))
+                    stack (zipWith pprBinding vs taus))
 
     go _ =
         return Text.PrettyPrint.Mainland.empty
 
-    pprBinding :: (Var, Type) -> Doc
-    pprBinding (v, tau) = nest 2 $ ppr v <+> text ":" <+> ppr tau
+    pprBinding :: Var -> Type -> Doc
+    pprBinding v tau = nest 2 $ ppr v <+> text ":" <+> ppr tau
 
 {------------------------------------------------------------------------------
  -

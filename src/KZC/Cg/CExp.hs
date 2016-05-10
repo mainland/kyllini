@@ -134,7 +134,7 @@ data CExp l = CVoid
               -- ^ An array slice. The data constructor's arguments are the type
               -- of the array's elements, the array, the offset, the length of the
               -- slice.
-            | CStruct [(Field, (CExp l))]
+            | CStruct [(Field, CExp l)]
               -- ^ A struct
             | CBits (CExp l)
               -- ^ A bit array represented as an integer
@@ -150,9 +150,9 @@ deriving instance Show (CExp l)
 
 instance Located (CExp l) where
     locOf CVoid               = NoLoc
-    locOf (CBool {})          = NoLoc
-    locOf (CInt {})           = NoLoc
-    locOf (CFloat {})         = NoLoc
+    locOf CBool{}             = NoLoc
+    locOf CInt{}              = NoLoc
+    locOf CFloat{}            = NoLoc
     locOf (CExp ce)           = locOf ce
     locOf (CInit cinit)       = locOf cinit
     locOf (CPtr ce)           = locOf ce
@@ -161,14 +161,14 @@ instance Located (CExp l) where
     locOf (CStruct flds)      = locOf (map snd flds)
     locOf (CBits ce)          = locOf ce
     locOf (CAlias _ ce)       = locOf ce
-    locOf (CComp {})          = NoLoc
-    locOf (CFunComp {})       = NoLoc
+    locOf CComp{}             = NoLoc
+    locOf CFunComp{}          = NoLoc
 
 instance Relocatable (CExp l) where
     reloc _ ce@CVoid                   = ce
-    reloc _ ce@(CBool {})              = ce
-    reloc _ ce@(CInt {})               = ce
-    reloc _ ce@(CFloat {})             = ce
+    reloc _ ce@CBool{}                 = ce
+    reloc _ ce@CInt{}                  = ce
+    reloc _ ce@CFloat{}                = ce
     reloc l (CExp ce)                  = CExp $ reloc l ce
     reloc l (CInit cinit)              = CInit $ reloc l cinit
     reloc l (CPtr ce)                  = CPtr $ reloc l ce
@@ -177,8 +177,8 @@ instance Relocatable (CExp l) where
     reloc l (CStruct flds)             = CStruct [(f, reloc l ce) | (f, ce) <- flds]
     reloc l (CBits ce)                 = CBits (reloc l ce)
     reloc l (CAlias e ce)              = CAlias e (reloc l ce)
-    reloc _ ce@(CComp {})              = ce
-    reloc _ ce@(CFunComp {})           = ce
+    reloc _ ce@CComp{}                 = ce
+    reloc _ ce@CFunComp{}              = ce
 
 instance IfThenElse (CExp l) (CExp l) where
     ifThenElse (CBool True)  t _ = t
@@ -292,7 +292,7 @@ instance Num (CExp l) where
     signum (CFloat x) = CFloat (signum x)
     signum ce         = error $ "Num CExp: signum not implemented: " ++ pretty 80 (ppr ce)
 
-    fromInteger i = CInt i
+    fromInteger = CInt
 
 instance Real (CExp l) where
     toRational (CInt n)   = toRational n
@@ -331,7 +331,7 @@ instance Fractional (CExp l) where
     recip (CFloat x) = CFloat (recip x)
     recip x          = CExp [cexp|1/$x|]
 
-    fromRational r = CFloat r
+    fromRational = CFloat
 
 instance Bits (CExp l) where
     CInt x .&. CInt y = CInt (x .&. y)
@@ -406,22 +406,22 @@ instance IsBits (CExp l) where
 instance C.ToExp (CExp l) where
     toExp CVoid                      = locatedError $
                                        text "toExp: void compiled expression"
-    toExp (CBool i)                  = \_ -> [cexp|$int:(if i then 1::Integer else 0)|]
-    toExp (CInt i)                   = \_ -> [cexp|$int:i|]
-    toExp (CFloat r)                 = \_ -> [cexp|$double:r|]
-    toExp (CExp e)                   = \_ -> e
+    toExp (CBool i)                  = const [cexp|$int:(if i then 1::Integer else 0)|]
+    toExp (CInt i)                   = const [cexp|$int:i|]
+    toExp (CFloat r)                 = const [cexp|$double:r|]
+    toExp (CExp e)                   = const e
     toExp ce@(CInit _)               = locatedError $
                                        text "toExp: cannot convert CInit to a C expression" </> ppr ce
     toExp (CPtr e)                   = C.toExp e
-    toExp (CIdx tau carr cidx)       = \_ -> lowerIdx tau carr cidx
-    toExp (CSlice tau carr cidx len) = \_ -> lowerSlice tau carr cidx len
-    toExp ce@(CStruct {})            = locatedError $
+    toExp (CIdx tau carr cidx)       = const $ lowerIdx tau carr cidx
+    toExp (CSlice tau carr cidx len) = const $ lowerSlice tau carr cidx len
+    toExp ce@CStruct{}               = locatedError $
                                        text "toExp: cannot convert CStruct to a C expression" </> ppr ce
     toExp (CBits ce)                 = C.toExp ce
     toExp (CAlias _ ce)              = C.toExp ce
-    toExp ce@(CComp {})              = locatedError $
+    toExp ce@CComp{}                 = locatedError $
                                        text "toExp: cannot convert CComp to a C expression" </> ppr ce
-    toExp ce@(CFunComp {})           = locatedError $
+    toExp ce@CFunComp{}              = locatedError $
                                        text "toExp: cannot convert CFunComp to a C expression" </> ppr ce
 
 locatedError :: Located a => Doc -> a -> b
@@ -442,8 +442,8 @@ instance Pretty (CExp l) where
     ppr (CStruct flds)           = pprStruct flds
     ppr (CBits e)                = ppr e
     ppr (CAlias _ e)             = ppr e
-    ppr (CComp {})               = text "<comp>"
-    ppr (CFunComp {})            = text "<fun comp>"
+    ppr CComp{}                  = text "<comp>"
+    ppr CFunComp{}               = text "<fun comp>"
 
 -- | Tag the translation of an expression with the expression is aliases.
 calias :: Exp -> CExp l -> CExp l
@@ -488,7 +488,7 @@ unBitCSliceBase (CSlice _ carr (CExp [cexp|$ce * $int:n|]) _)
     q, r :: Integer
     (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
 
-unBitCSliceBase (CSlice {}) =
+unBitCSliceBase CSlice{}    =
     Nothing
 
 unBitCSliceBase ce =

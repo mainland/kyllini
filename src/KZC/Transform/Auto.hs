@@ -28,6 +28,7 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -70,7 +71,7 @@ isInScope :: MonadTc m => Var -> Auto m Bool
 isInScope v = asks (Map.member v . autoSubst)
 
 lookupVarSubst :: MonadTc m => Var -> Auto m Var
-lookupVarSubst v = maybe v id <$> asks (Map.lookup v . autoSubst)
+lookupVarSubst v = fromMaybe v <$> asks (Map.lookup v . autoSubst)
 
 ensureUnique :: MonadTc m => Var -> (Var -> Auto m a) -> Auto m a
 ensureUnique v k = do
@@ -83,7 +84,7 @@ ensureUnique v k = do
 autoProgram :: forall l m . (IsLabel l, MonadTc m)
             => [C.Decl]
             -> Auto m (Program l)
-autoProgram cdecls = do
+autoProgram cdecls =
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
     return $ Program (filter (not . isMain) decls) comp tau
@@ -125,22 +126,24 @@ transDecl decl@(C.LetD v tau e l) k
          withSummaryContext decl $
          withFvContext e $
          transComp e
-    extendVars [(v,tau)] $ do
-    k $ LetCompD (mkBoundVar v') tau c l
+    extendVars [(v,tau)] $
+      k $ LetCompD (mkBoundVar v') tau c l
 
 transDecl decl@(C.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
 
 transDecl decl@(C.LetFunD f ivs vbs tau_ret e l) k
-  | isPureishT tau_ret = ensureUnique f $ \f' -> do
+  | isPureishT tau_ret =
+    ensureUnique f $ \f' ->
     extendVars [(f, tau)] $ do
     e' <- withSummaryContext decl $
           withFvContext e $
           extendLetFun f ivs vbs tau_ret $
           transExp e
     k $ LetFunD (mkBoundVar f') ivs vbs tau_ret e' l
-  | otherwise = ensureUnique f $ \f' -> do
+  | otherwise =
+    ensureUnique f $ \f' ->
     extendVars [(f, tau)] $ do
     c <- withSummaryContext decl $
          withFvContext e $
@@ -169,8 +172,8 @@ transLocalDecl :: MonadTc m
 transLocalDecl decl@(C.LetD v tau e l) k | isPureT tau =
     ensureUnique v $ \v' -> do
     e' <- withSummaryContext decl $ transExp e
-    extendVars [(v, tau)] $ do
-    k $ LetLD (mkBoundVar v') tau e' l
+    extendVars [(v, tau)] $
+      k $ LetLD (mkBoundVar v') tau e' l
 
 transLocalDecl (C.LetRefD v tau Nothing l) k =
     ensureUnique v $ \v' ->
@@ -182,8 +185,8 @@ transLocalDecl decl@(C.LetRefD v tau (Just e) l) k =
     e' <- withSummaryContext decl $
           inLocalScope $
           transExp e
-    extendVars [(v, refT tau)] $ do
-    k $ LetRefLD (mkBoundVar v') tau (Just e') l
+    extendVars [(v, refT tau)] $
+      k $ LetRefLD (mkBoundVar v') tau (Just e') l
 
 transLocalDecl decl _ =
     withSummaryContext decl $
@@ -191,12 +194,12 @@ transLocalDecl decl _ =
   where
     pprDeclType :: C.Decl -> Doc
     pprDeclType (C.LetD _ tau _ _)
-        | isPureishT tau          = text "let"
-        | otherwise               = text "letcomp"
-    pprDeclType (C.LetFunD {})    = text "letfun"
-    pprDeclType (C.LetExtFunD {}) = text "letextfun"
-    pprDeclType (C.LetRefD {})    = text "letref"
-    pprDeclType (C.LetStructD {}) = text "letstruct"
+        | isPureishT tau       = text "let"
+        | otherwise            = text "letcomp"
+    pprDeclType C.LetFunD{}    = text "letfun"
+    pprDeclType C.LetExtFunD{} = text "letextfun"
+    pprDeclType C.LetRefD{}    = text "letref"
+    pprDeclType C.LetStructD{} = text "letstruct"
 
 transExp :: forall m . MonadTc m
          => C.Exp
@@ -279,27 +282,27 @@ transExp (C.BindE (C.TameV v) tau e1 e2 l) =
            transExp e2
     return $ BindE (TameV (mkBoundVar v')) tau e1' e2' l
 
-transExp e@(C.TakeE {}) =
+transExp e@C.TakeE{} =
     withSummaryContext e $
     faildoc $ text "take expression seen in pure-ish computation"
 
-transExp e@(C.TakesE {}) =
+transExp e@C.TakesE{} =
     withSummaryContext e $
     faildoc $ text "takes expression seen in pure-ish computation"
 
-transExp e@(C.EmitE {}) =
+transExp e@C.EmitE{} =
     withSummaryContext e $
     faildoc $ text "emit expression seen in pure-ish computation"
 
-transExp e@(C.EmitsE {}) =
+transExp e@C.EmitsE{} =
     withSummaryContext e $
     faildoc $ text "emits expression seen in pure-ish computation"
 
-transExp e@(C.RepeatE {}) =
+transExp e@C.RepeatE{} =
     withSummaryContext e $
     faildoc $ text "repeat expression seen in pure-ish computation"
 
-transExp e@(C.ParE {}) =
+transExp e@C.ParE{} =
     withSummaryContext e $
     faildoc $ text "par expression seen in pure-ish computation"
 
@@ -370,7 +373,7 @@ transComp (C.BindE C.WildV tau e1 e2 _) =
     transComp e1 .>>. bindC WildV tau .>>. transComp e2
 
 transComp (C.BindE (C.TameV v) tau e1 e2 _) =
-    ensureUnique v $ \v' -> do
+    ensureUnique v $ \v' ->
     transComp e1
         .>>. bindC (TameV (mkBoundVar v')) tau
         .>>. (extendVars [(v, tau)] $ transComp e2)

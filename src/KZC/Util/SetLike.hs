@@ -53,20 +53,20 @@ instance Ord a => SetLike [] a where
     member x xs = x `List.elem` xs
     singleton x = [x]
     insert x xs = x:xs
-    xs <\\> ys  = xs List.\\ ys
-    delete x xs = List.delete x xs
+    (<\\>)      = (List.\\)
+    delete      = List.delete
     fromList xs = xs
 
 instance Ord a => MultiSetLike [] a where
     unique xs = Set.toList (Set.fromList xs)
 
 instance Ord a => SetLike Set a where
-    member x xs = Set.member x xs
-    singleton x = Set.singleton x
-    insert x xs = Set.insert x xs
-    xs <\\> ys  = xs Set.\\ ys
-    delete x xs = Set.delete x xs
-    fromList xs = Set.fromList xs
+    member    = Set.member
+    singleton = Set.singleton
+    insert    = Set.insert
+    (<\\>)    = (Set.\\)
+    delete    = Set.delete
+    fromList  = Set.fromList
 
 -- | A set data type that preserves the order of element insertion.
 data OrderedSet a = OS [a] (Set a)
@@ -96,4 +96,4 @@ instance Ord a => SetLike OrderedSet a where
 
     delete x (OS xs xs') = OS (List.delete x xs) (Set.delete x xs')
 
-    fromList ys = mkOrderedSet [] Set.empty ys
+    fromList = mkOrderedSet [] mempty

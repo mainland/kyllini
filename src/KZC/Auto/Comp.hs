@@ -225,8 +225,8 @@ mapCompLabels f comp =
     ml :: l1 -> (l2 -> M l1 l2 m a) -> M l1 l2 m a
     ml l k = do
         l' <- lift $ f l
-        local (\env -> Map.insert l l' env) $ k l'
+        local (Map.insert l l') $ k l'
 
 uniquifyCompLabels :: forall l m . (IsLabel l, Applicative m, MonadUnique m)
                    => Comp l -> m (Comp l)
-uniquifyCompLabels comp = mapCompLabels uniquify comp
+uniquifyCompLabels = mapCompLabels uniquify

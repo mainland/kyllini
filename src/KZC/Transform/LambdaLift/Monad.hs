@@ -73,8 +73,7 @@ lookupFunFvs f = do
     Just (f', vs) -> return (f', vs)
 
 extendFunFvs :: [(Var, (Var, [Var]))] -> Lift a -> Lift a
-extendFunFvs ves m =
-    extendEnv funFvs (\env x -> env { funFvs = x }) ves m
+extendFunFvs = extendEnv funFvs (\env x -> env { funFvs = x })
 
 withDecl :: Decl -> (Maybe Decl -> Lift a) -> Lift a
 withDecl decl k = do

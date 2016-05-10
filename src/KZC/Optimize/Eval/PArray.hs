@@ -65,7 +65,7 @@ toList (ArrF _ v) =
     V.toList v
 
 fromVector :: a -> Vector a -> PArray a
-fromVector dflt xs = ArrF dflt xs
+fromVector = ArrF
 
 toVector :: PArray a -> Vector a
 toVector (ArrP dflt n xs) = V.replicate n dflt V.// IntMap.toList xs

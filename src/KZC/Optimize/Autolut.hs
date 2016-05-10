@@ -19,7 +19,6 @@ module KZC.Optimize.Autolut (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (liftM)
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
 import Control.Monad.IO.Class (MonadIO)
@@ -50,10 +49,10 @@ newtype AutoM m a = AutoM { unAutoM :: m a }
               MonadTc)
 
 instance MonadTrans AutoM where
-    lift m = AutoM m
+    lift = AutoM
 
 runAutoM :: MonadTc m => AutoM m a -> m a
-runAutoM m = unAutoM m
+runAutoM = unAutoM
 
 autolutProgram :: (IsLabel l, MonadTc m)
                => Program l
@@ -79,7 +78,7 @@ autoDecl :: (IsLabel l, MonadTc m)
          -> (Decl l -> AutoM m a)
          -> AutoM m a
 autoDecl (LetD ldecl l) k =
-    autoLocalDecl ldecl $ \ldecl' -> do
+    autoLocalDecl ldecl $ \ldecl' ->
     k $ LetD ldecl' l
 
 autoDecl (LetFunD f ivs vbs tau_ret e l) k =
@@ -104,8 +103,8 @@ autoDecl decl@(LetStructD s flds l) k =
 
 autoDecl (LetCompD v tau comp l) k = do
     comp' <- autoComp comp
-    extendVars [(bVar v, tau)] $ do
-    k $ LetCompD v tau comp' l
+    extendVars [(bVar v, tau)] $
+      k $ LetCompD v tau comp' l
 
 autoDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
@@ -123,13 +122,13 @@ autoLocalDecl :: MonadTc m
               -> AutoM m a
 autoLocalDecl (LetLD v tau e l) k = do
     e' <- autoE e
-    extendVars [(bVar v, tau)] $ do
-    k $ LetLD v tau e' l
+    extendVars [(bVar v, tau)] $
+      k $ LetLD v tau e' l
 
 autoLocalDecl (LetRefLD v tau e l) k = do
     e' <- traverse autoE e
-    extendVars [(bVar v, refT tau)] $ do
-    k $ LetRefLD v tau e' l
+    extendVars [(bVar v, refT tau)] $
+      k $ LetRefLD v tau e' l
 
 autoComp :: (IsLabel l, MonadTc m) => Comp l -> AutoM m (Comp l)
 autoComp (Comp steps) =
@@ -153,7 +152,7 @@ autoSteps (step : k) =
     (:) <$> autoStep step <*> autoSteps k
   where
     autoStep :: Step l -> AutoM m (Step l)
-    autoStep step@(VarC {}) =
+    autoStep step@VarC{} =
         pure step
 
     autoStep (CallC l v is args s) =
@@ -162,7 +161,7 @@ autoSteps (step : k) =
     autoStep (IfC l e c1 c2 s) =
         IfC l <$> autoE e <*> autoComp c1 <*> autoComp c2 <*> pure s
 
-    autoStep (LetC {}) =
+    autoStep LetC{} =
         panicdoc $ text "autoStep: saw LetC"
 
     autoStep (WhileC l e comp s) =
@@ -180,13 +179,13 @@ autoSteps (step : k) =
     autoStep (ReturnC l e s) =
         ReturnC l <$> autoE e <*> pure s
 
-    autoStep (BindC {}) =
+    autoStep BindC{} =
         panicdoc $ text "autoStep: saw BindC"
 
-    autoStep step@(TakeC {}) =
+    autoStep step@TakeC{} =
         pure step
 
-    autoStep step@(TakesC {}) =
+    autoStep step@TakesC{} =
         pure step
 
     autoStep (EmitC l e s) =
@@ -201,7 +200,7 @@ autoSteps (step : k) =
     autoStep (ParC ann tau c1 c2 s) =
         ParC ann tau <$> autoComp c1 <*> autoComp c2 <*> pure s
 
-    autoStep step@(LoopC {}) =
+    autoStep step@LoopC{} =
         pure step
 
 autoArg :: (IsLabel l, MonadTc m) => Arg l -> AutoM m (Arg l)
@@ -213,7 +212,8 @@ autoE :: forall m . MonadTc m
      -> AutoM m Exp
 autoE e = do
     traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
-    maybe_info <- liftM Right (lutInfo e) `catch` \(err :: SomeException) -> return (Left err)
+    maybe_info <- fmap Right (lutInfo e)
+                    `catch` \(ex :: SomeException) -> return (Left ex)
     case maybe_info of
       Left  err  -> do traceAutoLUT $ text "Error:" <+> (text . show) err
                        go e
@@ -225,10 +225,10 @@ autoE e = do
                          else go e
   where
     go :: Exp -> AutoM m Exp
-    go e@(ConstE {}) =
+    go e@ConstE{} =
         pure e
 
-    go e@(VarE {}) =
+    go e@VarE{} =
         pure e
 
     go (UnopE op e s) =
@@ -247,7 +247,7 @@ autoE e = do
     go (CallE v is es s) =
         CallE v is <$> traverse autoE es <*> pure s
 
-    go e@(DerefE {}) =
+    go e@DerefE{} =
         pure e
 
     go (AssignE e1 e2 s) =
@@ -280,7 +280,7 @@ autoE e = do
     go (PrintE nl es s) =
         PrintE nl <$> traverse autoE es <*> pure s
 
-    go e@(ErrorE {}) =
+    go e@ErrorE{} =
         pure e
 
     go (ReturnE ann e s) =
@@ -291,5 +291,5 @@ autoE e = do
                      <*> extendWildVars [(wv, tau)] (autoE e2)
                      <*> pure s
 
-    go e@(LutE {}) =
+    go e@LutE{} =
         pure e

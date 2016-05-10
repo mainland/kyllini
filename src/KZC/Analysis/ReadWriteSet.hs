@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -323,7 +324,7 @@ extendVals vvals m = do
     update m (k, v) = Map.update (const v) k m
 
 extendWildVals :: MonadTc m => [(WildVar, Val)] -> RW m a -> RW m a
-extendWildVals wvs m = extendVals [(bVar bv, val) | (TameV bv, val) <- wvs] m
+extendWildVals wvs = extendVals [(bVar bv, val) | (TameV bv, val) <- wvs]
 
 putVal :: MonadTc m => Var -> Val -> RW m ()
 putVal v val =
@@ -396,7 +397,7 @@ rangeExp e =
         updateReadSet (VarR v)
         lookupVal v
 
-    go (UnopE op e _) = do
+    go (UnopE op e _) =
         unop op <$> go e
       where
         unop :: Unop -> Val -> Val
@@ -408,9 +409,9 @@ rangeExp e =
             | Just x <- fromSingI i              = IntV <$> singI $ negate x
         unop Neg _                               = top
         unop (Cast (FixT I _s _w (BP 0) _)) _    = IntV top
-        unop (Cast {}) _                         = top
+        unop Cast{} _                            = top
         unop (Bitcast (FixT I _s _w (BP 0) _)) _ = IntV top
-        unop (Bitcast {}) _                      = top
+        unop Bitcast{} _                         = top
         unop Len _                               = IntV top
 
     go (BinopE op e1 e2 _) =
@@ -558,7 +559,7 @@ rangeExp e =
         go e
 
 rangeRef :: forall m . MonadTc m => Exp -> RW m Ref
-rangeRef e = go e
+rangeRef = go
   where
     go :: Exp -> RW m Ref
     go (VarE v _) =

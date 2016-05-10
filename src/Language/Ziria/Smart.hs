@@ -23,13 +23,13 @@ import Language.Ziria.Syntax
 import KZC.Name
 
 mkVar :: Name -> Var
-mkVar n = Var n
+mkVar = Var
 
 mkField :: Name -> Field
-mkField n = Field n
+mkField = Field
 
 mkStruct :: Name -> Struct
-mkStruct n = Struct n
+mkStruct = Struct
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

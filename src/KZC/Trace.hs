@@ -80,7 +80,7 @@ instance (Monoid w, MonadTrace m) => MonadTrace (WriterT w m) where
     localTraceDepth f m = WriterT $ localTraceDepth f (runWriterT m)
 
 traceNest :: MonadTrace m => m a -> m a
-traceNest m = localTraceDepth (+1) m
+traceNest = localTraceDepth (+1)
 
 trace :: MonadTrace m => String -> Doc -> m ()
 trace prefix doc = do

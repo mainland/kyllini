@@ -122,7 +122,7 @@ instance Show a => Show (IORef a) where
     showsPrec d ref =
         showParen (d > appPrec) $
         showString "(unsafePerformIO . newRef) " .
-        showsPrec (appPrec1) ((unsafePerformIO . readRef) ref)
+        showsPrec appPrec1 ((unsafePerformIO . readRef) ref)
 
 {------------------------------------------------------------------------------
  -
@@ -312,12 +312,12 @@ instance Pretty Kind where
  ------------------------------------------------------------------------------}
 
 instance Fvs Type TyVar where
-    fvs (UnitT {})                         = mempty
-    fvs (BoolT {})                         = mempty
-    fvs (BitT {})                          = mempty
-    fvs (FixT {})                          = mempty
-    fvs (FloatT {})                        = mempty
-    fvs (StringT {})                       = mempty
+    fvs UnitT{}                            = mempty
+    fvs BoolT{}                            = mempty
+    fvs BitT{}                             = mempty
+    fvs FixT{}                             = mempty
+    fvs FloatT{}                           = mempty
+    fvs StringT{}                          = mempty
     fvs (StructT _ _)                      = mempty
     fvs (ArrT tau1 tau2 _)                 = fvs tau1 <> fvs tau2
     fvs (C tau _)                          = fvs tau
@@ -333,12 +333,12 @@ instance Fvs Type TyVar where
     fvs (MetaT _ _)                        = mempty
 
 instance Fvs Type IVar where
-    fvs (UnitT {})                    = mempty
-    fvs (BoolT {})                    = mempty
-    fvs (BitT {})                     = mempty
-    fvs (FixT {})                     = mempty
-    fvs (FloatT {})                   = mempty
-    fvs (StringT {})                  = mempty
+    fvs UnitT{}                       = mempty
+    fvs BoolT{}                       = mempty
+    fvs BitT{}                        = mempty
+    fvs FixT{}                        = mempty
+    fvs FloatT{}                      = mempty
+    fvs StringT{}                     = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT tau1 tau2 _)            = fvs tau1 <> fvs tau2
     fvs (C tau _)                     = fvs tau
@@ -354,12 +354,12 @@ instance Fvs Type IVar where
     fvs (MetaT _ _)                   = mempty
 
 instance Fvs Type MetaTv where
-    fvs (UnitT {})                    = mempty
-    fvs (BoolT {})                    = mempty
-    fvs (BitT {})                     = mempty
-    fvs (FixT {})                     = mempty
-    fvs (FloatT {})                   = mempty
-    fvs (StringT {})                  = mempty
+    fvs UnitT{}                       = mempty
+    fvs BoolT{}                       = mempty
+    fvs BitT{}                        = mempty
+    fvs FixT{}                        = mempty
+    fvs FloatT{}                      = mempty
+    fvs StringT{}                     = mempty
     fvs (StructT _ _)                 = mempty
     fvs (ArrT tau1 tau2 _)            = fvs tau1 <> fvs tau2
     fvs (C tau _)                     = fvs tau
@@ -374,15 +374,15 @@ instance Fvs Type MetaTv where
     fvs (MetaT mtv _)                 = singleton mtv
 
 instance Fvs Type n => Fvs [Type] n where
-    fvs taus = foldMap fvs taus
+    fvs = foldMap fvs
 
 instance HasVars Type TyVar where
-    allVars (UnitT {})                         = mempty
-    allVars (BoolT {})                         = mempty
-    allVars (BitT {})                          = mempty
-    allVars (FixT {})                          = mempty
-    allVars (FloatT {})                        = mempty
-    allVars (StringT {})                       = mempty
+    allVars UnitT{}                            = mempty
+    allVars BoolT{}                            = mempty
+    allVars BitT{}                             = mempty
+    allVars FixT{}                             = mempty
+    allVars FloatT{}                           = mempty
+    allVars StringT{}                          = mempty
     allVars (StructT _ _)                      = mempty
     allVars (ArrT tau1 tau2 _)                 = allVars tau1 <> allVars tau2
     allVars (C tau _)                          = allVars tau
@@ -400,12 +400,12 @@ instance HasVars Type TyVar where
     allVars (MetaT _ _)                        = mempty
 
 instance HasVars Type IVar where
-    allVars (UnitT {})                    = mempty
-    allVars (BoolT {})                    = mempty
-    allVars (BitT {})                     = mempty
-    allVars (FixT {})                     = mempty
-    allVars (FloatT {})                   = mempty
-    allVars (StringT {})                  = mempty
+    allVars UnitT{}                       = mempty
+    allVars BoolT{}                       = mempty
+    allVars BitT{}                        = mempty
+    allVars FixT{}                        = mempty
+    allVars FloatT{}                      = mempty
+    allVars StringT{}                     = mempty
     allVars (StructT _ _)                 = mempty
     allVars (ArrT tau1 tau2 _)            = allVars tau1 <> allVars tau2
     allVars (C tau _)                     = allVars tau
@@ -421,12 +421,12 @@ instance HasVars Type IVar where
     allVars (MetaT _ _)                   = mempty
 
 instance HasVars Type MetaTv where
-    allVars (UnitT {})                    = mempty
-    allVars (BoolT {})                    = mempty
-    allVars (BitT {})                     = mempty
-    allVars (FixT {})                     = mempty
-    allVars (FloatT {})                   = mempty
-    allVars (StringT {})                  = mempty
+    allVars UnitT{}                       = mempty
+    allVars BoolT{}                       = mempty
+    allVars BitT{}                        = mempty
+    allVars FixT{}                        = mempty
+    allVars FloatT{}                      = mempty
+    allVars StringT{}                     = mempty
     allVars (StructT _ _)                 = mempty
     allVars (ArrT tau1 tau2 _)            = allVars tau1 <> allVars tau2
     allVars (C tau _)                     = allVars tau
@@ -442,25 +442,25 @@ instance HasVars Type MetaTv where
     allVars (MetaT mtv _)                 = singleton mtv
 
 instance Subst Type MetaTv Type where
-    substM tau@(UnitT {}) =
+    substM tau@UnitT{} =
         pure tau
 
-    substM tau@(BoolT {}) =
+    substM tau@BoolT{} =
         pure tau
 
-    substM tau@(BitT {}) =
+    substM tau@BitT{} =
         pure tau
 
-    substM tau@(FixT {}) =
+    substM tau@FixT{} =
         pure tau
 
-    substM tau@(FloatT {}) =
+    substM tau@FloatT{} =
         pure tau
 
-    substM tau@(StringT {}) =
+    substM tau@StringT{} =
         pure tau
 
-    substM tau@(StructT {}) =
+    substM tau@StructT{} =
         pure tau
 
     substM (ArrT tau1 tau2 l) =
@@ -469,7 +469,7 @@ instance Subst Type MetaTv Type where
     substM (C tau l) =
         C <$> substM tau <*> pure l
 
-    substM tau@(T {}) =
+    substM tau@T{} =
         pure tau
 
     substM (ST alphas omega tau1 tau2 tau3 l) =
@@ -481,13 +481,13 @@ instance Subst Type MetaTv Type where
     substM (FunT iotas taus tau l) =
         FunT iotas <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@(ConstI {}) =
+    substM tau@ConstI{} =
         pure tau
 
-    substM tau@(VarI {}) =
+    substM tau@VarI{} =
         pure tau
 
-    substM tau@(TyVarT {}) =
+    substM tau@TyVarT{} =
         pure tau
 
     substM tau@(MetaT mtv _) = do
@@ -495,25 +495,25 @@ instance Subst Type MetaTv Type where
         return $ fromMaybe tau (Map.lookup mtv theta)
 
 instance Subst Type IVar Type where
-    substM tau@(UnitT {}) =
+    substM tau@UnitT{} =
         pure tau
 
-    substM tau@(BoolT {}) =
+    substM tau@BoolT{} =
         pure tau
 
-    substM tau@(BitT {}) =
+    substM tau@BitT{} =
         pure tau
 
-    substM tau@(FixT {}) =
+    substM tau@FixT{} =
         pure tau
 
-    substM tau@(FloatT {}) =
+    substM tau@FloatT{} =
         pure tau
 
-    substM tau@(StringT {}) =
+    substM tau@StringT{} =
         pure tau
 
-    substM tau@(StructT {}) =
+    substM tau@StructT{} =
         pure tau
 
     substM (ArrT tau1 tau2 l) =
@@ -522,7 +522,7 @@ instance Subst Type IVar Type where
     substM (C tau l) =
         C <$> substM tau <*> pure l
 
-    substM tau@(T {}) =
+    substM tau@T{} =
         pure tau
 
     substM (ST alphas omega tau1 tau2 tau3 l) =
@@ -535,39 +535,39 @@ instance Subst Type IVar Type where
         freshen iotas $ \iotas' ->
         FunT iotas' <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@(ConstI {}) =
+    substM tau@ConstI{} =
         pure tau
 
     substM tau@(VarI v _) = do
         (theta, _) <- ask
         return $ fromMaybe tau (Map.lookup v theta)
 
-    substM tau@(TyVarT {}) =
+    substM tau@TyVarT{} =
         pure tau
 
-    substM tau@(MetaT {}) =
+    substM tau@MetaT{} =
         pure tau
 
 instance Subst Type TyVar Type where
-    substM tau@(UnitT {}) =
+    substM tau@UnitT{} =
         pure tau
 
-    substM tau@(BoolT {}) =
+    substM tau@BoolT{} =
         pure tau
 
-    substM tau@(BitT {}) =
+    substM tau@BitT{} =
         pure tau
 
-    substM tau@(FixT {}) =
+    substM tau@FixT{} =
         pure tau
 
-    substM tau@(FloatT {}) =
+    substM tau@FloatT{} =
         pure tau
 
-    substM tau@(StringT {}) =
+    substM tau@StringT{} =
         pure tau
 
-    substM tau@(StructT {}) =
+    substM tau@StructT{} =
         pure tau
 
     substM (ArrT tau1 tau2 l) =
@@ -576,7 +576,7 @@ instance Subst Type TyVar Type where
     substM (C tau l) =
         C <$> substM tau <*> pure l
 
-    substM tau@(T {}) =
+    substM tau@T{} =
         pure tau
 
     substM (ST alphas omega tau1 tau2 tau3 l) =
@@ -589,17 +589,17 @@ instance Subst Type TyVar Type where
     substM (FunT iotas taus tau l) =
         FunT iotas <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@(ConstI {}) =
+    substM tau@ConstI{} =
         pure tau
 
-    substM tau@(VarI {}) =
+    substM tau@VarI{} =
         pure tau
 
     substM tau@(TyVarT alpha _) = do
         (theta, _) <- ask
         return $ fromMaybe tau (Map.lookup alpha theta)
 
-    substM tau@(MetaT {}) =
+    substM tau@MetaT{} =
         pure tau
 
 instance FreshVars TyVar where

@@ -18,9 +18,6 @@ module KZC.Monad.SEFKT (
     runSEFKTM
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative(..))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Applicative (Alternative(..))
 import Control.Monad (MonadPlus(..),
                       ap)
@@ -79,7 +76,7 @@ runSEFKTM Nothing m = unSEFKT m errk failk succk
     failk = return []
 
     succk :: SK (m [a]) a
-    succk x _errk fk = fk >>= return . (x:)
+    succk x _errk fk = fmap (x:) fk
 
 runSEFKTM (Just n) _ | n <= 0 = return []
 
@@ -104,7 +101,7 @@ runSEFKTM (Just n) m = unSEFKT (msplit m) errk failk succk
 
     succk :: SK (m [a]) (Maybe (a, SEFKT m a))
     succk Nothing        _ek _fk = return []
-    succk (Just (x, m')) _ek _fk = runSEFKTM (Just (n-1)) m' >>= return . (x:)
+    succk (Just (x, m')) _ek _fk = fmap (x:) (runSEFKTM (Just (n-1)) m')
 
 instance MonadTrans SEFKT where
     lift m = SEFKT $ \ek fk sk -> m >>= \x -> sk x ek fk
@@ -148,13 +145,13 @@ instance MonadErr m => MonadLogic (SEFKT m) where
       where
         ek ex _fk   = throw ex
         fk          = return Nothing
-        sk x _ek fk = return $ Just (x, (lift fk >>= reflect))
+        sk x _ek fk = return $ Just (x, lift fk >>= reflect)
 
 instance (MonadErr m, MonadIO m) => MonadIO (SEFKT m) where
     liftIO = lift . liftIO
 
 instance MonadErr m => MonadException (SEFKT m) where
-    throw ex = throwContextException throw' ex
+    throw = throwContextException throw'
       where
         throw' ::  Exception ex => ex -> SEFKT m a
         throw' ex = SEFKT $ \ek fk _sk -> ek (toException ex) fk

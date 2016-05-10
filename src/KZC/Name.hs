@@ -84,8 +84,8 @@ class Named a where
     mapName :: (Name -> Name) -> a -> a
 
 instance Named Name where
-    namedSymbol n = nameSym n
-    mapName f n = f n
+    namedSymbol = nameSym
+    mapName f   = f
 
 mkName :: String -> Loc -> Name
 mkName s l = Name Orig (intern s) (SrcLoc l)

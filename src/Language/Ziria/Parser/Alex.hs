@@ -5,7 +5,6 @@
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
@@ -79,7 +78,7 @@ alexGetChar inp =
                                    })
 
 alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
-alexGetByte inp@(AlexInput { alexBytes = [] }) =
+alexGetByte inp@AlexInput{ alexBytes = [] } =
     case alexGetChar inp of
       Nothing        -> Nothing
       Just (c, inp') -> Just (b, inp' { alexBytes = bs })
@@ -107,7 +106,7 @@ alexGetByte inp@(AlexInput { alexBytes = [] }) =
                             , 0x80 + oc .&. 0x3f
                             ]
 
-alexGetByte inp@(AlexInput { alexBytes = b:bs }) =
+alexGetByte inp@AlexInput{ alexBytes = b:bs } =
     Just (b, inp { alexBytes = bs })
 
 alexInputPrevChar :: AlexInput -> Char
@@ -118,18 +117,15 @@ type Action m t = AlexInput -> AlexInput -> m (L t)
 
 locateTok :: AlexInput -> AlexInput -> t -> L t
 {-# INLINE locateTok #-}
-locateTok beg end tok =
-    L (Loc (alexPos beg) (alexPos end)) tok
+locateTok beg end = L (Loc (alexPos beg) (alexPos end))
 
 token :: Monad m => t -> Action m t
 {-# INLINE token #-}
-token tok beg end =
-    return $ locateTok beg end tok
+token tok beg end = return $ locateTok beg end tok
 
 token1 :: Monad m => (T.Text -> t) -> Action m t
 {-# INLINE token1 #-}
-token1 tok beg end =
-    return $ locateTok beg end (tok (inputText beg end))
+token1 tok beg end = return $ locateTok beg end (tok (inputText beg end))
 
 inputString :: AlexInput -> AlexInput -> String
 {-# INLINE inputString #-}
@@ -142,17 +138,17 @@ inputText beg end = T.take (alexOff end - alexOff beg) (alexBuf beg)
 type Radix = (Integer, Char -> Bool, Char -> Int)
 
 decDigit :: Char -> Int
-decDigit c  | c >= '0' && c <= '9' = ord c - ord '0'
-            | otherwise            = error "error in decimal constant"
+decDigit c  | isDigit c = ord c - ord '0'
+            | otherwise = error "error in decimal constant"
 
 octDigit :: Char -> Int
-octDigit c  | c >= '0' && c <= '7' = ord c - ord '0'
-            | otherwise            = error "error in octal constant"
+octDigit c  | isOctDigit c = ord c - ord '0'
+            | otherwise    = error "error in octal constant"
 
 hexDigit :: Char -> Int
 hexDigit c  | c >= 'a' && c <= 'f' = 10 + ord c - ord 'a'
             | c >= 'A' && c <= 'F' = 10 + ord c - ord 'A'
-            | c >= '0' && c <= '9' = ord c - ord '0'
+            | isDigit c            = ord c - ord '0'
             | otherwise            = error "error in hexadecimal constant"
 
 decimal :: Radix

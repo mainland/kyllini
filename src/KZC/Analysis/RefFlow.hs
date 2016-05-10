@@ -36,6 +36,7 @@ import Data.Foldable (toList)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -131,7 +132,7 @@ extendVarFlowsFrom v refs k = do
 putFlowVars :: forall m . MonadTc m => Var -> Set Ref -> RF m ()
 putFlowVars v refs = do
     modify $ \s -> s { varFlowsFrom = Map.insert v refs (varFlowsFrom s) }
-    mapM_ (\ref -> flowsTo ref v) (toList refs)
+    mapM_ (`flowsTo` v) (toList refs)
   where
     flowsTo :: Ref -> Var -> RF m ()
     flowsTo vref v =
@@ -163,7 +164,7 @@ useVar v = do
     tau <- lookupVar v
     if isRefT tau
       then tell $ Set.singleton (VarR v)
-      else do refs <- maybe mempty id <$> gets (\s -> Map.lookup v (varFlowsFrom s))
+      else do refs <- fromMaybe mempty <$> gets (Map.lookup v . varFlowsFrom)
               tell refs
 
 -- | Collect the set of refs used to produce the result of the computation @k@.
@@ -175,8 +176,7 @@ collectUseInfo k =
 -- | Throw away the set of refs used to produce the result of the computation
 -- @k@.
 voidUseInfo :: Monad m => RF m a -> RF m a
-voidUseInfo k =
-    censor (const mempty) k
+voidUseInfo = censor (const mempty)
 
 updateTaint :: MonadTc m => BoundVar -> RF m a -> RF m (a, BoundVar)
 updateTaint bv m =
@@ -186,7 +186,7 @@ updateTaint bv m =
     return (x, bv { bTainted = Just usedAfterTaint })
   where
     f :: RefSet -> RefSet
-    f refs = Set.delete (VarR (bVar bv)) refs
+    f = Set.delete (VarR (bVar bv))
 
 rfProgram :: MonadTc m => Program l -> RF m (Program l)
 rfProgram (Program decls comp tau) = do
@@ -207,7 +207,7 @@ rfDecls [] m = do
     return ([], x)
 
 rfDecls (d:ds) k = do
-    (d', (ds', x)) <- rfDecl d $ rfDecls ds $ k
+    (d', (ds', x)) <- rfDecl d $ rfDecls ds k
     return (d':ds', x)
 
 rfDecl :: MonadTc m
@@ -272,8 +272,7 @@ rfLocalDecl (LetLD v tau e1 s) k = do
 
 rfLocalDecl (LetRefLD v tau maybe_e1 s) k = do
     maybe_e1' <- traverse (voidUseInfo . rfExp) maybe_e1
-    x         <- extendVars [(bVar v, refT tau)] $
-                 k
+    x         <- extendVars [(bVar v, refT tau)] k
     return (LetRefLD v tau maybe_e1' s, x)
 
 rfComp :: MonadTc m
@@ -323,8 +322,7 @@ rfStep (CallC l f iotas args s) = do
     -- may be derived from a ref dereference are actually dereferenced. See Note
     -- [Aliasing] in Cg.hs.
     mapM_ taintArg args
-    e' <- CallC l f iotas <$> mapM rfArg args <*> pure s
-    return e'
+    CallC l f iotas <$> mapM rfArg args <*> pure s
   where
     rfArg :: Arg l -> RF m (Arg l)
     rfArg (CompA comp) = CompA <$> rfComp comp
@@ -345,10 +343,10 @@ rfStep (IfC l e1 c2 c3 s) = do
     (c2', c3') <- rfIf (rfComp c2) (rfComp c3)
     return $ IfC l e1' c2' c3' s
 
-rfStep (LetC {}) =
+rfStep LetC{} =
     panicdoc $ text "rfStep: saw let"
 
-rfStep (WhileC l e1 c2 s) = do
+rfStep (WhileC l e1 c2 s) =
     WhileC l <$> rfExp e1 <*> rfComp c2 <*> pure s
 
 rfStep (ForC l ann v tau e1 e2 c s) =
@@ -360,10 +358,10 @@ rfStep (LiftC l e s) =
 rfStep (ReturnC l e s) =
     ReturnC l <$> rfExp e <*> pure s
 
-rfStep (BindC {}) =
+rfStep BindC{} =
     panicdoc $ text "rfStep: saw bind"
 
-rfStep c@TakeC{}  = do
+rfStep c@TakeC{} = do
     refModified QueueR
     tell $ Set.singleton QueueR
     return c
@@ -373,7 +371,7 @@ rfStep c@TakesC{} = do
     tell $ Set.singleton QueueR
     return c
 
-rfStep (EmitC l e s) = do
+rfStep (EmitC l e s) =
     EmitC l <$> voidUseInfo (rfExp e) <*> pure s
 
 rfStep (EmitsC l e s) =
@@ -400,7 +398,7 @@ rfStep LoopC{} =
 rfExp :: forall m . MonadTc m
       => Exp
       -> RF m Exp
-rfExp e@(ConstE {}) =
+rfExp e@ConstE{} =
     pure e
 
 rfExp e@(VarE v _) = do

@@ -28,6 +28,7 @@ import Control.Monad.Writer (MonadWriter(..),
                              censor)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 import Data.Traversable (traverse)
@@ -53,9 +54,7 @@ instance Monoid OccEnv where
 
 lookupOccInfo :: Var -> OccEnv -> OccInfo
 lookupOccInfo v env =
-    case Map.lookup v (unOcc env) of
-      Nothing  -> Dead
-      Just occ -> occ
+    fromMaybe Dead $ Map.lookup v (unOcc env)
 
 newtype OccM m a = OccM { unOccM :: WriterT OccEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
@@ -110,7 +109,7 @@ occDecls [] m = do
     return ([], x)
 
 occDecls (d:ds) m = do
-    (d', (ds', x)) <- occDecl d $ occDecls ds $ m
+    (d', (ds', x)) <- occDecl d $ occDecls ds m
     return (d':ds', x)
 
 occDecl :: MonadTc m
@@ -217,13 +216,13 @@ occStep (CallC l f iotas args s) = do
 occStep (IfC l e c1 c2 s) =
     IfC l <$> occExp e <*> occComp c1 <*> occComp c2 <*> pure s
 
-occStep (LetC {}) =
+occStep LetC{} =
     faildoc $ text "Cannot occ let step."
 
-occStep (WhileC l e c s) = do
+occStep (WhileC l e c s) =
     WhileC l <$> occExp e <*> occComp c <*> pure s
 
-occStep (ForC l ann v tau e1 e2 c s) = do
+occStep (ForC l ann v tau e1 e2 c s) =
     ForC l ann v tau <$> occExp e1 <*> occExp e2 <*> occComp c <*> pure s
 
 occStep (LiftC l e s) =
@@ -232,13 +231,13 @@ occStep (LiftC l e s) =
 occStep (ReturnC l e s) =
     ReturnC l <$> occExp e <*> pure s
 
-occStep (BindC {}) =
+occStep BindC{} =
     faildoc $ text "Cannot occ bind step."
 
-occStep step@(TakeC {}) =
+occStep step@TakeC{} =
     return step
 
-occStep step@(TakesC {}) =
+occStep step@TakesC{} =
     return step
 
 occStep (EmitC l e s) =
@@ -250,14 +249,14 @@ occStep (EmitsC l e s) =
 occStep (RepeatC l ann c s) =
     RepeatC l ann <$> occComp c <*> pure s
 
-occStep (ParC ann tau c1 c2 s) = do
+occStep (ParC ann tau c1 c2 s) =
     ParC ann tau <$> occComp c1 <*> occComp c2 <*> pure s
 
-occStep (LoopC {}) =
+occStep LoopC{} =
     faildoc $ text "occStep: saw LoopC"
 
 occExp :: MonadTc m => Exp -> OccM m Exp
-occExp e@(ConstE {}) =
+occExp e@ConstE{} =
     return e
 
 occExp e@(VarE v _) = do
@@ -309,7 +308,7 @@ occExp (ProjE e f s) =
 occExp (PrintE nl es s) =
     PrintE nl <$> mapM occExp es <*> pure s
 
-occExp e@(ErrorE {}) =
+occExp e@ErrorE{} =
     return e
 
 occExp (ReturnE ann e s) =

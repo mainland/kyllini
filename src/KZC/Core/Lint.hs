@@ -114,8 +114,8 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
               MonadTrace)
 
 instance MonadTc Tc where
-    askTc       = Tc $ ask
-    localTc f m = Tc $ local f (unTc m)
+    askTc     = Tc ask
+    localTc f = Tc . local f . unTc
 
 instance PrimMonad Tc where
     type PrimState Tc = RealWorld
@@ -124,7 +124,7 @@ instance PrimMonad Tc where
 instance MonadTcRef Tc where
 
 runTc :: Tc a -> TcEnv -> KZC a
-runTc m r = (runReaderT . unTc) m r
+runTc = runReaderT . unTc
 
 -- | Run a 'Tc' computation in the 'KZC' monad and update the 'TcEnv'.
 liftTc :: forall a . Tc a -> KZC a
@@ -146,16 +146,10 @@ withTc m = do
     runTc m env
 
 extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
-extendWildVars wvs m =
-    extendVars [(v, tau) | (TameV v, tau) <- wvs] m
+extendWildVars wvs = extendVars [(v, tau) | (TameV v, tau) <- wvs]
 
 checkDecls :: MonadTc m => [Decl] -> m ()
-checkDecls [] =
-    return ()
-
-checkDecls (decl:decls) =
-    checkDecl  decl $
-    checkDecls decls
+checkDecls = foldr checkDecl (return ())
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
 checkDecl decl@(LetD v tau e _) k = do
@@ -203,7 +197,7 @@ checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
-        mapM_ (\tau -> checkKind tau TauK) taus
+        mapM_ (`checkKind` TauK) taus
     extendStructs [StructDef s flds l] k
   where
     (fnames, taus) = unzip flds
@@ -218,7 +212,7 @@ checkDecl decl@(LetStructD s flds l) k = do
 
 inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
 inferConst l UnitC              = return (UnitT l)
-inferConst l (BoolC {})         = return (BoolT l)
+inferConst l BoolC{}            = return (BoolT l)
 inferConst l (FixC sc s w bp _) = return (FixT sc s w bp l)
 inferConst l (FloatC w _)       = return (FloatT w l)
 inferConst l (StringC _)        = return (StringT l)
@@ -238,7 +232,7 @@ inferConst l (StructC s flds) = do
     checkField :: [(Field, Type)] -> (Field, Const) -> m ()
     checkField fldDefs (f, c) = do
       tau <- case lookup f fldDefs of
-               Nothing  -> panicdoc $ "checkField: missing field!"
+               Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkConst l c tau
 
@@ -436,7 +430,7 @@ inferExp (CallE f ies es _) = do
     return $ subst theta phi tau_ret
   where
     checkIotaArg :: Iota -> m ()
-    checkIotaArg (ConstI {}) =
+    checkIotaArg ConstI{} =
         return ()
 
     checkIotaArg (VarI iv _) =
@@ -469,7 +463,6 @@ inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
     return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -480,7 +473,6 @@ inferExp (AssignE e1 e2 l) = do
     withFvContext e2 $ checkTypeEquality tau' tau
     return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -522,7 +514,7 @@ inferExp (IdxE e1 e2 len l) = do
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l
 
-    go (ArrT _ tau _) = do
+    go (ArrT _ tau _) =
         return $ mkArrSlice tau len
 
     go tau =
@@ -544,9 +536,8 @@ inferExp (ProjE e f l) = do
         return $ RefT tau_f l
 
     go tau = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
-        return tau_f
+        sdef <- checkStructT tau >>= lookupStruct
+        checkStructFieldT sdef f
 
 inferExp e0@(StructE s flds l) =
     withFvContext e0 $ do
@@ -557,7 +548,7 @@ inferExp e0@(StructE s flds l) =
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do
       tau <- case lookup f fldDefs of
-               Nothing  -> panicdoc $ "checkField: missing field!"
+               Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
 
@@ -565,7 +556,6 @@ inferExp (PrintE _ es l) = do
     mapM_ inferExp es
     appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -573,7 +563,6 @@ inferExp (PrintE _ es l) = do
 inferExp (ErrorE nu _ l) =
     appSTScope $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -582,7 +571,6 @@ inferExp (ReturnE _ e l) = do
     tau <- inferExp e
     return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
-    s, a, b :: TyVar
     s = "s"
     a = "a"
     b = "b"
@@ -631,7 +619,6 @@ inferExp (EmitE e l) = do
     tau <- withFvContext e $ inferExp e
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
-    s, a :: TyVar
     s = "s"
     a = "a"
 
@@ -639,7 +626,6 @@ inferExp (EmitsE e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
     appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
-    s, a :: TyVar
     s = "s"
     a = "a"
 
@@ -664,9 +650,9 @@ inferExp e0@(ParE _ b e1 e2 l) = do
     return $ ST [] omega s a c l
   where
     joinOmega :: Omega -> Omega -> m Omega
-    joinOmega omega1@(C {}) (T {})        = return omega1
-    joinOmega (T {})        omega2@(C {}) = return omega2
-    joinOmega omega1@(T {}) (T {})        = return omega1
+    joinOmega omega1@C{} T{}        = return omega1
+    joinOmega T{}        omega2@C{} = return omega2
+    joinOmega omega1@T{} T{}        = return omega1
 
     joinOmega omega1 omega2 =
         faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
@@ -725,7 +711,7 @@ checkStructFields s flds = do
   where
     checkMissingFields :: [Field] -> [(Field, Type)] -> m ()
     checkMissingFields flds fldDefs =
-        when (not (Set.null missing)) $
+        unless (Set.null missing) $
           faildoc $
             text "Struct definition has missing fields:" <+>
             (commasep . map ppr . Set.toList) missing
@@ -737,7 +723,7 @@ checkStructFields s flds = do
 
     checkExtraFields :: [Field] -> [(Field, Type)] -> m ()
     checkExtraFields flds fldDefs =
-        when (not (Set.null extra)) $
+        unless (Set.null extra) $
           faildoc $
             text "Struct definition has extra fields:" <+>
             (commasep . map ppr . Set.toList) extra
@@ -753,16 +739,16 @@ checkCast :: MonadTc m => Type -> Type -> m ()
 checkCast tau1 tau2 | tau1 == tau2 =
     return ()
 
-checkCast (FixT {}) (FixT {}) =
+checkCast FixT{} FixT{} =
     return ()
 
-checkCast (FixT {}) (FloatT {}) =
+checkCast FixT{} FloatT{} =
     return ()
 
-checkCast (FloatT {}) (FixT {}) =
+checkCast FloatT{} FixT{} =
     return ()
 
-checkCast (FloatT {}) (FloatT {}) =
+checkCast FloatT{} FloatT{} =
     return ()
 
 checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
@@ -792,8 +778,8 @@ checkTypeEquality tau1 tau2 =
            -> Type
            -> Type
            -> m ()
-    checkT _ _ (UnitT {}) (UnitT {}) = return ()
-    checkT _ _ (BoolT {}) (BoolT {}) = return ()
+    checkT _ _ UnitT{} UnitT{} = return ()
+    checkT _ _ BoolT{} BoolT{} = return ()
 
     checkT _ _ (FixT sc1 s1 w1 bp1 _) (FixT sc2 s2 w2 bp2 _)
         | sc1 == sc2 && s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
@@ -801,7 +787,7 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ (FloatT w1 _)  (FloatT w2 _)
         | w1 == w2 = return ()
 
-    checkT _ _ (StringT {}) (StringT {}) = return ()
+    checkT _ _ StringT{} StringT{} = return ()
 
     checkT theta phi (ArrT iota1 tau1 _) (ArrT iota2 tau2 _) = do
         checkI phi iota1 iota2
@@ -848,7 +834,7 @@ checkTypeEquality tau1 tau2 =
     checkO theta phi (C tau1) (C tau2) =
         checkT theta phi tau1 tau2
 
-    checkO _ _ (T {}) (T {}) =
+    checkO _ _ T{} T{} =
         return ()
 
     checkO _ _ _ _ =
@@ -882,16 +868,15 @@ expectedTypeErr tau1 tau2 = do
       msg
 
 inferKind :: forall m . MonadTc m => Type -> m Kind
-inferKind tau =
-    inferType tau
+inferKind = inferType
   where
     inferType :: Type -> m Kind
-    inferType (UnitT {})   = return TauK
-    inferType (BoolT {})   = return TauK
-    inferType (FixT {})    = return TauK
-    inferType (FloatT {})  = return TauK
-    inferType (StringT {}) = return TauK
-    inferType (StructT {}) = return TauK
+    inferType UnitT{}   = return TauK
+    inferType BoolT{}   = return TauK
+    inferType FixT{}    = return TauK
+    inferType FloatT{}  = return TauK
+    inferType StringT{} = return TauK
+    inferType StructT{} = return TauK
 
     inferType (ArrT iota tau _) = do
         void $ inferIota iota
@@ -943,7 +928,7 @@ inferKind tau =
         lookupTyVar alpha
 
     inferIota :: Iota -> m Kind
-    inferIota (ConstI {}) = return IotaK
+    inferIota ConstI{}    = return IotaK
     inferIota (VarI iv _) = lookupIVar iv
 
     inferOmega :: Omega -> m Kind
@@ -975,23 +960,23 @@ checkEqT tau =
 
 -- | Check that a type supports ordering.
 checkOrdT :: MonadTc m => Type -> m ()
-checkOrdT (FixT {})   = return ()
-checkOrdT (FloatT {}) = return ()
+checkOrdT FixT{}   = return ()
+checkOrdT FloatT{} = return ()
 checkOrdT tau =
     faildoc $ nest 2 $ group $
     text "Expected comparable type but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform Boolean operations.
 checkBoolT :: MonadTc m => Type -> m ()
-checkBoolT (BoolT {}) = return ()
-checkBoolT (FixT {})  = return ()
+checkBoolT BoolT{} = return ()
+checkBoolT FixT{}  = return ()
 checkBoolT tau =
     faildoc $ nest 2 $ group $
     text "Expected a Boolean type, e.g., bool or int, but got:" <+/> ppr tau
 
 -- | Check that a type is a type on which we can perform bitwise operations.
 checkBitT :: MonadTc m => Type -> m ()
-checkBitT (BoolT {})       = return ()
+checkBitT BoolT{}          = return ()
 checkBitT (FixT _ U _ _ _) = return ()
 checkBitT tau =
     faildoc $ nest 2 $ group $
@@ -999,15 +984,15 @@ checkBitT tau =
 
 -- | Check that a type is an integer type.
 checkIntT :: MonadTc m => Type -> m ()
-checkIntT (FixT {}) = return ()
+checkIntT FixT{} = return ()
 checkIntT tau =
     faildoc $ nest 2 $ group $
     text "Expected integer type but got:" <+/> ppr tau
 
 -- | Check that a type is a numerical type.
 checkNumT :: MonadTc m => Type -> m ()
-checkNumT (FixT {})            = return ()
-checkNumT (FloatT {})          = return ()
+checkNumT FixT{}               = return ()
+checkNumT FloatT{}             = return ()
 checkNumT tau | isComplexT tau = return ()
 checkNumT tau =
     faildoc $ nest 2 $ group $
@@ -1167,7 +1152,7 @@ checkSTCUnit tau =
     text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
 
 checkPure :: MonadTc m => Type -> m ()
-checkPure tau@(ST {}) =
+checkPure tau@ST{} =
     faildoc $ nest 2 $ group $
     text "Expected pure type got:" <+/> ppr tau
 
@@ -1175,8 +1160,8 @@ checkPure _ =
     return ()
 
 checkPureish :: MonadTc m => Type -> m ()
-checkPureish tau@(ST {}) = void $ checkPureishST tau
-checkPureish _           = return ()
+checkPureish tau@ST{} = void $ checkPureishST tau
+checkPureish _        = return ()
 
 checkPureishST :: MonadTc m => Type -> m ([TyVar], Omega, Type, Type, Type)
 checkPureishST tau@(ST alphas omega s a b _) | isPureishT tau =

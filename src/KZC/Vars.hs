@@ -55,7 +55,7 @@ class Ord n => HasVars x n where
     allVars _ = mempty
 
 instance Ord a => HasVars a a where
-    allVars x = singleton x
+    allVars = singleton
 
 instance HasVars x n => HasVars (Maybe x) n where
     allVars = foldMap allVars
@@ -90,7 +90,7 @@ class (Ord v, Fvs e v) => Subst e v a where
 
 -- | Substitute without freshening.
 subst1 :: Subst e v a => Map v e -> a -> a
-subst1 m x = subst m Set.empty x
+subst1 m = subst m Set.empty
 
 instance Subst e v a => Subst e v [a] where
     substM a (theta, phi) = fmap (\x -> substM x (theta, phi)) a
