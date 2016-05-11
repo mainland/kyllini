@@ -1215,11 +1215,11 @@ simplExp (BindE wv tau e1 e2 s) = do
         return $ BindE WildV tau' e1' e2' s
 
     go e1' tau' (TameV v) =
-       withUniqBoundVar v $ \v' ->
-       extendVars [(bVar v', tau)] $
-       extendDefinitions [(bVar v', Unknown)] $ do
-       e2' <- simplExp e2
-       return $ BindE wv tau' e1' e2' s
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', Unknown)] $ do
+        e2' <- simplExp e2
+        return $ BindE wv tau' e1' e2' s
 
 simplExp (LutE e) =
     LutE <$> simplExp e
