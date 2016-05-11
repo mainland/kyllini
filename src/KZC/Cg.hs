@@ -1034,14 +1034,9 @@ cgExp e k =
     -}
 
     go (WhileE e_test e_body l) k = do
-        cgLoop Nothing $ do
-            (citems_test, ce_test) <- inNewBlock  $ cgExpOneshot e_test
-            citems_body            <- inNewBlock_ $ cgExpOneshot e_body
-            appendBlock $ map (rl l) citems_test
-            appendStm $ rl l [cstm|while ($ce_test) {
-                                     $items:citems_body
-                                     $items:citems_test
-                                   }|]
+        cgLoop Nothing $
+            cgWhile l e_test $
+            cgExpOneshot e_body
         runKont k CVoid
 
     go (ForE _ v v_tau e_start e_len e_body l) k = do
@@ -1817,19 +1812,11 @@ cgComp takek emitk emitsk comp klbl k =
         faildoc $ text "Cannot compile let computation step."
 
     cgStep (WhileC l e_test c_body sloc) _ k = do
-        cgLoop (Just l) $ do
-            (citems_test, ce_test) <- inNewBlock $
-                cgExpOneshot e_test
-            citems_body <- inNewBlock_ $ do
-                l_inner <- gensym "inner_whilek"
-                cgCompVoid takek emitk emitsk c_body l_inner
-                cgLabel l_inner
-            appendBlock $ map (rl sloc) citems_test
-            appendStm $
-              rl sloc [cstm|while ($ce_test) {
-                              $items:citems_body
-                              $items:citems_test
-                            }|]
+        cgLoop (Just l) $
+            cgWhile sloc e_test $ do
+            l_inner <- gensym "inner_whilek"
+            cgCompVoid takek emitk emitsk c_body l_inner
+            cgLabel l_inner
         newScope $ runKont k CVoid
 
     cgStep (ForC l _ v v_tau e_start e_len c_body sloc) _ k = do
@@ -2604,6 +2591,33 @@ cgAddrOf tau ce = do
     ctemp <- cgTemp "addrof" tau
     cgAssign tau ctemp ce
     return $ CExp [cexp|&$ctemp|]
+
+cgWhile :: IsLabel l
+        => SrcLoc
+        -> Exp
+        -> Cg l a
+        -> Cg l ()
+cgWhile l e_test mbody = do
+    (citems_test, ce_test) <- inNewBlock $
+                              cgExpOneshot e_test
+    let cinits_test :: [C.InitGroup]
+        cinits_test = map (rl l) [decl | C.BlockDecl decl <- citems_test]
+
+        cstms_test :: [C.Stm]
+        cstms_test = map (rl l) [stm | C.BlockStm stm <- citems_test]
+    appendDecls cinits_test
+    appendStms cstms_test
+    -- We need to mark ce_test as used both before and after the loop body so
+    -- that any bindings it may use are floated out to the proper scope, e.g.,
+    -- if this is a computation while loop, any bindings used in the conditional
+    -- will be floated out to thread scope.
+    useCExp ce_test
+    citems_body <- inNewBlock_ mbody
+    useCExp ce_test
+    appendStm $ rl l [cstm|while ($ce_test) {
+                             $items:citems_body
+                             $stms:cstms_test
+                           }|]
 
 -- | Generate code for an if statement.
 cgIf :: forall l a . IsLabel l
