@@ -180,6 +180,11 @@ kzc : $(SRC) dist/build/autogen/cabal_macros.h
 	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
 		-o $@
 
+kzc.prof : kzc
+	@mkdir -p obj
+	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
+		-prof -auto-all -caf-all -osuf p_o -o $@
+
 #
 # Generated instances
 #
