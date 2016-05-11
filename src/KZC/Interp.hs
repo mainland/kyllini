@@ -685,6 +685,12 @@ compileDecl (LetRefLD v tau e _) k = do
                               return $ return val
     compileInit (Just e) = compileExp e
 
+isRef :: Exp -> Bool
+isRef VarE{}          = True
+isRef (IdxE e1 _ _ _) = isRef e1
+isRef (ProjE e _ _)   = isRef e
+isRef _               = False
+
 compileRef :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
            => Exp -> I s m (IO (Ref s))
 compileRef (VarE v _) = do
@@ -875,6 +881,10 @@ compileExp (ArrayE es _) = do
     return $ do vals <- sequence mvals
                 return $ ArrayV $ V.fromList vals
 
+compileExp e@IdxE{} | isRef e = do
+    mref <- compileRef e
+    return $ mref >>= fromRef
+
 compileExp (IdxE e1 e2 len _) = do
     mval1 <- compileExp e1
     mval2 <- compileExp e2
@@ -888,6 +898,10 @@ compileExp (StructE struct flds _) = do
                 return $ StructV struct $ Map.fromList $ fs `zip` vals
   where
     (fs, es) = unzip flds
+
+compileExp e@ProjE{} | isRef e = do
+    mref <- compileRef e
+    return $  mref >>= fromRef
 
 compileExp (ProjE e f _) = do
     mval <- compileExp e
