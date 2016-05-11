@@ -1030,9 +1030,32 @@ simplExp (IfE e1 e2 e3 s) = do
 
 simplExp (LetE decl e s) = do
     (maybe_decl', e') <- simplLocalDecl decl $ simplExp e
-    case maybe_decl' of
-      Nothing    -> return e'
-      Just decl' -> return $ LetE decl' e' s
+    go maybe_decl' e'
+  where
+    go :: Maybe LocalDecl -> Exp -> SimplM l m Exp
+    go Nothing e' =
+        return e'
+
+    -- XXX This is a hack to transform an expression of the form
+    --
+    --     letref (v : tau) = ... in { v := e1; e2 }
+    --
+    -- into an expression of the forman expression of the form
+    --
+    --     letref (v : tau) = e1 in e2
+    --
+    -- It is a not a very general transformation, but we see this pattern over
+    -- and over again as a result of the interleaver. We want to perform this
+    -- transformation because it may yield a letref that is never actually
+    -- modified, meaning we can convert it into a let, meaning we can avoid a
+    -- memory copy. And we like to avoid memory copies...
+    --
+    go (Just (LetRefLD bv tau _ s)) (BindE WildV _ (AssignE (VarE v _) e1 _) e2 _)
+      | v == bVar bv = do rewrite
+                          return $ LetE (LetRefLD bv tau (Just e1) s) e2 s
+
+    go (Just decl') e' =
+        return $ LetE decl' e' s
 
 simplExp (CallE f0 iotas0 es0 s) = do
     iotas <- mapM simplIota iotas0
@@ -1193,31 +1216,46 @@ simplExp (BindE wv tau e1 e2 s) = do
     go e1' tau' wv
   where
     go :: Exp -> Type -> WildVar -> SimplM l m Exp
+    go (BindE wv1' tau1' e1a' e1b' _) tau' WildV = do
+        e2' <- simplExp e2
+        rewrite
+        return $ BindE wv1' tau1' e1a' (BindE WildV tau' e1b' e2' s) s
+
+    go (BindE wv1' tau1' e1a' e1b' _) tau' (TameV v) =
+        extendWildVars [(wv1', tau1')] $
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', Unknown)] $ do
+        e2' <- simplExp e2
+        rewrite
+        return $ BindE wv1' tau1' e1a' (BindE (TameV v') tau' e1b' e2' s) s
+
     go e tau' (TameV v) | bOccInfo v == Just Dead = do
         dropBinding v
         go e tau' WildV
 
-    go ReturnE{} _tau' WildV =
+    go ReturnE{} _tau' WildV = do
+        rewrite
         simplExp e2
 
-    go (ReturnE _ e1' _) tau' (TameV v) = do
-        decl <- withUniqBoundVar v $ \v' ->
-                extendVars [(bVar v', tau)] $
-                extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $
-                return $ LetLD v' tau' e1' s
-        e2'  <- simplExp e2
-        return $ LetE decl e2' s
+    go (ReturnE _ e1' _) tau' (TameV v) =
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
+        e2' <- simplExp e2
+        rewrite
+        return $ LetE (LetLD v' tau' e1' s) e2' s
 
     go e1' tau' WildV = do
         e2' <- simplExp e2
         return $ BindE WildV tau' e1' e2' s
 
     go e1' tau' (TameV v) =
-       withUniqBoundVar v $ \v' ->
-       extendVars [(bVar v', tau)] $
-       extendDefinitions [(bVar v', Unknown)] $ do
-       e2' <- simplExp e2
-       return $ BindE wv tau' e1' e2' s
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', Unknown)] $ do
+        e2' <- simplExp e2
+        return $ BindE (TameV v') tau' e1' e2' s
 
 simplExp (LutE e) =
     LutE <$> simplExp e
