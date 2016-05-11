@@ -123,7 +123,7 @@ $(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
 #
 TESTDIR = $(TOP)/testsuite
 
-KZC=$(TOP)/kzc
+KZC?=$(TOP)/kzc
 KZCFLAGS+=-I$(TESTDIR)/lib --dlint --dprint-uniques --fno-line-pragmas
 
 RUNTIME_SRC=\
