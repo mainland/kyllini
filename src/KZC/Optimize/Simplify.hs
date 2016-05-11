@@ -1201,14 +1201,13 @@ simplExp (BindE wv tau e1 e2 s) = do
         rewrite
         simplExp e2
 
-    go (ReturnE _ e1' _) tau' (TameV v) = do
-        decl <- withUniqBoundVar v $ \v' ->
-                extendVars [(bVar v', tau)] $
-                extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $
-                return $ LetLD v' tau' e1' s
-        e2'  <- simplExp e2
+    go (ReturnE _ e1' _) tau' (TameV v) =
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
+        e2' <- simplExp e2
         rewrite
-        return $ LetE decl e2' s
+        return $ LetE (LetLD v' tau' e1' s) e2' s
 
     go e1' tau' WildV = do
         e2' <- simplExp e2
