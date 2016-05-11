@@ -35,9 +35,11 @@ import Control.Monad.Error (Error, ErrorT(..))
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
+import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid)
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -74,9 +76,17 @@ instance MonadTrace m => MonadTrace (StateT s m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = StateT $ \s -> localTraceDepth f (runStateT m s)
 
+instance MonadTrace m => MonadTrace (S.StateT s m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = S.StateT $ \s -> localTraceDepth f (S.runStateT m s)
+
 instance (Monoid w, MonadTrace m) => MonadTrace (WriterT w m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = WriterT $ localTraceDepth f (runWriterT m)
+
+instance (Monoid w, MonadTrace m) => MonadTrace (S.WriterT w m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = S.WriterT $ localTraceDepth f (S.runWriterT m)
 
 traceNest :: MonadTrace m => m a -> m a
 traceNest = localTraceDepth (+1)

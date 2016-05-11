@@ -48,9 +48,11 @@ import Control.Monad.Exception (Exception(..),
                                 throw)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
+import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
 #if !MIN_VERSION_base(4,8,0)
@@ -164,9 +166,29 @@ instance MonadErr m => MonadErr (StateT r m) where
     err   = lift . err
     warn  = lift . warn
 
+instance MonadErr m => MonadErr (S.StateT r m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = S.StateT $ \s -> localErrCtx ctx (S.runStateT m s)
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+
 instance (Monoid w, MonadErr m) => MonadErr (WriterT w m) where
     askErrCtx         = lift askErrCtx
     localErrCtx ctx m = WriterT $ localErrCtx ctx (runWriterT m)
+
+    displayWarning = lift . displayWarning
+
+    panic = lift . panic
+    err   = lift . err
+    warn  = lift . warn
+
+instance (Monoid w, MonadErr m) => MonadErr (S.WriterT w m) where
+    askErrCtx         = lift askErrCtx
+    localErrCtx ctx m = S.WriterT $ localErrCtx ctx (S.runWriterT m)
 
     displayWarning = lift . displayWarning
 

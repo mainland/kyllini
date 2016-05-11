@@ -77,9 +77,11 @@ import Control.Monad.Primitive (PrimMonad(..),
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.State (StateT(..))
+import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.IORef (IORef)
 import Data.List (foldl')
 import Data.Loc (Located, noLoc, srclocOf)
@@ -174,9 +176,17 @@ instance MonadTc m => MonadTc (StateT r m) where
     askTc       = lift askTc
     localTc f m = StateT $ \s -> localTc f (runStateT m s)
 
+instance MonadTc m => MonadTc (S.StateT r m) where
+    askTc       = lift askTc
+    localTc f m = S.StateT $ \s -> localTc f (S.runStateT m s)
+
 instance (Monoid w, MonadTc m) => MonadTc (WriterT w m) where
     askTc       = lift askTc
     localTc f m = WriterT $ localTc f (runWriterT m)
+
+instance (Monoid w, MonadTc m) => MonadTc (S.WriterT w m) where
+    askTc       = lift askTc
+    localTc f m = S.WriterT $ localTc f (S.runWriterT m)
 
 extendTcEnv :: forall k v a m . (Ord k, MonadTc m)
             => (TcEnv -> Map k v)

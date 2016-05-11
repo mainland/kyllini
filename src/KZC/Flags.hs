@@ -46,9 +46,11 @@ import Control.Monad.Error (Error, ErrorT(..))
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
+import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
+import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.Bits
 import Data.List (foldl')
 import Data.Monoid
@@ -277,9 +279,17 @@ instance MonadFlags m => MonadFlags (StateT s m) where
     askFlags       = lift askFlags
     localFlags f m = StateT $ \s -> localFlags f (runStateT m s)
 
+instance MonadFlags m => MonadFlags (S.StateT s m) where
+    askFlags       = lift askFlags
+    localFlags f m = S.StateT $ \s -> localFlags f (S.runStateT m s)
+
 instance (Monoid w, MonadFlags m) => MonadFlags (WriterT w m) where
     askFlags       = lift askFlags
     localFlags f m = WriterT $ localFlags f (runWriterT m)
+
+instance (Monoid w, MonadFlags m) => MonadFlags (S.WriterT w m) where
+    askFlags       = lift askFlags
+    localFlags f m = S.WriterT $ localFlags f (S.runWriterT m)
 
 setMode :: ModeFlag -> Flags -> Flags
 setMode f flags = flags { mode = f }
