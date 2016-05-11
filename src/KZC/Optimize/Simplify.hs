@@ -1219,7 +1219,7 @@ simplExp (BindE wv tau e1 e2 s) = do
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', Unknown)] $ do
         e2' <- simplExp e2
-        return $ BindE wv tau' e1' e2' s
+        return $ BindE (TameV v') tau' e1' e2' s
 
 simplExp (LutE e) =
     LutE <$> simplExp e
