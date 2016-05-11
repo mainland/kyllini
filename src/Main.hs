@@ -84,8 +84,9 @@ main = do
     printFailure e = hPrint stderr e >> exitFailure
 
 runPipeline :: FilePath -> KZC ()
-runPipeline filepath =
-    void $ runMaybeT $ pipeline filepath
+runPipeline filepath = do
+    start <- liftIO getCPUTime
+    void $ runMaybeT $ pipeline start filepath
   where
     ext :: String
     ext = drop 1 (takeExtension filepath)
@@ -93,8 +94,8 @@ runPipeline filepath =
     start :: Pos
     start = startPos filepath
 
-    pipeline :: FilePath -> MaybeT KZC ()
-    pipeline =
+    pipeline :: Integer -> FilePath -> MaybeT KZC ()
+    pipeline start =
         inputPhase >=>
         cppPhase >=>
         parsePhase >=>
@@ -126,27 +127,29 @@ runPipeline filepath =
         tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
+      where
+        tracePhase :: String
+                   -> (a -> MaybeT KZC b)
+                   -> a
+                   -> MaybeT KZC b
+        tracePhase phase act x = do
+            doTrace <- asksFlags (testTraceFlag TracePhase)
+            if doTrace
+              then do pass       <- lift getPass
+                      phaseStart <- liftIO getCPUTime
+                      let t1 :: Double
+                          t1 = fromIntegral (phaseStart - start) / 1e12
+                      return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f)\n" phase pass t1)
+                      y        <- act x
+                      phaseEnd <- liftIO getCPUTime
+                      let t2 :: Double
+                          t2 = fromIntegral (phaseEnd - phaseStart) / 1e12
+                      return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f elapsed)\n" phase pass t2)
+                      return y
+              else act x
 
     runEval :: Flags -> Bool
     runEval flags = testDynFlag PartialEval flags || testDynFlag LUT flags
-
-    tracePhase :: String
-               -> (a -> MaybeT KZC b)
-               -> a
-               -> MaybeT KZC b
-    tracePhase phase act x = do
-        doTrace <- asksFlags (testTraceFlag TracePhase)
-        if doTrace
-          then do pass  <- lift getPass
-                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d\n" phase pass)
-                  start <- liftIO getCPUTime
-                  y     <- act x
-                  end   <- liftIO getCPUTime
-                  let t :: Double
-                      t = fromIntegral (end - start) / 1e12
-                  return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f)\n" phase pass t)
-                  return y
-          else act x
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
