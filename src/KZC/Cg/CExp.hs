@@ -120,9 +120,9 @@ instance Show (FunCompC l a) where
 
 -- | The type of "compiled" expressions.
 data CExp l = CVoid
-            | CBool Bool
-            | CInt Integer     -- ^ Integer constant
-            | CFloat Rational  -- ^ Float constant
+            | CBool !Bool
+            | CInt !Integer    -- ^ Integer constant
+            | CFloat !Rational -- ^ Float constant
             | CExp C.Exp       -- ^ C expression
             | CInit C.Initializer
               -- ^ A list of C initializers for a constant
