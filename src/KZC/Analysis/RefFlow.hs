@@ -47,6 +47,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Core.Transform
 import KZC.Error
 import KZC.Flags
 import KZC.Trace
@@ -167,6 +168,11 @@ useVar v = do
       else do refs <- fromMaybe mempty <$> gets (Map.lookup v . varFlowsFrom)
               tell refs
 
+queueModified :: MonadTc m => RF m ()
+queueModified = do
+    refModified QueueR
+    tell $ Set.singleton QueueR
+
 -- | Collect the set of refs used to produce the result of the computation @k@.
 collectUseInfo :: Monad m => RF m a -> RF m (a, RefSet)
 collectUseInfo k =
@@ -189,307 +195,145 @@ updateTaint bv m =
     f = Set.delete (VarR (bVar bv))
 
 rfProgram :: MonadTc m => Program l -> RF m (Program l)
-rfProgram (Program decls comp tau) = do
-  (decls', comp') <-
-      rfDecls decls $
-      inSTScope tau $
-      inLocalScope $
-      withLocContext comp (text "In definition of main") $
-      rfComp comp
-  return $ Program decls' comp' tau
+rfProgram = programT
 
-rfDecls :: MonadTc m
-        => [Decl l]
-        -> RF m a
-        -> RF m ([Decl l], a)
-rfDecls [] m = do
-    x <- m
-    return ([], x)
+instance MonadTc m => Transform (RF m) where
+    localDeclT (LetLD v tau e1 s) k = do
+        (e1', refs) <- collectUseInfo $ expT e1
+        (x, v')     <- extendVars [(bVar v, tau)] $
+                       extendVarFlowsFrom (bVar v) refs $
+                       updateTaint v k
+        return (LetLD v' tau e1' s, x)
 
-rfDecls (d:ds) k = do
-    (d', (ds', x)) <- rfDecl d $ rfDecls ds k
-    return (d':ds', x)
+    localDeclT (LetRefLD v tau maybe_e1 s) k = do
+        maybe_e1' <- traverse (voidUseInfo . expT) maybe_e1
+        x         <- extendVars [(bVar v, refT tau)] k
+        return (LetRefLD v tau maybe_e1' s, x)
 
-rfDecl :: MonadTc m
-       => Decl l
-       -> RF m a
-       -> RF m (Decl l, a)
-rfDecl (LetD decl s) m = do
-    (decl', x) <- rfLocalDecl decl m
-    return (LetD decl' s, x)
+    stepsT [] =
+        return []
 
-rfDecl (LetFunD f ivs vbs tau_ret e l) m = do
-    (x, e') <-
-        extendVars [(bVar f, tau)] $ do
-        e' <- extendLetFun f ivs vbs tau_ret $
-              rfExp e
-        x <- m
-        return (x, e')
-    return (LetFunD f ivs vbs tau_ret e' l, x)
-  where
-    tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    stepsT (LetC l decl s : steps) = do
+        (decl', steps') <- localDeclT decl $ stepsT steps
+        return $ LetC l decl' s : steps'
 
-rfDecl (LetExtFunD f ivs vbs tau_ret l) m = do
-    x <- extendExtFuns [(bVar f, tau)] m
-    return (LetExtFunD f ivs vbs tau_ret l, x)
-  where
-    tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    stepsT (step : BindC l WildV tau s : steps) = do
+        step'  <- voidUseInfo $ stepT step
+        steps' <- stepsT steps
+        return $ step' : BindC l WildV tau s : steps'
 
-rfDecl decl@(LetStructD s flds l) m = do
-    x <- extendStructs [StructDef s flds l] m
-    return (decl, x)
+    stepsT (step : BindC l (TameV v) tau s : steps) = do
+        (step', refs) <- collectUseInfo $ stepT step
+        (steps', v')  <- extendVars [(bVar v, tau)] $
+                         extendVarFlowsFrom (bVar v) refs $
+                         updateTaint v $
+                         stepsT steps
+        return $ step' : BindC l (TameV v') tau s : steps'
 
-rfDecl (LetCompD v tau comp l) m = do
-    comp' <- extendLet v tau $
-             rfComp comp
-    x     <- extendVars [(bVar v, tau)] m
-    return (LetCompD v tau comp' l, x)
+    stepsT (step : steps) = do
+        step'  <- voidUseInfo $ stepT step
+        steps' <- stepsT steps
+        return $ step' : steps'
 
-rfDecl (LetFunCompD f ivs vbs tau_ret comp l) m = do
-    (x, comp') <-
-        extendVars [(bVar f, tau)] $ do
-        comp' <- extendLetFun f ivs vbs tau_ret $
-                 rfComp comp
-        x <- m
-        return (x, comp')
-    return (LetFunCompD f ivs vbs tau_ret comp' l, x)
-  where
-    tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    stepT c@(VarC _ v _) = do
+        useVar v
+        return c
 
-rfLocalDecl :: forall m a . MonadTc m
-            => LocalDecl
-            -> RF m a
-            -> RF m (LocalDecl, a)
-rfLocalDecl (LetLD v tau e1 s) k = do
-    (e1', refs) <- collectUseInfo $ rfExp e1
-    (x, v')     <- extendVars [(bVar v, tau)] $
-                   extendVarFlowsFrom (bVar v) refs $
-                   updateTaint v k
-    return (LetLD v' tau e1' s, x)
+    stepT (CallC l f iotas args s) = do
+        -- We taint arguments /before/ we call 'rfArg' so that any arguments
+        -- that may be derived from a ref dereference are actually dereferenced.
+        -- See Note [Aliasing] in Cg.hs.
+        mapM_ taintArg args
+        CallC l f iotas <$> mapM argT args <*> pure s
+      where
+        taintArg :: Arg l -> RF m ()
+        taintArg CompA{} =
+            return ()
 
-rfLocalDecl (LetRefLD v tau maybe_e1 s) k = do
-    maybe_e1' <- traverse (voidUseInfo . rfExp) maybe_e1
-    x         <- extendVars [(bVar v, refT tau)] k
-    return (LetRefLD v tau maybe_e1' s, x)
+        taintArg (ExpA e) = do
+            tau <- inferExp e
+            when (isRefT tau) $ do
+                v <- refRoot e
+                refModified $ VarR v
 
-rfComp :: MonadTc m
-       => Comp l
-       -> RF m (Comp l)
-rfComp (Comp steps) =
-    Comp <$> rfSteps steps
+    stepT (IfC l e1 c2 c3 s) = do
+        e1'        <- expT e1
+        (c2', c3') <- rfIf (compT c2) (compT c3)
+        return $ IfC l e1' c2' c3' s
 
-rfSteps :: MonadTc m
-        => [Step l]
-        -> RF m [Step l]
-rfSteps [] =
-    return []
+    stepT c@TakeC{} = do
+        queueModified
+        return c
 
-rfSteps (LetC l decl s : steps) = do
-    (decl', steps') <- rfLocalDecl decl $
-                       rfSteps steps
-    return $ LetC l decl' s : steps'
+    stepT c@TakesC{} = do
+        queueModified
+        return c
 
-rfSteps (step : BindC l WildV tau s : steps) = do
-    step'  <- voidUseInfo $ rfStep step
-    steps' <- rfSteps steps
-    return $ step' : BindC l WildV tau s : steps'
+    stepT (EmitC l e s) =
+        EmitC l <$> voidUseInfo (expT e) <*> pure s
 
-rfSteps (step : BindC l (TameV v) tau s : steps) = do
-    (step', refs) <- collectUseInfo $ rfStep step
-    (steps', v')  <- extendVars [(bVar v, tau)] $
-                     extendVarFlowsFrom (bVar v) refs $
-                     updateTaint v $
-                     rfSteps steps
-    return $ step' : BindC l (TameV v') tau s : steps'
+    stepT (EmitsC l e s) =
+        EmitsC l <$> voidUseInfo (expT e) <*> pure s
 
-rfSteps (step : steps) = do
-    step'  <- voidUseInfo $ rfStep step
-    steps' <- rfSteps steps
-    return $ step' : steps'
+    stepT (ParC ann tau c1 c2 s) = do
+        -- We need to make sure any refs modified in /either/ branch are seen as
+        -- modified in both branches. If the two branches use the same source
+        -- ref, we need to re-analyze them to look for use-after-modify. See
+        -- Note [Aliasing] in Cg.hs.
+        (c1', refs1) <- collectUseInfo $ compT c1
+        (c2', refs2) <- collectUseInfo $ compT c2
+        tell $ refs1 <> refs2
+        if Set.null (refs1 `Set.intersection` refs2)
+          then return $ ParC ann tau c1' c2' s
+          else ParC ann tau <$> compT c1 <*> compT c2 <*> pure s
 
-rfStep :: forall l m . MonadTc m
-       => Step l
-       -> RF m (Step l)
-rfStep c@(VarC _ v _) = do
-    useVar v
-    return c
+    stepT step =
+        transStep step
 
-rfStep (CallC l f iotas args s) = do
-    -- We taint arguments /before/ we call 'rfArg' so that any arguments that
-    -- may be derived from a ref dereference are actually dereferenced. See Note
-    -- [Aliasing] in Cg.hs.
-    mapM_ taintArg args
-    CallC l f iotas <$> mapM rfArg args <*> pure s
-  where
-    rfArg :: Arg l -> RF m (Arg l)
-    rfArg (CompA comp) = CompA <$> rfComp comp
-    rfArg (ExpA e)     = ExpA <$> rfExp e
+    expT e@(VarE v _) = do
+        useVar v
+        return e
 
-    taintArg :: Arg l -> RF m ()
-    taintArg CompA{} =
-        return ()
+    expT (IfE e1 e2 e3 s) = do
+        e1'        <- expT e1
+        (e2', e3') <- rfIf (expT e2) (expT e3)
+        return $ IfE e1' e2' e3' s
 
-    taintArg (ExpA e) = do
-        tau <- inferExp e
-        when (isRefT tau) $ do
-            v <- refRoot e
-            refModified $ VarR v
+    expT (CallE f iotas es s) = do
+        e' <- CallE f iotas <$> mapM expT es <*> pure s
+        mapM_ taintArg es
+        return e'
+      where
+        taintArg :: Exp -> RF m ()
+        taintArg e = do
+            tau <- inferExp e
+            when (isRefT tau) $ do
+                v <- refRoot e
+                refModified $ VarR v
 
-rfStep (IfC l e1 c2 c3 s) = do
-    e1'        <- rfExp e1
-    (c2', c3') <- rfIf (rfComp c2) (rfComp c3)
-    return $ IfC l e1' c2' c3' s
+    expT (AssignE e1 e2 s) = do
+        e1'         <- expT e1
+        (e2', refs) <- collectUseInfo $ expT e2
+        v           <- refRoot e1
+        refModified (VarR v)
+        putFlowVars v refs
+        return $ AssignE e1' e2' s
 
-rfStep LetC{} =
-    panicdoc $ text "rfStep: saw let"
+    expT (BindE WildV tau e1 e2 s) = do
+        e1' <- voidUseInfo $ expT e1
+        e2' <- expT e2
+        return $ BindE WildV tau e1' e2' s
 
-rfStep (WhileC l e1 c2 s) =
-    WhileC l <$> rfExp e1 <*> rfComp c2 <*> pure s
+    expT (BindE (TameV v) tau e1 e2 s) = do
+        (e1', refs) <- collectUseInfo $ expT e1
+        (e2', v')   <- extendVars [(bVar v, tau)] $
+                       extendVarFlowsFrom (bVar v) refs $
+                       updateTaint v $
+                       expT e2
+        return $ BindE (TameV v') tau e1' e2' s
 
-rfStep (ForC l ann v tau e1 e2 c s) =
-    ForC l ann v tau <$> rfExp e1 <*> rfExp e2 <*> extendVars [(v, tau)] (rfComp c) <*> pure s
-
-rfStep (LiftC l e s) =
-    LiftC l <$> rfExp e <*> pure s
-
-rfStep (ReturnC l e s) =
-    ReturnC l <$> rfExp e <*> pure s
-
-rfStep BindC{} =
-    panicdoc $ text "rfStep: saw bind"
-
-rfStep c@TakeC{} = do
-    refModified QueueR
-    tell $ Set.singleton QueueR
-    return c
-
-rfStep c@TakesC{} = do
-    refModified QueueR
-    tell $ Set.singleton QueueR
-    return c
-
-rfStep (EmitC l e s) =
-    EmitC l <$> voidUseInfo (rfExp e) <*> pure s
-
-rfStep (EmitsC l e s) =
-    EmitsC l <$> voidUseInfo (rfExp e) <*> pure s
-
-rfStep (RepeatC l ann c s) =
-    RepeatC l ann <$> rfComp c <*> pure s
-
-rfStep (ParC ann tau c1 c2 s) = do
-    -- We need to make sure any refs modified in /either/ branch are seen as
-    -- modified in both branches. If the two branches use the same source ref,
-    -- we need to re-analyze them to look for use-after-modify. See Note
-    -- [Aliasing] in Cg.hs.
-    (c1', refs1) <- collectUseInfo $ rfComp c1
-    (c2', refs2) <- collectUseInfo $ rfComp c2
-    tell $ refs1 <> refs2
-    if Set.null (refs1 `Set.intersection` refs2)
-      then return $ ParC ann tau c1' c2' s
-      else ParC ann tau <$> rfComp c1 <*> rfComp c2 <*> pure s
-
-rfStep LoopC{} =
-    faildoc $ text "rfStep: saw LoopC"
-
-rfExp :: forall m . MonadTc m
-      => Exp
-      -> RF m Exp
-rfExp e@ConstE{} =
-    pure e
-
-rfExp e@(VarE v _) = do
-    useVar v
-    return e
-
-rfExp (UnopE op e s) =
-    UnopE op <$> rfExp e <*> pure s
-
-rfExp (BinopE op e1 e2 s) =
-    BinopE op <$> rfExp e1 <*> rfExp e2 <*> pure s
-
-rfExp (IfE e1 e2 e3 s) = do
-    e1'        <- rfExp e1
-    (e2', e3') <- rfIf (rfExp e2) (rfExp e3)
-    return $ IfE e1' e2' e3' s
-
-rfExp (LetE decl e2 s) = do
-    (decl', e2') <- rfLocalDecl decl $
-                    rfExp e2
-    return $ LetE decl' e2' s
-
-rfExp (CallE f iotas es s) = do
-    e' <- CallE f iotas <$> mapM rfExp es <*> pure s
-    mapM_ taintArg es
-    return e'
-  where
-    taintArg :: Exp -> RF m ()
-    taintArg e = do
-        tau <- inferExp e
-        when (isRefT tau) $ do
-            v <- refRoot e
-            refModified $ VarR v
-
-rfExp (DerefE e s) =
-    DerefE <$> rfExp e <*> pure s
-
-rfExp (AssignE e1 e2 s) = do
-    e1'         <- rfExp e1
-    (e2', refs) <- collectUseInfo $ rfExp e2
-    v           <- refRoot e1
-    refModified (VarR v)
-    putFlowVars v refs
-    return $ AssignE e1' e2' s
-
-rfExp (WhileE e1 e2 s) =
-    WhileE <$> rfExp e1 <*> rfExp e2 <*> pure s
-
-rfExp (ForE ann v tau e1 e2 e3 s) =
-    ForE ann v tau <$> rfExp e1 <*> rfExp e2 <*> extendVars [(v, tau)] (rfExp e3) <*> pure s
-
-rfExp (ArrayE es s) =
-    ArrayE <$> mapM rfExp es <*> pure s
-
-rfExp (IdxE e1 e2 len s) =
-    IdxE <$> rfExp e1 <*> rfExp e2 <*> pure len <*> pure s
-
-rfExp (StructE sname flds s) =
-    StructE sname <$> mapM rfField flds <*> pure s
-  where
-    rfField :: (Field, Exp) -> RF m (Field, Exp)
-    rfField (f, e) = (,) <$> pure f <*> rfExp e
-
-rfExp (ProjE e f s) =
-    ProjE <$> rfExp e <*> pure f <*> pure s
-
-rfExp (PrintE nl es s) =
-    PrintE nl <$> mapM rfExp es <*> pure s
-
-rfExp e@ErrorE{} =
-    pure e
-
-rfExp (ReturnE ann e s) =
-    ReturnE ann <$> rfExp e <*> pure s
-
-rfExp (BindE WildV tau e1 e2 s) = do
-    e1' <- voidUseInfo $ rfExp e1
-    e2' <- rfExp e2
-    return $ BindE WildV tau e1' e2' s
-
-
-rfExp (BindE (TameV v) tau e1 e2 s) = do
-    (e1', refs) <- collectUseInfo $ rfExp e1
-    (e2', v')   <- extendVars [(bVar v, tau)] $
-                   extendVarFlowsFrom (bVar v) refs $
-                   updateTaint v $
-                   rfExp e2
-    return $ BindE (TameV v') tau e1' e2' s
-
-rfExp (LutE e) =
-    LutE <$> rfExp e
+    expT e =
+      transExp e
 
 rfIf :: Monad m
      => RF m a
