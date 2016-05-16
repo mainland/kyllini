@@ -104,11 +104,11 @@ instance Applicative Known where
     (<*>) = ap
 
 instance Monad Known where
-  return = Known
+    return = Known
 
-  Unknown >>= _ = Unknown
-  Known x >>= f = f x
-  Any     >>= _ = Any
+    Unknown >>= _ = Unknown
+    Known x >>= f = f x
+    Any     >>= _ = Any
 
 instance Poset a => Poset (Known a) where
     Unknown  <= _        = True
