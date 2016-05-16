@@ -624,28 +624,34 @@ simplLift [] =
 simplLift [step] =
     return [step]
 
-simplLift (IfC l e1 (Comp [LiftC _ e2 _]) (Comp [LiftC _ e3 _]) s : steps) =
+simplLift (IfC l e1 (Comp [LiftC _ e2 _]) (Comp [LiftC _ e3 _]) s : steps) = do
+    rewrite
     simplLift $ LiftC l (IfE e1 e2 e3 s) s : steps
 
-simplLift (LetC _ decl _ : LiftC l2 e _ : steps) | decl `notUsedIn` steps =
+simplLift (LetC _ decl _ : LiftC l2 e _ : steps) | decl `notUsedIn` steps = do
+    rewrite
     return $ LiftC l2 (LetE decl e s) s : steps
   where
     s :: SrcLoc
     s = decl `srcspan` e
 
-simplLift (WhileC l e1 (Comp [LiftC _ e2 _]) s : steps) =
+simplLift (WhileC l e1 (Comp [LiftC _ e2 _]) s : steps) = do
+    rewrite
     simplLift $ LiftC l (WhileE e1 e2 s) s : steps
 
-simplLift (ForC l ann v tau e1 e2 (Comp [LiftC _ e3 _]) s : steps) =
+simplLift (ForC l ann v tau e1 e2 (Comp [LiftC _ e3 _]) s : steps) = do
+    rewrite
     simplLift $ LiftC l (ForE ann v tau e1 e2 e3 s) s : steps
 
-simplLift (LiftC l e1 _ : LiftC _ e2 _ : steps) =
+simplLift (LiftC l e1 _ : LiftC _ e2 _ : steps) = do
+    rewrite
     simplLift $ LiftC l (seqE e1 e2) s : steps
   where
     s :: SrcLoc
     s = e1 `srcspan` e2
 
-simplLift (LiftC l e1 _ : BindC _ wv tau _ : LiftC _ e2 _ : steps) | wv `notUsedIn` steps =
+simplLift (LiftC l e1 _ : BindC _ wv tau _ : LiftC _ e2 _ : steps) | wv `notUsedIn` steps = do
+    rewrite
     simplLift $ LiftC l (BindE wv tau e1 e2 s) s : steps
   where
     s :: SrcLoc
