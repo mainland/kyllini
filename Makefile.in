@@ -73,6 +73,7 @@ SOURCE = \
 	KZC/Core/Lint.hs \
 	KZC/Core/Smart.hs \
 	KZC/Core/Syntax.hs \
+	KZC/Core/Transform.hs \
 	KZC/Derive.hs \
 	KZC/Error.hs \
 	KZC/Expr/Lint.hs \
