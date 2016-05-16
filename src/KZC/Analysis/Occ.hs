@@ -75,6 +75,12 @@ runOccM m = fst <$> runWriterT (unOccM m)
 occVar :: MonadTc m => Var -> OccM m ()
 occVar v = tell $ Occ (Map.singleton v Once)
 
+collectOcc :: MonadTc m => OccM m a -> OccM m (OccEnv, a)
+collectOcc m =
+    censor (const mempty) $ do
+    (x, occ) <- listen m
+    return (occ, x)
+
 -- | Return occurrence information for the given variable after running the
 -- specified action, after which the variable is purged from the occurrence
 -- environment.
@@ -158,6 +164,13 @@ instance MonadTc m => Transform (OccM m) where
         occVar f
         transStep step
 
+    stepT (IfC l e1 c2 c3 s) = do
+        e1'         <- expT e1
+        (occ2, c2') <- collectOcc $ compT c2
+        (occ3, c3') <- collectOcc $ compT c3
+        tell $ occ2 `bub` occ3
+        return $ IfC l e1' c2' c3' s
+
     stepT step =
         transStep step
 
@@ -168,6 +181,13 @@ instance MonadTc m => Transform (OccM m) where
     expT e@(CallE f _ _ _) = do
         occVar f
         transExp e
+
+    expT (IfE e1 e2 e3 s) = do
+        e1'         <- expT e1
+        (occ2, e2') <- collectOcc $ expT e2
+        (occ3, e3') <- collectOcc $ expT e3
+        tell $ occ2 `bub` occ3
+        return $ IfE e1' e2' e3' s
 
     expT (BindE (TameV v) tau e1 e2 s) = do
         e1'        <- expT e1
