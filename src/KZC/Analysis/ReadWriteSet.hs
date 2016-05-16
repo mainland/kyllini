@@ -84,9 +84,9 @@ instance Pretty Intv where
         | otherwise    = brackets $ ppr lo <> comma <> ppr hi
 
 instance Poset Intv where
-    EmptyI   <= _          = True
+    EmptyI     <= _            = True
     RangeI i j <= RangeI i' j' = i' <= i && j <= j'
-    _        <= _          = False
+    _          <= _            = False
 
 instance Lattice Intv where
     EmptyI     `lub` i            = i
