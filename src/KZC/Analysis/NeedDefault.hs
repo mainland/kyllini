@@ -24,6 +24,8 @@ module KZC.Analysis.NeedDefault (
     needDefaultProgram
   ) where
 
+import Prelude hiding ((<=))
+
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
@@ -60,16 +62,27 @@ import KZC.Uniq
 import KZC.Util.Lattice
 import KZC.Vars
 
-data Val = RangeV Iota Iota
+data Range = Range Iota Iota
+  deriving (Eq, Ord, Show)
+
+instance Pretty Range where
+    ppr (Range lo hi) = brackets $ commasep [ppr lo, ppr hi]
+
+instance Poset Range where
+    Range lo hi <= Range lo' hi' = (lo,hi) == (lo',hi')
+
+data Val = RangeV Range
          | StructV (Map Field (Known Val))
   deriving (Eq, Ord, Show)
 
 instance Pretty Val where
-    ppr (RangeV lo hi) = ppr (lo, hi)
+    ppr (RangeV rng)   = ppr rng
     ppr (StructV flds) = pprStruct (Map.toList flds)
 
 instance Poset Val where
-    x <= y = x == y
+    RangeV x  <= RangeV y  = x <= y
+    StructV x <= StructV y = x <= y
+    _         <= _         = False
 
 isKnown :: Known Val -> Bool
 isKnown Unknown                = False
@@ -318,11 +331,12 @@ useStep (ForC l ann v tau e1 e2 c s) = do
     go e1' val1 e2' val2
   where
     go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Step l)
-    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi =
+    go e1' (Known (RangeV (Range lo lo'))) e2' (Known (RangeV (Range hi hi')))
+      | lo' == lo && hi' == hi =
        ForC l ann v tau <$> pure e1'
                         <*> pure e2'
                         <*> (extendVars [(v, tau)] $
-                             extendVals [(v, Known (RangeV lo hi))] $
+                             extendVals [(v, Known (RangeV (Range lo hi)))] $
                              useComp c)
                         <*> pure s
 
@@ -368,7 +382,7 @@ useExp :: forall m . MonadTc m
        => Exp
        -> ND m (Exp, Known Val)
 useExp e@(ConstE (FixC I _ _ 0 r) s) =
-    return (e, Known (RangeV iota iota))
+    return (e, Known (RangeV (Range iota iota)))
   where
     iota :: Iota
     iota = ConstI (fromIntegral (numerator r)) s
@@ -383,7 +397,7 @@ useExp e@(VarE v _) = do
 
 useExp e@(UnopE Len (VarE v _) _) = do
     (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-    return (e, Known (RangeV iota iota))
+    return (e, Known (RangeV (Range iota iota)))
 
 useExp (UnopE op e s) =
     topA $  UnopE op <$> (fst <$> useExp e) <*> pure s
@@ -441,7 +455,7 @@ useExp (AssignE e1 e2 s) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         i_val     <- lookupVal i
         case i_val of
-          Known (RangeV (ConstI 0 _) iota_hi) | iota_hi == iota -> putVal v top
+          Known (RangeV (Range (ConstI 0 _) iota_hi)) | iota_hi == iota -> putVal v top
           _ -> return ()
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
@@ -478,11 +492,12 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
     go e1' val1 e2' val2
   where
     go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Exp, Known Val)
-    go e1' (Known (RangeV lo lo')) e2' (Known (RangeV hi hi')) | lo' == lo && hi' == hi =
+    go e1' (Known (RangeV (Range lo lo'))) e2' (Known (RangeV (Range hi hi')))
+      | lo' == lo && hi' == hi =
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
-                                  extendVals [(v, Known (RangeV lo hi))] $
+                                  extendVals [(v, Known (RangeV (Range lo hi)))] $
                                   fst <$> useExp e3)
                              <*> pure s
 
@@ -547,16 +562,10 @@ useIf ma mb = do
     put s
     y   <- mb
     s_b <- get
-    put NDState { vals        = joinWith myglb bot (vals s_a) (vals s_b)
+    put NDState { vals        = vals s_a `glb` vals s_b
                 , usedDefault = usedDefault s_a <> usedDefault s_b
                 }
     return (x, y)
-  where
-    --- XXX: this is gross gross gross, but when we join to branches that both
-    --- set a ref, we want the value of the ref to be determined, not unknown!
-    myglb :: Known Val -> Known Val -> Known Val
-    myglb (Known RangeV{}) (Known RangeV{}) = Any
-    myglb val1             val2             = val1 `glb` val2
 
 topA :: Applicative f => f a -> f (a, Known Val)
 topA m = (,) <$> m <*> pure top
