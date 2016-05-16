@@ -1476,7 +1476,8 @@ cgLetRefBinding :: forall l a . IsLabel l
                 -> Cg l a
 cgLetRefBinding bv tau Nothing k = do
     cv <- cgBinder (bVar bv) tau
-    when (needDefault bv) $
+    when (needDefault bv) $ do
+        incDefaultInits
         init cv tau
     k cv
   where

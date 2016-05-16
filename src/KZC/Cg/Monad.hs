@@ -28,6 +28,7 @@ module KZC.Cg.Monad (
     askTyVarTypeSubst,
 
     getStats,
+    incDefaultInits,
     incMemCopies,
     incBitArrayCopies,
 
@@ -128,23 +129,27 @@ defaultCgEnv = CgEnv
     }
 
 data CgStats = CgStats
-    { memCopies      :: !Int
+    { defaultInits   :: !Int
+    , memCopies      :: !Int
     , bitArrayCopies :: !Int
     }
 
 instance Monoid CgStats where
     mempty = CgStats
-        { memCopies      = 0
+        { defaultInits   = 0
+        , memCopies      = 0
         , bitArrayCopies = 0
         }
 
     x `mappend` y =
-        CgStats { memCopies      = memCopies x + memCopies y
+        CgStats { defaultInits   = defaultInits x + defaultInits y
+                , memCopies      = memCopies x + memCopies y
                 , bitArrayCopies = bitArrayCopies x + bitArrayCopies y
                 }
 
 instance Pretty CgStats where
     ppr stats =
+        text "Defaulted values:" <+> ppr (defaultInits stats) </>
         text "   Memory copies:" <+> ppr (memCopies stats) </>
         text "Bit array copies:" <+> ppr (bitArrayCopies stats)
 
@@ -226,6 +231,10 @@ getStats = gets stats
 
 modifyStats :: (CgStats -> CgStats) -> Cg l ()
 modifyStats f = modify $ \s -> s { stats = f (stats s) }
+
+incDefaultInits :: Cg l ()
+incDefaultInits =
+    modifyStats $ \s -> s { defaultInits = defaultInits s + 1 }
 
 incMemCopies :: Cg l ()
 incMemCopies =
