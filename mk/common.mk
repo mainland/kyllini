@@ -110,6 +110,22 @@ RUNGHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 GHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 
 #
+# Profiling
+#
+
+%.ps : %.hp
+	hp2ps -c $^ >$@
+
+%.pdf : %.ps
+	ps2pdf $^ $@
+
+%.folded : %.prof
+	cat $^ | ghc-prof-flamegraph >$@
+
+%.svg : %.folded
+	cat $^ | flamegraph.pl >$@
+
+#
 # BlinkDiff
 #
 
