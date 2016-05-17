@@ -1216,52 +1216,66 @@ simplExp e@ErrorE{} =
 simplExp (ReturnE ann e s) =
     ReturnE ann <$> simplExp e <*> pure s
 
-simplExp (BindE wv tau e1 e2 s) = do
-    e1'  <- simplExp e1
-    tau' <- simplType tau
-    go e1' tau' wv
+simplExp (BindE wv tau e1 e2 s) =
+    simplBind wv tau e1 e2 s
   where
-    go :: Exp -> Type -> WildVar -> SimplM l m Exp
-    go (BindE wv1' tau1' e1a' e1b' _) tau' WildV = do
-        e2' <- simplExp e2
+    simplBind :: WildVar
+              -> Type
+              -> Exp
+              -> Exp
+              -> SrcLoc
+              -> SimplM l m Exp
+    -- Reassociate bind
+    simplBind wv tau (BindE wv' tau' e1a e1b s') e2 s = do
         rewrite
-        return $ BindE wv1' tau1' e1a' (BindE WildV tau' e1b' e2' s) s
+        simplBind wv' tau' e1a (BindE wv tau e1b e2 s') s
 
-    go (BindE wv1' tau1' e1a' e1b' _) tau' (TameV v) =
-        extendWildVars [(wv1', tau1')] $
-        withUniqBoundVar v $ \v' ->
-        extendVars [(bVar v', tau)] $
-        extendDefinitions [(bVar v', Unknown)] $ do
-        e2' <- simplExp e2
-        rewrite
-        return $ BindE wv1' tau1' e1a' (BindE (TameV v') tau' e1b' e2' s) s
-
-    go e tau' (TameV v) | bOccInfo v == Just Dead = do
-        dropBinding v
-        go e tau' WildV
-
-    go ReturnE{} _tau' WildV = do
+    --
+    -- Drop an unbound return, e.g.,
+    --
+    --   { return e1; ... } -> { ... }
+    --
+    simplBind WildV _tau ReturnE{} e2 _s = do
         rewrite
         simplExp e2
 
-    go (ReturnE _ e1' _) tau' (TameV v) =
-        withUniqBoundVar v $ \v' ->
-        extendVars [(bVar v', tau)] $
-        extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
-        e2' <- simplExp e2
-        rewrite
-        return $ LetE (LetLD v' tau' e1' s) e2' s
-
-    go e1' tau' WildV = do
-        e2' <- simplExp e2
+    simplBind WildV tau e1 e2 s = do
+        tau' <- simplType tau
+        e1'  <- simplExp e1
+        e2'  <- simplExp e2
         return $ BindE WildV tau' e1' e2' s
 
-    go e1' tau' (TameV v) =
+    --
+    -- Drop unused bindings. The expression whose result is bound might have an
+    -- effect, so we can't neccessarily throw it away completely.
+    --
+    simplBind (TameV v) tau e1 e2 s | bOccInfo v == Just Dead = do
+        dropBinding v
+        simplBind WildV tau e1 e2 s
+
+    --
+    -- Convert a bind-return into a let, e.g.,
+    --
+    --   { x <- return e1; ... } -> { let x = e1; ... }
+    --
+    simplBind (TameV v) tau (ReturnE _ e1 _) e2 s = do
+        e1'  <- simplExp e1
+        tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
-        extendVars [(bVar v', tau)] $
-        extendDefinitions [(bVar v', Unknown)] $ do
-        e2' <- simplExp e2
-        return $ BindE (TameV v') tau' e1' e2' s
+          extendVars [(bVar v', tau)] $
+          extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
+          e2' <- simplExp e2
+          rewrite
+          return $ LetE (LetLD v' tau' e1' s) e2' s
+
+    simplBind (TameV v) tau e1 e2 s = do
+        e1'  <- simplExp e1
+        tau' <- simplType tau
+        withUniqBoundVar v $ \v' ->
+          extendVars [(bVar v', tau)] $
+          extendDefinitions [(bVar v', Unknown)] $ do
+          e2' <- simplExp e2
+          return $ BindE (TameV v') tau' e1' e2' s
 
 simplExp (LutE e) =
     LutE <$> simplExp e
