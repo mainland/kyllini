@@ -30,9 +30,9 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
-import Control.Monad.State (MonadState(..),
-                            StateT(..),
-                            modify)
+import Control.Monad.State.Strict (MonadState(..),
+                                   StateT(..),
+                                   modify)
 import Data.Bits
 import Data.List (foldl')
 import Data.Loc
