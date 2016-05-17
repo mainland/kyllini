@@ -110,6 +110,22 @@ RUNGHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 GHCFLAGS += -optP-include -optP$(TOP)/dist/build/autogen/cabal_macros.h
 
 #
+# Profiling
+#
+
+%.ps : %.hp
+	hp2ps -c $^ >$@
+
+%.pdf : %.ps
+	ps2pdf $^ $@
+
+%.folded : %.prof
+	cat $^ | ghc-prof-flamegraph >$@
+
+%.svg : %.folded
+	cat $^ | flamegraph.pl >$@
+
+#
 # BlinkDiff
 #
 
@@ -123,7 +139,7 @@ $(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
 #
 TESTDIR = $(TOP)/testsuite
 
-KZC=$(TOP)/kzc
+KZC?=$(TOP)/kzc
 KZCFLAGS+=-I$(TESTDIR)/lib --dlint --dprint-uniques --fno-line-pragmas
 
 RUNTIME_SRC=\
