@@ -58,6 +58,8 @@ module KZC.Expr.Syntax (
     LiftedBits(..),
     LiftedCast(..),
 
+    renormalize,
+
     arrPrec,
     doPrec,
     doPrec1,
@@ -409,6 +411,28 @@ class LiftedBits a b | a -> b where
 class LiftedCast a b | a -> b where
     liftCast  :: Type -> a -> b
 
+-- | Renormalize a constant, ensuring that integral constants are within their
+-- bounds. We assume two's complement arithmetic.
+renormalize :: Const -> Const
+renormalize c@(FixC I S (W w) 0 r)
+    | r > max   = renormalize (FixC I S (W w) 0 (r - 2^w))
+    | r < min   = renormalize (FixC I S (W w) 0 (r + 2^w))
+    | otherwise = c
+  where
+    max, min :: Rational
+    max = 2^(w-1)-1
+    min = -2^(w-1)
+
+renormalize c@(FixC I U (W w) 0 r)
+    | r > max   = renormalize (FixC I U (W w) 0 (r - 2^w))
+    | r < 0     = renormalize (FixC I U (W w) 0 (r + 2^w))
+    | otherwise = c
+  where
+    max :: Rational
+    max = 2^w-1
+
+renormalize c = c
+
 instance LiftedBool Const (Maybe Const) where
     liftBool _ f (BoolC b) =
         Just $ BoolC (f b)
@@ -439,7 +463,7 @@ instance LiftedNum Const (Maybe Const) where
         Nothing
 
     liftNum2 _op f (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
-        Just $ FixC sc s w bp (f r1 r2)
+        Just $ renormalize $ FixC sc s w bp (f r1 r2)
 
     liftNum2 _op f (FloatC fp r1) (FloatC _ r2) =
         Just $ FloatC fp (f r1 r2)
@@ -495,12 +519,12 @@ instance LiftedCast Const (Maybe Const) where
         Just $ FixC I U (W 1) (BP 0) (if r == 0 then 0 else 1)
 
     -- Cast int to unsigned int
-    liftCast (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r <= 2^w - 1 =
-        Just $ FixC I U (W w) (BP 0) r
+    liftCast (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) r) =
+        Just $ renormalize $ FixC I U (W w) (BP 0) r
 
     -- Cast int to signed int
-    liftCast (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) r) | r <= 2^(w-1) - 1 && r >= -(2^(w-1)) =
-        Just $ FixC I S (W w) (BP 0) r
+    liftCast (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) r) =
+        Just $ renormalize $ FixC I S (W w) (BP 0) r
 
     -- Cast float to int
     liftCast (FixT I s w (BP 0) _) (FloatC _ r) =
