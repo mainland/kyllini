@@ -1106,14 +1106,19 @@ lutExp e = do
           where
             compLut :: [Exp] -> EvalM l m Exp
             compLut results = do
-                e_res <- case v_ret of
-                             Just v | resultInOutVars -> evalVarDeref v
-                             _ | isUnitT tau_ret'     -> return $ returnE unitE
-                               | otherwise            -> return $ returnE $
-                                                                  last results
-                es    <- zipWithM mkAssign lvs_out results
-                return $ foldr seqE e_res es
+                es <- zipWithM mkAssign lvs_out results
+                return $ foldr seqE (mkResult v_ret) es
               where
+                mkResult :: Maybe Var -> Exp
+                mkResult (Just v) | resultInOutVars =
+                    derefE $ varE v
+
+                mkResult _ | isUnitT tau_ret' =
+                    returnE unitE
+
+                mkResult _ =
+                    returnE $ last results
+
                 mkAssign :: LUTVar -> Exp -> EvalM l m Exp
                 mkAssign v e = do
                     v' <- toExp <$> evalExp (toExp v)
@@ -1125,21 +1130,6 @@ lutExp e = do
 
             pureLut results =
                 return $ last results
-
-            -- To find the expression representing a variable dereference, we
-            -- actually have to evaluate the variable dereference! Don't worry,
-            -- if the variable can't be fully evaluated, we'll get back a
-            -- residual expression...
-            --
-            -- Why can't we just use the variable firectly? Because it may be a
-            -- reference that is aliased via, e.g., a function parameter. In a
-            -- case like this, when we attempt to LUT an inlined function, the
-            -- function's named parameter will actually point to a variable in
-            -- the caller's context. Realizing this was the source of much pain.
-            -- See encode34 in test_encoding.blk for an example of where this
-            -- can happen.
-            evalVarDeref :: Var -> EvalM l m Exp
-            evalVarDeref v = toExp <$> evalExp (derefE (varE v))
 
             -- Get the values of all the input variables, dereferencing them if
             -- needed.
