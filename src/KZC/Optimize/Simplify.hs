@@ -96,9 +96,9 @@ type Phi = Map IVar Iota
 type Psi = Map TyVar Type
 
 data SimplStats = SimplStats
-    { simplDrop     :: Int
-    , simplInline   :: Int
-    , simplRewrites :: Int
+    { simplDrop     :: {-# UNPACK #-} !Int
+    , simplInline   :: {-# UNPACK #-} !Int
+    , simplRewrites :: {-# UNPACK #-} !Int
     }
   deriving (Eq, Ord, Show)
 
@@ -126,7 +126,7 @@ defaultSimplEnv :: SimplEnv l
 defaultSimplEnv = SimplEnv mempty mempty mempty mempty
 
 data SimplState = SimplState
-    { simplStats :: SimplStats }
+    { simplStats :: {-# UNPACK #-} !SimplStats }
 
 defaultSimplState :: SimplState
 defaultSimplState = SimplState
