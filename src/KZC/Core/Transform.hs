@@ -30,10 +30,10 @@ class MonadTc m => Transform m where
     programT :: Program l -> m (Program l)
     programT = transProgram
 
-    declsT :: Transform m => [Decl l] -> m a -> m ([Decl l], a)
+    declsT :: [Decl l] -> m a -> m ([Decl l], a)
     declsT = transDecls
 
-    declT :: Transform m => Decl l -> m a -> m (Decl l, a)
+    declT :: Decl l -> m a -> m (Decl l, a)
     declT = transDecl
 
     localDeclT :: LocalDecl -> m a -> m (LocalDecl, a)
