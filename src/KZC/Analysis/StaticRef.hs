@@ -12,9 +12,6 @@ Determine whether or not a ref is actually written to.
 -}
 
 module KZC.Analysis.StaticRef (
-    SR,
-    runSR,
-
     staticRefsProgram
   ) where
 
@@ -81,8 +78,8 @@ withStaticRefFlag v m =
 updStaticInfo :: BoundVar -> Bool -> BoundVar
 updStaticInfo v isStatic = v { bStaticRef = Just isStatic }
 
-staticRefsProgram :: MonadTc m => Program l -> SR m (Program l)
-staticRefsProgram = programT
+staticRefsProgram :: MonadTc m => Program l -> m (Program l)
+staticRefsProgram = runSR . programT
 
 instance MonadTc m => Transform (SR m) where
     localDeclT (LetRefLD v tau e s) m = do

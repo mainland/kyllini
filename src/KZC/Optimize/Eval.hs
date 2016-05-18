@@ -16,9 +16,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.Eval (
-    EvalM,
-    evalEvalM,
-
     evalProgram,
     toExp
   ) where
@@ -76,8 +73,9 @@ peval = testDynFlag PartialEval
 
 evalProgram :: (IsLabel l, MonadTcRef m)
             => Program l
-            -> EvalM l m (Program l)
+            -> m (Program l)
 evalProgram (Program decls comp tau) =
+    evalEvalM $
     evalDecls decls $ \mkDecls ->
     inSTScope tau $
     inLocalScope $

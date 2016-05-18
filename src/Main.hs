@@ -62,8 +62,7 @@ import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
-import KZC.Optimize.Autolut (runAutoM,
-                             autolutProgram)
+import KZC.Optimize.Autolut
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.HashConsConsts
@@ -228,20 +227,20 @@ runPipeline filepath = do
 
     occPhase :: C.Program l -> MaybeT KZC (C.Program l)
     occPhase =
-        lift . C.withTc . runOccM . occProgram
+        lift . C.withTc . occProgram
 
     simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
-        lift . C.withTc . runSimplM . simplProgram
+        lift . C.withTc . simplProgram
 
     staticRefsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     staticRefsPhase =
-        lift . C.withTc . runSR . staticRefsProgram >=>
+        lift . C.withTc . staticRefsProgram >=>
         dumpPass DumpStaticRefs "core" "staticrefs"
 
     hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =
-        lift . C.withTc . runHCM . hashConsConsts >=>
+        lift . C.withTc . hashConsConsts >=>
         dumpPass DumpHashCons "core" "hashcons"
 
     fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
@@ -251,22 +250,22 @@ runPipeline filepath = do
 
     autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     autolutPhase =
-        lift . C.withTc . runAutoM . autolutProgram >=>
+        lift . C.withTc . autolutProgram >=>
         dumpPass DumpAutoLUT "core" "autolut"
 
     evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     evalPhase =
-        lift . C.withTc . evalEvalM . evalProgram >=>
+        lift . C.withTc . evalProgram >=>
         dumpPass DumpEval "core" "peval"
 
     refFlowPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     refFlowPhase =
-        lift . C.liftTc . runRF . rfProgram >=>
+        lift . C.liftTc . rfProgram >=>
         dumpPass DumpEval "core" "rflow"
 
     needDefaultPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     needDefaultPhase =
-        lift . C.liftTc . runND . needDefaultProgram >=>
+        lift . C.liftTc . needDefaultProgram >=>
         dumpPass DumpEval "core" "needdefault"
 
     compilePhase :: C.LProgram -> MaybeT KZC ()

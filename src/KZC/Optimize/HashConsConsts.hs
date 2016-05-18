@@ -9,9 +9,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.HashConsConsts (
-    HCM,
-    runHCM,
-
     hashConsConsts
   ) where
 
@@ -93,8 +90,9 @@ useConst c =
 
 hashConsConsts :: forall l m . (IsLabel l, MonadTc m)
                => Program l
-               -> HCM m (Program l)
+               -> m (Program l)
 hashConsConsts (Program decls comp tau) =
+    runHCM $
     hconsDecls decls $ \decls' -> do
     comp' <- hconsComp comp
     let (structDecls, otherDecls) = partition isStructD decls'

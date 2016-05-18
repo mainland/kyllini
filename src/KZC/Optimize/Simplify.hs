@@ -12,8 +12,6 @@
 
 module KZC.Optimize.Simplify (
     SimplStats(..),
-    SimplM,
-    runSimplM,
 
     simplProgram
   ) where
@@ -290,8 +288,8 @@ withInstantiatedTyVars _tau k =
 
 simplProgram :: (IsLabel l, MonadTc m)
              => Program l
-             -> SimplM l m (Program l)
-simplProgram (Program decls comp tau) = do
+             -> m (Program l, SimplStats)
+simplProgram (Program decls comp tau) = runSimplM $ do
   (decls', comp') <-
       simplDecls decls $
       inSTScope tau $

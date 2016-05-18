@@ -9,9 +9,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Analysis.RefFlow (
-    RF,
-    runRF,
-
     rfProgram
   ) where
 
@@ -186,8 +183,8 @@ updateTaint bv m =
     f :: RefSet -> RefSet
     f = Set.delete (VarR (bVar bv))
 
-rfProgram :: MonadTc m => Program l -> RF m (Program l)
-rfProgram = programT
+rfProgram :: MonadTc m => Program l -> m (Program l)
+rfProgram = runRF . programT
 
 instance MonadTc m => Transform (RF m) where
     localDeclT (LetLD v tau e1 s) k = do

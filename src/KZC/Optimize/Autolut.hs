@@ -10,9 +10,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.Autolut (
-    AutoM,
-    runAutoM,
-
     autolutProgram
   ) where
 
@@ -50,8 +47,8 @@ runAutoM = unAutoM
 
 autolutProgram :: (IsLabel l, MonadTc m)
                => Program l
-               -> AutoM m (Program l)
-autolutProgram = programT
+               -> m (Program l)
+autolutProgram = runAutoM . programT
 
 instance MonadTc m => Transform (AutoM m) where
     expT e = do

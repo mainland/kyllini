@@ -16,9 +16,6 @@ because it is used before the program explicitly initializes it.
 -}
 
 module KZC.Analysis.NeedDefault (
-    ND,
-    runND,
-
     defaultsUsedExp,
 
     needDefaultProgram
@@ -179,8 +176,8 @@ defaultsUsedExp e =
     vs :: Set Var
     vs = fvs e
 
-needDefaultProgram :: MonadTc m => Program l -> ND m (Program l)
-needDefaultProgram (Program decls comp tau) = do
+needDefaultProgram :: MonadTc m => Program l -> m (Program l)
+needDefaultProgram (Program decls comp tau) = runND $ do
   (decls', comp') <-
       useDecls decls $
       inSTScope tau $

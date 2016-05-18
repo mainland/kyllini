@@ -9,9 +9,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Analysis.Occ (
-    OccM,
-    runOccM,
-
     occProgram
   ) where
 
@@ -96,8 +93,8 @@ withOccInfo v m =
 updOccInfo :: BoundVar -> OccInfo -> BoundVar
 updOccInfo v occ = v { bOccInfo = Just occ }
 
-occProgram :: MonadTc m => Program l -> OccM m (Program l)
-occProgram = programT
+occProgram :: MonadTc m => Program l -> m (Program l)
+occProgram = runOccM . programT
 
 instance MonadTc m => Transform (OccM m) where
     declT (LetFunD f iotas vbs tau_ret e l) m =
