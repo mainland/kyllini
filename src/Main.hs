@@ -44,9 +44,10 @@ import Text.Printf (printf)
 import Language.Ziria.Parser
 import qualified Language.Ziria.Syntax as Z
 
+import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
 import KZC.Analysis.RefFlow
-import KZC.Analysis.NeedDefault
+import KZC.Analysis.StaticRef
 import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Label as C
@@ -121,6 +122,10 @@ runPipeline filepath = do
         runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase2" autolutPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase4") >=>
+        -- Look for refs that are unchanged
+        runIf (testDynFlag Simplify) (tracePhase "staticRef" staticRefsPhase >=> tracePhase "lint" lintCore) >=>
+        -- One final round of simplification
+        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase5") >=>
         -- Clean up the code, do some analysis, and codegen
         tracePhase "hashcons" hashconsPhase >=> tracePhase "lintCore" lintCore >=>
         tracePhase "refFlow" refFlowPhase >=>
@@ -213,6 +218,11 @@ runPipeline filepath = do
                       void $ dumpPass DumpSimpl "core" ("simpl" ++ desc) prog''
                       go (i+1) n prog''
               else return prog
+
+    staticRefsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    staticRefsPhase =
+        lift . C.withTc . runSR . staticRefsProgram >=>
+        dumpPass DumpStaticRefs "core" "staticrefs"
 
     hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =

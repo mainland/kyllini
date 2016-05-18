@@ -100,6 +100,7 @@ data DumpFlag = DumpCPP
               | DumpAutoLUT
               | DumpLUT
               | DumpHashCons
+              | DumpStaticRefs
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase

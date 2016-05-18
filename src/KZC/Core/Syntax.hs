@@ -167,6 +167,7 @@ data BoundVar = BoundV
     , bOccInfo     :: Maybe OccInfo
     , bTainted     :: Maybe Bool
     , bNeedDefault :: Maybe Bool
+    , bStaticRef   :: Maybe Bool
     }
   deriving (Eq, Ord, Read, Show)
 
@@ -184,13 +185,14 @@ instance Gensym BoundVar where
                <*> pure Nothing
                <*> pure Nothing
                <*> pure Nothing
+               <*> pure Nothing
 
     uniquify bv = do
         u <- newUnique
         return $ mapName (\n -> n { nameSort = Internal u }) bv
 
 mkBoundVar :: Var -> BoundVar
-mkBoundVar v = BoundV v Nothing Nothing Nothing
+mkBoundVar v = BoundV v Nothing Nothing Nothing Nothing
 
 data WildVar = WildV
              | TameV BoundVar
@@ -453,7 +455,7 @@ instance Pretty WildVar where
     ppr (TameV v) = ppr v
 
 instance Pretty BoundVar where
-    ppr bv = ppr (bVar bv) <> occdoc <> taintdoc <> dfltdoc
+    ppr bv = ppr (bVar bv) <> occdoc <> taintdoc <> dfltdoc <> staticdoc
       where
         occdoc, taintdoc :: Doc
         occdoc = case bOccInfo bv of
@@ -469,6 +471,11 @@ instance Pretty BoundVar where
                      Nothing    -> empty
                      Just False -> empty
                      Just True  -> braces (text "default")
+
+        staticdoc = case bStaticRef bv of
+                      Nothing    -> empty
+                      Just False -> empty
+                      Just True  -> braces (text "static")
 
 instance Pretty OccInfo where
     ppr Dead       = text "0"
