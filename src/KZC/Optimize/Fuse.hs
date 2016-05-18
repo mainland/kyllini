@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -10,21 +12,24 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.Fuse (
-    F,
-    runF,
-    runF1,
-
-    fuseProgram,
-    fusePar
+    fuseProgram
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
+#if MIN_VERSION_base(4,8,0)
+import Control.Applicative (Alternative)
+#else /* !MIN_VERSION_base(4,8,0) */
+import Control.Applicative (Alternative, Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad.Reader
-import Control.Monad.State
+import Control.Monad (MonadPlus(..),
+                      guard,
+                      when)
+import Control.Monad.Exception (MonadException(..))
+import Control.Monad.State (MonadState(..),
+                            StateT(..),
+                            evalStateT,
+                            gets,
+                            modify)
 import Data.Map (Map)
-import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -33,7 +38,9 @@ import KZC.Core.Comp
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Core.Transform
 import KZC.Error
+import KZC.Flags
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Summary
@@ -41,29 +48,83 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-data FState l = FState { seen :: Set l }
+newtype FState l = FState { seen :: Set l }
 
-type F l m a = SEFKT (StateT (FState l) m) a
+newtype F l m a = F { unF :: SEFKT (StateT (FState l) m) a }
+    deriving (Functor, Applicative, Monad,
+              Alternative, MonadPlus,
+              MonadState (FState l),
+              MonadException,
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace,
+              MonadTc)
 
-runF :: MonadErr m
-     => F l m a -> FState l -> m a
-runF m = evalStateT (runSEFKT m)
+runF :: forall l m a . (IsLabel l, MonadErr m)
+     => F l m a
+     -> m a
+runF m = evalStateT (runSEFKT (unF m)) fstate
+  where
+    fstate :: FState l
+    fstate = FState mempty
 
-runF1 :: MonadErr m
-      => F l m a -> FState l -> m (Maybe a)
-runF1 m = evalStateT (runSEFKT1 m)
-
-sawLabel :: (IsLabel l, MonadPlus m, MonadTc m)
+sawLabel :: (IsLabel l, MonadTc m)
          => l -> F l m Bool
 sawLabel l = gets (Set.member l . seen)
 
-recordLabel :: (IsLabel l, MonadPlus m, MonadTc m)
+recordLabel :: (IsLabel l, MonadTc m)
             => l -> F l m ()
 recordLabel l = modify $ \s -> s { seen = Set.insert l (seen s) }
 
-jointLabel :: (IsLabel l, MonadPlus m, MonadTc m)
+jointLabel :: (IsLabel l, MonadTc m)
            => [Step l] -> [Step l] -> F l m l
 jointLabel lss rss = pairLabel <$> stepLabel (head lss) <*> stepLabel (head rss)
+
+fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
+            => Program l -> m (Program l)
+fuseProgram prog = runF (programT prog :: F l m (Program l))
+
+instance (IsLabel l, MonadTc m) => TransformExp (F l m) where
+
+instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
+  stepsT (ParC ann b c1 c2 sloc : steps) = do
+      (s, a, c) <- askSTIndTypes
+      c1'       <- localSTIndTypes (Just (s, a, b)) $
+                   compT c1
+      c2'       <- localSTIndTypes (Just (b, b, c)) $
+                   compT c2
+      steps1    <- fusePar c1' c2' `mplus` return [ParC ann b c1' c2' sloc]
+      steps'    <- stepsT steps
+      return $ steps1 ++ steps'
+    where
+      fusePar :: Comp l -> Comp l -> F l m [Step l]
+      fusePar left right0 = do
+          l    <- compLabel right0
+          comp <- fuse left right >>= setFirstLabel l
+          traceFusion $ text "Fused" <+>
+              (nest 2 $ text "producer:" </> ppr left) </>
+              (nest 2 $ text "and consumer:" </> ppr right) </>
+              (nest 2 $ text "into:" </> ppr comp)
+          return $ unComp comp
+        where
+          -- We need to make sure that the producer and consumer have unique
+          -- sets of binders, so we freshen all binders in the consumer. Why the
+          -- consumer? Because >>> is left-associative, so we hopefully avoid
+          -- repeated re-naming of binders by renaming the consumer.
+          right :: Comp l
+          right = unquify right0
+
+          unquify :: Subst Exp Var a => a -> a
+          unquify = subst (mempty :: Map Var Exp) (allVars left :: Set Var)
+
+          setFirstLabel :: l -> Comp l -> F l m (Comp l)
+          setFirstLabel l' comp = do
+              l <- compLabel comp
+              return $ subst1 (l /-> l') comp
+
+  stepsT steps =
+      transSteps steps
 
 -- | Calculate a joint label for two computations where one or both are repeat
 -- loops. Since we unroll repeats during fusion, the "loop header" state we are
@@ -97,7 +158,7 @@ runRepeat l_repeat ss_other ss k
 -- record the fact that we have seen the label @l@ and call our
 -- continuation. The function 'whenNotBeenThere' is the only way a 'LoopC' step
 -- can be introduced into a computation.
-whenNotBeenThere :: (IsLabel l, MonadPlus m, MonadTc m)
+whenNotBeenThere :: (IsLabel l, MonadTc m)
                  => [Step l]
                  -> l
                  -> F l m ([Step l], [Step l])
@@ -108,177 +169,14 @@ whenNotBeenThere ss l k = do
       then return (ss, [LoopC l])
       else recordLabel l >> k
 
-fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
-            => Program l -> m (Program l)
-fuseProgram prog =
-    fuse prog `mplus` return prog
-  where
-    fuse :: Program l -> m (Program l)
-    fuse (Program decls comp tau) =
-        fuseDecls decls $
-        inSTScope tau $
-        inLocalScope $ do
-        comp' <- withLocContext comp (text "In definition of main") $
-                 fuseComp comp
-        return $ Program decls comp' tau
-
-fuseDecls :: (IsLabel l, MonadPlus m, MonadTc m)
-          => [Decl l] -> m a -> m a
-fuseDecls decls k = foldr fuseDecl k decls
-
-fuseDecl :: (IsLabel l, MonadPlus m, MonadTc m)
-         => Decl l -> m a -> m a
-fuseDecl (LetD decl _) k =
-    fuseLocalDecl decl k
-
-fuseDecl (LetFunD f iotas vbs tau_ret _ l) k =
-    extendVars [(bVar f, tau)] k
-  where
-    tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
-
-fuseDecl (LetExtFunD f iotas vbs tau_ret l) k =
-    extendVars [(bVar f, tau)] k
-  where
-    tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
-
-fuseDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] k
-
-fuseDecl (LetCompD v tau _ _) k =
-    extendVars [(bVar v, tau)] k
-
-fuseDecl (LetFunCompD f ivs vbs tau_ret _ l) k =
-    extendVars [(bVar f, tau)] k
-  where
-    tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
-
-fuseLocalDecl :: (MonadPlus m, MonadTc m) => LocalDecl -> m a -> m a
-fuseLocalDecl (LetLD v tau _ _) k =
-    extendVars [(bVar v, tau)] k
-
-fuseLocalDecl (LetRefLD v tau _ _) k =
-    extendVars [(bVar v, refT tau)] k
-
-fuseComp :: (IsLabel l, MonadPlus m, MonadTc m) => Comp l -> m (Comp l)
-fuseComp (Comp steps) = Comp <$> fuseSteps steps
-
-fuseSteps :: (IsLabel l, MonadPlus m, MonadTc m) => [Step l] -> m [Step l]
-fuseSteps [] =
-    return []
-
-fuseSteps (step@(LetC _ decl _) : steps) =
-    fuseLocalDecl decl $
-    (:) <$> pure step <*> fuseSteps steps
-
-fuseSteps (step@(BindC _ wv tau _) : steps) =
-    extendWildVars [(wv, tau)] $
-    (:) <$> pure step <*> fuseSteps steps
-
-fuseSteps (step : steps) =
-    (++) <$> fuseStep step <*> fuseSteps steps
-
-fuseStep :: (IsLabel l, MonadPlus m, MonadTc m) => Step l -> m [Step l]
-fuseStep step@VarC{} =
-    return [step]
-
-fuseStep step@CallC{} =
-    return [step]
-
-fuseStep (IfC l e c1 c2 s) = do
-    step <- IfC l e <$> fuseComp c1 <*> fuseComp c2 <*> pure s
-    return [step]
-
-fuseStep LetC{} =
-    faildoc $ text "Cannot fuse let step."
-
-fuseStep (WhileC l e c s) = do
-    step <- WhileC l e <$> fuseComp c <*> pure s
-    return [step]
-
-fuseStep (ForC l ann v tau e1 e2 c s) = do
-    step <- ForC l ann v tau e1 e2 <$> fuseComp c <*> pure s
-    return [step]
-
-fuseStep step@LiftC{} =
-    return [step]
-
-fuseStep step@ReturnC{} =
-    return [step]
-
-fuseStep BindC{} =
-    faildoc $ text "Cannot fuse bind step."
-
-fuseStep step@TakeC{} =
-    return [step]
-
-fuseStep step@TakesC{} =
-    return [step]
-
-fuseStep step@EmitC{} =
-    return [step]
-
-fuseStep step@EmitsC{} =
-    return [step]
-
-fuseStep (RepeatC l ann c s) = do
-    step <- RepeatC l ann <$> fuseComp c <*> pure s
-    return [step]
-
-fuseStep step@(ParC _ann b c1 c2 _s) = do
-    (s, a, c) <- askSTIndTypes
-    tau       <- inferStep step
-    comp      <- fusePar s a b c c1 c2
-    checkComp comp tau
-    return $ unComp comp
-
-fuseStep LoopC{} =
-    faildoc $ text "fuseStep: saw LoopC"
-
-fusePar :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
-        => Type -> Type -> Type -> Type
-        -> Comp l
-        -> Comp l
-        -> m (Comp l)
-fusePar s a b c left right = do
-    left'  <- localSTIndTypes (Just (s, a, b)) $
-              fuseComp left
-    -- We need to make sure that the producer and consumer have unique sets of
-    -- binders, so we freshen all binders in the consumer. Why the consumer?
-    -- Because >>> is left-associative, so we hopefully avoid repeated re-naming
-    -- of binders by renaming the consumer.
-    let unquify :: Subst Exp Var a => a -> a
-        unquify = subst (mempty :: Map Var Exp) (allVars left' <> allVars right :: Set Var)
-    right' <- localSTIndTypes (Just (b, b, c)) $
-              unquify <$> fuseComp right
-    l      <- compLabel right'
-    comp   <- fuse left' right' >>= setFirstLabel l
-    traceFusion $ text "Fused" <+>
-        (nest 2 $ text "producer:" </> ppr left') </>
-        (nest 2 $ text "and consumer:" </> ppr right') </>
-        (nest 2 $ text "into:" </> ppr comp)
-    return comp
-  where
-    setFirstLabel :: l -> Comp l -> m (Comp l)
-    setFirstLabel l' comp = do
-        l <- compLabel comp
-        return $ subst1 (l /-> l') comp
-
-fuse :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
+fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l
      -> Comp l
-     -> m (Comp l)
+     -> F l m (Comp l)
 fuse left right = do
-    maybe_res <- runF1 (runRight (unComp left) (unComp right)) fstate
-    case maybe_res of
-      Nothing        -> mzero
-      Just (_, rss') -> return $ Comp rss'
+    (_, rss') <- runRight (unComp left) (unComp right)
+    return $ Comp rss'
   where
-    fstate :: FState l
-    fstate = FState mempty
-
     runRight :: [Step l] -> [Step l] -> F l m ([Step l], [Step l])
     runRight lss [] =
         return (lss, [])
@@ -305,7 +203,8 @@ fuse left right = do
             (_, c2') <- runRight lss (unComp c2 ++ rss)
             return ([], [IfC l' e (Comp c1') (Comp c2') s])
 
-    runRight _lss (WhileC {} : _rss) =
+    runRight _lss (WhileC {} : _rss) = do
+        traceFusion $ text "Encountered while in consumer"
         mzero
 
     -- See the comment in the ForC case for runLeft.
@@ -331,8 +230,9 @@ fuse left right = do
         runRepeat l_repeat lss' ss $
             return (lss', [RepeatC l ann (Comp (init ss)) s])
 
-    runRight _lss (ParC {} : _rss) =
-        faildoc $ text "Saw nested par in consumer during par fusion."
+    runRight _lss (ParC {} : _rss) = do
+        traceFusion $ text "Saw nested par in producer during par fusion."
+        mzero
 
     runRight lss (rs:rss) = do
         l' <- jointLabel lss (rs:rss)
@@ -367,7 +267,8 @@ fuse left right = do
             (_, c2') <- runLeft (unComp c2 ++ lss) rss
             return  ([], [IfC l' e (Comp c1') (Comp c2') s])
 
-    runLeft (WhileC {} : _lss) _rss =
+    runLeft (WhileC {} : _lss) _rss = do
+        traceFusion $ text "Encountered while in producer"
         mzero
 
     -- We attempt to fuse a for loop by running the body of the for with the
@@ -393,7 +294,8 @@ fuse left right = do
         l' :: l
         l' = pairLabel l_left l_right
 
-    runLeft (EmitC {} : _) (TakesC {} : _) =
+    runLeft (EmitC {} : _) (TakesC {} : _) = do
+        traceFusion $ text "emit paired with takes"
         mzero
 
     runLeft (EmitC {} : _) _ =
@@ -436,7 +338,8 @@ fuse left right = do
     runLeft (EmitsC l_left e s1 : lss) (TakesC l_right n_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
         n_left <- inferExp e >>= knownArraySize
-        when (n_left /= n_right)
+        when (n_left /= n_right) $ do
+            traceFusion $ text "emits paired with takes with incompatible size"
             mzero
         let step      =  ReturnC l' e s1
         (rss', steps) <- runRight (dropBind lss) rss
@@ -455,8 +358,9 @@ fuse left right = do
         runRepeat l_repeat rss' ss $
             return (rss', [RepeatC l ann (Comp (init ss)) s])
 
-    runLeft (ParC {} : _lss) _rss =
-        faildoc $ text "Saw nested par in producer during par fusion."
+    runLeft (ParC {} : _lss) _rss = do
+        traceFusion $ text "Saw nested par in producer during par fusion."
+        mzero
 
     runLeft (ls:lss) rss = do
         l' <- jointLabel (ls:lss) rss
@@ -474,7 +378,8 @@ knownArraySize tau = do
     (iota, _) <- checkArrT tau
     case iota of
       ConstI n _ -> return n
-      _          -> mzero
+      _          -> do traceFusion $ text "Unknown array size"
+                       mzero
 
 relabelStep :: (IsLabel l1, MonadPlus m, MonadTc m)
             => l2

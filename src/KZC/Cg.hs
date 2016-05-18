@@ -24,7 +24,6 @@ import Prelude
 import Control.Applicative ((<$>), (<*>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (forM_,
-                      mplus,
                       unless,
                       when)
 import Control.Monad.IO.Class (liftIO)
@@ -51,7 +50,6 @@ import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Name
-import KZC.Optimize.Fuse
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
@@ -1888,36 +1886,13 @@ cgComp takek emitk emitsk comp klbl k =
 
     cgStep step@(ParC ann b left right _) _ k =
         withSummaryContext step $ do
-        dflags <- askFlags
-        cgPar dflags
-      where
-        cgPar :: Flags -> Cg l a
-        cgPar dflags
-            | testDynFlag Fuse dflags = fuse dflags
-            | otherwise               = dontFuse dflags ann
-
-        fuse :: Flags -> Cg l a
-        fuse dflags =
-            do (s, a, c) <- askSTIndTypes
-               tau       <- inferStep step
-               comp      <- fusePar s a b c left right
-               useLabels (compUsedLabels comp)
-               checkComp comp tau
-               cgComp takek emitk emitsk comp klbl k
-          `mplus`
-            do traceFusion $ text "Failed to fuse" <+>
-                   (nest 2 $ text "producer:" </> ppr left) </>
-                   (nest 2 $ text "and consumer:" </> ppr right)
-               dontFuse dflags ann
-
-        dontFuse :: Flags -> PipelineAnn -> Cg l a
-        dontFuse dflags ann = do
-           tau_res <- resultType <$> inferStep step
-           case ann of
-             AlwaysPipeline | testDynFlag Pipeline dflags ->
-                 cgParMultiThreaded  takek emitk emitsk tau_res b left right klbl k
-             _ ->
-                 cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k
+        dflags  <- askFlags
+        tau_res <- resultType <$> inferStep step
+        case ann of
+          AlwaysPipeline | testDynFlag Pipeline dflags ->
+            cgParMultiThreaded  takek emitk emitsk tau_res b left right klbl k
+          _ ->
+            cgParSingleThreaded takek emitk emitsk tau_res b left right klbl k
 
     cgStep LoopC{} _ _k =
         faildoc $ text "cgStep: saw LoopC"
