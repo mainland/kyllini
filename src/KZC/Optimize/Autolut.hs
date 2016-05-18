@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -50,7 +52,7 @@ autolutProgram :: (IsLabel l, MonadTc m)
                -> m (Program l)
 autolutProgram = runAutoM . programT
 
-instance MonadTc m => Transform (AutoM m) where
+instance MonadTc m => TransformExp (AutoM m) where
     expT e = do
         traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
         maybe_info <- fmap Right (lutInfo e)
@@ -64,3 +66,5 @@ instance MonadTc m => Transform (AutoM m) where
                              then do traceAutoLUT $ nest 2 $ text "Creating LUT for:" </> ppr e
                                      return $ LutE e
                              else transExp e
+
+instance MonadTc m => TransformComp l (AutoM m) where

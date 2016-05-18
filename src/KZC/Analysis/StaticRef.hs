@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {- |
@@ -81,7 +83,7 @@ updStaticInfo v isStatic = v { bStaticRef = Just isStatic }
 staticRefsProgram :: MonadTc m => Program l -> m (Program l)
 staticRefsProgram = runSR . programT
 
-instance MonadTc m => Transform (SR m) where
+instance MonadTc m => TransformExp (SR m) where
     localDeclT (LetRefLD v tau e s) m = do
         e'            <- traverse expT e
         (isStatic, x) <- extendVars [(bVar v, refT tau)] $ withStaticRefFlag v m
@@ -89,13 +91,6 @@ instance MonadTc m => Transform (SR m) where
 
     localDeclT decl m =
         transLocalDecl decl m
-
-    argT arg@(ExpA e) = do
-        checkRefArg e
-        transArg arg
-
-    argT arg =
-        transArg arg
 
     expT e@(CallE _ _ es _) = do
         mapM_ checkRefArg es
@@ -107,6 +102,14 @@ instance MonadTc m => Transform (SR m) where
 
     expT e =
         transExp e
+
+instance MonadTc m => TransformComp l (SR m) where
+    argT arg@(ExpA e) = do
+        checkRefArg e
+        transArg arg
+
+    argT arg =
+        transArg arg
 
 checkRefArg :: MonadTc m => Exp -> SR m ()
 checkRefArg e = do
