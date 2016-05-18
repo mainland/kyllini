@@ -181,7 +181,7 @@ fuse left right = do
     runRight lss [] =
         return (lss, [])
 
-    runRight lss (rs@(IfC _ e c1 c2 s) : rss) =
+    runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
         joinIf `mplus` divergeIf
       where
         joinIf :: F l m ([Step l], [Step l])
@@ -192,7 +192,7 @@ fuse left right = do
             (lss2, c2') <- runRight lss (unComp c2)
             guard (lss2 == lss1)
             let step      =  IfC l' e (Comp c1') (Comp c2') s
-            (lss', steps) <- runRight lss rss
+            (lss', steps) <- runRight lss1 rss
             return (lss', step:steps)
 
         divergeIf :: F l m ([Step l], [Step l])
@@ -245,7 +245,7 @@ fuse left right = do
     runLeft [] rss =
         return (rss, [])
 
-    runLeft (ls@(IfC _ e c1 c2 s) : lss) rss =
+    runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
         joinIf `mplus` divergeIf
       where
         joinIf :: F l m ([Step l], [Step l])
@@ -256,7 +256,7 @@ fuse left right = do
             (rss2, c2') <- runLeft (unComp c2) rss
             guard (rss2 == rss1)
             let step      =  IfC l' e (Comp c1') (Comp c2') s
-            (rss', steps) <- runLeft lss rss
+            (rss', steps) <- runLeft lss rss1
             return (rss', step:steps)
 
         divergeIf :: F l m ([Step l], [Step l])
