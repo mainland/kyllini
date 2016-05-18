@@ -142,7 +142,7 @@ clean : clean-tests clean-runtime
 	$(_QUIET)rm -f TAGS
 
 .PHONY : clean-runtime
-clean-runtime : 
+clean-runtime :
 	$(_QUIET)rm -rf $(RUNTIME_OBJ)
 
 .PHONY : clean-tests
