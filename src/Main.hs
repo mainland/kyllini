@@ -108,24 +108,24 @@ runPipeline filepath = do
         traceExprPhase "lambdaLift" lambdaLiftPhase >=>
         traceCorePhase "exprToCore" exprToCorePhase >=>
         -- Simplify, but don't inline functions or computations
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ onlyInliningValues $ iterateSimplPhase "-phase1") >=>
+        runIf (testDynFlag Simplify) (onlyInliningValues $ iterateSimplPhase "-phase1") >=>
         -- AutoLUT
         runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase1" autolutPhase) >=>
         -- Simplify again, allowing inlining. This may inline LUTted functions.
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
         -- Fuse pars
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
         runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
         -- Auto-LUT, partially evaluate, and simplify once more
         runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase2" autolutPhase) >=>
         runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase4") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase4") >=>
         -- Look for refs that are unchanged
         runIf (testDynFlag Simplify) (tracePhase "staticRef" staticRefsPhase) >=>
         -- One final round of simplification
-        runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase5") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase5") >=>
         -- Clean up the code, do some analysis, and codegen
         traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
@@ -167,6 +167,26 @@ runPipeline filepath = do
                       return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f elapsed)\n" phase pass t2)
                       return y
               else act x
+
+        iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
+        iterateSimplPhase desc prog0 = do
+            n <- asksFlags maxSimpl
+            go 0 n prog0
+          where
+            go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
+            go i n prog | i >= n = do
+                warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
+                return prog
+
+            go i n prog = do
+                prog' <- tracePhase "occ" occPhase prog
+                void $ dumpPass DumpOcc "core" ("occ" ++ desc) prog'
+                (prog'', stats) <- tracePhase "simpl" simplPhase prog'
+                if stats /= mempty
+                  then do void $ dumpPass DumpSimpl "core" ("simpl" ++ desc) prog''
+                          void $ lintCore prog''
+                          go (i+1) n prog''
+                  else return prog
 
     runEval :: Flags -> Bool
     runEval flags = testDynFlag PartialEval flags || testDynFlag LUT flags
@@ -213,26 +233,6 @@ runPipeline filepath = do
     simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
         lift . C.withTc . runSimplM . simplProgram
-
-    iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
-    iterateSimplPhase desc prog0 = do
-        n <- asksFlags maxSimpl
-        go 0 n prog0
-      where
-        go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
-        go i n prog | i >= n = do
-            warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
-            return prog
-
-        go i n prog = do
-            prog'           <- occPhase prog >>= lintCore
-            (prog'', stats) <- simplPhase prog'
-            void $ lintCore prog'
-            if stats /= mempty
-              then do void $ dumpPass DumpOcc "core" ("occ" ++ desc) prog'
-                      void $ dumpPass DumpSimpl "core" ("simpl" ++ desc) prog''
-                      go (i+1) n prog''
-              else return prog
 
     staticRefsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     staticRefsPhase =
