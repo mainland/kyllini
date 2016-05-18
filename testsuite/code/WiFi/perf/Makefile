@@ -8,7 +8,7 @@ all : $(patsubst %.blk, %.perf, $(TESTS))
 WHOLEPROGRAM=1
 include $(TOP)/mk/common.mk
 
-KZCFLAGS+=--ftimer --finline --fsimpl --fautolut --flut --ffuse
+KZCFLAGS+=--ftimer --finline --fsimpl --fautolut --flut --ffuse --fpeval
 
 ifeq ($(GCC), 1)
 CFLAGS+=-pipe -march=native -Ofast -ggdb
