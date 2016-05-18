@@ -45,7 +45,9 @@ module KZC.Core.Smart (
     isStructD,
 
     isConstE,
-    isArrE
+    isArrE,
+
+    refPathRoot
   ) where
 
 import Data.Loc
@@ -226,3 +228,11 @@ isArrE :: Exp -> Bool
 isArrE (ConstE ArrayC{} _) = True
 isArrE ArrayE{}            = True
 isArrE _                   = False
+
+-- | Given an expression of type @ref \tau@, return the source variable of type
+-- @ref@.
+refPathRoot :: Monad m => Exp -> m Var
+refPathRoot (VarE v _)     = return v
+refPathRoot (IdxE e _ _ _) = refPathRoot e
+refPathRoot (ProjE e _ _)  = refPathRoot e
+refPathRoot e              = faildoc $ text "Not a reference:" <+> ppr e

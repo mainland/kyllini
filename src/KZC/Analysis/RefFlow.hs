@@ -65,14 +65,6 @@ instance Located Ref where
     locOf (VarR v) = locOf v
     locOf _        = noLoc
 
--- | Given an expression of type @ref \tau@, return the source variable of type
--- @ref@.
-refRoot :: Monad m => Exp -> m Var
-refRoot (VarE v _)     = return v
-refRoot (IdxE e _ _ _) = refRoot e
-refRoot (ProjE e _ _)  = refRoot e
-refRoot e              = faildoc $ text "Not a reference:" <+> ppr e
-
 data RFState = RFState
     { -- | Maps a reference to the variables it flows to.
       refFlowsTo :: !(Map Ref (Set Var))
@@ -253,7 +245,7 @@ instance MonadTc m => Transform (RF m) where
         taintArg (ExpA e) = do
             tau <- inferExp e
             when (isRefT tau) $ do
-                v <- refRoot e
+                v <- refPathRoot e
                 refModified $ VarR v
 
     stepT (IfC l e1 c2 c3 s) = do
@@ -308,13 +300,13 @@ instance MonadTc m => Transform (RF m) where
         taintArg e = do
             tau <- inferExp e
             when (isRefT tau) $ do
-                v <- refRoot e
+                v <- refPathRoot e
                 refModified $ VarR v
 
     expT (AssignE e1 e2 s) = do
         e1'         <- expT e1
         (e2', refs) <- collectUseInfo $ expT e2
-        v           <- refRoot e1
+        v           <- refPathRoot e1
         refModified (VarR v)
         putFlowVars v refs
         return $ AssignE e1' e2' s
