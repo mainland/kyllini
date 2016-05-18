@@ -522,15 +522,30 @@ simplLocalDecl decl m = do
         e'   <- traverse simplExp e
         tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
-            extendVars [(bVar v', refT tau)] $
             extendDefinitions [(bVar v', Unknown)] $
-            withBinding (LetRefLD v' tau' e' s) m
+            withRefBinding v' tau' e' s m
 
     withoutBinding :: SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
     withoutBinding m = (,) <$> pure Nothing <*> m
 
     withBinding :: LocalDecl -> SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
     withBinding decl m = (,) <$> pure (Just decl) <*> m
+
+    withRefBinding :: BoundVar
+                   -> Type
+                   -> Maybe Exp
+                   -> SrcLoc
+                   -> SimplM l m a
+                   -> SimplM l m (Maybe LocalDecl, a)
+    withRefBinding v tau maybe_e s m | Just True <- bStaticRef v = do
+        rewrite
+        e <- maybe (constE <$> defaultValueC tau) return maybe_e
+        extendVars [(bVar v, tau)] $
+          (,) <$> pure (Just (LetLD v tau e s)) <*> m
+
+    withRefBinding v tau e s m =
+        extendVars [(bVar v, refT tau)] $
+        (,) <$> pure (Just (LetRefLD v tau e s)) <*> m
 
 simplComp :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
 simplComp (Comp steps) = Comp <$> simplSteps steps
@@ -1128,8 +1143,12 @@ simplExp (CallE f0 iotas0 es0 s) = do
     extendArgs ((v, e):vargs) k = extendSubst v (DoneExp e) $
                                   extendArgs vargs k
 
-simplExp (DerefE e s) =
-    DerefE <$> simplExp e <*> pure s
+simplExp (DerefE e s) = do
+    e'  <- simplExp e
+    tau <- inferExp e'
+    return $ if isRefT tau
+             then DerefE e' s
+             else ReturnE AutoInline e' s
 
 simplExp (AssignE e1 e2 s) =
     AssignE <$> simplExp e1 <*> simplExp e2 <*> pure s
