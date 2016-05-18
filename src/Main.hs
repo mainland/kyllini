@@ -103,36 +103,51 @@ runPipeline filepath = do
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         tracePhase "rename" renamePhase >=>
-        tracePhase "typecheck" checkPhase >=> tracePhase "lint" lintExpr >=>
+        traceExprPhase "typecheck" checkPhase >=>
         stopIf (testDynFlag StopAfterCheck) >=>
-        tracePhase "lambdaLift" lambdaLiftPhase >=> tracePhase "lint" lintExpr >=>
-        tracePhase "exprToCore" exprToCorePhase >=> tracePhase "lint" lintCore >=>
+        traceExprPhase "lambdaLift" lambdaLiftPhase >=>
+        traceCorePhase "exprToCore" exprToCorePhase >=>
         -- Simplify, but don't inline functions or computations
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ onlyInliningValues $ iterateSimplPhase "-phase1") >=>
         -- AutoLUT
-        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase1" autolutPhase >=> tracePhase "lintCore" lintCore) >=>
+        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase1" autolutPhase) >=>
         -- Simplify again, allowing inlining. This may inline LUTted functions.
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase2") >=>
         -- Fuse pars
-        runIf (testDynFlag Fuse) (tracePhase "fusion" fusionPhase >=> tracePhase "lintCore" lintCore) >=>
+        runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
-        runIf runEval (tracePhase "eval-phase1" evalPhase >=> tracePhase "lintCore" lintCore) >=>
+        runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase3") >=>
         -- Auto-LUT, partially evaluate, and simplify once more
-        runIf (testDynFlag AutoLUT) (tracePhase "autolut-phase2" autolutPhase >=> tracePhase "lintCore" lintCore) >=>
+        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase2" autolutPhase) >=>
         runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase4") >=>
         -- Look for refs that are unchanged
-        runIf (testDynFlag Simplify) (tracePhase "staticRef" staticRefsPhase >=> tracePhase "lint" lintCore) >=>
+        runIf (testDynFlag Simplify) (tracePhase "staticRef" staticRefsPhase) >=>
         -- One final round of simplification
         runIf (testDynFlag Simplify) (tracePhase "simpl" $ iterateSimplPhase "-phase5") >=>
         -- Clean up the code, do some analysis, and codegen
-        tracePhase "hashcons" hashconsPhase >=> tracePhase "lintCore" lintCore >=>
+        traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
       where
+        traceExprPhase :: String
+                       -> (a -> MaybeT KZC [E.Decl])
+                       -> a
+                       -> MaybeT KZC [E.Decl]
+        traceExprPhase phase act =
+            tracePhase phase act >=> tracePhase "lint" lintExpr
+
+        traceCorePhase :: IsLabel l
+                       => String
+                       -> (a -> MaybeT KZC (C.Program l))
+                       -> a
+                       -> MaybeT KZC (C.Program l)
+        traceCorePhase phase act =
+            tracePhase phase act >=> tracePhase "lint" lintCore
+
         tracePhase :: String
                    -> (a -> MaybeT KZC b)
                    -> a
