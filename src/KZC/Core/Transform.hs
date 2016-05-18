@@ -187,8 +187,11 @@ transStep (EmitsC l e s) =
 transStep (RepeatC l ann c s) =
     RepeatC l ann <$> compT c <*> pure s
 
-transStep (ParC ann tau c1 c2 s) =
-    ParC ann tau <$> compT c1 <*> compT c2 <*> pure s
+transStep (ParC ann b c1 c2 sloc) = do
+    (s, a, c) <- askSTIndTypes
+    ParC ann b <$> localSTIndTypes (Just (s, a, b)) (compT c1)
+               <*> localSTIndTypes (Just (b, b, c)) (compT c2)
+               <*> pure sloc
 
 transStep LoopC{} =
     faildoc $ text "transStep: saw LoopC"
