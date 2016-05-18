@@ -203,9 +203,23 @@ fuse left right = do
             (_, c2') <- runRight lss (unComp c2 ++ rss)
             return ([], [IfC l' e (Comp c1') (Comp c2') s])
 
-    runRight _lss (WhileC {} : _rss) = do
-        traceFusion $ text "Encountered while in consumer"
-        mzero
+    runRight lss (rs@(WhileC _l e c s) : rss) =
+        joinWhile `mplus` divergeWhile
+      where
+        joinWhile :: F l m ([Step l], [Step l])
+        joinWhile = do
+            l' <- jointLabel lss (rs:rss)
+            whenNotBeenThere lss l' $ do
+            (lss', c') <- runRight lss (unComp c)
+            guard (lss' == lss)
+            let step      =  WhileC l' e (Comp c') s
+            (lss', steps) <- runRight lss rss
+            return (lss', step:steps)
+
+        divergeWhile :: F l m ([Step l], [Step l])
+        divergeWhile = do
+            traceFusion $ text "Encountered diverging while in consumer"
+            mzero
 
     -- See the comment in the ForC case for runLeft.
     runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) = do
@@ -267,9 +281,23 @@ fuse left right = do
             (_, c2') <- runLeft (unComp c2 ++ lss) rss
             return  ([], [IfC l' e (Comp c1') (Comp c2') s])
 
-    runLeft (WhileC {} : _lss) _rss = do
-        traceFusion $ text "Encountered while in producer"
-        mzero
+    runLeft (ls@(WhileC _l e c s) : lss) rss =
+        joinWhile `mplus` divergeWhile
+      where
+        joinWhile :: F l m ([Step l], [Step l])
+        joinWhile = do
+            l' <- jointLabel (ls:lss) rss
+            whenNotBeenThere rss l' $ do
+            (rss', c') <- runLeft (unComp c) rss
+            guard (rss' == rss)
+            let step      =  WhileC l' e (Comp c') s
+            (rss', steps) <- runLeft lss rss
+            return (rss', step:steps)
+
+        divergeWhile :: F l m ([Step l], [Step l])
+        divergeWhile = do
+            traceFusion $ text "Encountered diverging while in producer"
+            mzero
 
     -- We attempt to fuse a for loop by running the body of the for with the
     -- consumer. If we end up back where we started in the consumer's
