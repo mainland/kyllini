@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 -- |
 -- Module      : KZC.Core.Transform
 -- Copyright   : (c) 2016 Drexel University
@@ -6,7 +8,8 @@
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
 module KZC.Core.Transform (
-    Transform(..),
+    TransformExp(..),
+    TransformComp(..),
 
     transProgram,
     transDecls,
@@ -26,18 +29,22 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 
-class MonadTc m => Transform m where
+class MonadTc m => TransformExp m where
+    localDeclT :: LocalDecl -> m a -> m (LocalDecl, a)
+    localDeclT = transLocalDecl
+
+    expT :: Exp -> m Exp
+    expT = transExp
+
+class TransformExp m => TransformComp l m where
     programT :: Program l -> m (Program l)
     programT = transProgram
 
-    declsT :: Transform m => [Decl l] -> m a -> m ([Decl l], a)
+    declsT :: [Decl l] -> m a -> m ([Decl l], a)
     declsT = transDecls
 
-    declT :: Transform m => Decl l -> m a -> m (Decl l, a)
+    declT :: Decl l -> m a -> m (Decl l, a)
     declT = transDecl
-
-    localDeclT :: LocalDecl -> m a -> m (LocalDecl, a)
-    localDeclT = transLocalDecl
 
     compT :: Comp l -> m (Comp l)
     compT = transComp
@@ -51,10 +58,7 @@ class MonadTc m => Transform m where
     argT :: Arg l -> m (Arg l)
     argT = transArg
 
-    expT :: Exp -> m Exp
-    expT = transExp
-
-transProgram :: Transform m => Program l -> m (Program l)
+transProgram :: TransformComp l m => Program l -> m (Program l)
 transProgram (Program decls comp tau) = do
   (decls', comp') <-
       declsT decls $
@@ -64,7 +68,7 @@ transProgram (Program decls comp tau) = do
       compT comp
   return $ Program decls' comp' tau
 
-transDecls :: Transform m => [Decl l] -> m a -> m ([Decl l], a)
+transDecls :: TransformComp l m => [Decl l] -> m a -> m ([Decl l], a)
 transDecls [] m = do
     x <- m
     return ([], x)
@@ -73,7 +77,7 @@ transDecls (d:ds) m = do
     (d', (ds', x)) <- declT d $ declsT ds m
     return (d':ds', x)
 
-transDecl :: Transform m => Decl l -> m a -> m (Decl l, a)
+transDecl :: TransformComp l m => Decl l -> m a -> m (Decl l, a)
 transDecl (LetD decl s) m = do
     (decl', x) <- localDeclT decl m
     return (LetD decl' s, x)
@@ -115,21 +119,10 @@ transDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
     tau :: Type
     tau = FunT iotas (map snd vbs) tau_ret l
 
-transLocalDecl :: Transform m => LocalDecl -> m a -> m (LocalDecl, a)
-transLocalDecl (LetLD v tau e s) m = do
-    e' <- expT e
-    x  <- extendVars [(bVar v, tau)] m
-    return (LetLD v tau e' s, x)
-
-transLocalDecl (LetRefLD v tau e s) m = do
-    e' <- traverse expT e
-    x  <- extendVars [(bVar v, refT tau)] m
-    return (LetRefLD v tau e' s, x)
-
-transComp :: Transform m => Comp l -> m (Comp l)
+transComp :: TransformComp l m => Comp l -> m (Comp l)
 transComp (Comp steps) = Comp <$> stepsT steps
 
-transSteps :: Transform m => [Step l] -> m [Step l]
+transSteps :: TransformComp l m => [Step l] -> m [Step l]
 transSteps [] =
     return []
 
@@ -148,7 +141,7 @@ transSteps (BindC l (TameV v) tau s : steps) = do
 transSteps (step : steps) =
     (:) <$> stepT step <*> stepsT steps
 
-transStep :: Transform m => Step l -> m (Step l)
+transStep :: TransformComp l m => Step l -> m (Step l)
 transStep step@VarC{} =
     pure step
 
@@ -194,17 +187,31 @@ transStep (EmitsC l e s) =
 transStep (RepeatC l ann c s) =
     RepeatC l ann <$> compT c <*> pure s
 
-transStep (ParC ann tau c1 c2 s) =
-    ParC ann tau <$> compT c1 <*> compT c2 <*> pure s
+transStep (ParC ann b c1 c2 sloc) = do
+    (s, a, c) <- askSTIndTypes
+    ParC ann b <$> localSTIndTypes (Just (s, a, b)) (compT c1)
+               <*> localSTIndTypes (Just (b, b, c)) (compT c2)
+               <*> pure sloc
 
 transStep LoopC{} =
     faildoc $ text "transStep: saw LoopC"
 
-transArg :: Transform m => Arg l -> m (Arg l)
+transArg :: TransformComp l m => Arg l -> m (Arg l)
 transArg (ExpA e)  = ExpA  <$> expT e
 transArg (CompA c) = CompA <$> compT c
 
-transExp :: Transform m => Exp -> m Exp
+transLocalDecl :: TransformExp m => LocalDecl -> m a -> m (LocalDecl, a)
+transLocalDecl (LetLD v tau e s) m = do
+    e' <- expT e
+    x  <- extendVars [(bVar v, tau)] m
+    return (LetLD v tau e' s, x)
+
+transLocalDecl (LetRefLD v tau e s) m = do
+    e' <- traverse expT e
+    x  <- extendVars [(bVar v, refT tau)] m
+    return (LetRefLD v tau e' s, x)
+
+transExp :: TransformExp m => Exp -> m Exp
 transExp e@ConstE{} =
     pure e
 

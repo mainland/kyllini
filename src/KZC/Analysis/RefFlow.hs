@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -186,19 +188,65 @@ updateTaint bv m =
 rfProgram :: MonadTc m => Program l -> m (Program l)
 rfProgram = runRF . programT
 
-instance MonadTc m => Transform (RF m) where
+instance MonadTc m => TransformExp (RF m) where
     localDeclT (LetLD v tau e1 s) k = do
-        (e1', refs) <- collectUseInfo $ expT e1
-        (x, v')     <- extendVars [(bVar v, tau)] $
-                       extendVarFlowsFrom (bVar v) refs $
-                       updateTaint v k
-        return (LetLD v' tau e1' s, x)
+      (e1', refs) <- collectUseInfo $ expT e1
+      (x, v')     <- extendVars [(bVar v, tau)] $
+                     extendVarFlowsFrom (bVar v) refs $
+                     updateTaint v k
+      return (LetLD v' tau e1' s, x)
 
     localDeclT (LetRefLD v tau maybe_e1 s) k = do
-        maybe_e1' <- traverse (voidUseInfo . expT) maybe_e1
-        x         <- extendVars [(bVar v, refT tau)] k
-        return (LetRefLD v tau maybe_e1' s, x)
+      maybe_e1' <- traverse (voidUseInfo . expT) maybe_e1
+      x         <- extendVars [(bVar v, refT tau)] k
+      return (LetRefLD v tau maybe_e1' s, x)
 
+    expT e@(VarE v _) = do
+        useVar v
+        return e
+
+    expT (IfE e1 e2 e3 s) = do
+        e1'        <- expT e1
+        (e2', e3') <- rfIf (expT e2) (expT e3)
+        return $ IfE e1' e2' e3' s
+
+    expT (CallE f iotas es s) = do
+        e' <- CallE f iotas <$> mapM expT es <*> pure s
+        mapM_ taintArg es
+        return e'
+      where
+        taintArg :: Exp -> RF m ()
+        taintArg e = do
+            tau <- inferExp e
+            when (isRefT tau) $ do
+                v <- refPathRoot e
+                refModified $ VarR v
+
+    expT (AssignE e1 e2 s) = do
+        e1'         <- expT e1
+        (e2', refs) <- collectUseInfo $ expT e2
+        v           <- refPathRoot e1
+        refModified (VarR v)
+        putFlowVars v refs
+        return $ AssignE e1' e2' s
+
+    expT (BindE WildV tau e1 e2 s) = do
+        e1' <- voidUseInfo $ expT e1
+        e2' <- expT e2
+        return $ BindE WildV tau e1' e2' s
+
+    expT (BindE (TameV v) tau e1 e2 s) = do
+        (e1', refs) <- collectUseInfo $ expT e1
+        (e2', v')   <- extendVars [(bVar v, tau)] $
+                       extendVarFlowsFrom (bVar v) refs $
+                       updateTaint v $
+                       expT e2
+        return $ BindE (TameV v') tau e1' e2' s
+
+    expT e =
+      transExp e
+
+instance MonadTc m => TransformComp l (RF m) where
     stepsT [] =
         return []
 
@@ -278,51 +326,6 @@ instance MonadTc m => Transform (RF m) where
 
     stepT step =
         transStep step
-
-    expT e@(VarE v _) = do
-        useVar v
-        return e
-
-    expT (IfE e1 e2 e3 s) = do
-        e1'        <- expT e1
-        (e2', e3') <- rfIf (expT e2) (expT e3)
-        return $ IfE e1' e2' e3' s
-
-    expT (CallE f iotas es s) = do
-        e' <- CallE f iotas <$> mapM expT es <*> pure s
-        mapM_ taintArg es
-        return e'
-      where
-        taintArg :: Exp -> RF m ()
-        taintArg e = do
-            tau <- inferExp e
-            when (isRefT tau) $ do
-                v <- refPathRoot e
-                refModified $ VarR v
-
-    expT (AssignE e1 e2 s) = do
-        e1'         <- expT e1
-        (e2', refs) <- collectUseInfo $ expT e2
-        v           <- refPathRoot e1
-        refModified (VarR v)
-        putFlowVars v refs
-        return $ AssignE e1' e2' s
-
-    expT (BindE WildV tau e1 e2 s) = do
-        e1' <- voidUseInfo $ expT e1
-        e2' <- expT e2
-        return $ BindE WildV tau e1' e2' s
-
-    expT (BindE (TameV v) tau e1 e2 s) = do
-        (e1', refs) <- collectUseInfo $ expT e1
-        (e2', v')   <- extendVars [(bVar v, tau)] $
-                       extendVarFlowsFrom (bVar v) refs $
-                       updateTaint v $
-                       expT e2
-        return $ BindE (TameV v') tau e1' e2' s
-
-    expT e =
-      transExp e
 
 rfIf :: Monad m
      => RF m a

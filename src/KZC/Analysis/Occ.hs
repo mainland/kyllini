@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -96,7 +98,43 @@ updOccInfo v occ = v { bOccInfo = Just occ }
 occProgram :: MonadTc m => Program l -> m (Program l)
 occProgram = runOccM . programT
 
-instance MonadTc m => Transform (OccM m) where
+instance MonadTc m => TransformExp (OccM m) where
+    localDeclT (LetLD v tau e s) m = do
+        e'       <- expT e
+        (occ, x) <- extendVars [(bVar v, tau)] $ withOccInfo v m
+        return (LetLD (updOccInfo v occ) tau e' s, x)
+
+    localDeclT (LetRefLD v tau e s) m = do
+        e'       <- traverse expT e
+        (occ, x) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
+        return (LetRefLD (updOccInfo v occ) tau e' s, x)
+
+    expT e@(VarE v _) = do
+        occVar v
+        return e
+
+    expT e@(CallE f _ _ _) = do
+        occVar f
+        transExp e
+
+    expT (IfE e1 e2 e3 s) = do
+        e1'         <- expT e1
+        (occ2, e2') <- collectOcc $ expT e2
+        (occ3, e3') <- collectOcc $ expT e3
+        tell $ occ2 `bub` occ3
+        return $ IfE e1' e2' e3' s
+
+    expT (BindE (TameV v) tau e1 e2 s) = do
+        e1'        <- expT e1
+        (occ, e2') <- extendVars [(bVar v, tau)] $
+                      withOccInfo v $
+                      expT e2
+        return $ BindE (TameV (updOccInfo v occ)) tau e1' e2' s
+
+    expT e =
+        transExp e
+
+instance MonadTc m => TransformComp l (OccM m) where
     declT (LetFunD f iotas vbs tau_ret e l) m =
         extendVars [(bVar f, tau)] $ do
         e'       <- extendLetFun f iotas vbs tau_ret $
@@ -134,16 +172,6 @@ instance MonadTc m => Transform (OccM m) where
     declT decl m =
         transDecl decl m
 
-    localDeclT (LetLD v tau e s) m = do
-        e'       <- expT e
-        (occ, x) <- extendVars [(bVar v, tau)] $ withOccInfo v m
-        return (LetLD (updOccInfo v occ) tau e' s, x)
-
-    localDeclT (LetRefLD v tau e s) m = do
-        e'       <- traverse expT e
-        (occ, x) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
-        return (LetRefLD (updOccInfo v occ) tau e' s, x)
-
     stepsT (BindC l (TameV v) tau s : steps) = do
         (occ, steps') <- extendVars [(bVar v, tau)] $
                          withOccInfo v $
@@ -170,28 +198,3 @@ instance MonadTc m => Transform (OccM m) where
 
     stepT step =
         transStep step
-
-    expT e@(VarE v _) = do
-        occVar v
-        return e
-
-    expT e@(CallE f _ _ _) = do
-        occVar f
-        transExp e
-
-    expT (IfE e1 e2 e3 s) = do
-        e1'         <- expT e1
-        (occ2, e2') <- collectOcc $ expT e2
-        (occ3, e3') <- collectOcc $ expT e3
-        tell $ occ2 `bub` occ3
-        return $ IfE e1' e2' e3' s
-
-    expT (BindE (TameV v) tau e1 e2 s) = do
-        e1'        <- expT e1
-        (occ, e2') <- extendVars [(bVar v, tau)] $
-                      withOccInfo v $
-                      expT e2
-        return $ BindE (TameV (updOccInfo v occ)) tau e1' e2' s
-
-    expT e =
-      transExp e
