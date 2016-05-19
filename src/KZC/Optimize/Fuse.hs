@@ -24,11 +24,14 @@ import Control.Monad (MonadPlus(..),
                       guard,
                       when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.IO.Class (MonadIO(..),
+                               liftIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             evalStateT,
                             gets,
                             modify)
+import Control.Monad.Trans (lift)
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -50,9 +53,31 @@ import KZC.Vars
 
 newtype FState l = FState { seen :: Set l }
 
-newtype F l m a = F { unF :: StateT (FState l) (SEFKT m) a }
+defaultFState :: IsLabel l => FState l
+defaultFState = FState mempty
+
+data FusionStats = FusionStats
+    { fusedPars      :: !Int
+    , fusionFailures :: !Int
+    }
+
+instance Monoid FusionStats where
+    mempty = FusionStats 0 0
+
+    x `mappend` y = FusionStats
+        { fusedPars      = fusedPars x + fusedPars y
+        , fusionFailures = fusionFailures x + fusionFailures y
+        }
+
+instance Pretty FusionStats where
+    ppr stats =
+        text "     Fused pars:" <+> ppr (fusedPars stats) </>
+        text "Fusion failures:" <+> ppr (fusionFailures stats)
+
+newtype F l m a = F { unF :: StateT (FState l) (SEFKT (StateT FusionStats m)) a }
     deriving (Functor, Applicative, Monad,
               Alternative, MonadPlus,
+              MonadIO,
               MonadState (FState l),
               MonadException,
               MonadUnique,
@@ -64,10 +89,7 @@ newtype F l m a = F { unF :: StateT (FState l) (SEFKT m) a }
 runF :: forall l m a . (IsLabel l, MonadErr m)
      => F l m a
      -> m a
-runF m = runSEFKT (evalStateT (unF m) fstate)
-  where
-    fstate :: FState l
-    fstate = FState mempty
+runF m = evalStateT (runSEFKT (evalStateT (unF m) defaultFState)) mempty
 
 sawLabel :: (IsLabel l, MonadTc m)
          => l -> F l m Bool
@@ -81,9 +103,33 @@ jointLabel :: (IsLabel l, MonadTc m)
            => [Step l] -> [Step l] -> F l m l
 jointLabel lss rss = pairLabel <$> stepLabel (head lss) <*> stepLabel (head rss)
 
-fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadTc m)
+getStats :: MonadTc m => F l m FusionStats
+getStats = F $ lift $ lift get
+
+modifyStats :: MonadTc m => (FusionStats -> FusionStats) -> F l m ()
+modifyStats = F . lift . lift . modify
+
+parFused :: MonadTc m => F l m ()
+parFused =
+    modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
+
+fusionFailed :: MonadTc m => F l m ()
+fusionFailed =
+    modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
+
+fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadIO m, MonadTc m)
             => Program l -> m (Program l)
-fuseProgram prog = runF (programT prog :: F l m (Program l))
+fuseProgram = runF . fuseProg
+  where
+    fuseProg :: Program l -> F l m (Program l)
+    fuseProg prog = do
+        prog'     <- programT prog
+        dumpStats <- asksFlags (testDynFlag ShowFusionStats)
+        when dumpStats $ do
+            stats  <- getStats
+            liftIO $ putDocLn $ nest 2 $
+                text "Fusion statistics:" </> ppr stats
+        return prog'
 
 instance (IsLabel l, MonadTc m) => TransformExp (F l m) where
 
@@ -102,6 +148,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
       fusePar left right0 = do
           l    <- compLabel right0
           comp <- fuse left right >>= setFirstLabel l
+          parFused
           traceFusion $ text "Fused" <+>
               (nest 2 $ text "producer:" </> ppr left) </>
               (nest 2 $ text "and consumer:" </> ppr right) </>
@@ -219,6 +266,7 @@ fuse left right = do
         divergeWhile :: F l m ([Step l], [Step l])
         divergeWhile = do
             traceFusion $ text "Encountered diverging while in consumer"
+            fusionFailed
             mzero
 
     -- See the comment in the ForC case for runLeft.
@@ -246,6 +294,7 @@ fuse left right = do
 
     runRight _lss (ParC {} : _rss) = do
         traceFusion $ text "Saw nested par in producer during par fusion."
+        fusionFailed
         mzero
 
     runRight lss (rs:rss) = do
@@ -297,6 +346,7 @@ fuse left right = do
         divergeWhile :: F l m ([Step l], [Step l])
         divergeWhile = do
             traceFusion $ text "Encountered diverging while in producer"
+            fusionFailed
             mzero
 
     -- We attempt to fuse a for loop by running the body of the for with the
@@ -324,6 +374,7 @@ fuse left right = do
 
     runLeft (EmitC {} : _) (TakesC {} : _) = do
         traceFusion $ text "emit paired with takes"
+        fusionFailed
         mzero
 
     runLeft (EmitC {} : _) _ =
@@ -368,6 +419,7 @@ fuse left right = do
         n_left <- inferExp e >>= knownArraySize
         when (n_left /= n_right) $ do
             traceFusion $ text "emits paired with takes with incompatible size"
+            fusionFailed
             mzero
         let step      =  ReturnC l' e s1
         (rss', steps) <- runRight (dropBind lss) rss
@@ -388,6 +440,7 @@ fuse left right = do
 
     runLeft (ParC {} : _lss) _rss = do
         traceFusion $ text "Saw nested par in producer during par fusion."
+        fusionFailed
         mzero
 
     runLeft (ls:lss) rss = do
@@ -401,12 +454,13 @@ dropBind :: [Step l] -> [Step l]
 dropBind (BindC {} : ss) = ss
 dropBind ss              = ss
 
-knownArraySize :: (MonadPlus m, MonadTc m) => Type -> m Int
+knownArraySize :: MonadTc m => Type -> F l m Int
 knownArraySize tau = do
     (iota, _) <- checkArrT tau
     case iota of
       ConstI n _ -> return n
       _          -> do traceFusion $ text "Unknown array size"
+                       fusionFailed
                        mzero
 
 relabelStep :: (IsLabel l1, MonadPlus m, MonadTc m)

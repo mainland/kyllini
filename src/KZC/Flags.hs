@@ -82,6 +82,7 @@ data DynFlag = Quiet
              | NoGensym
              | Pipeline
              | ShowCgStats
+             | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data WarnFlag = WarnError
