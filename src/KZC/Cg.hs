@@ -27,6 +27,7 @@ import Control.Monad (forM_,
                       mplus,
                       unless,
                       when)
+import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Loc
 import Data.Maybe (isJust)
@@ -175,8 +176,11 @@ void kz_main(const typename kz_params_t* $id:params)
 {
     $items:cblock
 }|]
-    stats <- getStats
-    traceCg $ nest 2 $ text "Code generator statistics:" </> ppr stats
+    dumpStats <- asksFlags (testDynFlag ShowCgStats)
+    when dumpStats $ do
+        stats  <- getStats
+        liftIO $ putDocLn $ nest 2 $
+            text "Code generator statistics:" </> ppr stats
   where
     in_buf, out_buf, params :: C.Id
     in_buf  = "in"
