@@ -104,13 +104,12 @@ import KZC.Core.Lint (Tc, liftTc, isInTopScope)
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Monad
-import KZC.Monad.SEFKT
 import KZC.Quote.C
 import KZC.Staged
 import KZC.Util.Env
 
 -- | The 'Cg' monad.
-type Cg l a = SEFKT (ReaderT (CgEnv l) (StateT (CgState l) Tc)) a
+type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
 data CgEnv l = CgEnv
     { varCExps   :: Map Var (CExp l)
@@ -184,7 +183,7 @@ defaultCgState = CgState
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
 evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
-    s <- liftTc $ execStateT (runReaderT (runSEFKT m) defaultCgEnv) defaultCgState
+    s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
 
 extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
