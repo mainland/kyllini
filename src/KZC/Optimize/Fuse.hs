@@ -50,7 +50,7 @@ import KZC.Vars
 
 newtype FState l = FState { seen :: Set l }
 
-newtype F l m a = F { unF :: SEFKT (StateT (FState l) m) a }
+newtype F l m a = F { unF :: StateT (FState l) (SEFKT m) a }
     deriving (Functor, Applicative, Monad,
               Alternative, MonadPlus,
               MonadState (FState l),
@@ -64,7 +64,7 @@ newtype F l m a = F { unF :: SEFKT (StateT (FState l) m) a }
 runF :: forall l m a . (IsLabel l, MonadErr m)
      => F l m a
      -> m a
-runF m = evalStateT (runSEFKT (unF m)) fstate
+runF m = runSEFKT (evalStateT (unF m) fstate)
   where
     fstate :: FState l
     fstate = FState mempty
