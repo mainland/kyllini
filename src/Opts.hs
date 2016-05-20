@@ -210,6 +210,8 @@ dDynFlagOpts =
                     "show \"expert\" types when pretty-printing")
   , (ShowCgStats,   "cg-stats",
                     "show code generator statistics")
+  , (ShowFusionStats, "fusion-stats",
+                      "show fusion statistics")
   ]
 
 dDumpFlagOpts :: [(DumpFlag, String, String)]

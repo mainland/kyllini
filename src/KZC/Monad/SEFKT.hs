@@ -103,6 +103,19 @@ runSEFKTM (Just n) m = unSEFKT (msplit m) errk failk succk
     succk Nothing        _ek _fk = return []
     succk (Just (x, m')) _ek _fk = fmap (x:) (runSEFKTM (Just (n-1)) m')
 
+liftLocal :: Monad m
+          => m r'
+          -> ((r' -> r') -> forall r . (m r -> m r))
+          -> (r' -> r')
+          -> SEFKT m a
+          -> SEFKT m a
+liftLocal ask local f m = SEFKT $ \ek fk sk -> do
+    r <- ask
+    let ek' ex fk'    = local (const r) (ek ex fk')
+        fk'           = local (const r) fk
+        sk' x ek' fk' = local (const r) (sk x ek' fk')
+    local f (unSEFKT m ek' fk' sk')
+
 instance MonadTrans SEFKT where
     lift m = SEFKT $ \ek fk sk -> m >>= \x -> sk x ek fk
 
@@ -170,14 +183,17 @@ instance MonadErr m => MonadException (SEFKT m) where
                   in
                     unSEFKT m ek' fk sk
 
+instance (MonadErr m, MonadReader r m) => MonadReader r (SEFKT m) where
+    ask       = SEFKT $ \ek fk sk -> ask >>= \r -> sk r ek fk
+    local f m = SEFKT $ \ek fk sk -> local f (unSEFKT m ek fk sk)
+
+instance (MonadErr m, MonadState s m) => MonadState s (SEFKT m) where
+    get   = SEFKT $ \ek fk sk -> get >>= \s -> sk s ek fk
+    put s = SEFKT $ \ek fk sk -> put s >> sk () ek fk
+
 instance MonadErr m => MonadErr (SEFKT m) where
-    askErrCtx       = lift askErrCtx
-    localErrCtx f m = SEFKT $ \ek fk sk -> do
-                      ctx <- askErrCtx
-                      let ek' ex fk'    = localErrCtx (const ctx) (ek ex fk')
-                          fk'           = localErrCtx (const ctx) fk
-                          sk' x ek' fk' = localErrCtx (const ctx) (sk x ek' fk')
-                      localErrCtx f (unSEFKT m ek' fk' sk')
+    askErrCtx   = lift askErrCtx
+    localErrCtx = liftLocal askErrCtx localErrCtx
 
     displayWarning = lift . displayWarning
 
@@ -185,50 +201,17 @@ instance MonadErr m => MonadErr (SEFKT m) where
     err   = lift . err
     warn  = lift . warn
 
-instance (MonadErr m, MonadReader r m) => MonadReader r (SEFKT m) where
-    ask       = SEFKT $ \ek fk sk -> ask >>= \r -> sk r ek fk
-    local f m = SEFKT $ \ek fk sk -> do
-                r <- ask
-                let ek' ex fk'    = local (const r) (ek ex fk')
-                    fk'           = local (const r) fk
-                    sk' x ek' fk' = local (const r) (sk x ek' fk')
-                local f (unSEFKT m ek' fk' sk')
-
-instance (MonadErr m, MonadState s m) => MonadState s (SEFKT m) where
-    get    = SEFKT $ \ek fk sk -> get >>= \s -> sk s ek fk
-    put s' = SEFKT $ \ek fk sk -> do
-             s <- get
-             put s'
-             let ek' ex fk' = put s >> ek ex fk'
-                 fk'        = put s >> fk
-             sk () ek' fk'
-
 instance (MonadErr m, MonadUnique m) => MonadUnique (SEFKT m) where
     newUnique = lift newUnique
 
 instance (MonadErr m, MonadFlags m) => MonadFlags (SEFKT m) where
-    askFlags       = lift askFlags
-    localFlags f m = SEFKT $ \ek fk sk -> do
-                     fs <- askFlags
-                     let ek' ex fk'    = localFlags (const fs) (ek ex fk')
-                         fk'           = localFlags (const fs) fk
-                         sk' x ek' fk' = localFlags (const fs) (sk x ek' fk')
-                     localFlags f (unSEFKT m ek' fk' sk')
+    askFlags   = lift askFlags
+    localFlags = liftLocal askFlags localFlags
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (SEFKT m) where
-    askTraceDepth       = lift askTraceDepth
-    localTraceDepth f m = SEFKT $ \ek fk sk -> do
-                          d <- askTraceDepth
-                          let ek' ex fk'    = localTraceDepth (const d) (ek ex fk')
-                              fk'           = localTraceDepth (const d) fk
-                              sk' x ek' fk' = localTraceDepth (const d) (sk x ek' fk')
-                          localTraceDepth f (unSEFKT m ek' fk' sk')
+    askTraceDepth   = lift askTraceDepth
+    localTraceDepth = liftLocal askTraceDepth localTraceDepth
 
 instance MonadTc m => MonadTc (SEFKT m) where
-    askTc       = lift askTc
-    localTc f m = SEFKT $ \ek fk sk -> do
-                  r <- askTc
-                  let ek' ex fk'    = localTc (const r) (ek ex fk')
-                      fk'           = localTc (const r) fk
-                      sk' x ek' fk' = localTc (const r) (sk x ek' fk')
-                  localTc f (unSEFKT m ek' fk' sk')
+    askTc   = lift askTc
+    localTc = liftLocal askTc localTc

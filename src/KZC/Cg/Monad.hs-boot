@@ -15,9 +15,8 @@ import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (StateT)
 
 import KZC.Core.Lint (Tc)
-import KZC.Monad.SEFKT (SEFKT)
 
-type Cg l a = SEFKT (ReaderT (CgEnv l) (StateT (CgState l) Tc)) a
+type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
 type role CgEnv nominal
 
