@@ -52,7 +52,7 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-newtype FState l = FState { seen :: Set l }
+newtype FState l = FState { seen :: Set (l, l) }
 
 defaultFState :: IsLabel l => FState l
 defaultFState = FState mempty
@@ -93,11 +93,11 @@ runF :: forall l m a . (IsLabel l, MonadErr m)
 runF m = evalStateT (runSEFKT (evalStateT (unF m) defaultFState)) mempty
 
 sawLabel :: (IsLabel l, MonadTc m)
-         => l -> F l m Bool
+         => (l, l) -> F l m Bool
 sawLabel l = gets (Set.member l . seen)
 
 recordLabel :: (IsLabel l, MonadTc m)
-            => l -> F l m ()
+            => (l, l) -> F l m ()
 recordLabel l = modify $ \s -> s { seen = Set.insert l (seen s) }
 
 getStats :: MonadTc m => F l m FusionStats
@@ -209,27 +209,28 @@ are fusing repeats, thus the ugly @isNonEmptyRepeatLoop test@ in runRepeat.
 -}
 
 recoverRepeat :: forall l m . (IsLabel l, MonadTc m)
-              => l                      -- ^ The label to be used for the
-                                        -- resulting repeat
-              -> VectAnn                -- ^ Annotation for the resulting repeat
-              -> l                      -- ^ Label of the loop header
-              -> [Step l]               -- ^ Remaining steps for the "other"
-                                        -- side of the par
-              -> [Step l]               -- ^ Fusion result.
-              -> m ([Step l], [Step l]) -- ^ Pair of the remaining steps for the
-                                        -- other side of the par and the fusion
-                                        -- result.
+              => (l, l)                      -- ^ The label to be used for the
+                                             -- resulting repeat
+              -> VectAnn                     -- ^ Annotation for the resulting
+                                             -- repeat
+              -> (l, l)                      -- ^ Label of the loop header
+              -> [Step l]                    -- ^ Remaining steps for the
+                                             -- "other" side of the par
+              -> [Step (l, l)]               -- ^ Fusion result.
+              -> m ([Step l], [Step (l, l)]) -- ^ Pair of the remaining steps
+                                             -- for the other side of the par
+                                             -- and the fusion result.
 recoverRepeat l ann l_repeat ss_other ss =
     return (ss_other, ss')
   where
-    ss' :: [Step l]
+    ss' :: [Step (l, l)]
     ss' | isNonEmptyRepeatLoop ss = mkRepeat (init ss)
         | otherwise               = ss
 
-    mkRepeat :: [Step l] -> [Step l]
+    mkRepeat :: [Step (l, l)] -> [Step (l, l)]
     mkRepeat steps = [RepeatC l ann (Comp steps) (srclocOf steps)]
 
-    isNonEmptyRepeatLoop :: [Step l] -> Bool
+    isNonEmptyRepeatLoop :: [Step (l, l)] -> Bool
     isNonEmptyRepeatLoop steps = length steps > 1 && last ss == LoopC l_repeat
 
 -- | Given a list of computation steps for the "other" side of the
@@ -242,9 +243,9 @@ recoverRepeat l ann l_repeat ss_other ss =
 -- can be introduced into a computation. It will be removed by 'recoverRepeat'.
 whenNotBeenThere :: (IsLabel l, MonadTc m)
                  => [Step l]
-                 -> l
-                 -> F l m ([Step l], [Step l])
-                 -> F l m ([Step l], [Step l])
+                 -> (l, l)
+                 -> F l m ([Step l], [Step (l, l)])
+                 -> F l m ([Step l], [Step (l, l)])
 whenNotBeenThere ss l k = do
     beenThere <- sawLabel l
     if beenThere
@@ -258,7 +259,7 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> F l m (Comp l)
 fuse left right klabel = do
     (_, rss') <- runRight (unComp left) (unComp right)
-    return $ Comp rss'
+    mapMCompLabels (return . uncurry pairLabel) $ Comp rss'
   where
     -- | A "free" left step is one we can go ahead and run even if the
     -- right-hand side has not yet reached a take action.
@@ -269,7 +270,7 @@ fuse left right klabel = do
     isFreeLeftStep BindC{}   = True
     isFreeLeftStep _         = False
 
-    runRight :: [Step l] -> [Step l] -> F l m ([Step l], [Step l])
+    runRight :: [Step l] -> [Step l] -> F l m ([Step l], [Step (l, l)])
     -- We want to go ahead and run all "free" left steps so that they have
     -- already been executed when we look for confluence. Consider:
     --
@@ -291,7 +292,7 @@ fuse left right klabel = do
     runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
         joinIf `mplus` divergeIf
       where
-        joinIf :: F l m ([Step l], [Step l])
+        joinIf :: F l m ([Step l], [Step (l, l)])
         joinIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -302,7 +303,7 @@ fuse left right klabel = do
               (lss', steps) <- runRight lss1 rss
               return (lss', step:steps)
 
-        divergeIf :: F l m ([Step l], [Step l])
+        divergeIf :: F l m ([Step l], [Step (l, l)])
         divergeIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -313,7 +314,7 @@ fuse left right klabel = do
     runRight lss (rs@(WhileC _l e c s) : rss) =
         joinWhile `mplus` divergeWhile
       where
-        joinWhile :: F l m ([Step l], [Step l])
+        joinWhile :: F l m ([Step l], [Step (l, l)])
         joinWhile = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -323,7 +324,7 @@ fuse left right klabel = do
               (lss', steps) <- runRight lss rss
               return (lss', step:steps)
 
-        divergeWhile :: F l m ([Step l], [Step l])
+        divergeWhile :: F l m ([Step l], [Step (l, l)])
         divergeWhile = do
             traceFusion $ text "Encountered diverging while in consumer"
             fusionFailed
@@ -333,7 +334,7 @@ fuse left right klabel = do
     runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
         joinFor `mplus` divergeFor
       where
-        joinFor :: F l m ([Step l], [Step l])
+        joinFor :: F l m ([Step l], [Step (l, l)])
         joinFor = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
@@ -343,7 +344,7 @@ fuse left right klabel = do
               (lss', steps) <- runRight lss rss
               return (lss', step:steps)
 
-        divergeFor :: F l m ([Step l], [Step l])
+        divergeFor :: F l m ([Step l], [Step (l, l)])
         divergeFor = do
             traceFusion $ text "Encountered diverging for in consumer"
             fusionFailed
@@ -373,14 +374,14 @@ fuse left right klabel = do
           (lss', steps) <- runRight lss rss
           return (lss', step:steps)
 
-    runLeft :: [Step l] -> [Step l] -> F l m ([Step l], [Step l])
+    runLeft :: [Step l] -> [Step l] -> F l m ([Step l], [Step (l, l)])
     runLeft [] rss =
         return (rss, [])
 
     runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
         joinIf `mplus` divergeIf
       where
-        joinIf :: F l m ([Step l], [Step l])
+        joinIf :: F l m ([Step l], [Step (l, l)])
         joinIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -391,7 +392,7 @@ fuse left right klabel = do
               (rss', steps) <- runLeft lss rss1
               return (rss', step:steps)
 
-        divergeIf :: F l m ([Step l], [Step l])
+        divergeIf :: F l m ([Step l], [Step (l, l)])
         divergeIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -402,7 +403,7 @@ fuse left right klabel = do
     runLeft (ls@(WhileC _l e c s) : lss) rss =
         joinWhile `mplus` divergeWhile
       where
-        joinWhile :: F l m ([Step l], [Step l])
+        joinWhile :: F l m ([Step l], [Step (l, l)])
         joinWhile = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -412,7 +413,7 @@ fuse left right klabel = do
               (rss', steps) <- runLeft lss rss
               return (rss', step:steps)
 
-        divergeWhile :: F l m ([Step l], [Step l])
+        divergeWhile :: F l m ([Step l], [Step (l, l)])
         divergeWhile = do
             traceFusion $ text "Encountered diverging while in producer"
             fusionFailed
@@ -426,7 +427,7 @@ fuse left right klabel = do
     runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
         joinFor `mplus` divergeFor
       where
-        joinFor :: F l m ([Step l], [Step l])
+        joinFor :: F l m ([Step l], [Step (l, l)])
         joinFor = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
@@ -436,7 +437,7 @@ fuse left right klabel = do
               (rss', steps) <- runRight lss rss
               return (rss', step:steps)
 
-        divergeFor :: F l m ([Step l], [Step l])
+        divergeFor :: F l m ([Step l], [Step (l, l)])
         divergeFor = do
             traceFusion $ text "Encountered diverging for in producer"
             fusionFailed
@@ -448,8 +449,8 @@ fuse left right klabel = do
           (rss', steps) <- runRight (dropBind lss) rss
           return (rss', step:steps)
       where
-        l' :: l
-        l' = pairLabel l_left l_right
+        l' :: (l, l)
+        l' = (l_left, l_right)
 
     runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
         traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
@@ -469,26 +470,26 @@ fuse left right klabel = do
             else emitsNTake n
       where
         -- If we are emitting an array with only one element, fusion is trivial.
-        emits1Take :: F l m ([Step l], [Step l])
+        emits1Take :: F l m ([Step l], [Step (l, l)])
         emits1Take = do
             (rss', steps) <- runRight (dropBind lss) rss
             return (rss', step:steps)
           where
-            step :: Step l
+            step :: Step (l, l)
             step = ReturnC l' (idxE e 0) s1
 
         -- If we are emitting an array with more than one element, we rewrite
         -- the emits as a for loop that yields each element of the array one by
         -- one and try to fuse the rewritten computation.
-        emitsNTake :: Int -> F l m ([Step l], [Step l])
+        emitsNTake :: Int -> F l m ([Step l], [Step (l, l)])
         emitsNTake n = do
             i    <- gensymAt "i" s1
             body <- emitC (idxE e (varE i))
             fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
             runLeft (unComp fori ++ dropBind lss) (rs : rss)
 
-        l' :: l
-        l' = pairLabel l_left l_right
+        l' :: (l, l)
+        l' = (l_left, l_right)
 
     runLeft (EmitsC l_left e s1 : lss)
             (rstep@(TakesC l_right n_right _tau _s2) : rss) =
@@ -504,8 +505,8 @@ fuse left right klabel = do
           (rss', steps) <- runRight (dropBind lss) rss
           return (rss', step:steps)
       where
-        l' :: l
-        l' = pairLabel l_left l_right
+        l' :: (l, l)
+        l' = (l_left, l_right)
 
     runLeft (EmitsC {} : _) _ =
         faildoc $ text "emits paired with non-take."
@@ -528,9 +529,9 @@ fuse left right klabel = do
           (rss', steps) <- runLeft lss rss
           return (rss', step:steps)
 
-    jointLabel :: [Step l] -> [Step l] -> F l m l
+    jointLabel :: [Step l] -> [Step l] -> F l m (l, l)
     jointLabel lss rss =
-        pairLabel <$> stepsLabel lss <*> stepsLabel rss
+        (,) <$> stepsLabel lss <*> stepsLabel rss
       where
         stepsLabel :: [Step l] -> F l m l
         stepsLabel []       = return klabel
@@ -540,9 +541,9 @@ fuse left right klabel = do
     -- repeat loops. Since we unroll repeats during fusion, the "loop header"
     -- state we are looking for is found by "fast-forwarding" past the repeat
     -- state.
-    jointRepeatLabel :: [Step l] -> [Step l] -> F l m l
+    jointRepeatLabel :: [Step l] -> [Step l] -> F l m (l, l)
     jointRepeatLabel lss rss =
-        pairLabel <$> ffLabel lss <*> ffLabel rss
+        (,) <$> ffLabel lss <*> ffLabel rss
       where
         ffLabel :: [Step l] -> F l m l
         ffLabel []                    = return klabel
