@@ -330,14 +330,24 @@ fuse left right klabel = do
             mzero
 
     -- See the comment in the ForC case for runLeft.
-    runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) = do
-        l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-          (lss', steps) <- runRight lss (unComp c)
-          guard (lss' == lss)
-          let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
-          (lss', steps) <- runRight lss rss
-          return (lss', step:steps)
+    runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
+        joinFor `mplus` divergeFor
+      where
+        joinFor :: F l m ([Step l], [Step l])
+        joinFor = do
+            l' <- jointLabel lss (rs:rss)
+            whenNotBeenThere lss l' $ do
+              (lss', steps) <- runRight lss (unComp c)
+              guard (lss' == lss)
+              let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+              (lss', steps) <- runRight lss rss
+              return (lss', step:steps)
+
+        divergeFor :: F l m ([Step l], [Step l])
+        divergeFor = do
+            traceFusion $ text "Encountered diverging for in consumer"
+            fusionFailed
+            mzero
 
     runRight lss rss@(TakeC {} : _) =
         runLeft lss rss
@@ -348,7 +358,7 @@ fuse left right klabel = do
     runRight lss rss@(RepeatC _ ann c _s : _) = do
         l          <- jointLabel lss rss
         l_repeat   <- jointRepeatLabel lss rss
-        (lss', ss) <- traceNest $ runRight lss (unComp c ++ rss)
+        (lss', ss) <- runRight lss (unComp c ++ rss)
         recoverRepeat l ann l_repeat lss' ss
 
     runRight _lss (ParC {} : _rss) = do
@@ -413,14 +423,24 @@ fuse left right klabel = do
     -- computation, that means we can easily construct a new for loop whose body
     -- is the body of the producer's for loop merged with the consumer. This
     -- typically works when the consumer is a repeated computation.
-    runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-          (rss', steps) <- runLeft (unComp c) rss
-          guard (rss' == rss)
-          let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
-          (rss', steps) <- runRight lss rss
-          return (rss', step:steps)
+    runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
+        joinFor `mplus` divergeFor
+      where
+        joinFor :: F l m ([Step l], [Step l])
+        joinFor = do
+            l' <- jointLabel (ls:lss) rss
+            whenNotBeenThere rss l' $ do
+              (rss', steps) <- runLeft (unComp c) rss
+              guard (rss' == rss)
+              let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+              (rss', steps) <- runRight lss rss
+              return (rss', step:steps)
+
+        divergeFor :: F l m ([Step l], [Step l])
+        divergeFor = do
+            traceFusion $ text "Encountered diverging for in producer"
+            fusionFailed
+            mzero
 
     runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
@@ -431,8 +451,8 @@ fuse left right klabel = do
         l' :: l
         l' = pairLabel l_left l_right
 
-    runLeft (EmitC {} : _) (TakesC {} : _) = do
-        traceFusion $ text "emit paired with takes"
+    runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
+        traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
         fusionFailed
         mzero
 
@@ -470,12 +490,14 @@ fuse left right klabel = do
         l' :: l
         l' = pairLabel l_left l_right
 
-    runLeft (EmitsC l_left e s1 : lss) (TakesC l_right n_right _tau _s2 : rss) =
+    runLeft (EmitsC l_left e s1 : lss)
+            (rstep@(TakesC l_right n_right _tau _s2) : rss) =
         whenNotBeenThere rss l' $ do
           n_left <- inferExp e >>= knownArraySize
           when (n_left /= n_right) $ do
-              traceFusion $
-                text "emits paired with takes with incompatible size"
+              (iota, _) <- inferExp e >>= checkArrT
+              traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
+                            ppr rstep
               fusionFailed
               mzero
           let step      =  ReturnC l' e s1
@@ -491,7 +513,7 @@ fuse left right klabel = do
     runLeft lss@(RepeatC _ ann c _s : _) rss = do
         l          <- jointLabel lss rss
         l_repeat   <- jointRepeatLabel lss rss
-        (rss', ss) <- traceNest $ runLeft (unComp c ++ lss) rss
+        (rss', ss) <- runLeft (unComp c ++ lss) rss
         recoverRepeat l ann l_repeat rss' ss
 
     runLeft (ParC {} : _lss) _rss = do
