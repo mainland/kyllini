@@ -1753,25 +1753,19 @@ mkCastT tau1 tau2 = do
     go tau1' tau2'
   where
     go :: Type -> Type -> Ti Co
+    -- This is a quick, incomplete check to see if we can avoid a cast.
     go tau1 tau2 | tau1 == tau2 =
         return id
 
     go tau1 tau2 = do
         checkSafeCast WarnUnsafeParAutoCast Nothing tau1 tau2
         co <- mkCast tau1 tau2
-        let mkPipe = do
-            ctau1 <- trans tau1
-            cx    <- gensymAt "x" tau1
-            cxe   <- co $ return (E.varE cx)
-            return $ E.repeatE $
-                     E.bindE cx ctau1 (E.takeE ctau1) $
-                     E.emitE cxe
         return $ \mce -> do
             (clhs, crhs, l) <- mce >>= checkParE
             ctau1           <- trans tau1
             ctau2           <- trans tau2
-            cpipe           <- mkPipe
-            return $ E.ParE E.AutoPipeline ctau2 (E.ParE E.AutoPipeline ctau1 clhs cpipe l) crhs l
+            clhs'           <- castComp ctau1 ctau2 co clhs l
+            return $ E.ParE E.AutoPipeline ctau2 clhs' crhs l
       where
         checkParE :: E.Exp -> Ti (E.Exp, E.Exp, SrcLoc)
         checkParE (E.ParE _ _ clhs crhs l) =
@@ -1780,6 +1774,27 @@ mkCastT tau1 tau2 = do
         checkParE e =
             faildoc $ nest 2 $
             text "Expected arrow expression, but got:" <+/> ppr e
+
+        castComp :: E.Type -> E.Type -> Co -> E.Exp -> SrcLoc -> Ti E.Exp
+        -- @tau1@ and @tau2@ my be unequal due only to differing meta-variables
+        -- that are eventually unified, so the check above is incomplete. We
+        -- therefore do a second check to see if @ctau2@ and @ctau1@ are
+        -- equivalent.
+        castComp ctau1 ctau2 co c l
+            | ctau2 == ctau1 = return c
+            | otherwise      = do cpipe <- mkPipe ctau1 co
+                                  return $ E.ParE E.AutoPipeline ctau1 c cpipe l
+
+        -- | Given a type tau1 and a coercion from expressions of type tau1 to
+        -- expressions of type tau2, return a transformer that reads values of
+        -- type tau1 and writes coerced values of type tau2.
+        mkPipe :: E.Type -> Co -> Ti E.Exp
+        mkPipe ctau1 co = do
+            cx    <- gensymAt "x" tau1
+            cxe   <- co $ return (E.varE cx)
+            return $ E.repeatE $
+                     E.bindE cx ctau1 (E.takeE ctau1) $
+                     E.emitE cxe
 
 -- | @checkLegalCast tau1 tau2@ checks that a value of type @tau1@ can be
 -- legally cast to a value of type @tau2@.
