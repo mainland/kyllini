@@ -295,20 +295,20 @@ fuse left right klabel = do
         joinIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-            (lss1, c1') <- runRight lss (unComp c1)
-            (lss2, c2') <- runRight lss (unComp c2)
-            guard (lss2 == lss1)
-            let step      =  IfC l' e (Comp c1') (Comp c2') s
-            (lss', steps) <- runRight lss1 rss
-            return (lss', step:steps)
+              (lss1, c1') <- runRight lss (unComp c1)
+              (lss2, c2') <- runRight lss (unComp c2)
+              guard (lss2 == lss1)
+              let step      =  IfC l' e (Comp c1') (Comp c2') s
+              (lss', steps) <- runRight lss1 rss
+              return (lss', step:steps)
 
         divergeIf :: F l m ([Step l], [Step l])
         divergeIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-            (_, c1') <- runRight lss (unComp c1 ++ rss)
-            (_, c2') <- runRight lss (unComp c2 ++ rss)
-            return ([], [IfC l' e (Comp c1') (Comp c2') s])
+              (_, c1') <- runRight lss (unComp c1 ++ rss)
+              (_, c2') <- runRight lss (unComp c2 ++ rss)
+              return ([], [IfC l' e (Comp c1') (Comp c2') s])
 
     runRight lss (rs@(WhileC _l e c s) : rss) =
         joinWhile `mplus` divergeWhile
@@ -317,11 +317,11 @@ fuse left right klabel = do
         joinWhile = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-            (lss', c') <- runRight lss (unComp c)
-            guard (lss' == lss)
-            let step      =  WhileC l' e (Comp c') s
-            (lss', steps) <- runRight lss rss
-            return (lss', step:steps)
+              (lss', c') <- runRight lss (unComp c)
+              guard (lss' == lss)
+              let step      =  WhileC l' e (Comp c') s
+              (lss', steps) <- runRight lss rss
+              return (lss', step:steps)
 
         divergeWhile :: F l m ([Step l], [Step l])
         divergeWhile = do
@@ -333,11 +333,11 @@ fuse left right klabel = do
     runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) = do
         l' <- jointLabel lss (rs:rss)
         whenNotBeenThere lss l' $ do
-        (lss', steps) <- runRight lss (unComp c)
-        guard (lss' == lss)
-        let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
-        (lss', steps) <- runRight lss rss
-        return (lss', step:steps)
+          (lss', steps) <- runRight lss (unComp c)
+          guard (lss' == lss)
+          let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+          (lss', steps) <- runRight lss rss
+          return (lss', step:steps)
 
     runRight lss rss@(TakeC {} : _) =
         runLeft lss rss
@@ -374,20 +374,20 @@ fuse left right klabel = do
         joinIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-            (rss1, c1') <- runLeft (unComp c1) rss
-            (rss2, c2') <- runLeft (unComp c2) rss
-            guard (rss2 == rss1)
-            let step      =  IfC l' e (Comp c1') (Comp c2') s
-            (rss', steps) <- runLeft lss rss1
-            return (rss', step:steps)
+              (rss1, c1') <- runLeft (unComp c1) rss
+              (rss2, c2') <- runLeft (unComp c2) rss
+              guard (rss2 == rss1)
+              let step      =  IfC l' e (Comp c1') (Comp c2') s
+              (rss', steps) <- runLeft lss rss1
+              return (rss', step:steps)
 
         divergeIf :: F l m ([Step l], [Step l])
         divergeIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-            (_, c1') <- runLeft (unComp c1 ++ lss) rss
-            (_, c2') <- runLeft (unComp c2 ++ lss) rss
-            return  ([], [IfC l' e (Comp c1') (Comp c2') s])
+              (_, c1') <- runLeft (unComp c1 ++ lss) rss
+              (_, c2') <- runLeft (unComp c2 ++ lss) rss
+              return  ([], [IfC l' e (Comp c1') (Comp c2') s])
 
     runLeft (ls@(WhileC _l e c s) : lss) rss =
         joinWhile `mplus` divergeWhile
@@ -396,11 +396,11 @@ fuse left right klabel = do
         joinWhile = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-            (rss', c') <- runLeft (unComp c) rss
-            guard (rss' == rss)
-            let step      =  WhileC l' e (Comp c') s
-            (rss', steps) <- runLeft lss rss
-            return (rss', step:steps)
+              (rss', c') <- runLeft (unComp c) rss
+              guard (rss' == rss)
+              let step      =  WhileC l' e (Comp c') s
+              (rss', steps) <- runLeft lss rss
+              return (rss', step:steps)
 
         divergeWhile :: F l m ([Step l], [Step l])
         divergeWhile = do
@@ -416,17 +416,17 @@ fuse left right klabel = do
     runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss = do
         l' <- jointLabel (ls:lss) rss
         whenNotBeenThere rss l' $ do
-        (rss', steps) <- runLeft (unComp c) rss
-        guard (rss' == rss)
-        let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
-        (rss', steps) <- runRight lss rss
-        return (rss', step:steps)
+          (rss', steps) <- runLeft (unComp c) rss
+          guard (rss' == rss)
+          let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+          (rss', steps) <- runRight lss rss
+          return (rss', step:steps)
 
     runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
-        let step      =  ReturnC l' e s1
-        (rss', steps) <- runRight (dropBind lss) rss
-        return (rss', step:steps)
+          let step      =  ReturnC l' e s1
+          (rss', steps) <- runRight (dropBind lss) rss
+          return (rss', step:steps)
       where
         l' :: l
         l' = pairLabel l_left l_right
@@ -441,12 +441,12 @@ fuse left right klabel = do
 
     runLeft (EmitsC l_left e s1 : lss) (rs@(TakeC l_right _tau _s2) : rss) =
         whenNotBeenThere rss l' $ do
-        -- We can only fuse an emits and a take when we statically know the size
-        -- of the array being emitted.
-        n <- inferExp e >>= knownArraySize
-        if n == 1
-          then emits1Take
-          else emitsNTake n
+          -- We can only fuse an emits and a take when we statically know the
+          -- size of the array being emitted.
+          n <- inferExp e >>= knownArraySize
+          if n == 1
+            then emits1Take
+            else emitsNTake n
       where
         -- If we are emitting an array with only one element, fusion is trivial.
         emits1Take :: F l m ([Step l], [Step l])
@@ -472,14 +472,15 @@ fuse left right klabel = do
 
     runLeft (EmitsC l_left e s1 : lss) (TakesC l_right n_right _tau _s2 : rss) =
         whenNotBeenThere rss l' $ do
-        n_left <- inferExp e >>= knownArraySize
-        when (n_left /= n_right) $ do
-            traceFusion $ text "emits paired with takes with incompatible size"
-            fusionFailed
-            mzero
-        let step      =  ReturnC l' e s1
-        (rss', steps) <- runRight (dropBind lss) rss
-        return (rss', step:steps)
+          n_left <- inferExp e >>= knownArraySize
+          when (n_left /= n_right) $ do
+              traceFusion $
+                text "emits paired with takes with incompatible size"
+              fusionFailed
+              mzero
+          let step      =  ReturnC l' e s1
+          (rss', steps) <- runRight (dropBind lss) rss
+          return (rss', step:steps)
       where
         l' :: l
         l' = pairLabel l_left l_right
