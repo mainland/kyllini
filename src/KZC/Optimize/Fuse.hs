@@ -99,10 +99,6 @@ recordLabel :: (IsLabel l, MonadTc m)
             => l -> F l m ()
 recordLabel l = modify $ \s -> s { seen = Set.insert l (seen s) }
 
-jointLabel :: (IsLabel l, MonadTc m)
-           => [Step l] -> [Step l] -> F l m l
-jointLabel lss rss = pairLabel <$> stepLabel (head lss) <*> stepLabel (head rss)
-
 getStats :: MonadTc m => F l m FusionStats
 getStats = F $ lift $ lift get
 
@@ -146,8 +142,11 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
     where
       fusePar :: Comp l -> Comp l -> F l m [Step l]
       fusePar left right0 = do
-          l    <- compLabel right0
-          comp <- fuse left right >>= setFirstLabel l
+          l      <- compLabel right0
+          klabel <- case steps of
+                      []       -> gensym "end"
+                      (step:_) -> stepLabel step
+          comp   <- fuse left right klabel >>= setFirstLabel l
           parFused
           traceFusion $ text "Fused" <+>
               (nest 2 $ text "producer:" </> ppr left) </>
@@ -172,19 +171,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
 
   stepsT steps =
       transSteps steps
-
--- | Calculate a joint label for two computations where one or both are repeat
--- loops. Since we unroll repeats during fusion, the "loop header" state we are
--- looking for is found by "fast-forwarding" past the repeat state.
-jointRepeatLabel :: forall l m . (IsLabel l, Applicative m, Monad m)
-                 => [Step l] -> [Step l] -> m l
-jointRepeatLabel lss rss =
-    pairLabel <$> ffLabel lss <*> ffLabel rss
-  where
-    ffLabel :: Monad m => [Step l] -> m l
-    ffLabel []                    = fail "ffLabel: empty computation"
-    ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
-    ffLabel (step : _)            = stepLabel step
 
 runRepeat :: (IsLabel l, Monad m)
           => l
@@ -217,10 +203,11 @@ whenNotBeenThere ss l k = do
       else recordLabel l >> k
 
 fuse :: forall l m . (IsLabel l, MonadTc m)
-     => Comp l
-     -> Comp l
+     => Comp l         -- ^ Left computation
+     -> Comp l         -- ^ Right computation
+     -> l              -- ^ The continuation label of the par
      -> F l m (Comp l)
-fuse left right = do
+fuse left right klabel = do
     (_, rss') <- runRight (unComp left) (unComp right)
     return $ Comp rss'
   where
@@ -404,10 +391,7 @@ fuse left right = do
         emitsNTake :: Int -> F l m ([Step l], [Step l])
         emitsNTake n = do
             i    <- gensymAt "i" s1
-            -- XXX We need the empty return so that the emit has a
-            -- continuation...so that we can take its label to find a joint
-            -- label.
-            body <- emitC (idxE e (varE i)) .>>. returnC unitE
+            body <- emitC (idxE e (varE i))
             fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
             runLeft (unComp fori ++ dropBind lss) (rs : rss)
 
@@ -449,6 +433,27 @@ fuse left right = do
           relabelStep l' ls $ \step -> do
           (rss', steps) <- runLeft lss rss
           return (rss', step:steps)
+
+    jointLabel :: [Step l] -> [Step l] -> F l m l
+    jointLabel lss rss =
+        pairLabel <$> stepsLabel lss <*> stepsLabel rss
+      where
+        stepsLabel :: [Step l] -> F l m l
+        stepsLabel []       = return klabel
+        stepsLabel (step:_) = stepLabel step
+
+    -- | Calculate a joint label for two computations where one or both are
+    -- repeat loops. Since we unroll repeats during fusion, the "loop header"
+    -- state we are looking for is found by "fast-forwarding" past the repeat
+    -- state.
+    jointRepeatLabel :: [Step l] -> [Step l] -> F l m l
+    jointRepeatLabel lss rss =
+        pairLabel <$> ffLabel lss <*> ffLabel rss
+      where
+        ffLabel :: [Step l] -> F l m l
+        ffLabel []                    = return klabel
+        ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
+        ffLabel (step : _)            = stepLabel step
 
 dropBind :: [Step l] -> [Step l]
 dropBind (BindC {} : ss) = ss
