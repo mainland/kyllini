@@ -30,17 +30,14 @@ module KZC.Core.Comp (
     repeatC,
     parC,
 
-    mapCompLabels,
+    mapMCompLabels,
     uniquifyCompLabels
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad.Reader
 import Data.Loc
-import Data.Map (Map)
-import qualified Data.Map as Map
 
 import KZC.Core.Syntax
 import KZC.Label
@@ -132,101 +129,77 @@ parC :: MonadUnique m => PipelineAnn -> Type -> Comp l -> Comp l -> m (Comp l)
 parC ann tau c1 c2 =
     return $ Comp [ParC ann tau c1 c2 (c1 `srcspan` c2)]
 
-type M l1 l2 m a = ReaderT (Map l1 l2) m a
-
-mapCompLabels :: forall l1 l2 m . (Applicative m, MonadUnique m, IsLabel l1)
+mapMCompLabels :: forall l1 l2 m . (Applicative m, MonadUnique m, Ord l1)
               => (l1 -> m l2) -> Comp l1 -> m (Comp l2)
-mapCompLabels f comp =
-    runReaderT (mlComp comp) Map.empty
+mapMCompLabels f = mlComp
   where
-    mlComp :: Comp l1 -> M l1 l2 m (Comp l2)
+    mlComp :: Comp l1 -> m (Comp l2)
     mlComp (Comp steps) = Comp <$> mlSteps steps
 
-    mlArg :: Arg l1 -> M l1 l2 m (Arg l2)
+    mlArg :: Arg l1 ->  m (Arg l2)
     mlArg (ExpA e)  = pure $ ExpA e
     mlArg (CompA c) = CompA <$> mlComp c
 
-    mlSteps :: [Step l1] -> M l1 l2 m [Step l2]
-    mlSteps [] =
-        return []
+    mlSteps :: [Step l1] ->  m [Step l2]
+    mlSteps []           = return []
+    mlSteps (step:steps) = (:) <$> mlStep step <*> mlSteps steps
 
-    mlSteps (VarC l v s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (VarC l' v s) <*> mlSteps steps
+    mlStep :: Step l1 ->  m (Step l2)
+    mlStep (VarC l v s) =
+        VarC <$> f l <*> pure v <*> pure s
 
-    mlSteps (CallC l v iotas args s : steps) =
-        ml l $ \l' ->
-        (:) <$> (CallC l' v iotas <$> mapM mlArg args <*> pure s) <*> mlSteps steps
+    mlStep (CallC l v iotas args s) =
+        CallC <$> f l <*> pure v <*> pure iotas <*> mapM mlArg args <*> pure s
 
-    mlSteps (IfC l e c1 c2 s : steps) =
-        ml l $ \l' -> do
-        c1' <- mlComp c1
-        c2' <- mlComp c2
-        (:) <$> pure (IfC l' e c1' c2' s) <*> mlSteps steps
+    mlStep (IfC l e c1 c2 s) =
+        IfC <$> f l <*> pure e <*> mlComp c1 <*> mlComp c2 <*> pure s
 
-    mlSteps (LetC l decl s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (LetC l' decl s) <*> mlSteps steps
+    mlStep (LetC l decl s) =
+        LetC <$> f l <*> pure decl <*> pure s
 
-    mlSteps (WhileC l e c s : steps) =
-        ml l $ \l' -> do
-        step'  <- WhileC l' e <$> mlComp c <*> pure s
-        steps' <- mlSteps steps
-        return $ step' : steps'
+    mlStep (WhileC l e c s) =
+        WhileC <$> f l <*> pure e <*> mlComp c <*> pure s
 
-    mlSteps (ForC l ann v tau e1 e2 c s : steps) =
-        ml l $ \l' -> do
-        step'  <- ForC l' ann v tau e1 e2 <$> mlComp c <*> pure s
-        steps' <- mlSteps steps
-        return $ step' : steps'
+    mlStep (ForC l ann v tau e1 e2 c s) =
+        ForC <$> f l
+             <*> pure ann
+             <*> pure v
+             <*> pure tau
+             <*> pure e1
+             <*> pure e2
+             <*> mlComp c
+             <*> pure s
 
-    mlSteps (LiftC l e s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (LiftC l' e s) <*> mlSteps steps
+    mlStep (LiftC l e s) =
+        LiftC <$> f l <*> pure e <*> pure s
 
-    mlSteps (ReturnC l e s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (ReturnC l' e s) <*> mlSteps steps
+    mlStep (ReturnC l e s) =
+        ReturnC <$> f l <*> pure e <*> pure s
 
-    mlSteps (BindC l wv tau s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (BindC l' wv tau s) <*> mlSteps steps
+    mlStep (BindC l wv tau s) =
+        BindC <$> f l <*> pure wv <*> pure tau <*> pure s
 
-    mlSteps (TakeC l tau s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (TakeC l' tau s) <*> mlSteps steps
+    mlStep (TakeC l tau s) =
+        TakeC <$> f l <*> pure tau <*> pure s
 
-    mlSteps (TakesC l i tau s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (TakesC l' i tau s) <*> mlSteps steps
+    mlStep (TakesC l i tau s) =
+        TakesC <$> f l <*> pure i <*> pure tau <*> pure s
 
-    mlSteps (EmitC l tau s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (EmitC l' tau s) <*> mlSteps steps
+    mlStep (EmitC l tau s) =
+        EmitC <$> f l <*> pure tau <*> pure s
 
-    mlSteps (EmitsC l tau s : steps) =
-        ml l $ \l' ->
-        (:) <$> pure (EmitsC l' tau s) <*> mlSteps steps
+    mlStep (EmitsC l tau s) =
+        EmitsC <$> f l <*> pure tau <*> pure s
 
-    mlSteps (RepeatC l ann c s : steps) =
-        ml l $ \l' -> do
-        step'  <- RepeatC l' ann <$> mlComp c <*> pure s
-        steps' <- mlSteps steps
-        return $ step' : steps'
+    mlStep (RepeatC l ann c s) =
+        RepeatC <$> f l <*> pure ann <*> mlComp c <*> pure s
 
-    mlSteps (ParC ann tau c1 c2 s : steps) = do
-        step'  <- ParC ann tau <$> mlComp c1 <*> mlComp c2 <*> pure s
-        steps' <- mlSteps steps
-        return $ step' : steps'
+    mlStep (ParC ann tau c1 c2 s) =
+        ParC ann tau <$> mlComp c1 <*> mlComp c2 <*> pure s
 
-    mlSteps (LoopC {} : _) =
-        fail "mapCompLabels: saw LoopC"
-
-    ml :: l1 -> (l2 -> M l1 l2 m a) -> M l1 l2 m a
-    ml l k = do
-        l' <- lift $ f l
-        local (Map.insert l l') $ k l'
+    mlStep LoopC{} =
+        fail "mapMCompLabels: saw LoopC"
 
 uniquifyCompLabels :: forall l m . (IsLabel l, Applicative m, MonadUnique m)
                    => Comp l -> m (Comp l)
-uniquifyCompLabels = mapCompLabels uniquify
+uniquifyCompLabels = mapMCompLabels uniquify
