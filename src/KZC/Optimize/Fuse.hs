@@ -228,7 +228,7 @@ recoverRepeat l ann l_repeat ss_other ss =
         | otherwise               = ss
 
     mkRepeat :: [Step (l, l)] -> [Step (l, l)]
-    mkRepeat steps = [RepeatC l ann (Comp steps) (srclocOf steps)]
+    mkRepeat steps = [RepeatC l ann (mkComp steps) (srclocOf steps)]
 
     isNonEmptyRepeatLoop :: [Step (l, l)] -> Bool
     isNonEmptyRepeatLoop steps = length steps > 1 && last ss == LoopC l_repeat
@@ -259,7 +259,7 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> F l m (Comp l)
 fuse left right klabel = do
     (_, rss') <- runRight (unComp left) (unComp right)
-    return $ uncurry pairLabel <$> Comp rss'
+    return $ uncurry pairLabel <$> mkComp rss'
   where
     -- | A "free" left step is one we can go ahead and run even if the
     -- right-hand side has not yet reached a take action.
@@ -299,7 +299,7 @@ fuse left right klabel = do
               (lss1, c1') <- runRight lss (unComp c1)
               (lss2, c2') <- runRight lss (unComp c2)
               guard (lss2 == lss1)
-              let step      =  IfC l' e (Comp c1') (Comp c2') s
+              let step      =  IfC l' e (mkComp c1') (mkComp c2') s
               (lss', steps) <- runRight lss1 rss
               return (lss', step:steps)
 
@@ -309,7 +309,7 @@ fuse left right klabel = do
             whenNotBeenThere lss l' $ do
               (_, c1') <- runRight lss (unComp c1 ++ rss)
               (_, c2') <- runRight lss (unComp c2 ++ rss)
-              return ([], [IfC l' e (Comp c1') (Comp c2') s])
+              return ([], [IfC l' e (mkComp c1') (mkComp c2') s])
 
     runRight lss (rs@(WhileC _l e c s) : rss) =
         joinWhile `mplus` divergeWhile
@@ -320,7 +320,7 @@ fuse left right klabel = do
             whenNotBeenThere lss l' $ do
               (lss', c') <- runRight lss (unComp c)
               guard (lss' == lss)
-              let step      =  WhileC l' e (Comp c') s
+              let step      =  WhileC l' e (mkComp c') s
               (lss', steps) <- runRight lss rss
               return (lss', step:steps)
 
@@ -340,7 +340,7 @@ fuse left right klabel = do
             whenNotBeenThere lss l' $ do
               (lss', steps) <- runRight lss (unComp c)
               guard (lss' == lss)
-              let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+              let step      =  ForC l' ann v tau e1 e2 (mkComp steps) sloc
               (lss', steps) <- runRight lss rss
               return (lss', step:steps)
 
@@ -388,7 +388,7 @@ fuse left right klabel = do
               (rss1, c1') <- runLeft (unComp c1) rss
               (rss2, c2') <- runLeft (unComp c2) rss
               guard (rss2 == rss1)
-              let step      =  IfC l' e (Comp c1') (Comp c2') s
+              let step      =  IfC l' e (mkComp c1') (mkComp c2') s
               (rss', steps) <- runLeft lss rss1
               return (rss', step:steps)
 
@@ -398,7 +398,7 @@ fuse left right klabel = do
             whenNotBeenThere rss l' $ do
               (_, c1') <- runLeft (unComp c1 ++ lss) rss
               (_, c2') <- runLeft (unComp c2 ++ lss) rss
-              return  ([], [IfC l' e (Comp c1') (Comp c2') s])
+              return  ([], [IfC l' e (mkComp c1') (mkComp c2') s])
 
     runLeft (ls@(WhileC _l e c s) : lss) rss =
         joinWhile `mplus` divergeWhile
@@ -409,7 +409,7 @@ fuse left right klabel = do
             whenNotBeenThere rss l' $ do
               (rss', c') <- runLeft (unComp c) rss
               guard (rss' == rss)
-              let step      =  WhileC l' e (Comp c') s
+              let step      =  WhileC l' e (mkComp c') s
               (rss', steps) <- runLeft lss rss
               return (rss', step:steps)
 
@@ -433,7 +433,7 @@ fuse left right klabel = do
             whenNotBeenThere rss l' $ do
               (rss', steps) <- runLeft (unComp c) rss
               guard (rss' == rss)
-              let step      =  ForC l' ann v tau e1 e2 (Comp steps) sloc
+              let step      =  ForC l' ann v tau e1 e2 (mkComp steps) sloc
               (rss', steps) <- runRight lss rss
               return (rss', step:steps)
 

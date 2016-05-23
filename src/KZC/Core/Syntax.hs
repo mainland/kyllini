@@ -54,6 +54,8 @@ module KZC.Core.Syntax (
     Arg(..),
     Step(..),
     Comp(..),
+
+    mkComp,
 #if !defined(ONLY_TYPEDEFS)
     compLabel,
     setCompLabel,
@@ -290,6 +292,9 @@ data Step l = VarC l Var !SrcLoc
 
 newtype Comp l = Comp { unComp :: [Step l] }
   deriving (Eq, Ord, Read, Show, Monoid, Functor, Foldable, Traversable)
+
+mkComp :: [Step l] -> Comp l
+mkComp = Comp
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -661,9 +666,9 @@ instance IsLabel l => Pretty (Arg l) where
     pprPrec p (CompA c) = pprPrec p c
 
 instance IsLabel l => Pretty (Step l) where
-    ppr step = ppr (Comp [step])
+    ppr step = ppr (mkComp [step])
 
-    pprList steps = ppr (Comp steps)
+    pprList steps = ppr (mkComp steps)
 
 instance IsLabel l => Pretty (Comp l) where
     pprPrec p comp =
@@ -880,7 +885,7 @@ instance Fvs (Arg l) v => Fvs [Arg l] v where
     fvs = foldMap fvs
 
 instance Fvs (Comp l) v => Fvs [Step l] v where
-    fvs steps = fvs (Comp steps)
+    fvs steps = fvs (mkComp steps)
 
 {------------------------------------------------------------------------------
  -
@@ -1639,6 +1644,6 @@ instance Located (Arg l) where
     locOf (CompA c) = locOf c
 
 instance Located (Comp l) where
-    locOf (Comp steps) = locOf steps
+    locOf comp = locOf (unComp comp)
 
 #endif /* !defined(ONLY_TYPEDEFS) */

@@ -445,7 +445,7 @@ diffHeapComp :: (IsLabel l, MonadTc m)
              -> EvalM l m (Comp l)
 diffHeapComp h h' comp = do
     comps_diff <- diffHeapExps h h' >>= mapM liftC
-    return $ Comp $ concatMap unComp comps_diff ++ unComp comp
+    return $ mkComp $ concatMap unComp comps_diff ++ unComp comp
 
 -- | Generate a list of expressions that captures all the heap changes from @h1@
 -- to @h2@
@@ -587,4 +587,4 @@ instance ModifiedVars (Comp l) Var where
         go (step : k)                  = mvs step <> go k
 
 instance ModifiedVars (Comp l) v => ModifiedVars [Step l] v where
-    mvs steps = mvs (Comp steps)
+    mvs steps = mvs (mkComp steps)

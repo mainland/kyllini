@@ -608,7 +608,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
 
 simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
     step1' <- simplStep step1
-    (omega, _, _, _) <- inferComp (Comp step1') >>= checkST
+    (omega, _, _, _) <- inferComp (mkComp step1') >>= checkST
     case omega of
       C UnitT{} -> rewrite >> return step1'
       _         -> simplLift $ step1' ++ [step2]

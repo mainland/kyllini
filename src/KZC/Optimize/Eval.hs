@@ -85,7 +85,7 @@ evalProgram (Program decls comp tau) =
                      CompReturnV {}  -> do h'    <- getHeap
                                            comp' <- toComp val
                                            return (h', comp')
-                     CompV h' steps' -> return (h', Comp steps')
+                     CompV h' steps' -> return (h', mkComp  steps')
                      _               -> faildoc $ nest 2 $
                                         text "Computation did not return CompReturnV or CompV:" </>
                                         ppr val
@@ -251,7 +251,7 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
 evalComp :: forall l m . (IsLabel l, MonadTcRef m)
          => Comp l
          -> EvalM l m (Val l m (Comp l))
-evalComp (Comp steps) = evalSteps steps
+evalComp comp = evalSteps (unComp comp)
   where
     evalSteps :: [Step l] -> EvalM l m (Val l m (Comp l))
     evalSteps [] =
@@ -390,9 +390,9 @@ evalStep step@(CallC _ f iotas args _) =
               else transformCompVal (letBinds bs) val
           where
             letBinds :: [(Var, Type, ArgVal l m)] -> Comp l -> EvalM l m (Comp l)
-            letBinds bs (Comp steps) = do
+            letBinds bs comp = do
               bindsSteps <- mapM letBind bs
-              return $ Comp $ concat bindsSteps ++ steps
+              return $ mkComp  $ concat bindsSteps ++ unComp comp
 
             letBind :: (Var, Type, ArgVal l m) -> EvalM l m [Step l]
             letBind (_v, RefT {}, _e1)      = return []
@@ -434,7 +434,7 @@ evalStep (IfC l e1 c2 c3 s) =
                            c3' <- savingHeap $ evalFullSteps $ unComp c3
                            killVars c2'
                            killVars c3'
-                           partial $ CompV h [IfC l (toExp val) (Comp c2') (Comp c3') s]
+                           partial $ CompV h [IfC l (toExp val) (mkComp  c2') (mkComp  c3') s]
 
 evalStep LetC{} =
     panicdoc $ text "evalStep: saw LetC"
@@ -458,7 +458,7 @@ evalStep (LiftC l e s) = do
 evalStep (ReturnC l e s) = do
     val <- evalExp e
     case val of
-      ExpV e' -> partialComp $ Comp [ReturnC l e' s]
+      ExpV e' -> partialComp $ mkComp  [ReturnC l e' s]
       _       -> return $ CompReturnV val
 
 evalStep BindC{} =
@@ -466,19 +466,19 @@ evalStep BindC{} =
 
 evalStep (TakeC l tau s) = do
     tau' <- simplType tau
-    partialComp $ Comp [TakeC l tau' s]
+    partialComp $ mkComp  [TakeC l tau' s]
 
 evalStep (TakesC l n tau s) = do
     tau' <- simplType tau
-    partialComp $ Comp [TakesC l n tau' s]
+    partialComp $ mkComp  [TakesC l n tau' s]
 
 evalStep (EmitC l e s) = do
     val <- evalExp e
-    partialComp $ Comp [EmitC l (toExp val) s]
+    partialComp $ mkComp  [EmitC l (toExp val) s]
 
 evalStep (EmitsC l e s) = do
     val <- evalExp e
-    partialComp $ Comp [EmitsC l (toExp val) s]
+    partialComp $ mkComp  [EmitsC l (toExp val) s]
 
 evalStep (RepeatC l ann c s) = do
     h <- getHeap
@@ -487,7 +487,7 @@ evalStep (RepeatC l ann c s) = do
               withSummaryContext c $
               evalComp c
     steps' <- toSteps val
-    partial $ CompV h [RepeatC l ann (Comp steps') s]
+    partial $ CompV h [RepeatC l ann (mkComp  steps') s]
 
 evalStep (ParC ann tau c1 c2 s) = do
     h      <- getHeap
@@ -495,7 +495,7 @@ evalStep (ParC ann tau c1 c2 s) = do
     val2   <- withSummaryContext c2 $ evalComp c2
     steps1 <- toSteps val1
     steps2 <- toSteps val2
-    partial $ CompV h [ParC ann tau (Comp steps1) (Comp steps2) s]
+    partial $ CompV h [ParC ann tau (mkComp  steps1) (mkComp  steps2) s]
 
 evalStep LoopC{} =
     panicdoc $ text "evalStep: saw LoopC"
@@ -507,7 +507,7 @@ evalFullSteps :: (IsLabel l, MonadTcRef m)
               -> EvalM l m [Step l]
 evalFullSteps steps = do
     h            <- getHeap
-    val          <- evalComp (Comp steps)
+    val          <- evalComp (mkComp steps)
     (h', steps') <- case val of
                       CompReturnV {}  -> do h'     <- getHeap
                                             steps' <- toSteps val
@@ -517,12 +517,12 @@ evalFullSteps steps = do
                                          faildoc $ nest 2 $
                                          text "Computation did not return CompReturnV or CompV:" </>
                                          ppr val
-    unComp <$> diffHeapComp h h' (Comp steps')
+    unComp <$> diffHeapComp h h' (mkComp steps')
 
 evalFullComp :: (IsLabel l, MonadTcRef m)
              => Comp l
              -> EvalM l m (Comp l)
-evalFullComp comp = Comp <$> evalFullSteps (unComp comp)
+evalFullComp comp = mkComp <$> evalFullSteps (unComp comp)
 
 evalConst :: forall l m . (IsLabel l, MonadTcRef m)
           => Const
@@ -1501,7 +1501,7 @@ compValToExpVal (CompReturnV e) =
     return $ ReturnV e
 
 compValToExpVal (CompV h steps) =
-    CmdV h <$> compToExp (Comp steps)
+    CmdV h <$> compToExp (mkComp steps)
 
 compValToExpVal (CompVarV v) =
     return $ ReturnV $ ExpV $ varE v

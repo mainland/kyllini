@@ -673,7 +673,7 @@ inferComp comp =
                              appSTScope tau0 >>= checkSTC
         withFvContext step $
             checkTypeEquality tau' tau
-        withFvContext (Comp k) $
+        withFvContext (mkComp k) $
             extendWildVars [(wv, tau)] $ do
             tau2             <- inferSteps k >>= appSTScope
             (omega, _, _, _) <- checkST tau2
@@ -844,9 +844,9 @@ checkComp comp tau = do
 compToExp :: forall l m . (IsLabel l, MonadTc m)
           => Comp l
           -> m Exp
-compToExp comp@(Comp steps) =
+compToExp comp =
     withSummaryContext comp $
-    stepsToExp steps
+    stepsToExp (unComp comp)
   where
     stepsToExp :: [Step l] -> m Exp
     stepsToExp [] =

@@ -92,7 +92,7 @@ letref v tau f = do
     shift $ \k -> do
         c1 <- reset $ f (varE v') >> return mempty
         c2 <- k ()
-        return $ Comp (LetC l decl (srclocOf decl) : unComp c1) <> c2
+        return $ mkComp (LetC l decl (srclocOf decl) : unComp c1) <> c2
 
 bindC :: (IsLabel l, MonadTc m)
       => Type
@@ -102,7 +102,7 @@ bindC tau k = do
     l <- gensym "bindk"
     v <- gensym "v"
     c <- k (varE v)
-    return $ Comp $ BindC l (TameV (mkBoundVar v)) tau s : unComp c
+    return $ mkComp $ BindC l (TameV (mkBoundVar v)) tau s : unComp c
   where
     s :: SrcLoc
     s = srclocOf tau
@@ -110,10 +110,10 @@ bindC tau k = do
 varC :: (IsLabel l, MonadTc m) => Var -> K l m Exp
 varC v = do
     l   <- gensym "varC"
-    tau <- inferComp (Comp [VarC l v s])
+    tau <- inferComp (mkComp [VarC l v s])
     shift $ \k -> do
       c <- bindC tau k
-      return $ Comp $ VarC l v s : unComp c
+      return $ mkComp $ VarC l v s : unComp c
   where
     s :: SrcLoc
     s = srclocOf v
@@ -129,7 +129,7 @@ forC i j f = do
     shift $ \k -> do
       c1 <- reset $ f (varE v) >> return mempty
       c2 <- k ()
-      return $ Comp $ ForC l AutoUnroll v intT (intE i) (intE j) c1 (srclocOf c1) : unComp c2
+      return $ mkComp $ ForC l AutoUnroll v intT (intE i) (intE j) c1 (srclocOf c1) : unComp c2
 
 timesC :: (Integral a, IsLabel l, MonadTc m)
        => a
@@ -143,7 +143,7 @@ liftC e = do
     tau <- inferExp e
     shift $ \k -> do
       c <- bindC tau k
-      return $ Comp $ LiftC l e s : unComp c
+      return $ mkComp $ LiftC l e s : unComp c
   where
     s :: SrcLoc
     s = srclocOf e
@@ -154,7 +154,7 @@ returnC e = do
     tau <- inferExp e
     shift $ \k -> do
       c <- bindC tau k
-      return $ Comp $ ReturnC l e s : unComp c
+      return $ mkComp $ ReturnC l e s : unComp c
   where
     s :: SrcLoc
     s = srclocOf e
@@ -164,7 +164,7 @@ takeC tau = do
     l <- gensym "takek"
     shift $ \k -> do
       c <- bindC tau k
-      return $ Comp $ TakeC l tau s : unComp c
+      return $ mkComp $ TakeC l tau s : unComp c
   where
     s :: SrcLoc
     s = srclocOf tau
@@ -174,7 +174,7 @@ takesC n tau = do
     l <- gensym "takesk"
     shift $ \k -> do
       c <- bindC tau k
-      return $ Comp $ TakesC l n tau s : unComp c
+      return $ mkComp $ TakesC l n tau s : unComp c
   where
     s :: SrcLoc
     s = srclocOf tau
@@ -184,11 +184,11 @@ emitC e = do
     l <- gensym "emitk"
     shift $ \k -> do
       c <- k ()
-      return $ Comp $ EmitC l e (srclocOf e) : unComp c
+      return $ mkComp $ EmitC l e (srclocOf e) : unComp c
 
 emitsC :: (IsLabel l, MonadUnique m) => Exp -> K l m ()
 emitsC e = do
     l <- gensym "emitsk"
     shift $ \k -> do
       c <- k ()
-      return $ Comp $ EmitsC l e (srclocOf e) : unComp c
+      return $ mkComp $ EmitsC l e (srclocOf e) : unComp c

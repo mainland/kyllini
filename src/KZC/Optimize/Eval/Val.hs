@@ -731,7 +731,7 @@ instance IsLabel l => ToExp (Ref l m) where
 
 class (IsLabel l, MonadTc m) => ToComp l m a where
     toComp :: a -> EvalM l m (Comp l)
-    toComp x = Comp <$> toSteps x
+    toComp x = mkComp <$> toSteps x
 
     toSteps :: a -> EvalM l m [Step l]
 
