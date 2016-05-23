@@ -607,12 +607,15 @@ simplSteps (step : BindC l wv tau s : steps) = do
         hd = init step'
         tl = last step'
 
-simplSteps (step : steps) = do
-    step' <- simplStep step
-    (omega, _, _, _) <- inferComp (Comp step') >>= checkST
-    case (omega, steps) of
-      (C UnitT{}, [ReturnC _ (ConstE UnitC _) _]) -> rewrite >> return step'
-      _ -> (++) <$> pure step' <*> simplSteps steps >>= simplLift
+simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
+    step1' <- simplStep step1
+    (omega, _, _, _) <- inferComp (Comp step1') >>= checkST
+    case omega of
+      C UnitT{} -> rewrite >> return step1'
+      _         -> simplLift $ step1' ++ [step2]
+
+simplSteps (step : steps) =
+    (++) <$> simplStep step <*> simplSteps steps >>= simplLift
 
 -- | Return 'True' if the binders of @x@ are used in @y@, 'False' otherwise.
 notUsedIn :: (Binders a Var, Fvs b Var) => a -> b -> Bool
