@@ -1251,6 +1251,15 @@ simplExp (BindE wv tau e1 e2 s) =
         simplBind wv' tau' e1a (BindE wv tau e1b e2 s') s
 
     --
+    -- Drop unnecessary return, e.g.,
+    --
+    --   { ... ; emit x; return (); } -> { ... ; emit x; }
+    --
+    simplBind WildV UnitT{} e1 (ReturnE _ann (ConstE UnitC _) _) _s = do
+        rewrite
+        simplExp e1
+
+    --
     -- Drop an unbound return, e.g.,
     --
     --   { return e1; ... } -> { ... }
