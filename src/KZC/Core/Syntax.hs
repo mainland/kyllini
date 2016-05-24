@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -257,7 +259,7 @@ class ToExp a where
 -- expressions or computations.
 data Arg l = ExpA  Exp
            | CompA (Comp l)
-  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Step l = VarC l Var !SrcLoc
             | CallC l Var [Iota] [Arg l] !SrcLoc
@@ -284,10 +286,10 @@ data Step l = VarC l Var !SrcLoc
             -- | This is a special "administrative" step that we use to indicate
             -- a jump to a loop header.
             | LoopC l
-  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 newtype Comp l = Comp { unComp :: [Step l] }
-  deriving (Eq, Ord, Read, Show, Monoid)
+  deriving (Eq, Ord, Read, Show, Monoid, Functor, Foldable, Traversable)
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
