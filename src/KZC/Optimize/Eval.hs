@@ -171,7 +171,7 @@ evalDecl decl@(LetCompD v tau comp s) k =
     eval =
         withInstantiatedTyVars tau $
         withSummaryContext comp $
-        uniquifyCompLabels comp >>= evalComp
+        traverse uniquify comp >>= evalComp
 
 evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     withSummaryContext decl $
@@ -195,7 +195,7 @@ evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
         extendIVars (ivs `zip` repeat IotaK) $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
-        uniquifyCompLabels comp >>= evalComp
+        traverse uniquify comp >>= evalComp
 
 data LocalLetVal l m  -- | Local declaration is pure and produces a declaration
                    = DeclVal LocalDecl

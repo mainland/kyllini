@@ -28,10 +28,7 @@ module KZC.Core.Comp (
     emitC,
     emitsC,
     repeatC,
-    parC,
-
-    mapMCompLabels,
-    uniquifyCompLabels
+    parC
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -128,78 +125,3 @@ repeatC ann c = do
 parC :: MonadUnique m => PipelineAnn -> Type -> Comp l -> Comp l -> m (Comp l)
 parC ann tau c1 c2 =
     return $ Comp [ParC ann tau c1 c2 (c1 `srcspan` c2)]
-
-mapMCompLabels :: forall l1 l2 m . (Applicative m, MonadUnique m, Ord l1)
-              => (l1 -> m l2) -> Comp l1 -> m (Comp l2)
-mapMCompLabels f = mlComp
-  where
-    mlComp :: Comp l1 -> m (Comp l2)
-    mlComp (Comp steps) = Comp <$> mlSteps steps
-
-    mlArg :: Arg l1 ->  m (Arg l2)
-    mlArg (ExpA e)  = pure $ ExpA e
-    mlArg (CompA c) = CompA <$> mlComp c
-
-    mlSteps :: [Step l1] ->  m [Step l2]
-    mlSteps []           = return []
-    mlSteps (step:steps) = (:) <$> mlStep step <*> mlSteps steps
-
-    mlStep :: Step l1 ->  m (Step l2)
-    mlStep (VarC l v s) =
-        VarC <$> f l <*> pure v <*> pure s
-
-    mlStep (CallC l v iotas args s) =
-        CallC <$> f l <*> pure v <*> pure iotas <*> mapM mlArg args <*> pure s
-
-    mlStep (IfC l e c1 c2 s) =
-        IfC <$> f l <*> pure e <*> mlComp c1 <*> mlComp c2 <*> pure s
-
-    mlStep (LetC l decl s) =
-        LetC <$> f l <*> pure decl <*> pure s
-
-    mlStep (WhileC l e c s) =
-        WhileC <$> f l <*> pure e <*> mlComp c <*> pure s
-
-    mlStep (ForC l ann v tau e1 e2 c s) =
-        ForC <$> f l
-             <*> pure ann
-             <*> pure v
-             <*> pure tau
-             <*> pure e1
-             <*> pure e2
-             <*> mlComp c
-             <*> pure s
-
-    mlStep (LiftC l e s) =
-        LiftC <$> f l <*> pure e <*> pure s
-
-    mlStep (ReturnC l e s) =
-        ReturnC <$> f l <*> pure e <*> pure s
-
-    mlStep (BindC l wv tau s) =
-        BindC <$> f l <*> pure wv <*> pure tau <*> pure s
-
-    mlStep (TakeC l tau s) =
-        TakeC <$> f l <*> pure tau <*> pure s
-
-    mlStep (TakesC l i tau s) =
-        TakesC <$> f l <*> pure i <*> pure tau <*> pure s
-
-    mlStep (EmitC l tau s) =
-        EmitC <$> f l <*> pure tau <*> pure s
-
-    mlStep (EmitsC l tau s) =
-        EmitsC <$> f l <*> pure tau <*> pure s
-
-    mlStep (RepeatC l ann c s) =
-        RepeatC <$> f l <*> pure ann <*> mlComp c <*> pure s
-
-    mlStep (ParC ann tau c1 c2 s) =
-        ParC ann tau <$> mlComp c1 <*> mlComp c2 <*> pure s
-
-    mlStep LoopC{} =
-        fail "mapMCompLabels: saw LoopC"
-
-uniquifyCompLabels :: forall l m . (IsLabel l, Applicative m, MonadUnique m)
-                   => Comp l -> m (Comp l)
-uniquifyCompLabels = mapMCompLabels uniquify

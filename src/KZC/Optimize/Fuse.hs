@@ -259,7 +259,7 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> F l m (Comp l)
 fuse left right klabel = do
     (_, rss') <- runRight (unComp left) (unComp right)
-    mapMCompLabels (return . uncurry pairLabel) $ Comp rss'
+    return $ uncurry pairLabel <$> Comp rss'
   where
     -- | A "free" left step is one we can go ahead and run even if the
     -- right-hand side has not yet reached a take action.
