@@ -13,16 +13,13 @@ module KZC.Core.Comp (
     varC,
     callC,
     ifC,
-    ifC',
     letC,
     letDC,
-    letDC',
     whileC,
     forC,
     liftC,
     returnC,
     bindC,
-    bindC',
     takeC,
     takesC,
     emitC,
@@ -53,10 +50,7 @@ callC f is args = do
 ifC :: (IsLabel l, MonadUnique m) => Exp -> Comp l -> Comp l -> m (Comp l)
 ifC e thenc elsec = do
     l <- gensym "ifk"
-    return $ ifC' l e thenc elsec
-
-ifC' :: l -> Exp -> Comp l -> Comp l -> Comp l
-ifC' l e thenc elsec = Comp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
+    return $ Comp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
 
 letC :: (IsLabel l, MonadUnique m) => Var -> Type -> Exp -> m (Comp l)
 letC v tau e = letDC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
@@ -65,9 +59,6 @@ letDC :: (IsLabel l, MonadUnique m) => LocalDecl -> m (Comp l)
 letDC decl = do
     l <- gensym "letk"
     return $ Comp [LetC l decl (srclocOf decl)]
-
-letDC' :: l -> LocalDecl -> Comp l
-letDC' l decl = Comp [LetC l decl (srclocOf decl)]
 
 whileC :: (IsLabel l, MonadUnique m) => Exp -> Comp l -> m (Comp l)
 whileC e c  = do
@@ -93,9 +84,6 @@ bindC :: (IsLabel l, MonadUnique m) => WildVar -> Type -> m (Comp l)
 bindC wv tau = do
     l <- gensym "bindk"
     return $ Comp [BindC l wv tau (srclocOf tau)]
-
-bindC' :: l -> WildVar -> Type -> Comp l
-bindC' l wv tau = Comp [BindC l wv tau (srclocOf tau)]
 
 takeC ::  (IsLabel l, MonadUnique m) => Type -> m (Comp l)
 takeC tau = do
