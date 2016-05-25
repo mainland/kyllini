@@ -1511,8 +1511,3 @@ compValToExpVal (CompClosV theta _tau m) =
 
 compValToExpVal (FunCompClosV theta ivs vtaus tau m) =
     return $ FunClosV theta ivs vtaus tau $ m >>= compValToExpVal
-
-compValToExpVal val =
-    panicdoc $
-    nest 2 $
-    text "compValToExpVal: cannot convert comp value to expression value:" </> ppr val

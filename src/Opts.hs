@@ -228,6 +228,7 @@ dDumpFlagOpts =
   , (DumpLUT,        "lut",        "dump LUTter")
   , (DumpHashCons,   "hashcons",   "dump hashcons of constants")
   , (DumpStaticRefs, "staticrefs", "dump result of static refs")
+  , (DumpRate,       "rate",       "dump result of rate analysis")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -248,6 +249,7 @@ dTraceFlagOpts =
   , (TraceLUT,         "lut",          "trace LUTter")
   , (TraceRefFlow,     "rflow",        "trace ref-flow")
   , (TraceNeedDefault, "need-default", "trace default need")
+  , (TraceRate,        "rate",         "trace rate analysis")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]
@@ -261,6 +263,7 @@ fWarnFlagOpts =
   , (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
+  , (WarnRateMismatch,      "warn-rate-mismatch",        "warn on producer/consumer rate mismatch in par")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])

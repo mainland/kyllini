@@ -120,7 +120,7 @@ transDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
     tau = FunT iotas (map snd vbs) tau_ret l
 
 transComp :: TransformComp l m => Comp l -> m (Comp l)
-transComp (Comp steps) = Comp <$> stepsT steps
+transComp (Comp steps card) = Comp <$> stepsT steps <*> pure card
 
 transSteps :: TransformComp l m => [Step l] -> m [Step l]
 transSteps [] =

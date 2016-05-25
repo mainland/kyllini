@@ -55,6 +55,7 @@ SOURCE = \
 	KZC/Analysis/Lut.hs \
 	KZC/Analysis/NeedDefault.hs \
 	KZC/Analysis/Occ.hs \
+	KZC/Analysis/Rate.hs \
 	KZC/Analysis/ReadWriteSet.hs \
 	KZC/Analysis/RefFlow.hs \
 	KZC/Analysis/StaticRef.hs \

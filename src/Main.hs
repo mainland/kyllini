@@ -46,6 +46,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
+import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
 import KZC.Analysis.StaticRef
 import KZC.Cg
@@ -114,6 +115,8 @@ runPipeline filepath = do
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
         -- Fuse pars
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
+        -- Perform rate analysis
+        traceCorePhase "rate" ratePhase >=>
         -- Partially evaluate and simplify
         runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
@@ -242,6 +245,11 @@ runPipeline filepath = do
     hashconsPhase =
         lift . C.withTc . hashConsConsts >=>
         dumpPass DumpHashCons "core" "hashcons"
+
+    ratePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    ratePhase =
+        lift . C.withTc . rateProgram >=>
+        dumpPass DumpRate "core" "rate"
 
     fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =

@@ -95,6 +95,7 @@ data WarnFlag = WarnError
               | WarnUnusedCommandBind
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
+              | WarnRateMismatch
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data DumpFlag = DumpCPP
@@ -109,6 +110,7 @@ data DumpFlag = DumpCPP
               | DumpLUT
               | DumpHashCons
               | DumpStaticRefs
+              | DumpRate
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -127,6 +129,7 @@ data TraceFlag = TracePhase
                | TraceLUT
                | TraceRefFlow
                | TraceNeedDefault
+               | TraceRate
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32
