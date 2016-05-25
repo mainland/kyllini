@@ -44,6 +44,7 @@ import Control.Monad (when)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.Exception (ExceptionT(..), runExceptionT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
@@ -273,6 +274,10 @@ instance (Error e, MonadFlags m) => MonadFlags (ErrorT e m) where
 instance (MonadFlags m) => MonadFlags (ExceptT e m) where
     askFlags       = lift askFlags
     localFlags f m = ExceptT $ localFlags f (runExceptT m)
+
+instance (MonadFlags m) => MonadFlags (ExceptionT m) where
+    askFlags       = lift askFlags
+    localFlags f m = ExceptionT $ localFlags f (runExceptionT m)
 
 instance MonadFlags m => MonadFlags (ReaderT r m) where
     askFlags       = lift askFlags

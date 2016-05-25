@@ -20,6 +20,7 @@ module KZC.Uniq (
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..))
+import Control.Monad.Exception (ExceptionT(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
@@ -64,6 +65,9 @@ instance (Error e, MonadUnique m) => MonadUnique (ErrorT e m) where
 #endif /* !MIN_VERSION_base(4,8,0) */
 
 instance MonadUnique m => MonadUnique (ExceptT e m) where
+    newUnique = lift newUnique
+
+instance MonadUnique m => MonadUnique (ExceptionT m) where
     newUnique = lift newUnique
 
 instance MonadUnique m => MonadUnique (ReaderT r m) where

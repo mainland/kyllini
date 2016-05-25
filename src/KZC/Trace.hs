@@ -33,6 +33,7 @@ import Control.Monad (when)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.Exception (ExceptionT(..), runExceptionT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
@@ -67,6 +68,10 @@ instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
 instance (MonadTrace m) => MonadTrace (ExceptT e m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = ExceptT $ localTraceDepth f (runExceptT m)
+
+instance (MonadTrace m) => MonadTrace (ExceptionT m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = ExceptionT $ localTraceDepth f (runExceptionT m)
 
 instance MonadTrace m => MonadTrace (ReaderT r m) where
     askTraceDepth       = lift askTraceDepth
