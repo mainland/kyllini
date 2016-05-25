@@ -70,6 +70,7 @@ SOURCE = \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
 	KZC/Core/Comp.hs \
+	KZC/Core/Embed.hs \
 	KZC/Core/Label.hs \
 	KZC/Core/Lint.hs \
 	KZC/Core/Smart.hs \
