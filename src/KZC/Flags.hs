@@ -49,6 +49,8 @@ import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Cont (ContT(..))
+import qualified Control.Monad.Trans.Cont as Cont
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
@@ -264,6 +266,10 @@ flagImplications = fixpoint go
 instance MonadFlags m => MonadFlags (MaybeT m) where
     askFlags       = lift askFlags
     localFlags f m = MaybeT $ localFlags f (runMaybeT m)
+
+instance MonadFlags m => MonadFlags (ContT r m) where
+    askFlags   = lift askFlags
+    localFlags = Cont.liftLocal askFlags localFlags
 
 #if !MIN_VERSION_base(4,8,0)
 instance (Error e, MonadFlags m) => MonadFlags (ErrorT e m) where

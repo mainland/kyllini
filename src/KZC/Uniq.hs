@@ -25,6 +25,7 @@ import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Cont (ContT(..))
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
@@ -57,6 +58,9 @@ maybeNewUnique = do
         else Just <$> newUnique
 
 instance MonadUnique m => MonadUnique (MaybeT m) where
+    newUnique = lift newUnique
+
+instance MonadUnique m => MonadUnique (ContT r m) where
     newUnique = lift newUnique
 
 #if !MIN_VERSION_base(4,8,0)
