@@ -38,7 +38,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Comp
+import KZC.Core.Embed
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -259,7 +259,7 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> F l m (Comp l)
 fuse left right klabel = do
     (_, rss') <- runRight (unComp left) (unComp right)
-    mapMCompLabels (return . uncurry pairLabel) $ Comp rss'
+    return $ uncurry pairLabel <$> Comp rss'
   where
     -- | A "free" left step is one we can go ahead and run even if the
     -- right-hand side has not yet reached a take action.
@@ -483,10 +483,8 @@ fuse left right klabel = do
         -- one and try to fuse the rewritten computation.
         emitsNTake :: Int -> F l m ([Step l], [Step (l, l)])
         emitsNTake n = do
-            i    <- gensymAt "i" s1
-            body <- emitC (idxE e (varE i))
-            fori <- forC AutoUnroll i intT 0 (fromIntegral n) body
-            runLeft (unComp fori ++ dropBind lss) (rs : rss)
+            body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
+            runLeft (unComp body ++ dropBind lss) (rs : rss)
 
         l' :: (l, l)
         l' = (l_left, l_right)

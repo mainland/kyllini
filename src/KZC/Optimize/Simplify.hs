@@ -45,7 +45,6 @@ import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Comp
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -738,7 +737,8 @@ simplStep step@(VarC l v _) =
     inlineCompRhs comp =
         withSubst mempty $ do
         inlineBinding v
-        unComp <$> (simplComp comp >>= uniquifyCompLabels) >>= rewriteStepsLabel l
+        unComp <$> (simplComp comp >>= traverse uniquify) >>=
+                   rewriteStepsLabel l
 
 simplStep (CallC l f0 iotas0 args0 s) = do
     iotas <- mapM simplIota iotas0
@@ -800,7 +800,8 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
-        unComp <$> (simplComp comp >>= uniquifyCompLabels) >>= rewriteStepsLabel l
+        unComp <$> (simplComp comp >>= traverse uniquify) >>=
+                   rewriteStepsLabel l
 
     simplArg :: Arg l -> SimplM l m (Arg l)
     simplArg (ExpA e)  = ExpA  <$> simplExp e

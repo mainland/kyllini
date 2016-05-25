@@ -42,7 +42,6 @@ import KZC.Cg.CExp
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
-import KZC.Core.Comp
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -468,7 +467,7 @@ cgDecl (LetCompD v tau comp _) k =
     compc :: forall a . CompC l a
     compc takek emitk emitsk klbl k =
         withInstantiatedTyVars tau $ do
-        comp' <- uniquifyCompLabels comp
+        comp' <- traverse uniquify comp
         useLabels (compUsedLabels comp')
         cgComp takek emitk emitsk comp' klbl k
 
@@ -486,7 +485,7 @@ cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
     funcompc :: forall a . FunCompC l a
     funcompc iotas es takek emitk emitsk klbl k =
         withInstantiatedTyVars tau_ret $ do
-        comp'  <- uniquifyCompLabels comp
+        comp'  <- traverse uniquify comp
         ciotas <- mapM cgIota iotas
         ces    <- mapM cgArg es
         extendIVars (ivs `zip` repeat IotaK) $

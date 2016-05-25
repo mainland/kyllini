@@ -33,10 +33,13 @@ import Control.Monad (when)
 import Control.Monad.Error (Error, ErrorT(..))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.Exception (ExceptionT(..), runExceptionT)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Cont (ContT(..))
+import qualified Control.Monad.Trans.Cont as Cont
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
@@ -58,6 +61,10 @@ instance MonadTrace m => MonadTrace (MaybeT m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = MaybeT $ localTraceDepth f (runMaybeT m)
 
+instance MonadTrace m => MonadTrace (ContT r m) where
+    askTraceDepth   = lift askTraceDepth
+    localTraceDepth = Cont.liftLocal askTraceDepth localTraceDepth
+
 #if !MIN_VERSION_base(4,8,0)
 instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
     askTraceDepth       = lift askTraceDepth
@@ -67,6 +74,10 @@ instance (Error e, MonadTrace m) => MonadTrace (ErrorT e m) where
 instance (MonadTrace m) => MonadTrace (ExceptT e m) where
     askTraceDepth       = lift askTraceDepth
     localTraceDepth f m = ExceptT $ localTraceDepth f (runExceptT m)
+
+instance (MonadTrace m) => MonadTrace (ExceptionT m) where
+    askTraceDepth       = lift askTraceDepth
+    localTraceDepth f m = ExceptionT $ localTraceDepth f (runExceptionT m)
 
 instance MonadTrace m => MonadTrace (ReaderT r m) where
     askTraceDepth       = lift askTraceDepth
