@@ -2,13 +2,13 @@
 set -e
 make
 
-echo "Validate: base"
+echo "Validate: base $KZCFLAGS"
 make clean-tests && make -B test-all $@
 
-echo "Validate: -DDFIRSTCLASSLABELS"
+echo "Validate: -DDFIRSTCLASSLABELS $KZCFLAGS"
 make clean-tests && CFLAGS="-DFIRSTCLASSLABELS" make -B test-all $@
 
-for KZCFLAGS in \
+for FLAGS in \
     "--fsimpl" \
     "--fsimpl --finline" \
     "--ffuse" \
@@ -18,8 +18,8 @@ for KZCFLAGS in \
     "--fautolut --flut" \
     "--fautolut --flut --fpeval" \
     "--finline --fsimpl --fpeval --fautolut --flut" ; do
-    echo "Validate: $KZCFLAGS"
-    make clean-tests && KZCFLAGS="$KZCFLAGS" make -B test-all $@
+    echo "Validate: $KZCFLAGS $FLAGS"
+    make clean-tests && KZCFLAGS="$KZCFLAGS $FLAGS" make -B test-all $@
 done
 
 make clean-tests
