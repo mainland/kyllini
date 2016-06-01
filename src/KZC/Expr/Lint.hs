@@ -39,6 +39,8 @@ module KZC.Expr.Lint (
     checkTypeEquality,
     checkKindEquality,
 
+    joinOmega,
+
     checkEqT,
     checkOrdT,
     checkBoolT,
@@ -648,14 +650,6 @@ inferExp e0@(ParE _ b e1 e2 l) = do
     omega <- withFvContext e0 $
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
-  where
-    joinOmega :: Omega -> Omega -> m Omega
-    joinOmega omega1@C{} T{}        = return omega1
-    joinOmega T{}        omega2@C{} = return omega2
-    joinOmega omega1@T{} T{}        = return omega1
-
-    joinOmega omega1 omega2 =
-        faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
 checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
@@ -952,6 +946,15 @@ checkKindEquality kappa1 kappa2 =
     faildoc $ align $
     text "Expected kind:" <+> ppr kappa2 </>
     text "but got:      " <+> ppr kappa1
+
+-- | Check that two omega types can be joined.
+joinOmega :: MonadTc m => Omega -> Omega -> m Omega
+joinOmega omega1@C{} T{}        = return omega1
+joinOmega T{}        omega2@C{} = return omega2
+joinOmega omega1@T{} T{}        = return omega1
+
+joinOmega omega1 omega2 =
+    faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
 -- | Check that a type supports equality.
 checkEqT :: MonadTc m => Type -> m ()

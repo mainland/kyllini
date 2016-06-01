@@ -40,6 +40,10 @@ module KZC.Core.Lint (
 
     inferStep,
 
+    checkTypeEquality,
+
+    joinOmega,
+
     checkEqT,
     checkOrdT,
     checkBoolT,
@@ -99,6 +103,8 @@ import KZC.Expr.Lint (Tc(..),
                       checkBitcast,
 
                       checkTypeEquality,
+
+                      joinOmega,
 
                       checkEqT,
                       checkOrdT,
@@ -822,14 +828,6 @@ inferStep step@(ParC _ b e1 e2 l) = do
     omega <- withFvContext step $
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
-  where
-    joinOmega :: Omega -> Omega -> m Omega
-    joinOmega omega1@C{} T{}        = return omega1
-    joinOmega T{}        omega2@C{} = return omega2
-    joinOmega omega1@T{} T{}        = return omega1
-
-    joinOmega omega1 omega2 =
-        faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
 
 inferStep LoopC{} =
     faildoc $ text "inferStep: saw LoopC"
