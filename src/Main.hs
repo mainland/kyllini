@@ -174,7 +174,7 @@ runPipeline filepath = do
           where
             go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
             go i n prog | i >= n = do
-                warndoc $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
+                warndocWhen WarnSimplifierBailout $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
                 return prog
 
             go i n prog = do

@@ -257,7 +257,8 @@ wWarnFlagOpts =
 
 fWarnFlagOpts :: [(WarnFlag, String, String)]
 fWarnFlagOpts =
-  [ (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
+  [ (WarnSimplifierBailout, "warn-simplifier-bailout",   "warn when the simplifier bails out")
+  , (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
   ]
