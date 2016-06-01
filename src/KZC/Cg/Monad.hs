@@ -492,10 +492,10 @@ taintAndUseCExp ce = do
                      , usedTainted = Set.insert cid (usedTainted s)
                      }
   where
-    taint :: CExp l -> Cg l C.Id
+    taint :: forall m . Monad m => CExp l -> m C.Id
     taint (CExp ce) = go ce
       where
-        go :: C.Exp -> Cg l C.Id
+        go :: C.Exp -> m C.Id
         go (C.Var cid _)        = return cid
         go (C.Member ce _ _)    = go ce
         go (C.PtrMember ce _ _) = go ce
