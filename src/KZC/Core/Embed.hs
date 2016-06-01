@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -8,13 +7,15 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Core.Embed (
-    K(..),
+    K,
     runK,
 
     letref,
 
+    compC,
     varC,
     forC,
+    forC',
     timesC,
     liftC,
     returnC,
@@ -22,114 +23,124 @@ module KZC.Core.Embed (
     takeC,
     takesC,
     emitC,
-    emitsC
+    emitsC,
+
+    repeatC,
+
+    parC
   ) where
 
-import Control.Monad.Exception (MonadException(..))
-import Control.Monad.Trans.Class (MonadTrans(..))
-import Control.Monad.Trans.Cont (ContT(..),
-                                 shiftT,
-                                 resetT,
-                                 runContT)
-import qualified Control.Monad.Trans.Cont as Cont
 import Data.Loc
 import Data.Monoid
+import qualified Data.Set as Set
 
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
-import KZC.Flags
 import KZC.Label
-import KZC.Name
-import KZC.Trace
+import KZC.Monad.KT
+import KZC.Summary
 import KZC.Uniq
+import KZC.Vars
 
-newtype K l m a = K { unK :: ContT (Comp l) m a }
-  deriving (Functor, Applicative, Monad,
-            MonadUnique,
-            MonadFlags,
-            MonadTrace)
+type K l m a = KT (Comp l) m a
 
-instance MonadTrans (K l) where
-    lift = K . lift
+runK :: MonadTc m => K l m a -> m (Comp l)
+runK m = runKT (m >> return mempty)
 
---- XXX This does not correctly lift throw and catch since the catch scopes over
---- the /entire/ continuation. However, we need both shift and reset and our
---- MonadTc instance, so...
-instance MonadException m => MonadException (K l m) where
-    throw = lift . throw
-
-    e `catch` h = K $ ContT $ \k -> runContT (unK e) k `catch` \ex -> runContT (unK (h ex)) k
-
-instance MonadErr m => MonadErr (K l m) where
-    askErrCtx       = lift askErrCtx
-    localErrCtx f m = K $ Cont.liftLocal askErrCtx localErrCtx f (unK m)
-
-    displayWarning = lift . displayWarning
-
-instance MonadTc m => MonadTc (K l m) where
-    askTc       = lift askTc
-    localTc f m = K $ Cont.liftLocal askTc localTc f (unK m)
-
-runK :: MonadException m => K l m a -> m (Comp l)
-runK m = runContT (unK m >> return mempty) return
-
-reset :: Monad m => K l m (Comp l) -> K l m (Comp l)
-reset m = K $ resetT (unK m)
-
-shift :: forall l m a . Monad m => ((a -> K l m (Comp l)) -> K l m (Comp l)) -> K l m a
-shift k = K $ shiftT k'
-  where
-    k' f = unK $ k (lift . f)
-
-letref :: (IsLabel l, MonadUnique m)
-       => Var -> Type -> (Exp -> K l m ()) -> K l m ()
-letref v tau f = do
-    v'       <- gensym (namedString v)
-    let decl =  LetRefLD (mkBoundVar v') tau Nothing (v `srcspan` tau)
-    l        <- gensym "letrefk"
+-- | Sequence a computation with the continuation's computation.
+seqC :: (IsLabel l, MonadTc m)
+     => Comp l
+     -> K l m ()
+seqC c1 =
     shift $ \k -> do
-        c1 <- reset $ f (varE v') >> return mempty
-        c2 <- k ()
-        return $ mkComp (LetC l decl (srclocOf decl) : unComp c1) <> c2
+    c2 <- k ()
+    return $ c1 <> c2
 
+-- | Bind the result of a computation in the continuation's computation.
 bindC :: (IsLabel l, MonadTc m)
-      => Type
-      -> (Exp -> K l m (Comp l))
-      -> K l m (Comp l)
-bindC tau k = do
+      => Comp l
+      -> Type
+      -> K l m Exp
+bindC c1 UnitT{} =
+    shift $ \k -> do
+    c2 <- k unitE
+    return $ c1 <> c2
+
+bindC c1 tau = do
     l <- gensym "bindk"
     v <- gensym "v"
-    c <- k (varE v)
-    return $ mkComp $ BindC l (TameV (mkBoundVar v)) tau s : unComp c
+    shift $ \k -> do
+    c2 <- extendVars [(v, tau)] $
+          k (varE v)
+    return $
+      if v `Set.member` fvs c2
+      then c1 <> mkComp (BindC l (TameV (mkBoundVar v)) tau s : unComp c2)
+      else c1 <> c2
   where
     s :: SrcLoc
     s = srclocOf tau
 
+-- | Run a computation in the 'K' monad and obtain a representation of the
+-- underlying 'Comp l'.
+runComp :: (IsLabel l, MonadTc m)
+        => K l m a
+        -> K l m (Comp l)
+runComp m = reset $ m >> return mempty
+
+letref :: (IsLabel l, MonadTc m)
+       => String -> Type -> (Exp -> K l m a) -> K l m a
+letref v tau f = do
+    v'       <- gensym v
+    let decl =  LetRefLD (mkBoundVar v') tau Nothing (srclocOf tau)
+    l        <- gensym "letrefk"
+    shift $ \k -> do
+        c <- runComp $ do
+             x <- extendVars [(v', refT tau)] $
+                  f (varE v')
+             k x
+        return $ mkComp (LetC l decl (srclocOf decl) : unComp c)
+
+-- | Lift a 'Comp l' into the 'K' monad.
+compC :: (IsLabel l, MonadTc m) => Comp l -> K l m Exp
+compC c1 = do
+    (omega, _, _, _) <- withSummaryContext c1 $
+                        inferComp c1 >>= checkST
+    -- If c1 is a transformer, throw away the continuation.
+    case omega of
+      C tau -> bindC c1 tau
+      T{}   -> shift $ \_k -> return c1
+
 varC :: (IsLabel l, MonadTc m) => Var -> K l m Exp
 varC v = do
-    l   <- gensym "varC"
-    tau <- inferComp (mkComp [VarC l v s])
-    shift $ \k -> do
-      c <- bindC tau k
-      return $ mkComp $ VarC l v s : unComp c
+    l <- gensym "varC"
+    compC $ mkComp [VarC l v s]
   where
     s :: SrcLoc
     s = srclocOf v
 
 forC :: (Integral a, IsLabel l, MonadTc m)
-      => a
+     => a
+     -> a
+     -> (Exp -> K l m b)
+     -> K l m ()
+forC = forC' AutoUnroll
+
+forC' :: (Integral a, IsLabel l, MonadTc m)
+      => UnrollAnn
       -> a
-      -> (Exp -> K l m ())
+      -> a
+      -> (Exp -> K l m b)
       -> K l m ()
-forC i j f = do
+forC' ann i j f = do
     v <- gensym "i"
     l <- gensym "fork"
     shift $ \k -> do
-      c1 <- reset $ f (varE v) >> return mempty
+      c1 <- runComp $
+            extendVars [(v, intT)] $
+            f (varE v)
       c2 <- k ()
-      return $ mkComp $ ForC l AutoUnroll v intT (intE i) (intE j) c1 (srclocOf c1) : unComp c2
+      return $ mkComp $ ForC l ann v intT (intE i) (intE j) c1 (srclocOf c1) : unComp c2
 
 timesC :: (Integral a, IsLabel l, MonadTc m)
        => a
@@ -139,22 +150,20 @@ timesC n body = forC 0 n (const body)
 
 liftC :: (IsLabel l, MonadTc m) => Exp -> K l m Exp
 liftC e = do
-    l   <- gensym "liftk"
-    tau <- inferExp e
-    shift $ \k -> do
-      c <- bindC tau k
-      return $ mkComp $ LiftC l e s : unComp c
+    l                 <- gensym "liftk"
+    (_, tau, _, _, _) <- withSummaryContext e $
+                         inferExp e >>= checkPureishSTC
+    bindC (mkComp [LiftC l e s]) tau
   where
     s :: SrcLoc
     s = srclocOf e
 
 returnC :: (IsLabel l, MonadTc m) => Exp -> K l m Exp
 returnC e = do
-    l   <- gensym "returnk"
-    tau <- inferExp e
-    shift $ \k -> do
-      c <- bindC tau k
-      return $ mkComp $ ReturnC l e s : unComp c
+    l              <- gensym "returnk"
+    (tau, _, _, _) <- withSummaryContext e $
+                      inferExp e >>= checkSTC
+    bindC (mkComp [ReturnC l e s]) tau
   where
     s :: SrcLoc
     s = srclocOf e
@@ -162,9 +171,7 @@ returnC e = do
 takeC :: (IsLabel l, MonadTc m) => Type -> K l m Exp
 takeC tau = do
     l <- gensym "takek"
-    shift $ \k -> do
-      c <- bindC tau k
-      return $ mkComp $ TakeC l tau s : unComp c
+    bindC (mkComp [TakeC l tau s]) tau
   where
     s :: SrcLoc
     s = srclocOf tau
@@ -172,23 +179,36 @@ takeC tau = do
 takesC :: (IsLabel l, MonadTc m) => Int -> Type -> K l m Exp
 takesC n tau = do
     l <- gensym "takesk"
-    shift $ \k -> do
-      c <- bindC tau k
-      return $ mkComp $ TakesC l n tau s : unComp c
+    bindC (mkComp [TakesC l n tau s]) (arrKnownT n tau)
   where
     s :: SrcLoc
     s = srclocOf tau
 
-emitC :: (IsLabel l, MonadUnique m) => Exp -> K l m ()
+emitC :: (IsLabel l, MonadTc m) => Exp -> K l m ()
 emitC e = do
     l <- gensym "emitk"
-    shift $ \k -> do
-      c <- k ()
-      return $ mkComp $ EmitC l e (srclocOf e) : unComp c
+    seqC (mkComp [EmitC l e (srclocOf e)])
 
-emitsC :: (IsLabel l, MonadUnique m) => Exp -> K l m ()
+emitsC :: (IsLabel l, MonadTc m) => Exp -> K l m ()
 emitsC e = do
     l <- gensym "emitsk"
-    shift $ \k -> do
-      c <- k ()
-      return $ mkComp $ EmitsC l e (srclocOf e) : unComp c
+    seqC (mkComp [EmitsC l e (srclocOf e)])
+
+repeatC :: (IsLabel l, MonadTc m) => K l m () -> K l m ()
+repeatC body = do
+    l <- gensym "repeatk"
+    -- We don't call our continuation since the repeat never terminates
+    shift $ \_k -> do
+      c <- runComp body
+      return $ mkComp [RepeatC l AutoVect c (srclocOf c)]
+
+parC :: (IsLabel l, MonadTc m)
+     => Type
+     -> K l m a
+     -> K l m b
+     -> K l m Exp
+parC b m1 m2 = do
+    (s, a, c) <- askSTIndTypes
+    c1        <- runComp $ localSTIndTypes (Just (s, a, b)) m1
+    c2        <- runComp $ localSTIndTypes (Just (b, b, c)) m2
+    compC $ mkComp [ParC AutoPipeline b c1 c2 (c1 `srcspan` c2)]
