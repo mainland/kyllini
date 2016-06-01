@@ -87,6 +87,7 @@ SOURCE = \
 	KZC/Globals.hs \
 	KZC/Interp.hs \
 	KZC/Monad.hs \
+	KZC/Monad/KT.hs \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/LambdaLift.hs \
