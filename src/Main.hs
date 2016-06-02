@@ -114,12 +114,12 @@ runPipeline filepath = do
         runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase1" autolutPhase) >=>
         -- Simplify again, allowing inlining. This may inline LUTted functions.
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
-        -- Fuse pars
-        runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Perform rate analysis
         traceCorePhase "rate" ratePhase >=>
         -- Perform pipeline coalescing
         runIf (testDynFlag Coalesce) (traceCorePhase "coalesce" coalescePhase) >=>
+        -- Fuse pars
+        runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
         runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
