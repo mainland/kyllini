@@ -64,6 +64,7 @@ import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Autolut
+import KZC.Optimize.Coalesce
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.HashConsConsts
@@ -117,6 +118,8 @@ runPipeline filepath = do
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Perform rate analysis
         traceCorePhase "rate" ratePhase >=>
+        -- Perform pipeline coalescing
+        runIf (testDynFlag Coalesce) (traceCorePhase "coalesce" coalescePhase) >=>
         -- Partially evaluate and simplify
         runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
@@ -250,6 +253,11 @@ runPipeline filepath = do
     ratePhase =
         lift . C.withTc . rateProgram >=>
         dumpPass DumpRate "core" "rate"
+
+    coalescePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    coalescePhase =
+        lift . C.withTc . coalesceProgram >=>
+        dumpPass DumpCoalesce "core" "coalesce"
 
     fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =

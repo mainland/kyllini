@@ -94,6 +94,7 @@ SOURCE = \
 	KZC/LambdaLift.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Autolut.hs \
+	KZC/Optimize/Coalesce.hs \
 	KZC/Optimize/Eval.hs \
 	KZC/Optimize/Eval/Monad.hs \
 	KZC/Optimize/Eval/Monad.hs-boot \

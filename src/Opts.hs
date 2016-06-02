@@ -198,6 +198,9 @@ fDynFlagOpts =
   , (LUT,           "lut",          "run the LUTter")
   , (NoGensym,      "no-gensym",    "don't gensym (for debugging)")
   , (Pipeline,      "pipeline",     "pipeline computations")
+  , (Coalesce,      "coalesce",     "coalesce computations")
+  , (VectOnlyBytes, "vect-bytes",   "only vectorize to byte widths")
+  , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -229,6 +232,7 @@ dDumpFlagOpts =
   , (DumpHashCons,   "hashcons",   "dump hashcons of constants")
   , (DumpStaticRefs, "staticrefs", "dump result of static refs")
   , (DumpRate,       "rate",       "dump result of rate analysis")
+  , (DumpCoalesce,   "coalesce",   "dump result of pipeline coalescing")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -250,6 +254,7 @@ dTraceFlagOpts =
   , (TraceRefFlow,     "rflow",        "trace ref-flow")
   , (TraceNeedDefault, "need-default", "trace default need")
   , (TraceRate,        "rate",         "trace rate analysis")
+  , (TraceCoalesce,    "coalesce",     "trace pipeline coalescing")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]

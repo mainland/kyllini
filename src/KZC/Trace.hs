@@ -26,7 +26,8 @@ module KZC.Trace (
     traceAutoLUT,
     traceRefFlow,
     traceNeedDefault,
-    traceRate
+    traceRate,
+    traceCoalesce
   ) where
 
 import Control.Monad (when)
@@ -160,3 +161,5 @@ traceNeedDefault = traceIfSet TraceNeedDefault "traceNeedDefault:"
 traceRate :: MonadTrace m => Doc -> m ()
 traceRate = traceIfSet TraceRate "traceRate:"
 
+traceCoalesce :: MonadTrace m => Doc -> m ()
+traceCoalesce = traceIfSet TraceCoalesce "traceCoalesce:"

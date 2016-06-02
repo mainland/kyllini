@@ -86,6 +86,9 @@ data DynFlag = Quiet
              | LUT
              | NoGensym
              | Pipeline
+             | Coalesce
+             | VectOnlyBytes
+             | VectFilterAnn
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -111,6 +114,7 @@ data DumpFlag = DumpCPP
               | DumpHashCons
               | DumpStaticRefs
               | DumpRate
+              | DumpCoalesce
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -130,6 +134,7 @@ data TraceFlag = TracePhase
                | TraceRefFlow
                | TraceNeedDefault
                | TraceRate
+               | TraceCoalesce
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32
@@ -259,6 +264,7 @@ flagImplications = fixpoint go
 
     go :: Flags -> Flags
     go = imp Fuse (setDynFlag AlwaysInlineComp) .
+         imp Coalesce (setDynFlag AlwaysInlineComp) .
          imp MayInlineVal (setDynFlag Simplify) .
          imp MayInlineFun (setDynFlag Simplify) .
          imp MayInlineComp (setDynFlag Simplify) .
