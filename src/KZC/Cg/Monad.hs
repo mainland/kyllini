@@ -496,11 +496,12 @@ taintAndUseCExp ce = do
     taint (CExp ce) = go ce
       where
         go :: C.Exp -> m C.Id
-        go (C.Var cid _)        = return cid
-        go (C.Member ce _ _)    = go ce
-        go (C.PtrMember ce _ _) = go ce
-        go (C.Index ce _ _)     = go ce
-        go _                    = faildoc $ text "Cannot taint:" <+> ppr ce
+        go (C.Var cid _)          = return cid
+        go (C.Member ce _ _)      = go ce
+        go (C.PtrMember ce _ _)   = go ce
+        go (C.Index ce _ _)       = go ce
+        go (C.UnOp C.Deref ce _ ) = go ce
+        go _                      = faildoc $ text "Cannot taint:" <+> ppr ce
 
     taint (CPtr ce)         = taint ce
     taint (CIdx _ ce _)     = taint ce
