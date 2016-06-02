@@ -93,6 +93,8 @@ import KZC.Expr.Smart (tyVarT,
                        arrayC,
                        structC,
 
+                       fromIntC,
+
                        mkVar)
 
 letD :: Var -> Type -> Exp -> LocalDecl
