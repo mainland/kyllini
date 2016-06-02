@@ -36,7 +36,9 @@ module KZC.Flags (
 
     whenDynFlag,
     whenWarnFlag,
-    whenDumpFlag
+    whenDumpFlag,
+    whenVerb,
+    whenVerbLevel
   ) where
 
 import Control.Monad (when)
@@ -354,3 +356,11 @@ whenDumpFlag :: MonadFlags m => DumpFlag -> m () -> m ()
 whenDumpFlag f act = do
     doDump <- asksFlags (testDumpFlag f)
     when doDump act
+
+whenVerb :: MonadFlags m => m () -> m ()
+whenVerb = whenVerbLevel 1
+
+whenVerbLevel :: MonadFlags m => Int -> m () -> m ()
+whenVerbLevel lvlNeeded act = do
+    lvl <- asksFlags verbLevel
+    when (lvl >= lvlNeeded) act
