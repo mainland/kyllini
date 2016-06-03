@@ -897,7 +897,20 @@ simplStep (ForC l ann v tau e1 e2 c s) = do
         return1 $ ForC l ann v' tau e1' e2' c' s
 
 simplStep (LiftC l e s) =
-    LiftC l <$> simplE e <*> pure s >>= return1
+    simplE e >>= go
+  where
+    go :: Exp -> SimplM l m [Step l]
+    --
+    -- Collapse lifted return
+    --
+    -- { _ <- lift (return e); ... } ->  { _ <- return e; ... }
+    --
+    go (ReturnE _ann e' s') = do
+        rewrite
+        return [ReturnC l e' s']
+
+    go e' =
+        return [LiftC l e' s]
 
 simplStep (ReturnC l e s) =
     ReturnC l <$> simplE e <*> pure s >>= return1
