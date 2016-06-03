@@ -33,6 +33,7 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
 import KZC.Core.Smart
@@ -127,6 +128,22 @@ instance MonadTc m => TransformExp (OccM m) where
         (occ3, e3') <- collectOcc $ expT e3
         tell $ occ2 `bub` occ3
         return $ IfE e1' e2' e3' s
+
+    expT (AssignE e1_0 e2_0 s) =
+        AssignE <$> occRef e1_0 <*> expT e2_0 <*> pure s
+      where
+        occRef :: Exp -> OccM m Exp
+        occRef e@VarE{} =
+            return e
+
+        occRef (IdxE e1 e2 len s) =
+            IdxE <$> occRef e1 <*> expT e2 <*> pure len <*> pure s
+
+        occRef (ProjE e f s) =
+            ProjE <$> occRef e <*> pure f <*> pure s
+
+        occRef e =
+            panicdoc $ text "Illegal assignment lhs:" <+> ppr e
 
     expT (BindE (TameV v) tau e1 e2 s) = do
         e1'        <- expT e1

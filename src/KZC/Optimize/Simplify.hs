@@ -119,10 +119,11 @@ data SimplEnv l = SimplEnv
     , simplVarDefs :: !(VarDefs l)
     , simplPhi     :: !Phi
     , simplPsi     :: !Psi
+    , simplRefDrop :: !(Set Var)
     }
 
 defaultSimplEnv :: SimplEnv l
-defaultSimplEnv = SimplEnv mempty mempty mempty mempty
+defaultSimplEnv = SimplEnv mempty mempty mempty mempty mempty
 
 data SimplState = SimplState
     { simplStats :: {-# UNPACK #-} !SimplStats }
@@ -272,6 +273,17 @@ extendTyVarSubst tvs =
   where
     insert :: Ord k => Map k v -> (k, v) -> Map k v
     insert mp (k, v) = Map.insert k v mp
+
+dropRef :: MonadTc m => Var -> SimplM l m a -> SimplM l m a
+dropRef v =
+    local $ \env -> env { simplRefDrop = Set.insert v (simplRefDrop env) }
+
+keepRef :: MonadTc m => Var -> SimplM l m a -> SimplM l m a
+keepRef v =
+    local $ \env -> env { simplRefDrop = Set.delete v (simplRefDrop env) }
+
+isDroppedRef :: MonadTc m => Var -> SimplM l m Bool
+isDroppedRef v = asks (Set.member v . simplRefDrop)
 
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
@@ -514,7 +526,8 @@ simplLocalDecl decl m = do
         isOnce = bOccInfo v == Just Once
 
     preInlineUnconditionally flags decl@(LetRefLD v _ _ _)
-        | isDead    = dropBinding v >> withoutBinding m
+        | isDead    = do dropBinding v
+                         dropRef (bVar v) $ withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead :: Bool
@@ -539,6 +552,7 @@ simplLocalDecl decl m = do
         tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
             extendDefinitions [(bVar v', Unknown)] $
+            keepRef (bVar v) $
             withRefBinding v' tau' e' s m
 
     withoutBinding :: SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
@@ -1193,8 +1207,14 @@ simplE (DerefE e s) = do
              then DerefE e' s
              else ReturnE AutoInline e' s
 
-simplE (AssignE e1 e2 s) =
-    AssignE <$> simplE e1 <*> simplE e2 <*> pure s
+simplE (AssignE e1 e2 s) = do
+    e1'  <- simplE e1
+    e2'  <- simplE e2
+    drop <- refPathRoot e1 >>= isDroppedRef
+    if drop
+      then do rewrite
+              return $ returnE unitE
+      else return $ AssignE e1' e2' s
 
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
