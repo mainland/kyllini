@@ -16,6 +16,9 @@ module KZC.Core.Smart (
 
     unConstE,
     constE,
+
+    fromIntE,
+
     unitE,
     intE,
     varE,
@@ -128,6 +131,10 @@ unConstE e =
 
 constE :: Const -> Exp
 constE c = ConstE c noLoc
+
+fromIntE :: Monad m => Exp -> m Integer
+fromIntE (ConstE c _) = fromIntC c
+fromIntE _            = fail "fromIntE: not an integer"
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
