@@ -589,23 +589,39 @@ simplSteps (step : BindC l wv tau s : steps) = do
     go step' tau' wv
   where
     go :: [Step l] -> Type -> WildVar -> SimplM l m [Step l]
+    --
+    -- Drop an unbound return, e.g.,
+    --
+    --   { return e1; ... } -> { ... }
+    --
+    go [ReturnC {}] _tau' WildV = do
+        rewrite
+        simplSteps steps
+
+    go [step'] tau' WildV = do
+        steps' <- simplSteps steps
+        simplLift $ step' : BindC l WildV tau' s : steps'
+
+    --
+    -- Drop unused bindings. The step whose result is bound might have an
+    -- effect, so we can't just throw it away.
+    --
     go [step'] tau' (TameV v) | bOccInfo v == Just Dead = do
         dropBinding v
         go [step'] tau' WildV
 
-    go [ReturnC {}] _tau' WildV =
-        simplSteps steps
-
+    --
+    -- Convert a bind-return into a let, e.g.,
+    --
+    --   { x <- return e1; ... } -> { let x = e1; ... }
+    --
     go [ReturnC l e s] tau' (TameV v) =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', BoundToExp Nothing Nested e)] $ do
         steps' <- simplSteps steps
+        rewrite
         simplLift $ LetC l (LetLD v' tau' e s) s : steps'
-
-    go [step'] tau' WildV = do
-        steps' <- simplSteps steps
-        simplLift $ step' : BindC l WildV tau' s : steps'
 
     go [step'] tau' (TameV v) =
         withUniqBoundVar v $ \v' ->
@@ -624,6 +640,12 @@ simplSteps (step : BindC l wv tau s : steps) = do
         tl :: Step l
         hd = init step'
         tl = last step'
+--
+-- Drop an unbound return; we know the return isn't bound becasue it isn't the
+-- final step and we didn't match the bind case just above.
+simplSteps (ReturnC{} : steps@(_:_)) = do
+    rewrite
+    simplSteps steps
 
 simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
     step1' <- simplStep step1
@@ -1271,9 +1293,9 @@ simplE (BindE wv tau e1 e2 s) =
         simplBind wv' tau' e1a (BindE wv tau e1b e2 s') s
 
     --
-    -- Drop unnecessary return, e.g.,
+    -- Drop unnecessary final return (), e.g.,
     --
-    --   { ... ; emit x; return (); } -> { ... ; emit x; }
+    --   { ... ; x := 1; return (); } -> { ... ; x := 1; }
     --
     simplBind WildV UnitT{} e1 (ReturnE _ann (ConstE UnitC _) _) _s = do
         rewrite
@@ -1296,7 +1318,7 @@ simplE (BindE wv tau e1 e2 s) =
 
     --
     -- Drop unused bindings. The expression whose result is bound might have an
-    -- effect, so we can't neccessarily throw it away completely.
+    -- effect, so we can't just throw it away.
     --
     simplBind (TameV v) tau e1 e2 s | bOccInfo v == Just Dead = do
         dropBinding v
