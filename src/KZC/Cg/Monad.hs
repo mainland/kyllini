@@ -70,6 +70,7 @@ module KZC.Cg.Monad (
     appendBlock,
 
     collectUsed,
+    collectUsed_,
     taintScope,
     newScope,
     taintAndUseCExp,
@@ -452,6 +453,9 @@ collectUsed m = do
     vs <- gets used
     modify $ \s -> s { used = vs_old <> vs }
     return (vs, x)
+
+collectUsed_ :: Cg l () -> Cg l (Set C.Id)
+collectUsed_ m = fst <$> collectUsed m
 
 -- | Taint current declarations.
 taintScope :: Cg l ()
