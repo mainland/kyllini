@@ -11,7 +11,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Analysis.Occ (
-    occProgram
+    occProgram,
+    occComp
   ) where
 
 import Prelude hiding ((<=))
@@ -97,6 +98,9 @@ updOccInfo v occ = v { bOccInfo = Just occ }
 
 occProgram :: MonadTc m => Program l -> m (Program l)
 occProgram = runOccM . programT
+
+occComp :: MonadTc m => Comp l -> m (Comp l)
+occComp = runOccM . compT
 
 instance MonadTc m => TransformExp (OccM m) where
     localDeclT (LetLD v tau e s) m = do
