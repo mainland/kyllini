@@ -482,7 +482,7 @@ newScope k = do
 
         citems :: [C.BlockItem]
         citems = (map C.BlockDecl . toList) decls ++
-                 (map C.BlockStm .toList) cbefore
+                 (map C.BlockStm . toList) cbefore
 
 -- | Taint and use a 'CExp'.
 taintAndUseCExp :: forall l . CExp l -> Cg l ()
