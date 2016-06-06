@@ -13,7 +13,8 @@
 module KZC.Optimize.Simplify (
     SimplStats(..),
 
-    simplProgram
+    simplProgram,
+    simplComp
   ) where
 
 import Prelude hiding ((<=))
@@ -51,6 +52,7 @@ import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label
+import KZC.Analysis.Occ
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -296,6 +298,23 @@ simplProgram (Program decls comp tau) = runSimplM $ do
       withLocContext comp (text "In definition of main") $
       simplC comp
   return $ Program decls' comp' tau
+
+simplComp :: forall l m . (IsLabel l, MonadTc m)
+          => Comp l
+          -> m (Comp l)
+simplComp c = do
+    n <- asksFlags maxSimpl
+    go 0 n c
+  where
+    go :: Int -> Int -> Comp l -> m (Comp l)
+    go i n c | i >= n =
+        return c
+
+    go i n c = do
+        (c', stats) <- occComp c >>= runSimplM . simplC
+        if stats /= mempty
+          then go (i+1) n c'
+          else return c
 
 simplType :: MonadTc m => Type -> SimplM l m Type
 simplType tau = do
