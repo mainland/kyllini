@@ -979,7 +979,7 @@ lutExp e = do
         (ref, tau) <- maybe err return (Map.lookup v v_refs)
         return (lv, ref, tau)
       where
-        err = faildoc $ text "Cannot fiend in/out variable:" <+> ppr v
+        err = faildoc $ text "Cannot find in/out variable:" <+> ppr v
 
     lutVarRef v_refs lv@(IdxL v i len) = do
         (ref, tau)    <- maybe err return (Map.lookup v v_refs)
@@ -990,7 +990,7 @@ lutExp e = do
         n :: Int
         n = fromMaybe 1 len
 
-        err = faildoc $ text "Cannot fiend in/out variable:" <+> ppr v
+        err = faildoc $ text "Cannot find in/out variable:" <+> ppr v
 
     go :: [(Var, I.Ref s, Type)]
        -> [(LUTVar, I.Ref s, Type)]
