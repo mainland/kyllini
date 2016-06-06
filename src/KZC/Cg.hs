@@ -1169,12 +1169,13 @@ cgExp e k =
 -- the loop are marked as used again after code for the body has been generated
 -- in case there is a label at the end of the loop's body.
 cgLoop :: IsLabel l => Maybe l -> Cg l () -> Cg l ()
-cgLoop maybe_l m = do
-    (cids, stms) <- collectUsed $ collectStms_ m
+cgLoop Nothing m = do
+    cids <- collectUsed_ m
     useCIds cids
-    case maybe_l of
-      Nothing -> appendStms stms
-      Just l  -> cgWithLabel l $ appendStms stms
+
+cgLoop (Just l) m = cgWithLabel l $ do
+    cids <- collectUsed_ m
+    useCIds cids
 
 cgIVar :: IVar -> Cg l (CExp l, C.Param)
 cgIVar iv = do
