@@ -78,6 +78,7 @@ data LUTInfo = LUTInfo
     { lutInVars      :: Set LUTVar
     , lutOutVars     :: Set LUTVar
     , lutReturnedVar :: Maybe Var
+    , lutResultType  :: Type
     , lutReadSet     :: Map Var (Known RWSet)
     , lutWriteSet    :: Map Var (Known RWSet)
 
@@ -94,6 +95,7 @@ instance Pretty LUTInfo where
         nest 2 (text "In vars:" </> ppr (lutInVars info)) </>
         nest 2 (text "Out vars:" </> ppr (lutOutVars info)) </>
         nest 2 (text "Returned var:" <+> ppr (lutReturnedVar info)) </>
+        nest 2 (text "Result type:" <+> ppr (lutResultType info)) </>
         nest 2 (text "Read set:" </> ppr (lutReadSet info)) </>
         nest 2 (text "Write set:" </> ppr (lutWriteSet info)) </>
         nest 2 (text "In bits:    " <+> ppr (lutInBits info)) </>
@@ -172,6 +174,7 @@ lutInfo e = withFvContext e $ do
     return LUTInfo { lutInVars      = inVars
                    , lutOutVars     = outVars
                    , lutReturnedVar = resVar
+                   , lutResultType  = tau_res
                    , lutReadSet     = rset
                    , lutWriteSet    = wset
 
