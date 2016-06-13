@@ -150,9 +150,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           comp   <- fuse left right klabel >>= setFirstLabel l
           parFused
           traceFusion $ text "Fused" <+>
-              (nest 2 $ text "producer:" </> ppr left) </>
-              (nest 2 $ text "and consumer:" </> ppr right) </>
-              (nest 2 $ text "into:" </> ppr comp)
+              text "producer:" </> indent 2 (ppr left) </>
+              text "and consumer:" </> indent 2 (ppr right) </>
+              text "into:" </> indent 2 (ppr comp)
           return $ unComp comp
         where
           -- We need to make sure that the producer and consumer have unique
