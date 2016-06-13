@@ -1,0 +1,19 @@
+fun comp A() {
+  repeat {
+    xs <- takes 4;
+    emits xs;
+  }
+}
+
+fun comp B() {
+  (x : int) <- take;
+  emit x;
+  (y : int) <- take;
+  emit y;
+  repeat {
+    xs <- takes 2;
+    emits xs;
+  }
+}
+
+let comp main = read[int] >>> A() >>> B() >>> write[int]
