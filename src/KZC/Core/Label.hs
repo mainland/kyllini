@@ -53,14 +53,14 @@ instance Gensym Label where
     uniquify (SeqL s _)   = SeqL s <$> maybeNewUnique
     uniquify (ParL l1 l2) = ParL <$> uniquify l1 <*> uniquify l2
 
-instance IsLabel Label where
-    pairLabel = ParL
-
 instance Fvs Label Label where
     fvs = singleton
 
 instance Subst Label Label Label where
     substM x (theta, _) = fromMaybe x (Map.lookup x theta)
+
+instance IsLabel Label where
+    jointLabel (l1, l2) = ParL l1 l2
 
 type LProgram = Program Label
 

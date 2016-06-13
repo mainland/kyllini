@@ -26,4 +26,4 @@ class ( Ord l
       , Gensym l
       , Fvs l l
       , Subst l l l ) => IsLabel l where
-    pairLabel :: l -> l -> l
+    jointLabel :: (l, l) -> l

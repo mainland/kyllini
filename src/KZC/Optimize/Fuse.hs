@@ -61,6 +61,8 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
+type Joint l = (l, l)
+
 data FEnv l = FEnv
     { kont      :: !l         -- Current continuation label
     , leftLoop  :: !(Maybe l) -- Label of left loop head
@@ -75,7 +77,7 @@ defaultFEnv = do
                 , rightLoop = Nothing
                 }
 
-newtype FState l = FState { seen :: Set (l, l) }
+newtype FState l = FState { seen :: Set (Joint l) }
 
 defaultFState :: IsLabel l => FState l
 defaultFState = FState mempty
@@ -99,14 +101,14 @@ instance Pretty FusionStats where
         text "Fusion failures:" <+> ppr (fusionFailures stats)
 
 newtype F l m a = F { unF :: ReaderT (FEnv l)
-                               (WriterT (Seq (Step (l, l)))
+                               (WriterT (Seq (Step (Joint l)))
                                  (StateT (FState l)
                                    (SEFKT (StateT FusionStats m)))) a }
     deriving (Functor, Applicative, Monad,
               Alternative, MonadPlus,
               MonadIO,
               MonadReader (FEnv l),
-              MonadWriter (Seq (Step (l, l))),
+              MonadWriter (Seq (Step (Joint l))),
               MonadState (FState l),
               MonadException,
               MonadUnique,
@@ -140,19 +142,25 @@ stepsLabel []                    = currentKont
 stepsLabel (RepeatC _ _ c _ : _) = stepsLabel (unComp c)
 stepsLabel (step : _)            = stepLabel step
 
-jointStep :: (IsLabel l, MonadTc m) => Step (l, l) -> F l m ()
+joint :: (IsLabel l, MonadTc m)
+      => [Step l]
+      -> [Step l]
+      -> F l m (Joint l)
+joint lss rss = (,) <$> stepsLabel lss <*> stepsLabel rss
+
+jointStep :: (IsLabel l, MonadTc m) => Step (Joint l) -> F l m ()
 jointStep step = do
     l <- stepLabel step
     recordLabel l
     tell (Seq.singleton step)
 
-collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (l, l)])
+collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
 collectSteps m =
     censor (const mempty) $ do
     (x, steps) <- listen m
     return (x, toList steps)
 
-repeatLabel :: forall l m . MonadTc m => F l m (Maybe (l, l))
+repeatLabel :: forall l m . MonadTc m => F l m (Maybe (Joint l))
 repeatLabel = do
     maybe_left  <- asks leftLoop
     maybe_right <- asks rightLoop
@@ -201,11 +209,11 @@ rightRepeat lss rss =
     runRight lss rss
 
 sawLabel :: (IsLabel l, MonadTc m)
-         => (l, l) -> F l m Bool
+         => Joint l -> F l m Bool
 sawLabel l = gets (Set.member l . seen)
 
 recordLabel :: (IsLabel l, MonadTc m)
-            => (l, l) -> F l m ()
+            => Joint l -> F l m ()
 recordLabel l = modify $ \s -> s { seen = Set.insert l (seen s) }
 
 getStats :: MonadTc m => F l m FusionStats
@@ -287,7 +295,7 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> F l m (Comp l)
 fuse left right = do
     (_, rss') <- collectSteps $ runRight (unComp left) (unComp right)
-    return $ uncurry pairLabel <$> mkComp rss'
+    return $ jointLabel <$> mkComp rss'
 
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
@@ -301,7 +309,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
   where
     joinIf :: F l m [Step l]
     joinIf = do
-        l'          <- jointLabel lss (rs:rss)
+        l'          <- joint lss (rs:rss)
         (lss1, c1') <- collectSteps $
                        withKont rss $
                        runRight lss (unComp c1)
@@ -314,7 +322,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l'       <- jointLabel lss (rs:rss)
+        l'       <- joint lss (rs:rss)
         (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
         (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
@@ -325,7 +333,7 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
   where
     joinWhile :: F l m [Step l]
     joinWhile = do
-        l'         <- jointLabel lss (rs:rss)
+        l'         <- joint lss (rs:rss)
         (lss', c') <- collectSteps $
                       withKont rss $
                       runRight lss (unComp c)
@@ -345,7 +353,7 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
   where
     joinFor :: F l m [Step l]
     joinFor = do
-        l'            <- jointLabel lss (rs:rss)
+        l'            <- joint lss (rs:rss)
         (lss', steps) <- collectSteps $
                          withKont rss $
                          runRight lss (unComp c)
@@ -372,7 +380,7 @@ runRight _lss (ParC {} : _rss) =
     nestedPar
 
 runRight lss (rs:rss) = do
-    l' <- jointLabel lss (rs:rss)
+    l' <- joint lss (rs:rss)
     relabelStep l' rs $
       runRight lss rss
 
@@ -388,7 +396,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
   where
     joinIf :: F l m [Step l]
     joinIf = do
-        l'          <- jointLabel (ls:lss) rss
+        l'          <- joint (ls:lss) rss
         (rss1, c1') <- collectSteps $
                        withKont lss $
                        runLeft (unComp c1) rss
@@ -401,7 +409,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l'       <- jointLabel (ls:lss) rss
+        l'       <- joint (ls:lss) rss
         (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
         (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
@@ -412,7 +420,7 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
   where
     joinWhile :: F l m [Step l]
     joinWhile = do
-        l'         <- jointLabel (ls:lss) rss
+        l'         <- joint (ls:lss) rss
         (rss', c') <- collectSteps $
                       withKont lss $
                       runLeft (unComp c) rss
@@ -436,7 +444,7 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
   where
     joinFor :: F l m [Step l]
     joinFor = do
-        l'            <- jointLabel (ls:lss) rss
+        l'            <- joint (ls:lss) rss
         (rss', steps) <- collectSteps $
                          withKont lss $
                          runLeft (unComp c) rss
@@ -497,16 +505,9 @@ runLeft (ParC {} : _lss) _rss =
     nestedPar
 
 runLeft (ls:lss) rss = do
-    l' <- jointLabel (ls:lss) rss
+    l' <- joint (ls:lss) rss
     relabelStep l' ls $
       runLeft lss rss
-
-jointLabel :: (IsLabel l, MonadTc m)
-           => [Step l]
-           -> [Step l]
-           -> F l m (l, l)
-jointLabel lss rss =
-    (,) <$> stepsLabel lss <*> stepsLabel rss
 
 -- | Run the right side of a par when we've hit a emit/take combination.
 emitTake :: forall l m . (IsLabel l, MonadTc m)
@@ -587,7 +588,7 @@ recoverRepeat comp =
         return $ RepeatC l AutoVect c (srclocOf c)
 
 relabelStep :: (IsLabel l, MonadTc m)
-            => (l, l)
+            => Joint l
             -> Step l
             -> F l m a
             -> F l m a
