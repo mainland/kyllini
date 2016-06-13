@@ -287,10 +287,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           -- consumer? Because >>> is left-associative, so we hopefully avoid
           -- repeated re-naming of binders by renaming the consumer.
           right :: Comp l
-          right = unquify right0
-
-          unquify :: Subst Exp Var a => a -> a
-          unquify = subst (mempty :: Map Var Exp) (allVars left :: Set Var)
+          right = alphaRename (allVars left) right0
 
   stepsT steps =
       transSteps steps
@@ -548,6 +545,10 @@ unrollingFor = do
     unless doUnroll $ do
         traceFusion $ text "Encountered diverging loop during fusion."
         mzero
+
+-- | Alpha-rename binders given an in-scope set of binders.
+alphaRename :: Subst Exp Var a => Set Var -> a -> a
+alphaRename = subst (mempty :: Map Var Exp)
 
 knownArraySize :: MonadTc m => Type -> F l m Int
 knownArraySize tau = do
