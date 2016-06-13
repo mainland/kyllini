@@ -506,13 +506,8 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
         fusionFailed
         mzero
 
-runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
-    whenNotBeenThere rss l' $ do
-      jointStep $ ReturnC l' e s1
-      runRight (dropBind lss) rss
-  where
-    l' :: (l, l)
-    l' = (l_left, l_right)
+runLeft (EmitC _ e _ : lss) (TakeC{} : rss) =
+    emitTake e lss rss
 
 runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
     traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
@@ -522,47 +517,31 @@ runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
 runLeft (EmitC {} : _) _ =
     faildoc $ text "emit paired with non-take."
 
-runLeft (EmitsC l_left e s1 : lss) (rs@(TakeC l_right _tau _s2) : rss) =
-    whenNotBeenThere rss l' $ do
-      -- We can only fuse an emits and a take when we statically know the
-      -- size of the array being emitted.
-      n <- inferExp e >>= knownArraySize
-      if n == 1
-        then emits1Take
-        else emitsNTake n
+runLeft (EmitsC _ e _ : lss) (rs@TakeC{} : rss) = do
+    -- We can only fuse an emits and a take when we statically know the
+    -- size of the array being emitted.
+    n <- inferExp e >>= knownArraySize
+    if n == 1
+      then emitTake (idxE e 0) lss rss
+      else emitsNTake n
   where
-    -- If we are emitting an array with only one element, fusion is trivial.
-    emits1Take :: F l m [Step l]
-    emits1Take = do
-        jointStep $ ReturnC l' (idxE e 0) s1
-        runRight (dropBind lss) rss
-
     -- If we are emitting an array with more than one element, we rewrite
     -- the emits as a for loop that yields each element of the array one by
     -- one and try to fuse the rewritten computation.
     emitsNTake :: Int -> F l m [Step l]
     emitsNTake n = do
         body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
-        runLeft (unComp body ++ dropBind lss) (rs : rss)
+        runLeft (unComp body ++ lss) (rs : rss)
 
-    l' :: (l, l)
-    l' = (l_left, l_right)
-
-runLeft (EmitsC l_left e s1 : lss)
-        (rstep@(TakesC l_right n_right _tau _s2) : rss) =
-    whenNotBeenThere rss l' $ do
-      n_left <- inferExp e >>= knownArraySize
-      when (n_left /= n_right) $ do
-          (iota, _) <- inferExp e >>= checkArrT
-          traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
-                        ppr rstep
-          fusionFailed
-          mzero
-      jointStep $ ReturnC l' e s1
-      runRight (dropBind lss) rss
-  where
-    l' :: (l, l)
-    l' = (l_left, l_right)
+runLeft (EmitsC _ e _ : lss) (rs@(TakesC _ n' _ _) : rss) = do
+    n <- inferExp e >>= knownArraySize
+    when (n' /= n) $ do
+        (iota, _) <- inferExp e >>= checkArrT
+        traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
+                      ppr rs
+        fusionFailed
+        mzero
+    emitTake e lss rss
 
 runLeft (EmitsC {} : _) _ =
     faildoc $ text "emits paired with non-take."
@@ -605,9 +584,19 @@ jointRepeatLabel lss rss =
     ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
     ffLabel (step : _)            = stepLabel step
 
-dropBind :: [Step l] -> [Step l]
-dropBind (BindC {} : ss) = ss
-dropBind ss              = ss
+-- | Run the right side of a par when we've hit a emit/take combination.
+emitTake :: forall l m . (IsLabel l, MonadTc m)
+         => Exp
+         -> [Step l]
+         -> [Step l]
+         -> F l m [Step l]
+emitTake e lss rss =
+    runRight (bind unitE lss) (bind e rss)
+  where
+    bind :: Exp -> [Step l] -> [Step l]
+    bind _e (BindC _l WildV    _tau _ : ss) = ss
+    bind  e (BindC l (TameV v)  tau s : ss) = LetC l (LetLD v tau e s) s : ss
+    bind _e                             ss  = ss
 
 -- | Indicate that a nested par was encountered during fusion.
 nestedPar :: MonadTc m => F l m a
