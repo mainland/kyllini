@@ -26,4 +26,7 @@ class ( Ord l
       , Gensym l
       , Fvs l l
       , Subst l l l ) => IsLabel l where
+    -- | Produced a label indexed by the value of a (for) loop index variable.
+    indexLabel :: Int -> l -> l
+    -- | Produce a joint label for a fused computational step.
     jointLabel :: (l, l) -> l
