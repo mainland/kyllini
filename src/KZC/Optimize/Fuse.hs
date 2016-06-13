@@ -362,10 +362,8 @@ fuse left right klabel = do
         (lss', ss) <- runRight lss (unComp c ++ rss)
         recoverRepeat l ann l_repeat lss' ss
 
-    runRight _lss (ParC {} : _rss) = do
-        traceFusion $ text "Saw nested par in producer during par fusion."
-        fusionFailed
-        mzero
+    runRight _lss (ParC {} : _rss) =
+        nestedPar
 
     runRight lss (rs:rss) = do
         l' <- jointLabel lss (rs:rss)
@@ -515,10 +513,8 @@ fuse left right klabel = do
         (rss', ss) <- runLeft (unComp c ++ lss) rss
         recoverRepeat l ann l_repeat rss' ss
 
-    runLeft (ParC {} : _lss) _rss = do
-        traceFusion $ text "Saw nested par in producer during par fusion."
-        fusionFailed
-        mzero
+    runLeft (ParC {} : _lss) _rss =
+        nestedPar
 
     runLeft (ls:lss) rss = do
         l' <- jointLabel (ls:lss) rss
@@ -551,6 +547,13 @@ fuse left right klabel = do
 dropBind :: [Step l] -> [Step l]
 dropBind (BindC {} : ss) = ss
 dropBind ss              = ss
+
+-- | Indicate that a nested par was encountered during fusion.
+nestedPar :: MonadTc m => F l m a
+nestedPar = do
+    traceFusion $ text "Saw nested par in producer during par fusion."
+    fusionFailed
+    mzero
 
 knownArraySize :: MonadTc m => Type -> F l m Int
 knownArraySize tau = do
