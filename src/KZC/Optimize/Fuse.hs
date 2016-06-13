@@ -273,7 +273,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           comp <- withKont steps $
                   fuse left right >>=
                   recoverRepeat >>=
-                  setFirstLabel l >>=
+                  return . setCompLabel l >>=
                   simplComp
           parFused
           traceFusion $ text "Fused" <+>
@@ -291,11 +291,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
 
           unquify :: Subst Exp Var a => a -> a
           unquify = subst (mempty :: Map Var Exp) (allVars left :: Set Var)
-
-          setFirstLabel :: l -> Comp l -> F l m (Comp l)
-          setFirstLabel l' comp = do
-              l <- compLabel comp
-              return $ subst1 (l /-> l') comp
 
   stepsT steps =
       transSteps steps
