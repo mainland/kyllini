@@ -608,14 +608,13 @@ unrollingFor = do
 alphaRename :: Subst Exp Var a => Set Var -> a -> a
 alphaRename = subst (mempty :: Map Var Exp)
 
-knownArraySize :: MonadTc m => Type -> F l m Int
+-- | Return the given array type's size, which must be statically known.
+knownArraySize :: MonadTc m => Type -> m Int
 knownArraySize tau = do
     (iota, _) <- checkArrT tau
     case iota of
       ConstI n _ -> return n
-      _          -> do traceFusion $ text "Unknown array size"
-                       fusionFailed
-                       mzero
+      _          -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.
 tryFromIntE :: (MonadPlus m, MonadTrace m) => Exp -> m Int
