@@ -265,6 +265,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
     where
       fusePar :: Comp l -> Comp l -> F l m [Step l]
       fusePar left right0 = do
+          traceFusion $ text "Attempting to fuse" <+>
+              text "producer:" </> indent 2 (ppr left) </>
+              text "and consumer:" </> indent 2 (ppr right)
           l    <- compLabel right0
           comp <- withKont steps $
                   fuse left right >>=
