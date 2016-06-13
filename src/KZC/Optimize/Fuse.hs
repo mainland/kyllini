@@ -356,7 +356,7 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
         mzero
 
 -- See the comment in the ForC case for runLeft.
-runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
+runRight lss (rs@(ForC _ ann v tau e1 e2 c s) : rss) =
     ifte joinFor
          (const $ runRight lss rss)
          divergeFor
@@ -368,7 +368,7 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
                          withKont rss $
                          runRight lss (unComp c)
         guardConvergence lss lss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -376,16 +376,16 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
         fusionFailed
         mzero
 
-runRight lss rss@(TakeC {} : _) =
+runRight lss rss@(TakeC{} : _) =
     runLeft lss rss
 
-runRight lss rss@(TakesC {} : _) =
+runRight lss rss@(TakesC{} : _) =
     runLeft lss rss
 
 runRight lss rss@(RepeatC _ _ c _ : _) =
     rightRepeat lss (unComp c ++ rss)
 
-runRight _lss (ParC {} : _rss) =
+runRight _lss (ParC{} : _rss) =
     nestedPar
 
 runRight lss (rs:rss) = do
@@ -451,7 +451,7 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
 -- computation, that means we can easily construct a new for loop whose body
 -- is the body of the producer's for loop merged with the consumer. This
 -- typically works when the consumer is a repeated computation.
-runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
+runLeft (ls@(ForC _ ann v tau e1 e2 c s) : lss) rss =
     ifte joinFor
          (const $ runLeft lss rss)
          divergeFor
@@ -463,7 +463,7 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
                          withKont lss $
                          runLeft (unComp c) rss
         guardConvergence rss rss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -474,12 +474,12 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
 runLeft (EmitC _ e _ : lss) (TakeC{} : rss) =
     emitTake e lss rss
 
-runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
-    traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
+runLeft (ls@EmitC{} : _) (rs@TakesC{} : _) = do
+    traceFusion $ ppr ls <+> text "paired with" <+> ppr rs
     fusionFailed
     mzero
 
-runLeft (EmitC {} : _) _ =
+runLeft (EmitC{} : _) _ =
     faildoc $ text "emit paired with non-take."
 
 runLeft (EmitsC _ e _ : lss) (rs@TakeC{} : rss) = do
@@ -496,7 +496,7 @@ runLeft (EmitsC _ e _ : lss) (rs@TakeC{} : rss) = do
     emitsNTake :: Int -> F l m [Step l]
     emitsNTake n = do
         body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
-        runLeft (unComp body ++ lss) (rs : rss)
+        runLeft (unComp body ++ lss) (rs:rss)
 
 runLeft (EmitsC _ e _ : lss) (rs@(TakesC _ n' _ _) : rss) = do
     n <- inferExp e >>= knownArraySize
@@ -508,13 +508,13 @@ runLeft (EmitsC _ e _ : lss) (rs@(TakesC _ n' _ _) : rss) = do
         mzero
     emitTake e lss rss
 
-runLeft (EmitsC {} : _) _ =
+runLeft (EmitsC{} : _) _ =
     faildoc $ text "emits paired with non-take."
 
 runLeft lss@(RepeatC _ _ c _ : _) rss =
     leftRepeat (unComp c ++ lss) rss
 
-runLeft (ParC {} : _lss) _rss =
+runLeft (ParC{} : _lss) _rss =
     nestedPar
 
 runLeft (ls:lss) rss = do
