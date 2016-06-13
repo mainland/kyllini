@@ -323,7 +323,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
         (lss2, c2') <- collectSteps $
                        withKont rss $
                        runRight lss (unComp c2)
-        guard (lss2 == lss1)
+        guardConvergence lss1 lss2
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return lss1
 
@@ -346,7 +346,7 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
         (lss', c') <- collectSteps $
                       withKont rss $
                       runRight lss (unComp c)
-        guard (lss' == lss)
+        guardConvergence lss lss'
         jointStep $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
@@ -367,7 +367,7 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
         (lss', steps) <- collectSteps $
                          withKont rss $
                          runRight lss (unComp c)
-        guard (lss' == lss)
+        guardConvergence lss lss'
         jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
 
     divergeFor :: F l m [Step l]
@@ -414,7 +414,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
         (rss2, c2') <- collectSteps $
                        withKont lss $
                        runLeft (unComp c2) rss
-        guard (rss2 == rss1)
+        guardConvergence rss1 rss2
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return rss1
 
@@ -437,7 +437,7 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
         (rss', c') <- collectSteps $
                       withKont lss $
                       runLeft (unComp c) rss
-        guard (rss' == rss)
+        guardConvergence rss rss'
         jointStep $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
@@ -462,7 +462,7 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
         (rss', steps) <- collectSteps $
                          withKont lss $
                          runLeft (unComp c) rss
-        guard (rss' == rss)
+        guardConvergence rss rss'
         jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
 
     divergeFor :: F l m [Step l]
@@ -551,6 +551,30 @@ knownArraySize tau = do
       _          -> do traceFusion $ text "Unknown array size"
                        fusionFailed
                        mzero
+
+{- Note [Convergence]
+
+When fusing loops and if-the-else computations, we test for convergence of the
+"other" side of the par we're fusing. For example, we test that the two branches
+of an if, when run, end up at the same point in the computation on the other
+side of the par. Similarly, we test that the body of a loop ends up at the same
+point in the other side of the computation as it started---if so, we can
+directly output a loop as part of the fused computation.
+
+We used to test for equality of the two computations, but now we just test for
+the equality of their label.
+-}
+
+-- | Guard the convergence of two branches of computation.
+guardConvergence :: (IsLabel l, MonadPlus m)
+                 => [Step l]
+                 -> [Step l]
+                 -> m ()
+guardConvergence ss ss' = guard (stepsLabel ss' == stepsLabel ss)
+  where
+    stepsLabel :: [Step l] -> Maybe l
+    stepsLabel []       = Nothing
+    stepsLabel (step:_) = stepLabel step
 
 {- Note [Fusing Repeat]
 
