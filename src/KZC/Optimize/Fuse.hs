@@ -61,10 +61,19 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
-data FEnv l = FEnv { kont :: l }
+data FEnv l = FEnv
+    { kont      :: !l         -- Current continuation label
+    , leftLoop  :: !(Maybe l) -- Label of left loop head
+    , rightLoop :: !(Maybe l) -- Label of right loop head
+    }
 
-defaultFEnv :: FEnv l
-defaultFEnv = FEnv { kont = error "no continuation label" }
+defaultFEnv :: (IsLabel l, MonadUnique m) => m (FEnv l)
+defaultFEnv = do
+    l <- gensym "end"
+    return FEnv { kont      = l
+                , leftLoop  = Nothing
+                , rightLoop = Nothing
+                }
 
 newtype FState l = FState { seen :: Set (l, l) }
 
@@ -106,44 +115,90 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadTrace,
               MonadTc)
 
-runF :: forall l m a . (IsLabel l, MonadErr m)
+runF :: forall l m a . (IsLabel l, MonadTc m)
      => F l m a
      -> m a
-runF m = fst <$> evalStateT
-                   (runSEFKT
-                     (evalStateT
-                       (runWriterT
-                         (runReaderT (unF m) defaultFEnv))
-                       defaultFState))
-                   mempty
+runF m = do
+  env <- defaultFEnv
+  fst <$> evalStateT (runSEFKT
+                       (evalStateT
+                         (runWriterT
+                           (runReaderT (unF m) env))
+                         defaultFState))
+                     mempty
 
 withKont :: (IsLabel l, MonadTc m) => [Step l] -> F l m a -> F l m a
-withKont [] m = do
-    klabel <- gensym "end"
-    local (\env -> env { kont = klabel }) m
-
-withKont (step:_) m = do
-    klabel <- stepLabel step
+withKont steps m = do
+    klabel <- stepsLabel steps
     local (\env -> env { kont = klabel }) m
 
 currentKont :: MonadTc m => F l m l
 currentKont = asks kont
 
 stepsLabel :: MonadTc m => [Step l] -> F l m l
-stepsLabel []         = currentKont
-stepsLabel (step : _) = stepLabel step
+stepsLabel []                    = currentKont
+stepsLabel (RepeatC _ _ c _ : _) = stepsLabel (unComp c)
+stepsLabel (step : _)            = stepLabel step
 
 jointStep :: (IsLabel l, MonadTc m) => Step (l, l) -> F l m ()
-jointStep step = tell (Seq.singleton step)
-
-jointSteps :: (IsLabel l, MonadTc m) => [Step (l, l)] -> F l m ()
-jointSteps steps = tell (Seq.fromList steps)
+jointStep step = do
+    l <- stepLabel step
+    recordLabel l
+    tell (Seq.singleton step)
 
 collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (l, l)])
 collectSteps m =
     censor (const mempty) $ do
     (x, steps) <- listen m
     return (x, toList steps)
+
+repeatLabel :: forall l m . MonadTc m => F l m (Maybe (l, l))
+repeatLabel = do
+    maybe_left  <- asks leftLoop
+    maybe_right <- asks rightLoop
+    case (maybe_left, maybe_right) of
+      (Just left, Just right) -> return $ Just (left, right)
+      _                       -> return Nothing
+
+runRepeat :: forall l m . (IsLabel l, MonadTc m)
+          => [Step l]
+          -> [Step l]
+          -> (l -> l -> F l m [Step l])
+          -> F l m [Step l]
+runRepeat lss rss k = do
+    l_repeat    <- repeatLabel
+    l_left      <- stepsLabel lss
+    l_right     <- stepsLabel rss
+    let l_joint =  (l_left, l_right)
+    saw         <- sawLabel l_joint
+    if saw
+      then do when (l_repeat /= Just l_joint) $ do
+                traceFusion $ text "Unaligned repeat loops"
+                fusionFailed
+                mzero
+              jointStep $ LoopC l_joint
+              return []
+      else do when (l_repeat == Just l_joint) $
+                modify $ \s -> s { seen = mempty }
+              k l_left l_right
+
+leftRepeat :: (IsLabel l, MonadTc m)
+           => [Step l]
+           -> [Step l]
+           -> F l m [Step l]
+leftRepeat lss rss =
+    runRepeat lss rss $ \l_left _ ->
+    local (\env -> env { leftLoop = Just l_left }) $
+    runLeft lss rss
+
+rightRepeat :: (IsLabel l, MonadTc m)
+            => [Step l]
+            -> [Step l]
+            -> F l m [Step l]
+rightRepeat lss rss =
+    runRepeat lss rss $ \_ l_right ->
+    local (\env -> env { rightLoop = Just l_right }) $
+    runRight lss rss
 
 sawLabel :: (IsLabel l, MonadTc m)
          => (l, l) -> F l m Bool
@@ -199,6 +254,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           l    <- compLabel right0
           comp <- withKont steps $
                   fuse left right >>=
+                  recoverRepeat >>=
                   setFirstLabel l
           parFused
           traceFusion $ text "Fused" <+>
@@ -225,83 +281,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
   stepsT steps =
       transSteps steps
 
-{- Note [Fusing Repeat]
-
-We fuse repeat by unrolling the loop on demand until we reach a joint state that
-we have already been in. When we reach a state we have already seen,
-@whenNotBeenThere@ will insert a @LoopC@ command, labeled with the repeated
-state---this is currently the only way a @LoopC@ command can be introduced.
-
-Who will consume, i.e., remove, the @LoopC@? Whoever initiated the repeat
-should. The originator of the repeat can tell if the fused stream of
-computations it gets back is a repeat because it will end in a @LoopC@ with an
-appropriate label.
-
-There is one catch: we /could/ be fusing two repeat loops. Consider the
-following example, which actually shows up, e.g., when inserting automatic
-casts:
-
-    repeat { x <- take; emit x)
-    >>>
-    repeat { x <- take; emit x)
-
-Here's what happens when we see this example: we will run the consumer, unroll
-the repeat, immediately see a take, and run the producer. The producer will
-unroll the repeat, emit, and then run the consumer. The consumer emits, then
-unrolls again and immediately runs the producer because it hits a take. The
-producer unrolls, and hits its take, and it is now in a joint state it has
-already been in, since we have run each loop once. The producer immediately see
-a result consisting of a single @LoopC@ generated by 'whenNotBeenThere' /and no
-other computations/. Furthermore, it has the right joint label, and the producer
-was indeed executing a repeat! However, we need to pass the sequence of steps
-back to the producer so it can detect the real loop.
-
-Note that the only time we end up with this singleton @LoopC@ step is when we
-are fusing repeats, thus the ugly @isNonEmptyRepeatLoop test@ in runRepeat.
--}
-
-recoverRepeat :: forall l m . (IsLabel l, MonadTc m)
-              => (l, l)         -- ^ The label to be used for the resulting
-                                -- repeat
-              -> VectAnn        -- ^ Annotation for the resulting repeat
-              -> (l, l)         -- ^ Label of the loop header
-              -> F l m [Step l] -- ^ Body of the repeat
-              -> F l m [Step l] -- ^ Remaining steps or the other side of the
-                                -- par.
-recoverRepeat l ann l_repeat k =do
-    (ss_other, ss) <- collectSteps k
-    if isNonEmptyRepeatLoop ss
-      then jointStep $ mkRepeat (init ss)
-      else jointSteps ss
-    return ss_other
-  where
-    mkRepeat :: [Step (l, l)] -> Step (l, l)
-    mkRepeat steps = RepeatC l ann (mkComp steps) (srclocOf steps)
-
-    isNonEmptyRepeatLoop :: [Step (l, l)] -> Bool
-    isNonEmptyRepeatLoop steps =
-        length steps > 1 && last steps == LoopC l_repeat
-
--- | Given a list of computation steps for the "other" side of the
--- producer/consumer loop and a label, @l@, for the current joint
--- producer/consumer state, see if we have been in the current state before. If
--- we have, return the remaining "other" side of the computation and the single
--- step @'LoopC' l@, which indicates that we have encountered a loop. Otherwise,
--- record the fact that we have seen the label @l@ and call our
--- continuation. The function 'whenNotBeenThere' is the only way a 'LoopC' step
--- can be introduced into a computation. It will be removed by 'recoverRepeat'.
-whenNotBeenThere :: (IsLabel l, MonadTc m)
-                 => [Step l]
-                 -> (l, l)
-                 -> F l m [Step l]
-                 -> F l m [Step l]
-whenNotBeenThere ss l k = do
-    beenThere <- sawLabel l
-    if beenThere
-      then do jointStep $ LoopC l
-              return ss
-      else recordLabel l >> k
-
 fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l         -- ^ Left computation
      -> Comp l         -- ^ Right computation
@@ -314,29 +293,6 @@ runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
          -> [Step l]
          -> F l m [Step l]
--- We want to go ahead and run all "free" left steps so that they have
--- already been executed when we look for confluence. Consider:
---
--- { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
---
--- We want to be at the left computation's repeat head when we fuse pars so
--- that the trace will align when we fuse the repeats.
---
-runRight (ls:lss) rss | isFreeLeftStep ls = do
-    l' <- jointLabel (ls:lss) rss
-    whenNotBeenThere rss l' $
-      relabelStep l' ls $
-      runRight lss rss
-  where
-    -- | A "free" left step is one we can go ahead and run even if the
-    -- right-hand side has not yet reached a take action.
-    isFreeLeftStep :: Step l -> Bool
-    isFreeLeftStep LetC{}    = True
-    isFreeLeftStep LiftC{}   = True
-    isFreeLeftStep ReturnC{} = True
-    isFreeLeftStep BindC{}   = True
-    isFreeLeftStep _         = False
-
 runRight lss [] =
     return lss
 
@@ -345,40 +301,37 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
   where
     joinIf :: F l m [Step l]
     joinIf = do
-        l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-          (lss1, c1') <- collectSteps $
-                         withKont rss $
-                         runRight lss (unComp c1)
-          (lss2, c2') <- collectSteps $
-                         withKont rss $
-                         runRight lss (unComp c2)
-          guard (lss2 == lss1)
-          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-          runRight lss1 rss
+        l'          <- jointLabel lss (rs:rss)
+        (lss1, c1') <- collectSteps $
+                       withKont rss $
+                       runRight lss (unComp c1)
+        (lss2, c2') <- collectSteps $
+                       withKont rss $
+                       runRight lss (unComp c2)
+        guard (lss2 == lss1)
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+        runRight lss1 rss
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-          (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
-          (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
-          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-          return []
+        l'       <- jointLabel lss (rs:rss)
+        (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
+        (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+        return []
 
 runRight lss (rs@(WhileC _l e c s) : rss) =
     joinWhile `mplus` divergeWhile
   where
     joinWhile :: F l m [Step l]
     joinWhile = do
-        l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-          (lss', c') <- collectSteps $
-                        withKont rss $
-                        runRight lss (unComp c)
-          guard (lss' == lss)
-          jointStep $ WhileC l' e (mkComp c') s
-          runRight lss rss
+        l'         <- jointLabel lss (rs:rss)
+        (lss', c') <- collectSteps $
+                      withKont rss $
+                      runRight lss (unComp c)
+        guard (lss' == lss)
+        jointStep $ WhileC l' e (mkComp c') s
+        runRight lss rss
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -392,14 +345,13 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
   where
     joinFor :: F l m [Step l]
     joinFor = do
-        l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $ do
-          (lss', steps) <- collectSteps $
-                           withKont rss $
-                           runRight lss (unComp c)
-          guard (lss' == lss)
-          jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-          runRight lss rss
+        l'            <- jointLabel lss (rs:rss)
+        (lss', steps) <- collectSteps $
+                         withKont rss $
+                         runRight lss (unComp c)
+        guard (lss' == lss)
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+        runRight lss rss
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -413,19 +365,15 @@ runRight lss rss@(TakeC {} : _) =
 runRight lss rss@(TakesC {} : _) =
     runLeft lss rss
 
-runRight lss rss@(RepeatC _ ann c _s : _) = do
-    l          <- jointLabel lss rss
-    l_repeat   <- jointRepeatLabel lss rss
-    recoverRepeat l ann l_repeat $
-      runRight lss (unComp c ++ rss)
+runRight lss rss@(RepeatC _ _ c _ : _) =
+    rightRepeat lss (unComp c ++ rss)
 
 runRight _lss (ParC {} : _rss) =
     nestedPar
 
 runRight lss (rs:rss) = do
     l' <- jointLabel lss (rs:rss)
-    whenNotBeenThere lss l' $
-      relabelStep l' rs $
+    relabelStep l' rs $
       runRight lss rss
 
 runLeft :: forall l m . (IsLabel l, MonadTc m)
@@ -440,40 +388,37 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
   where
     joinIf :: F l m [Step l]
     joinIf = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-          (rss1, c1') <- collectSteps $
-                         withKont lss $
-                         runLeft (unComp c1) rss
-          (rss2, c2') <- collectSteps $
-                         withKont lss $
-                         runLeft (unComp c2) rss
-          guard (rss2 == rss1)
-          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-          runLeft lss rss1
+        l'          <- jointLabel (ls:lss) rss
+        (rss1, c1') <- collectSteps $
+                       withKont lss $
+                       runLeft (unComp c1) rss
+        (rss2, c2') <- collectSteps $
+                       withKont lss $
+                       runLeft (unComp c2) rss
+        guard (rss2 == rss1)
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+        runLeft lss rss1
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-          (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
-          (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
-          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-          return []
+        l'       <- jointLabel (ls:lss) rss
+        (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
+        (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+        return []
 
 runLeft (ls@(WhileC _l e c s) : lss) rss =
     joinWhile `mplus` divergeWhile
   where
     joinWhile :: F l m [Step l]
     joinWhile = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-          (rss', c') <- collectSteps $
-                        withKont lss $
-                        runLeft (unComp c) rss
-          guard (rss' == rss)
-          jointStep $ WhileC l' e (mkComp c') s
-          runLeft lss rss
+        l'         <- jointLabel (ls:lss) rss
+        (rss', c') <- collectSteps $
+                      withKont lss $
+                      runLeft (unComp c) rss
+        guard (rss' == rss)
+        jointStep $ WhileC l' e (mkComp c') s
+        runLeft lss rss
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -491,14 +436,13 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
   where
     joinFor :: F l m [Step l]
     joinFor = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $ do
-          (rss', steps) <- collectSteps $
-                           withKont lss $
-                           runLeft (unComp c) rss
-          guard (rss' == rss)
-          jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-          runRight lss rss
+        l'            <- jointLabel (ls:lss) rss
+        (rss', steps) <- collectSteps $
+                         withKont lss $
+                         runLeft (unComp c) rss
+        guard (rss' == rss)
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+        runRight lss rss
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -546,19 +490,15 @@ runLeft (EmitsC _ e _ : lss) (rs@(TakesC _ n' _ _) : rss) = do
 runLeft (EmitsC {} : _) _ =
     faildoc $ text "emits paired with non-take."
 
-runLeft lss@(RepeatC _ ann c _s : _) rss = do
-    l        <- jointLabel lss rss
-    l_repeat <- jointRepeatLabel lss rss
-    recoverRepeat l ann l_repeat $
-      runLeft (unComp c ++ lss) rss
+runLeft lss@(RepeatC _ _ c _ : _) rss =
+    leftRepeat (unComp c ++ lss) rss
 
 runLeft (ParC {} : _lss) _rss =
     nestedPar
 
 runLeft (ls:lss) rss = do
     l' <- jointLabel (ls:lss) rss
-    whenNotBeenThere rss l' $
-      relabelStep l' ls $
+    relabelStep l' ls $
       runLeft lss rss
 
 jointLabel :: (IsLabel l, MonadTc m)
@@ -567,22 +507,6 @@ jointLabel :: (IsLabel l, MonadTc m)
            -> F l m (l, l)
 jointLabel lss rss =
     (,) <$> stepsLabel lss <*> stepsLabel rss
-
--- | Calculate a joint label for two computations where one or both are
--- repeat loops. Since we unroll repeats during fusion, the "loop header"
--- state we are looking for is found by "fast-forwarding" past the repeat
--- state.
-jointRepeatLabel :: forall l m . (IsLabel l, MonadTc m)
-                 => [Step l]
-                 -> [Step l]
-                 -> F l m (l, l)
-jointRepeatLabel lss rss =
-    (,) <$> ffLabel lss <*> ffLabel rss
-  where
-    ffLabel :: [Step l] -> F l m l
-    ffLabel []                    = currentKont
-    ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
-    ffLabel (step : _)            = stepLabel step
 
 -- | Run the right side of a par when we've hit a emit/take combination.
 emitTake :: forall l m . (IsLabel l, MonadTc m)
@@ -613,6 +537,54 @@ knownArraySize tau = do
       _          -> do traceFusion $ text "Unknown array size"
                        fusionFailed
                        mzero
+
+{- Note [Fusing Repeat]
+
+We fuse repeat by unrolling the repeat loop on demand.
+
+The only time that fusion will produce a repeat loop is when both sides of the
+par are repeats. We detect a loop by keeping track of the labels of all fused
+steps that have been produced so far and inserting a `LoopC` construct when we
+encounter a step we have seen before *and* we are in a state where both the left
+and right sides of the par are at a loop header.
+
+We need to make sure that both computations are at a loop header because
+otherwise we can end up in a situation where the fused loop starts halfway
+through the body of one of the two loops being fused, meaning the binders that
+occurred earlier in the loop body are not valid!
+
+The `LoopC` will be removed by `recoverRepeat`, which we use to process every
+fused computation. Because a repeat must be a terminal computation, i.e.,
+nothing can come after it, a `LoopC` will only ever be present at the end of a
+fused computation. This makes it easy to find and turn into a new, fused repeat
+construct.
+-}
+
+recoverRepeat :: forall l m . (IsLabel l, MonadUnique m)
+              => Comp l
+              -> m (Comp l)
+recoverRepeat comp =
+    case last steps of
+      LoopC l -> mkComp <$> recover l (init steps)
+      _       -> return $ mkComp steps
+  where
+    steps :: [Step l]
+    steps = unComp comp
+
+    recover :: l -> [Step l] -> m [Step l]
+    recover _ [] =
+        return []
+
+    recover l (step:steps) | stepLabel step == Just l =
+        (: []) <$> repeatC (mkComp (step:steps))
+
+    recover l (step:steps) =
+        (step :) <$> recover l steps
+
+    repeatC :: Comp l -> m (Step l)
+    repeatC c = do
+        l <- gensym "repeatk"
+        return $ RepeatC l AutoVect c (srclocOf c)
 
 relabelStep :: (IsLabel l, MonadTc m)
             => (l, l)
