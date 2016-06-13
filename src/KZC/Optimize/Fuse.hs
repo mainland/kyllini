@@ -309,6 +309,24 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
 fuse left right = do
     (_, rss') <- collectSteps $ runRight (unComp left) (unComp right)
     return $ uncurry pairLabel <$> mkComp rss'
+
+runRight :: forall l m . (IsLabel l, MonadTc m)
+         => [Step l]
+         -> [Step l]
+         -> F l m [Step l]
+-- We want to go ahead and run all "free" left steps so that they have
+-- already been executed when we look for confluence. Consider:
+--
+-- { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
+--
+-- We want to be at the left computation's repeat head when we fuse pars so
+-- that the trace will align when we fuse the repeats.
+--
+runRight (ls:lss) rss | isFreeLeftStep ls = do
+    l' <- jointLabel (ls:lss) rss
+    whenNotBeenThere rss l' $
+      relabelStep l' ls $
+      runRight lss rss
   where
     -- | A "free" left step is one we can go ahead and run even if the
     -- right-hand side has not yet reached a take action.
@@ -319,279 +337,273 @@ fuse left right = do
     isFreeLeftStep BindC{}   = True
     isFreeLeftStep _         = False
 
-    runRight :: [Step l] -> [Step l] -> F l m [Step l]
-    -- We want to go ahead and run all "free" left steps so that they have
-    -- already been executed when we look for confluence. Consider:
-    --
-    -- { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
-    --
-    -- We want to be at the left computation's repeat head when we fuse pars so
-    -- that the trace will align when we fuse the repeats.
-    --
-    runRight (ls:lss) rss | isFreeLeftStep ls = do
-        l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $
-          relabelStep l' ls $
-          runRight lss rss
+runRight lss [] =
+    return lss
 
-    runRight lss [] =
-        return lss
-
-    runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
-        joinIf `mplus` divergeIf
-      where
-        joinIf :: F l m [Step l]
-        joinIf = do
-            l' <- jointLabel lss (rs:rss)
-            whenNotBeenThere lss l' $ do
-              (lss1, c1') <- collectSteps $
-                             withKont rss $
-                             runRight lss (unComp c1)
-              (lss2, c2') <- collectSteps $
-                             withKont rss $
-                             runRight lss (unComp c2)
-              guard (lss2 == lss1)
-              jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-              runRight lss1 rss
-
-        divergeIf :: F l m [Step l]
-        divergeIf = do
-            l' <- jointLabel lss (rs:rss)
-            whenNotBeenThere lss l' $ do
-              (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
-              (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
-              jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-              return []
-
-    runRight lss (rs@(WhileC _l e c s) : rss) =
-        joinWhile `mplus` divergeWhile
-      where
-        joinWhile :: F l m [Step l]
-        joinWhile = do
-            l' <- jointLabel lss (rs:rss)
-            whenNotBeenThere lss l' $ do
-              (lss', c') <- collectSteps $
-                            withKont rss $ 
-                            runRight lss (unComp c)
-              guard (lss' == lss)
-              jointStep $ WhileC l' e (mkComp c') s
-              runRight lss rss
-
-        divergeWhile :: F l m [Step l]
-        divergeWhile = do
-            traceFusion $ text "Encountered diverging while in consumer"
-            fusionFailed
-            mzero
-
-    -- See the comment in the ForC case for runLeft.
-    runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
-        joinFor `mplus` divergeFor
-      where
-        joinFor :: F l m [Step l]
-        joinFor = do
-            l' <- jointLabel lss (rs:rss)
-            whenNotBeenThere lss l' $ do
-              (lss', steps) <- collectSteps $
-                               withKont rss $
-                               runRight lss (unComp c)
-              guard (lss' == lss)
-              jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-              runRight lss rss
-
-        divergeFor :: F l m [Step l]
-        divergeFor = do
-            traceFusion $ text "Encountered diverging for in consumer"
-            fusionFailed
-            mzero
-
-    runRight lss rss@(TakeC {} : _) =
-        runLeft lss rss
-
-    runRight lss rss@(TakesC {} : _) =
-        runLeft lss rss
-
-    runRight lss rss@(RepeatC _ ann c _s : _) = do
-        l          <- jointLabel lss rss
-        l_repeat   <- jointRepeatLabel lss rss
-        recoverRepeat l ann l_repeat $
-          runRight lss (unComp c ++ rss)
-
-    runRight _lss (ParC {} : _rss) =
-        nestedPar
-
-    runRight lss (rs:rss) = do
+runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
+    joinIf `mplus` divergeIf
+  where
+    joinIf :: F l m [Step l]
+    joinIf = do
         l' <- jointLabel lss (rs:rss)
-        whenNotBeenThere lss l' $
-          relabelStep l' rs $
+        whenNotBeenThere lss l' $ do
+          (lss1, c1') <- collectSteps $
+                         withKont rss $
+                         runRight lss (unComp c1)
+          (lss2, c2') <- collectSteps $
+                         withKont rss $
+                         runRight lss (unComp c2)
+          guard (lss2 == lss1)
+          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+          runRight lss1 rss
+
+    divergeIf :: F l m [Step l]
+    divergeIf = do
+        l' <- jointLabel lss (rs:rss)
+        whenNotBeenThere lss l' $ do
+          (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
+          (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
+          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+          return []
+
+runRight lss (rs@(WhileC _l e c s) : rss) =
+    joinWhile `mplus` divergeWhile
+  where
+    joinWhile :: F l m [Step l]
+    joinWhile = do
+        l' <- jointLabel lss (rs:rss)
+        whenNotBeenThere lss l' $ do
+          (lss', c') <- collectSteps $
+                        withKont rss $
+                        runRight lss (unComp c)
+          guard (lss' == lss)
+          jointStep $ WhileC l' e (mkComp c') s
           runRight lss rss
 
-    runLeft :: [Step l] -> [Step l] -> F l m [Step l]
-    runLeft [] rss =
-        return rss
-
-    runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
-        joinIf `mplus` divergeIf
-      where
-        joinIf :: F l m [Step l]
-        joinIf = do
-            l' <- jointLabel (ls:lss) rss
-            whenNotBeenThere rss l' $ do
-              (rss1, c1') <- collectSteps $
-                             withKont lss $ 
-                             runLeft (unComp c1) rss
-              (rss2, c2') <- collectSteps $
-                             withKont lss $ 
-                             runLeft (unComp c2) rss
-              guard (rss2 == rss1)
-              jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-              runLeft lss rss1
-
-        divergeIf :: F l m [Step l]
-        divergeIf = do
-            l' <- jointLabel (ls:lss) rss
-            whenNotBeenThere rss l' $ do
-              (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
-              (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
-              jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-              return []
-
-    runLeft (ls@(WhileC _l e c s) : lss) rss =
-        joinWhile `mplus` divergeWhile
-      where
-        joinWhile :: F l m [Step l]
-        joinWhile = do
-            l' <- jointLabel (ls:lss) rss
-            whenNotBeenThere rss l' $ do
-              (rss', c') <- collectSteps $
-                            withKont lss $ 
-                            runLeft (unComp c) rss
-              guard (rss' == rss)
-              jointStep $ WhileC l' e (mkComp c') s
-              runLeft lss rss
-
-        divergeWhile :: F l m [Step l]
-        divergeWhile = do
-            traceFusion $ text "Encountered diverging while in producer"
-            fusionFailed
-            mzero
-
-    -- We attempt to fuse a for loop by running the body of the for with the
-    -- consumer. If we end up back where we started in the consumer's
-    -- computation, that means we can easily construct a new for loop whose body
-    -- is the body of the producer's for loop merged with the consumer. This
-    -- typically works when the consumer is a repeated computation.
-    runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
-        joinFor `mplus` divergeFor
-      where
-        joinFor :: F l m [Step l]
-        joinFor = do
-            l' <- jointLabel (ls:lss) rss
-            whenNotBeenThere rss l' $ do
-              (rss', steps) <- collectSteps $
-                               withKont lss $ 
-                               runLeft (unComp c) rss
-              guard (rss' == rss)
-              jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-              runRight lss rss
-
-        divergeFor :: F l m [Step l]
-        divergeFor = do
-            traceFusion $ text "Encountered diverging for in producer"
-            fusionFailed
-            mzero
-
-    runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
-        whenNotBeenThere rss l' $ do
-          jointStep $ ReturnC l' e s1
-          runRight (dropBind lss) rss
-      where
-        l' :: (l, l)
-        l' = (l_left, l_right)
-
-    runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
-        traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
+    divergeWhile :: F l m [Step l]
+    divergeWhile = do
+        traceFusion $ text "Encountered diverging while in consumer"
         fusionFailed
         mzero
 
-    runLeft (EmitC {} : _) _ =
-        faildoc $ text "emit paired with non-take."
+-- See the comment in the ForC case for runLeft.
+runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
+    joinFor `mplus` divergeFor
+  where
+    joinFor :: F l m [Step l]
+    joinFor = do
+        l' <- jointLabel lss (rs:rss)
+        whenNotBeenThere lss l' $ do
+          (lss', steps) <- collectSteps $
+                           withKont rss $
+                           runRight lss (unComp c)
+          guard (lss' == lss)
+          jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+          runRight lss rss
 
-    runLeft (EmitsC l_left e s1 : lss) (rs@(TakeC l_right _tau _s2) : rss) =
-        whenNotBeenThere rss l' $ do
-          -- We can only fuse an emits and a take when we statically know the
-          -- size of the array being emitted.
-          n <- inferExp e >>= knownArraySize
-          if n == 1
-            then emits1Take
-            else emitsNTake n
-      where
-        -- If we are emitting an array with only one element, fusion is trivial.
-        emits1Take :: F l m [Step l]
-        emits1Take = do
-            jointStep $ ReturnC l' (idxE e 0) s1
-            runRight (dropBind lss) rss
+    divergeFor :: F l m [Step l]
+    divergeFor = do
+        traceFusion $ text "Encountered diverging for in consumer"
+        fusionFailed
+        mzero
 
-        -- If we are emitting an array with more than one element, we rewrite
-        -- the emits as a for loop that yields each element of the array one by
-        -- one and try to fuse the rewritten computation.
-        emitsNTake :: Int -> F l m [Step l]
-        emitsNTake n = do
-            body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
-            runLeft (unComp body ++ dropBind lss) (rs : rss)
+runRight lss rss@(TakeC {} : _) =
+    runLeft lss rss
 
-        l' :: (l, l)
-        l' = (l_left, l_right)
+runRight lss rss@(TakesC {} : _) =
+    runLeft lss rss
 
-    runLeft (EmitsC l_left e s1 : lss)
-            (rstep@(TakesC l_right n_right _tau _s2) : rss) =
-        whenNotBeenThere rss l' $ do
-          n_left <- inferExp e >>= knownArraySize
-          when (n_left /= n_right) $ do
-              (iota, _) <- inferExp e >>= checkArrT
-              traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
-                            ppr rstep
-              fusionFailed
-              mzero
-          jointStep $ ReturnC l' e s1
-          runRight (dropBind lss) rss
-      where
-        l' :: (l, l)
-        l' = (l_left, l_right)
+runRight lss rss@(RepeatC _ ann c _s : _) = do
+    l          <- jointLabel lss rss
+    l_repeat   <- jointRepeatLabel lss rss
+    recoverRepeat l ann l_repeat $
+      runRight lss (unComp c ++ rss)
 
-    runLeft (EmitsC {} : _) _ =
-        faildoc $ text "emits paired with non-take."
+runRight _lss (ParC {} : _rss) =
+    nestedPar
 
-    runLeft lss@(RepeatC _ ann c _s : _) rss = do
-        l        <- jointLabel lss rss
-        l_repeat <- jointRepeatLabel lss rss
-        recoverRepeat l ann l_repeat $
-          runLeft (unComp c ++ lss) rss
+runRight lss (rs:rss) = do
+    l' <- jointLabel lss (rs:rss)
+    whenNotBeenThere lss l' $
+      relabelStep l' rs $
+      runRight lss rss
 
-    runLeft (ParC {} : _lss) _rss =
-        nestedPar
+runLeft :: forall l m . (IsLabel l, MonadTc m)
+        => [Step l]
+        -> [Step l]
+        -> F l m [Step l]
+runLeft [] rss =
+    return rss
 
-    runLeft (ls:lss) rss = do
+runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
+    joinIf `mplus` divergeIf
+  where
+    joinIf :: F l m [Step l]
+    joinIf = do
         l' <- jointLabel (ls:lss) rss
-        whenNotBeenThere rss l' $
-          relabelStep l' ls $
+        whenNotBeenThere rss l' $ do
+          (rss1, c1') <- collectSteps $
+                         withKont lss $
+                         runLeft (unComp c1) rss
+          (rss2, c2') <- collectSteps $
+                         withKont lss $
+                         runLeft (unComp c2) rss
+          guard (rss2 == rss1)
+          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+          runLeft lss rss1
+
+    divergeIf :: F l m [Step l]
+    divergeIf = do
+        l' <- jointLabel (ls:lss) rss
+        whenNotBeenThere rss l' $ do
+          (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
+          (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
+          jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
+          return []
+
+runLeft (ls@(WhileC _l e c s) : lss) rss =
+    joinWhile `mplus` divergeWhile
+  where
+    joinWhile :: F l m [Step l]
+    joinWhile = do
+        l' <- jointLabel (ls:lss) rss
+        whenNotBeenThere rss l' $ do
+          (rss', c') <- collectSteps $
+                        withKont lss $
+                        runLeft (unComp c) rss
+          guard (rss' == rss)
+          jointStep $ WhileC l' e (mkComp c') s
           runLeft lss rss
 
-    jointLabel :: [Step l] -> [Step l] -> F l m (l, l)
-    jointLabel lss rss =
-        (,) <$> stepsLabel lss <*> stepsLabel rss
+    divergeWhile :: F l m [Step l]
+    divergeWhile = do
+        traceFusion $ text "Encountered diverging while in producer"
+        fusionFailed
+        mzero
 
-    -- | Calculate a joint label for two computations where one or both are
-    -- repeat loops. Since we unroll repeats during fusion, the "loop header"
-    -- state we are looking for is found by "fast-forwarding" past the repeat
-    -- state.
-    jointRepeatLabel :: [Step l] -> [Step l] -> F l m (l, l)
-    jointRepeatLabel lss rss =
-        (,) <$> ffLabel lss <*> ffLabel rss
-      where
-        ffLabel :: [Step l] -> F l m l
-        ffLabel []                    = currentKont
-        ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
-        ffLabel (step : _)            = stepLabel step
+-- We attempt to fuse a for loop by running the body of the for with the
+-- consumer. If we end up back where we started in the consumer's
+-- computation, that means we can easily construct a new for loop whose body
+-- is the body of the producer's for loop merged with the consumer. This
+-- typically works when the consumer is a repeated computation.
+runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
+    joinFor `mplus` divergeFor
+  where
+    joinFor :: F l m [Step l]
+    joinFor = do
+        l' <- jointLabel (ls:lss) rss
+        whenNotBeenThere rss l' $ do
+          (rss', steps) <- collectSteps $
+                           withKont lss $
+                           runLeft (unComp c) rss
+          guard (rss' == rss)
+          jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
+          runRight lss rss
+
+    divergeFor :: F l m [Step l]
+    divergeFor = do
+        traceFusion $ text "Encountered diverging for in producer"
+        fusionFailed
+        mzero
+
+runLeft (EmitC l_left e s1 : lss) (TakeC l_right _tau _s2 : rss) =
+    whenNotBeenThere rss l' $ do
+      jointStep $ ReturnC l' e s1
+      runRight (dropBind lss) rss
+  where
+    l' :: (l, l)
+    l' = (l_left, l_right)
+
+runLeft (lstep@EmitC{} : _) (rstep@TakesC{} : _) = do
+    traceFusion $ ppr lstep <+> text "paired with" <+> ppr rstep
+    fusionFailed
+    mzero
+
+runLeft (EmitC {} : _) _ =
+    faildoc $ text "emit paired with non-take."
+
+runLeft (EmitsC l_left e s1 : lss) (rs@(TakeC l_right _tau _s2) : rss) =
+    whenNotBeenThere rss l' $ do
+      -- We can only fuse an emits and a take when we statically know the
+      -- size of the array being emitted.
+      n <- inferExp e >>= knownArraySize
+      if n == 1
+        then emits1Take
+        else emitsNTake n
+  where
+    -- If we are emitting an array with only one element, fusion is trivial.
+    emits1Take :: F l m [Step l]
+    emits1Take = do
+        jointStep $ ReturnC l' (idxE e 0) s1
+        runRight (dropBind lss) rss
+
+    -- If we are emitting an array with more than one element, we rewrite
+    -- the emits as a for loop that yields each element of the array one by
+    -- one and try to fuse the rewritten computation.
+    emitsNTake :: Int -> F l m [Step l]
+    emitsNTake n = do
+        body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
+        runLeft (unComp body ++ dropBind lss) (rs : rss)
+
+    l' :: (l, l)
+    l' = (l_left, l_right)
+
+runLeft (EmitsC l_left e s1 : lss)
+        (rstep@(TakesC l_right n_right _tau _s2) : rss) =
+    whenNotBeenThere rss l' $ do
+      n_left <- inferExp e >>= knownArraySize
+      when (n_left /= n_right) $ do
+          (iota, _) <- inferExp e >>= checkArrT
+          traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
+                        ppr rstep
+          fusionFailed
+          mzero
+      jointStep $ ReturnC l' e s1
+      runRight (dropBind lss) rss
+  where
+    l' :: (l, l)
+    l' = (l_left, l_right)
+
+runLeft (EmitsC {} : _) _ =
+    faildoc $ text "emits paired with non-take."
+
+runLeft lss@(RepeatC _ ann c _s : _) rss = do
+    l        <- jointLabel lss rss
+    l_repeat <- jointRepeatLabel lss rss
+    recoverRepeat l ann l_repeat $
+      runLeft (unComp c ++ lss) rss
+
+runLeft (ParC {} : _lss) _rss =
+    nestedPar
+
+runLeft (ls:lss) rss = do
+    l' <- jointLabel (ls:lss) rss
+    whenNotBeenThere rss l' $
+      relabelStep l' ls $
+      runLeft lss rss
+
+jointLabel :: (IsLabel l, MonadTc m)
+           => [Step l]
+           -> [Step l]
+           -> F l m (l, l)
+jointLabel lss rss =
+    (,) <$> stepsLabel lss <*> stepsLabel rss
+
+-- | Calculate a joint label for two computations where one or both are
+-- repeat loops. Since we unroll repeats during fusion, the "loop header"
+-- state we are looking for is found by "fast-forwarding" past the repeat
+-- state.
+jointRepeatLabel :: forall l m . (IsLabel l, MonadTc m)
+                 => [Step l]
+                 -> [Step l]
+                 -> F l m (l, l)
+jointRepeatLabel lss rss =
+    (,) <$> ffLabel lss <*> ffLabel rss
+  where
+    ffLabel :: [Step l] -> F l m l
+    ffLabel []                    = currentKont
+    ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
+    ffLabel (step : _)            = stepLabel step
 
 dropBind :: [Step l] -> [Step l]
 dropBind (BindC {} : ss) = ss
