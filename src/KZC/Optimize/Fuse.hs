@@ -516,6 +516,64 @@ runLeft (ls:lss) rss = do
     relabelStep l' ls $
       runLeft lss rss
 
+-- | Add a step to the fused computation after re-labeling it with the given
+-- label, and then execute the continuation ensuring that the step's binders
+-- scope over it.
+relabelStep :: (IsLabel l, MonadTc m)
+            => Joint l
+            -> Step l
+            -> F l m a
+            -> F l m a
+relabelStep _ step@VarC{} _k =
+    withSummaryContext step $
+    faildoc $ text "Saw variable bound to a computation during fusion"
+
+relabelStep _ step@CallC{} _k =
+    withSummaryContext step $
+    faildoc $ text "Saw call to a computation function during fusion"
+
+relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
+    extendVars [(bVar v, tau)] $ do
+    jointStep $ LetC l decl s
+    k
+
+relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
+    extendVars [(bVar v, refT tau)] $ do
+    jointStep $ LetC l decl s
+    k
+
+relabelStep l (LiftC _ e s) k = do
+    jointStep $ LiftC l e s
+    k
+
+relabelStep l (ReturnC _ e s) k = do
+    jointStep $ ReturnC l e s
+    k
+
+relabelStep l (BindC _ wv tau s) k =
+    extendWildVars [(wv, tau)] $ do
+    jointStep $ BindC l wv tau s
+    k
+
+relabelStep l (TakeC _ tau s) k = do
+    jointStep $ TakeC l tau s
+    k
+
+relabelStep l (TakesC _ i tau s) k = do
+    jointStep $ TakesC l i tau s
+    k
+
+relabelStep l (EmitC _ e s) k = do
+    jointStep $ EmitC l e s
+    k
+
+relabelStep l (EmitsC _ e s) k = do
+    jointStep $ EmitsC l e s
+    k
+
+relabelStep _ _ _k =
+    fail "relabelStep: can't happen"
+
 -- | Run the right side of a par when we've hit a emit/take combination.
 emitTake :: forall l m . (IsLabel l, MonadTc m)
          => Exp
@@ -671,58 +729,3 @@ unrollBody :: IsLabel l
            -> Comp l
 unrollBody z n f =
     mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
-
-relabelStep :: (IsLabel l, MonadTc m)
-            => Joint l
-            -> Step l
-            -> F l m a
-            -> F l m a
-relabelStep _ step@VarC{} _k =
-    withSummaryContext step $
-    faildoc $ text "Saw variable bound to a computation during fusion"
-
-relabelStep _ step@CallC{} _k =
-    withSummaryContext step $
-    faildoc $ text "Saw call to a computation function during fusion"
-
-relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
-    extendVars [(bVar v, tau)] $ do
-    jointStep $ LetC l decl s
-    k
-
-relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
-    extendVars [(bVar v, refT tau)] $ do
-    jointStep $ LetC l decl s
-    k
-
-relabelStep l (LiftC _ e s) k = do
-    jointStep $ LiftC l e s
-    k
-
-relabelStep l (ReturnC _ e s) k = do
-    jointStep $ ReturnC l e s
-    k
-
-relabelStep l (BindC _ wv tau s) k =
-    extendWildVars [(wv, tau)] $ do
-    jointStep $ BindC l wv tau s
-    k
-
-relabelStep l (TakeC _ tau s) k = do
-    jointStep $ TakeC l tau s
-    k
-
-relabelStep l (TakesC _ i tau s) k = do
-    jointStep $ TakesC l i tau s
-    k
-
-relabelStep l (EmitC _ e s) k = do
-    jointStep $ EmitC l e s
-    k
-
-relabelStep l (EmitsC _ e s) k = do
-    jointStep $ EmitsC l e s
-    k
-
-relabelStep _ _ _k =
-    fail "relabelStep: can't happen"
