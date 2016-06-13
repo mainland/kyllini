@@ -26,6 +26,9 @@ import Control.Monad (MonadPlus(..),
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
+import Control.Monad.Reader (MonadReader(..),
+                             ReaderT(..),
+                             asks)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             evalStateT,
@@ -52,6 +55,11 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Vars
 
+data FEnv l = FEnv { kont :: l }
+
+defaultFEnv :: FEnv l
+defaultFEnv = FEnv { kont = error "no continuation label" }
+
 newtype FState l = FState { seen :: Set (l, l) }
 
 defaultFState :: IsLabel l => FState l
@@ -75,10 +83,13 @@ instance Pretty FusionStats where
         text "     Fused pars:" <+> ppr (fusedPars stats) </>
         text "Fusion failures:" <+> ppr (fusionFailures stats)
 
-newtype F l m a = F { unF :: StateT (FState l) (SEFKT (StateT FusionStats m)) a }
+newtype F l m a = F { unF :: ReaderT (FEnv l)
+                               (StateT (FState l)
+                                 (SEFKT (StateT FusionStats m))) a }
     deriving (Functor, Applicative, Monad,
               Alternative, MonadPlus,
               MonadIO,
+              MonadReader (FEnv l),
               MonadState (FState l),
               MonadException,
               MonadUnique,
@@ -90,7 +101,25 @@ newtype F l m a = F { unF :: StateT (FState l) (SEFKT (StateT FusionStats m)) a 
 runF :: forall l m a . (IsLabel l, MonadErr m)
      => F l m a
      -> m a
-runF m = evalStateT (runSEFKT (evalStateT (unF m) defaultFState)) mempty
+runF m = evalStateT (runSEFKT (evalStateT (runReaderT (unF m) defaultFEnv)
+                                          defaultFState))
+                    mempty
+
+withKont :: (IsLabel l, MonadTc m) => [Step l] -> F l m a -> F l m a
+withKont [] m = do
+    klabel <- gensym "end"
+    local (\env -> env { kont = klabel }) m
+
+withKont (step:_) m = do
+    klabel <- stepLabel step
+    local (\env -> env { kont = klabel }) m
+
+currentKont :: MonadTc m => F l m l
+currentKont = asks kont
+
+stepsLabel :: MonadTc m => [Step l] -> F l m l
+stepsLabel []         = currentKont
+stepsLabel (step : _) = stepLabel step
 
 sawLabel :: (IsLabel l, MonadTc m)
          => (l, l) -> F l m Bool
@@ -143,11 +172,10 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
     where
       fusePar :: Comp l -> Comp l -> F l m [Step l]
       fusePar left right0 = do
-          l      <- compLabel right0
-          klabel <- case steps of
-                      []       -> gensym "end"
-                      (step:_) -> stepLabel step
-          comp   <- fuse left right klabel >>= setFirstLabel l
+          l    <- compLabel right0
+          comp <- withKont steps $
+                  fuse left right >>=
+                  setFirstLabel l
           parFused
           traceFusion $ text "Fused" <+>
               text "producer:" </> indent 2 (ppr left) </>
@@ -255,9 +283,8 @@ whenNotBeenThere ss l k = do
 fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l         -- ^ Left computation
      -> Comp l         -- ^ Right computation
-     -> l              -- ^ The continuation label of the par
      -> F l m (Comp l)
-fuse left right klabel = do
+fuse left right = do
     (_, rss') <- runRight (unComp left) (unComp right)
     return $ uncurry pairLabel <$> mkComp rss'
   where
@@ -296,8 +323,8 @@ fuse left right klabel = do
         joinIf = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-              (lss1, c1') <- runRight lss (unComp c1)
-              (lss2, c2') <- runRight lss (unComp c2)
+              (lss1, c1') <- withKont rss $ runRight lss (unComp c1)
+              (lss2, c2') <- withKont rss $ runRight lss (unComp c2)
               guard (lss2 == lss1)
               let step      =  IfC l' e (mkComp c1') (mkComp c2') s
               (lss', steps) <- runRight lss1 rss
@@ -318,7 +345,7 @@ fuse left right klabel = do
         joinWhile = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-              (lss', c') <- runRight lss (unComp c)
+              (lss', c') <- withKont rss $ runRight lss (unComp c)
               guard (lss' == lss)
               let step      =  WhileC l' e (mkComp c') s
               (lss', steps) <- runRight lss rss
@@ -338,7 +365,7 @@ fuse left right klabel = do
         joinFor = do
             l' <- jointLabel lss (rs:rss)
             whenNotBeenThere lss l' $ do
-              (lss', steps) <- runRight lss (unComp c)
+              (lss', steps) <- withKont rss $ runRight lss (unComp c)
               guard (lss' == lss)
               let step      =  ForC l' ann v tau e1 e2 (mkComp steps) sloc
               (lss', steps) <- runRight lss rss
@@ -383,8 +410,8 @@ fuse left right klabel = do
         joinIf = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-              (rss1, c1') <- runLeft (unComp c1) rss
-              (rss2, c2') <- runLeft (unComp c2) rss
+              (rss1, c1') <- withKont lss $ runLeft (unComp c1) rss
+              (rss2, c2') <- withKont lss $ runLeft (unComp c2) rss
               guard (rss2 == rss1)
               let step      =  IfC l' e (mkComp c1') (mkComp c2') s
               (rss', steps) <- runLeft lss rss1
@@ -405,7 +432,7 @@ fuse left right klabel = do
         joinWhile = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-              (rss', c') <- runLeft (unComp c) rss
+              (rss', c') <- withKont lss $ runLeft (unComp c) rss
               guard (rss' == rss)
               let step      =  WhileC l' e (mkComp c') s
               (rss', steps) <- runLeft lss rss
@@ -429,7 +456,7 @@ fuse left right klabel = do
         joinFor = do
             l' <- jointLabel (ls:lss) rss
             whenNotBeenThere rss l' $ do
-              (rss', steps) <- runLeft (unComp c) rss
+              (rss', steps) <- withKont lss $ runLeft (unComp c) rss
               guard (rss' == rss)
               let step      =  ForC l' ann v tau e1 e2 (mkComp steps) sloc
               (rss', steps) <- runRight lss rss
@@ -526,10 +553,6 @@ fuse left right klabel = do
     jointLabel :: [Step l] -> [Step l] -> F l m (l, l)
     jointLabel lss rss =
         (,) <$> stepsLabel lss <*> stepsLabel rss
-      where
-        stepsLabel :: [Step l] -> F l m l
-        stepsLabel []       = return klabel
-        stepsLabel (step:_) = stepLabel step
 
     -- | Calculate a joint label for two computations where one or both are
     -- repeat loops. Since we unroll repeats during fusion, the "loop header"
@@ -540,7 +563,7 @@ fuse left right klabel = do
         (,) <$> ffLabel lss <*> ffLabel rss
       where
         ffLabel :: [Step l] -> F l m l
-        ffLabel []                    = return klabel
+        ffLabel []                    = currentKont
         ffLabel (RepeatC _ _ c _ : _) = ffLabel (unComp c)
         ffLabel (step : _)            = stepLabel step
 
