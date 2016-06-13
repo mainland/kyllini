@@ -26,6 +26,8 @@ import Control.Monad (MonadPlus(..),
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
+import Control.Monad.Logic.Class (MonadLogic(..),
+                                  ifte)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
@@ -111,6 +113,7 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadWriter (Seq (Step (Joint l))),
               MonadState (FState l),
               MonadException,
+              MonadLogic,
               MonadUnique,
               MonadErr,
               MonadFlags,
@@ -253,7 +256,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                    compT c1
       c2'       <- localSTIndTypes (Just (b, b, c)) $
                    compT c2
-      steps1    <- fusePar c1' c2' `mplus` return [ParC ann b c1' c2' sloc]
+      steps1    <- ifte (fusePar c1' c2')
+                        return
+                        (return [ParC ann b c1' c2' sloc])
       steps'    <- stepsT steps
       return $ steps1 ++ steps'
     where
@@ -305,7 +310,9 @@ runRight lss [] =
     return lss
 
 runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
-    joinIf `mplus` divergeIf
+    ifte joinIf
+         (\lss' -> runRight lss' rss)
+         divergeIf
   where
     joinIf :: F l m [Step l]
     joinIf = do
@@ -318,7 +325,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
                        runRight lss (unComp c2)
         guard (lss2 == lss1)
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        runRight lss1 rss
+        return lss1
 
     divergeIf :: F l m [Step l]
     divergeIf = do
@@ -329,9 +336,11 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
         return []
 
 runRight lss (rs@(WhileC _l e c s) : rss) =
-    joinWhile `mplus` divergeWhile
+    ifte joinWhile
+         (const $ runRight lss rss)
+         divergeWhile
   where
-    joinWhile :: F l m [Step l]
+    joinWhile :: F l m ()
     joinWhile = do
         l'         <- joint lss (rs:rss)
         (lss', c') <- collectSteps $
@@ -339,7 +348,6 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
                       runRight lss (unComp c)
         guard (lss' == lss)
         jointStep $ WhileC l' e (mkComp c') s
-        runRight lss rss
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -349,9 +357,11 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
 
 -- See the comment in the ForC case for runLeft.
 runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
-    joinFor `mplus` divergeFor
+    ifte joinFor
+         (const $ runRight lss rss)
+         divergeFor
   where
-    joinFor :: F l m [Step l]
+    joinFor :: F l m ()
     joinFor = do
         l'            <- joint lss (rs:rss)
         (lss', steps) <- collectSteps $
@@ -359,7 +369,6 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c sloc) : rss) =
                          runRight lss (unComp c)
         guard (lss' == lss)
         jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-        runRight lss rss
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -392,7 +401,9 @@ runLeft [] rss =
     return rss
 
 runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
-    joinIf `mplus` divergeIf
+    ifte joinIf
+         (\rss' -> runLeft lss rss')
+         divergeIf
   where
     joinIf :: F l m [Step l]
     joinIf = do
@@ -405,7 +416,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
                        runLeft (unComp c2) rss
         guard (rss2 == rss1)
         jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        runLeft lss rss1
+        return rss1
 
     divergeIf :: F l m [Step l]
     divergeIf = do
@@ -416,9 +427,11 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
         return []
 
 runLeft (ls@(WhileC _l e c s) : lss) rss =
-    joinWhile `mplus` divergeWhile
+    ifte joinWhile
+         (const $ runLeft lss rss)
+         divergeWhile
   where
-    joinWhile :: F l m [Step l]
+    joinWhile :: F l m ()
     joinWhile = do
         l'         <- joint (ls:lss) rss
         (rss', c') <- collectSteps $
@@ -426,7 +439,6 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
                       runLeft (unComp c) rss
         guard (rss' == rss)
         jointStep $ WhileC l' e (mkComp c') s
-        runLeft lss rss
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -440,9 +452,11 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
 -- is the body of the producer's for loop merged with the consumer. This
 -- typically works when the consumer is a repeated computation.
 runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
-    joinFor `mplus` divergeFor
+    ifte joinFor
+         (const $ runLeft lss rss)
+         divergeFor
   where
-    joinFor :: F l m [Step l]
+    joinFor :: F l m ()
     joinFor = do
         l'            <- joint (ls:lss) rss
         (rss', steps) <- collectSteps $
@@ -450,7 +464,6 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c sloc) : lss) rss =
                          runLeft (unComp c) rss
         guard (rss' == rss)
         jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) sloc
-        runRight lss rss
 
     divergeFor :: F l m [Step l]
     divergeFor = do
