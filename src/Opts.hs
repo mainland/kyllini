@@ -202,6 +202,7 @@ fDynFlagOpts =
   , (VectOnlyBytes, "vect-bytes",   "only vectorize to byte widths")
   , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
   , (CoalesceTop,   "coalesce-top", "coalesce top-level computation")
+  , (FuseUnroll,    "fuse-unroll",  "unroll loops during fusion")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]

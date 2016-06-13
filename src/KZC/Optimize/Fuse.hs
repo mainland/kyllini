@@ -22,6 +22,7 @@ import Control.Applicative (Alternative, Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (MonadPlus(..),
                       guard,
+                      unless,
                       when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO(..),
@@ -360,8 +361,8 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
         fusionFailed
         mzero
 
--- See the comment in the ForC case for runLeft.
-runRight lss (rs@(ForC _ ann v tau e1 e2 c s) : rss) =
+-- See Note [Fusing For Loops]
+runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
     ifte joinFor
          (const $ runRight lss rss)
          divergeFor
@@ -377,9 +378,9 @@ runRight lss (rs@(ForC _ ann v tau e1 e2 c s) : rss) =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        traceFusion $ text "Encountered diverging for in consumer"
-        fusionFailed
-        mzero
+        unrollingFor
+        unrolled <- unrollFor l v e1 e2 c
+        runRight lss (unComp unrolled ++ rss)
 
 runRight lss rss@(TakeC{} : _) =
     runLeft lss rss
@@ -451,12 +452,8 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
         fusionFailed
         mzero
 
--- We attempt to fuse a for loop by running the body of the for with the
--- consumer. If we end up back where we started in the consumer's
--- computation, that means we can easily construct a new for loop whose body
--- is the body of the producer's for loop merged with the consumer. This
--- typically works when the consumer is a repeated computation.
-runLeft (ls@(ForC _ ann v tau e1 e2 c s) : lss) rss =
+-- See Note [Fusing For Loops]
+runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
     ifte joinFor
          (const $ runLeft lss rss)
          divergeFor
@@ -472,9 +469,9 @@ runLeft (ls@(ForC _ ann v tau e1 e2 c s) : lss) rss =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        traceFusion $ text "Encountered diverging for in producer"
-        fusionFailed
-        mzero
+        unrollingFor
+        unrolled <- unrollFor l v e1 e2 c
+        runLeft (unComp unrolled ++ lss) rss
 
 runLeft (EmitC _ e _ : lss) (TakeC{} : rss) =
     emitTake e lss rss
@@ -548,6 +545,15 @@ nestedPar = do
     fusionFailed
     mzero
 
+-- | Indicate that we are unrolling a for loop during fusion. This will fail
+-- unless the appropriate flag has been specified.
+unrollingFor :: MonadTc m => F l m ()
+unrollingFor = do
+    doUnroll <- asksFlags (testDynFlag FuseUnroll)
+    unless doUnroll $ do
+        traceFusion $ text "Encountered diverging loop during fusion."
+        mzero
+
 knownArraySize :: MonadTc m => Type -> F l m Int
 knownArraySize tau = do
     (iota, _) <- checkArrT tau
@@ -556,6 +562,12 @@ knownArraySize tau = do
       _          -> do traceFusion $ text "Unknown array size"
                        fusionFailed
                        mzero
+
+-- | Attempt to extract a constant integer from an 'Exp'.
+tryFromIntE :: (MonadPlus m, MonadTrace m) => Exp -> m Int
+tryFromIntE (ConstE c _) = fromIntC c
+tryFromIntE _            = do traceFusion $ text "Non-constant for loop bound"
+                              mzero
 
 {- Note [Convergence]
 
@@ -628,6 +640,41 @@ recoverRepeat comp =
     repeatC c = do
         l <- gensym "repeatk"
         return $ RepeatC l AutoVect c (srclocOf c)
+
+{- Note [Fusing For Loops]
+
+We first attempt to fuse a for loop by fusing the body of the for with the other
+side of the par. If, after running the body, we end up back where we started in
+the other computation, that means we can easily construct a new for loop whose
+body is the fusion of the body with the other side of the par. This typically
+works when the other computation is a repeat.
+
+If that doesn't work, we then completely unroll the loop. We need to be careful
+to re-label the steps in the peeled loop bodies, but we must also maintain the
+label of the first step so that it matches the label of the loop. Maintaining
+the initial label is necessary to allow runRepeat to accurately determine the
+next computational step.
+-}
+
+unrollFor :: forall l m . (IsLabel l, MonadTc m)
+          => l
+          -> Var
+          -> Exp
+          -> Exp
+          -> Comp l
+          -> F l m (Comp l)
+unrollFor l v e1 e2 c = do
+    i   <- tryFromIntE e1
+    len <- tryFromIntE e2
+    return $ setCompLabel l $ unrollBody i len $ \j -> subst1 (v /-> intE j) c
+
+unrollBody :: IsLabel l
+           => Int
+           -> Int
+           -> (Int -> Comp l)
+           -> Comp l
+unrollBody z n f =
+    mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
 
 relabelStep :: (IsLabel l, MonadTc m)
             => Joint l
