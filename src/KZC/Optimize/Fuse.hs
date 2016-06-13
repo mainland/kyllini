@@ -58,6 +58,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Monad.SEFKT
+import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -268,7 +269,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           comp <- withKont steps $
                   fuse left right >>=
                   recoverRepeat >>=
-                  setFirstLabel l
+                  setFirstLabel l >>=
+                  simplComp
           parFused
           traceFusion $ text "Fused" <+>
               text "producer:" </> indent 2 (ppr left) </>
