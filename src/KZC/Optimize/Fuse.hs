@@ -156,6 +156,8 @@ joint lss rss = (,) <$> stepsLabel lss <*> stepsLabel rss
 jointStep :: (IsLabel l, MonadTc m) => Step (Joint l) -> F l m ()
 jointStep step = do
     l <- stepLabel step
+    whenVerbLevel 2 $ traceFusion $
+        text "jointStep:" <+> ppr l <> colon </> ppr (jointLabel <$> step)
     recordLabel l
     tell (Seq.singleton step)
 
