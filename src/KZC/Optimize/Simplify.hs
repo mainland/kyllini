@@ -613,6 +613,9 @@ simplSteps (step : BindC l wv tau s : steps) = do
         rewrite
         simplSteps steps
 
+    --
+    -- Default computation sequencing
+    --
     go [step'] tau' WildV = do
         steps' <- simplSteps steps
         simplLift $ step' : BindC l WildV tau' s : steps'
@@ -638,6 +641,9 @@ simplSteps (step : BindC l wv tau s : steps) = do
         rewrite
         simplLift $ LetC l (LetLD v' tau' e s) s : steps'
 
+    --
+    -- Default computation bind
+    --
     go [step'] tau' (TameV v) =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
@@ -645,9 +651,17 @@ simplSteps (step : BindC l wv tau s : steps) = do
         steps' <- simplSteps steps
         simplLift $ step' : BindC l (TameV v') tau' s : steps'
 
+    --
+    -- Can't happen---simplifying a step has to yield one or more steps
+    --
     go [] _tau' _wv =
         faildoc $ text "simplSteps: can't happen"
 
+    --
+    -- When simplifying a steps yields more than one step, simplify the
+    -- resulting sequence. A single step can simplify to many steps if we inline
+    -- a computation.
+    --
     go step' tau' wv =
         (++) <$> pure hd <*> go [tl] tau' wv >>= simplLift
       where
@@ -1405,6 +1419,9 @@ simplE (BindE wv tau e1 e2 s) =
         rewrite
         simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
 
+    --
+    -- Default command sequencing
+    --
     simplBind WildV tau e1 e2 s = do
         tau' <- simplType tau
         e1'  <- simplE e1
@@ -1434,6 +1451,9 @@ simplE (BindE wv tau e1 e2 s) =
           rewrite
           return $ LetE (LetLD v' tau' e1' s) e2' s
 
+    --
+    -- Default command bind
+    --
     simplBind (TameV v) tau e1 e2 s = do
         e1'  <- simplE e1
         tau' <- simplType tau
