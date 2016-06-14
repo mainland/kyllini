@@ -1,0 +1,20 @@
+fun comp A() {
+  repeat {
+    (x : complex16) <- take ;
+    emit x.re;
+    emit x.im;
+  }
+}
+
+fun comp B() {
+  var xs : arr[2] int16;
+  repeat {
+    for i in [0, 2] {
+      x <- take;
+      do { xs[i] := x };
+    };
+    emits xs;
+  }
+}
+
+let comp main = read[complex16] >>> A() >>> B() >>> write[int16]
