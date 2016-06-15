@@ -1319,12 +1319,40 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
         e3' <- simplE e3
         return $ ForE ann v' tau e1' e2' e3' s
 
-simplE (ArrayE es s) = do
-    es <- mapM simplE es
-    if all isConstE es
-      then do cs <- mapM unConstE es
-              return $ ConstE (ArrayC cs) s
-      else return $ ArrayE es s
+simplE (ArrayE es s) =
+    mapM simplE es >>= go
+  where
+    go :: [Exp] -> SimplM l m Exp
+    --
+    -- Convert a non-constant array expression into a constant array expression
+    -- if we can.
+    --
+    go es' | all isConstE es' = do
+        cs <- mapM unConstE es
+        return $ ConstE (ArrayC cs) s
+
+    --
+    -- Convert an "exploded" array expression into a slice
+    --
+    -- arr { x[0], x[1], x[2] } -> x[0,3]
+    --
+    go (IdxE (VarE xs _) ei Nothing _ : es') | Just i  <- fromIntE ei
+                                             , Just e' <- coalesce xs i 1 es' =
+        return e'
+      where
+        coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
+        coalesce xs i len [] =
+            return $ sliceE (varE xs) (intE i) (fromIntegral len)
+
+        coalesce xs i len (IdxE (VarE xs' _) ej Nothing _ : es'')
+          | Just j <- fromIntE ej, j == i + len, xs' == xs =
+            coalesce xs i (len+1) es''
+
+        coalesce _ _ _ _ =
+            fail "Cannot coalesce"
+
+    go es' =
+        return $ ArrayE es' s
 
 simplE (IdxE e1 e2 len0 s) = do
     e1' <- simplE e1
