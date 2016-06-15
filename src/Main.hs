@@ -48,7 +48,6 @@ import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
 import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
-import KZC.Analysis.StaticRef
 import KZC.Cg
 import KZC.Check
 import qualified KZC.Core.Label as C
@@ -127,8 +126,6 @@ runPipeline filepath = do
         runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase2" autolutPhase) >=>
         runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase4") >=>
-        -- Look for refs that are unchanged
-        runIf (testDynFlag Simplify) (tracePhase "staticRef" staticRefsPhase) >=>
         -- One final round of simplification
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase5") >=>
         -- Clean up the code, do some analysis, and codegen
@@ -238,11 +235,6 @@ runPipeline filepath = do
     simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
         lift . C.withTc . simplProgram
-
-    staticRefsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
-    staticRefsPhase =
-        lift . C.withTc . staticRefsProgram >=>
-        dumpPass DumpStaticRefs "core" "staticrefs"
 
     hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =

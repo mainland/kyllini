@@ -59,7 +59,6 @@ SOURCE = \
 	KZC/Analysis/Rate.hs \
 	KZC/Analysis/ReadWriteSet.hs \
 	KZC/Analysis/RefFlow.hs \
-	KZC/Analysis/StaticRef.hs \
 	KZC/Cg.hs \
 	KZC/Cg/CExp.hs \
 	KZC/Cg/Code.hs \

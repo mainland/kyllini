@@ -20,6 +20,7 @@ import Prelude hiding ((<=))
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -31,6 +32,10 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
+#endif /* !MIN_VERSION_base(4,8,0) */
+import Data.Set (Set)
+import qualified Data.Set as Set
+#if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
@@ -45,17 +50,29 @@ import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Lattice
 
-newtype OccEnv = Occ { unOcc :: Map Var OccInfo }
+type RefSet = Set Var
+
+newtype OccsInfo = Occ { unOcc :: Map Var OccInfo }
   deriving (Eq, Poset, Lattice, BranchLattice)
 
-instance Monoid OccEnv where
+instance Monoid OccsInfo where
     mempty = Occ mempty
 
     occ `mappend` occ' = occ `lub` occ'
 
-lookupOccInfo :: Var -> OccEnv -> OccInfo
+lookupOccInfo :: Var -> OccsInfo -> OccInfo
 lookupOccInfo v env =
     fromMaybe Dead $ Map.lookup v (unOcc env)
+
+data OccEnv = OccEnv { occsInfo :: OccsInfo
+                     , refs     :: RefSet
+                     }
+
+instance Monoid OccEnv where
+  mempty = OccEnv mempty mempty
+
+  OccEnv info refs `mappend` OccEnv info' refs' =
+      OccEnv (info <> info') (refs <> refs')
 
 newtype OccM m a = OccM { unOccM :: WriterT OccEnv m a }
     deriving (Functor, Applicative, Monad, MonadIO,
@@ -73,14 +90,32 @@ instance MonadTrans OccM where
 runOccM :: MonadTc m => OccM m a -> m a
 runOccM m = fst <$> runWriterT (unOccM m)
 
-occVar :: MonadTc m => Var -> OccM m ()
-occVar v = tell $ Occ (Map.singleton v Once)
+writeRef :: MonadTc m => Var -> OccM m ()
+writeRef v = tell mempty { refs = Set.singleton v }
 
-collectOcc :: MonadTc m => OccM m a -> OccM m (OccEnv, a)
+-- | Return a flag indicating whether or not the given variable was written to
+-- after running the specified action, after which the variable is purged from
+-- the static ref environment.
+withStaticRefFlag :: MonadTc m => BoundVar -> OccM m a -> OccM m (Bool, a)
+withStaticRefFlag v m =
+    censor (\env -> env { refs = Set.delete (bVar v) (refs env)}) $ do
+    (x, env) <- listen m
+    return (Set.notMember (bVar v) (refs env), x)
+
+updStaticInfo :: BoundVar -> Bool -> BoundVar
+updStaticInfo v isStatic = v { bStaticRef = Just isStatic }
+
+occVar :: MonadTc m => Var -> OccM m ()
+occVar v = tellOcc $ Occ (Map.singleton v Once)
+
+collectOcc :: MonadTc m => OccM m a -> OccM m (OccsInfo, a)
 collectOcc m =
-    censor (const mempty) $ do
-    (x, occ) <- listen m
-    return (occ, x)
+    censor (\env -> env { occsInfo = mempty }) $ do
+    (x, env) <- listen m
+    return (occsInfo env, x)
+
+tellOcc :: MonadTc m => OccsInfo -> OccM m ()
+tellOcc occs = tell mempty { occsInfo = occs }
 
 -- | Return occurrence information for the given variable after running the
 -- specified action, after which the variable is purged from the occurrence
@@ -89,10 +124,10 @@ withOccInfo :: MonadTc m => BoundVar -> OccM m a -> OccM m (OccInfo, a)
 withOccInfo v m =
     censor f $ do
     (x, env) <- listen m
-    return (lookupOccInfo (bVar v) env, x)
+    return (lookupOccInfo (bVar v) (occsInfo env), x)
   where
     f :: OccEnv -> OccEnv
-    f (Occ env) = Occ $ Map.delete (bVar v) env
+    f env = env { occsInfo = Occ $ Map.delete (bVar v) (unOcc (occsInfo env)) }
 
 updOccInfo :: BoundVar -> OccInfo -> BoundVar
 updOccInfo v occ = v { bOccInfo = Just occ }
@@ -110,26 +145,30 @@ instance MonadTc m => TransformExp (OccM m) where
         return (LetLD (updOccInfo v occ) tau e' s, x)
 
     localDeclT (LetRefLD v tau e s) m = do
-        e'       <- traverse expT e
-        (occ, x) <- extendVars [(bVar v, refT tau)] $ withOccInfo v m
-        return (LetRefLD (updOccInfo v occ) tau e' s, x)
+        e'                 <- traverse expT e
+        (static, (occ, x)) <- extendVars [(bVar v, refT tau)] $
+                              withStaticRefFlag v $
+                              withOccInfo v m
+        return (LetRefLD (updStaticInfo (updOccInfo v occ) static) tau e' s, x)
 
     expT e@(VarE v _) = do
         occVar v
         return e
 
-    expT e@(CallE f _ _ _) = do
+    expT e@(CallE f _ es _) = do
         occVar f
+        mapM_ checkRefArg es
         transExp e
 
     expT (IfE e1 e2 e3 s) = do
         e1'         <- expT e1
         (occ2, e2') <- collectOcc $ expT e2
         (occ3, e3') <- collectOcc $ expT e3
-        tell $ occ2 `bub` occ3
+        tellOcc $ occ2 `bub` occ3
         return $ IfE e1' e2' e3' s
 
-    expT (AssignE e1_0 e2_0 s) =
+    expT (AssignE e1_0 e2_0 s) = do
+        refPathRoot e1_0 >>= writeRef
         AssignE <$> occRef e1_0 <*> expT e2_0 <*> pure s
       where
         occRef :: Exp -> OccM m Exp
@@ -214,8 +253,21 @@ instance MonadTc m => TransformComp l (OccM m) where
         e1'         <- expT e1
         (occ2, c2') <- collectOcc $ compT c2
         (occ3, c3') <- collectOcc $ compT c3
-        tell $ occ2 `bub` occ3
+        tellOcc$ occ2 `bub` occ3
         return $ IfC l e1' c2' c3' s
 
     stepT step =
         transStep step
+
+    argT arg@(ExpA e) = do
+        checkRefArg e
+        transArg arg
+
+    argT arg =
+        transArg arg
+
+checkRefArg :: MonadTc m => Exp -> OccM m ()
+checkRefArg e = do
+    tau <- inferExp e
+    when (isRefT tau) $
+        refPathRoot e >>= writeRef
