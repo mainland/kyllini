@@ -173,12 +173,23 @@ jointStep :: (IsLabel l, MonadTc m)
           -> F l m [Step l]
           -> F l m [Step l]
 jointStep step k = do
-    l <- stepLabel step
+    l_repeat <- repeatLabel
+    l_joint  <- stepLabel step
     whenVerbLevel 2 $ traceFusion $
-        text "jointStep:" <+> ppr l <> colon </> ppr (jointLabel <$> step)
-    recordLabel l
-    tell (Seq.singleton step)
-    k
+        text "jointStep:" <+> ppr l_joint <> colon </> ppr (jointLabel <$> step)
+    saw <- sawLabel l_joint
+    if saw
+      then do when (l_repeat /= Just l_joint) $ do
+                traceFusion $ text "Unaligned repeat loops"
+                fusionFailed
+                mzero
+              modify $ \s -> s { loopHead = Just l_joint }
+              return []
+      else do when (l_repeat == Just l_joint) $
+                modify $ \s -> s { seen = mempty }
+              recordLabel l_joint
+              tell (Seq.singleton step)
+              k
 
 collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
 collectSteps m =
@@ -194,45 +205,21 @@ repeatLabel = do
       (Just left, Just right) -> return $ Just (left, right)
       _                       -> return Nothing
 
-runRepeat :: forall l m . (IsLabel l, MonadTc m)
-          => [Step l]
-          -> [Step l]
-          -> (l -> l -> F l m [Step l])
-          -> F l m [Step l]
-runRepeat lss rss k = do
-    l_repeat    <- repeatLabel
-    l_left      <- leftStepsLabel lss
-    l_right     <- rightStepsLabel rss
-    let l_joint =  (l_left, l_right)
-    saw         <- sawLabel l_joint
-    if saw
-      then do when (l_repeat /= Just l_joint) $ do
-                traceFusion $ text "Unaligned repeat loops"
-                fusionFailed
-                mzero
-              modify $ \s -> s { loopHead = Just l_joint }
-              return []
-      else do when (l_repeat == Just l_joint) $
-                modify $ \s -> s { seen = mempty }
-              k l_left l_right
-
 leftRepeat :: (IsLabel l, MonadTc m)
-           => [Step l]
-           -> [Step l]
-           -> F l m [Step l]
-leftRepeat lss rss =
-    runRepeat lss rss $ \l_left _ ->
-    local (\env -> env { leftLoop = Just l_left }) $
-    runLeft lss rss
+           => Comp l
+           -> F l m a
+           -> F l m a
+leftRepeat c k = do
+    l <- leftStepsLabel (unComp c)
+    local (\env -> env { leftLoop = Just l }) k
 
 rightRepeat :: (IsLabel l, MonadTc m)
-            => [Step l]
-            -> [Step l]
-            -> F l m [Step l]
-rightRepeat lss rss =
-    runRepeat lss rss $ \_ l_right ->
-    local (\env -> env { rightLoop = Just l_right }) $
-    runRight lss rss
+            => Comp l
+            -> F l m a
+            -> F l m a
+rightRepeat c k = do
+    l <- rightStepsLabel (unComp c)
+    local (\env -> env { rightLoop = Just l }) k
 
 sawLabel :: (IsLabel l, MonadTc m)
          => Joint l -> F l m Bool
@@ -406,7 +393,8 @@ runRight _ (TakesC{} : _) =
 
 runRight lss rss@(RepeatC _ _ c _ : _) =
     withRightKont rss $
-    rightRepeat lss (unComp c ++ rss)
+    rightRepeat c $
+    runRight lss (unComp c ++ rss)
 
 runRight _lss (ParC{} : _rss) =
     nestedPar
@@ -505,7 +493,8 @@ runLeft (EmitsC{} : _) _ =
 
 runLeft lss@(RepeatC _ _ c _ : _) rss =
     withLeftKont lss $
-    leftRepeat (unComp c ++ lss) rss
+    leftRepeat c $
+    runLeft (unComp c ++ lss) rss
 
 runLeft (ParC{} : _lss) _rss =
     nestedPar
@@ -700,8 +689,8 @@ works when the other computation is a repeat.
 If that doesn't work, we then completely unroll the loop. We need to be careful
 to re-label the steps in the peeled loop bodies, but we must also maintain the
 label of the first step so that it matches the label of the loop. Maintaining
-the initial label is necessary to allow runRepeat to accurately determine the
-next computational step.
+the initial label is necessary to allow accurate determination of the next
+computational step.
 -}
 
 unrollFor :: forall l m . (IsLabel l, MonadTc m)
