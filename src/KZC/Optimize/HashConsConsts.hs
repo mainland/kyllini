@@ -245,9 +245,6 @@ hconsSteps (step : k) =
     hconsStep (ParC ann tau c1 c2 s) =
         ParC ann tau <$> hconsComp c1 <*> hconsComp c2 <*> pure s
 
-    hconsStep step@LoopC{} =
-        pure step
-
 hconsArg :: (IsLabel l, MonadTc m) => Arg l -> HCM m (Arg l)
 hconsArg (ExpA e)     = ExpA <$> hconsE False e
 hconsArg (CompA comp) = CompA <$> hconsComp comp

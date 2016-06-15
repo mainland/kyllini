@@ -831,9 +831,6 @@ inferStep step@(ParC _ b e1 e2 l) = do
              joinOmega omega1 omega2
     return $ ST [] omega s a c l
 
-inferStep LoopC{} =
-    faildoc $ text "inferStep: saw LoopC"
-
 checkComp :: (IsLabel l, MonadTc m)
           => Comp l
           -> Type
@@ -918,9 +915,6 @@ compToExp comp =
 
     stepToExp ParC{} =
         faildoc $ text "compToExp: saw >>>."
-
-    stepToExp LoopC{} =
-        faildoc $ text "compToExp: saw loop."
 
     argToExp :: Arg l -> m Exp
     argToExp (ExpA e)  = return e

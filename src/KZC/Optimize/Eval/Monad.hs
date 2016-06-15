@@ -611,7 +611,6 @@ instance ModifiedVars (Step l) Var where
     mvs EmitsC{}               = mempty
     mvs (RepeatC _ _ c _)      = mvs c
     mvs (ParC _ _ e1 e2 _)     = mvs e1 <> mvs e2
-    mvs LoopC{}                = mempty
 
 instance ModifiedVars (Comp l) Var where
     mvs comp = go (unComp comp)

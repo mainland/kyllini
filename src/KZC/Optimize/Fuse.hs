@@ -83,10 +83,16 @@ defaultFEnv = do
                 , rightLoop = Nothing
                 }
 
-newtype FState l = FState { seen :: Set (Joint l) }
+data FState l = FState
+    { seen     :: !(Set (Joint l))
+    , loopHead :: !(Maybe (Joint l))
+    }
 
 defaultFState :: IsLabel l => FState l
-defaultFState = FState mempty
+defaultFState = FState
+    { seen     = mempty
+    , loopHead = Nothing
+    }
 
 data FusionStats = FusionStats
     { fusedPars      :: !Int
@@ -200,7 +206,7 @@ runRepeat lss rss k = do
                 traceFusion $ text "Unaligned repeat loops"
                 fusionFailed
                 mzero
-              jointStep $ LoopC l_joint
+              modify $ \s -> s { loopHead = Just l_joint }
               return []
       else do when (l_repeat == Just l_joint) $
                 modify $ \s -> s { seen = mempty }
@@ -290,7 +296,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           comp  <- withLeftKont steps $
                    withRightKont steps $
                    fuse left right >>=
-                   recoverRepeat >>=
                    return . setCompLabel l >>=
                    simplComp
           parFused
@@ -308,8 +313,13 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> Comp l         -- ^ Right computation
      -> F l m (Comp l)
 fuse left right = do
-    (_, rss') <- collectSteps $ runRight (unComp left) (unComp right)
-    return $ jointLabel <$> mkComp rss'
+    (_, steps) <- collectSteps $
+                  runRight (unComp left) (unComp right)
+    let comp   =  jointLabel <$> mkComp steps
+    maybe_l    <- gets loopHead
+    case maybe_l of
+      Nothing -> return comp
+      Just l  -> recoverRepeat (jointLabel l) comp
 
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
@@ -333,7 +343,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
                        withRightKont rss $
                        runRight lss (unComp c2)
         guardLeftConvergence lss1 lss2
-        jointStep $ IfC l' e (mkUnloopComp c1') (mkUnloopComp c2') s
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return lss1
 
     divergeIf :: F l m [Step l]
@@ -341,7 +351,7 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
         l'       <- joint lss (rs:rss)
         (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
         (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
-        jointStep $ IfC l' e (mkUnloopComp c1') (mkUnloopComp c2') s
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return []
 
 runRight lss (rs@(WhileC _l e c s) : rss) =
@@ -356,7 +366,7 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
                       withRightKont rss $
                       runRight lss (unComp c)
         guardLeftConvergence lss lss'
-        jointStep $ WhileC l' e (mkUnloopComp c') s
+        jointStep $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -377,7 +387,7 @@ runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
                          withRightKont rss $
                          runRight lss (unComp c)
         guardLeftConvergence lss lss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkUnloopComp steps) s
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -425,7 +435,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
                        withLeftKont lss $
                        runLeft (unComp c2) rss
         guardRightConvergence rss1 rss2
-        jointStep $ IfC l' e (mkUnloopComp c1') (mkUnloopComp c2') s
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return rss1
 
     divergeIf :: F l m [Step l]
@@ -433,7 +443,7 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
         l'       <- joint (ls:lss) rss
         (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
         (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
-        jointStep $ IfC l' e (mkUnloopComp c1') (mkUnloopComp c2') s
+        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
         return []
 
 runLeft (ls@(WhileC _l e c s) : lss) rss =
@@ -448,7 +458,7 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
                       withLeftKont lss $
                       runLeft (unComp c) rss
         guardRightConvergence rss rss'
-        jointStep $ WhileC l' e (mkUnloopComp c') s
+        jointStep $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -469,7 +479,7 @@ runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
                          withLeftKont lss $
                          runLeft (unComp c) rss
         guardRightConvergence rss rss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkUnloopComp steps) s
+        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -652,7 +662,7 @@ We fuse repeat by unrolling the repeat loop on demand.
 
 The only time that fusion will produce a repeat loop is when both sides of the
 par are repeats. We detect a loop by keeping track of the labels of all fused
-steps that have been produced so far and inserting a `LoopC` construct when we
+steps that have been produced so far and recording the loop header label when we
 encounter a step we have seen before *and* we are in a state where both the left
 and right sides of the par are at a loop header.
 
@@ -661,47 +671,30 @@ otherwise we can end up in a situation where the fused loop starts halfway
 through the body of one of the two loops being fused, meaning the binders that
 occurred earlier in the loop body are not valid!
 
-The `LoopC` will be removed by `recoverRepeat`, which we use to process every
-fused computation. Because a repeat must be a terminal computation, i.e.,
-nothing can come after it, a `LoopC` will only ever be present at the end of a
-fused computation. This makes it easy to find and turn into a new, fused repeat
-construct. However, it is possible for a `LoopC` to appear at the end of a fused
-**branch** of a computation as well, i.e., in the body of a for loop. We use
-`mkUnloopComp` to drop `LoopC` steps from the fused bodies of if/while/for
-computations.
+When we detect a loop, we save the loop's label, which is then used by
+`recoverRepeat` to recover the loop.
 -}
 
 recoverRepeat :: forall l m . (IsLabel l, MonadUnique m)
-              => Comp l
+              => l
+              -> Comp l
               -> m (Comp l)
-recoverRepeat comp =
-    case last steps of
-      LoopC l -> mkComp <$> recover l (init steps)
-      _       -> return $ mkComp steps
+recoverRepeat l c =
+    mkComp <$> go (unComp c)
   where
-    steps :: [Step l]
-    steps = unComp comp
-
-    recover :: l -> [Step l] -> m [Step l]
-    recover _ [] =
+    go :: [Step l] -> m [Step l]
+    go [] =
         return []
 
-    recover l (step:steps) | stepLabel step == Just l =
-        (: []) <$> repeatC (mkComp (step:steps))
+    go (step:steps) | stepLabel step == Just l = do
+        l' <- gensym "repeatk"
+        return [RepeatC l' AutoVect c (srclocOf c)]
+      where
+        c :: Comp l
+        c = mkComp (step:steps)
 
-    recover l (step:steps) =
-        (step :) <$> recover l steps
-
-    repeatC :: Comp l -> m (Step l)
-    repeatC c = do
-        l <- gensym "repeatk"
-        return $ RepeatC l AutoVect c (srclocOf c)
-
-mkUnloopComp :: [Step l] -> Comp l
-mkUnloopComp []    = mkComp[]
-mkUnloopComp steps = case last steps of
-                       LoopC{} -> mkComp (init steps)
-                       _       -> mkComp steps
+    go (step:steps) =
+        (step :) <$> go steps
 
 {- Note [Fusing For Loops]
 

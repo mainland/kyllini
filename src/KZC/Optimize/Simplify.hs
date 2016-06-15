@@ -1113,9 +1113,6 @@ simplStep (ParC ann b c1 c2 sloc) = do
                  simplC c2
     return1 $ ParC ann b c1' c2' sloc
 
-simplStep LoopC{} =
-    faildoc $ text "simplStep: saw LoopC"
-
 simplE :: forall l m . (IsLabel l, MonadTc m)
        => Exp
        -> SimplM l m Exp

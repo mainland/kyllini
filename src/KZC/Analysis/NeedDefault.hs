@@ -550,9 +550,6 @@ useStep (RepeatC l ann c s) =
 useStep (ParC ann tau c1 c2 s) =
     ParC ann tau <$> useComp c1 <*> useComp c2 <*> pure s
 
-useStep LoopC{} =
-    faildoc $ text "useStep: saw LoopC"
-
 useExp :: forall m . MonadTc m
        => Exp
        -> ND m (Exp, Val)
