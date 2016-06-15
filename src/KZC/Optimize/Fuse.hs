@@ -168,13 +168,17 @@ joint :: (IsLabel l, MonadTc m)
       -> F l m (Joint l)
 joint lss rss = (,) <$> leftStepsLabel lss <*> rightStepsLabel rss
 
-jointStep :: (IsLabel l, MonadTc m) => Step (Joint l) -> F l m ()
-jointStep step = do
+jointStep :: (IsLabel l, MonadTc m)
+          => Step (Joint l)
+          -> F l m [Step l]
+          -> F l m [Step l]
+jointStep step k = do
     l <- stepLabel step
     whenVerbLevel 2 $ traceFusion $
         text "jointStep:" <+> ppr l <> colon </> ppr (jointLabel <$> step)
     recordLabel l
     tell (Seq.singleton step)
+    k
 
 collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
 collectSteps m =
@@ -330,10 +334,10 @@ runRight lss [] =
 
 runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
     ifte joinIf
-         (\lss' -> runRight lss' rss)
+         (\(step, lss') -> jointStep step $ runRight lss' rss)
          divergeIf
   where
-    joinIf :: F l m [Step l]
+    joinIf :: F l m (Step (Joint l), [Step l])
     joinIf = do
         l'          <- joint lss (rs:rss)
         (lss1, c1') <- collectSteps $
@@ -343,30 +347,29 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
                        withRightKont rss $
                        runRight lss (unComp c2)
         guardLeftConvergence lss1 lss2
-        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        return lss1
+        return (IfC l' e (mkComp c1') (mkComp c2') s, lss1)
 
     divergeIf :: F l m [Step l]
     divergeIf = do
         l'       <- joint lss (rs:rss)
         (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
         (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
-        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        return []
+        jointStep (IfC l' e (mkComp c1') (mkComp c2') s) $
+          return []
 
 runRight lss (rs@(WhileC _l e c s) : rss) =
     ifte joinWhile
-         (const $ runRight lss rss)
+         (\step -> jointStep step $ runRight lss rss)
          divergeWhile
   where
-    joinWhile :: F l m ()
+    joinWhile :: F l m (Step (Joint l))
     joinWhile = do
         l'         <- joint lss (rs:rss)
         (lss', c') <- collectSteps $
                       withRightKont rss $
                       runRight lss (unComp c)
         guardLeftConvergence lss lss'
-        jointStep $ WhileC l' e (mkComp c') s
+        return $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -377,17 +380,17 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
 -- See Note [Fusing For Loops]
 runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
     ifte joinFor
-         (const $ runRight lss rss)
+         (\step -> jointStep step $ runRight lss rss)
          divergeFor
   where
-    joinFor :: F l m ()
+    joinFor :: F l m (Step (Joint l))
     joinFor = do
         l'            <- joint lss (rs:rss)
         (lss', steps) <- collectSteps $
                          withRightKont rss $
                          runRight lss (unComp c)
         guardLeftConvergence lss lss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
+        return $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -422,10 +425,10 @@ runLeft [] rss =
 
 runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
     ifte joinIf
-         (\rss' -> runLeft lss rss')
+         (\(step, rss') -> jointStep step $ runLeft lss rss')
          divergeIf
   where
-    joinIf :: F l m [Step l]
+    joinIf :: F l m (Step (Joint l), [Step l])
     joinIf = do
         l'          <- joint (ls:lss) rss
         (rss1, c1') <- collectSteps $
@@ -435,30 +438,29 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
                        withLeftKont lss $
                        runLeft (unComp c2) rss
         guardRightConvergence rss1 rss2
-        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        return rss1
+        return (IfC l' e (mkComp c1') (mkComp c2') s, rss1)
 
     divergeIf :: F l m [Step l]
     divergeIf = do
         l'       <- joint (ls:lss) rss
         (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
         (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
-        jointStep $ IfC l' e (mkComp c1') (mkComp c2') s
-        return []
+        jointStep (IfC l' e (mkComp c1') (mkComp c2') s) $
+          return []
 
 runLeft (ls@(WhileC _l e c s) : lss) rss =
     ifte joinWhile
-         (const $ runLeft lss rss)
+         (\step -> jointStep step $ runLeft lss rss)
          divergeWhile
   where
-    joinWhile :: F l m ()
+    joinWhile :: F l m (Step (Joint l))
     joinWhile = do
         l'         <- joint (ls:lss) rss
         (rss', c') <- collectSteps $
                       withLeftKont lss $
                       runLeft (unComp c) rss
         guardRightConvergence rss rss'
-        jointStep $ WhileC l' e (mkComp c') s
+        return $ WhileC l' e (mkComp c') s
 
     divergeWhile :: F l m [Step l]
     divergeWhile = do
@@ -469,17 +471,17 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
 -- See Note [Fusing For Loops]
 runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
     ifte joinFor
-         (const $ runLeft lss rss)
+         (\step -> jointStep step $ runLeft lss rss)
          divergeFor
   where
-    joinFor :: F l m ()
+    joinFor :: F l m (Step (Joint l))
     joinFor = do
         l'            <- joint (ls:lss) rss
         (rss', steps) <- collectSteps $
                          withLeftKont lss $
                          runLeft (unComp c) rss
         guardRightConvergence rss rss'
-        jointStep $ ForC l' ann v tau e1 e2 (mkComp steps) s
+        return $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
     divergeFor :: F l m [Step l]
     divergeFor = do
@@ -519,8 +521,8 @@ runLeft (ls:lss) rss = do
 relabelStep :: (IsLabel l, MonadTc m)
             => Joint l
             -> Step l
-            -> F l m a
-            -> F l m a
+            -> F l m [Step l]
+            -> F l m [Step l]
 relabelStep _ step@VarC{} _k =
     withSummaryContext step $
     faildoc $ text "Saw variable bound to a computation during fusion"
@@ -530,43 +532,34 @@ relabelStep _ step@CallC{} _k =
     faildoc $ text "Saw call to a computation function during fusion"
 
 relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
-    extendVars [(bVar v, tau)] $ do
-    jointStep $ LetC l decl s
-    k
+    extendVars [(bVar v, tau)] $
+    jointStep (LetC l decl s) k
 
 relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
-    extendVars [(bVar v, refT tau)] $ do
-    jointStep $ LetC l decl s
-    k
+    extendVars [(bVar v, refT tau)] $
+    jointStep (LetC l decl s) k
 
-relabelStep l (LiftC _ e s) k = do
-    jointStep $ LiftC l e s
-    k
+relabelStep l (LiftC _ e s) k =
+    jointStep (LiftC l e s) k
 
-relabelStep l (ReturnC _ e s) k = do
-    jointStep $ ReturnC l e s
-    k
+relabelStep l (ReturnC _ e s) k =
+    jointStep (ReturnC l e s) k
 
 relabelStep l (BindC _ wv tau s) k =
-    extendWildVars [(wv, tau)] $ do
-    jointStep $ BindC l wv tau s
-    k
+    extendWildVars [(wv, tau)] $
+    jointStep (BindC l wv tau s) k
 
-relabelStep l (TakeC _ tau s) k = do
-    jointStep $ TakeC l tau s
-    k
+relabelStep l (TakeC _ tau s) k =
+    jointStep (TakeC l tau s) k
 
-relabelStep l (TakesC _ i tau s) k = do
-    jointStep $ TakesC l i tau s
-    k
+relabelStep l (TakesC _ i tau s) k =
+    jointStep (TakesC l i tau s) k
 
-relabelStep l (EmitC _ e s) k = do
-    jointStep $ EmitC l e s
-    k
+relabelStep l (EmitC _ e s) k =
+    jointStep (EmitC l e s) k
 
-relabelStep l (EmitsC _ e s) k = do
-    jointStep $ EmitsC l e s
-    k
+relabelStep l (EmitsC _ e s) k =
+    jointStep (EmitsC l e s) k
 
 relabelStep _ _ _k =
     fail "relabelStep: can't happen"
