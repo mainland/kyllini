@@ -188,6 +188,14 @@ extendSubst :: MonadTc m
 extendSubst v rng =
     local $ \env -> env { simplTheta = Map.insert v rng (simplTheta env) }
 
+extendSubsts :: MonadTc m
+             => [(InVar, SubstRng l)]
+             -> SimplM l m a
+             -> SimplM l m a
+extendSubsts vrngs =
+    local $ \env ->
+      env { simplTheta = Map.fromList vrngs `Map.union` simplTheta env }
+
 withSubst :: MonadTc m
           => Theta l
           -> SimplM l m a
@@ -597,6 +605,43 @@ simplSteps (LetC l decl s : steps) = do
 
 simplSteps (BindC {} : _) =
     panicdoc $ text "simplSteps: leading BindC"
+
+--
+-- Coalesce multiples sequential TakesC
+--
+-- { xs <- takes n; ys <- takes m; ... } ->
+-- { zs <- takes (n+m); ... [xs -> zs[0:n]; ys -> zs[n:m]] }
+--
+simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
+                  TakesC{}           : BindC _  TameV{} _ _  :
+                  _) = do
+    zs <- gensym "zs"
+    extendVars [(zs, arrKnownT total tau)] $
+      extendSubsts [(v, DoneExp e) | (v, i, n) <- zip3 vs offs lens,
+                                     let e = sliceE (varE zs) (intE i) n] $ do
+      steps' <- simplSteps rest
+      simplSteps $ TakesC l1 total tau s1 :
+                   BindC l2 (TameV (mkBoundVar zs)) (arrKnownT total tau) s2 :
+                   steps'
+  where
+    vs :: [Var]
+    lens :: [Int]
+    offs :: [Int]
+    total :: Int
+    (vs, lens) = unzip takes
+    offs = scanl (+) 0 lens
+    total = last offs
+
+    takes :: [(Var, Int)]
+    rest :: [Step l]
+    (takes, rest) = go [] steps
+
+    go :: [(Var, Int)] -> [Step l] -> ([(Var, Int)], [Step l])
+    go takes (TakesC _ n _ _ : BindC _ (TameV xs) _ _ : steps) =
+      go ((bVar xs, n) : takes) steps
+
+    go takes steps =
+      (reverse takes, steps)
 
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
