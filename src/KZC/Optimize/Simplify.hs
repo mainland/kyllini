@@ -1288,6 +1288,15 @@ simplE (IdxE e1 e2 len0 s) = do
   where
     go :: Exp -> Exp -> Maybe Int -> SimplM l m Exp
     --
+    -- Replace a slice of a slice with a single slice.
+    --
+    --  x[i, n][j, m] -> x[i+j, m]
+    --
+    go (IdxE e1' ei Just{} _) e2' len = do
+        rewrite
+        go e1' (ei + e2') len
+
+    --
     -- Replace a whole-array slice with the array itself.
     --
     --   x[0, n] -> n        when x is an array of size n
