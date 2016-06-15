@@ -607,6 +607,19 @@ simplSteps (BindC {} : _) =
     panicdoc $ text "simplSteps: leading BindC"
 
 --
+-- Move lift past take(s)
+--
+-- { lift e; x <- take; ... } -> { x <- take; lift e; ... }
+--
+simplSteps (s1@LiftC{} : s2 : s3@BindC{} : steps) | isTake s2 =
+    simplSteps (s2:s3:s1:steps)
+  where
+    isTake :: Step l -> Bool
+    isTake TakeC{}  = True
+    isTake TakesC{} = True
+    isTake _        = False
+
+--
 -- Coalesce multiples sequential TakesC
 --
 -- { xs <- takes n; ys <- takes m; ... } ->
