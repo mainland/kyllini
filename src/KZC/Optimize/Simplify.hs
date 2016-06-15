@@ -1014,9 +1014,8 @@ simplE e0@(VarE v _) =
     inline :: OutExp -> Maybe OccInfo -> Level -> Bool
     inline _rhs Nothing            _lvl = False
     inline _rhs (Just Dead)        _lvl = error "inline: saw Dead binding"
-    inline rhs (Just Once)         _lvl
-        | isArrE rhs                    = False
-        | otherwise                     = error "inline: saw Once binding"
+    -- We may choose not to inline a Once binding if, e.g., it is an array expression
+    inline _rhs (Just Once)        _lvl = False
     inline _rhs (Just OnceInFun)   _lvl = False
     inline _rhs (Just ManyBranch)  _lvl = False
     inline _rhs (Just Many)        _lvl = False
