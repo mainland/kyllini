@@ -652,6 +652,9 @@ inferComp comp =
     inferSteps [] =
         faildoc $ text "No computational steps to type check!"
 
+    inferSteps [LetC{}] =
+        faildoc $ text "Computation may not end in let"
+
     inferSteps (LetC _ decl _ : k) =
         checkLocalDecl decl $
         inferSteps k
