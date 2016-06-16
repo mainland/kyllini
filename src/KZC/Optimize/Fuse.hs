@@ -477,7 +477,7 @@ runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
         unrolled <- unrollFor l v e1 e2 c
         runLeft (unComp unrolled ++ lss) rss
 
-runLeft (EmitC _ e _ : lss) (TakeC{} : rss) =
+runLeft lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
     emitTake e lss rss
 
 runLeft (ls@EmitC{} : _) (rs@TakesC{} : _) = do
@@ -559,13 +559,28 @@ emitTake :: forall l m . (IsLabel l, MonadTc m)
          -> [Step l]
          -> [Step l]
          -> F l m [Step l]
-emitTake e lss rss =
-    runRight (bind unitE lss) (bind e rss)
+emitTake e lss rss = do
+    l                <- joint lss rss
+    let lss'         =  bindIn unitE (tail lss)
+    let (step, rss') =  bindAnd l e (tail rss)
+    jointStep step $
+      runRight lss' rss'
   where
-    bind :: Exp -> [Step l] -> [Step l]
-    bind _e (BindC _l WildV    _tau _ : ss) = ss
-    bind  e (BindC l (TameV v)  tau s : ss) = LetC l (LetLD v tau e s) s : ss
-    bind _e                             ss  = ss
+    bindIn :: Exp -> [Step l] -> [Step l]
+    bindIn _e (BindC _l WildV    _   _ : ss) = ss
+    bindIn  e (BindC l (TameV v) tau _ : ss) = letC l v tau e : ss
+    bindIn _e                            ss  = ss
+
+    bindAnd :: Joint l -> Exp -> [Step l] -> (Step (Joint l), [Step l])
+    bindAnd l e (BindC _ (TameV v) tau _ : ss) = (letC l v tau e, ss)
+    bindAnd l _ (BindC _ WildV     _   _ : ss) = (returnC l unitE, ss)
+    bindAnd l _                            ss  = (returnC l unitE, ss)
+
+    letC :: l' -> BoundVar -> Type -> Exp -> Step l'
+    letC l v tau e = LetC l (LetLD v tau e (srclocOf e)) (srclocOf e)
+
+    returnC :: l' -> Exp -> Step l'
+    returnC l e = ReturnC l e (srclocOf e)
 
 -- | Indicate that a nested par was encountered during fusion.
 nestedPar :: MonadTc m => F l m a
