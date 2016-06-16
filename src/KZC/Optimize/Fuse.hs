@@ -68,10 +68,8 @@ import KZC.Vars
 type Joint l = (l, l)
 
 data FEnv l = FEnv
-    { leftKont  :: !l         -- Current left continuation label
-    , rightKont :: !l         -- Current right continuation label
-    , leftLoop  :: !(Maybe l) -- Label of left loop head
-    , rightLoop :: !(Maybe l) -- Label of right loop head
+    { leftKont  :: !l -- Current left continuation label
+    , rightKont :: !l -- Current right continuation label
     }
 
 defaultFEnv :: (IsLabel l, MonadUnique m) => m (FEnv l)
@@ -79,19 +77,21 @@ defaultFEnv = do
     l <- gensym "end"
     return FEnv { leftKont  = l
                 , rightKont = l
-                , leftLoop  = Nothing
-                , rightLoop = Nothing
                 }
 
 data FState l = FState
-    { seen     :: !(Set (Joint l))
-    , loopHead :: !(Maybe (Joint l))
+    { seen          :: !(Set (Joint l))   -- All seen labels
+    , loopHead      :: !(Maybe (Joint l)) -- Label of loop head
+    , leftLoopHead  :: !(Maybe l)         -- Label of head of left repeat
+    , rightLoopHead :: !(Maybe l)         -- Label of head of right repeat
     }
 
 defaultFState :: IsLabel l => FState l
 defaultFState = FState
-    { seen     = mempty
-    , loopHead = Nothing
+    { seen          = mempty
+    , loopHead      = Nothing
+    , leftLoopHead  = Nothing
+    , rightLoopHead = Nothing
     }
 
 data FusionStats = FusionStats
@@ -197,27 +197,25 @@ collectSteps m =
 
 repeatLabel :: forall l m . MonadTc m => F l m (Maybe (Joint l))
 repeatLabel = do
-    maybe_left  <- asks leftLoop
-    maybe_right <- asks rightLoop
+    maybe_left  <- gets leftLoopHead
+    maybe_right <- gets rightLoopHead
     case (maybe_left, maybe_right) of
       (Just left, Just right) -> return $ Just (left, right)
       _                       -> return Nothing
 
 leftRepeat :: (IsLabel l, MonadTc m)
            => Comp l
-           -> F l m a
-           -> F l m a
-leftRepeat c k = do
+           -> F l m ()
+leftRepeat c = do
     l <- leftStepsLabel (unComp c)
-    local (\env -> env { leftLoop = Just l }) k
+    modify $ \s -> s { leftLoopHead = Just l }
 
 rightRepeat :: (IsLabel l, MonadTc m)
             => Comp l
-            -> F l m a
-            -> F l m a
-rightRepeat c k = do
+            -> F l m ()
+rightRepeat c = do
     l <- rightStepsLabel (unComp c)
-    local (\env -> env { rightLoop = Just l }) k
+    modify $ \s -> s { rightLoopHead = Just l }
 
 sawLabel :: (IsLabel l, MonadTc m)
          => Joint l -> F l m Bool
@@ -304,11 +302,11 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
 fuse left right = do
     (_, steps) <- collectSteps $
                   runRight (unComp left) (unComp right)
-    let comp   =  jointLabel <$> mkComp steps
     maybe_l    <- gets loopHead
+    let comp   =  mkComp steps
     case maybe_l of
-      Nothing -> return comp
-      Just l  -> recoverRepeat (jointLabel l) comp
+      Nothing -> return $ jointLabel <$> comp
+      Just l  -> recoverRepeat l comp
 
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
@@ -390,8 +388,8 @@ runRight _ (TakesC{} : _) =
     faildoc $ text "Saw takes in consumer."
 
 runRight lss rss@(RepeatC _ _ c _ : _) =
-    withRightKont rss $
-    rightRepeat c $
+    withRightKont rss $ do
+    rightRepeat c
     runRight lss (unComp c ++ rss)
 
 runRight _lss (ParC{} : _rss) =
@@ -490,8 +488,8 @@ runLeft (EmitsC{} : _) _ =
     faildoc $ text "Saw emits in producer."
 
 runLeft lss@(RepeatC _ _ c _ : _) rss =
-    withLeftKont lss $
-    leftRepeat c $
+    withLeftKont lss $ do
+    leftRepeat c
     runLeft (unComp c ++ lss) rss
 
 runLeft (ParC{} : _lss) _rss =
@@ -676,26 +674,29 @@ When we detect a loop, we save the loop's label, which is then used by
 `recoverRepeat` to recover the loop.
 -}
 
-recoverRepeat :: forall l m . (IsLabel l, MonadUnique m)
-              => l
-              -> Comp l
+recoverRepeat :: forall l m . (IsLabel l, MonadTc m)
+              => Joint l
+              -> Comp (Joint l)
               -> m (Comp l)
-recoverRepeat l c =
-    mkComp <$> go (unComp c)
+recoverRepeat l comp =
+    go (unComp comp) []
   where
-    go :: [Step l] -> m [Step l]
-    go [] =
-        return []
+    go :: [Step (Joint l)] -- ^ Remaining steps in the computation
+       -> [Step (Joint l)] -- ^ Prefix (reversed) of the computation
+       -> m (Comp l)
+    go [] prefix =
+        return $ jointLabel <$> mkComp (reverse prefix)
 
-    go (step:steps) | stepLabel step == Just l = do
-        l' <- gensym "repeatk"
-        return [RepeatC l' AutoVect c (srclocOf c)]
+    go (step:steps) prefix | stepLabel step == Just l = do
+        l_repeat <- gensym "repeatk"
+        return $ (jointLabel <$> mkComp (reverse prefix)) <>
+                 mkComp [RepeatC l_repeat AutoVect c (srclocOf c)]
       where
         c :: Comp l
-        c = mkComp (step:steps)
+        c = jointLabel <$> mkComp (step:steps)
 
-    go (step:steps) =
-        (step :) <$> go steps
+    go (step:steps) prefix =
+        go steps (step:prefix)
 
 {- Note [Fusing For Loops]
 
