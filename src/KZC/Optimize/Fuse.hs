@@ -179,10 +179,8 @@ jointStep step k = do
         text "jointStep:" <+> ppr l_joint <> colon </> ppr (jointLabel <$> step)
     saw <- sawLabel l_joint
     if saw
-      then do when (l_repeat /= Just l_joint) $ do
-                traceFusion $ text "Unaligned repeat loops"
-                fusionFailed
-                mzero
+      then do when (l_repeat /= Just l_joint)
+                unalignedRepeats
               modify $ \s -> s { loopHead = Just l_joint }
               return []
       else do when (l_repeat == Just l_joint) $
@@ -597,6 +595,12 @@ unrollingFor = do
     unless doUnroll $ do
         traceFusion $ text "Encountered diverging loop during fusion."
         mzero
+
+unalignedRepeats :: MonadTc m => F l m ()
+unalignedRepeats = do
+    traceFusion $ text "Unaligned repeat loops"
+    fusionFailed
+    mzero
 
 -- | Alpha-rename binders given an in-scope set of binders.
 alphaRename :: Subst Exp Var a => Set Var -> a -> a
