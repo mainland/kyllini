@@ -75,10 +75,10 @@ GHCFLAGS+=-O -Wall -fno-warn-name-shadowing -Werror
 RUNGHC=runghc
 RUNGHCFLAGS+=-W -fno-warn-unused-imports
 
-HAPPY=happy 
+HAPPY=happy
 HAPPYFLAGS+=-agci
 
-ALEX=alex 
+ALEX=alex
 ALEXFLAGS+=-gi
 
 #
