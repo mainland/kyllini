@@ -408,7 +408,7 @@ void __kz_sora_fft(int n, const complex16_t *in, complex16_t *out)
 const size_t TRELLIS_MAX = 5000 * 8;
 TViterbiCore<TRELLIS_MAX> m_viterbi;
 
-ulong ob_count;
+unsigned long ob_count;
 uint16_t frame_length = 1500;
 int16_t code_rate = CR_12;
 size_t TRELLIS_DEPTH = 256;
