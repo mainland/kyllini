@@ -34,10 +34,16 @@ SUCH DAMAGE.
 extern "C" {
 #endif
 
+#include <KzcConfig.h>
+
 #include <kz/types.h>
 
 #include <pthread.h>
 #include <semaphore.h>
+
+#if HAVE_DISPATCH_DISPATCH_H
+#include <dispatch/dispatch.h>
+#endif
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -63,7 +69,11 @@ extern "C" {
 
 /* Thread info */
 typedef struct {
+#if HAVE_DISPATCH_DISPATCH_H
+    dispatch_semaphore_t sem;
+#else /* !HAVE_DISPATCH_DISPATCH_H */
     sem_t sem;
+#endif /* !HAVE_DISPATCH_DISPATCH_H */
     volatile unsigned int prod_cnt; /* count of items produced */
     volatile unsigned int cons_cnt; /* count of items consumed */
     volatile unsigned int cons_req; /* number of items consumer has requested */

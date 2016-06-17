@@ -27,9 +27,15 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 */
 
+#include <KzcConfig.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if HAVE_DISPATCH_DISPATCH_H
+#include <dispatch/dispatch.h>
+#endif
 
 #include <kz/threads.h>
 
@@ -51,8 +57,14 @@ int kz_thread_init(kz_tinfo_t *tinfo,
     tinfo->done = 0;
     tinfo->result = NULL;
 
+#if HAVE_DISPATCH_DISPATCH_H
+    tinfo->sem = dispatch_semaphore_create(0);
+    if (tinfo->sem == NULL)
+        return -1;
+#else /* !HAVE_DISPATCH_DISPATCH_H */
     if ((err = sem_init(&(tinfo->sem), 0, 0)) != 0)
         return err;
+#endif /* !HAVE_DISPATCH_DISPATCH_H */
 
     if ((err = pthread_attr_init(&attr)) != 0)
         return err;
@@ -67,12 +79,20 @@ int kz_thread_post(kz_tinfo_t *tinfo)
 {
     tinfo->done = 0;
     kz_memory_barrier();
+#if HAVE_DISPATCH_DISPATCH_H
+    return dispatch_semaphore_signal(tinfo->sem);
+#else /* !HAVE_DISPATCH_DISPATCH_H */
     return sem_post(&(tinfo->sem));
+#endif /* !HAVE_DISPATCH_DISPATCH_H */
 }
 
 int kz_thread_wait(kz_tinfo_t *tinfo)
 {
+#if HAVE_DISPATCH_DISPATCH_H
+    return dispatch_semaphore_wait(tinfo->sem, DISPATCH_TIME_FOREVER);
+#else /* !HAVE_DISPATCH_DISPATCH_H */
     return sem_wait(&(tinfo->sem));
+#endif /* !HAVE_DISPATCH_DISPATCH_H */
 }
 
 int kz_thread_join(kz_thread_t thread, void **retval)
