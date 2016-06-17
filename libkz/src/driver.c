@@ -27,6 +27,8 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 */
 
+#include <KzcConfig.h>
+
 #include <errno.h>
 #include <getopt.h>
 #include <stdarg.h>
@@ -36,6 +38,14 @@ SUCH DAMAGE.
 #include <unistd.h>
 #include <sys/resource.h>
 #include <sys/times.h>
+
+#if HAVE_MACH_MACH_H
+#include <mach/mach.h>
+#endif /* HAVE_MACH_MACH_H */
+
+#if HAVE_MACH_MACH_TIME_H
+#include <mach/mach_time.h>
+#endif /* HAVE_MACH_MACH_TIME_H */
 
 #include <kz.h>
 
@@ -88,27 +98,63 @@ void kz_error(const char* s)
 
 long double kz_get_cpu_time(void)
 {
-    clockid_t clk_id;
+#if HAVE_CLOCK_GETTIME
+    clockid_t clk_id = -1;
     struct timespec ts;
 
+#if defined(CLOCK_PROCESS_CPUTIME_ID)
     clk_id = CLOCK_PROCESS_CPUTIME_ID;
+#elif defined(CLOCK_VIRTUAL)
+    clk_id = CLOCK_VIRTUAL;
+#endif
 
     if (clock_gettime(clk_id, &ts) == 0)
         return (long double) ts.tv_sec + (long double) ts.tv_nsec / 1e9;
+#elif HAVE_CLOCK
+    clock_t cl = clock();
 
-    return -1;
+    if (cl != (clock_t) -1)
+        return (double) cl / (double) CLOCKS_PER_SEC;
+#else
+#error "Cannot find suitable clock"
+#endif
+  return -1;
 }
 
 long double kz_get_real_time(void)
 {
-    clockid_t clk_id;
+#if HAVE_CLOCK_GETTIME
+    clockid_t clk_id = -1;
     struct timespec ts;
 
+#if defined(CLOCK_MONOTONIC_RAW)
     clk_id = CLOCK_MONOTONIC_RAW;
+#elif defined(CLOCK_MONOTONIC_PRECISE)
+    clk_id = CLOCK_MONOTONIC_PRECISE;
+#elif defined(CLOCK_MONOTONIC)
+    clk_id = CLOCK_MONOTONIC;
+#elif defined(CLOCK_REALTIME_PRECISE)
+    clk_id = CLOCK_REALTIME;
+#elif defined(CLOCK_REALTIME_PRECISE)
+    clk_id = CLOCK_REALTIME;
+#endif
 
     if (clock_gettime(clk_id, &ts) == 0)
         return (long double) ts.tv_sec + (long double) ts.tv_nsec / 1e9;
+#elif HAVE_MACH_TIMEBASE_INFO
+    static double secConversion = 0.0;
 
+    if (secConversion == 0.0) {
+        mach_timebase_info_data_t timeBase;
+
+        (void) mach_timebase_info(&timeBase);
+        secConversion = (double) timeBase.numer / (double) timeBase.denom / 1e9;
+    }
+
+    return (double) mach_absolute_time() * secConversion;
+#else
+#error "Cannot find suitable clock"
+#endif
     return -1;
 }
 

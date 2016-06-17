@@ -59,7 +59,7 @@ endif
 #
 # Misc flags
 #
-CPPFLAGS+=-I$(TOP)/libkz/include
+CPPFLAGS+=-I$(TOP)/include -I$(TOP)/libkz/include
 CFLAGS+=-msse4
 
 CCFLAGS+=-std=gnu99

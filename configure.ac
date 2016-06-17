@@ -29,6 +29,14 @@ AC_ARG_WITH([compiler],
 AC_PROG_CPP()
 
 #
+# Look for clock bits
+#
+AC_CHECK_HEADERS([mach/mach.h])
+AC_CHECK_HEADERS([mach/mach_time.h])
+AC_SEARCH_LIBS([clock_gettime],[rt posix4])
+AC_CHECK_FUNCS([clock clock_gettime mach_timebase_info])
+
+#
 # Finish up
 #
 
