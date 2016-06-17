@@ -10,6 +10,7 @@
 
 module KZC.Check.Smart (
     tyVarT,
+    metaT,
 
     unitT,
     boolT,
@@ -43,6 +44,9 @@ import KZC.Platform
 
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
+
+metaT :: MetaTv -> Type
+metaT mtv = MetaT mtv noLoc
 
 unitT :: Type
 unitT = UnitT noLoc
