@@ -141,7 +141,7 @@ withTi m = do
 localExp :: Z.Exp -> Ti a -> Ti a
 localExp e = local (\env -> env { curexp = Just e })
 
--- | ASk the current expression we are working with. We use this to list
+-- | Ask the current expression we are working with. We use this to list
 -- relevant bindings in error messages.
 askCurrentExp :: Ti (Maybe Z.Exp)
 askCurrentExp = asks curexp
