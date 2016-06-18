@@ -1,0 +1,19 @@
+fun split(xs: arr complex16) {
+  var evens: arr complex16
+  var odds:  arr complex16
+
+  for i in [0, length(xs)/2] {
+    evens[i] := xs[i*2]
+  }
+
+  return evens
+}
+
+fun comp id() {
+  repeat {
+    x <- take;
+    emit x;
+  }
+}
+
+let comp main = read[int] >>> id() >>> write[int]
