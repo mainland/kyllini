@@ -140,6 +140,7 @@ checkLet v ztau TauK e l =
     extendVars [(v, tau)] $ do
     mce <- castVal tau e
     let mcdecl = do
+        checkUnresolvedMtvs v tau
         cv   <- trans v
         ctau <- trans tau
         ce   <- mce
@@ -176,6 +177,7 @@ checkLetRef v ztau e_init l =
              Just e  -> do mce <- castVal tau e
                            return $ Just <$> mce
     let mcdecl = do
+        checkUnresolvedMtvs v tau
         cv   <- trans v
         ctau <- trans tau
         ce   <- mce
@@ -1110,7 +1112,8 @@ tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
     mce2 <- extendVars [(v, nu)] $
             checkCmds cmds tau2
     withSummaryContext e checkForUnusedReturn
-    return $ do cv  <- trans v
+    return $ do checkUnresolvedMtvs v nu
+                cv  <- trans v
                 ce1 <- withSummaryContext cmd mce1
                 cnu <- trans nu
                 ce2 <- mce2
@@ -1655,6 +1658,34 @@ checkMapFunT f tau = do
 
     l :: SrcLoc
     l = srclocOf tau
+
+-- | Check for unresolved type meta-variables in a binder's type.
+checkUnresolvedMtvs :: Z.Var -> Type -> Ti ()
+checkUnresolvedMtvs v tau = do
+    tau' <- compress tau
+    let mtvs :: [MetaTv]
+        mtvs = Set.toList $ fvs tau'
+    check "Ambiguous array length" (filter isIotaMetaTv mtvs)
+    check "Ambiguous type" (filter (not . isIotaMetaTv) mtvs)
+  where
+      isIotaMetaTv :: MetaTv -> Bool
+      isIotaMetaTv (MetaTv _ IotaK _) = True
+      isIotaMetaTv _                  = False
+
+      check :: String -> [MetaTv] -> Ti ()
+      check _ [] =
+          return ()
+
+      check msg mtvs = do
+          tau':mtvs' <- sanitizeTypes (tau : map metaT mtvs)
+          faildoc $
+              text (plural msg mtvs') <> colon <+> commasep (map ppr mtvs') </>
+              text "In declaration:" </>
+              indent 2 (ppr v <+> colon <+> ppr tau')
+        where
+          plural :: String -> [a] -> String
+          plural s [_] = s
+          plural s _   = s ++ "s"
 
 mkSTC :: Type -> Ti Type
 mkSTC tau = do
