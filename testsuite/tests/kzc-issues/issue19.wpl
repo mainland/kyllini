@@ -1,0 +1,21 @@
+#define MODULATION 1
+
+fun comp test0() {
+  x <- take
+
+  emit '0
+}
+
+fun comp test1() {
+  x <- take
+
+  emit '1
+}
+
+let comp main =
+    read[bit] >>>
+    if MODULATION == 0 then
+      test0()
+    else -- if MODULATION == 1 then
+      test1()
+    >>> write[bit]

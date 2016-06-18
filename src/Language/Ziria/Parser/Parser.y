@@ -175,6 +175,10 @@ import KZC.Name
 %left '|>>>|'
 %left '>>>'
 
+%left 'in'
+
+%left STANDALONE
+
 %expect 0
 
 %monad { P } { >>= } { return }
@@ -682,24 +686,7 @@ comp_let_decl :
 
 acomp :: { Exp }
 acomp :
-    'standalone' acomp
-      { StandaloneE $2 ($1 `srcspan` $2) }
-  | 'repeat' vect_ann acomp
-      { RepeatE $2 $3 ($1 `srcspan` $3) }
-  | 'until' exp acomp
-      { UntilE $2 $3 ($1 `srcspan` $3) }
-  | 'while' exp acomp
-      { WhileE $2 $3 ($1 `srcspan` $3) }
-  | unroll_info 'times' exp acomp
-      { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
-  | unroll_info 'for' var_bind 'in' gen_interval acomp
-      { let { (v, tau)     = $3
-            ; (start, len) = unLoc $5
-            }
-        in
-          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
-      }
-  | inline_ann 'return' exp
+    inline_ann 'return' exp
       { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
   | 'emit' exp
       { EmitE $2 ($1 `srcspan` $2) }
@@ -724,6 +711,20 @@ acomp :
           MapE $2 v tau ($1 `srcspan` tau)
       }
 
+  | 'if' exp 'then' comp %prec IF
+      { IfE $2 $4 Nothing ($1 `srcspan` $4) }
+  | 'if' exp 'then' comp 'else' comp
+      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
+  | 'if' exp 'then' error
+      {% expected ["command"] Nothing }
+  | 'if' exp error
+      {% expected ["then clause"] Nothing }
+
+  | comp_let_decl 'in' comp
+      { CompLetE $1 $3 ($1 `srcspan` $3) }
+  | comp_let_decl error
+      {% expected ["'in'"] Nothing }
+
   | 'do' stm_block
       { stmsE $2 }
   | 'seq' '{' commands '}'
@@ -741,36 +742,33 @@ acomp :
   | '(' comp ')'
       { $2 }
 
-opcomp :: { Exp }
-opcomp :
-    acomp
-      { $1 }
-  | opcomp '>>>' opcomp
-      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
-  | opcomp '|>>>|' opcomp
-      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
-
-ifcomp :: { Exp }
-ifcomp :
-    opcomp
-      { $1 }
-  | 'if' exp 'then' ifcomp %prec IF
-      { IfE $2 $4 Nothing ($1 `srcspan` $4) }
-  | 'if' exp 'then' ifcomp 'else' ifcomp
-      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
-  | 'if' exp 'then' error
-      {% expected ["command"] Nothing }
-  | 'if' exp error
-      {% expected ["then clause"] Nothing }
-
 comp :: { Exp }
 comp :
-    ifcomp
+    acomp
       { $1 }
-  | comp_let_decl 'in' comp
-      { CompLetE $1 $3 ($1 `srcspan` $3) }
-  | comp_let_decl error
-      {% expected ["'in'"] Nothing }
+
+  | 'standalone' comp %prec STANDALONE
+      { StandaloneE $2 ($1 `srcspan` $2) }
+  | 'repeat' vect_ann comp %prec STANDALONE
+      { RepeatE $2 $3 ($1 `srcspan` $3) }
+  | 'until' exp comp %prec STANDALONE
+      { UntilE $2 $3 ($1 `srcspan` $3) }
+  | 'while' exp comp %prec STANDALONE
+      { WhileE $2 $3 ($1 `srcspan` $3) }
+  | unroll_info 'times' exp comp %prec STANDALONE
+      { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
+  | unroll_info 'for' var_bind 'in' gen_interval comp %prec STANDALONE
+      { let { (v, tau)     = $3
+            ; (start, len) = unLoc $5
+            }
+        in
+          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
+      }
+
+  | comp '>>>' comp
+      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
+  | comp '|>>>|' comp
+      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
 
 inline_ann :: { L InlineAnn }
 inline_ann :
