@@ -128,6 +128,30 @@ int32_t __kz_atan2_int32(int32_t y, int32_t x)
 }
 
 FORCEINLINE
+int16_t __kz_sine_double_int16(int16_t x, int16_t prec)
+{
+    return (int16_t) (sin(((float) x) / prec)*prec);
+}
+
+FORCEINLINE
+int16_t __kz_cosine_double_int16(int16_t x, int16_t prec)
+{
+    return (int16_t) (cos(((float) x) / prec)*prec);
+}
+
+FORCEINLINE
+int32_t __kz_sine_double_int32(int32_t x, int32_t prec)
+{
+    return (int32_t) (sin(((float) x) / prec)*prec);
+}
+
+FORCEINLINE
+int32_t __kz_cosine_double_int32(int32_t x, int32_t prec)
+{
+    return (int32_t) (cos(((float) x) / prec)*prec);
+}
+
+FORCEINLINE
 void __kz_sora_ifft(int n, const complex16_t *in, complex16_t *out)
 {
     // We use the safe version to respect Blink's semantic
