@@ -1,0 +1,13 @@
+#define USE_VALC 1
+
+fun comp id() {
+  x <- take
+  emit x
+}
+
+struct TXParams = {
+  ValA : int16;
+  ValB : int16;
+};
+
+let comp main = read[bit] >>> id() >>> write[bit]

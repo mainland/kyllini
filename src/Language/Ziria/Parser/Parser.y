@@ -843,6 +843,7 @@ field_rlist :: { RevList (Field, Type) }
 field_rlist :
     {- empty -}           { rnil }
   | field                 { rsingleton $1 }
+  | field_rlist ';'       { $1 }
   | field_rlist ';' field { rcons $3 $1 }
 
 field :: { (Field, Type) }
