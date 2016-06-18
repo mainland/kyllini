@@ -206,10 +206,10 @@ $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/bu
 # Lexer and parser generation
 #
 $(SRCDIR)Language/Ziria/Parser/Parser.hs : $(SRCDIR)Language/Ziria/Parser/Parser.y
-	$(_QUIET)$(HAPPY) $(HAPPY_ARGS) -o $@ $<
+	$(_QUIET)$(HAPPY) $(HAPPYFLAGS) -o $@ $<
 
 $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
-	$(_QUIET)$(ALEX) $(ALEX_ARGS) -o $@ $<
+	$(_QUIET)$(ALEX) $(ALEXFLAGS) -o $@ $<
 
 #
 # Tests
