@@ -315,6 +315,49 @@ runRight :: forall l m . (IsLabel l, MonadTc m)
 runRight lss [] =
     return lss
 
+{- Note ["Free" Left Steps]
+
+We want to go ahead and run all "free" left steps so that they have already been
+executed when we look for confluence. Consider:
+
+    { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
+
+We want to be at the left computation's repeat head when we fuse pars so that
+the trace will align when we fuse the repeats.
+
+When running a "free" return or lift, we need to be sure to also run the
+subsequent bind. However, we don't want to run a final lift or return, because
+those would be the final value of the overall fused computation---we need to
+wait until the right side is done running before running a final lift or return
+on the left.
+-}
+
+runRight (ls1:ls2:lss) rss | isFree ls1 ls2 = do
+    l1' <- joint (ls1:ls2:lss) rss
+    l2' <- joint (ls2:lss) rss
+    relabelStep l1' ls1 $
+      relabelStep l2' ls2 $
+      runRight lss rss
+  where
+    isFree :: Step l -> Step l -> Bool
+    isFree ReturnC{} BindC{} = True
+    isFree LiftC{}   BindC{} = True
+    isFree _         _       = False
+
+-- lss@(_:_) ensures we won't match a final lift/return. A final let is weird
+-- and useless anyway, so we don't worry about it :)
+runRight (ls:lss@(_:_)) rss | isFree ls = do
+    l' <- joint (ls:lss) rss
+    relabelStep l' ls $
+      runRight lss rss
+  where
+    isFree :: Step l -> Bool
+    isFree LetC{}              = True
+    isFree ReturnC{}           = True
+    isFree LiftC{}             = True
+    isFree (BindC _ WildV _ _) = True
+    isFree _                   = False
+
 runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
     ifte joinIf
          (\(step, lss') -> jointStep step $ runRight lss' rss)
