@@ -420,7 +420,7 @@ runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        unrollingFor
+        unrollingFor c
         unrolled <- unrollFor l v e1 e2 c
         runRight lss (unComp unrolled ++ rss)
 
@@ -512,7 +512,7 @@ runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        unrollingFor
+        unrollingFor c
         unrolled <- unrollFor l v e1 e2 c
         runLeft (unComp unrolled ++ lss) rss
 
@@ -630,12 +630,19 @@ nestedPar = do
 
 -- | Indicate that we are unrolling a for loop during fusion. This will fail
 -- unless the appropriate flag has been specified.
-unrollingFor :: MonadTc m => F l m ()
-unrollingFor = do
+unrollingFor :: forall l m . (IsLabel l, MonadTc m) => Comp l -> F l m ()
+unrollingFor c = do
     doUnroll <- asksFlags (testDynFlag FuseUnroll)
-    unless doUnroll $ do
+    unless (alwaysUnroll (unComp c) || doUnroll) $ do
         traceFusion $ text "Encountered diverging loop during fusion."
         mzero
+  where
+    -- We only always unroll loops of the forms we output when translating
+    -- emits/takes to loops of individual emit and take steps.
+    alwaysUnroll :: [Step l] -> Bool
+    alwaysUnroll [EmitC{}]                               = True
+    alwaysUnroll [TakeC{}, BindC{}, LiftC _ AssignE{} _] = True
+    alwaysUnroll _                                       = False
 
 unalignedRepeats :: MonadTc m => F l m ()
 unalignedRepeats = do
