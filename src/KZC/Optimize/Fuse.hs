@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -24,7 +25,8 @@ import Control.Monad (MonadPlus(..),
                       guard,
                       unless,
                       void,
-                      when)
+                      when,
+                      zipWithM)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
@@ -55,6 +57,7 @@ import Data.String (IsString(..))
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
+import qualified KZC.Core.Comp as C
 import KZC.Core.Embed
 import KZC.Core.Lint
 import KZC.Core.Smart
@@ -64,6 +67,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Monad.SEFKT
+import KZC.Name
 import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
@@ -690,10 +694,8 @@ unrollingFor c = do
     alwaysUnroll _                                       = False
 
 unalignedRepeats :: MonadTc m => F l m ()
-unalignedRepeats = do
+unalignedRepeats =
     traceFusion $ text "Unaligned repeat loops"
-    fusionFailed
-    mzero
 
 -- | Alpha-rename binders given an in-scope set of binders.
 alphaRename :: Subst Exp Var a => Set Var -> a -> a
@@ -757,16 +759,11 @@ We fuse repeat by unrolling the repeat loop on demand.
 The only time that fusion will produce a repeat loop is when both sides of the
 par are repeats. We detect a loop by keeping track of the labels of all fused
 steps that have been produced so far and recording the loop header label when we
-encounter a step we have seen before *and* we are in a state where both the left
-and right sides of the par are at a loop header.
+encounter a step we have seen before. This label is then used by `recoverRepeat`
+to recover the loop.
 
-We need to make sure that both computations are at a loop header because
-otherwise we can end up in a situation where the fused loop starts halfway
-through the body of one of the two loops being fused, meaning the binders that
-occurred earlier in the loop body are not valid!
-
-When we detect a loop, we save the loop's label, which is then used by
-`recoverRepeat` to recover the loop.
+When the repeat loops are unaligned, we take care to save and restore variables
+that are bound by the shifted repeat loop prefix.
 -}
 
 recoverRepeat :: forall a l m . (IsLabel l, MonadTc m)
@@ -782,19 +779,70 @@ recoverRepeat m = do
             -> [Step (Joint l)]       -- ^ Remaining steps in the computation
             -> [Step (Joint l)]       -- ^ Prefix (reversed) of the computation
             -> F l m (Comp (Joint l)) -- ^ Computation with recovered repeat
-    recover _ [] _prefix =
-        faildoc $ text "Could not find repeat label!"
-
-    recover l steps@(step:_) prefix | stepLabel step == Just l = do
-        l_repeat <- gensym "repeatk"
-        return $ mkComp $ reverse $
-          RepeatC l_repeat AutoVect c (srclocOf c) : prefix
+    recover l = loop
       where
-        c :: Comp (Joint l)
-        c = mkComp steps
+        loop :: [Step (Joint l)] -> [Step (Joint l)] -> F l m (Comp (Joint l))
+        loop [] _prefix =
+            faildoc $ text "Could not find repeat label!"
 
-    recover l (step:steps) prefix =
-        recover l steps (step:prefix)
+        loop steps@(step:_) prefix | stepLabel step == Just l = do
+            taus                       <- mapM (inferFv c_prefix) vs
+            (c_let, c_restore, c_save) <- mconcat <$>
+                                            zipWithM mkDeclSaveRestore vs taus
+            c_repeat                   <- C.repeatC AutoVect $
+                                            c_restore <> c_body <> c_save
+            return $ c_prefix <> c_let <> c_repeat
+          where
+            -- Variables bound by the shifted prefix of the unaligned repeat
+            -- loops
+            vs :: [Var]
+            vs = Set.toList $ fvs c_body `Set.intersection` binders c_body
+
+            c_prefix, c_body :: Comp (Joint l)
+            c_prefix = mkComp (reverse prefix)
+            c_body   = mkComp steps
+
+        loop (step:steps) prefix =
+            loop steps (step:prefix)
+
+    inferFv :: Comp (Joint l) -> Var -> F l m Type
+    inferFv c v = do
+        (tau, _, _, _) <- inferComp (c <> mkComp [returnVarC]) >>=
+                          checkSTC
+        return tau
+      where
+        returnVarC :: Step (Joint l)
+        returnVarC = ReturnC "dummy" (varE v) (srclocOf v)
+
+    mkDeclSaveRestore :: Var
+                      -> Type
+                      -> F l m (Comp (Joint l), Comp (Joint l), Comp (Joint l))
+    mkDeclSaveRestore v tau | isRefT tau = do
+        v'       <- gensym (namedString v ++ "_save")
+        t1       <- gensym (namedString v ++ "_temp1")
+        t2       <- gensym (namedString v ++ "_temp2")
+        t3       <- gensym (namedString v ++ "_temp3")
+        letc     <- mkSteps [C.liftC $ derefE (varE v)
+                            ,C.bindC (TameV (mkBoundVar t1)) (unRefT tau)
+                            ,C.letrefC v' (unRefT tau) (Just (varE t1))]
+        restorec <- mkSteps [C.liftC $ derefE (varE v')
+                            ,C.bindC (TameV (mkBoundVar t2)) (unRefT tau)
+                            ,C.liftC $ assignE (varE v) (varE t2)]
+        savec    <- mkSteps [C.liftC $ derefE (varE v)
+                            ,C.bindC (TameV (mkBoundVar t3)) (unRefT tau)
+                            ,C.liftC $ assignE (varE v') (varE t3)]
+        return (letc, restorec, savec)
+
+    mkDeclSaveRestore v tau = do
+        v'       <- gensym (namedString v ++ "_save")
+        letc     <- mkSteps [C.letrefC v' tau (Just (varE v))]
+        restorec <- mkSteps [C.liftC $ derefE (varE v')
+                            ,C.bindC (TameV (mkBoundVar v)) tau]
+        savec    <- mkSteps [C.liftC $ assignE (varE v') (varE v)]
+        return (letc, restorec, savec)
+
+    mkSteps :: [F l m (Comp (Joint l))] -> F l m (Comp (Joint l))
+    mkSteps = fmap mconcat . sequence
 
 recoverRepeat_ :: forall l m . (IsLabel l, MonadTc m)
                => F l m ()
