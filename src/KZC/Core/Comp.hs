@@ -14,6 +14,7 @@ module KZC.Core.Comp (
     callC,
     ifC,
     letC,
+    letrefC,
     letDC,
     whileC,
     forC,
@@ -54,6 +55,9 @@ ifC e thenc elsec = do
 
 letC :: (IsLabel l, MonadUnique m) => Var -> Type -> Exp -> m (Comp l)
 letC v tau e = letDC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
+
+letrefC :: (IsLabel l, MonadUnique m) => Var -> Type -> Maybe Exp -> m (Comp l)
+letrefC v tau e = letDC $ LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
 
 letDC :: (IsLabel l, MonadUnique m) => LocalDecl -> m (Comp l)
 letDC decl = do
