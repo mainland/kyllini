@@ -656,6 +656,25 @@ simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
     go takes steps =
       (reverse takes, steps)
 
+--
+-- Coalesce multiple sequential EmitsC
+--
+-- { emits x[i,n]; emits x[i+n,m]; ... } ->
+-- { emits x[i,n+m]] }
+--
+simplSteps (EmitsC l1 (IdxE (VarE v  _) ei len1 s1) s2 :
+            EmitsC _  (IdxE (VarE v' _) ej len2 _)   _ :
+            steps)
+  | v' == v,
+    Just i <- fromIntE ei,
+    Just j <- fromIntE ej,
+    j == i + sliceLen len1 = do
+      rewrite
+      simplSteps $ EmitsC l1 (IdxE (varE v) ei len' s1) s2 : steps
+  where
+    len' :: Maybe Int
+    len' = Just $ sliceLen len1 + sliceLen len2
+
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
     tau'  <- simplType tau
