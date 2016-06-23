@@ -1063,6 +1063,11 @@ instance Fvs (Step l) Var where
     fvs (RepeatC _ _ c _)        = fvs c
     fvs (ParC _ _ e1 e2 _)       = fvs e1 <> fvs e2
 
+instance Binders (Step l) Var where
+    binders (LetC _ decl _)  = binders decl
+    binders (BindC _ wv _ _) = binders wv
+    binders _                = mempty
+
 instance Fvs (Comp l) Var where
     fvs comp = go (unComp comp)
       where
@@ -1071,6 +1076,9 @@ instance Fvs (Comp l) Var where
         go (BindC _ wv _ _ : k)        = go k <\\> binders wv
         go (LetC _ decl _ : k)         = fvs decl <> (go k <\\> binders decl)
         go (step : k)                  = fvs step <> go k
+
+instance Binders (Comp l) Var where
+    binders comp = mconcat (map binders (unComp comp))
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
