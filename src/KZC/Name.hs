@@ -38,7 +38,7 @@ instance Show Name where
         pprSort (Internal u) = "{" ++ show u ++ "}"
 
 instance Eq Name where
-    n1 == n2 = nameSym n1 == nameSym n2
+    n1 == n2 = nameSort n1 == nameSort n2 && nameSym n1 == nameSym n2
 
 instance Ord Name where
     compare n1 n2 =
