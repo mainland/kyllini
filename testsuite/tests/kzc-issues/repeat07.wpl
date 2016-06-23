@@ -1,0 +1,26 @@
+#include "externals.blk"
+
+fun comp A() {
+  var ai : arr[1] int8;
+  var ao : arr[8] bit;
+  repeat {
+    x <- take;
+    do { ai[0] := x };
+    int8_to_bits(ao, ai);
+    emits ao;
+  }
+}
+
+fun comp B() {
+  var state : arr[8] bit;
+  var ao : arr[1] int8;
+  repeat {
+    for i in [1, 2] {
+      x <- takes 8;
+      do { state := x };
+    };
+    emits state;
+  }
+}
+
+let comp main = read[int8] >>> A() >>> B() >>> write[bit]
