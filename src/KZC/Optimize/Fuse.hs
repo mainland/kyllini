@@ -317,7 +317,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                    compT c2
       steps1    <- ifte (fusePar c1' c2')
                         return
-                        (return [ParC ann b c1' c2' sloc])
+                        (fusionFailed >> return [ParC ann b c1' c2' sloc])
       steps'    <- stepsT steps
       return $ steps1 ++ steps'
     where
@@ -449,7 +449,6 @@ runRight lss (rs@(WhileC _l e c s) : rss) =
     divergeWhile :: F l m [Step l]
     divergeWhile = do
         traceFusion $ text "Encountered diverging while in consumer"
-        fusionFailed
         mzero
 
 -- See Note [Fusing For Loops]
@@ -541,7 +540,6 @@ runLeft (ls@(WhileC _l e c s) : lss) rss =
     divergeWhile :: F l m [Step l]
     divergeWhile = do
         traceFusion $ text "Encountered diverging while in producer"
-        fusionFailed
         mzero
 
 -- See Note [Fusing For Loops]
@@ -570,7 +568,6 @@ runLeft lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
 
 runLeft (ls@EmitC{} : _) (rs@TakesC{} : _) = do
     traceFusion $ ppr ls <+> text "paired with" <+> ppr rs
-    fusionFailed
     mzero
 
 runLeft (EmitC{} : _) _ =
@@ -674,7 +671,6 @@ emitTake e lss rss = do
 nestedPar :: MonadTc m => F l m a
 nestedPar = do
     traceFusion $ text "Saw nested par in producer during par fusion."
-    fusionFailed
     mzero
 
 -- | Indicate that we are unrolling a for loop during fusion. This will fail
