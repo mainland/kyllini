@@ -789,8 +789,14 @@ recoverRepeat m = do
     recover l = loop
       where
         loop :: [Step (Joint l)] -> [Step (Joint l)] -> F l m (Comp (Joint l))
-        loop [] _prefix =
-            faildoc $ text "Could not find repeat label!"
+        loop [] _prefix = do
+            traceFusion $ text "Could not find repeat label!"
+            -- XXX We could try this...but would we still be able to recover the
+            -- loop?
+            --
+            --   return $ mkComp $ reverse prefix
+            --
+            mzero
 
         loop steps@(step:_) prefix | stepLabel step == Just l = do
             taus                       <- mapM (inferFv c_prefix) vs
