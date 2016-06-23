@@ -77,6 +77,7 @@ class FreshVars a where
 -- the set of in-scope variables (note that this convention is the *opposite*
 -- from that used in the paper).
 
+infix 1 /->
 (/->) :: k -> a -> Map k a
 (/->) = Map.singleton
 
