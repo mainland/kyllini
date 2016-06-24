@@ -39,6 +39,7 @@ import Control.Monad.State (MonadState(..),
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -88,8 +89,8 @@ isKnown (Known (StructV flds)) = all isKnown (Map.elems flds)
 isKnown Any                    = True
 
 data NDState = NDState
-    { vals        :: Map Var (Known Val)
-    , usedDefault :: Set Var
+    { vals        :: !(Map Var (Known Val))
+    , usedDefault :: !(Set Var)
     }
 
 instance Monoid NDState where
@@ -120,11 +121,7 @@ runND :: MonadTc m => ND m a -> m a
 runND m = evalStateT (unND m) mempty
 
 lookupVal :: MonadTc m => Var -> ND m (Known Val)
-lookupVal v = do
-    maybe_val <- gets (Map.lookup v . vals)
-    case maybe_val of
-      Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
-      Just val -> return val
+lookupVal v = fromMaybe top <$> gets (Map.lookup v . vals)
 
 extendVals :: MonadTc m => [(Var, Known Val)] -> ND m a -> ND m a
 extendVals vvals m = do
@@ -208,10 +205,8 @@ useDecl (LetD decl s) m = do
 
 useDecl (LetFunD f iotas vbs tau_ret e l) m = do
     (x, e') <-
-        extendVars [(bVar f, tau)] $
-        extendVals [(bVar f, top)] $ do
+        extendVars [(bVar f, tau)] $ do
         e' <- extendLetFun f iotas vbs tau_ret $
-              extendVals (map fst vbs `zip` repeat top) $
               fst <$> useExp e
         x  <- m
         return (x, e')
@@ -221,8 +216,7 @@ useDecl (LetFunD f iotas vbs tau_ret e l) m = do
     tau = FunT iotas (map snd vbs) tau_ret l
 
 useDecl (LetExtFunD f iotas vbs tau_ret l) m = do
-    x <- extendExtFuns [(bVar f, tau)] $
-         extendVals [(bVar f, top)] m
+    x <- extendExtFuns [(bVar f, tau)] m
     return (LetExtFunD f iotas vbs tau_ret l, x)
   where
     tau :: Type
@@ -234,18 +228,14 @@ useDecl (LetStructD s flds l) m = do
 
 useDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $
-             extendVals [(bVar v, top)] $
              useComp comp
-    x     <- extendVars [(bVar v, tau)] $
-             extendVals [(bVar v, top)] m
+    x     <- extendVars [(bVar v, tau)] m
     return (LetCompD v tau comp' l, x)
 
 useDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
     (x, comp') <-
-        extendVars [(bVar f, tau)] $
-        extendVals [(bVar f, top)] $ do
+        extendVars [(bVar f, tau)] $ do
         comp' <- extendLetFun f iotas vbs tau_ret $
-                 extendVals (map fst vbs `zip` repeat top) $
                  useComp comp
         x     <- m
         return (x, comp')
@@ -265,12 +255,18 @@ useLocalDecl (LetLD v tau e s) m = do
                  updateNeedDefault v m
     return (LetLD v' tau e' s, x)
 
-useLocalDecl (LetRefLD v tau e s) m = do
-    e'      <- traverse (fmap fst . useExp) e
+useLocalDecl (LetRefLD v tau Nothing s) m = do
     (x, v') <- extendVars [(bVar v, refT tau)] $
-               extendVals [(bVar v, maybe Unknown (const top) e)] $
+               extendVals [(bVar v, Unknown )] $
                updateNeedDefault v m
-    return (LetRefLD v' tau e' s, x)
+    return (LetRefLD v' tau Nothing s, x)
+
+useLocalDecl (LetRefLD v tau (Just e) s) m = do
+    (e', val) <- useExp e
+    (x, v')   <- extendVars [(bVar v, refT tau)] $
+                 extendVals [(bVar v, val)] $
+                 updateNeedDefault v m
+    return (LetRefLD v' tau (Just e') s, x)
 
 useComp :: MonadTc m => Comp l -> ND m (Comp l)
 useComp (Comp steps) = Comp <$> useSteps steps
@@ -292,7 +288,6 @@ useSteps (BindC l WildV tau s : steps) = do
 
 useSteps (BindC l (TameV v) tau s : steps) = do
     steps' <- extendVars [(bVar v, tau)] $
-              extendVals [(bVar v, top)] $
               useSteps steps
     return $ BindC l (TameV v) tau s : steps'
 
@@ -341,7 +336,6 @@ useStep (ForC l ann v tau e1 e2 c s) = do
        ForC l ann v tau <$> pure e1'
                         <*> pure e2'
                         <*> (extendVars [(v, tau)] $
-                             extendVals [(v, top)] $
                              useComp c)
                         <*> pure s
 
@@ -502,7 +496,6 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
        topA $ ForE ann v tau <$> pure e1'
                              <*> pure e2'
                              <*> (extendVars [(v, tau)] $
-                                  extendVals [(v, top)] $
                                   fst <$> useExp e3)
                              <*> pure s
 
@@ -544,7 +537,6 @@ useExp (BindE WildV tau e1 e2 s) =
 useExp (BindE (TameV v) tau e1 e2 s) =
     topA $ BindE (TameV v) tau <$> (fst <$> useExp e1)
                                <*> (extendVars [(bVar v, tau)] $
-                                    extendVals [(bVar v, top)] $
                                     fst <$> useExp e2)
                                <*> pure s
 
