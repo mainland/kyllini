@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,10 +13,25 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Cg.Monad (
+    TakeK,
+    TakesK,
+    EmitK,
+    EmitsK,
+    
     Cg,
     CgEnv,
     CgStats(..),
     evalCg,
+
+    withTakeK,
+    withTakesK,
+    withEmitK,
+    withEmitsK,
+
+    cgTake,
+    cgTakes,
+    cgEmit,
+    cgEmits,
 
     extendVarCExps,
     lookupVarCExp,
@@ -109,11 +125,34 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Util.Env
 
+-- | Generate code to take a value of the specified type, jumping to the
+-- specified label when the take is complete. A 'CExp' representing the taken
+-- value is returned. We assume that the continuation labels the code that will
+-- be generated immediately after the take.
+type TakeK l = forall a . Type -> l -> (CExp l -> Cg l a) -> Cg l a
+
+-- | Generate code to take multiple values.
+type TakesK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
+
+-- | Generate code to emit the specified value at the specified type, jumping to
+-- the specified label when the take is complete. We assume that the
+-- continuation labels the code that will be generated immediately after the
+-- emit.
+type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
+
+-- | Generate code to emit multiple values.
+type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
+
 -- | The 'Cg' monad.
 type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
 data CgEnv l = CgEnv
-    { varCExps   :: Map Var (CExp l)
+    { takeCg     :: TakeK l
+    , takesCg    :: TakesK l
+    , emitCg     :: EmitK l
+    , emitsCg    :: EmitsK l
+
+    , varCExps   :: Map Var (CExp l)
     , ivarCExps  :: Map IVar (CExp l)
     , tyvarTypes :: Map TyVar Type
     }
@@ -123,7 +162,12 @@ instance Show (CgEnv l) where
 
 defaultCgEnv :: CgEnv l
 defaultCgEnv = CgEnv
-    { varCExps   = mempty
+    { takeCg     = error "no take code generator"
+    , takesCg    = error "no takes code generator"
+    , emitCg     = error "no emit code generator"
+    , emitsCg    = error "no emits code generator"
+
+    , varCExps   = mempty
     , ivarCExps  = mempty
     , tyvarTypes = mempty
     }
@@ -186,6 +230,38 @@ evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
     return $ (toList . codeDefs . code) s
+
+withTakeK :: TakeK l -> Cg l a -> Cg l a
+withTakeK f = local (\env -> env { takeCg = f})
+
+withTakesK :: TakesK l -> Cg l a -> Cg l a
+withTakesK f = local (\env -> env { takesCg = f})
+
+withEmitK :: EmitK l -> Cg l a -> Cg l a
+withEmitK f = local (\env -> env { emitCg = f})
+
+withEmitsK :: EmitsK l -> Cg l a -> Cg l a
+withEmitsK f = local (\env -> env { emitsCg = f})
+
+cgTake :: TakeK l
+cgTake tau klbl k = do
+    f <- asks takeCg
+    f tau klbl k
+
+cgTakes :: TakesK l
+cgTakes n tau klbl k = do
+    f <- asks takesCg
+    f n tau klbl k
+
+cgEmit :: EmitK l
+cgEmit tau ce klbl k = do
+    f <- asks emitCg
+    f tau ce klbl k
+
+cgEmits :: EmitsK l
+cgEmits iota tau ce klbl k = do
+    f <- asks emitsCg
+    f iota tau ce klbl k
 
 extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
 extendVarCExps = extendEnv varCExps (\env x -> env { varCExps = x })
