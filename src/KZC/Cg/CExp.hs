@@ -16,6 +16,7 @@ module KZC.Cg.CExp (
     Kont(..),
 
     TakeK,
+    TakesK,
     EmitK,
     EmitsK,
     CompC,
@@ -48,11 +49,14 @@ import KZC.Pretty
 import KZC.Quote.C
 import KZC.Staged
 
--- | Generate code to take the specified number of elements of the specified
--- type, jumping to the specified label when the take is complete. A 'CExp'
--- representing the taken value(s) is returned. We assume that the continuation
--- labels the code that will be generated immediately after the take.
-type TakeK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
+-- | Generate code to take a value of the specified type, jumping to the
+-- specified label when the take is complete. A 'CExp' representing the taken
+-- value is returned. We assume that the continuation labels the code that will
+-- be generated immediately after the take.
+type TakeK l = forall a . Type -> l -> (CExp l -> Cg l a) -> Cg l a
+
+-- | Generate code to take multiple values.
+type TakesK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
 
 -- | Generate code to emit the specified value at the specified type, jumping to
 -- the specified label when the take is complete. We assume that the
@@ -60,10 +64,7 @@ type TakeK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
 -- emit.
 type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
 
--- | Generate code to emit the specified arrays of values at the specified type,
--- jumping to the specified label when the take is complete. We assume that the
--- continuation labels the code that will be generated immediately after the
--- emit.
+-- | Generate code to emit multiple values.
 type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 
 -- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
@@ -95,6 +96,7 @@ data Kont l a -- | A continuation that may only be called once because calling
 -- | A computation compiler, which produces a compiled computation when given
 -- the appropriate arguments.
 type CompC l a =  TakeK l  -- Code generator for take
+               -> TakesK l -- Code generator for takes
                -> EmitK l  -- Code generator for emit
                -> EmitsK l -- Code generator for emits
                -> l        -- Label of our continuation
@@ -109,6 +111,7 @@ instance Show (CompC l a) where
 type FunCompC l a =  [Iota]   -- Array length arguments
                   -> [Arg l]  -- Function arguments
                   -> TakeK l  -- Code generator for take
+                  -> TakesK l -- Code generator for takes
                   -> EmitK l  -- Code generator for emit
                   -> EmitsK l -- Code generator for emits
                   -> l        -- Label of our continuation
