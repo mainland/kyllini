@@ -329,7 +329,7 @@ projR (StructR _ flds) f =
 projR val _ =
     faildoc $ text "Cannot project from non-struct:" <+> ppr val
 
--- | The environmnet for the 'I' monad.
+-- | The environment for the 'I' monad.
 data IEnv s = IEnv { refs :: !(Map Var (Ref s)) }
 
 defaultIEnv :: IEnv s
