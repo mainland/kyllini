@@ -17,7 +17,7 @@ module KZC.Cg.Monad (
     TakesK,
     EmitK,
     EmitsK,
-    
+
     Cg,
     CgEnv,
     CgStats(..),
