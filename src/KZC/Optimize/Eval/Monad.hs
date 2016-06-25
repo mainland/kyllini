@@ -67,7 +67,7 @@ module KZC.Optimize.Eval.Monad (
     savingHeap,
     heapLookup,
 
-    newVarPtr,
+    withNewVarPtr,
     readVarPtr,
     writeVarPtr,
 
@@ -374,7 +374,7 @@ extendVarValues vbs m =
               do writeVarPtr ptr val
                  go vbs m
           _ ->
-              do ptr <- newVarPtr
+              withNewVarPtr $ \ptr -> do
                  writeVarPtr ptr val
                  extendVarBinds [(v', RefV (VarR v ptr))] $
                    go vbs m
@@ -481,11 +481,13 @@ diffHeapExps h1 h2 = do
         | val' == val = Nothing
         | otherwise   = Just $ v .:=. toExp val'
 
-newVarPtr :: MonadTc m => EvalM l m VarPtr
-newVarPtr = do
+withNewVarPtr :: MonadTc m => (VarPtr -> EvalM l m a) -> EvalM l m a
+withNewVarPtr k = do
     ptr <- gets heapLoc
     modify $ \s -> s { heapLoc = heapLoc s + 1 }
-    return ptr
+    x <- k ptr
+    modify $ \s -> s { heap = IntMap.delete ptr (heap s) }
+    return x
 
 readVarPtr :: MonadTc m => VarPtr -> EvalM l m (Val l m Exp)
 readVarPtr ptr = do

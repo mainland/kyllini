@@ -221,10 +221,10 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     tau' <- simplType tau
     val1 <- evalRhs tau' maybe_e1
     -- Allocate heap storage for v and initialize it
-    ptr  <- newVarPtr
-    writeVarPtr ptr val1
-    withUniqBoundVar v $ \v' ->
-      extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $
+    withNewVarPtr $ \ptr -> do
+      writeVarPtr ptr val1
+      withUniqBoundVar v $ \v' ->
+        extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $
         k $ HeapDeclVal $ \h ->
             withSummaryContext decl $ do
             val1'     <- heapLookup h ptr
