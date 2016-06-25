@@ -18,7 +18,8 @@ module KZC.Optimize.Eval.Val (
     Val(..),
     Ref(..),
     VarPtr,
-    Heap,
+    Heap(..),
+    FrozenHeap(..),
 
     unitV,
 
@@ -70,8 +71,7 @@ import Data.Binary.IEEE754 (floatToWord,
                             doubleToWord,
                             wordToDouble)
 import Data.Bits
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import Data.IORef (IORef)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -79,6 +79,8 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Ratio (numerator)
 import Data.String (fromString)
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
 import Data.Word (Word32,
                   Word64)
 import Text.PrettyPrint.Mainland
@@ -119,7 +121,7 @@ data Val l m a where
 
     -- A residual command that cannot be fully evaluated. The 'Heap' argument is
     -- the state of the heap right before the residual expression is executed.
-    CmdV :: Heap l m -> Exp -> Val l m Exp
+    CmdV :: FrozenHeap l m -> Exp -> Val l m Exp
 
     -- A function closure
     FunClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m Exp)) -> Val l m Exp
@@ -128,7 +130,7 @@ data Val l m a where
     CompReturnV :: Val l m Exp -> Val l m (Comp l)
 
     -- A residual computation.
-    CompV :: Heap l m -> [Step l] -> Val l m (Comp l)
+    CompV :: FrozenHeap l m -> [Step l] -> Val l m (Comp l)
 
     -- A computation or computation function we know nothing about except its
     -- name.
@@ -164,7 +166,16 @@ data Ref l m = VarR Var VarPtr
 
 type VarPtr = Int
 
-type Heap l m = IntMap (Val l m Exp)
+data FrozenHeap l m = FrozenHeap
+    { fheapLoc :: !Int
+    , fheapMem :: !(V.Vector (Val l m Exp))
+    }
+  deriving (Eq, Ord, Show)
+
+data Heap l m = Heap
+    { heapLoc :: {-# UNPACK #-} !(IORef Int)
+    , heapMem :: {-# UNPACK #-} !(MV.IOVector (Val l m Exp))
+    }
 
 unitV :: Val l m Exp
 unitV  = ConstV UnitC
@@ -792,5 +803,12 @@ instance IsLabel l => Pretty (Val l m a) where
 instance IsLabel l => Pretty (Ref l m) where
     ppr = string . show
 
-pprHeap :: IsLabel l => Heap l m -> Doc
-pprHeap m = braces $ commasep (map ppr (IntMap.assocs m))
+pprHeap :: forall l m . IsLabel l => FrozenHeap l m -> Doc
+pprHeap h = braces $ commasep (map ppr (heapElems 0))
+  where
+    heapElems :: Int -> [(Int, Val l m Exp)]
+    heapElems i | i >= sz   = []
+                | otherwise = (i, fheapMem h V.! i) : heapElems (i+1)
+
+    sz :: Int
+    sz = fheapLoc h

@@ -62,10 +62,11 @@ module KZC.Optimize.Eval.Monad (
     appendTopDecl,
     getTopDecls,
 
-    getHeap,
-    putHeap,
+    freezeHeap,
+    thawHeap,
     savingHeap,
     heapLookup,
+    frozenHeapLookup,
 
     withNewVarPtr,
     readVarPtr,
@@ -87,6 +88,8 @@ module KZC.Optimize.Eval.Monad (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad (forM_,
+                      when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
@@ -105,9 +108,7 @@ import Data.Foldable (foldMap)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Foldable (toList)
 import Data.IORef (IORef)
-import qualified Data.IntMap as IntMap
-import Data.List (foldl',
-                  partition)
+import Data.List (partition)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe,
@@ -116,6 +117,8 @@ import Data.Monoid
 import Data.Sequence ((|>),
                       Seq)
 import Data.Set (Set)
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Comp
@@ -131,6 +134,9 @@ import KZC.Uniq
 import KZC.Util.Env
 import KZC.Util.SetLike
 import KZC.Vars
+
+dEFAULT_HEAP_SIZE :: Int
+dEFAULT_HEAP_SIZE = 128
 
 data ArgVal l m = ExpAV (Val l m Exp)
                 | CompAV (Val l m (Comp l))
@@ -168,17 +174,15 @@ defaultEvalEnv = EvalEnv
 
 data EvalState l m = EvalState
     { topDecls :: !(Seq (Decl l))
-    , heapLoc  :: !VarPtr
     , heap     :: !(Heap l m)
     }
-  deriving (Eq, Ord, Show)
 
-defaultEvalState :: EvalState l m
-defaultEvalState = EvalState
-    { topDecls = mempty
-    , heapLoc  = 1
-    , heap     = mempty
-    }
+defaultEvalState :: MonadTcRef m => m (EvalState l m)
+defaultEvalState = do
+    h <- newHeap
+    return EvalState { topDecls = mempty
+                     , heap     = h
+                     }
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
     deriving (Applicative, Functor, Monad, MonadIO,
@@ -202,8 +206,10 @@ instance MonadTrans (EvalM l) where
 
 deriving instance MonadTcRef m => MonadTcRef (EvalM l m)
 
-evalEvalM :: MonadTc m => EvalM l m a -> m a
-evalEvalM m = evalStateT (runReaderT (unEvalM m) defaultEvalEnv) defaultEvalState
+evalEvalM :: MonadTcRef m => EvalM l m a -> m a
+evalEvalM m = do
+    s <- defaultEvalState
+    evalStateT (runReaderT (unEvalM m) defaultEvalEnv) s
 
 partial :: MonadTc m => a -> EvalM l m a
 partial = return
@@ -214,14 +220,14 @@ maybePartialVal = return
 partialExp :: MonadTc m => Exp -> EvalM l m (Val l m Exp)
 partialExp = return . ExpV
 
-partialCmd :: MonadTc m => Exp -> EvalM l m (Val l m Exp)
+partialCmd :: MonadTcRef m => Exp -> EvalM l m (Val l m Exp)
 partialCmd e = do
-    h <- getHeap
+    h <- freezeHeap
     return $ CmdV h e
 
-partialComp :: MonadTc m => Comp l -> EvalM l m (Val l m (Comp l))
+partialComp :: MonadTcRef m => Comp l -> EvalM l m (Val l m (Comp l))
 partialComp c = do
-    h <- getHeap
+    h <- freezeHeap
     return $ CompV h (unComp c)
 
 askSubst :: MonadTc m => EvalM l m Theta
@@ -339,7 +345,7 @@ extendWildVarBinds :: MonadTc m
 extendWildVarBinds wvbs =
   extendVarBinds [(bVar v, val) | (TameV v, val) <- wvbs]
 
-lookupVarValue :: forall l m . MonadTc m
+lookupVarValue :: forall l m . MonadTcRef m
                => Var
                -> EvalM l m (Val l m Exp)
 lookupVarValue v =
@@ -355,7 +361,7 @@ lookupVarValue v =
     extract val =
         return val
 
-extendVarValues :: forall l m a . MonadTc m
+extendVarValues :: forall l m a . MonadTcRef m
                 => [(Var, Type, Val l m Exp)]
                 -> EvalM l m a
                 -> EvalM l m a
@@ -415,32 +421,49 @@ appendTopDecl decl = modify $ \s -> s { topDecls = topDecls s |> decl }
 getTopDecls :: MonadTc m => EvalM l m [Decl l]
 getTopDecls = toList <$> gets topDecls
 
-getHeap :: MonadTc m => EvalM l m (Heap l m)
-getHeap = gets heap
+newHeap :: MonadTcRef m => m (Heap l m)
+newHeap = Heap <$> newRef 0 <*> MV.new dEFAULT_HEAP_SIZE
 
-putHeap :: MonadTc m => Heap l m -> EvalM l m ()
-putHeap h = modify $ \s -> s { heap = h }
-
-savingHeap :: MonadTc m => EvalM l m a -> EvalM l m a
+savingHeap :: MonadTcRef m => EvalM l m a -> EvalM l m a
 savingHeap m = do
-    h <- getHeap
-    x <- m
-    putHeap h
+    fh <- freezeHeap
+    x  <- m
+    thawHeap fh
     return x
 
-heapLookup :: MonadTc m => Heap l m -> VarPtr -> EvalM l m (Val l m Exp)
-heapLookup h ptr =
-    case IntMap.lookup ptr h of
-      Nothing  -> faildoc $ text "Unknown variable reference in heap!"
-      Just val -> return val
+freezeHeap :: MonadTcRef m => EvalM l m (FrozenHeap l m)
+freezeHeap = do
+    h <- gets heap
+    FrozenHeap <$> readRef (heapLoc h) <*> V.freeze (heapMem h)
 
-diffHeapExp :: (IsLabel l, MonadTc m) => Heap l m -> Heap l m -> Exp -> EvalM l m Exp
+thawHeap :: MonadTcRef m => FrozenHeap l m -> EvalM l m ()
+thawHeap fh = do
+    h <- Heap <$> newRef (fheapLoc fh) <*> V.thaw (fheapMem fh)
+    modify $ \s -> s { heap = h }
+
+heapLookup :: MonadTcRef m
+           => Heap l m
+           -> VarPtr
+           -> EvalM l m (Val l m Exp)
+heapLookup h = MV.read (heapMem h)
+
+frozenHeapLookup :: MonadTcRef m
+                 => FrozenHeap l m
+                 -> VarPtr
+                 -> EvalM l m (Val l m Exp)
+frozenHeapLookup fh ptr = return $ fheapMem fh V.! ptr
+
+diffHeapExp :: (IsLabel l, MonadTcRef m)
+            => FrozenHeap l m
+            -> FrozenHeap l m
+            -> Exp
+            -> EvalM l m Exp
 diffHeapExp h h' e =
     foldr seqE e <$> diffHeapExps h h'
 
-diffHeapComp :: (IsLabel l, MonadTc m)
-             => Heap l m
-             -> Heap l m
+diffHeapComp :: (IsLabel l, MonadTcRef m)
+             => FrozenHeap l m
+             -> FrozenHeap l m
              -> Comp l
              -> EvalM l m (Comp l)
 diffHeapComp h h' comp = do
@@ -449,9 +472,9 @@ diffHeapComp h h' comp = do
 
 -- | Generate a list of expressions that captures all the heap changes from @h1@
 -- to @h2@
-diffHeapExps :: forall l m . (IsLabel l, MonadTc m)
-             => Heap l m
-             -> Heap l m
+diffHeapExps :: forall l m . (IsLabel l, MonadTcRef m)
+             => FrozenHeap l m
+             -> FrozenHeap l m
              -> EvalM l m [Exp]
 diffHeapExps h1 h2 = do
     -- Get a list of all variables currently in scope. We assume that this list
@@ -463,8 +486,8 @@ diffHeapExps h1 h2 = do
     return $
         mapMaybe update
         [( v
-         , fromMaybe UnknownV (IntMap.lookup ptr h1)
-         , fromMaybe UnknownV (IntMap.lookup ptr h2)
+         , if ptr >= fheapLoc h1 then UnknownV else fheapMem h1 V.! ptr
+         , if ptr >= fheapLoc h2 then UnknownV else fheapMem h2 V.! ptr
          ) | (_, RefV (VarR v ptr)) <- vvals]
   where
     update :: (Var, Val l m Exp, Val l m Exp) -> Maybe Exp
@@ -481,26 +504,32 @@ diffHeapExps h1 h2 = do
         | val' == val = Nothing
         | otherwise   = Just $ v .:=. toExp val'
 
-withNewVarPtr :: MonadTc m => (VarPtr -> EvalM l m a) -> EvalM l m a
+withNewVarPtr :: MonadTcRef m => (VarPtr -> EvalM l m a) -> EvalM l m a
 withNewVarPtr k = do
-    ptr <- gets heapLoc
-    modify $ \s -> s { heapLoc = heapLoc s + 1 }
+    ref <- gets (heapLoc . heap)
+    sz  <- gets (MV.length . heapMem . heap)
+    ptr <- readRef ref
+    when (ptr >= sz) $ do
+      mv  <- gets (heapMem . heap)
+      mv' <- MV.grow mv sz
+      modify $ \s -> s { heap = Heap ref mv' }
+    let ptr' = ptr + 1
+    ptr' `seq` writeRef ref ptr'
     x <- k ptr
-    modify $ \s -> s { heap = IntMap.delete ptr (heap s) }
+    writeRef ref ptr
     return x
 
-readVarPtr :: MonadTc m => VarPtr -> EvalM l m (Val l m Exp)
+readVarPtr :: MonadTcRef m => VarPtr -> EvalM l m (Val l m Exp)
 readVarPtr ptr = do
-    maybe_val <- gets (IntMap.lookup ptr . heap)
-    case maybe_val of
-      Nothing  -> faildoc $ text "Unknown variable reference!"
-      Just val -> return val
+    mv <- gets (heapMem . heap)
+    MV.read mv ptr
 
-writeVarPtr :: MonadTc m => VarPtr -> Val l m Exp -> EvalM l m ()
-writeVarPtr ptr val =
-    modify $ \s -> s { heap = IntMap.insert ptr val (heap s) }
+writeVarPtr :: MonadTcRef m => VarPtr -> Val l m Exp -> EvalM l m ()
+writeVarPtr ptr val = do
+    mv <- gets (heapMem . heap)
+    MV.write mv ptr val
 
-killVars :: (ModifiedVars e Var, MonadTc m)
+killVars :: (ModifiedVars e Var, MonadTcRef m)
          => e
          -> EvalM l m ()
 killVars e = do
@@ -508,14 +537,19 @@ killVars e = do
                      (toList (mvs e :: Set Var))
     vbs      <- asks varBinds
     let ptrs =  [ptr | Just (RefV (VarR _ ptr)) <- [Map.lookup v vbs | v <- vs]]
-    modify $ \s -> s { heap = foldl' (\m ptr -> IntMap.insert ptr UnknownV m) (heap s) ptrs }
+    mv <- gets (heapMem . heap)
+    forM_ ptrs $ \ptr -> MV.write mv ptr UnknownV
 
 -- | Kill the entire heap. We use this when partially evaluating function
 -- bodies.
-killHeap :: MonadTc m => EvalM l m a -> EvalM l m a
+killHeap :: MonadTcRef m => EvalM l m a -> EvalM l m a
 killHeap m =
     savingHeap $ do
-    modify $ \s -> s { heap = IntMap.map (const UnknownV) (heap s) }
+    sz <- gets (heapLoc . heap) >>= readRef
+    mv <- gets (heapMem . heap)
+    let loop i | i >= sz   = return ()
+               | otherwise = MV.write mv i UnknownV >> loop (i+1)
+    loop 0
     m
 
 simplType :: MonadTc m => Type -> EvalM l m Type
