@@ -152,9 +152,9 @@ data CgEnv l = CgEnv
     , emitCg     :: EmitK l
     , emitsCg    :: EmitsK l
 
-    , varCExps   :: Map Var (CExp l)
-    , ivarCExps  :: Map IVar (CExp l)
-    , tyvarTypes :: Map TyVar Type
+    , varCExps   :: !(Map Var (CExp l))
+    , ivarCExps  :: !(Map IVar (CExp l))
+    , tyvarTypes :: !(Map TyVar Type)
     }
 
 instance Show (CgEnv l) where
