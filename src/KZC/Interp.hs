@@ -385,7 +385,7 @@ extendRefs = extendEnv refs (\env x -> env { refs = x })
 assign :: forall s m . (s ~ PrimState m, PrimMonad m, MonadRef IORef m)
        => Ref s -> Val -> m ()
 assign (ValR ref) val =
-    writeRef ref val
+    val `seq` writeRef ref val
 
 assign (StructR _ flds) (StructV _ flds') =
     mapM_ (assignField flds') (Map.assocs flds)
