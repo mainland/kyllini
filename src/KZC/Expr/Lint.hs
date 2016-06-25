@@ -90,6 +90,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
@@ -219,11 +220,13 @@ inferConst l (FloatC w _)       = return (FloatT w l)
 inferConst l (StringC _)        = return (StringT l)
 
 inferConst l (ArrayC cs) = do
-    taus <- mapM (inferConst l) cs
-    case taus of
-      [] -> faildoc $ text "Empty array"
-      tau:taus | all (== tau) taus -> return $ ArrT (ConstI (length cs) l) tau l
-               | otherwise -> faildoc $ text "Constant array elements do not all have the same type"
+    taus <- V.mapM (inferConst l) cs
+    when (V.null taus) $
+      faildoc $ text "Empty array"
+    let tau = V.head taus
+    unless (V.all (== tau) (V.drop 1 taus)) $
+      faildoc $ text "Constant array elements do not all have the same type"
+    return $ ArrT (ConstI (length cs) l) tau l
 
 inferConst l (StructC s flds) = do
     fldDefs <- checkStructFields s (map fst flds)

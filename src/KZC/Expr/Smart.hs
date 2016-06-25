@@ -80,6 +80,7 @@ import Control.Applicative
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.List (sort)
 import Data.Loc
+import Data.Vector (Vector)
 import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax
@@ -225,7 +226,7 @@ intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
 uintC :: Integral i => i -> Const
 uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
-arrayC :: [Const] -> Const
+arrayC :: Vector Const -> Const
 arrayC = ArrayC
 
 structC :: Struct -> [(Field, Const)] -> Const

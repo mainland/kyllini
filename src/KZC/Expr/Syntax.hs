@@ -87,6 +87,8 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.String
 import Data.Symbol
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
@@ -207,7 +209,7 @@ data Const = UnitC
            | FixC Scale Signedness W BP {-# UNPACK #-} !Int
            | FloatC FP {-# UNPACK #-} !Double
            | StringC String
-           | ArrayC [Const]
+           | ArrayC !(Vector Const)
            | StructC Struct [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
@@ -640,8 +642,8 @@ instance Pretty Const where
     pprPrec _ (StringC s)          = text (show s)
     pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
     pprPrec _ (ArrayC cs)
-        | not (null cs) && all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse cs))
-        | otherwise                     = text "arr" <+> embrace commasep (map ppr cs)
+        | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
+        | otherwise                         = text "arr" <+> embrace commasep (map ppr (V.toList cs))
       where
         isBit :: Const -> Bool
         isBit (FixC I U (W 1) 0 _) = True

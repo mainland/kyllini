@@ -33,6 +33,7 @@ import Data.Maybe (isJust)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
+import qualified Data.Vector as V
 import qualified Language.C.Quote as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
@@ -560,7 +561,7 @@ cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
-    ces      <- mapM cgConst cs
+    ces      <- V.toList <$> V.mapM cgConst cs
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
   where
     cgArrayConstInits :: Type -> [CExp l] -> [C.Initializer]

@@ -62,6 +62,7 @@ module KZC.Core.Smart (
   ) where
 
 import Data.Loc
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
@@ -127,7 +128,7 @@ unConstE (UnopE (Cast tau) (ConstE c _) _) | Just c' <- liftCast tau c =
 
 unConstE (ArrayE es _) = do
     cs <- mapM unConstE es
-    return $ ArrayC cs
+    return $ ArrayC $ V.fromList cs
 
 unConstE (StructE s flds _) = do
     cs <- mapM unConstE es

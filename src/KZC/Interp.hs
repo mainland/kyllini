@@ -106,7 +106,7 @@ fromConst (StructC struct flds) =
     (fs, cs) = unzip flds
 
 fromConst (ArrayC cs) =
-    ArrayV $ V.fromList $ map fromConst cs
+    ArrayV $ V.map fromConst cs
 
 fromConst c =
     ConstV c
@@ -122,7 +122,7 @@ toConst (StructV struct flds) =
     (fs, vals) = unzip $ Map.assocs flds
 
 toConst (ArrayV v) =
-    ArrayC $ map toConst $ V.toList v
+    ArrayC $ V.map toConst v
 
 -- | Produce a default value of the given type.
 defaultVal :: MonadTcRef m => Type -> m Val
@@ -442,9 +442,8 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit (Just e) = evalExp e >>= toRef
 
 evalConst :: MonadTcRef m => Const -> I s m Val
-evalConst (ArrayC cs) = do
-    vals <- mapM evalConst cs
-    return $ ArrayV $ V.fromList vals
+evalConst (ArrayC cs) =
+    ArrayV <$> V.mapM evalConst cs
 
 evalConst (StructC struct flds) = do
     vals <- mapM evalConst cs
