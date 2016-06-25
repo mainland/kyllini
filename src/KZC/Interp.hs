@@ -62,7 +62,6 @@ import Data.Bits
 import Data.IORef (IORef)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as MV
@@ -82,47 +81,20 @@ import KZC.Uniq
 import KZC.Util.Env
 
 -- | Values.
-data Val -- | A constant /of base type/. May not be a struct or array!
-         = ConstV !Const
-         -- | A struct constant.
-         | StructV !Struct !(Map Field Val)
-         -- | An array constant.
-         | ArrayV !(Vector Val)
-  deriving (Eq, Ord, Show)
-
-instance Pretty Val where
-    ppr = ppr . toConst
+type Val = Const
 
 isBaseV :: Val -> Bool
-isBaseV StructV{} = False
-isBaseV ArrayV{}  = False
+isBaseV StructC{} = False
+isBaseV ArrayC{}  = False
 isBaseV _         = True
 
 -- | Convert a constant to a value
 fromConst :: Const -> Val
-fromConst (StructC struct flds) =
-    StructV struct $ Map.fromList $ fs `zip` map fromConst cs
-  where
-    (fs, cs) = unzip flds
-
-fromConst (ArrayC cs) =
-    ArrayV $ V.map fromConst cs
-
-fromConst c =
-    ConstV c
+fromConst = id
 
 -- | Convert a value to a constant
 toConst :: Val -> Const
-toConst (ConstV c) =
-    c
-
-toConst (StructV struct flds) =
-    StructC struct $ fs `zip` map toConst vals
-  where
-    (fs, vals) = unzip $ Map.assocs flds
-
-toConst (ArrayV v) =
-    ArrayC $ V.map toConst v
+toConst = id
 
 -- | Produce a default value of the given type.
 defaultVal :: MonadTcRef m => Type -> m Val
@@ -131,31 +103,31 @@ defaultVal tau = fromConst <$> defaultValueC tau
 -- | Convert an 'Integral' value to a 'Val' of the given (fixpoint) type.
 intV :: Integral i => Type -> i -> Val
 intV ~(FixT sc s w bp _) i =
-    ConstV $ FixC sc s w bp (fromIntegral i)
+    FixC sc s w bp (fromIntegral i)
 
 -- | Convert a 'Val' to an 'Integral' value.
 fromIntV :: (Integral a, Monad m) => Val -> m a
-fromIntV (ConstV (FixC S.I _ _ 0 x)) =
+fromIntV (FixC S.I _ _ 0 x) =
     return $ fromIntegral x
 
 fromIntV val =
     faildoc $ text "Not an integer:" <+> ppr val
 
 idxV :: Monad m => Val -> Int -> Maybe Int -> m Val
-idxV (ArrayV v) i Nothing =
+idxV (ArrayC v) i Nothing =
     maybe err return $ v V.!? i
   where
     err = faildoc $ text "Array access out of bounds"
 
-idxV (ArrayV v) i (Just len) =
-    return $ ArrayV $ V.slice i len v
+idxV (ArrayC v) i (Just len) =
+    return $ ArrayC $ V.slice i len v
 
 idxV val _ _ =
     faildoc $ text "Cannot index into non-array:" <+> ppr val
 
 projV :: Monad m => Val -> Field -> m Val
-projV (StructV _ flds) f =
-    maybe err return $ Map.lookup f flds
+projV (StructC _ flds) f =
+    maybe err return $ lookup f flds
   where
     err = faildoc $ text "Unknown struct field" <+> ppr f
 
@@ -167,20 +139,20 @@ enumVals :: MonadTc m
          => Type
          -> m [Val]
 enumVals UnitT{} =
-    return [ConstV UnitC]
+    return [UnitC]
 
 enumVals BoolT{} =
-    return $ map (ConstV . BoolC) [(minBound :: Bool)..]
+    return $ map BoolC [(minBound :: Bool)..]
 
 enumVals (FixT S.I U (W w) (BP 0) _) =
-    return $ map (ConstV . FixC S.I U (W w) (BP 0))
+    return $ map (FixC S.I U (W w) (BP 0))
                  [0..hi]
   where
     hi :: Int
     hi = 2^w-1
 
 enumVals (FixT S.I S (W w) (BP 0) _) =
-    return $ map (ConstV . FixC S.I S (W w) (BP 0)) $
+    return $ map (FixC S.I S (W w) (BP 0)) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Int
@@ -188,11 +160,11 @@ enumVals (FixT S.I S (W w) (BP 0) _) =
     lo = -(2^(w-1))
 
 enumVals (FloatT FP32 _) =
-    return $ map (ConstV . FloatC FP32 . float2Double . wordToFloat)
+    return $ map (FloatC FP32 . float2Double . wordToFloat)
                  [(minBound :: Word32)..]
 
 enumVals (FloatT FP64 _) =
-    return $ map (ConstV . FloatC FP64 . wordToDouble)
+    return $ map (FloatC FP64 . wordToDouble)
                  [(minBound :: Word64)..]
 
 enumVals (RefT tau _) =
@@ -204,11 +176,11 @@ enumVals (StructT sname _) = do
         taus :: [Type]
         (fs, taus) = unzip flds
     valss <- enumValsList taus
-    return [StructV sname (Map.fromList (fs `zip` vals)) | vals <- valss]
+    return [StructC sname (fs `zip` vals) | vals <- valss]
 
 enumVals (ArrT (ConstI n _) tau _) = do
     valss <- enumValsList (replicate n tau)
-    return [ArrayV (V.fromList vals) | vals <- valss]
+    return [ArrayC (V.fromList vals) | vals <- valss]
 
 enumVals tau =
     faildoc $ text "Cannot enumerate values of type" <+> ppr tau
@@ -232,7 +204,7 @@ enumValsList (tau:taus) = do
 data Ref s -- | A reference to a value
            = ValR !(IORef Val)
            -- | A struct reference
-           | StructR Struct !(Map Field (Ref s))
+           | StructR Struct ![(Field, Ref s)]
            -- | A reference to an array of values of base type
            | ArrayR !(MVector s Val)
            -- | A reference to an element of base type in a mutable array.
@@ -253,26 +225,30 @@ fromRef (ValR ref) =
     readRef ref
 
 fromRef (StructR struct flds) =
-    StructV struct <$> traverse fromRef flds
+    StructC struct <$> (zip fs <$> mapM fromRef rs)
+  where
+    (fs, rs) = unzip flds
 
 fromRef (ArrayR mv) =
-    ArrayV <$> V.freeze mv
+    ArrayC <$> V.freeze mv
 
 fromRef (IdxR mv i) =
     MV.read mv i
 
 fromRef (ArrayRefR mv) =
-    ArrayV <$> (V.freeze mv >>= V.mapM fromRef)
+    ArrayC <$> (V.freeze mv >>= V.mapM fromRef)
 
 toRef :: (PrimMonad m, MonadRef IORef m) => Val -> m (Ref (PrimState m))
-toRef (ArrayV vs) | isBaseV (V.head vs) =
+toRef (ArrayC vs) | isBaseV (V.head vs) =
     ArrayR <$> V.thaw vs
 
-toRef (ArrayV vs) =
+toRef (ArrayC vs) =
     ArrayRefR <$> (V.mapM toRef vs >>= V.thaw)
 
-toRef (StructV struct flds) =
-    StructR struct <$> traverse toRef flds
+toRef (StructC struct flds) =
+    StructR struct <$> (zip fs <$> mapM toRef cs)
+  where
+    (fs, cs) = unzip flds
 
 toRef val =
     ValR <$> newRef val
@@ -286,7 +262,7 @@ defaultRef (StructT struct _) = do
     StructDef _ flds _ <- lookupStruct struct
     let (fs, taus)     =  unzip flds
     refs               <- mapM defaultRef taus
-    return $ StructR struct $ Map.fromList (fs `zip` refs)
+    return $ StructR struct (fs `zip` refs)
 
 defaultRef (ArrT (ConstI n _) tau _) | isBaseT tau = do
     val <- defaultVal tau
@@ -323,7 +299,7 @@ projR :: (PrimMonad m, MonadRef IORef m)
       -> Field
       -> m (Ref (PrimState m))
 projR (StructR _ flds) f =
-    maybe err return $ Map.lookup f flds
+    maybe err return $ lookup f flds
   where
     err = faildoc $ text "Unknown struct field" <+> ppr f
 
@@ -388,17 +364,17 @@ assign :: forall s m . (s ~ PrimState m, PrimMonad m, MonadRef IORef m)
 assign (ValR ref) val =
     val `seq` writeRef ref val
 
-assign (StructR _ flds) (StructV _ flds') =
-    mapM_ (assignField flds') (Map.assocs flds)
+assign (StructR _ flds) (StructC _ flds') =
+    mapM_ (assignField flds') flds
   where
-    assignField :: Map Field Val -> (Field, Ref s) -> m ()
+    assignField :: [(Field, Val)] -> (Field, Ref s) -> m ()
     assignField flds' (f, old) = do
-        new <- maybe err return $ Map.lookup f flds'
+        new <- maybe err return $ lookup f flds'
         assign old new
       where
         err = faildoc $ text "Unknown struct field" <+> ppr f
 
-assign (ArrayR mv) (ArrayV v) =
+assign (ArrayR mv) (ArrayC v) =
     loop 0 (MV.length mv)
   where
     loop :: Int -> Int -> m ()
@@ -412,7 +388,7 @@ assign (ArrayR mv) (ArrayV v) =
 assign (IdxR mv i) val =
     MV.write mv i val
 
-assign (ArrayRefR mv) (ArrayV v) =
+assign (ArrayRefR mv) (ArrayC v) =
     loop 0 (MV.length mv)
   where
     loop :: Int -> Int -> m ()
@@ -442,19 +418,7 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit (Just e) = evalExp e >>= toRef
 
 evalConst :: MonadTcRef m => Const -> I s m Val
-evalConst (ArrayC cs) =
-    ArrayV <$> V.mapM evalConst cs
-
-evalConst (StructC struct flds) = do
-    vals <- mapM evalConst cs
-    return $ StructV struct $ Map.fromList (fs `zip` vals)
-  where
-    fs :: [Field]
-    cs :: [Const]
-    (fs, cs) = unzip  flds
-
-evalConst c =
-    return $ ConstV c
+evalConst = return
 
 evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)
         => Exp -> I s m (Ref s)
@@ -486,20 +450,20 @@ evalExp e0@(UnopE op e _) = do
     unop op val
   where
     unop :: Unop -> Val -> I s m Val
-    unop Lnot (ConstV c) | Just c' <- liftBool op not c =
-        return $ ConstV c'
+    unop Lnot c | Just c' <- liftBool op not c =
+        return  c'
 
-    unop Bnot (ConstV c) | Just c' <- liftBits op complement c =
-        return $ ConstV c'
+    unop Bnot c | Just c' <- liftBits op complement c =
+        return c'
 
-    unop Neg (ConstV c) | Just c' <- liftNum op negate c =
-        return $ ConstV c'
+    unop Neg c | Just c' <- liftNum op negate c =
+        return c'
 
-    unop (Cast tau) (ConstV c) | Just c' <- liftCast tau c =
-        return $ ConstV c'
+    unop (Cast tau) c | Just c' <- liftCast tau c =
+        return c'
 
-    unop Len (ArrayV v) =
-        return $ ConstV $ intC $ V.length v
+    unop Len (ArrayC v) =
+        return $ intC $ V.length v
 
     unop _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
@@ -510,65 +474,65 @@ evalExp e0@(BinopE op e1 e2 _) = do
     binop op val1 val2
   where
     binop :: Binop -> Val -> Val -> I s m Val
-    binop Lt (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (<) c1 c2
+    binop Lt c1 c2 =
+        return $ liftOrd op (<) c1 c2
 
-    binop Le (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (<=) c1 c2
+    binop Le c1 c2 =
+        return $ liftOrd op (<=) c1 c2
 
-    binop Eq (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftEq op (==) c1 c2
+    binop Eq c1 c2 =
+        return $ liftEq op (==) c1 c2
 
-    binop Ge (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (>=) c1 c2
+    binop Ge c1 c2 =
+        return $ liftOrd op (>=) c1 c2
 
-    binop Gt (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (>) c1 c2
+    binop Gt c1 c2 =
+        return $ liftOrd op (>) c1 c2
 
-    binop Ne (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftEq op (/=) c1 c2
+    binop Ne c1 c2 =
+        return $ liftEq op (/=) c1 c2
 
-    binop Land (ConstV (BoolC False)) _ =
-        return $ ConstV $ BoolC False
+    binop Land (BoolC False) _ =
+        return $ BoolC False
 
     binop Land _ val2 =
         return val2
 
-    binop Lor (ConstV (BoolC True)) _ =
-        return $ ConstV $ BoolC True
+    binop Lor (BoolC True) _ =
+        return $ BoolC True
 
     binop Lor _ val2 =
         return val2
 
-    binop Band (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.&.) c1 c2 =
-        return $ ConstV c'
+    binop Band c1 c2 | Just c' <- liftBits2 op (.&.) c1 c2 =
+        return c'
 
-    binop Bor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.|.) c1 c2 =
-        return $ ConstV c'
+    binop Bor c1 c2 | Just c' <- liftBits2 op (.|.) c1 c2 =
+        return c'
 
-    binop Bxor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op xor c1 c2 =
-        return $ ConstV c'
+    binop Bxor c1 c2 | Just c' <- liftBits2 op xor c1 c2 =
+        return c'
 
-    binop LshL (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftL c1 c2 =
-        return $ ConstV c'
+    binop LshL c1 c2 | Just c' <- liftShift op shiftL c1 c2 =
+        return c'
 
-    binop AshR (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftR c1 c2 =
-        return $ ConstV c'
+    binop AshR c1 c2 | Just c' <- liftShift op shiftR c1 c2 =
+        return c'
 
-    binop Add (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (+) c1 c2 =
-        return $ ConstV c'
+    binop Add c1 c2 | Just c' <- liftNum2 op (+) c1 c2 =
+        return c'
 
-    binop Sub (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (-) c1 c2 =
-        return $ ConstV c'
+    binop Sub c1 c2 | Just c' <- liftNum2 op (-) c1 c2 =
+        return c'
 
-    binop Mul (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (*) c1 c2 =
-        return $ ConstV c'
+    binop Mul c1 c2 | Just c' <- liftNum2 op (*) c1 c2 =
+        return c'
 
-    binop Div (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op quot c1 c2 =
-        return $ ConstV c'
+    binop Div c1 c2 | Just c' <- liftIntegral2 op quot c1 c2 =
+        return c'
 
-    binop Rem (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op rem c1 c2 =
-        return $ ConstV c'
+    binop Rem c1 c2 | Just c' <- liftIntegral2 op rem c1 c2 =
+        return c'
 
     binop _ _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
@@ -577,9 +541,9 @@ evalExp e0@(IfE e1 e2 e3 _) =
     evalExp e1 >>= go
   where
     go :: Val -> I s m Val
-    go (ConstV (BoolC True))  = evalExp e2
-    go (ConstV (BoolC False)) = evalExp e3
-    go _                      = faildoc $ text "Could not evaluate" <+> ppr e0
+    go (BoolC True)  = evalExp e2
+    go (BoolC False) = evalExp e3
+    go _             = faildoc $ text "Could not evaluate" <+> ppr e0
 
 evalExp (LetE decl e _) =
     evalDecl decl $
@@ -592,18 +556,18 @@ evalExp (AssignE e1 e2 _) = do
     ref <- evalRef e1
     val <- evalExp e2
     assign ref val
-    return $ ConstV UnitC
+    return UnitC
 
 evalExp (WhileE e1 e2 _) =
     evalExp e1 >>= go
   where
     go :: Val -> I s m Val
-    go (ConstV (BoolC True)) = do
+    go (BoolC True) = do
         void $ evalExp e2
         evalExp e1 >>= go
 
-    go (ConstV (BoolC False)) =
-        return $ ConstV UnitC
+    go (BoolC False) =
+        return UnitC
 
     go val =
         faildoc $ text "Bad conditional:" <+> ppr val
@@ -614,7 +578,7 @@ evalExp (ForE _ v tau e1 e2 e3 _) = do
     ref <- newRef $ intV tau i
     extendRefs [(v, ValR ref)] $
       loop ref i (i+len)
-    return $ ConstV UnitC
+    return UnitC
   where
     loop :: IORef Val -> Int -> Int -> I s m ()
     loop !ref !i !end | i < end = do
@@ -627,7 +591,7 @@ evalExp (ForE _ v tau e1 e2 e3 _) = do
 
 evalExp (ArrayE es _) = do
     vals <- mapM evalExp es
-    return $ ArrayV $ V.fromList vals
+    return $ ArrayC $ V.fromList vals
 
 evalExp (IdxE e1 e2 len _) = do
     val1 <- evalExp e1
@@ -636,7 +600,7 @@ evalExp (IdxE e1 e2 len _) = do
 
 evalExp (StructE struct flds _) = do
     vals <- mapM evalExp es
-    return $ StructV struct $ Map.fromList $ fs `zip` vals
+    return $ StructC struct (fs `zip` vals)
   where
     fs :: [Field]
     es :: [Exp]
@@ -727,20 +691,20 @@ compileExp e0@(UnopE op e _) = do
     return $ mval >>= unop op
   where
     unop :: Unop -> Val -> IO Val
-    unop Lnot (ConstV c) | Just c' <- liftBool op not c =
-        return $ ConstV c'
+    unop Lnot c | Just c' <- liftBool op not c =
+        return c'
 
-    unop Bnot (ConstV c) | Just c' <- liftBits op complement c =
-        return $ ConstV c'
+    unop Bnot c | Just c' <- liftBits op complement c =
+        return c'
 
-    unop Neg (ConstV c) | Just c' <- liftNum op negate c =
-        return $ ConstV c'
+    unop Neg c | Just c' <- liftNum op negate c =
+        return c'
 
-    unop (Cast tau) (ConstV c) | Just c' <- liftCast tau c =
-        return $ ConstV c'
+    unop (Cast tau) c | Just c' <- liftCast tau c =
+        return c'
 
-    unop Len (ArrayV v) =
-        return $ ConstV $ intC $ V.length v
+    unop Len (ArrayC v) =
+        return $ intC $ V.length v
 
     unop _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
@@ -753,65 +717,65 @@ compileExp e0@(BinopE op e1 e2 _) = do
                 binop op val1 val2
   where
     binop :: Binop -> Val -> Val -> IO Val
-    binop Lt (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (<) c1 c2
+    binop Lt c1 c2 =
+        return $ liftOrd op (<) c1 c2
 
-    binop Le (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (<=) c1 c2
+    binop Le c1 c2 =
+        return $ liftOrd op (<=) c1 c2
 
-    binop Eq (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftEq op (==) c1 c2
+    binop Eq c1 c2 =
+        return $ liftEq op (==) c1 c2
 
-    binop Ge (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (>=) c1 c2
+    binop Ge c1 c2 =
+        return $ liftOrd op (>=) c1 c2
 
-    binop Gt (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftOrd op (>) c1 c2
+    binop Gt c1 c2 =
+        return $ liftOrd op (>) c1 c2
 
-    binop Ne (ConstV c1) (ConstV c2) =
-        return $ ConstV $ liftEq op (/=) c1 c2
+    binop Ne c1 c2 =
+        return $ liftEq op (/=) c1 c2
 
-    binop Land (ConstV (BoolC False)) _ =
-        return $ ConstV $ BoolC False
+    binop Land (BoolC False) _ =
+        return $ BoolC False
 
     binop Land _ val2 =
         return val2
 
-    binop Lor (ConstV (BoolC True)) _ =
-        return $ ConstV $ BoolC True
+    binop Lor (BoolC True) _ =
+        return $ BoolC True
 
     binop Lor _ val2 =
         return val2
 
-    binop Band (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.&.) c1 c2 =
-        return $ ConstV c'
+    binop Band c1 c2 | Just c' <- liftBits2 op (.&.) c1 c2 =
+        return c'
 
-    binop Bor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op (.|.) c1 c2 =
-        return $ ConstV c'
+    binop Bor c1 c2 | Just c' <- liftBits2 op (.|.) c1 c2 =
+        return c'
 
-    binop Bxor (ConstV c1) (ConstV c2) | Just c' <- liftBits2 op xor c1 c2 =
-        return $ ConstV c'
+    binop Bxor c1 c2 | Just c' <- liftBits2 op xor c1 c2 =
+        return c'
 
-    binop LshL (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftL c1 c2 =
-        return $ ConstV c'
+    binop LshL c1 c2 | Just c' <- liftShift op shiftL c1 c2 =
+        return c'
 
-    binop AshR (ConstV c1) (ConstV c2) | Just c' <- liftShift op shiftR c1 c2 =
-        return $ ConstV c'
+    binop AshR c1 c2 | Just c' <- liftShift op shiftR c1 c2 =
+        return c'
 
-    binop Add (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (+) c1 c2 =
-        return $ ConstV c'
+    binop Add c1 c2 | Just c' <- liftNum2 op (+) c1 c2 =
+        return c'
 
-    binop Sub (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (-) c1 c2 =
-        return $ ConstV c'
+    binop Sub c1 c2 | Just c' <- liftNum2 op (-) c1 c2 =
+        return c'
 
-    binop Mul (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op (*) c1 c2 =
-        return $ ConstV c'
+    binop Mul c1 c2 | Just c' <- liftNum2 op (*) c1 c2 =
+        return c'
 
-    binop Div (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op quot c1 c2 =
-        return $ ConstV c'
+    binop Div c1 c2 | Just c' <- liftIntegral2 op quot c1 c2 =
+        return c'
 
-    binop Rem (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op rem c1 c2 =
-        return $ ConstV c'
+    binop Rem c1 c2 | Just c' <- liftIntegral2 op rem c1 c2 =
+        return c'
 
     binop _ _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
@@ -822,8 +786,8 @@ compileExp e0@(IfE e1 e2 e3 _) = do
     mval3 <- compileExp e3
     return $ do val1 <- mval1
                 case val1 of
-                  ConstV (BoolC True)  -> mval2
-                  ConstV (BoolC False) -> mval3
+                  BoolC True  -> mval2
+                  BoolC False -> mval3
                   _ -> faildoc $ text "Could not evaluate" <+> ppr e0
 
 compileExp (LetE decl e _) =
@@ -840,18 +804,18 @@ compileExp (AssignE e1 e2 _) = do
     return $ do ref <- mref
                 val <- mval
                 assign ref val
-                return $ ConstV UnitC
+                return UnitC
 
 compileExp (WhileE e1 e2 _) = do
     mval1 <- compileExp e1
     mval2 <- compileExp e2
     let go :: Val -> IO Val
-        go (ConstV (BoolC True)) = do
+        go (BoolC True) = do
             void mval2
             mval1 >>= go
 
-        go (ConstV (BoolC False)) =
-            return $ ConstV UnitC
+        go (BoolC False) =
+            return UnitC
 
         go val =
             faildoc $ text "Bad conditional:" <+> ppr val
@@ -870,7 +834,7 @@ compileExp (ForE _ v tau e1 e2 e3 _) = do
             loop (i+1) end
 
         loop _ _ =
-            return $ ConstV UnitC
+            return UnitC
     return $ do i   <- mi   >>= fromIntV
                 len <- mlen >>= fromIntV
                 writeRef ref $ intV tau i
@@ -879,7 +843,7 @@ compileExp (ForE _ v tau e1 e2 e3 _) = do
 compileExp (ArrayE es _) = do
     mvals <- mapM compileExp es
     return $ do vals <- sequence mvals
-                return $ ArrayV $ V.fromList vals
+                return $ ArrayC $ V.fromList vals
 
 compileExp e@IdxE{} | isRef e = do
     mref <- compileRef e
@@ -895,7 +859,7 @@ compileExp (IdxE e1 e2 len _) = do
 compileExp (StructE struct flds _) = do
     mvals <- mapM compileExp es
     return $ do vals <- sequence mvals
-                return $ StructV struct $ Map.fromList $ fs `zip` vals
+                return $ StructC struct $ fs `zip` vals
   where
     (fs, es) = unzip flds
 
