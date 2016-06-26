@@ -584,6 +584,7 @@ taintAndUseCExp ce = do
         go _                      = faildoc $ text "Cannot taint:" <+> ppr ce
 
     taint (CPtr ce)         = taint ce
+    taint (CBitSlice ce)    = taint ce
     taint (CIdx _ ce _)     = taint ce
     taint (CSlice _ ce _ _) = taint ce
     taint (CAlias _ ce)     = taint ce

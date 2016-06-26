@@ -196,9 +196,12 @@ void kz_main(const typename kz_params_t* $id:params)
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
-        if isBitT tau
-          then k $ CExp [cexp|*$cbuf & 1|]
-          else k $ CExp [cexp|*$cbuf|]
+        go tau cbuf
+      where
+        go tau cbuf
+          | isBitT tau    = k $ CExp [cexp|*$cbuf & 1|]
+          | isBitArrT tau = k $ CBitSlice $ CExp [cexp|*$cbuf|]
+          | otherwise     = k $ CExp [cexp|*$cbuf|]
 
     takesk :: TakesK l
     takesk n tau _klbl k = do
@@ -208,7 +211,11 @@ void kz_main(const typename kz_params_t* $id:params)
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
         appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
-        k $ CExp [cexp|$cbuf|]
+        go tau cbuf
+      where
+        go tau cbuf
+          | isBitT tau = k $ CBitSlice $ CExp [cexp|$cbuf|]
+          | otherwise  = k $ CExp [cexp|$cbuf|]
 
     emitk :: EmitK l
     emitk tau ce _klbl k = do
@@ -595,6 +602,47 @@ cgConst (StructC s flds) = do
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
         return $ toInit ce
+
+{- Note [Bit Arrays]
+
+We represent bit arrays as C arrays of type `bIT_ARRAY_ELEM_TYPE`, which has
+size `bIT_ARRAY_ELEM_BITS`, where the least significant bit is 0 and the least
+significant group of bits is element 0 of the C array. We must be careful when
+the size of the bit array is not zero module `bIT_ARRAY_ELEM_BITS`; in this
+case, there are "zombie bits" in the representation. This leads to two problems:
+
+  1. When using the `CExp` as a source, we may need to mask out the zombie bits.
+
+  2. When using the `CExp` as a destination, we need to be sure not to overwrite
+  the zombie bits, because the expression may be a slice of a larger array!
+
+We attempt to solve this by imposing the following invariants:
+
+  1. Zombie bits are only assigned to if they are truly zombie bits, i.e., if
+  the destination is a slice, the "zombie" bits may be non-zombie bits in the
+  sliced array!
+
+  2. Zombie bits are always zero.
+
+Maintaining these invariants requires the following:
+
+  1. Even if a bit array is marked as not needing a default value, we still
+  initialize any zombie bits to zero. See `cgInitAlways`.
+
+  2. During assignment, we only assign to the zombie bits if the destination is
+  not a slice. This guarantees we only overwrite true zombie bits.
+
+  3. During assignment, if the source is a slice, we mask off the zombie bits.
+  This ensures that the rhs of the assignment has only zombie bits whose values
+  are zero.
+
+Bit arrays that may be slices are marked using the `CBitSlice` data constructor.
+Note that function arguments may also be bit array slices; such arguments are
+marked with either `CPtr` or `CBitSlice` data constructor in `cgVarBind`.
+
+We used to always mask off extraneous bits, but these extra masks can lead to
+not insignificant performance degradation.
+-}
 
 {- Note [Declaration Scopes]
 
@@ -1198,10 +1246,14 @@ cgVarBind :: (Var, Type) -> Cg l (CExp l, C.Param)
 cgVarBind (v, tau) = do
     cv     <- cvar v
     cparam <- cgParam tau (Just cv)
-    if isPassByRef tau
-      then return (CPtr (CExp $ rl l [cexp|$id:cv|]), cparam)
-      else return (CExp $ rl l [cexp|$id:cv|], cparam)
+    return $ go cv cparam
   where
+    go :: C.Id -> C.Param -> (CExp l, C.Param)
+    go cv cparam
+      | isPassByRef tau = (CPtr $ CExp $ rl l [cexp|$id:cv|], cparam)
+      | isBitArrT tau   = (CBitSlice $ CExp $ rl l [cexp|$id:cv|], cparam)
+      | otherwise       = (CExp $ rl l [cexp|$id:cv|], cparam)
+
     l :: Loc
     l = locOf v <--> locOf tau
 
@@ -1258,7 +1310,7 @@ cgBits tau@(ArrT iota _ _) ce | isBitArrT tau = do
     ctau  <- cgBitcastType tau
     caddr <- cgAddrOf tau ce
     w     <- cgConstIota iota
-    if cgWidthMatchesBitcastTypeWidth w
+    if cgWidthMatchesBitcastTypeWidth w || not (needsBitMask ce)
       then return [cexp|*(($ty:ctau*) $caddr)|]
       else return [cexp|*(($ty:ctau*) $caddr) & $(chexconst (2^w - 1))|]
 
@@ -1487,36 +1539,15 @@ cgLetRefBinding :: forall l a . IsLabel l
                 -> Cg l a
 cgLetRefBinding bv tau Nothing k = do
     cv <- cgBinder (bVar bv) tau
-    when (needDefault bv) $ do
-        incDefaultInits
-        init cv tau
+    if needDefault bv
+      then do incDefaultInits
+              cgInitDefault cv tau
+      else cgInitAlways cv tau
     k cv
   where
     needDefault :: BoundVar -> Bool
     needDefault BoundV{ bNeedDefault = Just False} = False
     needDefault _                                  = True
-
-    init :: CExp l -> Type -> Cg l ()
-    init cv BoolT{}  = cgAssign tau cv (CExp [cexp|0|])
-    init cv FixT{}   = cgAssign tau cv (CExp [cexp|0|])
-    init cv FloatT{} = cgAssign tau cv (CExp [cexp|0.0|])
-
-    init cv (ArrT iota tau _) | isBitT tau = do
-        cn <- cgIota iota
-        appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
-      where
-        ctau :: C.Type
-        ctau = bIT_ARRAY_ELEM_TYPE
-
-    init cv (ArrT iota tau _) = do
-        cn    <- cgIota iota
-        ctau  <- cgType tau
-        appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
-
-    init cv tau = do
-        ctau  <- cgType tau
-        caddr <- cgAddrOf tau cv
-        appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 cgLetRefBinding bv tau (Just e) k = do
     cve <- cgBinder (bVar bv) tau
@@ -1599,6 +1630,40 @@ cgBinder v tau = do
       else appendDecl cdecl
     return ce
 
+-- | Initialize an l-value with its default value.
+cgInitDefault :: CExp l -> Type -> Cg l ()
+cgInitDefault cv tau@BoolT{}  = cgAssign tau cv (CExp [cexp|0|])
+cgInitDefault cv tau@FixT{}   = cgAssign tau cv (CExp [cexp|0|])
+cgInitDefault cv tau@FloatT{} = cgAssign tau cv (CExp [cexp|0.0|])
+
+cgInitDefault cv (ArrT iota tau _) | isBitT tau = do
+    cn <- cgIota iota
+    appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+  where
+    ctau :: C.Type
+    ctau = bIT_ARRAY_ELEM_TYPE
+
+cgInitDefault cv (ArrT iota tau _) = do
+    cn    <- cgIota iota
+    ctau  <- cgType tau
+    appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
+
+cgInitDefault cv tau = do
+    ctau  <- cgType tau
+    caddr <- cgAddrOf tau cv
+    appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
+
+-- | Perform mandatory initialization of an l-value.
+cgInitAlways :: CExp l -> Type -> Cg l ()
+cgInitAlways cv (ArrT iota tau _) | isBitT tau = do
+    cn <- cgIota iota
+    case cn of
+      CInt n | n `rem` bIT_ARRAY_ELEM_BITS == 0 -> return ()
+      _ -> appendStm [cstm|$cv[$(bitArrayLen cn-1)] = 0;|]
+
+cgInitAlways _ _ =
+    return ()
+
 -- | Allocate storage for a temporary of the given core type. The name of the
 -- temporary is gensym'd using @s@ with a prefix of @__@.
 cgTemp :: String -> Type -> Cg l (CExp l)
@@ -1609,6 +1674,7 @@ cgTemp s tau = do
     cv          <- gensym ("__" ++ s)
     (cdecl, ce) <- cgStorage cv tau
     appendDecl cdecl
+    cgInitAlways ce tau
     return ce
 
 -- | Allocate storage for a C identifier with the given core type. The first
@@ -1979,10 +2045,11 @@ cgParSingleThreaded tau_res b left right klbl k = do
     -- through to the next action, which is why we call @k2@ with @ccomp@
     -- without forcing its label to be required---we don't need the label!
     takesk cleftk crightk _cbuf cbufp n tau _klbl k = do
-        ctau_arr <- cgType (ArrT (ConstI n noLoc) tau noLoc)
+        ctau_arr <- cgType (arrKnownT n tau)
         carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
         klbl     <- gensym "inner_takesk"
         useLabel klbl
+        cgInitAlways carr (arrKnownT n tau)
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
@@ -2206,8 +2273,9 @@ void* $id:cf(void* _tinfo)
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
-            ctau  <- cgType tau
-            carr  <- cgThreadCTemp tau "par_takes_xs" [cty|$ty:ctau[$int:n]|] Nothing
+            ctau_arr <- cgType (arrKnownT n tau)
+            carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
+            cgInitAlways carr (arrKnownT n tau)
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
                 cgConsume ctinfo cbuf exitk $ \ce ->
@@ -2261,6 +2329,7 @@ isLvalue (CExp C.Var{})       = True
 isLvalue (CExp C.Member{})    = True
 isLvalue (CExp C.PtrMember{}) = True
 isLvalue (CExp C.Index{})     = True
+isLvalue (CBitSlice ce)       = isLvalue ce
 isLvalue (CAlias _ ce)        = isLvalue ce
 isLvalue _                    = False
 
@@ -2393,16 +2462,21 @@ cgAssign tau ce1 ce2 = do
                 (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
                 qbytes = (q*bIT_ARRAY_ELEM_BITS) `quot` 8
 
-            fastPath cdst csrc i n | n < bIT_ARRAY_ELEM_BITS =
-                maskedAssign (CExp [cexp|$cdst[$int:i]|]) (CExp [cexp|$csrc[$int:i]|]) n
+            fastPath cdst0 csrc0 i n | n < bIT_ARRAY_ELEM_BITS =
+                maskedAssign (CExp [cexp|$cdst0[$int:i]|]) (CExp [cexp|$csrc0[$int:i]|]) n
               where
                 maskedAssign :: CExp l -> CExp l -> Integer -> Cg l ()
-                maskedAssign cdst csrc n =
-                    appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc ..&.. cmask);|]
+                maskedAssign cdst csrc n
+                    | needsBitMask cdst0 = appendStm [cstm|$cdst = $(cdst ..&.. cnotmask ..|.. csrc');|]
+                    | otherwise          = appendStm [cstm|$cdst = $csrc';|]
                   where
                     cmask, cnotmask :: CExp l
                     cmask    = CExp $ chexconst (2^n - 1)
                     cnotmask = CExp $ [cexp|~$(chexconst (2^n - 1))|]
+
+                    csrc' :: CExp l
+                    csrc' | needsBitMask csrc0 = csrc ..&.. cmask
+                          | otherwise          = csrc
 
             fastPath _ _ i _ =
                 slowPath cdst (cdstIdx + fromIntegral i) csrc (csrcIdx + fromIntegral i) clen
@@ -2688,6 +2762,14 @@ appendTopComment doc =
 appendComment :: Doc -> Cg l ()
 appendComment doc =
     appendStm [cstm|$escstm:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
+
+-- | Reture 'True' if 'CExp' requires a bit mask.
+needsBitMask :: CExp l -> Bool
+needsBitMask CSlice{}      = True
+needsBitMask CPtr{}        = True
+needsBitMask CBitSlice{}   = True
+needsBitMask (CAlias _ ce) = needsBitMask ce
+needsBitMask _             = False
 
 -- | Return a C hex constant.
 chexconst :: Integer -> C.Exp

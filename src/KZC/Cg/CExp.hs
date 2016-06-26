@@ -104,6 +104,8 @@ data CExp l = CVoid
             | CInit C.Initializer
             -- | A pointer.
             | CPtr (CExp l)
+            -- | A bit array slice.
+            | CBitSlice (CExp l)
             -- | An array element. The data constructor's arguments are the type
             -- of the array's elements, the array, and the index.
             | CIdx Type (CExp l) (CExp l)
@@ -133,6 +135,7 @@ instance Located (CExp l) where
     locOf (CExp ce)           = locOf ce
     locOf (CInit cinit)       = locOf cinit
     locOf (CPtr ce)           = locOf ce
+    locOf (CBitSlice ce)      = locOf ce
     locOf (CIdx _ _ cidx)     = locOf cidx
     locOf (CSlice _ _ cidx _) = locOf cidx
     locOf (CStruct flds)      = locOf (map snd flds)
@@ -149,6 +152,7 @@ instance Relocatable (CExp l) where
     reloc l (CExp ce)                  = CExp $ reloc l ce
     reloc l (CInit cinit)              = CInit $ reloc l cinit
     reloc l (CPtr ce)                  = CPtr $ reloc l ce
+    reloc l (CBitSlice ce)             = CBitSlice $ reloc l ce
     reloc l (CIdx tau carr cidx)       = CIdx tau (reloc l carr) (reloc l cidx)
     reloc l (CSlice tau carr cidx len) = CSlice tau (reloc l carr) (reloc l cidx) len
     reloc l (CStruct flds)             = CStruct [(f, reloc l ce) | (f, ce) <- flds]
@@ -168,6 +172,7 @@ instance Eq (CExp l) where
     CInt x         == CInt y         = x == y
     CFloat x       == CFloat y       = x == y
     CPtr x         == CPtr y         = x == y
+    CBitSlice x    == CBitSlice y    = x == y
     CIdx r s t     == CIdx x y z     = (r,s,t) == (x,y,z)
     CSlice q r s t == CSlice w x y z = (q,r,s,t) == (w,x,y,z)
     CBits x        == CBits y        = x == y
@@ -183,6 +188,7 @@ instance Ord (CExp l) where
     compare (CInt x)         (CInt y)         = compare x y
     compare (CFloat x)       (CFloat y)       = compare x y
     compare (CPtr x)         (CPtr y)         = compare x y
+    compare (CBitSlice x)    (CBitSlice y)    = compare x y
     compare (CIdx r s t)     (CIdx x y z)     = compare (r,s,t) (x,y,z)
     compare (CSlice q r s t) (CSlice w x y z) = compare (q,r,s,t) (w,x,y,z)
     compare (CBits x)        (CBits y)        = compare x y
@@ -390,6 +396,7 @@ instance C.ToExp (CExp l) where
     toExp ce@(CInit _)               = locatedError $
                                        text "toExp: cannot convert CInit to a C expression" </> ppr ce
     toExp (CPtr e)                   = C.toExp e
+    toExp (CBitSlice e)              = C.toExp e
     toExp (CIdx tau carr cidx)       = const $ lowerIdx tau carr cidx
     toExp (CSlice tau carr cidx len) = const $ lowerSlice tau carr cidx len
     toExp ce@CStruct{}               = locatedError $
@@ -414,6 +421,7 @@ instance Pretty (CExp l) where
     ppr (CExp e)                 = ppr e
     ppr (CInit cinit)            = ppr cinit
     ppr (CPtr e)                 = ppr [cexp|*$e|]
+    ppr (CBitSlice e)            = ppr e
     ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
     ppr (CStruct flds)           = pprStruct flds
@@ -446,21 +454,21 @@ unCSlice carr                   = (carr, 0)
 -- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
 unBitCSliceBase :: CExp l -> Maybe (CExp l)
 unBitCSliceBase (CSlice _ carr (CInt i) _) | bitOff == 0 =
-    Just $ CExp [cexp|&$carr[$int:bitIdx]|]
+    Just $ CBitSlice $ CExp [cexp|&$carr[$int:bitIdx]|]
   where
     bitIdx, bitOff :: Integer
     (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
 
 unBitCSliceBase (CSlice _ carr (CExp [cexp|$int:n * $ce|]) _)
-    | q == 1 && r == 0 = Just $ CExp [cexp|&$carr[$ce]|]
-    | r == 0           = Just $ CExp [cexp|&$carr[$int:q * $ce]|]
+    | q == 1 && r == 0 = Just $ CBitSlice $ CExp [cexp|&$carr[$ce]|]
+    | r == 0           = Just $ CBitSlice $ CExp [cexp|&$carr[$int:q * $ce]|]
   where
     q, r :: Integer
     (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
 
 unBitCSliceBase (CSlice _ carr (CExp [cexp|$ce * $int:n|]) _)
-    | q == 1 && r == 0 = Just $ CExp [cexp|&$carr[$ce]|]
-    | r == 0           = Just $ CExp [cexp|&$carr[$int:q * $ce]|]
+    | q == 1 && r == 0 = Just $ CBitSlice $ CExp [cexp|&$carr[$ce]|]
+    | r == 0           = Just $ CBitSlice $ CExp [cexp|&$carr[$int:q * $ce]|]
   where
     q, r :: Integer
     (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
@@ -494,6 +502,7 @@ lowerIdx tau carr ci
 lowerSlice :: Type -> CExp l -> CExp l -> Int -> C.Exp
 lowerSlice tau carr cidx len | isBitT tau =
     case unBitCSliceBase (CSlice tau carr cidx len) of
+      Just (CBitSlice (CExp ce)) -> ce
       Just (CExp ce) -> ce
       _ -> errordoc $ nest 4 $
            ppr (locOf cidx) <> text ":" </>
