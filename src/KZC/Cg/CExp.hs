@@ -94,30 +94,34 @@ instance Show (FunCompC l a) where
 -- | The type of "compiled" expressions.
 data CExp l = CVoid
             | CBool !Bool
-            | CInt !Integer    -- ^ Integer constant
-            | CFloat !Rational -- ^ Float constant
-            | CExp C.Exp       -- ^ C expression
+            -- | Integer constant
+            | CInt !Integer
+            -- | Float constant
+            | CFloat !Rational
+            -- | C expression
+            | CExp C.Exp
+            -- | A list of C initializers for a constant.
             | CInit C.Initializer
-              -- ^ A list of C initializers for a constant
-            | CPtr (CExp l)    -- ^ A pointer.
+            -- | A pointer.
+            | CPtr (CExp l)
+            -- | An array element. The data constructor's arguments are the type
+            -- of the array's elements, the array, and the index.
             | CIdx Type (CExp l) (CExp l)
-              -- ^ An array element. The data constructor's arguments are the type
-              -- of the array's elements, the array, and the index.
+            -- | An array slice. The data constructor's arguments are the type
+            -- of the array's elements, the array, the offset, the length of the
+            -- slice.
             | CSlice Type (CExp l) (CExp l) Int
-              -- ^ An array slice. The data constructor's arguments are the type
-              -- of the array's elements, the array, the offset, the length of the
-              -- slice.
+            -- | A struct.
             | CStruct [(Field, CExp l)]
-              -- ^ A struct
+            -- | A bit array represented as an integer.
             | CBits (CExp l)
-              -- ^ A bit array represented as an integer
+            -- | The 'CAlias' data constructor indicates a 'CExp' that aliases
+            -- an expression. See Note [Aliasing].
             | CAlias Exp (CExp l)
-              -- ^ The 'CAlias' data constructor indicates a 'CExp' that aliases
-              -- an expression. See Note [Aliasing].
+            -- | A computation.
             | CComp (forall a . CompC l a)
-              -- ^ A computation.
+            -- | A computation function.
             | CFunComp (forall a. FunCompC l a)
-              -- ^ A computation function.
 
 deriving instance Show (CExp l)
 
