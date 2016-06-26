@@ -70,6 +70,7 @@ import KZC.Flags
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Name
+import KZC.Optimize.Autolut (autolutComp)
 import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
@@ -353,19 +354,35 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                   fuse left right >>=
                   simplComp >>=
                   rateComp
-          checkFusionBlowup (size left + size right) (size comp)
+          checkFusionBlowup (size left + size right) comp
           fusionSucceeded left right comp
           return $ unComp comp
 
-      checkFusionBlowup :: Int -> Int -> F l m ()
-      checkFusionBlowup s1 s2 = do
+      checkFusionBlowup :: Int -> Comp l -> F l m ()
+      checkFusionBlowup sz_orig comp = do
           k <- asksFlags maxFusionBlowup
-          when (r > k) $ do
-              traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
-              mzero
+          when (r > k) $
+            askFlags >>= tryAutoLUT
         where
           r :: Double
-          r = fromIntegral s2 / fromIntegral s1
+          r = fromIntegral (size comp) / fromIntegral sz_orig
+
+          tryAutoLUT :: Flags -> F l m ()
+          -- XXX if we don't cut off search based on the size of the original
+          -- computation, we hang on, e.g., test_encdec_18mbps.blk.
+          tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
+              sz_autolut <- size <$> autolutComp comp
+              let r' = fromIntegral sz_autolut / fromIntegral sz_orig
+              when (r' > maxFusionBlowup flags) tooBig
+
+          tryAutoLUT _ =
+              tooBig
+
+          tooBig :: F l m ()
+          tooBig = do
+            traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
+            whenVerb $ traceFusion $ indent 2 $ ppr comp
+            mzero
 
       fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
       fusionSucceeded left right result = do
