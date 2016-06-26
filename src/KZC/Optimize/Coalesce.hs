@@ -322,16 +322,20 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
           text "Producer:" <+> ppr (compRate c1) <+> text "::" <+> pprST a b </>
           ppr c1
         (c1', bcs1) <- localSTIndTypes (Just (s, a, b)) $
-                       withRightCtx (compRate c2) $
-                       coalesceComp c1
+                       withRightCtx (compRate c2) $ do
+                       c1'  <- compT c1
+                       bcs1 <- coalesceComp c1'
+                       return (c1', bcs1)
         whenVerb $ traceCoalesce $ nest 2 $
           text "Producer candidates:" </> stack (map ppr (sort bcs1))
         traceCoalesce $ nest 2 $
           text "Consumer:" <+> ppr (compRate c2) <+> text "::" <+> pprST b c </>
           ppr c2
         (c2', bcs2) <- localSTIndTypes (Just (b, b, c)) $
-                       withLeftCtx (compRate c1) $
-                       coalesceComp c2
+                       withLeftCtx (compRate c1) $ do
+                       c2'  <- compT c2
+                       bcs2 <- coalesceComp c2'
+                       return (c2', bcs2)
         whenVerb $ traceCoalesce $ nest 2 $
           text "Consumer candidates:" </> stack (map ppr (sort bcs2))
         let bcs = sortBy (flip compare `on` thrd)
@@ -405,9 +409,8 @@ parUtil bc1 bc2 = go (outBlock bc1) (inBlock bc2)
 
 coalesceComp :: forall l m . (IsLabel l, MonadTc m)
              => Comp l
-             -> Co m (Comp l, [BC])
+             -> Co m [BC]
 coalesceComp c = do
-    c'        <- compT c
     (_, a, b) <- askSTIndTypes
     ctx_left  <- askLeftCtx
     ctx_right <- askRightCtx
@@ -431,7 +434,7 @@ coalesceComp c = do
         cs = filter (byteSizePred dflags asz bsz) $
              filter (vectAnnPred dflags (vectAnn c)) $
              cs1 ++ cs2
-    return (c', cs)
+    return cs
   where
     byteSizePred :: Flags -> Int -> Int -> BC -> Bool
     byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
