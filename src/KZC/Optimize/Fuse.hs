@@ -304,7 +304,7 @@ cacheCode l m =
         return c
 
     go Nothing = do
-        c <- setCompLabel l <$> m
+        c <- setCompLabel l <$> m >>= rateComp
         modify $ \s -> s { codeCache = Map.insert l c (codeCache s)}
         return c
 
@@ -351,7 +351,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           comp <- withLeftKont steps $
                   withRightKont steps $
                   fuse left right >>=
-                  simplComp
+                  simplComp >>=
+                  rateComp
           checkFusionBlowup (size left + size right) (size comp)
           fusionSucceeded left right comp
           return $ unComp comp
