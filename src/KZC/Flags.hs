@@ -237,7 +237,8 @@ defaultFlags =
     setFlags f xs flags = foldl' (flip f) flags xs
 
     defaultDynFlags :: [DynFlag]
-    defaultDynFlags = [LinePragmas]
+    defaultDynFlags = [ LinePragmas
+                      , VectFilterAnn]
 
     defaultWarnFlags :: [WarnFlag]
     defaultWarnFlags = [ WarnSimplifierBailout
