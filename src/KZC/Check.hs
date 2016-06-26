@@ -872,13 +872,17 @@ tcExp (Z.ParE _ (Z.ReadE ztau l) e _) tau_exp = do
     checkExp e tau
 
 tcExp (Z.ParE _ e (Z.WriteE ztau l) _) tau_exp = do
-    omega   <- newMetaTvT OmegaK l
-    s       <- newMetaTvT TauK l
-    a       <- newMetaTvT TauK l
-    b       <- fromZ (ztau, TauK)
-    let tau =  ST [] omega s a b l
-    instType tau tau_exp
-    checkExp e tau
+    omega    <- newMetaTvT OmegaK l
+    s        <- newMetaTvT TauK l
+    a        <- newMetaTvT TauK l
+    b        <- newMetaTvT TauK l
+    b'       <- fromZ (ztau, TauK)
+    let tau  =  ST [] omega s a b l
+    let tau' =  ST [] omega s a b' l
+    instType tau' tau_exp
+    ce <- checkExp e tau
+    co <- mkCastT b b'
+    return $ co ce
 
 tcExp e@(Z.ParE ann e1 e2 l) tau_exp = do
     omega1   <- newMetaTvT OmegaK l
@@ -899,12 +903,12 @@ tcExp e@(Z.ParE ann e1 e2 l) tau_exp = do
     omega  <- joinOmega omega1 omega2
     instType (ST [] omega a a c l) tau_exp
     checkForSplitContext
-    return $ co $ do
+    return $ do
         cann <- trans ann
-        cb   <- trans b
-        ce1  <- mce1
+        cb'  <- trans b'
+        ce1  <- co mce1
         ce2  <- mce2
-        return $ E.ParE cann cb ce1 ce2 l
+        return $ E.ParE cann cb' ce1 ce2 l
   where
     checkForSplitContext :: Ti ()
     checkForSplitContext = do
@@ -1792,29 +1796,23 @@ mkCastT tau1 tau2 = do
         checkSafeCast WarnUnsafeParAutoCast Nothing tau1 tau2
         co <- mkCast tau1 tau2
         return $ \mce -> do
-            (clhs, crhs, l) <- mce >>= checkParE
-            ctau1           <- trans tau1
-            ctau2           <- trans tau2
-            clhs'           <- castComp ctau1 ctau2 co clhs l
-            return $ E.ParE E.AutoPipeline ctau2 clhs' crhs l
+            ce    <- mce
+            ctau1 <- trans tau1
+            ctau2 <- trans tau2
+            castComp ctau1 ctau2 co ce
       where
-        checkParE :: E.Exp -> Ti (E.Exp, E.Exp, SrcLoc)
-        checkParE (E.ParE _ _ clhs crhs l) =
-            return (clhs, crhs, l)
-
-        checkParE e =
-            faildoc $ nest 2 $
-            text "Expected arrow expression, but got:" <+/> ppr e
-
-        castComp :: E.Type -> E.Type -> Co -> E.Exp -> SrcLoc -> Ti E.Exp
+        castComp :: E.Type -> E.Type -> Co -> E.Exp -> Ti E.Exp
         -- @tau1@ and @tau2@ my be unequal due only to differing meta-variables
         -- that are eventually unified, so the check above is incomplete. We
         -- therefore do a second check to see if @ctau2@ and @ctau1@ are
         -- equivalent.
-        castComp ctau1 ctau2 co c l
+        castComp ctau1 ctau2 co c
             | ctau2 == ctau1 = return c
             | otherwise      = do cpipe <- mkPipe ctau1 co
                                   return $ E.ParE E.AutoPipeline ctau1 c cpipe l
+          where
+            l :: SrcLoc
+            l = srclocOf c
 
         -- | Given a type tau1 and a coercion from expressions of type tau1 to
         -- expressions of type tau2, return a transformer that reads values of
