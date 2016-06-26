@@ -13,7 +13,8 @@
 module KZC.Optimize.Simplify (
     SimplStats(..),
 
-    simplProgram
+    simplProgram,
+    simplComp
   ) where
 
 import Prelude hiding ((<=))
@@ -51,6 +52,7 @@ import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Label
+import KZC.Analysis.Occ
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
@@ -294,8 +296,25 @@ simplProgram (Program decls comp tau) = runSimplM $ do
       inSTScope tau $
       inLocalScope $
       withLocContext comp (text "In definition of main") $
-      simplComp comp
+      simplC comp
   return $ Program decls' comp' tau
+
+simplComp :: forall l m . (IsLabel l, MonadTc m)
+          => Comp l
+          -> m (Comp l)
+simplComp c = do
+    n <- asksFlags maxSimpl
+    go 0 n c
+  where
+    go :: Int -> Int -> Comp l -> m (Comp l)
+    go i n c | i >= n =
+        return c
+
+    go i n c = do
+        (c', stats) <- occComp c >>= runSimplM . simplC
+        if stats /= mempty
+          then go (i+1) n c'
+          else return c
 
 simplType :: MonadTc m => Type -> SimplM l m Type
 simplType tau = do
@@ -400,7 +419,7 @@ simplDecl decl m = do
             withUniqVars vs $ \vs' ->
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
-            e'       <- simplExp e
+            e'       <- simplE e
             return (ivs, vs' `zip` taus, tau_ret', e')
         inlineIt <- shouldInlineFunUnconditionally ivs' vbs' tau_ret' e'
         if inlineIt
@@ -428,7 +447,7 @@ simplDecl decl m = do
 
     postInlineUnconditionally _flags (LetCompD v tau comp l) = do
         comp' <- extendLet v tau $
-                 simplComp comp
+                 simplC comp
         inlineIt <- shouldInlineCompUnconditionally comp'
         if inlineIt
           then extendSubst (bVar v) (DoneComp comp') $ do
@@ -445,7 +464,7 @@ simplDecl decl m = do
             withUniqVars vs $ \vs' ->
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
-            comp'    <- simplComp comp
+            comp'    <- simplC comp
             return (ivs, vs' `zip` taus, tau_ret', comp')
         inlineIt <- shouldInlineCompFunUnconditionally ivs' vbs' tau_ret' comp'
         if inlineIt
@@ -503,7 +522,7 @@ simplLocalDecl decl m = do
 
     postInlineUnconditionally :: Flags -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     postInlineUnconditionally _flags (LetLD v tau e s) = do
-        e'       <- simplExp e
+        e'       <- simplE e
         tau'     <- simplType tau
         inlineIt <- shouldInlineExpUnconditionally e'
         if inlineIt
@@ -516,7 +535,7 @@ simplLocalDecl decl m = do
                withBinding (LetLD v' tau' e' s) m
 
     postInlineUnconditionally _flags (LetRefLD v tau e s) = do
-        e'   <- traverse simplExp e
+        e'   <- traverse simplE e
         tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
             extendDefinitions [(bVar v', Unknown)] $
@@ -544,8 +563,8 @@ simplLocalDecl decl m = do
         extendVars [(bVar v, refT tau)] $
         (,) <$> pure (Just (LetRefLD v tau e s)) <*> m
 
-simplComp :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
-simplComp (Comp steps) = Comp <$> simplSteps steps
+simplC :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
+simplC (Comp steps) = Comp <$> simplSteps steps
 
 simplSteps :: forall l m . (IsLabel l, MonadTc m)
            => [Step l]
@@ -708,7 +727,7 @@ simplStep step@(VarC l v _) =
     go (Just (SuspComp theta comp)) =
         withSubst theta $ do
         inlineBinding v
-        unComp <$> simplComp comp >>= rewriteStepsLabel l
+        unComp <$> simplC comp >>= rewriteStepsLabel l
 
     go (Just (DoneComp comp)) =
         inlineCompRhs comp
@@ -737,7 +756,7 @@ simplStep step@(VarC l v _) =
     inlineCompRhs comp =
         withSubst mempty $ do
         inlineBinding v
-        unComp <$> (simplComp comp >>= traverse uniquify) >>=
+        unComp <$> (simplC comp >>= traverse uniquify) >>=
                    rewriteStepsLabel l
 
 simplStep (CallC l f0 iotas0 args0 s) = do
@@ -760,7 +779,7 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
-        unComp <$> simplComp comp >>= rewriteStepsLabel l
+        unComp <$> simplC comp >>= rewriteStepsLabel l
 
     go _ iotas args (Just (DoneFunComp ivs vbs tau_ret comp)) =
         inlineFunCompRhs iotas args ivs vbs tau_ret comp
@@ -800,12 +819,12 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
-        unComp <$> (simplComp comp >>= traverse uniquify) >>=
+        unComp <$> (simplC comp >>= traverse uniquify) >>=
                    rewriteStepsLabel l
 
     simplArg :: Arg l -> SimplM l m (Arg l)
-    simplArg (ExpA e)  = ExpA  <$> simplExp e
-    simplArg (CompA c) = CompA <$> simplComp c
+    simplArg (ExpA e)  = ExpA  <$> simplE e
+    simplArg (CompA c) = CompA <$> simplC c
 
     extendArgs :: [(Var, Arg l)] -> SimplM l m a -> SimplM l m a
     extendArgs []                   k = k
@@ -815,9 +834,9 @@ simplStep (CallC l f0 iotas0 args0 s) = do
                                         extendArgs vargs k
 
 simplStep (IfC l e1 c2 c3 s) = do
-    e1' <- simplExp e1
-    c2' <- simplComp c2
-    c3' <- simplComp c3
+    e1' <- simplE e1
+    c2' <- simplC c2
+    c3' <- simplC c3
     simplIf e1' c2' c3'
   where
     simplIf :: Exp -> Comp l -> Comp l -> SimplM l m [Step l]
@@ -830,22 +849,22 @@ simplStep LetC{} =
     faildoc $ text "Cannot occ let step."
 
 simplStep (WhileC l e c s) =
-    WhileC l <$> simplExp e <*> simplComp c <*> pure s >>= return1
+    WhileC l <$> simplE e <*> simplC c <*> pure s >>= return1
 
 simplStep (ForC l ann v tau e1 e2 c s) = do
-    e1' <- simplExp e1
-    e2' <- simplExp e2
+    e1' <- simplE e1
+    e2' <- simplE e2
     withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
-        c' <- simplComp c
+        c' <- simplC c
         return1 $ ForC l ann v' tau e1' e2' c' s
 
 simplStep (LiftC l e s) =
-    LiftC l <$> simplExp e <*> pure s >>= return1
+    LiftC l <$> simplE e <*> pure s >>= return1
 
 simplStep (ReturnC l e s) =
-    ReturnC l <$> simplExp e <*> pure s >>= return1
+    ReturnC l <$> simplE e <*> pure s >>= return1
 
 simplStep BindC{} =
     faildoc $ text "Cannot occ bind step."
@@ -859,34 +878,34 @@ simplStep (TakesC l n tau s) = do
     return1 $ TakesC l n tau' s
 
 simplStep (EmitC l e s) =
-    EmitC l <$> simplExp e <*> pure s >>= return1
+    EmitC l <$> simplE e <*> pure s >>= return1
 
 simplStep (EmitsC l e s) =
-    EmitsC l <$> simplExp e <*> pure s >>= return1
+    EmitsC l <$> simplE e <*> pure s >>= return1
 
 simplStep (RepeatC l ann c s) =
-    RepeatC l ann <$> simplComp c <*> pure s >>= return1
+    RepeatC l ann <$> simplC c <*> pure s >>= return1
 
 simplStep (ParC ann b c1 c2 sloc) = do
     (s, a, c) <- askSTIndTypes
     c1'       <- withFvContext c1 $
                  localSTIndTypes (Just (s, a, b)) $
-                 simplComp c1
+                 simplC c1
     c2'       <- withFvContext c2 $
                  localSTIndTypes (Just (b, b, c)) $
-                 simplComp c2
+                 simplC c2
     return1 $ ParC ann b c1' c2' sloc
 
 simplStep LoopC{} =
     faildoc $ text "simplStep: saw LoopC"
 
-simplExp :: forall l m . (IsLabel l, MonadTc m)
-         => Exp
-         -> SimplM l m Exp
-simplExp e@ConstE{} =
+simplE :: forall l m . (IsLabel l, MonadTc m)
+       => Exp
+       -> SimplM l m Exp
+simplE e@ConstE{} =
     return e
 
-simplExp e0@(VarE v _) =
+simplE e0@(VarE v _) =
     lookupSubst v >>= go
   where
     go :: Maybe (SubstRng l) -> SimplM l m Exp
@@ -896,7 +915,7 @@ simplExp e0@(VarE v _) =
     go (Just (SuspExp theta e)) =
         withSubst theta $ do
         inlineBinding v
-        simplExp e
+        simplE e
 
     go (Just (DoneExp e)) =
         inlineRhs e
@@ -942,10 +961,10 @@ simplExp e0@(VarE v _) =
     inlineRhs rhs =
         withSubst mempty $ do
         inlineBinding v
-        simplExp rhs
+        simplE rhs
 
-simplExp (UnopE op e s) = do
-    e' <- simplExp e
+simplE (UnopE op e s) = do
+    e' <- simplE e
     unop op e'
   where
     unop :: Unop -> Exp -> SimplM l m Exp
@@ -987,9 +1006,9 @@ simplExp (UnopE op e s) = do
     unop op e' =
         return $ UnopE op e' s
 
-simplExp (BinopE op e1 e2 s) = do
-    e1' <- simplExp e1
-    e2' <- simplExp e2
+simplE (BinopE op e1 e2 s) = do
+    e1' <- simplE e1
+    e2' <- simplE e2
     binop op e1' e2'
   where
     binop :: Binop -> Exp -> Exp -> SimplM l m Exp
@@ -1039,10 +1058,10 @@ simplExp (BinopE op e1 e2 s) = do
     binop op  e1' e2' =
         return $ BinopE op e1' e2' s
 
-simplExp (IfE e1 e2 e3 s) = do
-    e1' <- simplExp e1
-    e2' <- simplExp e2
-    e3' <- simplExp e3
+simplE (IfE e1 e2 e3 s) = do
+    e1' <- simplE e1
+    e2' <- simplE e2
+    e3' <- simplE e3
     simplIf e1' e2' e3'
   where
     simplIf :: Exp -> Exp -> Exp -> SimplM l m Exp
@@ -1051,8 +1070,8 @@ simplExp (IfE e1 e2 e3 s) = do
         | isFalse e1' = return e3'
         | otherwise   = return $ IfE e1' e2' e3' s
 
-simplExp (LetE decl e s) = do
-    (maybe_decl', e') <- simplLocalDecl decl $ simplExp e
+simplE (LetE decl e s) = do
+    (maybe_decl', e') <- simplLocalDecl decl $ simplE e
     go maybe_decl' e'
   where
     go :: Maybe LocalDecl -> Exp -> SimplM l m Exp
@@ -1080,9 +1099,9 @@ simplExp (LetE decl e s) = do
     go (Just decl') e' =
         return $ LetE decl' e' s
 
-simplExp (CallE f0 iotas0 es0 s) = do
+simplE (CallE f0 iotas0 es0 s) = do
     iotas <- mapM simplIota iotas0
-    es    <- mapM simplExp es0
+    es    <- mapM simplE es0
     lookupSubst f0 >>= go f0 iotas es
   where
     go :: Var -> [Iota] -> [Exp] -> Maybe (SubstRng l) -> SimplM l m Exp
@@ -1099,7 +1118,7 @@ simplExp (CallE f0 iotas0 es0 s) = do
         extendIVarSubst (ivs `zip` iotas) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
-        simplExp e
+        simplE e
 
     go _ iotas args (Just (DoneFun ivs vbs tau_ret rhs)) =
         inlineFunRhs iotas args ivs vbs tau_ret rhs
@@ -1138,29 +1157,29 @@ simplExp (CallE f0 iotas0 es0 s) = do
         extendIVarSubst (ivs `zip` iotas) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
-        simplExp e
+        simplE e
 
     extendArgs :: [(Var, Exp)] -> SimplM l m a -> SimplM l m a
     extendArgs []             k = k
     extendArgs ((v, e):vargs) k = extendSubst v (DoneExp e) $
                                   extendArgs vargs k
 
-simplExp (DerefE e s) = do
-    e'  <- simplExp e
+simplE (DerefE e s) = do
+    e'  <- simplE e
     tau <- inferExp e'
     return $ if isRefT tau
              then DerefE e' s
              else ReturnE AutoInline e' s
 
-simplExp (AssignE e1 e2 s) =
-    AssignE <$> simplExp e1 <*> simplExp e2 <*> pure s
+simplE (AssignE e1 e2 s) =
+    AssignE <$> simplE e1 <*> simplE e2 <*> pure s
 
-simplExp (WhileE e1 e2 s) =
-    WhileE <$> simplExp e1 <*> simplExp e2 <*> pure s
+simplE (WhileE e1 e2 s) =
+    WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
-simplExp (ForE ann v tau e1 e2 e3 s) = do
-    e1' <- simplExp e1
-    e2' <- simplExp e2
+simplE (ForE ann v tau e1 e2 e3 s) = do
+    e1' <- simplE e1
+    e2' <- simplE e2
     unroll ann e1' e2'
   where
     unroll :: UnrollAnn
@@ -1174,7 +1193,7 @@ simplExp (ForE ann v tau e1 e2 e3 s) = do
         body :: Integer -> SimplM l m Exp
         body i =
             extendSubst v (DoneExp (idx i)) $
-            simplExp e3
+            simplE e3
           where
             idx :: Integer -> Exp
             idx i = constE $ FixC I s w 0 (fromIntegral i)
@@ -1187,21 +1206,21 @@ simplExp (ForE ann v tau e1 e2 e3 s) = do
         withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
-        e3' <- simplExp e3
+        e3' <- simplE e3
         return $ ForE ann v' tau e1' e2' e3' s
 
-simplExp (ArrayE es s) = do
-    es <- mapM simplExp es
+simplE (ArrayE es s) = do
+    es <- mapM simplE es
     if all isConstE es
       then do cs <- mapM unConstE es
               return $ ConstE (ArrayC cs) s
       else return $ ArrayE es s
 
-simplExp (IdxE e1 e2 len s) =
-    IdxE <$> simplExp e1 <*> simplExp e2 <*> pure len <*> pure s
+simplE (IdxE e1 e2 len s) =
+    IdxE <$> simplE e1 <*> simplE e2 <*> pure len <*> pure s
 
-simplExp (StructE struct flds s) = do
-    es <- mapM simplExp es
+simplE (StructE struct flds s) = do
+    es <- mapM simplE es
     if all isConstE es
       then do cs <- mapM unConstE es
               return $ ConstE (StructC struct (fs `zip` cs)) s
@@ -1211,8 +1230,8 @@ simplExp (StructE struct flds s) = do
     es :: [Exp]
     (fs, es) = unzip flds
 
-simplExp (ProjE e f s) =
-    simplExp e >>= go
+simplE (ProjE e f s) =
+    simplE e >>= go
   where
     go :: Exp -> SimplM l m Exp
     go (StructE _ flds _) =
@@ -1228,16 +1247,16 @@ simplExp (ProjE e f s) =
     go e' =
         return $ ProjE e' f s
 
-simplExp (PrintE nl es s) =
-    PrintE nl <$> mapM simplExp es <*> pure s
+simplE (PrintE nl es s) =
+    PrintE nl <$> mapM simplE es <*> pure s
 
-simplExp e@ErrorE{} =
+simplE e@ErrorE{} =
     return e
 
-simplExp (ReturnE ann e s) =
-    ReturnE ann <$> simplExp e <*> pure s
+simplE (ReturnE ann e s) =
+    ReturnE ann <$> simplE e <*> pure s
 
-simplExp (BindE wv tau e1 e2 s) =
+simplE (BindE wv tau e1 e2 s) =
     simplBind wv tau e1 e2 s
   where
     simplBind :: WildVar
@@ -1258,7 +1277,7 @@ simplExp (BindE wv tau e1 e2 s) =
     --
     simplBind WildV UnitT{} e1 (ReturnE _ann (ConstE UnitC _) _) _s = do
         rewrite
-        simplExp e1
+        simplE e1
 
     --
     -- Drop an unbound return, e.g.,
@@ -1267,12 +1286,12 @@ simplExp (BindE wv tau e1 e2 s) =
     --
     simplBind WildV _tau ReturnE{} e2 _s = do
         rewrite
-        simplExp e2
+        simplE e2
 
     simplBind WildV tau e1 e2 s = do
         tau' <- simplType tau
-        e1'  <- simplExp e1
-        e2'  <- simplExp e2
+        e1'  <- simplE e1
+        e2'  <- simplE e2
         return $ BindE WildV tau' e1' e2' s
 
     --
@@ -1289,26 +1308,26 @@ simplExp (BindE wv tau e1 e2 s) =
     --   { x <- return e1; ... } -> { let x = e1; ... }
     --
     simplBind (TameV v) tau (ReturnE _ e1 _) e2 s = do
-        e1'  <- simplExp e1
+        e1'  <- simplE e1
         tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
           extendVars [(bVar v', tau)] $
           extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
-          e2' <- simplExp e2
+          e2' <- simplE e2
           rewrite
           return $ LetE (LetLD v' tau' e1' s) e2' s
 
     simplBind (TameV v) tau e1 e2 s = do
-        e1'  <- simplExp e1
+        e1'  <- simplE e1
         tau' <- simplType tau
         withUniqBoundVar v $ \v' ->
           extendVars [(bVar v', tau)] $
           extendDefinitions [(bVar v', Unknown)] $ do
-          e2' <- simplExp e2
+          e2' <- simplE e2
           return $ BindE (TameV v') tau' e1' e2' s
 
-simplExp (LutE e) =
-    LutE <$> simplExp e
+simplE (LutE e) =
+    LutE <$> simplE e
 
 isTrue :: Exp -> Bool
 isTrue (ConstE (BoolC True) _) = True
