@@ -1328,6 +1328,39 @@ simplE (BindE wv tau e1 e2 s) =
         rewrite
         simplE e2
 
+    --
+    -- Combine sequential array assignments.
+    --
+    --  { x[0] := y[0]; x[1] := y[1]; ... } -> { x[0:1] := y[0:1]; ... }
+    --
+    -- We see this after coalescing/fusion
+    --
+    simplBind WildV _ e1 e_rest _
+      | let (e2, mkBind) = unBind e_rest
+      , AssignE (IdxE xs  e_i len1 s1) (IdxE ys  e_k len1' s2) s3 <- e1
+      , Just i <- fromIntE e_i
+      , Just k <- fromIntE e_k
+      , len1' == len1
+      , AssignE (IdxE xs' e_j len2 _)  (IdxE ys' e_l len2' _)  _ <- e2
+      , Just j <- fromIntE e_j
+      , Just l <- fromIntE e_l
+      , len2' == len2
+      , xs' == xs
+      , ys' == ys
+      , i + fromLen len1 == j
+      , k + fromLen len1 == l
+      = do
+        rewrite
+        let len = plusl len1 len2
+        simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
+      where
+        fromLen :: Maybe Int -> Integer
+        fromLen Nothing    = 1
+        fromLen (Just len) = fromIntegral len
+
+        plusl :: Maybe Int -> Maybe Int -> Maybe Int
+        plusl len1 len2 = Just $ fromIntegral $ fromLen len1 + fromLen len2
+
     simplBind WildV tau e1 e2 s = do
         tau' <- simplType tau
         e1'  <- simplE e1
@@ -1365,6 +1398,12 @@ simplE (BindE wv tau e1 e2 s) =
           extendDefinitions [(bVar v', Unknown)] $ do
           e2' <- simplE e2
           return $ BindE (TameV v') tau' e1' e2' s
+
+    -- This gives us a handy way to pull apart binds so we don't have to
+    -- separately handle the cases { e1; e2; } and { e1; e2; ... }
+    unBind :: Exp -> (Exp, Exp -> Exp)
+    unBind (BindE wv tau e1 e2 s) = (e1, \e1' -> BindE wv tau e1' e2 s)
+    unBind e                      = (e, id)
 
 simplE (LutE e) =
     LutE <$> simplE e
