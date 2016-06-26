@@ -186,8 +186,8 @@ instance Monoid Flags where
         , verbLevel  = 0
         , maxErrCtx  = 1
         , maxSimpl   = 10
-        , maxLUT     = 32*1024 -- Default maximum size for LUT is 32K bytes
-        , maxLUTLog2 = 5 + 10  -- Default maximum size for LUT log_2 is 15
+        , maxLUT     = 256*1024 -- Default maximum size for LUT is 256K bytes
+        , maxLUTLog2 = 8 + 10  -- Default maximum size for LUT log_2 is 18
         , minLUTOps  = 5 -- Minimum number of operations necessary to consider a
                          -- LUT for an expression
 
