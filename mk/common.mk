@@ -70,7 +70,7 @@ LDFLAGS+=
 LIBS+=-lm -lpthread -lstdc++
 
 GHC=ghc
-GHCFLAGS+=-O -Wall -fno-warn-name-shadowing -Werror
+GHCFLAGS+=-rtsopts -O -Wall -fno-warn-name-shadowing -Werror
 
 RUNGHC=runghc
 RUNGHCFLAGS+=-W -fno-warn-unused-imports

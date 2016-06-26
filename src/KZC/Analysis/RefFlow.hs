@@ -31,7 +31,6 @@ import Control.Monad.Writer (MonadWriter(..),
                              WriterT(..),
                              censor,
                              tell)
-import Data.Foldable (toList)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -65,9 +64,7 @@ instance Located Ref where
     locOf _        = noLoc
 
 data RFState = RFState
-    { -- | Maps a reference to the variables it flows to.
-      refFlowsTo :: !(Map Ref (Set Var))
-    , -- | Maps a variable to the refs used to define the variable
+    { -- | Maps a variable to the refs used to define the variable
       varFlowsFrom :: !(Map Var (Set Ref))
     , -- | The set of variables whose ref source has been modified
       tainted :: !(Set Var)
@@ -77,15 +74,13 @@ data RFState = RFState
 
 instance Monoid RFState where
     mempty = RFState
-        { refFlowsTo   = mempty
-        , varFlowsFrom = mempty
+        { varFlowsFrom = mempty
         , tainted      = mempty
         , usedTainted  = mempty
         }
 
     x `mappend` y = RFState
-        { refFlowsTo   = Map.unionWith (<>) (refFlowsTo x) (refFlowsTo y)
-        , varFlowsFrom = Map.unionWith (<>) (varFlowsFrom x) (varFlowsFrom y)
+        { varFlowsFrom = Map.unionWith (<>) (varFlowsFrom x) (varFlowsFrom y)
         , tainted      = tainted x <> tainted y
         , usedTainted  = usedTainted x <> usedTainted y
         }
@@ -108,12 +103,16 @@ runRF m = fst <$> runWriterT (evalStateT (unRF m) mempty)
 
 -- | @extendVarFlowsFrom v refs k@ specifies that the references in @ref@ flow
 -- to the variable @v@ in the scoped computation @k@.
-extendVarFlowsFrom :: forall m a . MonadTc m => Var -> Set Ref -> RF m a -> RF m a
+extendVarFlowsFrom :: MonadTc m => Var -> Set Ref -> RF m a -> RF m a
 extendVarFlowsFrom v refs k = do
     putFlowVars v refs
+    delimitScope v k
+
+-- | Delimit scope of a variable.
+delimitScope :: MonadTc m => Var -> RF m a -> RF m a
+delimitScope v k = do
     x <- k
-    modify $ \s -> s { refFlowsTo   = Map.map (Set.delete v) (Map.delete (VarR v) (refFlowsTo s))
-                     , varFlowsFrom = Map.map (Set.delete (VarR v)) (Map.delete v (varFlowsFrom s))
+    modify $ \s -> s { varFlowsFrom = Map.delete v (varFlowsFrom s)
                      , tainted      = Set.delete v (tainted s)
                      , usedTainted  = Set.delete v (usedTainted s)
                      }
@@ -122,28 +121,21 @@ extendVarFlowsFrom v refs k = do
 -- | @putFlowVars v refs@ specifies that the references in @ref@ flow to the
 -- variable @v@.
 putFlowVars :: forall m . MonadTc m => Var -> Set Ref -> RF m ()
-putFlowVars v refs = do
+putFlowVars v refs | Set.null refs =
+    modify $ \s -> s { varFlowsFrom = Map.delete v (varFlowsFrom s) }
+
+putFlowVars v refs =
     modify $ \s -> s { varFlowsFrom = Map.insert v refs (varFlowsFrom s) }
-    mapM_ (`flowsTo` v) (toList refs)
-  where
-    flowsTo :: Ref -> Var -> RF m ()
-    flowsTo vref v =
-        modify $ \s ->
-            s { refFlowsTo = Map.insert vref
-                                        (Set.insert v (Map.findWithDefault mempty vref (refFlowsTo s)))
-                                        (refFlowsTo s)
-              }
 
 -- | Indicated that a ref was potentially modified.
 refModified :: MonadTc m => Ref -> RF m ()
-refModified v = do
-    flowsTo <- gets $ \s -> Map.lookup v (refFlowsTo s)
-    case flowsTo of
-      Nothing -> return ()
-      Just vs -> do traceRefFlow $
-                      nest 2 $
-                      text "Modification of" <+> ppr v <+> text "is tainting:" </> ppr vs
-                    modify $ \s -> s { tainted = tainted s `Set.union` vs }
+refModified r = do
+    -- Find variables for which r is a ref source.
+    flows  <- gets (Map.assocs . varFlowsFrom)
+    let vs =  [v | (v, refs) <- flows, r `Set.member` refs]
+    traceRefFlow $ nest 2 $
+        text "Modification of" <+> ppr r <+> text "is tainting:" <+> ppr vs
+    modify $ \s -> s { tainted = tainted s `Set.union` Set.fromList vs }
 
 useVar :: MonadTc m => Var -> RF m ()
 useVar v = do
@@ -198,7 +190,8 @@ instance MonadTc m => TransformExp (RF m) where
 
     localDeclT (LetRefLD v tau maybe_e1 s) k = do
       maybe_e1' <- traverse (voidUseInfo . expT) maybe_e1
-      x         <- extendVars [(bVar v, refT tau)] k
+      x         <- extendVars [(bVar v, refT tau)] $
+                   delimitScope (bVar v) k
       return (LetRefLD v tau maybe_e1' s, x)
 
     expT e@(VarE v _) = do

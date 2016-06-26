@@ -203,9 +203,9 @@ data FP = FP16
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
-           | BoolC Bool
-           | FixC Scale Signedness W BP Rational
-           | FloatC FP Rational
+           | BoolC !Bool
+           | FixC Scale Signedness W BP !Rational
+           | FloatC FP !Rational
            | StringC String
            | ArrayC [Const]
            | StructC Struct [(Field, Const)]

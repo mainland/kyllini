@@ -82,7 +82,7 @@ evalProgram (Program decls comp tau) =
     withLocContext comp (text "In definition of main") $ do
     val         <- evalComp comp
     (h', comp') <- case val of
-                     CompReturnV {}  -> do h'    <- getHeap
+                     CompReturnV {}  -> do h'    <- freezeHeap
                                            comp' <- toComp val
                                            return (h', comp')
                      CompV h' steps' -> return (h', mkComp  steps')
@@ -95,7 +95,7 @@ evalProgram (Program decls comp tau) =
 
 evalDecls :: (IsLabel l, MonadTcRef m)
           => [Decl l]
-          -> ((Heap l m -> EvalM l m [Decl l]) -> EvalM l m a)
+          -> ((FrozenHeap l m -> EvalM l m [Decl l]) -> EvalM l m a)
           -> EvalM l m a
 evalDecls [] k =
     k $ \_h -> return []
@@ -107,7 +107,7 @@ evalDecls (decl:decls) k =
 
 evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
-         -> ((Heap l m -> EvalM l m (Decl l)) -> EvalM l m a)
+         -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
@@ -201,7 +201,7 @@ data LocalLetVal l m  -- | Local declaration is pure and produces a declaration
                    = DeclVal LocalDecl
                    -- | Local declaration requires a heap so it can push the heap
                    -- through the declaration.
-                   | HeapDeclVal (Heap l m -> EvalM l m LocalDecl)
+                   | HeapDeclVal (FrozenHeap l m -> EvalM l m LocalDecl)
 
 evalLocalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
               => LocalDecl
@@ -221,13 +221,13 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
     tau' <- simplType tau
     val1 <- evalRhs tau' maybe_e1
     -- Allocate heap storage for v and initialize it
-    ptr  <- newVarPtr
-    writeVarPtr ptr val1
-    withUniqBoundVar v $ \v' ->
-      extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $
+    withNewVarPtr $ \ptr -> do
+      writeVarPtr ptr val1
+      withUniqBoundVar v $ \v' ->
+        extendVarBinds [(bVar v', RefV (VarR (bVar v') ptr))] $
         k $ HeapDeclVal $ \h ->
             withSummaryContext decl $ do
-            val1'     <- heapLookup h ptr
+            val1'     <- frozenHeapLookup h ptr
             maybe_e1' <- mkRhs val1' val1
             return $ LetRefLD v' tau' maybe_e1' s1
   where
@@ -429,7 +429,7 @@ evalStep (IfC l e1 c2 c3 s) =
     evalIfBody val
         | isTrue  val = evalComp c2
         | isFalse val = evalComp c3
-        | otherwise   = do h   <- getHeap
+        | otherwise   = do h   <- freezeHeap
                            c2' <- savingHeap $ evalFullSteps $ unComp c2
                            c3' <- savingHeap $ evalFullSteps $ unComp c3
                            killVars c2'
@@ -481,7 +481,7 @@ evalStep (EmitsC l e s) = do
     partialComp $ mkComp  [EmitsC l (toExp val) s]
 
 evalStep (RepeatC l ann c s) = do
-    h <- getHeap
+    h <- freezeHeap
     killVars c
     val    <- savingHeap $
               withSummaryContext c $
@@ -490,7 +490,7 @@ evalStep (RepeatC l ann c s) = do
     partial $ CompV h [RepeatC l ann (mkComp  steps') s]
 
 evalStep (ParC ann tau c1 c2 s) = do
-    h      <- getHeap
+    h      <- freezeHeap
     val1   <- withSummaryContext c1 $ evalComp c1
     val2   <- withSummaryContext c2 $ evalComp c2
     steps1 <- toSteps val1
@@ -506,10 +506,10 @@ evalFullSteps :: (IsLabel l, MonadTcRef m)
               => [Step l]
               -> EvalM l m [Step l]
 evalFullSteps steps = do
-    h            <- getHeap
+    h            <- freezeHeap
     val          <- evalComp (mkComp steps)
     (h', steps') <- case val of
-                      CompReturnV {}  -> do h'     <- getHeap
+                      CompReturnV {}  -> do h'     <- freezeHeap
                                             steps' <- toSteps val
                                             return (h', steps')
                       CompV h' steps' -> return (h', steps')
@@ -704,7 +704,7 @@ evalExp e =
             | isPureT tau = do val2 <- eval flags e2
                                val3 <- eval flags e3
                                partial $ ExpV $ IfE (toExp val) (toExp val2) (toExp val3) s
-            | otherwise   = do h   <- getHeap
+            | otherwise   = do h   <- freezeHeap
                                e2' <- savingHeap $ evalFullCmd e2
                                e3' <- savingHeap $ evalFullCmd e3
                                killVars e2'
@@ -725,11 +725,11 @@ evalExp e =
         go (HeapDeclVal k) = do
             val2 <- evalExp e2
             case val2 of
-              ExpV e2'   -> do decl <- getHeap >>= k
+              ExpV e2'   -> do decl <- freezeHeap >>= k
                                partial $ ExpV   $ LetE decl e2' s2
               CmdV h e2' -> do decl <- k h
                                partial $ CmdV h $ LetE decl e2' s2
-              _          -> do decl <- getHeap >>= k
+              _          -> do decl <- freezeHeap >>= k
                                wrapLet decl val2
 
         wrapLet :: LocalDecl -> Val l m Exp -> EvalM l m (Val l m Exp)
@@ -827,7 +827,7 @@ evalExp e =
       where
         go :: Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
         go (RefV r) val2 = do
-            h         <- getHeap
+            h         <- freezeHeap
             old       <- readVarPtr ptr
             maybe_new <- runMaybeT $ refUpdate r old val2
             case maybe_new of
@@ -932,7 +932,7 @@ evalExp e =
             return val2
 
     eval flags (LutE e) | testDynFlag LUT flags = do
-        h <- getHeap
+        h <- freezeHeap
         CmdV h <$> lutExp e
 
     eval flags (LutE e) =
@@ -1160,10 +1160,10 @@ evalFullCmd :: (IsLabel l, MonadTcRef m)
             -> EvalM l m Exp
 evalFullCmd e =
     withSummaryContext e $ do
-    h        <- getHeap
+    h        <- freezeHeap
     val      <- evalExp e
     (h', e') <- case val of
-                  ReturnV {} -> do h' <- getHeap
+                  ReturnV {} -> do h' <- freezeHeap
                                    return (h', toExp val)
                   CmdV h' e' -> return (h', e')
                   _          -> faildoc $ nest 2 $
@@ -1245,15 +1245,15 @@ evalLoop :: (IsLabel l, ModifiedVars e Var, MonadTcRef m)
          -> EvalM l m (Val l m a)
          -> EvalM l m (Val l m a)
 evalLoop body m = do
-    h   <- getHeap
+    h   <- freezeHeap
     val <- m
     case val of
       ReturnV {}     -> return val
       CompReturnV {} -> return val
-      CmdV _ e'      -> do putHeap h
+      CmdV _ e'      -> do thawHeap h
                            killVars body
                            partial $ CmdV h e'
-      CompV _ c'     -> do putHeap h
+      CompV _ c'     -> do thawHeap h
                            killVars body
                            partial $ CompV h c'
       _              -> faildoc $ text "Bad loop:" <+> ppr val
@@ -1484,7 +1484,7 @@ transformExpVal f = go
 -- applying f. Note that 'transformCompVal' will convert some sub-term of its
 -- @Val Comp@ to a 'CompV' if it isn't already, so even if @f@ is the identity
 -- function, 'transformCompVal' /is not/ the identity function.
-transformCompVal :: (IsLabel l, MonadTc m)
+transformCompVal :: (IsLabel l, MonadTcRef m)
                  => (Comp l -> EvalM l m (Comp l))
                  -> Val l m (Comp l)
                  -> EvalM l m (Val l m (Comp l))
