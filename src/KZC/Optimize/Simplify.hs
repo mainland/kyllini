@@ -1238,8 +1238,26 @@ simplE (ArrayE es s) = do
               return $ ConstE (ArrayC cs) s
       else return $ ArrayE es s
 
-simplE (IdxE e1 e2 len s) =
-    IdxE <$> simplE e1 <*> simplE e2 <*> pure len <*> pure s
+simplE (IdxE e1 e2 len0 s) = do
+    e1' <- simplE e1
+    e2' <- simplE e2
+    go e1' e2' len0
+  where
+    go :: Exp -> Exp -> Maybe Int -> SimplM l m Exp
+    --
+    -- Replace a whole-array slice with the array itself.
+    --
+    --   x[0, n] -> n        when x is an array of size n
+    --
+    go e1' e2' (Just len) | Just 0 <- fromIntE e2' = do
+        (iota, _) <- inferExp e1' >>= checkArrOrRefArrT
+        case iota of
+          ConstI n _ | len == n -> do rewrite
+                                      return e1'
+          _ -> return $ IdxE e1' e2' (Just len) s
+
+    go e1' e2' len =
+        return $ IdxE e1' e2' len s
 
 simplE (StructE struct flds s) = do
     es <- mapM simplE es
