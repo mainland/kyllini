@@ -198,6 +198,9 @@ fDynFlagOpts =
   , (LUT,           "lut",          "run the LUTter")
   , (NoGensym,      "no-gensym",    "don't gensym (for debugging)")
   , (Pipeline,      "pipeline",     "pipeline computations")
+  , (Coalesce,      "coalesce",     "coalesce computations")
+  , (VectOnlyBytes, "vect-bytes",   "only vectorize to byte widths")
+  , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -228,6 +231,8 @@ dDumpFlagOpts =
   , (DumpLUT,        "lut",        "dump LUTter")
   , (DumpHashCons,   "hashcons",   "dump hashcons of constants")
   , (DumpStaticRefs, "staticrefs", "dump result of static refs")
+  , (DumpRate,       "rate",       "dump result of rate analysis")
+  , (DumpCoalesce,   "coalesce",   "dump result of pipeline coalescing")
   ]
 
 dTraceFlagOpts :: [(TraceFlag, String, String)]
@@ -248,6 +253,8 @@ dTraceFlagOpts =
   , (TraceLUT,         "lut",          "trace LUTter")
   , (TraceRefFlow,     "rflow",        "trace ref-flow")
   , (TraceNeedDefault, "need-default", "trace default need")
+  , (TraceRate,        "rate",         "trace rate analysis")
+  , (TraceCoalesce,    "coalesce",     "trace pipeline coalescing")
   ]
 
 wWarnFlagOpts :: [(WarnFlag, String, String)]
@@ -261,6 +268,7 @@ fWarnFlagOpts =
   , (WarnUnusedCommandBind, "warn-unused-command-bind",  "warn when a non-unit command result is unused")
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
+  , (WarnRateMismatch,      "warn-rate-mismatch",        "warn on producer/consumer rate mismatch in par")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])

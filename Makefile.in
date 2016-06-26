@@ -55,6 +55,7 @@ SOURCE = \
 	KZC/Analysis/Lut.hs \
 	KZC/Analysis/NeedDefault.hs \
 	KZC/Analysis/Occ.hs \
+	KZC/Analysis/Rate.hs \
 	KZC/Analysis/ReadWriteSet.hs \
 	KZC/Analysis/RefFlow.hs \
 	KZC/Analysis/StaticRef.hs \
@@ -93,6 +94,7 @@ SOURCE = \
 	KZC/LambdaLift.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Autolut.hs \
+	KZC/Optimize/Coalesce.hs \
 	KZC/Optimize/Eval.hs \
 	KZC/Optimize/Eval/Monad.hs \
 	KZC/Optimize/Eval/Monad.hs-boot \

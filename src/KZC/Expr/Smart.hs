@@ -68,7 +68,8 @@ module KZC.Expr.Smart (
     takesE,
     emitE,
     emitsE,
-    repeatE
+    repeatE,
+    repeatAnnE
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -277,3 +278,6 @@ emitsE e = EmitsE e (srclocOf e)
 
 repeatE :: Exp -> Exp
 repeatE e = RepeatE AutoVect e (srclocOf e)
+
+repeatAnnE :: VectAnn -> Exp -> Exp
+repeatAnnE ann e = RepeatE ann e (srclocOf e)

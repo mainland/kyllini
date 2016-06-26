@@ -269,7 +269,7 @@ useLocalDecl (LetRefLD v tau (Just e) s) m = do
     return (LetRefLD v' tau (Just e') s, x)
 
 useComp :: MonadTc m => Comp l -> ND m (Comp l)
-useComp (Comp steps) = Comp <$> useSteps steps
+useComp (Comp steps card) = Comp <$> useSteps steps <*> pure card
 
 useSteps :: forall l m . MonadTc m
          => [Step l]

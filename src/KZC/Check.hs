@@ -940,7 +940,7 @@ tcExp e@Z.WriteE{} _ =
 tcExp (Z.StandaloneE e _) exp_ty =
     tcExp e exp_ty
 
-tcExp (Z.MapE _ f ztau l) exp_ty = do
+tcExp (Z.MapE ann f ztau l) exp_ty = do
     tau  <- fromZ (ztau, PhiK)
     tau' <- lookupVar f
     unifyTypes tau' tau
@@ -951,7 +951,8 @@ tcExp (Z.MapE _ f ztau l) exp_ty = do
                 ccalle <- co $ return $ E.varE cx
                 ca     <- trans a
                 cb     <- trans b
-                return $ E.repeatE $
+                cann   <- trans ann
+                return $ E.repeatAnnE cann $
                          E.bindE cx ca (E.takeE ca) $
                          E.bindE cy cb ccalle $
                          E.emitE (E.varE cy)

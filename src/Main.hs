@@ -46,6 +46,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
+import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
 import KZC.Analysis.StaticRef
 import KZC.Cg
@@ -63,6 +64,7 @@ import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Autolut
+import KZC.Optimize.Coalesce
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.HashConsConsts
@@ -112,6 +114,10 @@ runPipeline filepath = do
         runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase1" autolutPhase) >=>
         -- Simplify again, allowing inlining. This may inline LUTted functions.
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
+        -- Perform rate analysis
+        traceCorePhase "rate" ratePhase >=>
+        -- Perform pipeline coalescing
+        runIf (testDynFlag Coalesce) (traceCorePhase "coalesce" coalescePhase) >=>
         -- Fuse pars
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
@@ -242,6 +248,16 @@ runPipeline filepath = do
     hashconsPhase =
         lift . C.withTc . hashConsConsts >=>
         dumpPass DumpHashCons "core" "hashcons"
+
+    ratePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    ratePhase =
+        lift . C.withTc . rateProgram >=>
+        dumpPass DumpRate "core" "rate"
+
+    coalescePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    coalescePhase =
+        lift . C.withTc . coalesceProgram >=>
+        dumpPass DumpCoalesce "core" "coalesce"
 
     fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =

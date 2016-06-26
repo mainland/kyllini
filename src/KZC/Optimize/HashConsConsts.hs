@@ -175,8 +175,7 @@ hconsLocalDecl bind (LetRefLD v tau e l) k = do
       k $ LetRefLD v tau e' l
 
 hconsComp :: (IsLabel l, MonadTc m) => Comp l -> HCM m (Comp l)
-hconsComp (Comp steps) =
-    Comp <$> hconsSteps steps
+hconsComp (Comp steps card) = Comp <$> hconsSteps steps <*> pure card
 
 hconsSteps :: forall l m . (IsLabel l, MonadTc m)
            => [Step l]
