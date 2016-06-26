@@ -1361,6 +1361,24 @@ simplE (BindE wv tau e1 e2 s) =
         plusl :: Maybe Int -> Maybe Int -> Maybe Int
         plusl len1 len2 = Just $ fromIntegral $ fromLen len1 + fromLen len2
 
+    --
+    -- Combine sequential assignment and dereference.
+    --
+    --  { x := e; !x; ... } -> { x := e; return e; ... }
+    --
+    -- We see this after coalescing/fusion. We must be careful not to duplicate
+    -- work!
+    --
+    simplBind WildV tau e1 e_rest s
+      | let (e2, mkBind) = unBind e_rest
+      , AssignE (VarE v  _) e_rhs _ <- e1
+      , DerefE  (VarE v' _)       _ <- e2
+      , v' == v
+      , isSimple e_rhs
+      = do
+        rewrite
+        simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
+
     simplBind WildV tau e1 e2 s = do
         tau' <- simplType tau
         e1'  <- simplE e1
