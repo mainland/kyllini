@@ -77,7 +77,6 @@ import Control.Applicative
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.List (sort)
 import Data.Loc
-import Data.Ratio (numerator)
 import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax
@@ -221,9 +220,9 @@ arrayC = ArrayC
 structC :: Struct -> [(Field, Const)] -> Const
 structC = StructC
 
-fromIntC :: Monad m => Const -> m Integer
-fromIntC (FixC I _ _ (BP 0) r) =
-    return $ numerator r
+fromIntC :: Monad m => Const -> m Int
+fromIntC (FixC I _ _ (BP 0) x) =
+    return x
 
 fromIntC _ =
     fail "fromIntC: not an integer"

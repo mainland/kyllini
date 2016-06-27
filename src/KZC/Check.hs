@@ -46,7 +46,6 @@ import Data.List (sort)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Typeable
@@ -355,7 +354,7 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (BitT l) exp_ty
         return $ E.FixC E.I E.U (E.W 1) 0 (if b then 1 else 0)
 
-    tcConst (Z.FixC zsc zs zw zbp r) = do
+    tcConst (Z.FixC zsc zs zw zbp x) = do
         sc  <- fromZ zsc
         s   <- fromZ zs
         w   <- fromZ zw
@@ -365,13 +364,13 @@ tcExp (Z.ConstE zc l) exp_ty = do
         cw  <- trans w
         cbp <- trans bp
         instType (FixT sc s w bp l) exp_ty
-        return $ E.FixC csc cs cw cbp r
+        return $ E.FixC csc cs cw cbp x
 
     tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
         cw <- trans w
         instType (FloatT w l) exp_ty
-        return $ E.FloatC cw (toRational f)
+        return $ E.FloatC cw f
 
     tcConst (Z.StringC s)  = do
         instType (StringT l) exp_ty
@@ -1008,11 +1007,11 @@ refPath e =
     go (Z.VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) Nothing _) path =
-        go e (IdxP (fromIntegral (numerator r)) 1 : path)
+    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 x) _) Nothing _) path =
+        go e (IdxP (fromIntegral x) 1 : path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 r) _) (Just len) _) path =
-        go e (IdxP (fromIntegral (numerator r)) len : path)
+    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 x) _) (Just len) _) path =
+        go e (IdxP (fromIntegral x) len : path)
 
     go (Z.IdxE e _ _ _) _ =
         go e []
@@ -1870,7 +1869,7 @@ checkLegalCast tau1 tau2 = do
 -- safe. If it is definitely unsafe, signal an error; if it may be unsafe,
 -- signal a warning if the specified warning flag is set.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
-checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 r) l)) tau1 tau2 =
+checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) l)) tau1 tau2 =
     withSummaryContext e $ do
     tau1' <- fromZ $ Z.FixT sc1 s1 w1 bp1 l
     when (tau1' /= tau1) $
@@ -1881,22 +1880,22 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 r) l)) tau1 tau2 =
     go tau2
   where
     go :: Type -> Ti ()
-    go (FixT _ U _ _ _) | r < 0 =
+    go (FixT _ U _ _ _) | x < 0 =
         return ()
 
-    go (FixT _ U (W w) (BP 0) _) | r > 2^w-1 =
+    go (FixT _ U (W w) (BP 0) _) | x > 2^w-1 =
         faildoc $ align $
-        text "Integer constant" <+> ppr (numerator r) <+>
+        text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT _ S (W w) (BP 0) _) | r > 2^(w-1)-1 =
+    go (FixT _ S (W w) (BP 0) _) | x > 2^(w-1)-1 =
         faildoc $ align $
-        text "Integer constant" <+> ppr (numerator r) <+>
+        text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT _ S (W w) (BP 0) _) | r < -2^(w-1) =
+    go (FixT _ S (W w) (BP 0) _) | x < -2^(w-1) =
         faildoc $ align $
-        text "Integer constant" <+> ppr (numerator r) <+>
+        text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
     go _ =
@@ -1935,11 +1934,11 @@ constFold (Z.BinopE op e1 e2 l) =
 
     constFoldBinopE op e1 e2 = Z.BinopE op e1 e2 l
 
-    constFoldBinop :: Z.Binop -> Rational -> Rational -> Maybe Rational
+    constFoldBinop :: Z.Binop -> Int -> Int -> Maybe Int
     constFoldBinop Z.Add x y = Just $ x + y
     constFoldBinop Z.Sub x y = Just $ x - y
     constFoldBinop Z.Mul x y = Just $ x * y
-    constFoldBinop Z.Pow x y = Just $ x ^ numerator y
+    constFoldBinop Z.Pow x y = Just $ x ^ y
     constFoldBinop _     _ _ = Nothing
 
 constFold e = e

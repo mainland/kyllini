@@ -41,7 +41,6 @@ import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Data.Ratio (numerator)
 import Text.PrettyPrint.Mainland hiding (empty)
 
 import KZC.Core.Lint
@@ -67,8 +66,10 @@ data Intv -- | Empty interval
           | RangeI Integer Integer
   deriving (Eq, Ord, Show)
 
-singI :: Integer -> Known Intv
-singI i = Known $ RangeI i i
+singI :: Integral a => a -> Known Intv
+singI i = Known $ RangeI i' i'
+  where
+    i' = fromIntegral i
 
 fromSingI :: Monad m => Known Intv -> m Integer
 fromSingI (Known (RangeI i j)) | i == j =
@@ -390,7 +391,7 @@ rangeExp e =
       where
         rangeConst :: Const -> Val
         rangeConst (BoolC b)               = BoolV (pure b)
-        rangeConst (FixC I _s _w (BP 0) r) = IntV $ singI (numerator r)
+        rangeConst (FixC I _s _w (BP 0) x) = IntV $ singI x
         rangeConst _c                      = top
 
     go (VarE v _) = do

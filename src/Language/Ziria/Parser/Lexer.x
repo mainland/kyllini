@@ -271,7 +271,7 @@ lexConst1 tok beg end = do
 lexFloat :: Action P Token
 lexFloat beg end =
     case i of
-      [n] -> return $ locateTok beg end (TfloatConst (s, n))
+      [n] -> return $ locateTok beg end (TfloatConst (s, fromRational n))
       _   -> fail "bad parse for float"
   where
     s :: String

@@ -38,7 +38,6 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
@@ -1241,21 +1240,17 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
            -> Exp
            -> Exp
            -> SimplM l m Exp
-    unroll Unroll (ConstE (FixC I s w 0 r_i) _) (ConstE (FixC _ _ _ _ r_j) _) = do
+    unroll Unroll (ConstE (FixC I s w 0 i) _) (ConstE (FixC _ _ _ _ j) _) = do
         es <- mapM body [i..j-1]
         return $ foldr seqE (returnE unitE) es
       where
-        body :: Integer -> SimplM l m Exp
+        body :: Int -> SimplM l m Exp
         body i =
             extendSubst v (DoneExp (idx i)) $
             simplE e3
           where
-            idx :: Integer -> Exp
-            idx i = constE $ FixC I s w 0 (fromIntegral i)
-
-        i, j :: Integer
-        i = numerator r_i
-        j = numerator r_j
+            idx :: Int -> Exp
+            idx i = constE $ FixC I s w 0 i
 
     unroll _ e1' e2' =
         withUniqVar v $ \v' ->
@@ -1387,12 +1382,12 @@ simplE (BindE wv tau e1 e2 s) =
         let len = plusl len1 len2
         simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
       where
-        fromLen :: Maybe Int -> Integer
+        fromLen :: Maybe Int -> Int
         fromLen Nothing    = 1
-        fromLen (Just len) = fromIntegral len
+        fromLen (Just len) = len
 
         plusl :: Maybe Int -> Maybe Int -> Maybe Int
-        plusl len1 len2 = Just $ fromIntegral $ fromLen len1 + fromLen len2
+        plusl len1 len2 = Just $ fromLen len1 + fromLen len2
 
     --
     -- Combine sequential assignment and dereference.

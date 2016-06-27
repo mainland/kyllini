@@ -30,7 +30,6 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Loc
 import Data.Maybe (isJust)
-import Data.Ratio
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
@@ -548,9 +547,9 @@ cgLocalDecl decl@(LetRefLD v tau maybe_e _) k =
 cgConst :: forall l . IsLabel l => Const -> Cg l (CExp l)
 cgConst UnitC            = return CVoid
 cgConst (BoolC b)        = return $ CBool b
-cgConst (FixC I _ _ 0 r) = return $ CInt (numerator r)
+cgConst (FixC I _ _ 0 x) = return $ CInt (fromIntegral x)
 cgConst FixC{}           = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
-cgConst (FloatC _ r)     = return $ CFloat r
+cgConst (FloatC _ f)     = return $ CFloat (toRational f)
 cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do

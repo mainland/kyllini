@@ -84,7 +84,6 @@ import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import Data.Ratio (denominator, numerator)
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
@@ -204,8 +203,8 @@ data FP = FP16
 
 data Const = UnitC
            | BoolC !Bool
-           | FixC Scale Signedness W BP !Rational
-           | FloatC FP !Rational
+           | FixC Scale Signedness W BP {-# UNPACK #-} !Int
+           | FloatC FP {-# UNPACK #-} !Double
            | StringC String
            | ArrayC [Const]
            | StructC Struct [(Field, Const)]
@@ -414,21 +413,21 @@ class LiftedCast a b | a -> b where
 -- | Renormalize a constant, ensuring that integral constants are within their
 -- bounds. We assume two's complement arithmetic.
 renormalize :: Const -> Const
-renormalize c@(FixC I S (W w) 0 r)
-    | r > max   = renormalize (FixC I S (W w) 0 (r - 2^w))
-    | r < min   = renormalize (FixC I S (W w) 0 (r + 2^w))
+renormalize c@(FixC I S (W w) 0 x)
+    | x > max   = renormalize (FixC I S (W w) 0 (x - 2^w))
+    | x < min   = renormalize (FixC I S (W w) 0 (x + 2^w))
     | otherwise = c
   where
-    max, min :: Rational
+    max, min :: Int
     max = 2^(w-1)-1
     min = -2^(w-1)
 
-renormalize c@(FixC I U (W w) 0 r)
-    | r > max   = renormalize (FixC I U (W w) 0 (r - 2^w))
-    | r < 0     = renormalize (FixC I U (W w) 0 (r + 2^w))
+renormalize c@(FixC I U (W w) 0 x)
+    | x > max   = renormalize (FixC I U (W w) 0 (x - 2^w))
+    | x < 0     = renormalize (FixC I U (W w) 0 (x + 2^w))
     | otherwise = c
   where
-    max :: Rational
+    max :: Int
     max = 2^w-1
 
 renormalize c = c
@@ -453,20 +452,20 @@ instance LiftedOrd Const Const where
     liftOrd _ f x y = BoolC (f x y)
 
 instance LiftedNum Const (Maybe Const) where
-    liftNum _op f (FixC sc s w bp r) =
-        Just $ FixC sc s w bp (f r)
+    liftNum _op f (FixC sc s w bp x) =
+        Just $ FixC sc s w bp (f x)
 
-    liftNum _op f (FloatC fp r) =
-        Just $ FloatC fp (f r)
+    liftNum _op f (FloatC fp x) =
+        Just $ FloatC fp (f x)
 
     liftNum _op _f _c =
         Nothing
 
-    liftNum2 _op f (FixC sc s w bp r1) (FixC _ _ _ _ r2) =
-        Just $ renormalize $ FixC sc s w bp (f r1 r2)
+    liftNum2 _op f (FixC sc s w bp x) (FixC _ _ _ _ y) =
+        Just $ renormalize $ FixC sc s w bp (f x y)
 
-    liftNum2 _op f (FloatC fp r1) (FloatC _ r2) =
-        Just $ FloatC fp (f r1 r2)
+    liftNum2 _op f (FloatC fp x) (FloatC _ y) =
+        Just $ FloatC fp (f x y)
 
     liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a+c) (b+d)
@@ -490,14 +489,14 @@ instance LiftedNum Const (Maybe Const) where
         Nothing
 
 instance LiftedIntegral Const (Maybe Const) where
-    liftIntegral2 Div _ (FixC I s w (BP 0) r1) (FixC _ _ _ _ r2) =
-        Just $ FixC I s w (BP 0) (fromIntegral (numerator r1 `quot` numerator r2))
+    liftIntegral2 Div _ (FixC I s w (BP 0) x) (FixC _ _ _ _ y) =
+        Just $ FixC I s w (BP 0) (fromIntegral (x `quot` y))
 
     liftIntegral2 Div _ (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (x / y)
 
-    liftIntegral2 Rem _ (FixC I s w (BP 0) r1) (FixC _ _ _ _ r2) =
-        Just $ FixC I s w (BP 0) (fromIntegral (numerator r1 `rem` numerator r2))
+    liftIntegral2 Rem _ (FixC I s w (BP 0) x) (FixC _ _ _ _ y) =
+        Just $ FixC I s w (BP 0) (fromIntegral (x `rem` y))
 
     liftIntegral2 Div _ x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn = do
         re <- (a*c + b*d)/(c*c + d*d)
@@ -515,24 +514,24 @@ instance LiftedIntegral Const (Maybe Const) where
 
 instance LiftedCast Const (Maybe Const) where
     -- Cast to a bit type
-    liftCast (FixT I U (W 1) (BP 0) _) (FixC _ _ _ (BP 0) r) =
-        Just $ FixC I U (W 1) (BP 0) (if r == 0 then 0 else 1)
+    liftCast (FixT I U (W 1) (BP 0) _) (FixC _ _ _ (BP 0) x) =
+        Just $ FixC I U (W 1) (BP 0) (if x == 0 then 0 else 1)
 
     -- Cast int to unsigned int
-    liftCast (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) r) =
-        Just $ renormalize $ FixC I U (W w) (BP 0) r
+    liftCast (FixT I U (W w) (BP 0) _) (FixC I _ _ (BP 0) x) =
+        Just $ renormalize $ FixC I U (W w) (BP 0) x
 
     -- Cast int to signed int
-    liftCast (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) r) =
-        Just $ renormalize $ FixC I S (W w) (BP 0) r
+    liftCast (FixT I S (W w) (BP 0) _) (FixC I _ _ (BP 0) x) =
+        Just $ renormalize $ FixC I S (W w) (BP 0) x
 
     -- Cast float to int
-    liftCast (FixT I s w (BP 0) _) (FloatC _ r) =
-        Just $ FixC I s w (BP 0) (fromIntegral (truncate r :: Integer))
+    liftCast (FixT I s w (BP 0) _) (FloatC _ x) =
+        Just $ FixC I s w (BP 0) (fromIntegral (truncate x :: Integer))
 
     -- Cast int to float
-    liftCast (FloatT fp _) (FixC I _ _ (BP 0) r) =
-        Just $ FloatC fp r
+    liftCast (FloatT fp _) (FixC I _ _ (BP 0) x) =
+        Just $ FloatC fp (fromIntegral x)
 
     liftCast _ _ =
         Nothing
@@ -554,20 +553,20 @@ uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
 
 instance LiftedBits Const (Maybe Const) where
-    liftBits _ f (FixC sc s w (BP 0) r) =
-        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r)))
+    liftBits _ f (FixC sc s w (BP 0) x) =
+        Just $ FixC sc s w (BP 0) (f x)
 
     liftBits _ _ _ =
         Nothing
 
-    liftBits2 _ f (FixC sc s w (BP 0) r1) (FixC _ _ _ _ r2) =
-        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r1) (numerator r2)))
+    liftBits2 _ f (FixC sc s w (BP 0) x) (FixC _ _ _ _ y) =
+        Just $ FixC sc s w (BP 0) (f x y)
 
     liftBits2 _ _ _ _ =
         Nothing
 
-    liftShift _ f (FixC sc s w (BP 0) r1) (FixC _ _ _ _ r2) =
-        Just $ FixC sc s w (BP 0) (fromIntegral (f (numerator r1) (fromIntegral (numerator r2))))
+    liftShift _ f (FixC sc s w (BP 0) x) (FixC _ _ _ _ y) =
+        Just $ FixC sc s w (BP 0) (f x (fromIntegral y))
 
     liftShift _ _ _ _ =
         Nothing
@@ -629,8 +628,8 @@ instance Pretty Const where
     pprPrec _ (BoolC True)         = text "true"
     pprPrec _ (FixC I U (W 1) 0 0) = text "'0"
     pprPrec _ (FixC I U (W 1) 0 1) = text "'1"
-    pprPrec p (FixC sc s _ bp r)   = pprScaled p sc s bp r <> pprSign s
-    pprPrec _ (FloatC _ f)         = ppr (fromRational f :: Double)
+    pprPrec p (FixC sc s _ bp x)   = pprScaled p sc s bp x <> pprSign s
+    pprPrec _ (FloatC _ f)         = ppr f
     pprPrec _ (StringC s)          = text (show s)
     pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
     pprPrec _ (ArrayC cs)
@@ -650,13 +649,12 @@ pprSign :: Signedness -> Doc
 pprSign S = empty
 pprSign U = char 'u'
 
-pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
-pprScaled p I _ (BP 0) r
-    | denominator r == 1 = pprPrec p (numerator r)
-    | otherwise          = pprPrec p r
+pprScaled :: Int -> Scale -> Signedness -> BP -> Int -> Doc
+pprScaled p I _ (BP 0) x =
+    pprPrec p x
 
-pprScaled p sc _ (BP bp) r =
-    pprPrec p (fromRational r * scale sc / 2^bp :: Double)
+pprScaled p sc _ (BP bp) x =
+    pprPrec p (fromIntegral x * scale sc / 2^bp :: Double)
   where
     scale :: Scale -> Double
     scale I  = 1.0

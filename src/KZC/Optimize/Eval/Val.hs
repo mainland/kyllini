@@ -77,12 +77,13 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import Data.Ratio (numerator)
 import Data.String (fromString)
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as MV
 import Data.Word (Word32,
                   Word64)
+import GHC.Float (double2Float,
+                  float2Double)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Comp
@@ -186,9 +187,9 @@ uintV i = ConstV $ uintC i
 intV :: Integral a => a -> Val l m Exp
 intV i = ConstV $ intC i
 
-fromIntV :: Val l m Exp -> Maybe Integer
-fromIntV (ConstV (FixC I _ _ (BP 0) r)) =
-    Just $ numerator r
+fromIntV :: Val l m Exp -> Maybe Int
+fromIntV (ConstV (FixC I _ _ (BP 0) x)) =
+    Just x
 
 fromIntV _ =
     Nothing
@@ -317,18 +318,18 @@ toBitsV = go
     go (ConstV (BoolC f)) _ =
         toBitArr (fromIntegral (fromEnum f)) 1
 
-    go (ConstV (FixC I U (W w) (BP 0) r)) _ =
-        toBitArr (numerator r) w
+    go (ConstV (FixC I U (W w) (BP 0) x)) _ =
+        toBitArr x w
 
-    go (ConstV (FixC I S (W w) (BP 0) r)) _
-        | r >= 0    = toBitArr (numerator r) w
-        | otherwise = toBitArr (numerator r + 2^w) w
+    go (ConstV (FixC I S (W w) (BP 0) x)) _
+        | x >= 0    = toBitArr x w
+        | otherwise = toBitArr (x + 2^w) w
 
-    go (ConstV (FloatC FP32 r)) _ =
-        toBitArr (fromIntegral (floatToWord (fromRational r))) 32
+    go (ConstV (FloatC FP32 f)) _ =
+        toBitArr (fromIntegral (floatToWord (double2Float f))) 32
 
-    go(ConstV  (FloatC FP64 r)) _ =
-        toBitArr (fromIntegral (doubleToWord (fromRational r))) 64
+    go(ConstV  (FloatC FP64 f)) _ =
+        toBitArr (fromIntegral (doubleToWord f)) 64
 
     go (StructV _ m) (StructT sname _) = do
         StructDef _ flds _ <- lookupStruct sname
@@ -344,7 +345,7 @@ toBitsV = go
         w <- typeSize tau
         return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
-    toBitArr :: Integer -> Int -> EvalM l m (Val l m Exp)
+    toBitArr :: Int -> Int -> EvalM l m (Val l m Exp)
     toBitArr n w = ArrayV <$> (P.replicateDefault w zeroBitV P.// [(i,oneBitV) | i <- [0..w-1], n `testBit` i])
 
 packValues :: forall l m . (IsLabel l, MonadTc m)
@@ -389,10 +390,10 @@ fromBitsV (ArrayV vs) tau =
             else FixC I S (W w) (BP 0) (fromIntegral (i - 2^w))
 
     go vs (FloatT FP32 _) =
-        ConstV . FloatC FP32 . toRational . wordToFloat . fromIntegral <$> fromBitArr vs
+        ConstV . FloatC FP32 . float2Double . wordToFloat . fromIntegral <$> fromBitArr vs
 
     go vs (FloatT FP64 _) =
-        ConstV . FloatC FP64 . toRational . wordToDouble . fromIntegral <$> fromBitArr vs
+        ConstV . FloatC FP64 . wordToDouble . fromIntegral <$> fromBitArr vs
 
     go vs (RefT tau _) =
         go vs tau
@@ -410,10 +411,10 @@ fromBitsV (ArrayV vs) tau =
     go vs _ =
         return $ ExpV $ bitcastE tau (toExp (ArrayV vs))
 
-    fromBitArr :: P.PArray (Val l m Exp) -> EvalM l m Integer
+    fromBitArr :: P.PArray (Val l m Exp) -> EvalM l m Int
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
-        set :: Integer -> Val l m Exp -> EvalM l m Integer
+        set :: Int -> Val l m Exp -> EvalM l m Int
         set i (ConstV (FixC I U (W 1) (BP 0) 0)) = return $ i `shiftL` 1
         set i (ConstV (FixC I U (W 1) (BP 0) 1)) = return $ i `shiftL` 1 .|. 1
         set _ val                                = faildoc $ text "Not a bit:" <+> ppr val
@@ -469,11 +470,11 @@ enumVals (FixT I S (W w) (BP 0) _) =
     lo = -(2^(w-1))
 
 enumVals (FloatT FP32 _) =
-    return $ map (ConstV . FloatC FP32 . toRational . wordToFloat)
+    return $ map (ConstV . FloatC FP32 . float2Double . wordToFloat)
                  [(minBound :: Word32)..]
 
 enumVals (FloatT FP64 _) =
-    return $ map (ConstV . FloatC FP64 . toRational . wordToDouble)
+    return $ map (ConstV . FloatC FP64 . wordToDouble)
                 [(minBound :: Word64)..]
 
 enumVals (RefT tau _) =

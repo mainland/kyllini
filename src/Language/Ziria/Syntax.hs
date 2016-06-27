@@ -51,7 +51,6 @@ import Data.Foldable
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Loc
 import Data.Monoid
-import Data.Ratio (denominator, numerator)
 import Data.String
 import Text.PrettyPrint.Mainland
 
@@ -128,8 +127,8 @@ data FP = FP16
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | FixC Scale Signedness W BP Rational
-           | FloatC FP Rational
+           | FixC Scale Signedness W BP Int
+           | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
 
@@ -419,21 +418,20 @@ instance Pretty Const where
     pprPrec _ (BoolC True)       = text "true"
     pprPrec _ (BitC False)       = text "'0"
     pprPrec _ (BitC True)        = text "'1"
-    pprPrec p (FixC sc s _ bp r) = pprScaled p sc s bp r <> pprSign s
-    pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
+    pprPrec p (FixC sc s _ bp x) = pprScaled p sc s bp x <> pprSign s
+    pprPrec _ (FloatC _ f)       = ppr f
     pprPrec _ (StringC s)        = text (show s)
 
 pprSign :: Signedness -> Doc
 pprSign S = empty
 pprSign U = char 'u'
 
-pprScaled :: Int -> Scale -> Signedness -> BP -> Rational -> Doc
-pprScaled p I _ (BP 0) r
-    | denominator r == 1 = pprPrec p (numerator r)
-    | otherwise          = pprPrec p r
+pprScaled :: Int -> Scale -> Signedness -> BP -> Int -> Doc
+pprScaled p I _ (BP 0) x =
+    pprPrec p x
 
-pprScaled p sc _ (BP bp) r =
-    pprPrec p (fromRational r * scale sc / 2^bp :: Double)
+pprScaled p sc _ (BP bp) x =
+    pprPrec p (fromIntegral x * scale sc / 2^bp :: Double)
   where
     scale :: Scale -> Double
     scale I  = 1.0
