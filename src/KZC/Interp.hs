@@ -288,8 +288,9 @@ defaultRef (StructT struct _) = do
     refs               <- mapM defaultRef taus
     return $ StructR struct $ Map.fromList (fs `zip` refs)
 
-defaultRef (ArrT (ConstI n _) tau _) | isBaseT tau =
-    ArrayR <$> MV.new n
+defaultRef (ArrT (ConstI n _) tau _) | isBaseT tau = do
+    val <- defaultVal tau
+    ArrayR <$> MV.replicate n val
 
 defaultRef (ArrT (ConstI n _) tau _) =
     ArrayRefR <$> (V.replicateM n (defaultRef tau) >>= V.thaw)
