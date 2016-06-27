@@ -33,6 +33,7 @@ module KZC.Expr.Smart (
     isComplexT,
     isFunT,
     isArrT,
+    isArrOrRefArrT,
     isRefT,
     isSTUnitT,
     isCompT,
@@ -163,6 +164,11 @@ isFunT _      = False
 isArrT :: Type -> Bool
 isArrT ArrT{} = True
 isArrT _      = False
+
+isArrOrRefArrT :: Type -> Bool
+isArrOrRefArrT ArrT{}          = True
+isArrOrRefArrT (RefT ArrT{} _) = True
+isArrOrRefArrT _               = False
 
 isRefT :: Type -> Bool
 isRefT RefT{} = True
