@@ -1934,7 +1934,7 @@ constFold (Z.BinopE op e1 e2 l) =
 
     constFoldBinopE op e1 e2 = Z.BinopE op e1 e2 l
 
-    constFoldBinop :: Z.Binop -> Integer -> Integer -> Maybe Integer
+    constFoldBinop :: Z.Binop -> Int -> Int -> Maybe Int
     constFoldBinop Z.Add x y = Just $ x + y
     constFoldBinop Z.Sub x y = Just $ x - y
     constFoldBinop Z.Mul x y = Just $ x * y

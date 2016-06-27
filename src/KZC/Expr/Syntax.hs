@@ -203,7 +203,7 @@ data FP = FP16
 
 data Const = UnitC
            | BoolC !Bool
-           | FixC Scale Signedness W BP !Integer
+           | FixC Scale Signedness W BP {-# UNPACK #-} !Int
            | FloatC FP !Rational
            | StringC String
            | ArrayC [Const]
@@ -418,7 +418,7 @@ renormalize c@(FixC I S (W w) 0 x)
     | x < min   = renormalize (FixC I S (W w) 0 (x + 2^w))
     | otherwise = c
   where
-    max, min :: Integer
+    max, min :: Int
     max = 2^(w-1)-1
     min = -2^(w-1)
 
@@ -427,7 +427,7 @@ renormalize c@(FixC I U (W w) 0 x)
     | x < 0     = renormalize (FixC I U (W w) 0 (x + 2^w))
     | otherwise = c
   where
-    max :: Integer
+    max :: Int
     max = 2^w-1
 
 renormalize c = c
@@ -649,7 +649,7 @@ pprSign :: Signedness -> Doc
 pprSign S = empty
 pprSign U = char 'u'
 
-pprScaled :: Int -> Scale -> Signedness -> BP -> Integer -> Doc
+pprScaled :: Int -> Scale -> Signedness -> BP -> Int -> Doc
 pprScaled p I _ (BP 0) x =
     pprPrec p x
 

@@ -127,7 +127,7 @@ data FP = FP16
 data Const = UnitC
            | BoolC Bool
            | BitC Bool
-           | FixC Scale Signedness W BP Integer
+           | FixC Scale Signedness W BP Int
            | FloatC FP Rational
            | StringC String
   deriving (Eq, Ord, Read, Show)
@@ -426,7 +426,7 @@ pprSign :: Signedness -> Doc
 pprSign S = empty
 pprSign U = char 'u'
 
-pprScaled :: Int -> Scale -> Signedness -> BP -> Integer -> Doc
+pprScaled :: Int -> Scale -> Signedness -> BP -> Int -> Doc
 pprScaled p I _ (BP 0) x =
     pprPrec p x
 

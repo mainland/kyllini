@@ -1355,11 +1355,11 @@ evalForE ann v tau e1 e2 e3 = do
         go v' start len
   where
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
-    go v' start len | Just r_start <- fromIntV start,
-                      Just r_len   <- fromIntV len =
-        loop r_start (r_start + r_len)
+    go v' start len | Just i_start <- fromIntV start,
+                      Just i_len   <- fromIntV len =
+        loop i_start (i_start + i_len)
       where
-        loop :: Integer -> Integer -> EvalM l m (Val l m Exp)
+        loop :: Int -> Int -> EvalM l m (Val l m Exp)
         loop !i !end | i < end = do
             val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalExp e3
             case val3 of
@@ -1402,7 +1402,7 @@ evalForC ann v tau e1 e2 c3 = do
                       Just i_len   <- fromIntV len =
         loop i_start (i_start + i_len)
       where
-        loop :: Integer -> Integer -> EvalM l m (Val l m (Comp l))
+        loop :: Int -> Int -> EvalM l m (Val l m (Comp l))
         loop !i !end | i < end = do
             val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalComp c3
             case val3 of

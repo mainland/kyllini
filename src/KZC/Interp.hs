@@ -175,14 +175,14 @@ enumVals (FixT S.I U (W w) (BP 0) _) =
     return $ map (ConstV . FixC S.I U (W w) (BP 0))
                  [0..hi]
   where
-    hi :: Integer
+    hi :: Int
     hi = 2^w-1
 
 enumVals (FixT S.I S (W w) (BP 0) _) =
     return $ map (ConstV . FixC S.I U (W w) (BP 0)) $
                  [0..hi] ++ [lo..0]
   where
-    hi, lo :: Integer
+    hi, lo :: Int
     hi = 2^(w-1)-1
     lo = -(2^(w-1))
 

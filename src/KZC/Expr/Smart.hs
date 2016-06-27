@@ -220,7 +220,7 @@ arrayC = ArrayC
 structC :: Struct -> [(Field, Const)] -> Const
 structC = StructC
 
-fromIntC :: Monad m => Const -> m Integer
+fromIntC :: Monad m => Const -> m Int
 fromIntC (FixC I _ _ (BP 0) x) =
     return x
 

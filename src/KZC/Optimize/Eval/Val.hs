@@ -185,7 +185,7 @@ uintV i = ConstV $ uintC i
 intV :: Integral a => a -> Val l m Exp
 intV i = ConstV $ intC i
 
-fromIntV :: Val l m Exp -> Maybe Integer
+fromIntV :: Val l m Exp -> Maybe Int
 fromIntV (ConstV (FixC I _ _ (BP 0) x)) =
     Just x
 
@@ -343,7 +343,7 @@ toBitsV = go
         w <- typeSize tau
         return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
-    toBitArr :: Integer -> Int -> EvalM l m (Val l m Exp)
+    toBitArr :: Int -> Int -> EvalM l m (Val l m Exp)
     toBitArr n w = ArrayV <$> (P.replicateDefault w zeroBitV P.// [(i,oneBitV) | i <- [0..w-1], n `testBit` i])
 
 packValues :: forall l m . (IsLabel l, MonadTc m)

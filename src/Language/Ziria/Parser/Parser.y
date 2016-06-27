@@ -300,11 +300,11 @@ pexp :
             ; let to    =  unLoc $5
             ; let len   =  to - from + 1
             ; let efrom =  intC from (srclocOf $5)
-            ; return $ IdxE $1 efrom (Just (fromInteger len)) ($1 `srcspan` $6)
+            ; return $ IdxE $1 efrom (Just len) ($1 `srcspan` $6)
             }
       }
   | pexp '[' exp ',' const_int_exp ']'
-      { IdxE $1 $3 (Just (fromInteger (unLoc $5))) ($1 `srcspan` $6) }
+      { IdxE $1 $3 (Just (unLoc $5)) ($1 `srcspan` $6) }
   | pexp '[' exp ']'
       { IdxE $1 $3 Nothing ($1 `srcspan` $4) }
 
@@ -423,7 +423,7 @@ maybe_initializer :
   | ':=' exp    { Just $2 }
 
 -- Constant integer expressions
-const_int_exp :: { L Integer }
+const_int_exp :: { L Int }
 const_int_exp :
     const_exp {% fmap (L (locOf $1)) (constIntExp $1) }
 
@@ -523,7 +523,7 @@ arr_length :
     '[' 'length' '(' ID ')' ']' base_type
       { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
-      { (ConstI (fromInteger (unLoc $2)) (srclocOf $2), $4) }
+      { (ConstI (unLoc $2) (srclocOf $2), $4) }
   | base_type
       { (NoneI (srclocOf $1), $1) }
 
@@ -695,7 +695,7 @@ acomp :
   | 'take'
       { TakeE (srclocOf $1) }
   | 'takes' const_int_exp
-      { TakesE (fromInteger (unLoc $2)) ($1 `srcspan` $2) }
+      { TakesE (unLoc $2) ($1 `srcspan` $2) }
   | 'filter' var_bind
       { let { (v, tau) = $2 }
         in
@@ -952,10 +952,10 @@ structid t = mkSymName (getSTRUCTID t) (locOf t)
 fieldid :: L T.Token -> Name
 fieldid t = mkSymName (getID t) (locOf t)
 
-constIntExp :: Exp -> P Integer
+constIntExp :: Exp -> P Int
 constIntExp e = go e
   where
-    go :: Exp -> P Integer
+    go :: Exp -> P Int
     go (ConstE (FixC I _ _ 0 x) _) =
         return x
 
@@ -967,14 +967,14 @@ constIntExp e = go e
     go _ =
         fail $ "non-constant integer expression: " ++ show e
 
-    binop :: Binop -> Integer -> Integer -> P Integer
+    binop :: Binop -> Int -> Int -> P Int
     binop Add x y = return $ x + y
     binop Sub x y = return $ x - y
     binop Mul x y = return $ x * y
     binop Div x y = return $ x `div` y
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
-intC :: Integer -> SrcLoc -> Exp
+intC :: Int -> SrcLoc -> Exp
 intC i l = ConstE (FixC I S WDefault 0 i) l
 
 data RevList a  =  RNil
