@@ -204,7 +204,7 @@ data FP = FP16
 data Const = UnitC
            | BoolC !Bool
            | FixC Scale Signedness W BP {-# UNPACK #-} !Int
-           | FloatC FP !Rational
+           | FloatC FP {-# UNPACK #-} !Double
            | StringC String
            | ArrayC [Const]
            | StructC Struct [(Field, Const)]
@@ -629,7 +629,7 @@ instance Pretty Const where
     pprPrec _ (FixC I U (W 1) 0 0) = text "'0"
     pprPrec _ (FixC I U (W 1) 0 1) = text "'1"
     pprPrec p (FixC sc s _ bp x)   = pprScaled p sc s bp x <> pprSign s
-    pprPrec _ (FloatC _ f)         = ppr (fromRational f :: Double)
+    pprPrec _ (FloatC _ f)         = ppr f
     pprPrec _ (StringC s)          = text (show s)
     pprPrec _ (StructC s flds)     = ppr s <+> pprStruct flds
     pprPrec _ (ArrayC cs)

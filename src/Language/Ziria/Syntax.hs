@@ -128,7 +128,7 @@ data Const = UnitC
            | BoolC Bool
            | BitC Bool
            | FixC Scale Signedness W BP Int
-           | FloatC FP Rational
+           | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
 
@@ -419,7 +419,7 @@ instance Pretty Const where
     pprPrec _ (BitC False)       = text "'0"
     pprPrec _ (BitC True)        = text "'1"
     pprPrec p (FixC sc s _ bp x) = pprScaled p sc s bp x <> pprSign s
-    pprPrec _ (FloatC _ f)       = ppr (fromRational f :: Double)
+    pprPrec _ (FloatC _ f)       = ppr f
     pprPrec _ (StringC s)        = text (show s)
 
 pprSign :: Signedness -> Doc

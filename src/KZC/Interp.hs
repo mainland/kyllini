@@ -68,6 +68,7 @@ import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as MV
 import Data.Word (Word32,
                   Word64)
+import GHC.Float (float2Double)                  
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
@@ -187,11 +188,11 @@ enumVals (FixT S.I S (W w) (BP 0) _) =
     lo = -(2^(w-1))
 
 enumVals (FloatT FP32 _) =
-    return $ map (ConstV . FloatC FP32 . toRational . wordToFloat)
+    return $ map (ConstV . FloatC FP32 . float2Double . wordToFloat)
                  [(minBound :: Word32)..]
 
 enumVals (FloatT FP64 _) =
-    return $ map (ConstV . FloatC FP64 . toRational . wordToDouble)
+    return $ map (ConstV . FloatC FP64 . wordToDouble)
                  [(minBound :: Word64)..]
 
 enumVals (RefT tau _) =

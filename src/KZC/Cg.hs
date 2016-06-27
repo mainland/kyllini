@@ -549,7 +549,7 @@ cgConst UnitC            = return CVoid
 cgConst (BoolC b)        = return $ CBool b
 cgConst (FixC I _ _ 0 x) = return $ CInt (fromIntegral x)
 cgConst FixC{}           = faildoc $ text "Fractional and non-unit scaled fixed point values are not supported."
-cgConst (FloatC _ r)     = return $ CFloat r
+cgConst (FloatC _ f)     = return $ CFloat (toRational f)
 cgConst (StringC s)      = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do

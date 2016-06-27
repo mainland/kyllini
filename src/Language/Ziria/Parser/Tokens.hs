@@ -19,7 +19,7 @@ data Signedness = S
 
 data Token = Teof
            | TintConst Signedness (String, Integer)
-           | TfloatConst (String, Rational)
+           | TfloatConst (String, Double)
            | TcharConst (String, Char)
            | TstringConst (String, String)
            | Tidentifier Symbol

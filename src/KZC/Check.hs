@@ -370,7 +370,7 @@ tcExp (Z.ConstE zc l) exp_ty = do
         w  <- fromZ zw
         cw <- trans w
         instType (FloatT w l) exp_ty
-        return $ E.FloatC cw (toRational f)
+        return $ E.FloatC cw f
 
     tcConst (Z.StringC s)  = do
         instType (StringT l) exp_ty
