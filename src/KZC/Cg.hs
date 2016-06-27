@@ -2632,7 +2632,7 @@ cgAddrOf tau (CAlias _ ce) = do
     useCExp ce
     cgAddrOf tau ce
 
-cgAddrOf ArrT{} ce | isLvalue ce = do
+cgAddrOf tau ce | isArrOrRefArrT tau && isLvalue ce = do
     useCExp ce
     return $ CExp [cexp|$ce|]
 
@@ -2640,7 +2640,7 @@ cgAddrOf _ ce | isLvalue ce = do
     useCExp ce
     return $ CExp [cexp|&$ce|]
 
-cgAddrOf tau@ArrT{} ce = do
+cgAddrOf tau ce | isArrOrRefArrT tau = do
     ctemp <- cgTemp "addrof" tau
     cgAssign tau ctemp ce
     return $ CExp [cexp|$ctemp|]
