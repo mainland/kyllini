@@ -88,7 +88,6 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -677,11 +676,11 @@ refPath e =
     go (VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (IdxE e (ConstE (FixC I _ _ 0 r) _) Nothing _) path =
-        go e (IdxP (fromIntegral (numerator r)) 1 : path)
+    go (IdxE e (ConstE (FixC I _ _ 0 x) _) Nothing _) path =
+        go e (IdxP (fromIntegral x) 1 : path)
 
-    go (IdxE e (ConstE (FixC I _ _ 0 r) _) (Just len) _) path =
-        go e (IdxP (fromIntegral (numerator r)) len : path)
+    go (IdxE e (ConstE (FixC I _ _ 0 x) _) (Just len) _) path =
+        go e (IdxP (fromIntegral x) len : path)
 
     go (IdxE e _ _ _) _ =
         go e []

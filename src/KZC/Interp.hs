@@ -62,7 +62,6 @@ import Data.Bits
 import Data.IORef (IORef)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Ratio (numerator)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Vector.Mutable (MVector)
@@ -135,8 +134,8 @@ intV ~(FixT sc s w bp _) i =
 
 -- | Convert a 'Val' to an 'Integral' value.
 fromIntV :: (Integral a, Monad m) => Val -> m a
-fromIntV (ConstV (FixC S.I _ _ 0 r)) =
-    return $ fromIntegral $ numerator r
+fromIntV (ConstV (FixC S.I _ _ 0 x)) =
+    return $ fromIntegral x
 
 fromIntV val =
     faildoc $ text "Not an integer:" <+> ppr val
@@ -173,14 +172,14 @@ enumVals BoolT{} =
     return $ map (ConstV . BoolC) [(minBound :: Bool)..]
 
 enumVals (FixT S.I U (W w) (BP 0) _) =
-    return $ map (ConstV . FixC S.I U (W w) (BP 0) . fromInteger)
+    return $ map (ConstV . FixC S.I U (W w) (BP 0))
                  [0..hi]
   where
     hi :: Integer
     hi = 2^w-1
 
 enumVals (FixT S.I S (W w) (BP 0) _) =
-    return $ map (ConstV . FixC S.I U (W w) (BP 0) . fromInteger) $
+    return $ map (ConstV . FixC S.I U (W w) (BP 0)) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Integer

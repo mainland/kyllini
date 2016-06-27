@@ -956,8 +956,8 @@ constIntExp :: Exp -> P Integer
 constIntExp e = go e
   where
     go :: Exp -> P Integer
-    go (ConstE (FixC I _ _ 0 r) _) =
-        return (numerator r)
+    go (ConstE (FixC I _ _ 0 x) _) =
+        return x
 
     go (BinopE op e1 e2 _) = do
         x <- go e1
@@ -975,7 +975,7 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Integer -> SrcLoc -> Exp
-intC i l = ConstE (FixC I S WDefault 0 (fromIntegral i)) l
+intC i l = ConstE (FixC I S WDefault 0 i) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

@@ -31,7 +31,6 @@ import Control.Monad.State (MonadState(..),
                             evalStateT,
                             gets,
                             modify)
-import Data.Ratio (numerator)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
@@ -311,7 +310,7 @@ compR _                         = error "compR: no rate"
 
 -- | Convert an 'Exp' to an iteration factor
 expM :: Exp -> Rate M -> Rate M
-expM (ConstE (FixC I _ _ 0 r) _) = rtimes (fromIntegral (numerator r))
+expM (ConstE (FixC I _ _ 0 x) _) = rtimes (fromIntegral x)
 expM _                           = rstar
 
 -- | Convert an 'Iota' to a multiplicity.

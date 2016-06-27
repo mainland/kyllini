@@ -38,7 +38,6 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
@@ -1241,7 +1240,7 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
            -> Exp
            -> Exp
            -> SimplM l m Exp
-    unroll Unroll (ConstE (FixC I s w 0 r_i) _) (ConstE (FixC _ _ _ _ r_j) _) = do
+    unroll Unroll (ConstE (FixC I s w 0 i) _) (ConstE (FixC _ _ _ _ j) _) = do
         es <- mapM body [i..j-1]
         return $ foldr seqE (returnE unitE) es
       where
@@ -1251,11 +1250,7 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
             simplE e3
           where
             idx :: Integer -> Exp
-            idx i = constE $ FixC I s w 0 (fromIntegral i)
-
-        i, j :: Integer
-        i = numerator r_i
-        j = numerator r_j
+            idx i = constE $ FixC I s w 0 i
 
     unroll _ e1' e2' =
         withUniqVar v $ \v' ->

@@ -77,7 +77,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import Data.Ratio (numerator)
 import Data.String (fromString)
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as MV
@@ -187,8 +186,8 @@ intV :: Integral a => a -> Val l m Exp
 intV i = ConstV $ intC i
 
 fromIntV :: Val l m Exp -> Maybe Integer
-fromIntV (ConstV (FixC I _ _ (BP 0) r)) =
-    Just $ numerator r
+fromIntV (ConstV (FixC I _ _ (BP 0) x)) =
+    Just x
 
 fromIntV _ =
     Nothing
@@ -317,12 +316,12 @@ toBitsV = go
     go (ConstV (BoolC f)) _ =
         toBitArr (fromIntegral (fromEnum f)) 1
 
-    go (ConstV (FixC I U (W w) (BP 0) r)) _ =
-        toBitArr (numerator r) w
+    go (ConstV (FixC I U (W w) (BP 0) x)) _ =
+        toBitArr x w
 
-    go (ConstV (FixC I S (W w) (BP 0) r)) _
-        | r >= 0    = toBitArr (numerator r) w
-        | otherwise = toBitArr (numerator r + 2^w) w
+    go (ConstV (FixC I S (W w) (BP 0) x)) _
+        | x >= 0    = toBitArr x w
+        | otherwise = toBitArr (x + 2^w) w
 
     go (ConstV (FloatC FP32 r)) _ =
         toBitArr (fromIntegral (floatToWord (fromRational r))) 32
@@ -410,10 +409,10 @@ fromBitsV (ArrayV vs) tau =
     go vs _ =
         return $ ExpV $ bitcastE tau (toExp (ArrayV vs))
 
-    fromBitArr :: P.PArray (Val l m Exp) -> EvalM l m Integer
+    fromBitArr :: P.PArray (Val l m Exp) -> EvalM l m Int
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
-        set :: Integer -> Val l m Exp -> EvalM l m Integer
+        set :: Int -> Val l m Exp -> EvalM l m Int
         set i (ConstV (FixC I U (W 1) (BP 0) 0)) = return $ i `shiftL` 1
         set i (ConstV (FixC I U (W 1) (BP 0) 1)) = return $ i `shiftL` 1 .|. 1
         set _ val                                = faildoc $ text "Not a bit:" <+> ppr val

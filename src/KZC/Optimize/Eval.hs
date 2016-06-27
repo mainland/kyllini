@@ -42,7 +42,6 @@ import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -1211,19 +1210,17 @@ refUpdate (IdxR r i len) old new = do
     go i len old' new
   where
     --go :: Val l m Exp -> Maybe Int -> Val l m Exp -> Val l m Exp -> t m (Val l m Exp)
-    go (ConstV (FixC I _ _ (BP 0) n)) Nothing (ArrayV vs) new = do
+    go val Nothing (ArrayV vs) new | Just x <- fromIntV val = do
+        let start :: Int
+            start = fromIntegral x
         new' <- ArrayV <$> vs P.// [(start, new)]
         refUpdate r old new'
-      where
-        start :: Int
-        start = fromIntegral (numerator n)
 
-    go (ConstV (FixC I _ _ (BP 0) n)) (Just len) (ArrayV vs) (ArrayV vs') = do
+    go val (Just len) (ArrayV vs) (ArrayV vs') | Just x <- fromIntV val = do
+        let start :: Int
+            start = fromIntegral x
         new' <- ArrayV <$> vs P.// ([start..start+len-1] `zip` P.toList vs')
         refUpdate r old new'
-      where
-        start :: Int
-        start = fromIntegral (numerator n)
 
     go _ _ _ _ =
         fail "Cannot take slice of non-ArrayV"
@@ -1401,9 +1398,9 @@ evalForC ann v tau e1 e2 c3 = do
         go v' start len
   where
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m (Comp l))
-    go v' start len | Just r_start <- fromIntV start,
-                      Just r_len   <- fromIntV len =
-        loop r_start (r_start + r_len)
+    go v' start len | Just i_start <- fromIntV start,
+                      Just i_len   <- fromIntV len =
+        loop i_start (i_start + i_len)
       where
         loop :: Integer -> Integer -> EvalM l m (Val l m (Comp l))
         loop !i !end | i < end = do

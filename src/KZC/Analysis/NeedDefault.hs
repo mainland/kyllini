@@ -40,7 +40,6 @@ import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Ratio (numerator)
 import Data.Set (Set)
 import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
@@ -372,11 +371,11 @@ useStep LoopC{} =
 useExp :: forall m . MonadTc m
        => Exp
        -> ND m (Exp, Known Val)
-useExp e@(ConstE (FixC I _ _ 0 r) s) =
+useExp e@(ConstE (FixC I _ _ 0 x) s) =
     return (e, Known (RangeV (Range iota iota)))
   where
     iota :: Iota
-    iota = ConstI (fromIntegral (numerator r)) s
+    iota = ConstI (fromIntegral x) s
 
 useExp e@ConstE{} =
     return (e, top)
