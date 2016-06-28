@@ -9,7 +9,16 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Lattice where
+module KZC.Util.Lattice (
+    Poset(..),
+
+    Lattice(..),
+    BoundedLattice(..),
+    BranchLattice(..),
+
+    Known(..),
+    Bound(..)
+  ) where
 
 import qualified Prelude
 import Prelude hiding ((<=))
@@ -22,12 +31,13 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
 infix 4 <=
 
 -- | A partially ordered set
-class Poset a where
+class Eq a => Poset a where
     (<=) :: a -> a -> Bool
 
 -- | A lattice
@@ -85,11 +95,16 @@ instance (Ord k, BoundedLattice a, BranchLattice a) => BranchLattice (Map k a) w
     m1 `bub` m2 = joinWith bub bot m1 m2
 
 -- | 'Known' allows us to construct a lattice from a partially ordered set by
--- adding top and bottom elements.
+-- adding top and bottom elements. The lattice is constructs /is not/ a valid
+-- lattice if the type argument is a Lattice itself! Use 'Bound' to make a
+-- lattice bounded.
 data Known a = Unknown
              | Known a
              | Any
   deriving (Eq, Ord, Show)
+
+instance Arbitrary a => Arbitrary (Known a) where
+    arbitrary = oneof [pure Unknown, Known <$> arbitrary, pure Any]
 
 instance Pretty a => Pretty (Known a) where
     ppr Unknown   = text "unknown"
@@ -138,3 +153,61 @@ instance Poset a => Lattice (Known a) where
 instance Poset a => BoundedLattice (Known a) where
     top = Any
     bot = Unknown
+
+-- | 'Bound' allows us to construct a bounded lattice from a lattice
+data Bound a = UnknownB
+             | KnownB a
+             | AnyB
+  deriving (Eq, Ord, Show)
+
+instance Arbitrary a => Arbitrary (Bound a) where
+    arbitrary = oneof [pure UnknownB, KnownB <$> arbitrary, pure AnyB]
+
+instance Pretty a => Pretty (Bound a) where
+    ppr UnknownB   = text "unknown"
+    ppr (KnownB a) = ppr a
+    ppr AnyB       = text "top"
+
+instance Functor Bound where
+    fmap f x = x >>= return . f
+
+instance Applicative Bound where
+    pure  = return
+    (<*>) = ap
+
+instance Monad Bound where
+    return = KnownB
+
+    UnknownB >>= _ = UnknownB
+    KnownB x >>= f = f x
+    AnyB     >>= _ = AnyB
+
+instance Lattice a => Poset (Bound a) where
+    UnknownB  <= _         = True
+    _         <= AnyB      = True
+    KnownB x1 <= KnownB x2 = x1 <= x2
+    _         <= _         = False
+
+instance Lattice a => Lattice (Bound a) where
+    UnknownB  `lub` x         = x
+    x         `lub` UnknownB  = x
+    AnyB      `lub` _         = AnyB
+    _         `lub` AnyB      = AnyB
+    KnownB x1 `lub` KnownB x2 = KnownB (x1 `lub` x2)
+
+    UnknownB  `glb` _         = UnknownB
+    _         `glb` UnknownB  = UnknownB
+    AnyB      `glb` x         = x
+    x         `glb` AnyB      = x
+    KnownB x1 `glb` KnownB x2 = KnownB (x1 `glb` x2)
+
+instance BranchLattice a => BranchLattice (Bound a) where
+    UnknownB `bub` x        = x
+    x        `bub` UnknownB = x
+    AnyB     `bub` _        = AnyB
+    _        `bub` AnyB     = AnyB
+    KnownB x `bub` KnownB y = KnownB (x `bub` y)
+
+instance Lattice a => BoundedLattice (Bound a) where
+    top = AnyB
+    bot = UnknownB

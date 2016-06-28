@@ -35,8 +35,7 @@ import Control.Monad.Trans (MonadTrans(..))
 import Data.Loc (Located(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes,
-                   fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
@@ -51,7 +50,7 @@ import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Lattice (Known(..))
+import KZC.Util.Lattice (Bound(..))
 import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
@@ -79,8 +78,8 @@ data LUTInfo = LUTInfo
     , lutOutVars     :: Set LUTVar
     , lutReturnedVar :: Maybe Var
     , lutResultType  :: Type
-    , lutReadSet     :: Map Var (Known RWSet)
-    , lutWriteSet    :: Map Var (Known RWSet)
+    , lutReadSet     :: Map Var (Bound RWSet)
+    , lutWriteSet    :: Map Var (Bound RWSet)
 
     , lutInBits     :: Int
     , lutOutBits    :: Int
@@ -195,20 +194,19 @@ lutInfo e = withFvContext e $ do
         typeSize tau
 
 lutVars :: forall m . MonadTc m
-        => (Map Var (Known RWSet), Map Var (Known RWSet))
+        => (Map Var (Bound RWSet), Map Var (Bound RWSet))
         -> m (Set LUTVar, Set LUTVar)
 lutVars (rset, wset) = do
-    inVars   <- mapM lutVar (Map.assocs rset)
-    outVars  <- mapM lutVar (Map.assocs wset)
-    weakVars <- catMaybes <$> mapM weaklyUpdated (Map.assocs wset)
-    return (Set.fromList inVars <> Set.fromList weakVars, Set.fromList outVars)
+    inVars  <- mapM lutVar (Map.assocs rset)
+    outVars <- mapM lutVar (Map.assocs wset)
+    return (Set.fromList inVars, Set.fromList outVars)
   where
     -- | Convert a variable and its 'Known RWSet' to a 'LUTVar'.
-    lutVar :: (Var, Known RWSet) -> m LUTVar
-    lutVar (v, Any) =
+    lutVar :: (Var, Bound RWSet) -> m LUTVar
+    lutVar (v, AnyB) =
         return $ VarL v
 
-    lutVar (v, Known (ArrayS _ (PI (Known (RangeI lo hi))))) = do
+    lutVar (v, KnownB (ArrayS _ (PI (KnownB (RangeI lo hi))))) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         go iota
       where
@@ -227,28 +225,6 @@ lutVars (rset, wset) = do
 
     lutVar (v, _) =
         return $ VarL v
-
-    -- | Return an appropriate input 'LUTVar' if the variable is weakly updated.
-    weaklyUpdated :: (Var, Known RWSet) -> m (Maybe LUTVar)
-    weaklyUpdated (_, Any) =
-        return Nothing
-
-    weaklyUpdated (v, Known (ArrayS _ (PI (Known (RangeI lo hi))))) = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        go iota
-      where
-        go :: Iota -> m (Maybe LUTVar)
-        go (ConstI n _) | lo == 0 && hi == fromIntegral n-1 =
-            return Nothing
-
-        go _ | hi == lo =
-           return $ Just $ idxL v lo
-
-        go _ =
-           return $ Just $ sliceL v lo (hi-lo+1)
-
-    weaklyUpdated (v, _) =
-        return $ Just $ VarL v
 
 -- | Compute the variable that is the result expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its

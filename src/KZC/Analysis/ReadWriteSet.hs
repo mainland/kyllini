@@ -13,8 +13,9 @@
 
 module KZC.Analysis.ReadWriteSet (
     RWSet(..),
+    Interval(..),
+    BoundedInterval(..),
     PreciseInterval(..),
-    Intv(..),
 
     readWriteSets
   ) where
@@ -25,7 +26,8 @@ import Prelude hiding ((<=))
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (void)
+import Control.Monad (unless,
+                      void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
@@ -41,6 +43,7 @@ import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
 import KZC.Core.Lint
@@ -54,42 +57,58 @@ import KZC.Util.Lattice
 
 readWriteSets :: MonadTc m
               => Exp
-              -> m (Map Var (Known RWSet), Map Var (Known RWSet))
+              -> m (Map Var (Bound RWSet), Map Var (Bound RWSet))
 readWriteSets e = do
     s <- execRW (rangeExp e)
     return (readSet s, writeSet s)
 
 -- | An interval
-data Intv -- | Empty interval
-          = EmptyI
-          -- | Invariant: @'RangeI' i1 i2@ iff @i1@ <= @i2@.
-          | RangeI Integer Integer
+data Interval -- | Empty interval
+              = EmptyI
+              -- | Invariant: @'RangeI' i1 i2@ iff @i1@ <= @i2@.
+              | RangeI !Integer !Integer
   deriving (Eq, Ord, Show)
 
-singI :: Integral a => a -> Known Intv
-singI i = Known $ RangeI i' i'
+instance Arbitrary Interval where
+    arbitrary = do NonNegative x   <- arbitrary
+                   NonNegative len <- arbitrary
+                   return $ if len == 0 then EmptyI else RangeI x (x+len)
+
+    shrink EmptyI                    = []
+    shrink (RangeI x y) | y - x == 1 = [EmptyI]
+                        | otherwise  = [RangeI (x+1) y,RangeI x (y-1)]
+
+singI :: Integral a => a -> Bound Interval
+singI i = KnownB $ RangeI i' i'
   where
     i' = fromIntegral i
 
-fromSingI :: Monad m => Known Intv -> m Integer
-fromSingI (Known (RangeI i j)) | i == j =
+fromSingI :: Monad m => Bound Interval -> m Integer
+fromSingI (KnownB (RangeI i j)) | i == j =
     return i
 
 fromSingI _ =
-    fail " interval"
+    fail "Non-unit interval"
 
-instance Pretty Intv where
+intersectionI :: Interval -> Interval -> Interval
+intersectionI (RangeI i j) (RangeI i' j') | j' >= i || i' <= j =
+    RangeI (max i i') (min j j')
+
+intersectionI _ _ =
+    EmptyI
+
+instance Pretty Interval where
     ppr EmptyI         = text "()"
     ppr (RangeI lo hi)
         | hi == lo     = ppr lo
         | otherwise    = brackets $ ppr lo <> comma <> ppr hi
 
-instance Poset Intv where
+instance Poset Interval where
     EmptyI     <= _            = True
     RangeI i j <= RangeI i' j' = i' <= i && j <= j'
     _          <= _            = False
 
-instance Lattice Intv where
+instance Lattice Interval where
     EmptyI     `lub` i            = i
     i          `lub` EmptyI       = i
     RangeI i j `lub` RangeI i' j' = RangeI l h
@@ -97,57 +116,42 @@ instance Lattice Intv where
         l = min i i'
         h = max j j'
 
-    EmptyI     `glb` _            = EmptyI
-    _          `glb` EmptyI       = EmptyI
-    RangeI i j `glb` RangeI i' j'
-        | gap                     = EmptyI
-        | otherwise               = RangeI l h
-      where
-        l   = min i i'
-        h   = max j j'
-        gap = i - j' > 1 || i' - j > 1
+    glb = intersectionI
 
 -- | A bounded known interval
-newtype BoundedInterval = BI (Known Intv)
+newtype BoundedInterval = BI (Bound Interval)
   deriving (Eq, Ord, Show, Poset, Lattice, BoundedLattice)
+
+instance Arbitrary BoundedInterval where
+    arbitrary = BI <$> arbitrary
 
 instance Pretty BoundedInterval where
     ppr (BI x) = ppr x
 
 -- | A precisely known interval
-newtype PreciseInterval = PI (Known Intv)
+newtype PreciseInterval = PI (Bound Interval)
   deriving (Eq, Ord, Show, Poset)
+
+instance Arbitrary PreciseInterval where
+    arbitrary = PI <$> arbitrary
 
 instance Pretty PreciseInterval where
     ppr (PI x) = ppr x
 
 instance Lattice PreciseInterval where
-    i `lub` j | i <= j = j
-              | j <= i = i
-
-    PI (Known (RangeI i j)) `lub` PI (Known (RangeI i' j'))
+    PI (KnownB (RangeI i j)) `lub` PI (KnownB (RangeI i' j'))
         | gap       = top
-        | otherwise = PI (Known (RangeI l h))
+        | otherwise = PI (KnownB (RangeI l h))
       where
         l   = min i i'
         h   = max j j'
-        gap = i - j' > 1 || i' - j > 1
+        gap = i - j' > 1 && i' - j > 1
 
-    _ `lub` _ = top
+    i `lub` j | i <= j    = j
+              | j <= i    = i
+              | otherwise = top
 
-    i `glb` j | i <= j = i
-              | j <= i = j
-
-    PI (Known (RangeI i j)) `glb` PI (Known (RangeI i' j'))
-        | gap       = bot
-        | l == h    = PI (Known EmptyI)
-        | otherwise = PI (Known (RangeI l h))
-      where
-        l   = max i i'
-        h   = min j j'
-        gap = i - j' > 1 || i' - j > 1
-
-    _ `glb` _ = bot
+    PI i `glb` PI j = PI (i `glb` j)
 
 instance BoundedLattice PreciseInterval where
     top = PI top
@@ -173,10 +177,10 @@ instance Pretty Ref where
         pprPrec appPrec1 r <> text "." <> ppr f
 
 -- | Values
-data Val = UnknownV           -- ^ Unknown (not-yet defined)
-         | IntV (Known Intv)  -- ^ All integers in a range
-         | BoolV (Known Bool) -- ^ Booleans
-         | TopV               -- ^ Could be anything as far as we know...
+data Val = UnknownV              -- ^ Unknown (not-yet defined)
+         | IntV (Bound Interval) -- ^ All integers in a range
+         | BoolV (Known Bool)    -- ^ Booleans
+         | TopV                  -- ^ Could be anything as far as we know...
   deriving (Eq, Ord, Show)
 
 instance Pretty Val where
@@ -228,19 +232,13 @@ instance Lattice RWSet where
 instance BranchLattice RWSet where
     ArrayS rs ws `bub` ArrayS rs' ws' = ArrayS (rs `lub` rs') (ws `glb` ws')
 
-instance BranchLattice (Known RWSet) where
-    Unknown `bub` x       = x
-    x       `bub` Unknown = x
-    Any     `bub` _       = Any
-    _       `bub` Any     = Any
-    Known x `bub` Known y = Known (x `bub` y)
-
 -- | The range analysis state
 data RState = RState
     { vals     :: Map Var Val
-    , readSet  :: Map Var (Known RWSet)
-    , writeSet :: Map Var (Known RWSet)
+    , readSet  :: Map Var (Bound RWSet)
+    , writeSet :: Map Var (Bound RWSet)
     }
+  deriving (Eq)
 
 defaultRState :: RState
 defaultRState = RState
@@ -333,27 +331,28 @@ putVal v val =
 
 updateRWSet :: forall m .  MonadTc m
             => Ref
-            -> (RState -> Map Var (Known RWSet))
-            -> (RState -> Map Var (Known RWSet) -> RState)
+            -> (RState -> Map Var (Bound RWSet))
+            -> (Var -> Bound RWSet -> Bound RWSet -> RW m ())
             -> RW m ()
 updateRWSet ref proj upd =
     go ref
   where
     go :: Ref -> RW m ()
-    go (VarR v) =
-        modify $ \s -> upd s $ Map.insert v top (proj s)
-
-    go (IdxR (VarR v) idx len) =
-        modify $ \s ->
-            let rwset :: Known RWSet
-                rwset =
-                    fromMaybe bot (Map.lookup v (proj s))
-                    `lub`
-                    Known (ArrayS (BI intv) (PI intv))
-            in
-              upd s $ Map.insert v rwset (proj s)
+    go (VarR v) = do
+        old <- gets (fromMaybe bot . Map.lookup v . proj)
+        upd v old new
       where
-        intv :: Known Intv
+        new :: Bound RWSet
+        new = top
+
+    go (IdxR (VarR v) idx len) = do
+        old <- gets (fromMaybe bot . Map.lookup v . proj)
+        upd v old new
+      where
+        new :: Bound RWSet
+        new = KnownB (ArrayS (BI intv) (PI intv))
+
+        intv :: Bound Interval
         intv = sliceToInterval idx len
 
     go (IdxR r _ _) =
@@ -364,18 +363,28 @@ updateRWSet ref proj upd =
 
 updateReadSet :: forall m . MonadTc m => Ref -> RW m ()
 updateReadSet ref =
-    updateRWSet ref readSet (\s x -> s { readSet = x })
+    updateRWSet ref readSet upd
+  where
+    upd :: Var -> Bound RWSet -> Bound RWSet -> RW m ()
+    upd v old new = do
+      wset <- gets (fromMaybe bot . Map.lookup v . writeSet)
+      unless (new <= wset) $
+        modify $ \s -> s { readSet = Map.insert v (old `lub` new) (readSet s) }
 
 updateWriteSet :: forall m . MonadTc m => Ref -> RW m ()
 updateWriteSet ref =
-    updateRWSet ref writeSet (\s x -> s { writeSet = x })
+    updateRWSet ref writeSet upd
+  where
+    upd :: Var -> Bound RWSet -> Bound RWSet -> RW m ()
+    upd v old new =
+      modify $ \s -> s { writeSet = Map.insert v (old `lub` new) (writeSet s) }
 
-sliceToInterval :: Val -> Maybe Int -> Known Intv
-sliceToInterval (IntV intv@(Known _)) Nothing =
+sliceToInterval :: Val -> Maybe Int -> Bound Interval
+sliceToInterval (IntV intv@KnownB{}) Nothing =
     intv
 
 sliceToInterval (IntV i) (Just len) | Just idx <- fromSingI i =
-    Known $ RangeI idx (idx + fromIntegral len - 1)
+    KnownB $ RangeI idx (idx + fromIntegral len - 1)
 
 sliceToInterval _ _ =
     top
@@ -419,12 +428,12 @@ rangeExp e =
         binop op <$> go e1 <*> go e2
       where
         binop :: Binop -> Val -> Val -> Val
-        binop Lt (IntV i) (IntV j) = BoolV $ (<) <$> i <*> j
-        binop Le (IntV i) (IntV j) = BoolV $ (P.<=) <$> i <*> j
-        binop Eq (IntV i) (IntV j) = BoolV $ (==) <$> i <*> j
-        binop Ge (IntV i) (IntV j) = BoolV $ (>=) <$> i <*> j
-        binop Gt (IntV i) (IntV j) = BoolV $ (>) <$> i <*> j
-        binop Ne (IntV i) (IntV j) = BoolV $ (/=) <$> i <*> j
+        binop Lt (IntV i) (IntV j) = BoolV . toKnown $ (<) <$> i <*> j
+        binop Le (IntV i) (IntV j) = BoolV . toKnown $ (P.<=) <$> i <*> j
+        binop Eq (IntV i) (IntV j) = BoolV . toKnown $ (==) <$> i <*> j
+        binop Ge (IntV i) (IntV j) = BoolV . toKnown $ (>=) <$> i <*> j
+        binop Gt (IntV i) (IntV j) = BoolV . toKnown $ (>) <$> i <*> j
+        binop Ne (IntV i) (IntV j) = BoolV . toKnown $ (/=) <$> i <*> j
 
         binop Lt _ _ = BoolV top
         binop Eq _ _ = BoolV top
@@ -447,17 +456,17 @@ rangeExp e =
         binop LshR _ _ = top
         binop AshR _ _ = top
 
-        binop Add (IntV (Known (RangeI xlo xhi))) (IntV (Known (RangeI ylo yhi))) =
-            IntV $ Known $ RangeI (xlo + ylo) (xhi + yhi)
+        binop Add (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
+            IntV $ KnownB $ RangeI (xlo + ylo) (xhi + yhi)
 
-        binop Sub (IntV (Known (RangeI xlo xhi))) (IntV (Known (RangeI ylo yhi))) =
-            IntV $ Known $ RangeI (xlo - yhi) (xhi + ylo)
+        binop Sub (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
+            IntV $ KnownB $ RangeI (xlo - yhi) (xhi + ylo)
 
-        binop Mul (IntV (Known (RangeI xlo xhi))) (IntV (Known (RangeI ylo yhi))) =
-            IntV $ Known $ RangeI (xlo * ylo) (xhi * yhi)
+        binop Mul (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
+            IntV $ KnownB $ RangeI (xlo * ylo) (xhi * yhi)
 
-        binop Div (IntV (Known (RangeI xlo xhi))) (IntV (Known (RangeI ylo yhi))) =
-            IntV $ Known $ RangeI (xlo `quot` yhi) (xhi `quot` ylo)
+        binop Div (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
+            IntV $ KnownB $ RangeI (xlo `quot` yhi) (xhi `quot` ylo)
 
         binop Add _ _ = top
         binop Sub _ _ = top
@@ -466,6 +475,11 @@ rangeExp e =
         binop Rem _ _ = top
         binop Pow _ _ = top
         binop Cat _ _ = top
+
+        toKnown :: Bound a -> Known a
+        toKnown UnknownB   = Unknown
+        toKnown (KnownB x) = Known x
+        toKnown AnyB       = Any
 
     go (IfE e1 e2 e3 _) = do
         val1 <- rangeExp e1
@@ -618,7 +632,7 @@ rangeWhile _ k = do
 
 rangeFor :: MonadTc m => Var -> Val -> Val -> RW m a -> RW m a
 rangeFor v (IntV i) (IntV j) k | Just start <- fromSingI i, Just len <- fromSingI j =
-    extendVals [(v, IntV $ Known $ RangeI start (start+len-1))] k
+    extendVals [(v, IntV $ KnownB $ RangeI start (start+len-1))] k
 
 rangeFor v _v_start _v_len k =
     extendVals [(v, top)] k

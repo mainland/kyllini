@@ -46,7 +46,7 @@ import KZC.Uniq
 import KZC.Util.Lattice
 
 newtype OccEnv = Occ { unOcc :: Map Var OccInfo }
-  deriving (Poset, Lattice, BranchLattice)
+  deriving (Eq, Poset, Lattice, BranchLattice)
 
 instance Monoid OccEnv where
     mempty = Occ mempty
