@@ -363,25 +363,26 @@ putVal v val =
 updateRWSet :: forall m .  MonadTc m
             => Ref
             -> (RState -> Map Var (Known RWSet))
-            -> (RState -> Map Var (Known RWSet) -> RState)
+            -> (Var -> Known RWSet -> Known RWSet -> RW m ())
             -> RW m ()
 updateRWSet ref proj upd =
     go ref
   where
     go :: Ref -> RW m ()
-    go (VarR v) =
-        modify $ \s -> upd s $ Map.insert v top (proj s)
-
-    go (IdxR (VarR v) idx len) =
-        modify $ \s ->
-            let rwset :: Known RWSet
-                rwset =
-                    fromMaybe bot (Map.lookup v (proj s))
-                    `lub`
-                    Known (ArrayS (BI intv) (PI intv))
-            in
-              upd s $ Map.insert v rwset (proj s)
+    go (VarR v) = do
+        old <- gets (fromMaybe bot . Map.lookup v . proj)
+        upd v old new
       where
+        new :: Known RWSet
+        new = top
+
+    go (IdxR (VarR v) idx len) = do
+        old <- gets (fromMaybe bot . Map.lookup v . proj)
+        upd v old new
+      where
+        new :: Known RWSet
+        new = Known (ArrayS (BI intv) (PI intv))
+
         intv :: Known Intv
         intv = sliceToInterval idx len
 
@@ -393,11 +394,19 @@ updateRWSet ref proj upd =
 
 updateReadSet :: forall m . MonadTc m => Ref -> RW m ()
 updateReadSet ref =
-    updateRWSet ref readSet (\s x -> s { readSet = x })
+    updateRWSet ref readSet upd
+  where
+    upd :: Var -> Known RWSet -> Known RWSet -> RW m ()
+    upd v old new = modify $ \s ->
+        s { readSet = Map.insert v (old `lub` new) (readSet s) }
 
 updateWriteSet :: forall m . MonadTc m => Ref -> RW m ()
 updateWriteSet ref =
-    updateRWSet ref writeSet (\s x -> s { writeSet = x })
+    updateRWSet ref writeSet upd
+  where
+    upd :: Var -> Known RWSet -> Known RWSet -> RW m ()
+    upd v old new = modify $ \s ->
+        s { writeSet = Map.insert v (old `lub` new) (writeSet s) }
 
 sliceToInterval :: Val -> Maybe Int -> Known Intv
 sliceToInterval (IntV intv@(Known _)) Nothing =
