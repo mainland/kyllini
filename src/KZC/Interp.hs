@@ -68,7 +68,7 @@ import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as MV
 import Data.Word (Word32,
                   Word64)
-import GHC.Float (float2Double)                  
+import GHC.Float (float2Double)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
