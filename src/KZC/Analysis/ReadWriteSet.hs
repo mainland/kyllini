@@ -578,10 +578,29 @@ rangeRef = go
   where
     go :: Exp -> RW m Ref
     go (VarE v _) =
-        pure $ VarR v
+        lookupVar v >>= go
+      where
+        -- For extra precision, when we read an entire array, we specify that we
+        -- read all its elements, not that we read top---the two are not equal!
+        -- We have to then deal with the returned IdxR range in the next case
+        -- below.
+        go :: Type -> RW m Ref
+        go (ArrT (ConstI n _) _ _) =
+            pure $ IdxR (VarR v) (IntV $ singI (0::Integer)) (Just n)
+
+        go (RefT tau _) =
+            go tau
+
+        go _ =
+            pure $ VarR v
 
     go (IdxE e1 e2 len _) =
-        IdxR <$> rangeRef e1 <*> rangeExp e2 <*> pure len
+        rangeRef e1 >>= go
+      where
+        -- We must handle IdxR specially here as noted above.
+        go :: Ref -> RW m Ref
+        go (IdxR ref _ _) = IdxR ref <$> rangeExp e2 <*> pure len
+        go ref            = IdxR ref <$> rangeExp e2 <*> pure len
 
     go (ProjE e f _) =
         ProjR <$> rangeRef e <*> pure f
