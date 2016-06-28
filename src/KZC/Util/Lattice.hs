@@ -9,7 +9,15 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Lattice where
+module KZC.Util.Lattice (
+    Poset(..),
+    
+    Lattice(..),
+    BoundedLattice(..),
+    BranchLattice(..),
+
+    Known(..)
+  ) where
 
 import qualified Prelude
 import Prelude hiding ((<=))
@@ -22,12 +30,13 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
 infix 4 <=
 
 -- | A partially ordered set
-class Poset a where
+class Eq a => Poset a where
     (<=) :: a -> a -> Bool
 
 -- | A lattice
@@ -85,11 +94,15 @@ instance (Ord k, BoundedLattice a, BranchLattice a) => BranchLattice (Map k a) w
     m1 `bub` m2 = joinWith bub bot m1 m2
 
 -- | 'Known' allows us to construct a lattice from a partially ordered set by
--- adding top and bottom elements.
+-- adding top and bottom elements. The lattice is constructs /is not/ a valid
+-- lattice if the type argument is a Lattice itself!
 data Known a = Unknown
              | Known a
              | Any
   deriving (Eq, Ord, Show)
+
+instance Arbitrary a => Arbitrary (Known a) where
+    arbitrary = oneof [pure Unknown, Known <$> arbitrary, pure Any]
 
 instance Pretty a => Pretty (Known a) where
     ppr Unknown   = text "unknown"

@@ -13,6 +13,7 @@
 
 module KZC.Analysis.ReadWriteSet (
     RWSet(..),
+    BoundedInterval(..),
     PreciseInterval(..),
     Intv(..),
 
@@ -41,6 +42,7 @@ import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
 import KZC.Core.Lint
@@ -63,8 +65,17 @@ readWriteSets e = do
 data Intv -- | Empty interval
           = EmptyI
           -- | Invariant: @'RangeI' i1 i2@ iff @i1@ <= @i2@.
-          | RangeI Integer Integer
+          | RangeI !Integer !Integer
   deriving (Eq, Ord, Show)
+
+instance Arbitrary Intv where
+    arbitrary = do NonNegative x   <- arbitrary
+                   NonNegative len <- arbitrary
+                   return $ if len == 0 then EmptyI else RangeI x (x+len)
+
+    shrink EmptyI                    = []
+    shrink (RangeI x y) | y - x == 1 = [EmptyI]
+                        | otherwise  = [RangeI (x+1) y,RangeI x (y-1)]
 
 singI :: Integral a => a -> Known Intv
 singI i = Known $ RangeI i' i'
@@ -76,7 +87,14 @@ fromSingI (Known (RangeI i j)) | i == j =
     return i
 
 fromSingI _ =
-    fail " interval"
+    fail "Non-unit interval"
+
+intersectionI :: Intv -> Intv -> Intv
+intersectionI (RangeI i j) (RangeI i' j') | j' >= i || i' <= j =
+    RangeI (max i i') (min j j')
+
+intersectionI _ _ =
+    EmptyI
 
 instance Pretty Intv where
     ppr EmptyI         = text "()"
@@ -97,34 +115,50 @@ instance Lattice Intv where
         l = min i i'
         h = max j j'
 
-    EmptyI     `glb` _            = EmptyI
-    _          `glb` EmptyI       = EmptyI
-    RangeI i j `glb` RangeI i' j'
-        | gap                     = EmptyI
-        | otherwise               = RangeI l h
-      where
-        l   = min i i'
-        h   = max j j'
-        gap = i - j' > 1 || i' - j > 1
+    glb = intersectionI
 
 -- | A bounded known interval
 newtype BoundedInterval = BI (Known Intv)
-  deriving (Eq, Ord, Show, Poset, Lattice, BoundedLattice)
+  deriving (Eq, Ord, Show, Poset)
+
+instance Arbitrary BoundedInterval where
+    arbitrary = BI <$> arbitrary
 
 instance Pretty BoundedInterval where
     ppr (BI x) = ppr x
+
+instance Lattice BoundedInterval where
+    BI (Known (RangeI i j)) `lub` BI (Known (RangeI i' j')) =
+          BI (Known (RangeI l h))
+      where
+        l = min i i'
+        h = max j j'
+
+    i `lub` j | i <= j    = j
+              | j <= i    = i
+              | otherwise = top
+
+    BI (Known i) `glb` BI (Known j) = BI (Known (intersectionI i j))
+
+    i `glb` j | i <= j    = i
+              | j <= i    = j
+              | otherwise = bot
+
+instance BoundedLattice BoundedInterval where
+    top = BI top
+    bot = BI bot
 
 -- | A precisely known interval
 newtype PreciseInterval = PI (Known Intv)
   deriving (Eq, Ord, Show, Poset)
 
+instance Arbitrary PreciseInterval where
+    arbitrary = PI <$> arbitrary
+
 instance Pretty PreciseInterval where
     ppr (PI x) = ppr x
 
 instance Lattice PreciseInterval where
-    i `lub` j | i <= j = j
-              | j <= i = i
-
     PI (Known (RangeI i j)) `lub` PI (Known (RangeI i' j'))
         | gap       = top
         | otherwise = PI (Known (RangeI l h))
@@ -133,21 +167,15 @@ instance Lattice PreciseInterval where
         h   = max j j'
         gap = i - j' > 1 || i' - j > 1
 
-    _ `lub` _ = top
+    i `lub` j | i <= j    = j
+              | j <= i    = i
+              | otherwise = top
 
-    i `glb` j | i <= j = i
-              | j <= i = j
+    PI (Known i) `glb` PI (Known j) = PI (Known (intersectionI i j))
 
-    PI (Known (RangeI i j)) `glb` PI (Known (RangeI i' j'))
-        | gap       = bot
-        | l == h    = PI (Known EmptyI)
-        | otherwise = PI (Known (RangeI l h))
-      where
-        l   = max i i'
-        h   = min j j'
-        gap = i - j' > 1 || i' - j > 1
-
-    _ `glb` _ = bot
+    i `glb` j | i <= j    = i
+              | j <= i    = j
+              | otherwise = bot
 
 instance BoundedLattice PreciseInterval where
     top = PI top
@@ -241,6 +269,7 @@ data RState = RState
     , readSet  :: Map Var (Known RWSet)
     , writeSet :: Map Var (Known RWSet)
     }
+  deriving (Eq)
 
 defaultRState :: RState
 defaultRState = RState

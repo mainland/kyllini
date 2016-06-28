@@ -33,7 +33,8 @@ GHCFLAGS += \
 	-package text \
 	-package template-haskell \
 	-package transformers \
-	-package vector
+	-package vector \
+	-package QuickCheck
 
 GHCFLAGS_OPT = -O2 -funbox-strict-fields
 
@@ -114,6 +115,7 @@ SOURCE = \
 	KZC/Trace.hs \
 	KZC/Uniq.hs \
 	KZC/Util/Lattice.hs \
+	KZC/Util/Lattice/Properties.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \
 	Language/Ziria/Parser/Alex.hs \
