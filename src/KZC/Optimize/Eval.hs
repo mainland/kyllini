@@ -994,7 +994,10 @@ lutExp e = do
         (ref, tau)    <- maybe err return (Map.lookup v v_refs)
         (_, tau_elem) <- checkArrOrRefArrT tau
         ref'          <- I.idxR ref i len
-        return (lv, ref', arrKnownT n tau_elem)
+        let tau       =  case len of
+                           Nothing -> tau_elem
+                           Just{}  -> arrKnownT n tau_elem
+        return (lv, ref', tau)
       where
         n :: Int
         n = fromMaybe 1 len
