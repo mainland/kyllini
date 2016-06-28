@@ -462,7 +462,7 @@ enumVals (FixT I U (W w) (BP 0) _) =
     hi = 2^w-1
 
 enumVals (FixT I S (W w) (BP 0) _) =
-    return $ map (ConstV . FixC I U (W w) (BP 0) . fromInteger) $
+    return $ map (ConstV . FixC I S (W w) (BP 0) . fromInteger) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Integer

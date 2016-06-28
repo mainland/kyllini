@@ -180,7 +180,7 @@ enumVals (FixT S.I U (W w) (BP 0) _) =
     hi = 2^w-1
 
 enumVals (FixT S.I S (W w) (BP 0) _) =
-    return $ map (ConstV . FixC S.I U (W w) (BP 0)) $
+    return $ map (ConstV . FixC S.I S (W w) (BP 0)) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Int
