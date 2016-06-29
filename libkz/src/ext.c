@@ -33,7 +33,12 @@ SUCH DAMAGE.
 #include <stdlib.h>
 #include <string.h>
 
+#include <xmmintrin.h>
+#include <emmintrin.h>
+
 #include <kz/ext.h>
+
+#define ZIRIA_COMPAT
 
 FORCEINLINE
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src)
@@ -438,12 +443,76 @@ complex32_t __kz_v_sum_complex32(int n, const complex32_t *xs)
 }
 
 FORCEINLINE
+void __kz_v_or8(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
+{
+    *out = *xs | *ys;
+}
+
+FORCEINLINE
+void __kz_v_or_48(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
+{
+    *(uint32_t *) out = *(uint32_t *) xs | *(uint32_t *) ys;
+    *(uint16_t *) (out+4) = *(uint16_t *) (xs+4) | *(uint16_t *) (ys+4);
+}
+
+FORCEINLINE
+void __kz_v_or_96(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
+{
+    *(uint64_t *) out = *(uint64_t *) xs | *(uint64_t *) ys;
+    *(uint32_t *) (out+8) = *(uint32_t *) (xs+8) | *(uint32_t *) (ys+8);
+}
+
+FORCEINLINE
+void __kz_v_or_192(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
+{
+#if defined(ZIRIA_COMPAT)
+    *(uint64_t *) out = *(uint64_t *) xs | *(uint64_t *) ys;
+    *(uint64_t *) (out+8) = *(uint64_t *) (xs+8) | *(uint64_t *) (ys+8);
+#else /* !defined(ZIRIA_COMPAT) */
+    *(__m128i *) out = _mm_or_si128(*(__m128i *) xs, *(__m128i *) ys);
+#endif /* !defined(ZIRIA_COMPAT) */
+    *(uint64_t *) (out+16) = *(uint64_t *) (xs+16) | *(uint64_t *) (ys+16);
+}
+
+
+FORCEINLINE
+void __kz_v_or_288(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
+{
+#if defined(ZIRIA_COMPAT)
+    __kz_v_or_192(xs, ys, out);
+    __kz_v_or_96(xs + 24, ys + 24, out + 24);
+#else /* !defined(ZIRIA_COMPAT) */
+    *(__m256i *) out = _mm256_or_si256(*(__m256i *) xs, *(__m256i *) ys);
+    *(uint32_t *) (out+32) = *(uint32_t *) (xs+32) | *(uint32_t *) (ys+32);
+#endif /* !defined(ZIRIA_COMPAT) */
+}
+
+FORCEINLINE
 void __kz_v_or(int n, const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
     int i;
 
-    for (i = 0; i < BIT_ARRAY_LEN(n); ++i)
-        out[i] = xs[i] | ys[i];
+    switch (n) {
+      case 48:
+          __kz_v_or_48(xs, ys, out);
+          break;
+
+      case 96:
+          __kz_v_or_96(xs, ys, out);
+          break;
+
+      case 192:
+          __kz_v_or_192(xs, ys, out);
+          break;
+
+      case 288:
+          __kz_v_or_288(xs, ys, out);
+          break;
+
+      default:
+          for (i = 0; i < BIT_ARRAY_LEN(n); ++i)
+              out[i] = xs[i] | ys[i];
+    }
 }
 
 FORCEINLINE
