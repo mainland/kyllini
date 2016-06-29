@@ -470,9 +470,8 @@ cgDecl decl@(LetStructD s flds l) k = do
   where
     cgField :: (Field, Type) -> Cg l C.FieldGroup
     cgField (fld, tau) = do
-        let cfld =  zencode (namedString fld)
-        ctau     <- cgType tau
-        return [csdecl|$ty:ctau $id:cfld;|]
+        ctau <- cgType tau
+        return [csdecl|$ty:ctau $id:(cfield fld);|]
 
 cgDecl (LetCompD v tau comp _) k =
     extendVars [(bVar v, tau)] $
@@ -2610,10 +2609,7 @@ cgProj (CAlias _ ce) fld =
     cgProj ce fld
 
 cgProj ce fld =
-    return $ CExp [cexp|$ce.$id:cfld|]
-  where
-    cfld :: C.Id
-    cfld = C.Id (zencode (namedString fld)) (srclocOf ce)
+    return $ CExp [cexp|$ce.$id:(cfield fld)|]
 
 -- | Dereference a 'CExp' representing a value with ref type, which may or may
 -- not be represented as a pointer.
@@ -2779,6 +2775,13 @@ chexconst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noL
 -- 'Named'.
 cvar :: (Located a, Named a) => a -> Cg l C.Id
 cvar x = reloc (locOf x) <$> gensym (zencode (namedString x))
+
+cfield :: Field -> C.Id
+cfield (Field n) = C.Id (zencode (cname n)) noLoc
+
+cname :: Name -> String
+cname n@Name{nameSort = Orig}              = namedString n
+cname n@Name{nameSort = Internal (Uniq u)} = namedString n ++ "_" ++ show u
 
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
