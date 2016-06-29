@@ -48,7 +48,9 @@ zencode = concatMap zenc
     zenc '\\' = "zr"
     zenc '/'  = "zs"
     zenc '*'  = "zt"
-    zenc '_'  = "zu"
+    -- Underscore is legal in C, thank you very much
+    --zenc '_'  = "zu"
+    zenc '_'  = "_"
     zenc '%'  = "zv"
     zenc c    = "z" ++ hexOf c ++ "U"
 
