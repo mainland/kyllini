@@ -57,7 +57,7 @@ import KZC.Util.Lattice
 
 readWriteSets :: MonadTc m
               => Exp
-              -> m (Map Var (Bound RWSet), Map Var (Bound RWSet))
+              -> m (Map Var RWSet, Map Var RWSet)
 readWriteSets e = do
     s <- execRW (rangeExp e)
     return (readSet s, writeSet s)
@@ -232,11 +232,15 @@ instance Lattice RWSet where
 instance BranchLattice RWSet where
     ArrayS rs ws `bub` ArrayS rs' ws' = ArrayS (rs `lub` rs') (ws `glb` ws')
 
+instance BoundedLattice RWSet where
+    top = ArrayS top top
+    bot = ArrayS bot bot
+
 -- | The range analysis state
 data RState = RState
     { vals     :: Map Var Val
-    , readSet  :: Map Var (Bound RWSet)
-    , writeSet :: Map Var (Bound RWSet)
+    , readSet  :: Map Var RWSet
+    , writeSet :: Map Var RWSet
     }
   deriving (Eq)
 
@@ -331,8 +335,8 @@ putVal v val =
 
 updateRWSet :: forall m .  MonadTc m
             => Ref
-            -> (RState -> Map Var (Bound RWSet))
-            -> (Var -> Bound RWSet -> Bound RWSet -> RW m ())
+            -> (RState -> Map Var RWSet)
+            -> (Var -> RWSet -> RWSet -> RW m ())
             -> RW m ()
 updateRWSet ref proj upd =
     go ref
@@ -342,15 +346,15 @@ updateRWSet ref proj upd =
         old <- gets (fromMaybe bot . Map.lookup v . proj)
         upd v old new
       where
-        new :: Bound RWSet
+        new :: RWSet
         new = top
 
     go (IdxR (VarR v) idx len) = do
         old <- gets (fromMaybe bot . Map.lookup v . proj)
         upd v old new
       where
-        new :: Bound RWSet
-        new = KnownB (ArrayS (BI intv) (PI intv))
+        new :: RWSet
+        new = ArrayS (BI intv) (PI intv)
 
         intv :: Bound Interval
         intv = sliceToInterval idx len
@@ -365,7 +369,7 @@ updateReadSet :: forall m . MonadTc m => Ref -> RW m ()
 updateReadSet ref =
     updateRWSet ref readSet upd
   where
-    upd :: Var -> Bound RWSet -> Bound RWSet -> RW m ()
+    upd :: Var -> RWSet -> RWSet -> RW m ()
     upd v old new = do
       wset <- gets (fromMaybe bot . Map.lookup v . writeSet)
       unless (new <= wset) $
@@ -375,7 +379,7 @@ updateWriteSet :: forall m . MonadTc m => Ref -> RW m ()
 updateWriteSet ref =
     updateRWSet ref writeSet upd
   where
-    upd :: Var -> Bound RWSet -> Bound RWSet -> RW m ()
+    upd :: Var -> RWSet -> RWSet -> RW m ()
     upd v old new =
       modify $ \s -> s { writeSet = Map.insert v (old `lub` new) (writeSet s) }
 

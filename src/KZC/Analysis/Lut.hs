@@ -50,7 +50,9 @@ import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Lattice (Bound(..))
+import KZC.Util.Lattice (Bound(..),
+                         Lattice(..),
+                         BoundedLattice(..))
 import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
@@ -78,8 +80,8 @@ data LUTInfo = LUTInfo
     , lutOutVars     :: Set LUTVar
     , lutReturnedVar :: Maybe Var
     , lutResultType  :: Type
-    , lutReadSet     :: Map Var (Bound RWSet)
-    , lutWriteSet    :: Map Var (Bound RWSet)
+    , lutReadSet     :: Map Var RWSet
+    , lutWriteSet    :: Map Var RWSet
 
     , lutInBits     :: Int
     , lutOutBits    :: Int
@@ -194,37 +196,56 @@ lutInfo e = withFvContext e $ do
         typeSize tau
 
 lutVars :: forall m . MonadTc m
-        => (Map Var (Bound RWSet), Map Var (Bound RWSet))
+        => (Map Var RWSet, Map Var RWSet)
         -> m (Set LUTVar, Set LUTVar)
-lutVars (rset, wset) = do
-    inVars  <- mapM lutVar (Map.assocs rset)
-    outVars <- mapM lutVar (Map.assocs wset)
+lutVars (rsets, wsets) = do
+    inVars  <- mapM readLutVar (Map.assocs rsets')
+    outVars <- mapM writeLutVar (Map.assocs wsets)
     return (Set.fromList inVars, Set.fromList outVars)
   where
-    -- | Convert a variable and its 'Known RWSet' to a 'LUTVar'.
-    lutVar :: (Var, Bound RWSet) -> m LUTVar
-    lutVar (v, AnyB) =
-        return $ VarL v
-
-    lutVar (v, KnownB (ArrayS _ (PI (KnownB (RangeI lo hi))))) = do
+    -- | Convert a variable and its 'RWSet' to an in 'LUTVar'.
+    readLutVar :: (Var, RWSet) -> m LUTVar
+    readLutVar (v, ArrayS (BI (KnownB (RangeI lo hi))) _) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        go iota
-      where
-        go :: Iota -> m LUTVar
-        -- We need the whole variable
-        go (ConstI n _) | lo == 0 && hi == fromIntegral n-1 =
-            return $ VarL v
+        return $ rangeLUTVar v lo hi iota
 
-        -- We need a single element
-        go _ | hi == lo =
-           return $ idxL v lo
-
-        -- We need a slice
-        go _ =
-           return $ sliceL v lo (hi-lo+1)
-
-    lutVar (v, _) =
+    readLutVar (v, _) =
         return $ VarL v
+
+    -- | Convert a variable and its 'RWSet' to an out 'LUTVar'.
+    writeLutVar :: (Var, RWSet) -> m LUTVar
+    writeLutVar (v, ArrayS _ (PI (KnownB (RangeI lo hi)))) = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        return $ rangeLUTVar v lo hi iota
+
+    writeLutVar (v, _) =
+        return $ VarL v
+
+    -- | Convert a variable range into a 'LUTVar'
+    rangeLUTVar:: Var -> Integer -> Integer -> Iota -> LUTVar
+    -- We need the whole array
+    rangeLUTVar v lo hi (ConstI n _)
+      | lo == 0 && hi == fromIntegral n-1 = VarL v
+
+    -- We need either one element or a slice
+    rangeLUTVar v lo hi _
+      | hi == lo  = idxL v lo
+      | otherwise = sliceL v lo (hi-lo+1)
+
+    -- | This is the read set with all imprecisely updated variables added.
+    rsets' :: Map Var RWSet
+    rsets' = rsets `lub` Map.fromList (vs `zip` repeat top)
+      where
+        -- Imprecisely updated variables
+        vs :: [Var]
+        vs = [v | (v, wset) <- Map.assocs wsets, impreciselyUpdated wset]
+
+    -- | Return 'True' if the given 'RWSet' indicates that a variable has been
+    -- imprecisely updated, i.e., it is updated, but we cannot guarantee exactly
+    -- which part is updated.
+    impreciselyUpdated :: RWSet -> Bool
+    impreciselyUpdated (ArrayS _ (PI UnknownB)) = True
+    impreciselyUpdated _                        = False
 
 -- | Compute the variable that is the result expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its
