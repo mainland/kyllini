@@ -1654,6 +1654,7 @@ isSimple e =
     go (UnopE _ e _)      = go e
     go (BinopE _ e1 e2 _) = go e1 && go e2
     go (IfE e1 e2 e3 _)   = go e1 && go e2 && go e3
+    go (IdxE e1 e2 _ _)   = go e1 && go e2
     go (ProjE e _ _)      = go e
     go _                  = False
 
