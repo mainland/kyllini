@@ -537,17 +537,33 @@ const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
 
             buf->idx += n;
             return p;
-        } else {
+        } else if (n != 0) {
             /* Copy bits to a temporary buffer so we can return a pointer to the
              * bits.
              */
+            int   bytes = n / BIT_ARRAY_ELEM_BITS;
+            int   off = buf->idx % BIT_ARRAY_ELEM_BITS;
+            bit_t *src = ((bit_t*) buf->buf) + (buf->idx / BIT_ARRAY_ELEM_BITS);
+            bit_t *dst = bitbuf;
+            bit_t carry;
+
             assert(n <= BITBUF_SIZE*BIT_ARRAY_ELEM_BITS);
 
-            kz_bitarray_copy(bitbuf, 0, (bit_t*) buf->buf, buf->idx, n);
-            buf->idx += n;
+            carry = *src++ >> off;
 
-            return bitbuf;
+            while (bytes-- > 0) {
+                *dst++ = carry | (*src << off);
+                carry = *src++ >> off;
+            }
+
+            if (n % BIT_ARRAY_ELEM_BITS != 0)
+                *dst = carry;
+
+            //kz_bitarray_copy(bitbuf, 0, (bit_t*) buf->buf, buf->idx, n);
+            buf->idx += n;
         }
+
+        return bitbuf;
     }
 }
 
