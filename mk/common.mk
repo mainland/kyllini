@@ -163,6 +163,9 @@ RUNTIME_OBJ=$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(RUNTIME_SRC)))
 %.c : %.zr $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) $< -o $@
 
+%.s : %.exe
+	$(_QUIET)objdump -S -C -d $< > $@
+
 %.o : %.c
 	$(_QUIET)$(CC) $(CPPFLAGS) $(CCFLAGS) $(CFLAGS) -c $< -o $@
 
