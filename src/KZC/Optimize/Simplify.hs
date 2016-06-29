@@ -675,6 +675,28 @@ simplSteps (EmitsC l1 (IdxE (VarE v  _) ei len1 s1) s2 :
     len' :: Maybe Int
     len' = Just $ sliceLen len1 + sliceLen len2
 
+--
+-- Convert assignment followed by dereference and emit(s) to an emit(s)
+--
+--   { x <- lift { y := e; !y }; emit(s) x; ... }
+--   ->
+--   { x <- lift { y := e; !y }; emit(s) e; ... }
+--
+--
+simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitsC l3 e2 s3 : steps)
+  | Just (_, rhs)  <- unAssignBangE e1
+  , VarE v' _ <- e2
+  , v' == bVar v = do
+    rewrite
+    simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitsC l3 rhs s3 : steps)
+
+simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 e2 s3 : steps)
+  | Just (_, rhs)  <- unAssignBangE e1
+  , VarE v' _ <- e2
+  , v' == bVar v = do
+    rewrite
+    simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 rhs s3 : steps)
+
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
     tau'  <- simplType tau
@@ -763,6 +785,17 @@ simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
 
 simplSteps (step : steps) =
     (++) <$> simplStep step <*> simplSteps steps >>= simplLift
+
+-- Pull apart expressions of the form
+--
+--    { x := e; !x }
+--
+unAssignBangE :: Exp -> Maybe (Var, Exp)
+unAssignBangE (BindE _ _ (AssignE (VarE v _) e _) (DerefE (VarE v' _) _) _) | v' == v =
+    Just (v, e)
+
+unAssignBangE _ =
+    Nothing
 
 -- | Return 'True' if the binders of @x@ are used in @y@, 'False' otherwise.
 notUsedIn :: (Binders a Var, Fvs b Var) => a -> b -> Bool
