@@ -62,7 +62,7 @@ void __kz_zero_bit(int n, bit_t *x)
     memset(x, 0, n / BIT_ARRAY_ELEM_BITS);
 
     if (n % BIT_ARRAY_ELEM_BITS != 0) {
-        bit_t mask = 1 << ~((n % BIT_ARRAY_ELEM_BITS) - 1);
+        bit_t mask = ~((1 << (n % BIT_ARRAY_ELEM_BITS)) - 1);
 
         x[n / BIT_ARRAY_ELEM_BITS] &= mask;
     }
