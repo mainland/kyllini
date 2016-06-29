@@ -746,6 +746,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
         tl :: Step l
         hd = init step'
         tl = last step'
+
 --
 -- Drop an unbound return; we know the return isn't bound becasue it isn't the
 -- final step and we didn't match the bind case just above.
