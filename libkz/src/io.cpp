@@ -515,12 +515,13 @@ inline size_t bit_array_len(size_t n)
     return (n + (sizeof(bit_t) - 1))/sizeof(bit_t);
 }
 
+#define BITBUF_SIZE 64
+
+static bit_t dummy_bitbuf;
+static bit_t bitbuf[BITBUF_SIZE];
+
 const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
 {
-    static bit_t  dummy_bitbuf;
-    static bit_t* bitbuf = NULL;
-    static size_t bitbuf_len = 0;
-
     if (buf->dev == DEV_DUMMY) {
         buf->dummy_samples -= n;
         if (buf->dummy_samples >= 0)
@@ -540,19 +541,7 @@ const bit_t* kz_input_bit(kz_buf_t* buf, size_t n)
             /* Copy bits to a temporary buffer so we can return a pointer to the
              * bits.
              */
-            if (bitbuf_len < n) {
-                if (bitbuf == NULL) {
-                    bitbuf_len = (n + BIT_ARRAY_ELEM_BITS - 1) & ~(BIT_ARRAY_ELEM_BITS - 1);
-                    bitbuf = (bit_t*) malloc(bitbuf_len/CHAR_BIT);
-                    assert(bitbuf != NULL);
-                } else {
-                    while (bitbuf_len < n)
-                        bitbuf_len *= 2;
-
-                    bitbuf = (bit_t*) realloc(bitbuf, bitbuf_len/CHAR_BIT);
-                    assert(bitbuf != NULL);
-                }
-            }
+            assert(n <= BITBUF_SIZE*BIT_ARRAY_ELEM_BITS);
 
             kz_bitarray_copy(bitbuf, 0, (bit_t*) buf->buf, buf->idx, n);
             buf->idx += n;
