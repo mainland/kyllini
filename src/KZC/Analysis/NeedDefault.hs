@@ -75,6 +75,40 @@ fromUnitR _                      = Nothing
 iotaR :: Iota -> Range
 iotaR x = Range x (constI (1::Int))
 
+-- | Construct a range with known, constant start and length.
+rangeR :: Integral a => a -> a -> Range
+rangeR i len = Range (constI i) (constI len)
+
+-- | Union of two ranges only if it can be represented precisely.
+unionR :: Range -> Range -> Maybe Range
+unionR i j | i == j =
+    Just i
+
+unionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
+    Just $ Range i (constI (min len len'))
+
+unionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+  | i  + len  == i' = Just $ rangeR i  (len+len')
+  | i' + len' == i  = Just $ rangeR i' (len+len')
+
+unionR _ _ =
+    Nothing
+
+-- | Intersection of two ranges only if it can be represented precisely.
+intersectionR :: Range -> Range -> Maybe Range
+intersectionR i j | i == j =
+    Just i
+
+intersectionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
+    Just $ Range i (constI (max len len'))
+
+intersectionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+  | i  < i' && i + len  > i' = Just $ rangeR i' (i  + len  - i')
+  | i' < i  && i'+ len' > i  = Just $ rangeR i  (i' + len' - i)
+
+intersectionR _ _ =
+    Nothing
+
 instance Pretty Range where
     ppr (Range lo hi) = brackets $ commasep [ppr lo, ppr hi]
 
@@ -87,29 +121,57 @@ instance Poset Range where
 
     i <= j = i == j
 
+-- | A precisely known range.
+newtype PreciseRange = PR (Known Range)
+  deriving (Eq, Ord, Show, Poset)
+
+instance Pretty PreciseRange where
+    ppr (PR rng) = ppr rng
+
+-- This instance is why a 'PreciseRange' is different from a 'Known Range'---we
+-- can do a better job calculating the lub and glb of a 'PreciseRange'.
+instance Lattice PreciseRange where
+    PR (Known i) `lub` PR (Known j) | Just k <- unionR i j =
+        PR (Known k)
+
+    i `lub` j | i <= j    = j
+              | j <= i    = i
+              | otherwise = top
+
+    PR (Known i) `glb` PR (Known j) | Just k <- intersectionR i j =
+        PR (Known k)
+
+    i `glb` j | i <= j    = i
+              | j <= i    = j
+              | otherwise = bot
+
+instance BoundedLattice PreciseRange where
+    top = PR top
+    bot = PR bot
+
 -- | An abstract value.
 data Val -- | Unknown (not yet defined)
          = UnknownV
          -- | The variable takes on all values in the range, i.e., it may be a
          -- loop variable
-         | IntV (Known Range)
+         | IntV PreciseRange
          | StructV (Map Field Val)
          -- | Could be anything as far as we know...
          | TopV
   deriving (Eq, Ord, Show)
 
 intV :: Integral a => a -> Val
-intV = IntV . Known . unitR
+intV = IntV . PR . Known . unitR
 
 iotaV :: Iota -> Val
-iotaV = IntV . Known . iotaR
+iotaV = IntV . PR . Known . iotaR
 
 rangeV :: Iota -> Iota -> Val
-rangeV i len = IntV $ Known $ Range i len
+rangeV i len = IntV $ PR $ Known $ Range i len
 
 fromUnitV :: Val -> Maybe Iota
-fromUnitV (IntV (Known r)) = fromUnitR r
-fromUnitV _                = Nothing
+fromUnitV (IntV (PR (Known r))) = fromUnitR r
+fromUnitV _                     = Nothing
 
 instance Pretty Val where
     ppr UnknownV       = text "unknown"
@@ -499,7 +561,7 @@ useExp (AssignE e1 e2 s) = do
         (n, _) <- lookupVar v >>= checkArrOrRefArrT
         i_val  <- lookupVal i
         case i_val of
-          IntV (Known (Range (ConstI 0 _) n')) | n' == n -> putVal v top
+          IntV (PR (Known (Range (ConstI 0 _) n'))) | n' == n -> putVal v top
           _ -> return ()
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
