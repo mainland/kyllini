@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-|
@@ -26,8 +27,8 @@ import Prelude hiding ((<=))
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (unless,
-                      void)
+import Control.Monad (void,
+                      when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -62,33 +63,215 @@ import KZC.Vars
 data Range = Range Iota Iota
   deriving (Eq, Ord, Show)
 
+-- | Construct a literal range of length 1.
+unitR :: Integral a => a -> Range
+unitR x = Range (constI x) (constI (1::Int))
+
+fromUnitR :: Range -> Maybe Iota
+fromUnitR (Range i (ConstI 1 _)) = Just i
+fromUnitR _                      = Nothing
+
+-- | Construct a symbolic range of length 1.
+iotaR :: Iota -> Range
+iotaR x = Range x (constI (1::Int))
+
+-- | Construct a range with known, constant start and length.
+rangeR :: Integral a => a -> a -> Range
+rangeR i len = Range (constI i) (constI len)
+
+-- | Union of two ranges only if it can be represented precisely.
+unionR :: Range -> Range -> Maybe Range
+unionR i j | i == j =
+    Just i
+
+unionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
+    Just $ Range i (constI (min len len'))
+
+unionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+  | i  + len  == i' = Just $ rangeR i  (len+len')
+  | i' + len' == i  = Just $ rangeR i' (len+len')
+
+unionR _ _ =
+    Nothing
+
+-- | Intersection of two ranges only if it can be represented precisely.
+intersectionR :: Range -> Range -> Maybe Range
+intersectionR i j | i == j =
+    Just i
+
+intersectionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
+    Just $ Range i (constI (max len len'))
+
+intersectionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+  | i  < i' && i + len  > i' = Just $ rangeR i' (i  + len  - i')
+  | i' < i  && i'+ len' > i  = Just $ rangeR i  (i' + len' - i)
+
+intersectionR _ _ =
+    Nothing
+
 instance Pretty Range where
     ppr (Range lo hi) = brackets $ commasep [ppr lo, ppr hi]
 
 instance Poset Range where
-    Range lo hi <= Range lo' hi' = (lo,hi) == (lo',hi')
+    Range i (ConstI len _) <= Range j (ConstI len' _) | i == j =
+        len <= len'
 
-data Val = RangeV Range
-         | StructV (Map Field (Known Val))
+    Range (ConstI i _) (ConstI len _) <= Range (ConstI i' _) (ConstI len' _) =
+        i' <= i && i + len <= i' + len'
+
+    i <= j = i == j
+
+-- | A precisely known range.
+newtype PreciseRange = PR (Known Range)
+  deriving (Eq, Ord, Show, Poset)
+
+-- | Extend a precise range by a known length.
+extendPR :: PreciseRange -> Maybe Int -> PreciseRange
+extendPR (PR (Known (Range i (ConstI len _)))) (Just len') =
+    PR $ Known $ Range i (constI (len+len'-1))
+
+extendPR r _ =
+     r
+
+instance Pretty PreciseRange where
+    ppr (PR rng) = ppr rng
+
+-- This instance is why a 'PreciseRange' is different from a 'Known Range'---we
+-- can do a better job calculating the lub and glb of a 'PreciseRange'.
+instance Lattice PreciseRange where
+    PR (Known i) `lub` PR (Known j) | Just k <- unionR i j =
+        PR (Known k)
+
+    i `lub` j | i <= j    = j
+              | j <= i    = i
+              | otherwise = top
+
+    PR (Known i) `glb` PR (Known j) | Just k <- intersectionR i j =
+        PR (Known k)
+
+    i `glb` j | i <= j    = i
+              | j <= i    = j
+              | otherwise = bot
+
+instance BoundedLattice PreciseRange where
+    top = PR top
+    bot = PR bot
+
+-- | An array value specifying which elements are certainly known.
+data Array = Arr Iota PreciseRange
   deriving (Eq, Ord, Show)
 
+instance Pretty Array where
+    ppr (Arr n r) = text "arr" <> brackets (ppr n) <+> ppr r
+
+instance Poset Array where
+    Arr n i <= Arr n' j
+      | n == n'   = i <= j
+      | otherwise = error "Arrays have different sizes"
+
+instance Lattice Array where
+    Arr n i `lub` Arr n' j
+      | n == n'   = Arr n (i `lub` j)
+      | otherwise = error "Arrays have different sizes"
+
+    Arr n i `glb` Arr n' j
+      | n == n'   = Arr n (i `glb` j)
+      | otherwise = error "Arrays have different sizes"
+
+-- | An abstract value.
+data Val -- | Unknown (not yet defined)
+         = UnknownV
+         -- | The variable takes on all values in the range, i.e., it may be a
+         -- loop variable
+         | IntV PreciseRange
+         | ArrV Array
+         | StructV (Map Field Val)
+         -- | Could be anything as far as we know...
+         | TopV
+  deriving (Eq, Ord, Show)
+
+intV :: Integral a => a -> Val
+intV = IntV . PR . Known . unitR
+
+iotaV :: Iota -> Val
+iotaV = IntV . PR . Known . iotaR
+
+rangeV :: Iota -> Iota -> Val
+rangeV i len = IntV $ PR $ Known $ Range i len
+
+fromUnitV :: Val -> Maybe Iota
+fromUnitV (IntV (PR (Known r))) = fromUnitR r
+fromUnitV _                     = Nothing
+
+wholeArrV :: Iota -> Val
+wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (constI (0::Int)) n)
+
 instance Pretty Val where
-    ppr (RangeV rng)   = ppr rng
+    ppr UnknownV       = text "unknown"
+    ppr (IntV rng)     = ppr rng
+    ppr (ArrV arr)     = ppr arr
     ppr (StructV flds) = pprStruct (Map.toList flds)
+    ppr TopV           = text "top"
 
 instance Poset Val where
-    RangeV x  <= RangeV y  = x <= y
+    UnknownV  <= _        = True
+    _         <= TopV     = True
+    IntV x    <= IntV y    = x <= y
+    ArrV x    <= ArrV y    = x <= y
     StructV x <= StructV y = x <= y
     _         <= _         = False
 
-isKnown :: Known Val -> Bool
-isKnown Unknown                = False
-isKnown (Known RangeV{})       = True
-isKnown (Known (StructV flds)) = all isKnown (Map.elems flds)
-isKnown Any                    = True
+instance Lattice Val where
+    UnknownV  `lub` x         = x
+    x         `lub` UnknownV  = x
+    IntV x    `lub` IntV y    = IntV (x `lub` y)
+    ArrV x    `lub` ArrV y    = ArrV (x `lub` y)
+    StructV x `lub` StructV y = StructV (x `lub` y)
+    _         `lub` _         = top
+
+    TopV      `glb` x         = x
+    x         `glb` TopV      = x
+    IntV x    `glb` IntV y    = IntV (x `glb` y)
+    ArrV x    `glb` ArrV y    = ArrV (x `glb` y)
+    StructV x `glb` StructV y = StructV (x `glb` y)
+    _         `glb` _         = bot
+
+instance BranchLattice Val where
+    _         `bub` UnknownV  = UnknownV
+    UnknownV  `bub` _         = UnknownV
+    _         `bub` TopV      = TopV
+    TopV      `bub` _         = TopV
+    IntV x    `bub` IntV y    = IntV (x `glb` y)
+    ArrV x    `bub` ArrV y    = ArrV (x `glb` y)
+    StructV x `bub` StructV y = StructV (x `bub` y)
+    _         `bub` _         = bot
+
+instance BoundedLattice Val where
+    top = TopV
+    bot = UnknownV
+
+-- | Return 'True' when the value may be partial.
+partial :: Type -> Val -> Bool
+partial _   UnknownV           = True
+partial _   (IntV i)          = i == bot
+partial _   (ArrV (Arr n xs)) = ArrV (Arr n xs) /= wholeArrV n
+-- XXX Should not assume struct field is not an array!
+partial _   (StructV flds)    = any (partial intT) (Map.elems flds)
+partial tau TopV              = isArrOrRefArrT tau
+
+-- | Ensure that the given value is total.
+ensureTotal :: Type -> Val -> Val
+ensureTotal = go
+  where
+    go :: Type -> Val -> Val
+    go (ArrT iota _ _)          _ = wholeArrV iota
+    go (RefT (ArrT iota _ _) _) _ = wholeArrV iota
+
+    go _ val | val == bot = top
+             | otherwise  = val
 
 data NDState = NDState
-    { vals        :: !(Map Var (Known Val))
+    { vals        :: !(Map Var Val)
     , usedDefault :: !(Set Var)
     }
 
@@ -119,10 +302,10 @@ instance MonadTrans ND where
 runND :: MonadTc m => ND m a -> m a
 runND m = evalStateT (unND m) mempty
 
-lookupVal :: MonadTc m => Var -> ND m (Known Val)
+lookupVal :: MonadTc m => Var -> ND m Val
 lookupVal v = fromMaybe top <$> gets (Map.lookup v . vals)
 
-extendVals :: MonadTc m => [(Var, Known Val)] -> ND m a -> ND m a
+extendVals :: MonadTc m => [(Var, Val)] -> ND m a -> ND m a
 extendVals vvals m = do
     modify $ \s -> s { vals = Map.fromList vvals `Map.union` vals s }
     x <- m
@@ -134,30 +317,46 @@ extendVals vvals m = do
     vs :: [Var]
     vs = map fst vvals
 
-putVal :: MonadTc m => Var -> Known Val -> ND m ()
+putVal :: MonadTc m => Var -> Val -> ND m ()
 putVal v val =
     modify $ \s -> s { vals = Map.insert v val (vals s) }
+
+updateArray :: MonadTc m => Var -> Array -> ND m ()
+updateArray v arr = do
+   old     <- lookupVal v
+   let upd =  old `lub` new
+   traceNeedDefault $ text "updateArray:" <+> ppr v <+> ppr old <+> ppr arr <+> ppr upd
+   putVal v upd
+  where
+    new :: Val
+    new = ArrV arr
+
+needDefault :: Monad m => Var -> ND m ()
+needDefault v = modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
 
 updateNeedDefault :: MonadTc m => BoundVar -> ND m a -> ND m (a, BoundVar)
 updateNeedDefault bv m = do
     x    <- m
     need <- gets (Set.member (bVar bv) . usedDefault)
+    traceNeedDefault $ text "updateNeedDefault:" <+> ppr (bVar bv) <+> ppr need
     return (x, bv{bNeedDefault = Just need})
 
 useVar :: MonadTc m => Var -> ND m ()
 useVar v = do
+    tau <- lookupVar v
     val <- lookupVal v
-    unless (isKnown val) $
-        modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
+    when (partial tau val) $
+        needDefault v
 
 useField :: MonadTc m => Var -> Field -> ND m ()
 useField v f = do
     val  <- lookupVal v
     val' <- case val of
-              Known (StructV flds) -> maybe err return $ Map.lookup f flds
+              StructV flds -> maybe err return $ Map.lookup f flds
               _ -> return val
-    unless (isKnown val') $
-        modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
+    -- XXX Should not assume struct field is not an array!
+    when (partial intT val') $
+        needDefault v
   where
     err :: Monad m => m a
     err = faildoc $ text "Struct does not have field" <+> ppr f
@@ -165,7 +364,7 @@ useField v f = do
 defaultsUsedExp :: MonadTc m => Exp -> m (Set Var)
 defaultsUsedExp e =
     runND $
-    extendVals (Set.toList vs `zip` repeat Unknown) $ do
+    extendVals (Set.toList vs `zip` repeat bot) $ do
     void $ useExp e
     gets usedDefault
   where
@@ -202,13 +401,12 @@ useDecl (LetD decl s) m = do
     (decl', x) <- useLocalDecl decl m
     return (LetD decl' s, x)
 
-useDecl (LetFunD f iotas vbs tau_ret e l) m = do
-    (x, e') <-
-        extendVars [(bVar f, tau)] $ do
-        e' <- extendLetFun f iotas vbs tau_ret $
-              fst <$> useExp e
-        x  <- m
-        return (x, e')
+useDecl (LetFunD f iotas vbs tau_ret e l) m =
+    extendVars [(bVar f, tau)] $ do
+    e' <- extendLetFun f iotas vbs tau_ret $
+          extendVals (map fst vbs `zip` repeat bot) $
+          fst <$> useExp e
+    x  <- m
     return (LetFunD f iotas vbs tau_ret e' l, x)
   where
     tau :: Type
@@ -231,13 +429,12 @@ useDecl (LetCompD v tau comp l) m = do
     x     <- extendVars [(bVar v, tau)] m
     return (LetCompD v tau comp' l, x)
 
-useDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
-    (x, comp') <-
-        extendVars [(bVar f, tau)] $ do
-        comp' <- extendLetFun f iotas vbs tau_ret $
-                 useComp comp
-        x     <- m
-        return (x, comp')
+useDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
+    extendVars [(bVar f, tau)] $ do
+    comp' <- extendLetFun f iotas vbs tau_ret $
+             extendVals (map fst vbs `zip` repeat bot) $
+             useComp comp
+    x     <- m
     return (LetFunCompD f iotas vbs tau_ret comp' l, x)
   where
     tau :: Type
@@ -250,20 +447,20 @@ useLocalDecl :: MonadTc m
 useLocalDecl (LetLD v tau e s) m = do
     (e', val) <- useExp e
     (x, v')   <- extendVars [(bVar v, tau)] $
-                 extendVals [(bVar v, val)] $
+                 extendVals [(bVar v, ensureTotal tau val)] $
                  updateNeedDefault v m
     return (LetLD v' tau e' s, x)
 
 useLocalDecl (LetRefLD v tau Nothing s) m = do
     (x, v') <- extendVars [(bVar v, refT tau)] $
-               extendVals [(bVar v, Unknown )] $
+               extendVals [(bVar v, bot)] $
                updateNeedDefault v m
     return (LetRefLD v' tau Nothing s, x)
 
 useLocalDecl (LetRefLD v tau (Just e) s) m = do
     (e', val) <- useExp e
     (x, v')   <- extendVars [(bVar v, refT tau)] $
-                 extendVals [(bVar v, val)] $
+                 extendVals [(bVar v, ensureTotal tau val)] $
                  updateNeedDefault v m
     return (LetRefLD v' tau (Just e') s, x)
 
@@ -287,6 +484,7 @@ useSteps (BindC l WildV tau s : steps) = do
 
 useSteps (BindC l (TameV v) tau s : steps) = do
     steps' <- extendVars [(bVar v, tau)] $
+              extendVals [(bVar v, ensureTotal tau bot)] $
               useSteps steps
     return $ BindC l (TameV v) tau s : steps'
 
@@ -319,24 +517,9 @@ useStep (WhileC l e c s) =
 useStep (ForC l ann v tau e1 e2 c s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
-    go e1' val1 e2' val2
-  where
-    go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Step l)
-    go e1' (Known (RangeV (Range lo lo'))) e2' (Known (RangeV (Range hi hi')))
-      | lo' == lo && hi' == hi =
-       ForC l ann v tau <$> pure e1'
-                        <*> pure e2'
-                        <*> (extendVars [(v, tau)] $
-                             extendVals [(v, Known (RangeV (Range lo hi)))] $
-                             useComp c)
-                        <*> pure s
-
-    go e1' _ e2' _ =
-       ForC l ann v tau <$> pure e1'
-                        <*> pure e2'
-                        <*> (extendVars [(v, tau)] $
-                             useComp c)
-                        <*> pure s
+    c'          <- extendVars [(v, tau)] $
+                   useFor v val1 val2 (useComp c)
+    return $ ForC l ann v tau e1' e2' c' s
 
 useStep (LiftC l e s) =
     LiftC l <$> (fst <$> useExp e) <*> pure s
@@ -370,12 +553,15 @@ useStep LoopC{} =
 
 useExp :: forall m . MonadTc m
        => Exp
-       -> ND m (Exp, Known Val)
-useExp e@(ConstE (FixC I _ _ 0 x) s) =
-    return (e, Known (RangeV (Range iota iota)))
+       -> ND m (Exp, Val)
+useExp e@(ConstE (FixC I _ _ 0 x) _) =
+    return (e, intV x)
+
+useExp e@(ConstE (ArrayC cs) _) =
+    return (e, wholeArrV n)
   where
-    iota :: Iota
-    iota = ConstI (fromIntegral x) s
+    n :: Iota
+    n = constI (length cs)
 
 useExp e@ConstE{} =
     return (e, top)
@@ -387,15 +573,15 @@ useExp e@(VarE v _) = do
 
 useExp e@(UnopE Len (VarE v _) _) = do
     (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-    return (e, Known (RangeV (Range iota iota)))
+    return (e, iotaV iota)
 
 useExp (UnopE op e s) =
-    topA $  UnopE op <$> (fst <$> useExp e) <*> pure s
+    topA $ UnopE op <$> (fst <$> useExp e) <*> pure s
 
 useExp (BinopE op e1 e2 s) =
-    topA $  BinopE op <$> (fst <$> useExp e1)
-                      <*> (fst <$> useExp e2)
-                      <*> pure s
+    topA $ BinopE op <$> (fst <$> useExp e1)
+                     <*> (fst <$> useExp e2)
+                     <*> pure s
 
 useExp (IfE e1 e2 e3 s) = do
     e1'        <- fst <$> useExp e1
@@ -410,21 +596,21 @@ useExp (LetE decl e s) = do
 useExp (CallE f iotas es s) = do
     useVar f
     isExt <- isExtFun f
-    es'   <- mapM (fmap fst . useArg isExt) es
+    es'   <- mapM (useArg isExt) es
     return (CallE f iotas es' s, top)
   where
-    useArg :: Bool -> Exp -> ND m (Exp, Known Val)
+    useArg :: Bool -> Exp -> ND m Exp
     -- We assume that external functions fully initialize any ref passed to
     -- them.
     useArg True e@(VarE v _) = do
         tau <- inferExp e
         if isRefT tau
-            then do putVal v top
-                    return (e, top)
-            else useExp e
+            then do putVal v (ensureTotal tau top)
+                    return e
+            else fst <$> useExp e
 
     useArg _ e =
-        useExp e
+        fst <$> useExp e
 
 useExp (DerefE e s) =
     topA $ DerefE <$> (fst <$> useExp e) <*> pure s
@@ -433,38 +619,43 @@ useExp (AssignE e1 e2 s) = do
     (e2', val) <- useExp e2
     go e1 e2' val
   where
-    go :: Exp -> Exp -> Known Val -> ND m (Exp, Known Val)
+    go :: Exp -> Exp -> Val -> ND m (Exp, Val)
     go e1@(VarE v _) e2' val = do
-        let val' = case val of
-                     Unknown -> Any
-                     _       -> val
-        putVal v val'
-        topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+        tau <- lookupVar v
+        putVal v (ensureTotal tau val)
+        topA $ return $ AssignE e1 e2' s
 
-    go e1@(IdxE (VarE v _) (VarE i _) Nothing _) e2' _ = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        i_val     <- lookupVal i
-        case i_val of
-          Known (RangeV (Range (ConstI 0 _) iota_hi)) | iota_hi == iota -> putVal v top
-          _ -> return ()
-        topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+    go e1@(IdxE e_v@(VarE v _) e_i len s) e2' _ = do
+        traceNeedDefault $ text "Assign IdxE:" <+> ppr e1 <+> ppr e2
+        (n, _)        <- lookupVar v >>= checkArrOrRefArrT
+        (e_i', val_i) <- useExp e_i
+        let e1'       = IdxE e_v e_i' len s
+        update n val_i
+        topA $ return $ AssignE e1' e2' s
+      where
+        update :: Iota -> Val -> ND m ()
+        update n (IntV i) =
+            updateArray v (Arr n (extendPR i len))
+
+        update _ _ =
+            return ()
 
     go e1@(ProjE (VarE v _) f _) e2' val2 =
         lookupVal v >>= go
       where
-        go :: Known Val -> ND m (Exp, Known Val)
-        go Unknown = do
+        go :: Val -> ND m (Exp, Val)
+        go val | val == bot = do
             StructDef _ flds _ <- lookupVar v >>=
                                   checkRefT >>=
                                   checkStructT >>=
                                   lookupStruct
-            putVal v $ Known $ StructV $
+            putVal v $ StructV $
                 Map.insert f val2 $
-                Map.fromList (map fst flds `zip` repeat Unknown)
+                Map.fromList (map fst flds `zip` repeat bot)
             return (AssignE e1 e2' s, top)
 
-        go (Known (StructV flds)) = do
-            putVal v $ Known $ StructV $ Map.insert f val2 flds
+        go (StructV flds) = do
+            putVal v $ StructV $ Map.insert f val2 flds
             return (AssignE e1 e2' s, top)
 
         go _ =
@@ -479,27 +670,31 @@ useExp (WhileE e1 e2 s) =
 useExp (ForE ann v tau e1 e2 e3 s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
-    go e1' val1 e2' val2
+    e3'         <- extendVars [(v, tau)] $
+                   useFor v val1 val2 (fst <$> useExp e3)
+    topA $ return $ ForE ann v tau e1' e2' e3' s
+
+useExp (ArrayE es s) = do
+    es' <- map fst <$> mapM useExp es
+    return (ArrayE es' s, wholeArrV n)
   where
-    go :: Exp -> Known Val -> Exp -> Known Val -> ND m (Exp, Known Val)
-    go e1' (Known (RangeV (Range lo lo'))) e2' (Known (RangeV (Range hi hi')))
-      | lo' == lo && hi' == hi =
-       topA $ ForE ann v tau <$> pure e1'
-                             <*> pure e2'
-                             <*> (extendVars [(v, tau)] $
-                                  extendVals [(v, Known (RangeV (Range lo hi)))] $
-                                  fst <$> useExp e3)
-                             <*> pure s
+    n :: Iota
+    n = constI (length es)
 
-    go e1' _ e2' _ =
-       topA $ ForE ann v tau <$> pure e1'
-                             <*> pure e2'
-                             <*> (extendVars [(v, tau)] $
-                                  fst <$> useExp e3)
-                             <*> pure s
+useExp (IdxE e1@(VarE v _) e2 len s) = do
+    let e1'     =  e1
+    val1        <- lookupVal v
+    (e2', val2) <- useExp e2
+    traceNeedDefault $ text "IdxE:" <+> ppr v <+> ppr val1 <+> ppr val2
+    go val1 val2
+    topA $ return $ IdxE e1' e2' len s
+  where
+    go :: Val -> Val -> ND m ()
+    go (ArrV (Arr _ xs)) (IntV j) | extendPR j len <= xs =
+        return ()
 
-useExp (ArrayE es s) =
-    topA $ ArrayE <$> mapM (fmap fst . useExp) es <*> pure s
+    go _ _ =
+        useVar v
 
 useExp (IdxE e1 e2 len s) =
     topA $ IdxE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure len <*> pure s
@@ -536,6 +731,7 @@ useExp (BindE WildV tau e1 e2 s) =
 useExp (BindE (TameV v) tau e1 e2 s) =
     topA $ BindE (TameV v) tau <$> (fst <$> useExp e1)
                                <*> (extendVars [(bVar v, tau)] $
+                                    extendVals [(bVar v, ensureTotal tau bot)] $
                                     fst <$> useExp e2)
                                <*> pure s
 
@@ -550,10 +746,17 @@ useIf ma mb = do
     put s
     y   <- mb
     s_b <- get
-    put NDState { vals        = vals s_a `glb` vals s_b
+    put NDState { vals        = vals s_a `bub` vals s_b
                 , usedDefault = usedDefault s_a <> usedDefault s_b
                 }
     return (x, y)
 
-topA :: Applicative f => f a -> f (a, Known Val)
+useFor :: MonadTc m => Var -> Val -> Val -> ND m a -> ND m a
+useFor v val_i val_len k | Just i <- fromUnitV val_i, Just len <- fromUnitV val_len =
+    extendVals [(v, rangeV i len)] k
+
+useFor _ _ _ k =
+    k
+
+topA :: Applicative f => f a -> f (a, Val)
 topA m = (,) <$> m <*> pure top
