@@ -204,13 +204,6 @@ instance Lattice a => Lattice (Bound a) where
     x         `glb` AnyB      = x
     KnownB x1 `glb` KnownB x2 = KnownB (x1 `glb` x2)
 
-instance BranchLattice a => BranchLattice (Bound a) where
-    UnknownB `bub` x        = x
-    x        `bub` UnknownB = x
-    AnyB     `bub` _        = AnyB
-    _        `bub` AnyB     = AnyB
-    KnownB x `bub` KnownB y = KnownB (x `bub` y)
-
 instance Lattice a => BoundedLattice (Bound a) where
     top = AnyB
     bot = UnknownB
