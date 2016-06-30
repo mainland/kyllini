@@ -113,6 +113,7 @@ SOURCE = \
 	KZC/SysTools.hs \
 	KZC/Trace.hs \
 	KZC/Uniq.hs \
+	KZC/Util/Interval.hs \
 	KZC/Util/Lattice.hs \
 	KZC/Util/Lattice/Properties.hs \
 	KZC/Util/SetLike.hs \
