@@ -44,6 +44,8 @@ module KZC.Expr.Smart (
 
     splitArrT,
 
+    constI,
+
     bitC,
     intC,
     uintC,
@@ -210,6 +212,9 @@ splitArrT (ArrT iota tau _) =
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
+
+constI :: Integral a => a -> Iota
+constI x = ConstI (fromIntegral x) noLoc
 
 bitC :: Bool -> Const
 bitC b = FixC I U 1 0 (if b then 1 else 0)

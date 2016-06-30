@@ -91,6 +91,8 @@ import KZC.Expr.Smart (tyVarT,
 
                        splitArrT,
 
+                       constI,
+
                        bitC,
                        intC,
                        uintC,
