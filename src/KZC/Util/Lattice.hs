@@ -61,6 +61,9 @@ class Lattice a => BranchLattice a where
 instance Poset Bool where
     (<=) = (Prelude.==)
 
+instance Poset Int where
+    (<=) = (Prelude.<=)
+
 instance Poset Integer where
     (<=) = (Prelude.<=)
 
