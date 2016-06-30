@@ -125,6 +125,14 @@ instance Poset Range where
 newtype PreciseRange = PR (Known Range)
   deriving (Eq, Ord, Show, Poset)
 
+-- | Extend a precise range by a known length.
+extendPR :: PreciseRange -> Maybe Int -> PreciseRange
+extendPR (PR (Known (Range i (ConstI len _)))) (Just len') =
+    PR $ Known $ Range i (constI (len+len'-1))
+
+extendPR r _ =
+     r
+
 instance Pretty PreciseRange where
     ppr (PR rng) = ppr rng
 
@@ -149,12 +157,34 @@ instance BoundedLattice PreciseRange where
     top = PR top
     bot = PR bot
 
+-- | An array value specifying which elements are certainly known.
+data Array = Arr Iota PreciseRange
+  deriving (Eq, Ord, Show)
+
+instance Pretty Array where
+    ppr (Arr n r) = text "arr" <> brackets (ppr n) <+> ppr r
+
+instance Poset Array where
+    Arr n i <= Arr n' j
+      | n == n'   = i <= j
+      | otherwise = error "Arrays have different sizes"
+
+instance Lattice Array where
+    Arr n i `lub` Arr n' j
+      | n == n'   = Arr n (i `lub` j)
+      | otherwise = error "Arrays have different sizes"
+
+    Arr n i `glb` Arr n' j
+      | n == n'   = Arr n (i `glb` j)
+      | otherwise = error "Arrays have different sizes"
+
 -- | An abstract value.
 data Val -- | Unknown (not yet defined)
          = UnknownV
          -- | The variable takes on all values in the range, i.e., it may be a
          -- loop variable
          | IntV PreciseRange
+         | ArrV Array
          | StructV (Map Field Val)
          -- | Could be anything as far as we know...
          | TopV
@@ -173,9 +203,13 @@ fromUnitV :: Val -> Maybe Iota
 fromUnitV (IntV (PR (Known r))) = fromUnitR r
 fromUnitV _                     = Nothing
 
+wholeArrV :: Iota -> Val
+wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (constI (0::Int)) n)
+
 instance Pretty Val where
     ppr UnknownV       = text "unknown"
     ppr (IntV rng)     = ppr rng
+    ppr (ArrV arr)     = ppr arr
     ppr (StructV flds) = pprStruct (Map.toList flds)
     ppr TopV           = text "top"
 
@@ -183,27 +217,33 @@ instance Poset Val where
     UnknownV  <= _        = True
     _         <= TopV     = True
     IntV x    <= IntV y    = x <= y
+    ArrV x    <= ArrV y    = x <= y
     StructV x <= StructV y = x <= y
     _         <= _         = False
 
 instance Lattice Val where
-    UnknownV  `lub` UnknownV  = UnknownV
+    UnknownV  `lub` x         = x
+    x         `lub` UnknownV  = x
     IntV x    `lub` IntV y    = IntV (x `lub` y)
+    ArrV x    `lub` ArrV y    = ArrV (x `lub` y)
     StructV x `lub` StructV y = StructV (x `lub` y)
-    _         `lub` _         = TopV
+    _         `lub` _         = top
 
+    TopV      `glb` x         = x
+    x         `glb` TopV      = x
     IntV x    `glb` IntV y    = IntV (x `glb` y)
+    ArrV x    `glb` ArrV y    = ArrV (x `glb` y)
     StructV x `glb` StructV y = StructV (x `glb` y)
-    TopV      `glb` TopV      = TopV
     _         `glb` _         = bot
 
 instance BranchLattice Val where
     _         `bub` UnknownV  = UnknownV
     UnknownV  `bub` _         = UnknownV
-    IntV x    `bub` IntV y    = IntV (x `glb` y)
-    StructV x `bub` StructV y = StructV (x `bub` y)
     _         `bub` TopV      = TopV
     TopV      `bub` _         = TopV
+    IntV x    `bub` IntV y    = IntV (x `glb` y)
+    ArrV x    `bub` ArrV y    = ArrV (x `glb` y)
+    StructV x `bub` StructV y = StructV (x `bub` y)
     _         `bub` _         = bot
 
 instance BoundedLattice Val where
@@ -212,10 +252,23 @@ instance BoundedLattice Val where
 
 -- | Return 'True' when the value may be partial.
 partial :: Type -> Val -> Bool
-partial _ UnknownV       = True
-partial _ (IntV i)       = i == bot
-partial _ (StructV flds) = any (partial undefined) (Map.elems flds)
-partial _ TopV           = False
+partial _   UnknownV           = True
+partial _   (IntV i)          = i == bot
+partial _   (ArrV (Arr n xs)) = ArrV (Arr n xs) /= wholeArrV n
+-- XXX Should not assume struct field is not an array!
+partial _   (StructV flds)    = any (partial intT) (Map.elems flds)
+partial tau TopV              = isArrOrRefArrT tau
+
+-- | Ensure that the given value is total.
+ensureTotal :: Type -> Val -> Val
+ensureTotal = go
+  where
+    go :: Type -> Val -> Val
+    go (ArrT iota _ _)          _ = wholeArrV iota
+    go (RefT (ArrT iota _ _) _) _ = wholeArrV iota
+
+    go _ val | val == bot = top
+             | otherwise  = val
 
 data NDState = NDState
     { vals        :: !(Map Var Val)
@@ -268,6 +321,16 @@ putVal :: MonadTc m => Var -> Val -> ND m ()
 putVal v val =
     modify $ \s -> s { vals = Map.insert v val (vals s) }
 
+updateArray :: MonadTc m => Var -> Array -> ND m ()
+updateArray v arr = do
+   old     <- lookupVal v
+   let upd =  old `lub` new
+   traceNeedDefault $ text "updateArray:" <+> ppr v <+> ppr old <+> ppr arr <+> ppr upd
+   putVal v upd
+  where
+    new :: Val
+    new = ArrV arr
+
 needDefault :: Monad m => Var -> ND m ()
 needDefault v = modify $ \s -> s { usedDefault = Set.insert v (usedDefault s) }
 
@@ -291,7 +354,8 @@ useField v f = do
     val' <- case val of
               StructV flds -> maybe err return $ Map.lookup f flds
               _ -> return val
-    when (partial undefined val') $
+    -- XXX Should not assume struct field is not an array!
+    when (partial intT val') $
         needDefault v
   where
     err :: Monad m => m a
@@ -337,13 +401,12 @@ useDecl (LetD decl s) m = do
     (decl', x) <- useLocalDecl decl m
     return (LetD decl' s, x)
 
-useDecl (LetFunD f iotas vbs tau_ret e l) m = do
-    (x, e') <-
-        extendVars [(bVar f, tau)] $ do
-        e' <- extendLetFun f iotas vbs tau_ret $
-              fst <$> useExp e
-        x  <- m
-        return (x, e')
+useDecl (LetFunD f iotas vbs tau_ret e l) m =
+    extendVars [(bVar f, tau)] $ do
+    e' <- extendLetFun f iotas vbs tau_ret $
+          extendVals (map fst vbs `zip` repeat bot) $
+          fst <$> useExp e
+    x  <- m
     return (LetFunD f iotas vbs tau_ret e' l, x)
   where
     tau :: Type
@@ -366,13 +429,12 @@ useDecl (LetCompD v tau comp l) m = do
     x     <- extendVars [(bVar v, tau)] m
     return (LetCompD v tau comp' l, x)
 
-useDecl (LetFunCompD f iotas vbs tau_ret comp l) m = do
-    (x, comp') <-
-        extendVars [(bVar f, tau)] $ do
-        comp' <- extendLetFun f iotas vbs tau_ret $
-                 useComp comp
-        x     <- m
-        return (x, comp')
+useDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
+    extendVars [(bVar f, tau)] $ do
+    comp' <- extendLetFun f iotas vbs tau_ret $
+             extendVals (map fst vbs `zip` repeat bot) $
+             useComp comp
+    x     <- m
     return (LetFunCompD f iotas vbs tau_ret comp' l, x)
   where
     tau :: Type
@@ -385,7 +447,7 @@ useLocalDecl :: MonadTc m
 useLocalDecl (LetLD v tau e s) m = do
     (e', val) <- useExp e
     (x, v')   <- extendVars [(bVar v, tau)] $
-                 extendVals [(bVar v, val)] $
+                 extendVals [(bVar v, ensureTotal tau val)] $
                  updateNeedDefault v m
     return (LetLD v' tau e' s, x)
 
@@ -398,7 +460,7 @@ useLocalDecl (LetRefLD v tau Nothing s) m = do
 useLocalDecl (LetRefLD v tau (Just e) s) m = do
     (e', val) <- useExp e
     (x, v')   <- extendVars [(bVar v, refT tau)] $
-                 extendVals [(bVar v, val)] $
+                 extendVals [(bVar v, ensureTotal tau val)] $
                  updateNeedDefault v m
     return (LetRefLD v' tau (Just e') s, x)
 
@@ -422,6 +484,7 @@ useSteps (BindC l WildV tau s : steps) = do
 
 useSteps (BindC l (TameV v) tau s : steps) = do
     steps' <- extendVars [(bVar v, tau)] $
+              extendVals [(bVar v, ensureTotal tau bot)] $
               useSteps steps
     return $ BindC l (TameV v) tau s : steps'
 
@@ -494,6 +557,12 @@ useExp :: forall m . MonadTc m
 useExp e@(ConstE (FixC I _ _ 0 x) _) =
     return (e, intV x)
 
+useExp e@(ConstE (ArrayC cs) _) =
+    return (e, wholeArrV n)
+  where
+    n :: Iota
+    n = constI (length cs)
+
 useExp e@ConstE{} =
     return (e, top)
 
@@ -527,21 +596,21 @@ useExp (LetE decl e s) = do
 useExp (CallE f iotas es s) = do
     useVar f
     isExt <- isExtFun f
-    es'   <- mapM (fmap fst . useArg isExt) es
+    es'   <- mapM (useArg isExt) es
     return (CallE f iotas es' s, top)
   where
-    useArg :: Bool -> Exp -> ND m (Exp, Val)
+    useArg :: Bool -> Exp -> ND m Exp
     -- We assume that external functions fully initialize any ref passed to
     -- them.
     useArg True e@(VarE v _) = do
         tau <- inferExp e
         if isRefT tau
-            then do putVal v top
-                    return (e, top)
-            else useExp e
+            then do putVal v (ensureTotal tau top)
+                    return e
+            else fst <$> useExp e
 
     useArg _ e =
-        useExp e
+        fst <$> useExp e
 
 useExp (DerefE e s) =
     topA $ DerefE <$> (fst <$> useExp e) <*> pure s
@@ -552,18 +621,24 @@ useExp (AssignE e1 e2 s) = do
   where
     go :: Exp -> Exp -> Val -> ND m (Exp, Val)
     go e1@(VarE v _) e2' val = do
-        let val' | val == bot = top
-                 | otherwise  = val
-        putVal v val'
-        topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+        tau <- lookupVar v
+        putVal v (ensureTotal tau val)
+        topA $ return $ AssignE e1 e2' s
 
-    go e1@(IdxE (VarE v _) (VarE i _) Nothing _) e2' _ = do
-        (n, _) <- lookupVar v >>= checkArrOrRefArrT
-        i_val  <- lookupVal i
-        case i_val of
-          IntV (PR (Known (Range (ConstI 0 _) n'))) | n' == n -> putVal v top
-          _ -> return ()
-        topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+    go e1@(IdxE e_v@(VarE v _) e_i len s) e2' _ = do
+        traceNeedDefault $ text "Assign IdxE:" <+> ppr e1 <+> ppr e2
+        (n, _)        <- lookupVar v >>= checkArrOrRefArrT
+        (e_i', val_i) <- useExp e_i
+        let e1'       = IdxE e_v e_i' len s
+        update n val_i
+        topA $ return $ AssignE e1' e2' s
+      where
+        update :: Iota -> Val -> ND m ()
+        update n (IntV i) =
+            updateArray v (Arr n (extendPR i len))
+
+        update _ _ =
+            return ()
 
     go e1@(ProjE (VarE v _) f _) e2' val2 =
         lookupVal v >>= go
@@ -599,8 +674,27 @@ useExp (ForE ann v tau e1 e2 e3 s) = do
                    useFor v val1 val2 (fst <$> useExp e3)
     topA $ return $ ForE ann v tau e1' e2' e3' s
 
-useExp (ArrayE es s) =
-    topA $ ArrayE <$> mapM (fmap fst . useExp) es <*> pure s
+useExp (ArrayE es s) = do
+    es' <- map fst <$> mapM useExp es
+    return (ArrayE es' s, wholeArrV n)
+  where
+    n :: Iota
+    n = constI (length es)
+
+useExp (IdxE e1@(VarE v _) e2 len s) = do
+    let e1'     =  e1
+    val1        <- lookupVal v
+    (e2', val2) <- useExp e2
+    traceNeedDefault $ text "IdxE:" <+> ppr v <+> ppr val1 <+> ppr val2
+    go val1 val2
+    topA $ return $ IdxE e1' e2' len s
+  where
+    go :: Val -> Val -> ND m ()
+    go (ArrV (Arr _ xs)) (IntV j) | extendPR j len <= xs =
+        return ()
+
+    go _ _ =
+        useVar v
 
 useExp (IdxE e1 e2 len s) =
     topA $ IdxE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure len <*> pure s
@@ -637,6 +731,7 @@ useExp (BindE WildV tau e1 e2 s) =
 useExp (BindE (TameV v) tau e1 e2 s) =
     topA $ BindE (TameV v) tau <$> (fst <$> useExp e1)
                                <*> (extendVars [(bVar v, tau)] $
+                                    extendVals [(bVar v, ensureTotal tau bot)] $
                                     fst <$> useExp e2)
                                <*> pure s
 
