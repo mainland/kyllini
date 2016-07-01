@@ -334,7 +334,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                    compT c2
       steps1    <- ifte (fusePar c1' c2')
                         return
-                        (fusionFailed c1' c2' >> return [ParC ann b c1' c2' sloc])
+                        (fusionFailed c1' c2' >> dontFusePar c1' c2')
       steps'    <- stepsT steps
       return $ steps1 ++ steps'
     where
@@ -357,6 +357,20 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           checkFusionBlowup (size left + size right) comp
           fusionSucceeded left right comp
           return $ unComp comp
+
+      dontFusePar :: Comp l -> Comp l -> F l m [Step l]
+      dontFusePar left right | isIdentityC left = do
+          warndoc $ text "Dropping left identity coercion"
+          traceFusion $ text "Dropping left identity:" </> ppr left
+          return (unComp right)
+
+      dontFusePar left right | isIdentityC right = do
+          warndoc $ text "Dropping right identity coercion"
+          traceFusion $ text "Dropping right identity:" </> ppr right
+          return (unComp left)
+
+      dontFusePar left right =
+          return [ParC ann b left right sloc]
 
       checkFusionBlowup :: Int -> Comp l -> F l m ()
       checkFusionBlowup sz_orig comp = do
