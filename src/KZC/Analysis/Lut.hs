@@ -373,6 +373,8 @@ lutStats e =
         ops1 <- opCount $ go e2
         ops2 <- opCount $ go e3
         addOpCount $ max ops1 ops2
+        -- Conditionals are expensive!
+        addOpCount 5
 
     go (LetE (LetLD _ _ e1 _) e2 _) = do
         go e1
