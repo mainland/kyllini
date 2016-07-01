@@ -494,7 +494,7 @@ coalesceComp comp = do
         -- doesn't have a known multiplicity of i or i+.
         crule m maxBlock =
             ifte (fromP m)
-                 (\i -> Just <$> fact i blockingPred)
+                 (\i -> Just <$> fact 2 i blockingPred)
                  (return Nothing)
           where
             blockingPred :: B -> Bool
@@ -536,7 +536,7 @@ coalesceComp comp = do
         brule ctx m n =
             ifte (fromP m)
                  (\i -> do p <- mkBlockingPred ctx m
-                           Just <$> fact (i*n) p)
+                           Just <$> fact 2 (i*n) p)
                  (return Nothing)
 
         -- | Upper bound on n.
@@ -584,13 +584,15 @@ divides x y = y `rem` x == 0
 -- | Factor a multiplicity into all possible blockings satisfying a given
 -- constraint on the blocking.
 fact :: (MonadPlus m, MonadTc m)
-     => Int         -- ^ Multiplicity
+     => Int         -- ^ Minimum multiplicity
+     -> Int         -- ^ Maximum multiplicity
      -> (B -> Bool) -- ^ Predicate on blocking
      -> m B
-fact n p =
-    choices [B i j | i <- [2..n],
-                     n `rem` i == 0,
-                     let j = n `quot` i,
+fact n m p =
+    choices [B i j | i <- [n..m],
+                     m `rem` i == 0,
+                     i `rem` n == 0,
+                     let j = m `quot` i,
                      p (B i j)]
 
 coleft :: (IsLabel l, MonadTc m)
