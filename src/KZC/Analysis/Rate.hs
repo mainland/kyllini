@@ -166,7 +166,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         return $ WhileC l e c' s
 
     stepT (ForC l ann v tau e1 e2 c s) = do
-        c' <- compT c
+        c' <- extendVars [(v, tau)] $
+              compT c
         plusRate $ expM e2 $ compR c'
         return $ ForC l ann v tau e1 e2 c' s
 
