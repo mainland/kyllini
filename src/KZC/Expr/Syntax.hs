@@ -34,6 +34,7 @@ module KZC.Expr.Syntax (
     Stm(..),
 
     UnrollAnn(..),
+    mayUnroll,
     InlineAnn(..),
     PipelineAnn(..),
     VectAnn(..),
@@ -260,6 +261,12 @@ data UnrollAnn = Unroll     -- ^ Always unroll
                | NoUnroll   -- ^ Never unroll
                | AutoUnroll -- ^ Let the compiler choose when to unroll
   deriving (Enum, Eq, Ord, Read, Show)
+
+-- | Return 'True' if annotation indicates loop may be unrolled.
+mayUnroll :: UnrollAnn -> Bool
+mayUnroll Unroll     = True
+mayUnroll NoUnroll   = False
+mayUnroll AutoUnroll = True
 
 data InlineAnn = Inline     -- ^ Always inline
                | NoInline   -- ^ Never inline
