@@ -356,7 +356,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
             parc <- runK $ parC b (coalesce bc1 a b c1') (coalesce bc2 b c c2')
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
-            return (head (unComp parc))
+            head . unComp <$> rateComp parc
       where
         compat :: BC -> BC -> Bool
         compat bc1 bc2 =
