@@ -13,6 +13,7 @@ module KZC.Core.Embed (
     letC,
     letrefC,
 
+    identityC,
     compC,
     varC,
     forC,
@@ -114,6 +115,15 @@ letrefC v tau f = do
                   f (varE v')
              k x
         return $ mkComp (LetC l decl (srclocOf decl) : unComp c)
+
+-- | Assert that a generated computation is the identity computation.
+identityC :: (IsLabel l, MonadTc m)
+          => Int
+          -> K l m a
+          -> K l m Exp
+identityC n k = do
+    comp <- runComp k
+    compC $ tagIdentityC n comp
 
 -- | Lift a 'Comp l' into the 'K' monad.
 compC :: (IsLabel l, MonadTc m) => Comp l -> K l m Exp
