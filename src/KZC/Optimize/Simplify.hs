@@ -1026,14 +1026,43 @@ simplStep LetC{} =
 simplStep (WhileC l e c s) =
     WhileC l <$> simplE e <*> simplC c <*> pure s >>= return1
 
-simplStep (ForC l ann v tau e1 e2 c s) = do
-    e1' <- simplE e1
-    e2' <- simplE e2
-    withUniqVar v $ \v' ->
+simplStep (ForC l ann v tau ei elen c s) = do
+    ei'   <- simplE ei
+    elen' <- simplE elen
+    unroll ann ei' elen'
+  where
+    unroll :: UnrollAnn
+           -> Exp
+           -> Exp
+           -> SimplM l m [Step l]
+    unroll _ _ elen' | Just 0 <- fromIntE elen' = do
+        rewrite
+        return1 $ ReturnC l unitE s
+
+    unroll _ ei' elen' | Just 1 <- fromIntE elen' = do
+        rewrite
+        extendSubst v (DoneExp ei') $
+          unComp <$> simplC c
+
+    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+        rewrite
+        unComp . mconcat <$> mapM body [i..len-1]
+      where
+        -- We must ensure that each unrolling has a unique set of labels
+        body :: Int -> SimplM l m (Comp l)
+        body i =
+            extendSubst v (DoneExp (idx i)) $
+            simplC c >>= traverse uniquify
+          where
+            idx :: Int -> Exp
+            idx i = constE $ FixC I s w 0 i
+
+    unroll _ ei' elen' =
+        withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplC c
-        return1 $ ForC l ann v' tau e1' e2' c' s
+        return1 $ ForC l ann v' tau ei' elen' c' s
 
 simplStep (LiftC l e s) =
     simplE e >>= go
@@ -1370,17 +1399,27 @@ simplE (AssignE e1 e2 s) = do
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
-simplE (ForE ann v tau e1 e2 e3 s) = do
-    e1' <- simplE e1
-    e2' <- simplE e2
-    unroll ann e1' e2'
+simplE (ForE ann v tau ei elen e3 s) = do
+    ei'   <- simplE ei
+    elen' <- simplE elen
+    unroll ann ei' elen'
   where
     unroll :: UnrollAnn
            -> Exp
            -> Exp
            -> SimplM l m Exp
-    unroll Unroll (ConstE (FixC I s w 0 i) _) (ConstE (FixC _ _ _ _ j) _) = do
-        es <- mapM body [i..j-1]
+    unroll _ _ elen' | Just 0 <- fromIntE elen' = do
+        rewrite
+        return $ ReturnE AutoInline unitE s
+
+    unroll _ ei' elen' | Just 1 <- fromIntE elen' = do
+        rewrite
+        extendSubst v (DoneExp ei') $
+          simplE e3
+
+    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+        rewrite
+        es <- mapM body [i..len-1]
         return $ foldr seqE (returnE unitE) es
       where
         body :: Int -> SimplM l m Exp
@@ -1391,12 +1430,12 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
             idx :: Int -> Exp
             idx i = constE $ FixC I s w 0 i
 
-    unroll _ e1' e2' =
+    unroll _ ei' elen' =
         withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplE e3
-        return $ ForE ann v' tau e1' e2' e3' s
+        return $ ForE ann v' tau ei' elen' e3' s
 
 simplE (ArrayE es s) =
     mapM simplE es >>= go
