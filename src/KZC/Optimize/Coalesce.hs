@@ -410,13 +410,13 @@ parUtil bc1 bc2 = go (outBlock bc1) (inBlock bc2)
 coalesceComp :: forall l m . (IsLabel l, MonadTc m)
              => Comp l
              -> Co m [BC]
-coalesceComp c = do
+coalesceComp comp = do
     (_, a, b) <- askSTIndTypes
     ctx_left  <- askLeftCtx
     ctx_right <- askRightCtx
     traceCoalesce $ text "Left context:" <+> ppr ctx_left
     traceCoalesce $ text "Right context:" <+> ppr ctx_right
-    traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn c)
+    traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn comp)
     asz   <- typeSize a
     bsz   <- typeSize b
     cs1   <- observeAll $ do
@@ -432,7 +432,7 @@ coalesceComp c = do
     dflags <- askFlags
     let cs :: [BC]
         cs = filter (byteSizePred dflags asz bsz) $
-             filter (vectAnnPred dflags (vectAnn c)) $
+             filter (vectAnnPred dflags (vectAnn comp)) $
              cs1 ++ cs2
     return cs
   where
@@ -478,7 +478,7 @@ coalesceComp c = do
            -> Int
            -> Co m BC
     crules max_left max_right = do
-        (m_left, m_right) <- compInOutM c
+        (m_left, m_right) <- compInOutM comp
         b_in              <- crule m_left  max_left
         b_out             <- crule m_right max_right
         return BC { inBlock   = b_in
@@ -505,8 +505,8 @@ coalesceComp c = do
            -> Maybe M
            -> Co m BC
     brules ctx_left ctx_right = do
-        guard (isTransformer c)
-        (m_left, m_right) <- compInOutM c
+        guard (isTransformer comp)
+        (m_left, m_right) <- compInOutM comp
         let n_max         =  min (nBound m_left) (nBound m_right)
         n                 <- choices [2..n_max]
         b_in              <- brule ctx_left  m_left  n
