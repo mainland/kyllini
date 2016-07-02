@@ -433,5 +433,5 @@ lutStats e =
         go e1
         go e2
 
-    go (LutE e) =
+    go (LutE _ e) =
         go e

@@ -1451,8 +1451,8 @@ simplE (BindE wv tau e1 e2 s) =
     unBind (BindE wv tau e1 e2 s) = (e1, \e1' -> BindE wv tau e1' e2 s)
     unBind e                      = (e, id)
 
-simplE (LutE e) =
-    LutE <$> simplE e
+simplE (LutE sz e) =
+    LutE sz <$> simplE e
 
 isTrue :: Exp -> Bool
 isTrue (ConstE (BoolC True) _) = True

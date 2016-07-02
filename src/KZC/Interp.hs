@@ -659,7 +659,7 @@ evalExp (BindE (TameV v) _ e1 e2 _) = do
     extendVals [(bVar v, val1)] $
       evalExp e2
 
-evalExp (LutE e) =
+evalExp (LutE _ e) =
     evalExp e
 
 evalExp e =
@@ -927,7 +927,7 @@ compileExp (BindE (TameV v) tau e1 e2 _) = do
                 assign ref val1
                 mval2
 
-compileExp (LutE e) =
+compileExp (LutE _ e) =
     compileExp e
 
 compileExp e =

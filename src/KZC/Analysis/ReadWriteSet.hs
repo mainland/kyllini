@@ -479,7 +479,7 @@ rangeExp e =
           extendWildVals [(wv, val1)] $
           rangeExp e2
 
-    go (LutE e) =
+    go (LutE _ e) =
         go e
 
 rangeRef :: forall m . MonadTc m => Exp -> RW m Ref

@@ -21,7 +21,8 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Text.PrettyPrint.Mainland hiding (width)
 
-import KZC.Analysis.Lut (lutInfo,
+import KZC.Analysis.Lut (LUTInfo(..),
+                         lutInfo,
                          shouldLUT)
 import KZC.Core.Lint
 import KZC.Core.Syntax
@@ -64,7 +65,7 @@ instance MonadTc m => TransformExp (AutoM m) where
                            should <- shouldLUT info e
                            if should
                              then do traceAutoLUT $ nest 2 $ text "Creating LUT for:" </> ppr e
-                                     return $ LutE e
+                                     return $ LutE (lutBytes info) e
                              else transExp e
 
 instance MonadTc m => TransformComp l (AutoM m) where

@@ -45,4 +45,4 @@ instance Located Exp where
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l
   locOf (BindE _ _ _ _ l) = locOf l
-  locOf (LutE _) = NoLoc
+  locOf (LutE _ _) = NoLoc

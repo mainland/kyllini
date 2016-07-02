@@ -554,7 +554,7 @@ inferExp (ReturnE _ e l) = do
     a = "a"
     b = "b"
 
-inferExp (LutE e) =
+inferExp (LutE _ e) =
     inferExp e
 
 inferExp (BindE wv tau e1 e2 _) = do

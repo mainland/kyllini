@@ -590,7 +590,7 @@ instance ModifiedVars Exp Var where
     mvs ErrorE{}              = mempty
     mvs ReturnE{}             = mempty
     mvs (BindE wv _ e1 e2 _)  = mvs e1 <> (mvs e2 <\\> binders wv)
-    mvs (LutE e)              = mvs e
+    mvs (LutE _ e)            = mvs e
 
 instance ModifiedVars Exp v => ModifiedVars [Exp] v where
     mvs = foldMap mvs

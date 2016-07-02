@@ -735,8 +735,8 @@ useExp (BindE (TameV v) tau e1 e2 s) =
                                     fst <$> useExp e2)
                                <*> pure s
 
-useExp (LutE e) =
-    topA $ LutE <$> (fst <$> useExp e)
+useExp (LutE sz e) =
+    topA $ LutE sz <$> (fst <$> useExp e)
 
 useIf :: MonadTc m => ND m a -> ND m b -> ND m (a, b)
 useIf ma mb = do

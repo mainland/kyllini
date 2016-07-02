@@ -930,11 +930,11 @@ evalExp e =
         wrapBind _ _ _ val2 =
             return val2
 
-    eval flags (LutE e) | testDynFlag LUT flags = do
+    eval flags (LutE _ e) | testDynFlag LUT flags = do
         h <- freezeHeap
         CmdV h <$> lutExp e
 
-    eval flags (LutE e) =
+    eval flags (LutE _ e) =
         eval flags e
 
 lutExp :: forall l s m . (s ~ RealWorld, IsLabel l, MonadTcRef m)

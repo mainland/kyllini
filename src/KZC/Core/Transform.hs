@@ -280,5 +280,5 @@ transExp (BindE (TameV v) tau e1 e2 s) =
                         <*> extendVars [(bVar v, tau)] (expT e2)
                         <*> pure s
 
-transExp (LutE e) =
-    LutE <$> expT e
+transExp (LutE sz e) =
+    LutE sz <$> expT e

@@ -1218,7 +1218,7 @@ cgExp e k =
           extendVarCExps [(bVar v, cv)] $
           cgExp e2 k
 
-    go (LutE e) k =
+    go (LutE _ e) k =
         cgExp e k
 
 -- | Generate code for a looping construct. Any identifiers used in the body of
