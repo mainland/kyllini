@@ -344,7 +344,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
             traceCoalesce $
              text "      Chose vectorization:" <+> ppr bc </>
              text "For top-level computation:" <+> ppr (compRate comp)
-            comp' <- runK $ coalesce bc a b comp
+            comp' <- runK $ coalesce Top bc a b comp
             whenVerb $ traceCoalesce $ nest 2 $
               text "Coalesced top-level:" </> ppr comp'
             rateComp comp'
@@ -398,7 +398,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
             traceCoalesce $ nest 2 $
               text "Chose vectorization:" <+> ppr bc </>
               text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
-            parc <- runK $ parC b (coalesce bc1 a b c1) (coalesce bc2 b c c2)
+            parc <- runK $ parC b (coalesce Producer bc1 a b c1)
+                                  (coalesce Consumer bc2 b c c2)
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
             head . unComp <$> rateComp parc
@@ -428,13 +429,19 @@ topMetric asz bsz BC { inBlock = Just (B i _), outBlock = Just (B j _) } =
 
 topMetric _ _ _ = 0
 
+data Mode = Top
+          | Producer
+          | Consumer
+  deriving (Eq, Ord, Show)
+
 coalesce :: forall l m . (IsLabel l, MonadTc m)
-         => BC
+         => Mode
+         -> BC
          -> Type
          -> Type
          -> Comp l
          -> K l m Exp
-coalesce bc a b comp =
+coalesce _ bc a b comp =
     go bc
   where
     go :: BC -> K l m Exp
