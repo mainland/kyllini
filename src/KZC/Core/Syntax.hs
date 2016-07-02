@@ -67,6 +67,7 @@ module KZC.Core.Syntax (
     setStepLabel,
 
     Size(..),
+    LUTSize(..),
 #endif /* !defined(ONLY_TYPEDEFS) */
 
     isComplexStruct,
@@ -518,6 +519,73 @@ instance Size (Step l) where
 
 instance Size (Comp l) where
     size = size . unComp
+
+{------------------------------------------------------------------------------
+ -
+ - LUT size
+ -
+ ------------------------------------------------------------------------------}
+
+class LUTSize a where
+    lutSize :: a -> Integer
+
+    lutSizeList :: [a] -> Integer
+    lutSizeList = sum . map lutSize
+
+instance LUTSize a => LUTSize [a] where
+    lutSize = lutSizeList
+
+instance LUTSize LocalDecl where
+    lutSize (LetLD _ _ e _)           = lutSize e
+    lutSize (LetRefLD _ _ Nothing _)  = 0
+    lutSize (LetRefLD _ _ (Just e) _) = lutSize e
+
+instance LUTSize Exp where
+    lutSize ConstE{}                = 0
+    lutSize VarE{}                  = 0
+    lutSize (UnopE _ e _)           = lutSize e
+    lutSize (BinopE _ e1 e2 _)      = lutSize e1 + lutSize e2
+    lutSize (IfE e1 e2 e3 _)        = lutSize e1 + lutSize e2 + lutSize e3
+    lutSize (LetE decl e _)         = lutSize decl + lutSize e
+    lutSize (CallE _ _ es _)        = lutSize es
+    lutSize (DerefE e _)            = lutSize e
+    lutSize (AssignE e1 e2 _)       = lutSize e1 + lutSize e2
+    lutSize (WhileE e1 e2 _)        = lutSize e1 + lutSize e2
+    lutSize (ForE _ _ _ e1 e2 e3 _) = lutSize e1 + lutSize e2 + lutSize e3
+    lutSize (ArrayE es _)           = lutSize es
+    lutSize (IdxE e1 e2 _ _)        = lutSize e1 + lutSize e2
+    lutSize (StructE _ flds _)      = lutSize (map snd flds)
+    lutSize (ProjE e _ _)           = lutSize e
+    lutSize (PrintE _ es _)         = lutSize es
+    lutSize ErrorE{}                = 0
+    lutSize (ReturnE _ e _)         = lutSize e
+    lutSize (BindE _ _ e1 e2 _)     = lutSize e1 + lutSize e2
+    lutSize (LutE sz _)             = sz
+
+instance LUTSize (Arg l) where
+    lutSize (ExpA e)  = lutSize e
+    lutSize (CompA c) = lutSize c
+
+instance LUTSize (Step l) where
+    lutSize VarC{}                   = 0
+    lutSize (CallC _ _ _ args _)     = lutSize args
+    lutSize (IfC _ e c1 c2 _)        = lutSize e + lutSize c1 + lutSize c2
+    lutSize (LetC _ decl _)          = lutSize decl
+    lutSize (WhileC _ e c _)         = lutSize e + lutSize c
+    lutSize (ForC _ _ _ _ e1 e2 c _) = lutSize e1 + lutSize e2 + lutSize c
+    lutSize (LiftC _ e _)            = lutSize e
+    lutSize (ReturnC _ e _)          = lutSize e
+    lutSize BindC{}                  = 0
+    lutSize TakeC{}                  = 0
+    lutSize TakesC{}                 = 0
+    lutSize (EmitC _ e _)            = lutSize e
+    lutSize (EmitsC _ e _)           = lutSize e
+    lutSize (RepeatC _ _ c _)        = lutSize c
+    lutSize (ParC _ _ c1 c2 _)       = lutSize c1 + lutSize c2
+    lutSize LoopC{}                  = 0
+
+instance LUTSize (Comp l) where
+    lutSize = lutSize . unComp
 
 {------------------------------------------------------------------------------
  -
