@@ -354,7 +354,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                   fuse left right >>=
                   simplComp >>=
                   rateComp
-          checkFusionBlowup (size left + size right) comp
+          checkFusionBlowup left right comp
           fusionSucceeded left right comp
           return $ unComp comp
 
@@ -372,12 +372,15 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
       dontFusePar left right =
           return [ParC ann b left right sloc]
 
-      checkFusionBlowup :: Int -> Comp l -> F l m ()
-      checkFusionBlowup sz_orig comp = do
+      checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
+      checkFusionBlowup left right comp = do
           k <- asksFlags maxFusionBlowup
           when (r > k) $
             askFlags >>= tryAutoLUT
         where
+          sz_orig :: Int
+          sz_orig = size left + size right
+
           r :: Double
           r = fromIntegral (size comp) / fromIntegral sz_orig
 
@@ -385,9 +388,12 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           -- XXX if we don't cut off search based on the size of the original
           -- computation, we hang on, e.g., test_encdec_18mbps.blk.
           tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
-              sz_autolut <- size <$> autolutComp comp
-              let r' = fromIntegral sz_autolut / fromIntegral sz_orig
-              when (r' > maxFusionBlowup flags) tooBig
+              comp'  <- autolutComp comp
+              let r' =  fromIntegral (size comp') / fromIntegral sz_orig
+              when (r' > maxFusionBlowup flags)
+                tooBig
+              when (lutSize comp' > lutSize left + lutSize right + 256*1024)
+                lutTooBig
 
           tryAutoLUT _ =
               tooBig
@@ -395,6 +401,12 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           tooBig :: F l m ()
           tooBig = do
             traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
+            whenVerb $ traceFusion $ indent 2 $ ppr comp
+            mzero
+
+          lutTooBig :: F l m ()
+          lutTooBig = do
+            traceFusion $ text "LUT size too large" <+> parens (ppr r)
             whenVerb $ traceFusion $ indent 2 $ ppr comp
             mzero
 
