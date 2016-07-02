@@ -508,7 +508,7 @@ coalesceComp comp = do
         guard (isTransformer comp)
         (m_left, m_right) <- compInOutM comp
         let n_max         =  min (nBound m_left) (nBound m_right)
-        n                 <- choices [2..n_max]
+        n                 <- choices [1..n_max]
         b_in              <- brule ctx_left  m_left  n
         b_out             <- brule ctx_right m_right n
         -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
