@@ -494,7 +494,7 @@ coalesceComp comp = do
         -- doesn't have a known multiplicity of i or i+.
         crule m maxBlock =
             ifte (fromP m)
-                 (\i -> Just <$> fact 2 i blockingPred)
+                 (\i -> Just <$> fact i i blockingPred)
                  (return Nothing)
           where
             blockingPred :: B -> Bool
@@ -536,7 +536,7 @@ coalesceComp comp = do
         brule ctx m n =
             ifte (fromP m)
                  (\i -> do p <- mkBlockingPred ctx m
-                           Just <$> fact 2 (i*n) p)
+                           Just <$> fact i (i*n) p)
                  (return Nothing)
 
         -- | Upper bound on n.
