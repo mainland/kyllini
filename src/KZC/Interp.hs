@@ -370,23 +370,16 @@ assign (StructR _ flds) (StructC _ flds') =
     assignField :: [(Field, Val)] -> (Field, Ref s) -> m ()
     assignField flds' (f, old) = do
         new <- maybe err return $ lookup f flds'
-        assign old new
+        new `seq` assign old new
       where
         err = faildoc $ text "Unknown struct field" <+> ppr f
 
-assign (ArrayR mv) (ArrayC v) =
-    loop 0 (MV.length mv)
-  where
-    loop :: Int -> Int -> m ()
-    loop !i !len | i >= len =
-        return ()
-
-    loop i len = do
-        MV.write mv i (v V.! i)
-        loop (i+1) len
+assign (ArrayR mv) (ArrayC v) = do
+    mv' <- V.unsafeThaw v
+    MV.copy mv mv'
 
 assign (IdxR mv i) val =
-    MV.write mv i val
+    val `seq` MV.write mv i val
 
 assign (ArrayRefR mv) (ArrayC v) =
     loop 0 (MV.length mv)
@@ -396,8 +389,9 @@ assign (ArrayRefR mv) (ArrayC v) =
         return ()
 
     loop i len = do
-        ref <- MV.read mv i
-        assign ref (v V.! i)
+        let x =  v V.! i
+        ref   <- MV.read mv i
+        x `seq` assign ref x
         loop (i+1) len
 
 assign val1 val2 =
