@@ -2496,25 +2496,40 @@ cgAssign tau ce1 ce2 = do
                        -> Integer -- ^ Source index
                        -> Integer -- ^ Number of bits to copy
                        -> Cg l ()
-            mediumPath cdst dstIdx csrc srcIdx 1 =
+            -- If the source and destination are both slices of a single bit
+            -- array element, we can copy with a fews shifts and masks.
+            mediumPath cdst dstIdx csrc srcIdx n
+              | sameBitArrayIdx dstIdx (dstIdx + n - 1) &&
+                sameBitArrayIdx srcIdx (srcIdx + n - 1) =
                 appendStm [cstm|$cdst' = $cres;|]
               where
                 cdst', csrc', cres :: CExp l
-                cdst' = CExp [cexp|$cdst[$dq]|]
-                csrc' = CExp [cexp|$csrc[$sq]|]
+                cdst' = CExp [cexp|$cdst[$didx]|]
+                csrc' = CExp [cexp|$csrc[$sidx]|]
                 cres  = cdst' ..&.. cdstmask ..|..
                         ((csrc' ..&.. csrcmask) `shift` csrcshift)
 
                 cdstmask, csrcmask :: CExp l
-                cdstmask  = CExp $ [cexp|~$(chexconst (1 `shiftL` fromIntegral dr))|]
-                csrcmask  = CExp $ chexconst (1 `shiftL` fromIntegral sr)
+                cdstmask  = CExp $ [cexp|~$(chexconst (nbitsMask `shiftL` fromIntegral doff))|]
+                csrcmask  = CExp $ chexconst (nbitsMask `shiftL` fromIntegral soff)
 
                 csrcshift :: Int
-                csrcshift = fromIntegral (dr - sr)
+                csrcshift = fromIntegral (doff - soff)
 
-                sq, sr, dq, dr :: Integer
-                (sq, sr) = bitArrayIdxOff srcIdx
-                (dq, dr) = bitArrayIdxOff dstIdx
+                -- Bit mask for the low n bits
+                nbitsMask :: Integer
+                nbitsMask = (1 `shiftL` fromIntegral n) - 1
+
+                -- Source and destination (index, offset) pairs into the source
+                -- and destination bit arrays.
+                sidx, soff, didx, doff :: Integer
+                (sidx, soff) = bitArrayIdxOff srcIdx
+                (didx, doff) = bitArrayIdxOff dstIdx
+
+                -- Return 'True' if the two bit indicies are in the same element
+                -- of the bit array.
+                sameBitArrayIdx :: Integer -> Integer -> Bool
+                sameBitArrayIdx i j = bitArrayIdx i == bitArrayIdx j
 
             mediumPath cdst dstIdx csrc srcIdx n =
                 slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt n)
