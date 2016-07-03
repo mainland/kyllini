@@ -1657,7 +1657,7 @@ cgInitAlways :: CExp l -> Type -> Cg l ()
 cgInitAlways cv (ArrT iota tau _) | isBitT tau = do
     cn <- cgIota iota
     case cn of
-      CInt n | n `rem` bIT_ARRAY_ELEM_BITS == 0 -> return ()
+      CInt n | bitArrayOff n == 0 -> return ()
       _ -> appendStm [cstm|$cv[$(bitArrayLen cn-1)] = 0;|]
 
 cgInitAlways _ _ =
@@ -2407,7 +2407,7 @@ cgAssign tau ce1 ce2 = do
         appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
         cbitIdx, cbitOff :: CExp l
-        (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+        (cbitIdx, cbitOff) = bitArrayIdxOff cidx
 
         cmask, cbit :: CExp l
         cmask = 1 `shiftL'` cbitOff
@@ -2458,7 +2458,7 @@ cgAssign tau ce1 ce2 = do
                               fastPath cdst csrc (i + q) r
               where
                 q, r, qbytes :: Integer
-                (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
+                (q, r) = bitArrayIdxOff n
                 qbytes = (q*bIT_ARRAY_ELEM_BITS) `quot` 8
 
             fastPath cdst0 csrc0 i n | n < bIT_ARRAY_ELEM_BITS =
@@ -2513,8 +2513,8 @@ cgAssign tau ce1 ce2 = do
                 csrcshift = fromIntegral (dr - sr)
 
                 sq, sr, dq, dr :: Integer
-                (sq, sr) = srcIdx `quotRem` bIT_ARRAY_ELEM_BITS
-                (dq, dr) = dstIdx `quotRem` bIT_ARRAY_ELEM_BITS
+                (sq, sr) = bitArrayIdxOff srcIdx
+                (dq, dr) = bitArrayIdxOff dstIdx
 
             mediumPath cdst dstIdx csrc srcIdx n =
                 slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt n)
