@@ -447,15 +447,15 @@ coalesce _ bc a b comp =
     go :: BC -> K l m Exp
     go BC{inBlock = Just (B i _j), outBlock = Just (B k _l)} =
         -- Associate to the right
-        parC a (coleft i a) (parC b (compC comp) (coright k b))
+        coleft i a (coright k b (compC comp))
         -- Associate to the left
-        -- parC b (parC a (coleft i a) (compC comp)) (coright k b)
+        -- coright k b (coleft i a (compC comp))
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
-        parC a (coleft i a) (compC comp)
+        coleft i a (compC comp)
 
     go BC{inBlock = Nothing, outBlock = Just (B k _l)} =
-        parC b (compC comp) (coright k b)
+        coright k b (compC comp)
 
     go _ =
         compC comp
@@ -648,34 +648,44 @@ fact n m p =
                      let j = m `quot` i,
                      p (B i j)]
 
-coleft :: (IsLabel l, MonadTc m)
+coleft :: forall l m . (IsLabel l, MonadTc m)
        => Int       -- ^ Number of elements to take per round
        -> Type      -- ^ Type of elements
+       -> K l m Exp -- ^ Right side of par
        -> K l m Exp
-coleft 1 tau =
-    identityC 1 $
-    repeatC $ do
-      x <- takeC  tau
-      emitC x
+coleft n tau c_right =
+    parC tau (c_left n tau) c_right
+  where
+    c_left :: Int -> Type -> K l m Exp
+    c_left 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC  tau
+          emitC x
 
-coleft n tau =
-    identityC n $
-    repeatC $ do
-      xs <- takesC n tau
-      emitsC xs
+    c_left n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
 
-coright :: (IsLabel l, MonadTc m)
+coright :: forall l m . (IsLabel l, MonadTc m)
         => Int       -- ^ Number of elements to emit per round
         -> Type      -- ^ Type of elements
+        -> K l m Exp -- ^ Left side of par
         -> K l m Exp
-coright 1 tau =
-    identityC 1 $
-    repeatC $ do
-      x <- takeC  tau
-      emitC x
+coright n tau c_left =
+    parC tau c_left (c_right n tau)
+  where
+    c_right :: Int -> Type -> K l m Exp
+    c_right 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC  tau
+          emitC x
 
-coright n tau =
-    identityC n $
-    repeatC $ do
-      xs <- takesC n tau
-      emitsC xs
+    c_right n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
