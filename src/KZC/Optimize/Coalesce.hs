@@ -605,7 +605,7 @@ fact n p =
 coleft :: (IsLabel l, MonadTc m)
        => Int
        -> Type
-       -> K l m ()
+       -> K l m Exp
 coleft n tau =
     repeatC $ do
       xs <- takesC n tau
@@ -614,7 +614,7 @@ coleft n tau =
 coright :: (IsLabel l, MonadTc m)
         => Int
         -> Type
-        -> K l m ()
+        -> K l m Exp
 coright n tau =
     letrefC "xs" (arrKnownT n tau) $ \xs ->
     repeatC $ do

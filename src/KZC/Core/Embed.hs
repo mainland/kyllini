@@ -208,7 +208,7 @@ emitsC e = do
     l <- gensym "emitsk"
     seqC (mkComp [EmitsC l e (srclocOf e)])
 
-repeatC :: (IsLabel l, MonadTc m) => K l m () -> K l m ()
+repeatC :: (IsLabel l, MonadTc m) => K l m a -> K l m Exp
 repeatC body = do
     l <- gensym "repeatk"
     -- We don't call our continuation since the repeat never terminates
