@@ -2486,7 +2486,7 @@ cgAssign tau ce1 ce2 = do
                 csrc, csrcIdx :: CExp l
                 (csrc, csrcIdx) = unCSlice ce2
 
-            -- | We take the medium oath when the source and destination are not
+            -- | We take the medium path when the source and destination are not
             -- both aligned on 'bIT_ARRAY_ELEM_BITS' bits, but when we
             -- statically know the indices into the source and destination and
             -- the number of bits to copy.
