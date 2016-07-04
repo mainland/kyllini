@@ -327,111 +327,114 @@ fuseProgram = runF . fuseProg
 instance (IsLabel l, MonadTc m) => TransformExp (F l m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
-  stepsT (ParC ann b c1 c2 sloc : steps) = do
-      (s, a, c) <- askSTIndTypes
-      c1'       <- localSTIndTypes (Just (s, a, b)) $
-                   compT c1
-      c2'       <- localSTIndTypes (Just (b, b, c)) $
-                   compT c2
-      steps1    <- ifte (fusePar c1' c2')
-                        return
-                        (fusionFailed c1' c2' >> dontFusePar c1' c2')
-      steps'    <- stepsT steps
-      return $ steps1 ++ steps'
-    where
-      fusePar :: Comp l -> Comp l -> F l m [Step l]
-      fusePar left0 right0 = do
-          left <- unrollEmits left0
-          -- We need to make sure that the producer and consumer have unique sets of
-          -- binders, so we freshen all binders in the consumer. Why the consumer?
-          -- Because >>> is left-associative, so we hopefully avoid repeated re-naming
-          -- of binders by renaming the consumer.
-          right <- unrollTakes $ alphaRename (allVars left0) right0
-          traceFusion $ text "Attempting to fuse" <+>
-              text "producer:" </> indent 2 (ppr left) </>
-              text "and consumer:" </> indent 2 (ppr right)
-          comp <- prune 3 $
-                  withLeftKont steps $
-                  withRightKont steps $
-                  fuse left right >>=
-                  simplComp >>=
-                  rateComp
-          checkFusionBlowup left right comp
-          fusionSucceeded left right comp
-          return $ unComp comp
-
-      dontFusePar :: Comp l -> Comp l -> F l m [Step l]
-      dontFusePar left right | isIdentityC left = do
-          warndoc $ text "Dropping left identity coercion"
-          traceFusion $ text "Dropping left identity:" </> ppr left
-          return (unComp right)
-
-      dontFusePar left right | isIdentityC right = do
-          warndoc $ text "Dropping right identity coercion"
-          traceFusion $ text "Dropping right identity:" </> ppr right
-          return (unComp left)
-
-      dontFusePar left right =
-          return [ParC ann b left right sloc]
-
-      checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
-      checkFusionBlowup left right comp = do
-          k <- asksFlags maxFusionBlowup
-          when (r > k) $
-            askFlags >>= tryAutoLUT
-        where
-          sz_orig :: Int
-          sz_orig = size left + size right
-
-          r :: Double
-          r = fromIntegral (size comp) / fromIntegral sz_orig
-
-          tryAutoLUT :: Flags -> F l m ()
-          -- XXX if we don't cut off search based on the size of the original
-          -- computation, we hang on, e.g., test_encdec_18mbps.blk.
-          tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
-              comp'  <- autolutComp comp
-              let r' =  fromIntegral (size comp') / fromIntegral sz_orig
-              when (r' > maxFusionBlowup flags) $
-                tooBig r'
-              let nbytes = lutSize comp' - (lutSize left + lutSize right)
-              when (nbytes > 256*1024) $
-                lutTooBig nbytes
-
-          tryAutoLUT _ =
-              tooBig r
-
-          tooBig :: Double -> F l m ()
-          tooBig r = do
-            traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
-            whenVerb $ traceFusion $ indent 2 $ ppr comp
-            warndoc $ text "Blowup factor too large during fusion" <+> parens (ppr r)
-            mzero
-
-          lutTooBig :: Integer -> F l m ()
-          lutTooBig nbytes = do
-            traceFusion $ text "LUT too large" <+> parens (ppr nbytes)
-            whenVerb $ traceFusion $ indent 2 $ ppr comp
-            warndoc $ text "LUT too large too large during fusion" <+> parens (ppr nbytes)
-            mzero
-
-      fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
-      fusionSucceeded left right result = do
-          modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
-          traceFusion $ text "Fused" <+>
-              text "producer:" </> indent 2 (ppr left) </>
-              text "and consumer:" </> indent 2 (ppr right) </>
-              text "into:" </> indent 2 (ppr result)
-
-      fusionFailed :: Comp l -> Comp l -> F l m ()
-      fusionFailed left right = do
+    stepsT (ParC ann b c1 c2 sloc : steps) = do
+        (s, a, c) <- askSTIndTypes
+        c1'       <- localSTIndTypes (Just (s, a, b)) $
+                     compT c1
+        c2'       <- localSTIndTypes (Just (b, b, c)) $
+                     compT c2
+        steps1    <- ifte (withLeftKont steps $
+                           withRightKont steps $
+                           fusePar c1' c2')
+                          return
+                          (fusionFailed c1' c2' >> dontFusePar c1' c2')
+        steps'    <- stepsT steps
+        return $ steps1 ++ steps'
+      where
+        fusionFailed :: Comp l -> Comp l -> F l m ()
+        fusionFailed left right = do
           modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
           traceFusion $ text "Failed to fuse" <+>
               text "producer:" </> indent 2 (ppr left) </>
               text "and consumer:" </> indent 2 (ppr right)
 
-  stepsT steps =
-      transSteps steps
+        dontFusePar :: Comp l -> Comp l -> F l m [Step l]
+        dontFusePar left right | isIdentityC left = do
+            warndoc $ text "Dropping left identity coercion"
+            traceFusion $ text "Dropping left identity:" </> ppr left
+            return (unComp right)
+
+        dontFusePar left right | isIdentityC right = do
+            warndoc $ text "Dropping right identity coercion"
+            traceFusion $ text "Dropping right identity:" </> ppr right
+            return (unComp left)
+
+        dontFusePar left right =
+            return [ParC ann b left right sloc]
+
+    stepsT steps =
+        transSteps steps
+
+fusePar :: forall l m . (IsLabel l, MonadTc m)
+        => Comp l
+        -> Comp l
+        -> F l m [Step l]
+fusePar left0 right0 = do
+    left <- unrollEmits left0
+    -- We need to make sure that the producer and consumer have unique sets of
+    -- binders, so we freshen all binders in the consumer. Why the consumer?
+    -- Because >>> is left-associative, so we hopefully avoid repeated re-naming
+    -- of binders by renaming the consumer.
+    right <- unrollTakes $ alphaRename (allVars left0) right0
+    traceFusion $ text "Attempting to fuse" <+>
+        text "producer:" </> indent 2 (ppr left) </>
+        text "and consumer:" </> indent 2 (ppr right)
+    comp <- prune 3 $
+            fuse left right >>=
+            simplComp >>=
+            rateComp
+    checkFusionBlowup left right comp
+    fusionSucceeded left right comp
+    return $ unComp comp
+  where
+    checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
+    checkFusionBlowup left right comp = do
+        k <- asksFlags maxFusionBlowup
+        when (r > k) $
+          askFlags >>= tryAutoLUT
+      where
+        sz_orig :: Int
+        sz_orig = size left + size right
+
+        r :: Double
+        r = fromIntegral (size comp) / fromIntegral sz_orig
+
+        tryAutoLUT :: Flags -> F l m ()
+        -- XXX if we don't cut off search based on the size of the original
+        -- computation, we hang on, e.g., test_encdec_18mbps.blk.
+        tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
+            comp'  <- autolutComp comp
+            let r' =  fromIntegral (size comp') / fromIntegral sz_orig
+            when (r' > maxFusionBlowup flags) $
+              tooBig r'
+            let nbytes = lutSize comp' - (lutSize left + lutSize right)
+            when (nbytes > 256*1024) $
+              lutTooBig nbytes
+
+        tryAutoLUT _ =
+            tooBig r
+
+        tooBig :: Double -> F l m ()
+        tooBig r = do
+          traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
+          whenVerb $ traceFusion $ indent 2 $ ppr comp
+          warndoc $ text "Blowup factor too large during fusion" <+> parens (ppr r)
+          mzero
+
+        lutTooBig :: Integer -> F l m ()
+        lutTooBig nbytes = do
+          traceFusion $ text "LUT too large" <+> parens (ppr nbytes)
+          whenVerb $ traceFusion $ indent 2 $ ppr comp
+          warndoc $ text "LUT too large too large during fusion" <+> parens (ppr nbytes)
+          mzero
+
+    fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
+    fusionSucceeded left right result = do
+        modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
+        traceFusion $ text "Fused" <+>
+            text "producer:" </> indent 2 (ppr left) </>
+            text "and consumer:" </> indent 2 (ppr right) </>
+            text "into:" </> indent 2 (ppr result)
 
 fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l         -- ^ Left computation
