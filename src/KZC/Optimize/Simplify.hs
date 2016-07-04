@@ -1651,6 +1651,20 @@ simplE (BindE wv tau e1 e2 s) =
           return $ LetE (LetLD v' tau' e1' s) e2' s
 
     --
+    -- Avoid an identity assignment
+    --
+    --   { v <- !x; x := v; ... } -> { v <- !x; ... }
+    --
+    simplBind (TameV v) tau e1@(DerefE e_rhs _ ) e_rest _
+      | let (e2, mkBind) = unBind e_rest
+      , AssignE e_lhs (VarE v' _) _ <- e2
+      , v' == bVar v
+      , e_lhs == e_rhs
+      = do
+        rewrite
+        simplBind (TameV v) tau e1 (mkBind (returnE unitE)) s
+
+    --
     -- Default command bind
     --
     simplBind (TameV v) tau e1 e2 s = do
