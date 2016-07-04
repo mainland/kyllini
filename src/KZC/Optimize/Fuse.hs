@@ -392,24 +392,27 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
               comp'  <- autolutComp comp
               let r' =  fromIntegral (size comp') / fromIntegral sz_orig
-              when (r' > maxFusionBlowup flags)
-                tooBig
-              when (lutSize comp' > lutSize left + lutSize right + 256*1024)
-                lutTooBig
+              when (r' > maxFusionBlowup flags) $
+                tooBig r'
+              let nbytes = lutSize comp' - (lutSize left + lutSize right)
+              when (nbytes > 256*1024) $
+                lutTooBig nbytes
 
           tryAutoLUT _ =
-              tooBig
+              tooBig r
 
-          tooBig :: F l m ()
-          tooBig = do
+          tooBig :: Double -> F l m ()
+          tooBig r = do
             traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
             whenVerb $ traceFusion $ indent 2 $ ppr comp
+            warndoc $ text "Blowup factor too large during fusion" <+> parens (ppr r)
             mzero
 
-          lutTooBig :: F l m ()
-          lutTooBig = do
-            traceFusion $ text "LUT size too large" <+> parens (ppr r)
+          lutTooBig :: Integer -> F l m ()
+          lutTooBig nbytes = do
+            traceFusion $ text "LUT too large" <+> parens (ppr nbytes)
             whenVerb $ traceFusion $ indent 2 $ ppr comp
+            warndoc $ text "LUT too large too large during fusion" <+> parens (ppr nbytes)
             mzero
 
       fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
