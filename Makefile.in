@@ -116,6 +116,7 @@ SOURCE = \
 	KZC/Util/Interval.hs \
 	KZC/Util/Lattice.hs \
 	KZC/Util/Lattice/Properties.hs \
+	KZC/Util/Logic.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Vars.hs \
 	Language/Ziria/Parser/Alex.hs \

@@ -75,6 +75,7 @@ import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
+import KZC.Util.Logic
 import KZC.Util.SetLike
 import KZC.Vars
 
@@ -349,7 +350,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
           traceFusion $ text "Attempting to fuse" <+>
               text "producer:" </> indent 2 (ppr left) </>
               text "and consumer:" </> indent 2 (ppr right)
-          comp <- withLeftKont steps $
+          comp <- prune 3 $
+                  withLeftKont steps $
                   withRightKont steps $
                   fuse left right >>=
                   simplComp >>=
