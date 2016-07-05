@@ -54,6 +54,9 @@ autolutProgram :: (IsLabel l, MonadTc m)
 autolutProgram = runAutoM . programT
 
 instance MonadTc m => TransformExp (AutoM m) where
+    expT (LutE _ e) =
+        expT e
+        
     expT e = do
         traceAutoLUT $ nest 2 $ text "Attempting to LUT:" </> ppr e
         maybe_info <- fmap Right (lutInfo e)
