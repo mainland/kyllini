@@ -481,14 +481,64 @@ coalescePar :: forall l m . (IsLabel l, MonadTc m)
             -> BC
             -> BC
             -> K l m Exp
-coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)} =
-    parC (arrKnownT n b)
-         (coalesce Producer bc1' a b comp1)
-         (coalesce Consumer bc2' b c comp2)
+coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)}
+  | i == j    = matchedRates
+  | otherwise = mismatchedRates
   where
-    n = lcm i j
-    bc1' = bc1{outBlock=Just (B n 1)}
-    bc2' = bc2{inBlock=Just (B n 1)}
+    matchedRates :: K l m Exp
+    matchedRates =
+        parC (coArrT i b)
+             (coalesce Producer bc1 a b comp1)
+             (coalesce Consumer bc2 b c comp2)
+
+    mismatchedRates :: K l m Exp
+    mismatchedRates =
+        parC (coArrT j b)
+             (parC (coArrT i b)
+                   (coalesce Producer bc1 a b comp1)
+                   matcher)
+             (coalesce Consumer bc2 b c comp2)
+      where
+        n :: Int
+        n = lcm i j
+
+        matcher :: K l m Exp
+        matcher
+          -- Decrease rate for consumer
+          | i == n =
+            repeatC $ do
+            xs <- takeC (coArrT n b)
+            forC 0 (n `quot` j) $ \k ->
+               if j == 1
+                 then emitC (idxE xs (k*fromIntegral j))
+                 else emitC (sliceE xs (k*fromIntegral j) (fromIntegral j))
+
+          -- Increase rate for consumer
+          | j == n =
+            repeatC $
+            letrefC "xs" (arrKnownT n b) $ \xs -> do
+              forC 0 (n `quot` i) $ \k -> do
+                ys <- takeC (arrKnownT i b)
+                liftC $ assignE (sliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+              ys <- liftC $ derefE xs
+              emitC ys
+
+          -- Increase both rates up to n
+          | otherwise =
+            repeatC $
+            letrefC "xs" (arrKnownT n b) $ \xs -> do
+              forC 0 (n `quot` i) $ \k -> do
+                ys <- takeC (arrKnownT i b)
+                liftC $ assignE (sliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+              forC 0 (n `quot` j) $ \k -> do
+                ys <- liftC $ derefE xs
+                emitC (sliceE ys (k*fromIntegral j) (fromIntegral j))
+
+    -- The type of the block of n elements we pass between computers. When n =
+    -- 1, we use elements rather than arrays of size 1.
+    coArrT :: Int -> Type -> Type
+    coArrT 1 tau = tau
+    coArrT n tau = arrKnownT n tau
 
 coalescePar a b c comp1 comp2 bc1 bc2 =
     parC b (coalesce Top bc1 a b comp1)
