@@ -105,9 +105,11 @@ SOURCE = \
 	KZC/Optimize/Eval/Monad.hs-boot \
 	KZC/Optimize/Eval/PArray.hs \
 	KZC/Optimize/Eval/Val.hs \
+	KZC/Optimize/FloatViews.hs \
 	KZC/Optimize/Fuse.hs \
 	KZC/Optimize/HashConsConsts.hs \
 	KZC/Optimize/LowerGenerators.hs \
+	KZC/Optimize/LowerViews.hs \
 	KZC/Optimize/LutToGen.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \
