@@ -22,6 +22,7 @@ module KZC.Cg.CExp (
 
     calias,
 
+    unCIdx,
     unCSlice,
     unBitCSliceBase,
 
@@ -441,18 +442,48 @@ calias e ce          = case refPath e of
                          Nothing -> ce
                          Just _  -> CAlias e ce
 
+-- | Given a 'CExp' that is potentially an index into array, return the base
+-- array and the index.
+unCIdx :: Monad m => CExp l -> m (CExp l, CExp l)
+unCIdx (CIdx tau (CAlias _ carr) ci) =
+    unCIdx (CIdx tau carr ci)
+
+unCIdx (CIdx tau (CSlice _ carr ci _) cj) =
+    unCIdx (CIdx tau carr (ci + cj))
+
+unCIdx (CIdx _ carr cidx) =
+    return (carr, cidx)
+
+unCIdx _ =
+    fail "unCIdx: not a CIdx"
+
 -- | Given a 'CExp' that is potentially a slice of an array, return the base
 -- array and the index at which the slice begins. If the input 'CExp' is not a
 -- slice, the returned index is 0.
 unCSlice :: CExp l -> (CExp l, CExp l)
-unCSlice (CSlice _ carr cidx _) = (carr, cidx)
-unCSlice carr                   = (carr, 0)
+unCSlice (CSlice tau (CAlias _ carr) ci clen) =
+    unCSlice (CSlice tau carr ci clen)
+
+unCSlice (CSlice tau (CSlice _ carr ci _) cj clen) =
+    unCSlice (CSlice tau carr (ci + cj) clen)
+
+unCSlice (CSlice _ carr cidx _) =
+    (carr, cidx)
+
+unCSlice carr =
+    (carr, 0)
 
 -- | Given a 'CExp' that is potentially a slice of a /bit/ array, return the
 -- array base of the slice, i.e., a pointer to the beginning of the slice. This
 -- function is partial; the base array can only be calculated if the index of
 -- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
 unBitCSliceBase :: CExp l -> Maybe (CExp l)
+unBitCSliceBase (CSlice tau (CAlias _ carr) ci clen) =
+    unBitCSliceBase (CSlice tau carr ci clen)
+
+unBitCSliceBase (CSlice tau (CSlice _ carr ci _) cj clen) =
+    unBitCSliceBase (CSlice tau carr (ci + cj) clen)
+
 unBitCSliceBase (CSlice _ carr (CInt i) _) | bitOff == 0 =
     Just $ CBitSlice $ CExp [cexp|&$carr[$int:bitIdx]|]
   where
@@ -473,7 +504,7 @@ unBitCSliceBase (CSlice _ carr (CExp [cexp|$ce * $int:n|]) _)
     q, r :: Integer
     (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
 
-unBitCSliceBase CSlice{}    =
+unBitCSliceBase CSlice{} =
     Nothing
 
 unBitCSliceBase ce =
@@ -485,10 +516,14 @@ toInit ce            = [cinit|$ce|]
 
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: forall l . Type -> CExp l -> CExp l -> C.Exp
-lowerIdx tau carr ci
+lowerIdx tau ce cidx
     | isBitT tau = C.toExp (CExp [cexp|($carr[$cbitIdx] & $cbitMask)|] `shiftR'` cbitOff) l
     | otherwise  = [cexp|$carr[$ci]|]
   where
+    carr, cidx_base, ci :: CExp l
+    (carr, cidx_base) = unCSlice ce
+    ci = cidx_base + cidx
+
     cbitIdx, cbitOff :: CExp l
     (cbitIdx, cbitOff) = ci `quotRem` bIT_ARRAY_ELEM_BITS
 

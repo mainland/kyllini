@@ -2403,9 +2403,12 @@ cgAssign tau ce1 ce2 = do
     --   https://graphics.stanford.edu/~seander/bithacks.html
     --   https://stackoverflow.com/questions/18561655/bit-set-clear-in-c
     --
-    assign _ (RefT tau _) (CIdx _ carr cidx) ce2 | isBitT tau =
+    assign _ (RefT tau _) ce1@CIdx{} ce2 | isBitT tau =
         appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
+        carr, cidx :: CExp l
+        Just (carr, cidx) = unCIdx ce1
+
         cbitIdx, cbitOff :: CExp l
         (cbitIdx, cbitOff) = bitArrayIdxOff cidx
 
