@@ -26,6 +26,8 @@ module KZC.Core.Smart (
     catE,
     castE,
     bitcastE,
+    localdeclE,
+    localdeclsE,
     letE,
     letrefE,
     callE,
@@ -159,6 +161,12 @@ castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 bitcastE :: Type -> Exp -> Exp
 bitcastE tau e = UnopE (Bitcast tau) e (srclocOf e)
+
+localdeclE :: LocalDecl -> Exp -> Exp
+localdeclE d e = LetE d e (d `srcspan` e)
+
+localdeclsE :: [LocalDecl] -> Exp -> Exp
+localdeclsE ds e = foldr localdeclE e ds
 
 letE :: Var -> Type -> Exp -> Exp -> Exp
 letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
