@@ -15,7 +15,8 @@ module KZC.Core.Comp (
     ifC,
     letC,
     letrefC,
-    letDC,
+    localdeclC,
+    localdeclsC,
     whileC,
     forC,
     liftC,
@@ -54,15 +55,18 @@ ifC e thenc elsec = do
     return $ mkComp [IfC l e thenc elsec (e `srcspan` thenc `srcspan` elsec)]
 
 letC :: (IsLabel l, MonadUnique m) => Var -> Type -> Exp -> m (Comp l)
-letC v tau e = letDC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
+letC v tau e = localdeclC $ LetLD (mkBoundVar v) tau e (v `srcspan` e)
 
 letrefC :: (IsLabel l, MonadUnique m) => Var -> Type -> Maybe Exp -> m (Comp l)
-letrefC v tau e = letDC $ LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
+letrefC v tau e = localdeclC $ LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
 
-letDC :: (IsLabel l, MonadUnique m) => LocalDecl -> m (Comp l)
-letDC decl = do
+localdeclC :: (IsLabel l, MonadUnique m) => LocalDecl -> m (Comp l)
+localdeclC decl = do
     l <- gensym "letk"
     return $ mkComp [LetC l decl (srclocOf decl)]
+
+localdeclsC :: (IsLabel l, MonadUnique m) => [LocalDecl] -> m (Comp l)
+localdeclsC decls = mconcat <$> mapM localdeclC decls
 
 whileC :: (IsLabel l, MonadUnique m) => Exp -> Comp l -> m (Comp l)
 whileC e c  = do

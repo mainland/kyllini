@@ -333,7 +333,7 @@ transComp e@(E.IfE e1 e2 e3 l) = do
 
 transComp (E.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
-    letDC decl .>>. transComp e
+    localdeclC decl .>>. transComp e
 
 transComp e@(E.CallE f iotas es _) = do
     f'              <- lookupVarSubst f
