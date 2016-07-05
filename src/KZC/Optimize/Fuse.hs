@@ -327,6 +327,53 @@ fuseProgram = runF . fuseProg
 instance (IsLabel l, MonadTc m) => TransformExp (F l m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
+    programT (Program decls comp tau) = do
+        (decls', comp') <-
+            declsT decls $
+            inSTScope tau $
+            inLocalScope $
+            withLocContext comp (text "In definition of main") $
+            go comp (uncoalesce comp)
+        return $ Program decls' comp' tau
+      where
+        go :: Comp l
+           -> Maybe (Type, Type, Comp l, Comp l, Comp l)
+           -> F l m (Comp l)
+        go _ (Just (b, c, c1, c2, c3)) = do
+          (s, a, d) <- askSTIndTypes
+          c2'       <- localSTIndTypes (Just (b, b, c)) $
+                       withLeftKont [] $
+                       withRightKont [] $
+                       compT c2
+          ifte (do ssfuse1 <- localSTIndTypes (Just (b, b, c)) $
+                              ifte (fusePar c2' c3) return mzero
+                   cfuse1  <- rateComp (mkComp ssfuse1)
+                   ssfuse2 <- localSTIndTypes (Just (s, a, d)) $
+                              ifte (fusePar c1 cfuse1) return mzero
+                   cfuse2  <- rateComp (mkComp ssfuse2)
+                   -- Drop the fused computation if it is more than twice as big
+                   -- as the unfused computation *unless* it is small.
+                   when (size cfuse2 > 100 && size cfuse2 > 2 * size c2') $ do
+                     warndoc $ text "Dropping top-level coercions"
+                     mzero
+                   rateComp cfuse2)
+                return
+                (return c2')
+
+        go comp _ =
+            compT comp
+
+        uncoalesce :: Comp l
+                   -> Maybe (Type, Type, Comp l, Comp l, Comp l)
+        uncoalesce Comp{unComp=[ParC _ c Comp{unComp=[ParC _ b c1 c2 _]} c3 _]}
+          | isIdentityC c1 && isIdentityC c3 = Just (b, c, c1, c2, c3)
+
+        uncoalesce Comp{unComp=[ParC _ b c1 Comp{unComp=[ParC _ c c2 c3 _]} _]}
+          | isIdentityC c1 && isIdentityC c3 = Just (b, c, c1, c2, c3)
+
+        uncoalesce _ =
+            Nothing
+
     stepsT (ParC ann b c1 c2 sloc : steps) = do
         (s, a, c) <- askSTIndTypes
         c1'       <- localSTIndTypes (Just (s, a, b)) $
