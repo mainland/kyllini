@@ -101,6 +101,7 @@ data WarnFlag = WarnError
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
               | WarnRateMismatch
+              | WarnFusionFailure
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data DumpFlag = DumpCPP

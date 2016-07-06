@@ -346,10 +346,14 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                        withRightKont [] $
                        compT c2
           ifte (do ssfuse1 <- localSTIndTypes (Just (b, b, c)) $
-                              ifte (fusePar c2' c3) return mzero
+                              ifte (fusePar c2' c3)
+                                   return
+                                   (fusionFailed c2' c3 >> mzero)
                    cfuse1  <- rateComp (mkComp ssfuse1)
                    ssfuse2 <- localSTIndTypes (Just (s, a, d)) $
-                              ifte (fusePar c1 cfuse1) return mzero
+                              ifte (fusePar c1 cfuse1)
+                                   return
+                                   (fusionFailed c1 cfuse1 >> mzero)
                    cfuse2  <- rateComp (mkComp ssfuse2)
                    -- Drop the fused computation if it is more than twice as big
                    -- as the unfused computation *unless* it is small.
@@ -388,13 +392,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
         steps'    <- stepsT steps
         return $ steps1 ++ steps'
       where
-        fusionFailed :: Comp l -> Comp l -> F l m ()
-        fusionFailed left right = do
-          modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
-          traceFusion $ text "Failed to fuse" <+>
-              text "producer:" </> indent 2 (ppr left) </>
-              text "and consumer:" </> indent 2 (ppr right)
-
         dontFusePar :: Comp l -> Comp l -> F l m [Step l]
         dontFusePar left right | isIdentityC left = do
             warndoc $ text "Dropping left identity coercion"
@@ -411,6 +408,14 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
 
     stepsT steps =
         transSteps steps
+
+fusionFailed :: (IsLabel l, MonadTc m) => Comp l -> Comp l -> F l m ()
+fusionFailed left right = do
+    modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
+    warndocWhen WarnFusionFailure $ text "Failed to fuse par."
+    traceFusion $ text "Failed to fuse" <+>
+        text "producer:" </> indent 2 (ppr left) </>
+        text "and consumer:" </> indent 2 (ppr right)
 
 fusePar :: forall l m . (IsLabel l, MonadTc m)
         => Comp l

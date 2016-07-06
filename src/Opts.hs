@@ -280,6 +280,7 @@ fWarnFlagOpts =
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
   , (WarnRateMismatch,      "warn-rate-mismatch",        "warn on producer/consumer rate mismatch in par")
+  , (WarnFusionFailure,     "warn-fusion-failure",       "warn on fusion failure par")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])
