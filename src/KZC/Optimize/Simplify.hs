@@ -1400,6 +1400,18 @@ simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
 --
+-- Simplify empty for loop
+--
+--   for i in ...
+--     return ()
+-- ->
+--   return ()
+
+simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
+    rewrite
+    return e
+
+--
 -- Simplify assignment loops.
 --
 --   for i in [0,len]
