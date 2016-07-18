@@ -1622,24 +1622,20 @@ simplE (BindE wv tau e1 e2 s) =
     --
     -- Combine sequential array assignments.
     --
-    --  { x[0] := y[0]; x[1] := y[1]; ... } -> { x[0:1] := y[0:1]; ... }
+    --  { x[e1] := y[e2]; x[e1+1] := y[e2+1]; ... } -> { x[e1:1] := y[e2:1]; ... }
     --
     -- We see this after coalescing/fusion
     --
     simplBind WildV _ e1 e_rest _
       | let (e2, mkBind) = unBind e_rest
-      , AssignE (IdxE xs  e_i len1 s1) (IdxE ys  e_k len1' s2) s3 <- e1
-      , Just i <- fromIntE e_i
-      , Just k <- fromIntE e_k
+      , AssignE (IdxE xs e_i len1 s1) (IdxE ys e_k len1' s2) s3 <- e1
       , len1' == len1
       , AssignE (IdxE xs' e_j len2 _)  (IdxE ys' e_l len2' _)  _ <- e2
-      , Just j <- fromIntE e_j
-      , Just l <- fromIntE e_l
       , len2' == len2
       , xs' == xs
       , ys' == ys
-      , i + sliceLen len1 == j
-      , k + sliceLen len1 == l
+      , e_i + sliceLen len1 == e_j
+      , e_k + sliceLen len1 == e_l
       = do
         rewrite
         let len = plusl len1 len2
