@@ -64,6 +64,8 @@ module KZC.Core.Syntax (
     compUsedLabels,
     stepLabel,
     setStepLabel,
+
+    Size(..),
 #endif /* !defined(ONLY_TYPEDEFS) */
 
     isComplexStruct,
@@ -436,6 +438,82 @@ setStepLabel l (EmitsC _ e s)               = EmitsC l e s
 setStepLabel l (RepeatC _ ann c s)          = RepeatC l ann c s
 setStepLabel l (ParC ann tau left right s)  = ParC ann tau left (setCompLabel l right) s
 setStepLabel _ step@LoopC{}                 = step
+
+{------------------------------------------------------------------------------
+ -
+ - Computation size
+ -
+ ------------------------------------------------------------------------------}
+
+class Size a where
+    size :: a -> Int
+
+    sizeList :: [a] -> Int
+    sizeList = sum . map size
+
+instance Size a => Size [a] where
+    size = sizeList
+
+instance Size Const where
+    size UnitC{}          = 0
+    size BoolC{}          = 1
+    size FixC{}           = 1
+    size FloatC{}         = 1
+    size StringC{}        = 1
+    size (ArrayC cs)      = if null cs then 0 else length cs * size (head cs)
+    size (StructC _ flds) = size (map snd flds)
+
+instance Size LocalDecl where
+    size (LetLD _ _ e _)           = 1 + size e
+    size (LetRefLD _ _ Nothing _)  = 1
+    size (LetRefLD _ _ (Just e) _) = 1 + size e
+
+instance Size Exp where
+    size (ConstE c _)            = size c
+    size VarE{}                  = 1
+    size (UnopE _ e _)           = 1 + size e
+    size (BinopE _ e1 e2 _)      = 1 + size e1 + size e2
+    size (IfE e1 e2 e3 _)        = 1 + size e1 + size e2 + size e3
+    size (LetE decl e _)         = size decl + size e
+    size (CallE _ _ es _)        = 1 + size es
+    size (DerefE e _)            = 1 + size e
+    size (AssignE e1 e2 _)       = 1 + size e1 + size e2
+    size (WhileE e1 e2 _)        = 1 + size e1 + size e2
+    size (ForE _ _ _ e1 e2 e3 _) = 1 + size e1 + size e2 + size e3
+    size (ArrayE es _)           = 1 + size es
+    size (IdxE e1 e2 _ _)        = 1 + size e1 + size e2
+    size (StructE _ flds _)      = size (map snd flds)
+    size (ProjE e _ _)           = 1 + size e
+    size (PrintE _ es _)         = 1 + size es
+    size ErrorE{}                = 1
+    size (ReturnE _ e _)         = size e
+    size (BindE _ _ e1 e2 _)     = size e1 + size e2
+    size LutE{}                  = 1
+
+instance Size (Arg l) where
+    size (ExpA e)  = size e
+    size (CompA c) = size c
+
+instance Size (Step l) where
+    size VarC{}                   = 1
+    size CallC{}                  = 1
+    size (IfC _ e c1 c2 _)        = 1 + size e + size c1 + size c2
+    size (LetC _ decl _)          = size decl
+    size (WhileC _ e c _)         = 1 + size e + size c
+    size (ForC _ _ _ _ e1 e2 c _) = 1 + size e1 + size e2 + size c
+    size (LiftC _ e _)            = size e
+    size (ReturnC _ e _)          = size e
+    size BindC{}                  = 0
+    size TakeC{}                  = 1
+    size TakesC{}                 = 1
+    size (EmitC _ e _)            = 1 + size e
+    size (EmitsC _ e _)           = 1 + size e
+    size (RepeatC _ _ c _)        = size c
+    size (ParC _ _ c1 c2 _)       = size c1 + size c2
+    size LoopC{}                  = 0
+
+instance Size (Comp l) where
+    size = size . unComp
 
 {------------------------------------------------------------------------------
  -
