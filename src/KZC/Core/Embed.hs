@@ -10,7 +10,7 @@ module KZC.Core.Embed (
     K,
     runK,
 
-    letref,
+    letrefC,
 
     compC,
     varC,
@@ -88,9 +88,9 @@ runComp :: (IsLabel l, MonadTc m)
         -> K l m (Comp l)
 runComp m = reset $ m >> return mempty
 
-letref :: (IsLabel l, MonadTc m)
-       => String -> Type -> (Exp -> K l m a) -> K l m a
-letref v tau f = do
+letrefC :: (IsLabel l, MonadTc m)
+        => String -> Type -> (Exp -> K l m a) -> K l m a
+letrefC v tau f = do
     v'       <- gensym v
     let decl =  LetRefLD (mkBoundVar v') tau Nothing (srclocOf tau)
     l        <- gensym "letrefk"

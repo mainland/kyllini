@@ -616,7 +616,7 @@ coright :: (IsLabel l, MonadTc m)
         -> Type
         -> K l m ()
 coright n tau =
-    letref "xs" (arrKnownT n tau) $ \xs ->
+    letrefC "xs" (arrKnownT n tau) $ \xs ->
     repeatC $ do
       forC 0 n $ \i -> do
         x <- takeC tau
