@@ -56,6 +56,9 @@ options =
         , Option [] ["fmin-lut-ops"]
             (ReqArg minLUTOpsOpt "N")
             "set minimum operation count to consider a LUT"
+        , Option [] ["fmax-fusion-blowup"]
+            (ReqArg maxFusionBlowupOpt "DOUBLE")
+            "set maximum allowd fusion blowup"
         , Option [] ["fsimpl"]
             (NoArg simplOpt)
             "run the simplifier"
@@ -87,6 +90,12 @@ options =
         case reads s of
           [(n, "")]  -> return fs { maxSimpl = n }
           _          -> fail "argument to --fmax-simplifier-iterations must be an integer"
+
+    maxFusionBlowupOpt :: String -> Flags -> m Flags
+    maxFusionBlowupOpt s fs =
+        case reads s of
+          [(n, "")]  -> return fs { maxFusionBlowup = n }
+          _          -> fail "argument to --fmax-fusion-blowup must be a float"
 
     dumpAll :: Flags -> m Flags
     dumpAll fs =

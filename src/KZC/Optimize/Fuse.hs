@@ -343,7 +343,18 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
               text "producer:" </> indent 2 (ppr left) </>
               text "and consumer:" </> indent 2 (ppr right) </>
               text "into:" </> indent 2 (ppr comp)
+          checkFusionBlowup (size left0 + size right0) (size comp)
           return $ unComp comp
+
+      checkFusionBlowup :: Int -> Int -> F l m ()
+      checkFusionBlowup s1 s2 = do
+          k <- asksFlags maxFusionBlowup
+          when (r > k) $ do
+              traceFusion $ text "Blowup factor too large" <+> parens (ppr r)
+              mzero
+        where
+          r :: Double
+          r = fromIntegral s2 / fromIntegral s1
 
   stepsT steps =
       transSteps steps
