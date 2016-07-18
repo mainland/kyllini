@@ -1390,7 +1390,7 @@ simplE (DerefE e s) = do
 simplE (AssignE e1 e2 s) = do
     e1'  <- simplE e1
     e2'  <- simplE e2
-    drop <- refPathRoot e1 >>= isDroppedRef
+    drop <- refPathRoot e1' >>= isDroppedRef
     if drop
       then do rewrite
               return $ returnE unitE
