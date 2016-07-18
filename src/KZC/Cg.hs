@@ -1657,7 +1657,7 @@ cgInitAlways :: CExp l -> Type -> Cg l ()
 cgInitAlways cv (ArrT iota tau _) | isBitT tau = do
     cn <- cgIota iota
     case cn of
-      CInt n | n `rem` bIT_ARRAY_ELEM_BITS == 0 -> return ()
+      CInt n | bitArrayOff n == 0 -> return ()
       _ -> appendStm [cstm|$cv[$(bitArrayLen cn-1)] = 0;|]
 
 cgInitAlways _ _ =
@@ -2407,7 +2407,7 @@ cgAssign tau ce1 ce2 = do
         appendStm [cstm|$carr[$cbitIdx] = ($carr[$cbitIdx] & ~$cmask) | $cbit;|]
       where
         cbitIdx, cbitOff :: CExp l
-        (cbitIdx, cbitOff) = cidx `quotRem` bIT_ARRAY_ELEM_BITS
+        (cbitIdx, cbitOff) = bitArrayIdxOff cidx
 
         cmask, cbit :: CExp l
         cmask = 1 `shiftL'` cbitOff
@@ -2458,7 +2458,7 @@ cgAssign tau ce1 ce2 = do
                               fastPath cdst csrc (i + q) r
               where
                 q, r, qbytes :: Integer
-                (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
+                (q, r) = bitArrayIdxOff n
                 qbytes = (q*bIT_ARRAY_ELEM_BITS) `quot` 8
 
             fastPath cdst0 csrc0 i n | n < bIT_ARRAY_ELEM_BITS =
@@ -2486,7 +2486,7 @@ cgAssign tau ce1 ce2 = do
                 csrc, csrcIdx :: CExp l
                 (csrc, csrcIdx) = unCSlice ce2
 
-            -- | We take the medium oath when the source and destination are not
+            -- | We take the medium path when the source and destination are not
             -- both aligned on 'bIT_ARRAY_ELEM_BITS' bits, but when we
             -- statically know the indices into the source and destination and
             -- the number of bits to copy.
@@ -2496,25 +2496,40 @@ cgAssign tau ce1 ce2 = do
                        -> Integer -- ^ Source index
                        -> Integer -- ^ Number of bits to copy
                        -> Cg l ()
-            mediumPath cdst dstIdx csrc srcIdx 1 =
+            -- If the source and destination are both slices of a single bit
+            -- array element, we can copy with a fews shifts and masks.
+            mediumPath cdst dstIdx csrc srcIdx n
+              | sameBitArrayIdx dstIdx (dstIdx + n - 1) &&
+                sameBitArrayIdx srcIdx (srcIdx + n - 1) =
                 appendStm [cstm|$cdst' = $cres;|]
               where
                 cdst', csrc', cres :: CExp l
-                cdst' = CExp [cexp|$cdst[$dq]|]
-                csrc' = CExp [cexp|$csrc[$sq]|]
+                cdst' = CExp [cexp|$cdst[$didx]|]
+                csrc' = CExp [cexp|$csrc[$sidx]|]
                 cres  = cdst' ..&.. cdstmask ..|..
                         ((csrc' ..&.. csrcmask) `shift` csrcshift)
 
                 cdstmask, csrcmask :: CExp l
-                cdstmask  = CExp $ [cexp|~$(chexconst (1 `shiftL` fromIntegral dr))|]
-                csrcmask  = CExp $ chexconst (1 `shiftL` fromIntegral sr)
+                cdstmask  = CExp $ [cexp|~$(chexconst (nbitsMask `shiftL` fromIntegral doff))|]
+                csrcmask  = CExp $ chexconst (nbitsMask `shiftL` fromIntegral soff)
 
                 csrcshift :: Int
-                csrcshift = fromIntegral (dr - sr)
+                csrcshift = fromIntegral (doff - soff)
 
-                sq, sr, dq, dr :: Integer
-                (sq, sr) = srcIdx `quotRem` bIT_ARRAY_ELEM_BITS
-                (dq, dr) = dstIdx `quotRem` bIT_ARRAY_ELEM_BITS
+                -- Bit mask for the low n bits
+                nbitsMask :: Integer
+                nbitsMask = (1 `shiftL` fromIntegral n) - 1
+
+                -- Source and destination (index, offset) pairs into the source
+                -- and destination bit arrays.
+                sidx, soff, didx, doff :: Integer
+                (sidx, soff) = bitArrayIdxOff srcIdx
+                (didx, doff) = bitArrayIdxOff dstIdx
+
+                -- Return 'True' if the two bit indicies are in the same element
+                -- of the bit array.
+                sameBitArrayIdx :: Integer -> Integer -> Bool
+                sameBitArrayIdx i j = bitArrayIdx i == bitArrayIdx j
 
             mediumPath cdst dstIdx csrc srcIdx n =
                 slowPath cdst (CInt dstIdx) csrc (CInt srcIdx) (CInt n)
