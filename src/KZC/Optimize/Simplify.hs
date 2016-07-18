@@ -1399,6 +1399,42 @@ simplE (AssignE e1 e2 s) = do
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
+--
+-- Simplify assignment loops.
+--
+--   for i in [0,len]
+--     xs[i] := e_yx[i + k]
+-- ->
+--   xs[0,len] := e_yx[k,len]
+--
+-- This loop form shows up regularly in fused code.
+--
+simplE (ForE _ann v _tau ei elen
+             (AssignE (IdxE (VarE xs _) (VarE v' _)  Nothing _) e_rhs _)
+             s)
+  | Just len <- fromIntE elen
+  , Just (e_ys, v'', f) <- unIdx e_rhs
+  , v' == v, v'' == v
+  = do rewrite
+       -- The recursive call to 'simplE' is important! We need to be sure to
+       -- recursively call simplE here in case @xs@ has been substituted away.
+       simplE $ AssignE (IdxE (VarE xs s) ei (Just len) s)
+                        (IdxE e_ys (f ei) (Just len) s)
+                        s
+  where
+    unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
+    unIdx (IdxE e1 (VarE v _) Nothing _) =
+        Just (e1, v, id)
+
+    unIdx (IdxE e1 (BinopE Add (VarE v _) e2 s) Nothing _) =
+        Just (e1, v, \e -> BinopE Add e e2 s)
+
+    unIdx (IdxE e1 (BinopE Add e2 (VarE v _) s) Nothing _) =
+        Just (e1, v, \e -> BinopE Add e e2 s)
+
+    unIdx _ =
+        Nothing
+
 simplE (ForE ann v tau ei elen e3 s) = do
     ei'   <- simplE ei
     elen' <- simplE elen
