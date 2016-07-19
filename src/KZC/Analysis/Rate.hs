@@ -14,7 +14,14 @@ module KZC.Analysis.Rate (
     rateProgram,
     rateComp,
 
-    parRate
+    parRate,
+
+    compInOutM,
+    compInM,
+    compOutM,
+    compInP,
+    compOutP,
+    fromP
   ) where
 
 import Prelude hiding ((<=))
@@ -22,7 +29,8 @@ import Prelude hiding ((<=))
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (when)
+import Control.Monad (MonadPlus(..),
+                      when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -31,6 +39,7 @@ import Control.Monad.State (MonadState(..),
                             evalStateT,
                             gets,
                             modify)
+import Data.Maybe (fromJust)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
@@ -243,8 +252,8 @@ parRate (CompR i m2) (TransR m3 l)
   | otherwise      = return $ CompR i (n `mtimes` l)
   where
     j, k, n:: Int
-    j = fromP m2
-    k = fromP m3
+    j = (fromJust . fromP) m2
+    k = (fromJust . fromP) m3
     n = j `quot` k
 
 -- t >>> c
@@ -268,8 +277,8 @@ parRate (TransR i m2) (CompR m3 l)
   | otherwise      = return $ CompR (n `mtimes` i) l
   where
     j, k, n :: Int
-    j = fromP m2
-    k = fromP m3
+    j = (fromJust . fromP) m2
+    k = (fromJust . fromP) m3
     n = k `quot` j
 
 -- t1 >>> t2
@@ -296,13 +305,47 @@ parRate (TransR i m2) (TransR m3 l)
     return $ TransR ((n `quot` j) `mtimes` i) ((n `quot` k) `mtimes` l)
   where
     j, k, n :: Int
-    j = fromP m2
-    k = fromP m3
+    j = (fromJust . fromP) m2
+    k = (fromJust . fromP) m3
     n = lcm j k
 
 -- c1 >>> c2
 parRate CompR{} CompR{} =
     errordoc $ text "Saw two computers in parallel."
+
+-- | Return the in/out multiplicities of a computation.
+compInOutM :: forall l m . Monad m => Comp l -> m (M, M)
+compInOutM = go . compRate
+  where
+    go :: Maybe (Rate M) -> m (M, M)
+    go Nothing               = fail "compInOutM: computation has no multiplicity"
+    go (Just (CompR m1 m2))  = return (m1, m2)
+    go (Just (TransR m1 m2)) = return (m1, m2)
+
+-- | Return the input multiplicity of a computation.
+compInM :: Monad m => Comp l -> m M
+compInM comp = fst <$> compInOutM comp
+
+-- | Return the output multiplicity of a computation.
+compOutM :: Monad m => Comp l -> m M
+compOutM comp = snd <$> compInOutM comp
+
+-- | Return the input multiplicity of a computation if it is of the form n or
+-- n+.
+compInP :: MonadPlus m => Comp l -> m Int
+compInP comp = compInM comp >>= fromP
+
+-- | Return the output multiplicity of a computation if it is of the form n or
+-- n+.
+compOutP :: MonadPlus m => Comp l -> m Int
+compOutP comp = compOutM comp >>= fromP
+
+-- | Given a positive multiplicity, i.e., a multiplicity of the form n or n+,
+-- return n. Otherwise, fail.
+fromP :: MonadPlus m => M -> m Int
+fromP (N i) = return i
+fromP (P i) = return i
+fromP Z{}   = mzero
 
 -- | Get a computation's rate when we know it must exist.
 compR :: Comp l -> Rate M
@@ -340,13 +383,6 @@ staticRate i o = CompR (N i) (N o)
 notPos :: M -> Bool
 notPos Z{} = True
 notPos _   = False
-
--- | Given a strictly positive multiplicity, i.e., a multiplicity of the form n
--- or n+, return n.
-fromP :: M -> Int
-fromP (N i) = i
-fromP (P i) = i
-fromP Z{}   = error "fromP: non-positive multiplicity"
 
 -- | Given a multiplicity m, return the multiplicity of a computation with
 -- multiplicity m that is repeated 0 or more times.

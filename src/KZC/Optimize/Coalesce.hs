@@ -433,13 +433,6 @@ coalesceComp c = do
              cs1 ++ cs2
     return (c', cs)
   where
-    m_left, m_right :: M
-    (m_left, m_right) =
-      case compRate c of
-        Nothing             -> error "rightM: no multiplicity"
-        Just (CompR m1 m2)  -> (m1, m2)
-        Just (TransR m1 m2) -> (m1, m2)
-
     byteSizePred :: Flags -> Int -> Int -> BC -> Bool
     byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
         (byteSized asz . inBlock) bc && (byteSized bsz . outBlock) bc
@@ -482,8 +475,9 @@ coalesceComp c = do
            -> Int
            -> Co m BC
     crules max_left max_right = do
-        b_in  <- crule m_left  max_left
-        b_out <- crule m_right max_right
+        (m_left, m_right) <- compInOutM c
+        b_in              <- crule m_left  max_left
+        b_out             <- crule m_right max_right
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = 1
@@ -509,10 +503,11 @@ coalesceComp c = do
            -> Co m BC
     brules ctx_left ctx_right = do
         guard (isTransformer c)
-        let n_max = min (nBound m_left) (nBound m_right)
-        n     <- choices [2..n_max]
-        b_in  <- brule ctx_left  m_left  n
-        b_out <- brule ctx_right m_right n
+        (m_left, m_right) <- compInOutM c
+        let n_max         =  min (nBound m_left) (nBound m_right)
+        n                 <- choices [2..n_max]
+        b_in              <- brule ctx_left  m_left  n
+        b_out             <- brule ctx_right m_right n
         -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
         -- common factors, i.e., they must be coprime.
         guard (bfCoprime b_in b_out)
@@ -582,13 +577,6 @@ choices = foldr (mplus . return) mzero
 
 divides :: Integral a => a -> a -> Bool
 divides x y = y `rem` x == 0
-
--- | Given a positive multiplicity, i.e., a multiplicity of the form n or n+,
--- return n. Otherwise, fail.
-fromP :: MonadPlus m => M -> m Int
-fromP (N i) = return i
-fromP (P i) = return i
-fromP Z{}   = mzero
 
 -- | Factor a multiplicity into all possible blockings satisfying a given
 -- constraint on the blocking.
