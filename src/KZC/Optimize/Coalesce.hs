@@ -599,8 +599,8 @@ fact n m p =
                      p (B i j)]
 
 coleft :: (IsLabel l, MonadTc m)
-       => Int
-       -> Type
+       => Int       -- ^ Number of elements to take per round
+       -> Type      -- ^ Type of elements
        -> K l m Exp
 coleft 1 tau =
     identityC 1 $
@@ -612,12 +612,11 @@ coleft n tau =
     identityC n $
     repeatC $ do
       xs <- takesC n tau
-      forC 0 n $ \i ->
-        emitC (idxE xs i)
+      emitsC xs
 
 coright :: (IsLabel l, MonadTc m)
-        => Int
-        -> Type
+        => Int       -- ^ Number of elements to emit per round
+        -> Type      -- ^ Type of elements
         -> K l m Exp
 coright 1 tau =
     identityC 1 $
@@ -627,10 +626,6 @@ coright 1 tau =
 
 coright n tau =
     identityC n $
-    letrefC "xs" (arrKnownT n tau) $ \xs ->
     repeatC $ do
-      forC 0 n $ \i -> do
-        x <- takeC tau
-        liftC $ assignE (idxE xs i) x
-      xs' <- liftC $ derefE xs
-      emitsC xs'
+      xs <- takesC n tau
+      emitsC xs
