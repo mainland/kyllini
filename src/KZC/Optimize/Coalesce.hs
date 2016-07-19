@@ -326,8 +326,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
                        c1'  <- compT c1
                        bcs1 <- coalesceComp c1'
                        return (c1', bcs1)
-        whenVerb $ traceCoalesce $ nest 2 $
-          text "Producer candidates:" </> stack (map ppr (sort bcs1))
         traceCoalesce $ nest 2 $
           text "Consumer:" <+> ppr (compRate c2) <+> text "::" <+> pprST b c </>
           ppr c2
@@ -337,43 +335,52 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
                        bcs2 <- coalesceComp c2'
                        return (c2', bcs2)
         whenVerb $ traceCoalesce $ nest 2 $
-          text "Consumer candidates:" </> stack (map ppr (sort bcs2))
-        let bcs = sortBy (flip compare `on` thrd)
-                  [(bc1, bc2, u) | bc1 <- bcs1,
-                                   bc2 <- bcs2,
-                                   compat bc1 bc2,
-                                   let u = bcUtil bc1 +
-                                           parUtil bc1 bc2 +
-                                           bcUtil bc2]
+          text "Producer candidates:" </> stack (map ppr (sort bcs1))
         whenVerb $ traceCoalesce $ nest 2 $
-          text "Compatible candidates:" </> stack (map ppr bcs)
-        case bcs of
-          [] -> return $ ParC ann b c1' c2' sloc
-          bc@(bc1,bc2,_):_ -> do
+          text "Consumer candidates:" </> stack (map ppr (sort bcs2))
+        let bcs = sortAscendingBy (uncurry parMetric)
+                                  [(bc1, bc2) | bc1 <- bcs1, bc2 <- bcs2]
+        c' <- applyBestBlocking bcs a b c c1' c2'
+        traceCoalesce $ nest 2 $
+          text "Final coalesced par:" </> ppr c'
+        return c'
+      where
+        applyBestBlocking :: [(BC,BC)]
+                          -> Type
+                          -> Type
+                          -> Type
+                          -> Comp l
+                          -> Comp l
+                          -> Co m (Step l)
+        applyBestBlocking [] _ b _ c1 c2 =
+            return $ ParC ann b c1 c2 sloc
+
+        applyBestBlocking (bc@(bc1,bc2):_) a b c c1 c2 = do
             traceCoalesce $ nest 2 $
-             text "Chose vectorization:" <+> ppr bc </>
-             text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
-            parc <- runK $ parC b (coalesce bc1 a b c1') (coalesce bc2 b c c2')
+              text "Chose vectorization:" <+> ppr bc </>
+              text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
+            parc <- runK $ parC b (coalesce bc1 a b c1) (coalesce bc2 b c c2)
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
             head . unComp <$> rateComp parc
-      where
-        compat :: BC -> BC -> Bool
-        compat bc1 bc2 =
-            go (outBlock bc1) (inBlock bc2)
-          where
-            go :: Maybe B -> Maybe B -> Bool
-            go Nothing         Nothing       = True
-            go (Just (B i _)) (Just (B j _)) = j == i
-            go _              _              = False
 
         pprST :: Type -> Type -> Doc
         pprST a b = text "ST" <+> pprPrec appPrec1 a <+> pprPrec appPrec1 b
 
-        thrd :: (a, b, c) -> c
-        thrd (_, _, x) = x
-
     stepT step = transStep step
+
+sortAscendingBy :: Ord b => (a -> b) -> [a] -> [a]
+sortAscendingBy f = sortBy (flip compare `on` f)
+
+blockMetric :: Maybe B -> Double
+blockMetric Nothing        = 0
+blockMetric (Just (B i _)) = -(fromIntegral i)
+
+parMetric :: BC -> BC -> Double
+parMetric bc1 bc2 = go (outBlock bc1) (inBlock bc2)
+  where
+    go (Just (B i j)) (Just (B _k l)) = fromIntegral (2*i - abs(l-j)*i - (l+j) `quot` 2)
+    go _              _               = 0
 
 coalesce :: forall l m . (IsLabel l, MonadTc m)
          => BC
@@ -399,16 +406,6 @@ coalesce bc a b comp =
 
     go _ =
         compC comp
-
-blockUtil :: Maybe B -> Double
-blockUtil Nothing        = 0
-blockUtil (Just (B i _)) = -(fromIntegral i)
-
-parUtil :: BC -> BC -> Double
-parUtil bc1 bc2 = go (outBlock bc1) (inBlock bc2)
-  where
-    go (Just (B i j)) (Just (B _k l)) = fromIntegral (2*i - abs(l-j)*i - (l+j) `quot` 2)
-    go _              _               = 0
 
 coalesceComp :: forall l m . (IsLabel l, MonadTc m)
              => Comp l
@@ -487,7 +484,7 @@ coalesceComp comp = do
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = 1
-                  , bcUtil    = blockUtil b_in + blockUtil b_out
+                  , bcUtil    = blockMetric b_in + blockMetric b_out
                   }
       where
         crule :: M   -- ^ Multiplicity
@@ -522,7 +519,7 @@ coalesceComp comp = do
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = n
-                  , bcUtil    = blockUtil b_in + blockUtil b_out
+                  , bcUtil    = blockMetric b_in + blockMetric b_out
                   }
       where
         -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
