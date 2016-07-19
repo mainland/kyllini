@@ -386,7 +386,10 @@ coalesce bc a b comp =
   where
     go :: BC -> K l m Exp
     go BC{inBlock = Just (B i _j), outBlock = Just (B k _l)} =
+        -- Associate to the right
         parC a (coleft i a) (parC b (compC comp) (coright k b))
+        -- Associate to the left
+        -- parC b (parC a (coleft i a) (compC comp)) (coright k b)
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
         parC a (coleft i a) (compC comp)
