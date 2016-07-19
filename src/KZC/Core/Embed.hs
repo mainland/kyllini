@@ -235,4 +235,22 @@ parC b m1 m2 = do
     (s, a, c) <- askSTIndTypes
     c1        <- runComp $ localSTIndTypes (Just (s, a, b)) m1
     c2        <- runComp $ localSTIndTypes (Just (b, b, c)) m2
-    compC $ mkComp [ParC AutoPipeline b c1 c2 (c1 `srcspan` c2)]
+    compC $
+      case (identityRateC c1, identityRateC c2) of
+        (Just n, _) | hasLeftIdentity  c2 == Just n -> c2
+        (_, Just n) | hasRightIdentity c1 == Just n -> c1
+        _ -> mkComp [ParC AutoPipeline b c1 c2 (c1 `srcspan` c2)]
+  where
+    hasLeftIdentity :: Comp l -> Maybe Int
+    hasLeftIdentity Comp{unComp=[ParC _ _ c _ _]} =
+      hasLeftIdentity c
+
+    hasLeftIdentity c =
+      identityRateC c
+
+    hasRightIdentity :: Comp l -> Maybe Int
+    hasRightIdentity Comp{unComp=[ParC _ _ _ c _]} =
+      hasRightIdentity c
+
+    hasRightIdentity c =
+      identityRateC c
