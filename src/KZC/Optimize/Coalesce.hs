@@ -284,6 +284,33 @@ mAX_BLOCK_SIZE = 512
 mAX_BATCH_SIZE :: Int
 mAX_BATCH_SIZE = 288
 
+class Ord a => Metric a where
+    infixl 6  .+.
+
+    (.+.) :: a -> a -> a
+
+data BlockMetric = BlockMetric !Int -- ^ 1 if byte-sized, 0 otherwise
+                               !Int -- ^ Negated block count
+                               !Int -- ^ Negated block size
+  deriving (Eq, Ord, Show)
+
+instance Pretty BlockMetric where
+    ppr (BlockMetric x y z) = ppr (x, y, z)
+
+instance Metric BlockMetric where
+    BlockMetric s t u .+. BlockMetric x y z = BlockMetric (s+x) (t+y) (u+z)
+
+data ParMetric = ParMetric !BlockMetric -- ^ Block utilities
+                           !Int         -- ^ 1 if block sizes match, 0 otherwise
+                           !Int         -- ^ Negated size of necessary rate matcher
+  deriving (Eq, Ord, Show)
+
+instance Pretty ParMetric where
+    ppr (ParMetric x y z) = ppr (x, y, z)
+
+instance Metric ParMetric where
+    ParMetric s t u .+. ParMetric x y z = ParMetric (s.+.x) (t+y) (u+z)
+
 -- | Input/output blocking, of the form $i^j$.
 data B = B !Int !Int
   deriving (Eq, Ord, Show)
@@ -295,7 +322,7 @@ instance Pretty B where
 data BC = BC { inBlock   :: Maybe B
              , outBlock  :: Maybe B
              , batchFact :: !Int
-             , bcUtil    :: !Double
+             , bcUtil    :: !BlockMetric
              }
   deriving (Eq, Ord, Show)
 
@@ -412,15 +439,27 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
 sortAscendingBy :: Ord b => (a -> b) -> [a] -> [a]
 sortAscendingBy f = sortBy (flip compare `on` f)
 
-blockMetric :: Maybe B -> Double
-blockMetric Nothing        = 0
-blockMetric (Just (B i _)) = -(fromIntegral i)
+blockMetric :: Int -> Maybe B -> BlockMetric
+blockMetric _ Nothing =
+    BlockMetric 0 0 0
 
-parMetric :: BC -> BC -> Double
-parMetric bc1 bc2 = go (outBlock bc1) (inBlock bc2)
+blockMetric sz (Just (B i j)) =
+    BlockMetric (if i*sz `rem` 8 == 0 then 1 else 0)
+                (-fromIntegral (i*(j-1)))
+                (-fromIntegral i)
+
+parMetric :: BC -> BC -> ParMetric
+parMetric bc1 bc2 =
+    go (outBlock bc1) (inBlock bc2)
   where
-    go (Just (B i j)) (Just (B _k l)) = fromIntegral (2*i - abs(l-j)*i - (l+j) `quot` 2)
-    go _              _               = 0
+    go :: Maybe B -> Maybe B -> ParMetric
+    go (Just (B i _j)) (Just (B k _l)) =
+        ParMetric (bcUtil bc1 .+. bcUtil bc2)
+                  (if i == k then 1 else 0)
+                  (if i == k then 0 else -fromIntegral (lcm i k))
+
+    go _ _ =
+        ParMetric (bcUtil bc1 .+. bcUtil bc2) 0 0
 
 topMetric :: Int -> Int -> BC -> Int
 topMetric asz bsz BC { inBlock = Just (B i _), outBlock = Just (B j _) } =
@@ -474,10 +513,10 @@ coalesceComp comp = do
     bsz   <- typeSize b
     cs1   <- observeAll $ do
              guard (not (isBitArrT a) && not (isBitArrT b))
-             crules (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
+             crules asz asz (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
     cs2   <- observeAll $ do
              guard (not (isBitArrT a) && not (isBitArrT b))
-             brules ctx_left ctx_right
+             brules asz bsz ctx_left ctx_right
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
       text "C-rules:" </> stack (map ppr (sort cs1))
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
@@ -529,15 +568,17 @@ coalesceComp comp = do
     -- | Implement the C rules.
     crules :: Int
            -> Int
+           -> Int
+           -> Int
            -> Co m BC
-    crules max_left max_right = do
+    crules asz bsz max_left max_right = do
         (m_left, m_right) <- compInOutM comp
         b_in              <- crule m_left  max_left
         b_out             <- crule m_right max_right
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = 1
-                  , bcUtil    = blockMetric b_in + blockMetric b_out
+                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
                   }
       where
         crule :: M   -- ^ Multiplicity
@@ -556,10 +597,12 @@ coalesceComp comp = do
             blockingPred (B i _) = i <= maxBlock
 
     -- | Implement the B rules
-    brules :: Maybe M
+    brules :: Int
+           -> Int
+           -> Maybe M
            -> Maybe M
            -> Co m BC
-    brules ctx_left ctx_right = do
+    brules asz bsz ctx_left ctx_right = do
         guard (isTransformer comp)
         (m_left, m_right) <- compInOutM comp
         let n_max         =  min (nBound m_left) (nBound m_right)
@@ -574,7 +617,7 @@ coalesceComp comp = do
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = n
-                  , bcUtil    = blockMetric b_in + blockMetric b_out
+                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
                   }
       where
         -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
