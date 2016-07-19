@@ -577,7 +577,9 @@ simplLocalDecl decl m = do
         (,) <$> pure (Just (LetRefLD v tau e s)) <*> m
 
 simplC :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
-simplC (Comp steps card) = Comp <$> simplSteps steps <*> pure card
+simplC comp = do
+    steps' <- simplSteps (unComp comp)
+    return comp{ unComp = steps' }
 
 simplSteps :: forall l m . (IsLabel l, MonadTc m)
            => [Step l]
@@ -693,7 +695,7 @@ simplLift [] =
 simplLift [step] =
     return [step]
 
-simplLift (IfC l e1 (Comp [LiftC _ e2 _] _) (Comp [LiftC _ e3 _] _) s : steps) = do
+simplLift (IfC l e1 Comp{unComp=[LiftC _ e2 _]} Comp{unComp=[LiftC _ e3 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (IfE e1 e2 e3 s) s : steps
 
@@ -704,11 +706,11 @@ simplLift (LetC _ decl _ : LiftC l2 e _ : steps) | decl `notUsedIn` steps = do
     s :: SrcLoc
     s = decl `srcspan` e
 
-simplLift (WhileC l e1 (Comp [LiftC _ e2 _] _) s : steps) = do
+simplLift (WhileC l e1 Comp{unComp=[LiftC _ e2 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (WhileE e1 e2 s) s : steps
 
-simplLift (ForC l ann v tau e1 e2 (Comp [LiftC _ e3 _] _) s : steps) = do
+simplLift (ForC l ann v tau e1 e2 Comp{unComp=[LiftC _ e3 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (ForE ann v tau e1 e2 e3 s) s : steps
 

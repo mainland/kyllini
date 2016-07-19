@@ -314,7 +314,7 @@ instance Monoid (Comp l) where
                          }
 
 mkComp :: [Step l] -> Comp l
-mkComp steps = Comp steps Nothing
+mkComp steps = mempty { unComp = steps }
 
 -- See Note [Rates] in KZC.Analysis.Rate for the full explanation of what the
 -- next two data types mean.
@@ -380,12 +380,15 @@ instance BranchLattice OccInfo where
  -
  ------------------------------------------------------------------------------}
 compLabel :: Monad m => Comp l -> m l
-compLabel (Comp [] _)       = fail "compLabel: empty computation"
-compLabel (Comp (step:_) _) = stepLabel step
+compLabel Comp{ unComp = [] }     = fail "compLabel: empty computation"
+compLabel Comp{ unComp = step:_ } = stepLabel step
 
 setCompLabel :: l -> Comp l -> Comp l
-setCompLabel _ comp@(Comp [] _)         = comp
-setCompLabel l (Comp (step:steps) rate) = Comp (setStepLabel l step:steps) rate
+setCompLabel _ comp@Comp{ unComp = [] } =
+    comp
+
+setCompLabel l comp@Comp{ unComp = step:steps } =
+    comp{ unComp = setStepLabel l step:steps }
 
 -- | Rewrite the label of the first step in a computation and ensure that any
 -- references to the old label are rewritten to refer to the new label.
@@ -858,9 +861,9 @@ instance IsLabel l => Pretty (Comp l) where
           stms  -> semiEmbraceWrap stms
       where
         pprRate :: Comp l -> Doc
-        pprRate (Comp [ParC{}] _)    = empty
-        pprRate (Comp [RepeatC{}] _) = empty
-        pprRate (Comp _ r)           = ppr r
+        pprRate Comp{ unComp = [ParC{}] }    = empty
+        pprRate Comp{ unComp = [RepeatC{}] } = empty
+        pprRate comp                         = ppr (compRate comp)
 
 instance Pretty m => Pretty (Rate m) where
     ppr (CompR i o)  = brackets $ commasep [ppr i, ppr o]
@@ -1217,7 +1220,9 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
         return step
 
 instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
-    substM comp = Comp <$> substM (unComp comp) <*> pure (compRate comp)
+    substM comp = do
+        steps' <- substM (unComp comp)
+        return comp { unComp = steps' }
 
 {------------------------------------------------------------------------------
  -
@@ -1347,7 +1352,9 @@ instance Subst Iota IVar (Step l) where
         return step
 
 instance Subst Iota IVar (Comp l) where
-    substM (Comp steps rate) = Comp <$> substM steps <*> pure rate
+    substM comp = do
+        steps' <- substM (unComp comp)
+        return comp { unComp = steps' }
 
 {------------------------------------------------------------------------------
  -
@@ -1477,7 +1484,9 @@ instance Subst Type TyVar (Step l) where
         return step
 
 instance Subst Type TyVar (Comp l) where
-    substM (Comp steps rate) = Comp <$> substM steps <*> pure rate
+    substM comp = do
+        steps' <- substM (unComp comp)
+        return comp { unComp = steps' }
 
 {------------------------------------------------------------------------------
  -
@@ -1627,8 +1636,9 @@ instance Subst Exp Var (Step l) where
         return step
 
 instance Subst Exp Var (Comp l) where
-    substM (Comp steps rate) =
-        Comp <$> go steps <*> pure rate
+    substM comp = do
+        steps' <- go (unComp comp)
+        return comp { unComp = steps' }
       where
         go :: [Step l] -> SubstM Exp Var [Step l]
         go [] =
