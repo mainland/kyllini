@@ -156,7 +156,17 @@ forC' :: (Integral a, IsLabel l, MonadTc m)
       -> a
       -> (Exp -> K l m b)
       -> K l m ()
-forC' ann i j f = do
+forC' _ann _i 0 _f =
+    shift $ \k -> k ()
+
+forC' _ann i 1 f =
+    shift $ \k -> do
+      c1 <- runComp $
+            f (fromIntegral i)
+      c2 <- k ()
+      return $ c1 <> c2
+
+forC' ann i len f = do
     v <- gensym "i"
     l <- gensym "fork"
     shift $ \k -> do
@@ -164,7 +174,7 @@ forC' ann i j f = do
             extendVars [(v, intT)] $
             f (varE v)
       c2 <- k ()
-      return $ mkComp $ ForC l ann v intT (intE i) (intE j) c1 (srclocOf c1) : unComp c2
+      return $ mkComp $ ForC l ann v intT (intE i) (intE len) c1 (srclocOf c1) : unComp c2
 
 timesC :: (Integral a, IsLabel l, MonadTc m)
        => a
