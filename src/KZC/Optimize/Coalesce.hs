@@ -563,9 +563,9 @@ coalesce mode bc a b comp =
     go :: BC -> K l m Exp
     go BC{inBlock = Just (B i _j), outBlock = Just (B k _l)} =
         -- Associate to the right
-        coleft mode i a (coright mode k b (compC comp))
+        -- coleft mode i a (coright mode k b (compC comp))
         -- Associate to the left
-        -- coright mode k b (coleft mode i a (compC comp))
+        coright mode k b (coleft mode i a (compC comp))
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
         coleft mode i a (compC comp)
