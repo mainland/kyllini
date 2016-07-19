@@ -54,6 +54,7 @@ module KZC.Core.Syntax (
 
     Arg(..),
     Step(..),
+    Tag(..),
     Comp(..),
     Rate(..),
     M(..),
@@ -300,17 +301,24 @@ data Step l = VarC l Var !SrcLoc
             | LoopC l
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
+data Tag -- | Computation is the identity with given rate
+             = IdT !Int
+  deriving (Eq, Ord, Read, Show)
+
 data Comp l = Comp { unComp   :: [Step l]
                    , compRate :: !(Maybe (Rate M))
+                   -- | True if this computation is the identity
+                   , compTag  :: Maybe Tag
                    }
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 instance Monoid (Comp l) where
-    mempty = Comp mempty Nothing
+    mempty = Comp mempty Nothing Nothing
 
     -- Appending steps tosses out rate information
     x `mappend` y = Comp { unComp   = unComp x <> unComp y
                          , compRate = Nothing
+                         , compTag  = Nothing
                          }
 
 mkComp :: [Step l] -> Comp l
