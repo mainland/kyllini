@@ -425,8 +425,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
             traceCoalesce $ nest 2 $
               text "Chose vectorization:" <+> ppr bc </>
               text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
-            parc <- runK $ parC b (coalesce Producer bc1 a b c1)
-                                  (coalesce Consumer bc2 b c c2)
+            parc <- runK $ coalescePar a b c c1 c2 bc1 bc2
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
             head . unComp <$> rateComp parc
@@ -473,6 +472,28 @@ data Mode = Top
           | Consumer
   deriving (Eq, Ord, Show)
 
+coalescePar :: forall l m . (IsLabel l, MonadTc m)
+            => Type
+            -> Type
+            -> Type
+            -> Comp l
+            -> Comp l
+            -> BC
+            -> BC
+            -> K l m Exp
+coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)} =
+    parC (arrKnownT n b)
+         (coalesce Producer bc1' a b comp1)
+         (coalesce Consumer bc2' b c comp2)
+  where
+    n = lcm i j
+    bc1' = bc1{outBlock=Just (B n 1)}
+    bc2' = bc2{inBlock=Just (B n 1)}
+
+coalescePar a b c comp1 comp2 bc1 bc2 =
+    parC b (coalesce Top bc1 a b comp1)
+           (coalesce Top bc2 b c comp2)
+
 coalesce :: forall l m . (IsLabel l, MonadTc m)
          => Mode
          -> BC
@@ -480,24 +501,78 @@ coalesce :: forall l m . (IsLabel l, MonadTc m)
          -> Type
          -> Comp l
          -> K l m Exp
-coalesce _ bc a b comp =
+coalesce mode bc a b comp =
     go bc
   where
     go :: BC -> K l m Exp
     go BC{inBlock = Just (B i _j), outBlock = Just (B k _l)} =
         -- Associate to the right
-        coleft i a (coright k b (compC comp))
+        coleft mode i a (coright mode k b (compC comp))
         -- Associate to the left
-        -- coright k b (coleft i a (compC comp))
+        -- coright mode k b (coleft mode i a (compC comp))
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
-        coleft i a (compC comp)
+        coleft mode i a (compC comp)
 
     go BC{inBlock = Nothing, outBlock = Just (B k _l)} =
-        coright k b (compC comp)
+        coright mode k b (compC comp)
 
     go _ =
         compC comp
+
+coleft :: forall l m . (IsLabel l, MonadTc m)
+       => Mode
+       -> Int       -- ^ Number of elements to take per round
+       -> Type      -- ^ Type of elements
+       -> K l m Exp -- ^ Right side of par
+       -> K l m Exp
+coleft mode n tau c_right =
+    parC tau (c_left mode n tau) c_right
+  where
+    c_left :: Mode -> Int -> Type -> K l m Exp
+    c_left _ 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC tau
+          emitC x
+
+    c_left Consumer n tau =
+        repeatC $ do
+          xs <- takeC (arrKnownT n tau)
+          emitsC xs
+
+    c_left _ n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
+
+coright :: forall l m . (IsLabel l, MonadTc m)
+        => Mode
+        -> Int       -- ^ Number of elements to emit per round
+        -> Type      -- ^ Type of elements
+        -> K l m Exp -- ^ Left side of par
+        -> K l m Exp
+coright mode n tau c_left =
+    parC tau c_left (c_right mode n tau)
+  where
+    c_right :: Mode -> Int -> Type -> K l m Exp
+    c_right _ 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC tau
+          emitC x
+
+    c_right Producer n tau =
+        repeatC $ do
+          xs <- takesC n tau
+          emitC xs
+
+    c_right _ n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
 
 coalesceComp :: forall l m . (IsLabel l, MonadTc m)
              => Comp l
@@ -694,45 +769,3 @@ fact n m p =
                      i `rem` n == 0,
                      let j = m `quot` i,
                      p (B i j)]
-
-coleft :: forall l m . (IsLabel l, MonadTc m)
-       => Int       -- ^ Number of elements to take per round
-       -> Type      -- ^ Type of elements
-       -> K l m Exp -- ^ Right side of par
-       -> K l m Exp
-coleft n tau c_right =
-    parC tau (c_left n tau) c_right
-  where
-    c_left :: Int -> Type -> K l m Exp
-    c_left 1 tau =
-        identityC 1 $
-        repeatC $ do
-          x <- takeC  tau
-          emitC x
-
-    c_left n tau =
-        identityC n $
-        repeatC $ do
-          xs <- takesC n tau
-          emitsC xs
-
-coright :: forall l m . (IsLabel l, MonadTc m)
-        => Int       -- ^ Number of elements to emit per round
-        -> Type      -- ^ Type of elements
-        -> K l m Exp -- ^ Left side of par
-        -> K l m Exp
-coright n tau c_left =
-    parC tau c_left (c_right n tau)
-  where
-    c_right :: Int -> Type -> K l m Exp
-    c_right 1 tau =
-        identityC 1 $
-        repeatC $ do
-          x <- takeC  tau
-          emitC x
-
-    c_right n tau =
-        identityC n $
-        repeatC $ do
-          xs <- takesC n tau
-          emitsC xs
