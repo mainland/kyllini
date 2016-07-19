@@ -511,38 +511,44 @@ coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just 
             forC 0 (n `quot` j) $ \k ->
                if j == 1
                  then emitC (idxE xs (k*fromIntegral j))
-                 else emitC (sliceE xs (k*fromIntegral j) (fromIntegral j))
+                 else emitC (coSliceE xs (k*fromIntegral j) (fromIntegral j))
 
           -- Increase rate for consumer
           | j == n =
             repeatC $
-            letrefC "xs" (arrKnownT n b) $ \xs -> do
+            letrefC "xs" (coArrT n b) $ \xs -> do
               forC 0 (n `quot` i) $ \k -> do
-                ys <- takeC (arrKnownT i b)
-                liftC $ assignE (sliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+                ys <- takeC (coArrT i b)
+                liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
               ys <- liftC $ derefE xs
               emitC ys
 
           -- Increase both rates up to n
           | otherwise =
             repeatC $
-            letrefC "xs" (arrKnownT n b) $ \xs -> do
+            letrefC "xs" (coArrT n b) $ \xs -> do
               forC 0 (n `quot` i) $ \k -> do
-                ys <- takeC (arrKnownT i b)
-                liftC $ assignE (sliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+                ys <- takeC (coArrT i b)
+                liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
               forC 0 (n `quot` j) $ \k -> do
                 ys <- liftC $ derefE xs
-                emitC (sliceE ys (k*fromIntegral j) (fromIntegral j))
-
-    -- The type of the block of n elements we pass between computers. When n =
-    -- 1, we use elements rather than arrays of size 1.
-    coArrT :: Int -> Type -> Type
-    coArrT 1 tau = tau
-    coArrT n tau = arrKnownT n tau
+                emitC (coSliceE ys (k*fromIntegral j) (fromIntegral j))
 
 coalescePar a b c comp1 comp2 bc1 bc2 =
     parC b (coalesce Top bc1 a b comp1)
            (coalesce Top bc2 b c comp2)
+
+-- The type of the block of n elements we pass between computers. When n =
+-- 1, we use elements rather than arrays of size 1.
+coArrT :: Int -> Type -> Type
+coArrT 1 tau = tau
+coArrT n tau = arrKnownT n tau
+
+-- Extract an array slice. If the slice is only 1 element in length, just return
+-- the element itself.
+coSliceE :: Exp -> Exp -> Int -> Exp
+coSliceE e1 e2 1   = idxE e1 e2
+coSliceE e1 e2 len = sliceE e1 e2 len
 
 coalesce :: forall l m . (IsLabel l, MonadTc m)
          => Mode
@@ -588,7 +594,7 @@ coleft mode n tau c_right =
 
     c_left Consumer n tau =
         repeatC $ do
-          xs <- takeC (arrKnownT n tau)
+          xs <- takeC (coArrT n tau)
           emitsC xs
 
     c_left _ n tau =
