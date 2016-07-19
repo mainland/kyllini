@@ -600,11 +600,13 @@ coleft :: (IsLabel l, MonadTc m)
        -> Type
        -> K l m Exp
 coleft 1 tau =
+    identityC 1 $
     repeatC $ do
       x <- takeC  tau
       emitC x
 
 coleft n tau =
+    identityC n $
     repeatC $ do
       xs <- takesC n tau
       forC 0 n $ \i ->
@@ -615,11 +617,13 @@ coright :: (IsLabel l, MonadTc m)
         -> Type
         -> K l m Exp
 coright 1 tau =
+    identityC 1 $
     repeatC $ do
       x <- takeC  tau
       emitC x
 
 coright n tau =
+    identityC n $
     letrefC "xs" (arrKnownT n tau) $ \xs ->
     repeatC $ do
       forC 0 n $ \i -> do
