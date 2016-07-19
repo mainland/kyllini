@@ -265,29 +265,28 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
       return $ steps1 ++ steps'
     where
       fusePar :: Comp l -> Comp l -> F l m [Step l]
-      fusePar left right0 = do
+      fusePar left0 right0 = do
           traceFusion $ text "Attempting to fuse" <+>
-              text "producer:" </> indent 2 (ppr left) </>
-              text "and consumer:" </> indent 2 (ppr right)
-          l    <- compLabel right0
-          comp <- withKont steps $
-                  fuse left right >>=
-                  recoverRepeat >>=
-                  return . setCompLabel l >>=
-                  simplComp
+              text "producer:" </> indent 2 (ppr left0) </>
+              text "and consumer:" </> indent 2 (ppr right0)
+          -- We need to make sure that the producer and consumer have unique
+          -- sets of binders, so we freshen all binders in the consumer. Why the
+          -- consumer? Because >>> is left-associative, so we hopefully avoid
+          -- repeated re-naming of binders by renaming the consumer.
+          left  <- unrollEmits left0
+          right <- alphaRename (allVars left) <$> unrollTakes right0
+          l     <- compLabel right0
+          comp  <- withKont steps $
+                   fuse left right >>=
+                   recoverRepeat >>=
+                   return . setCompLabel l >>=
+                   simplComp
           parFused
           traceFusion $ text "Fused" <+>
               text "producer:" </> indent 2 (ppr left) </>
               text "and consumer:" </> indent 2 (ppr right) </>
               text "into:" </> indent 2 (ppr comp)
           return $ unComp comp
-        where
-          -- We need to make sure that the producer and consumer have unique
-          -- sets of binders, so we freshen all binders in the consumer. Why the
-          -- consumer? Because >>> is left-associative, so we hopefully avoid
-          -- repeated re-naming of binders by renaming the consumer.
-          right :: Comp l
-          right = alphaRename (allVars left) right0
 
   stepsT steps =
       transSteps steps
@@ -377,8 +376,8 @@ runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
 runRight lss rss@(TakeC{} : _) =
     runLeft lss rss
 
-runRight lss rss@(TakesC{} : _) =
-    runLeft lss rss
+runRight _ (TakesC{} : _) =
+    faildoc $ text "Saw takes in consumer."
 
 runRight lss rss@(RepeatC _ _ c _ : _) =
     rightRepeat lss (unComp c ++ rss)
@@ -476,34 +475,8 @@ runLeft (ls@EmitC{} : _) (rs@TakesC{} : _) = do
 runLeft (EmitC{} : _) _ =
     faildoc $ text "emit paired with non-take."
 
-runLeft (EmitsC _ e _ : lss) (rs@TakeC{} : rss) = do
-    -- We can only fuse an emits and a take when we statically know the
-    -- size of the array being emitted.
-    n <- inferExp e >>= knownArraySize
-    if n == 1
-      then emitTake (idxE e 0) lss rss
-      else emitsNTake n
-  where
-    -- If we are emitting an array with more than one element, we rewrite
-    -- the emits as a for loop that yields each element of the array one by
-    -- one and try to fuse the rewritten computation.
-    emitsNTake :: Int -> F l m [Step l]
-    emitsNTake n = do
-        body <- runK $ forC 0 n $ \i -> emitC (idxE e i)
-        runLeft (unComp body ++ lss) (rs:rss)
-
-runLeft (EmitsC _ e _ : lss) (rs@(TakesC _ n' _ _) : rss) = do
-    n <- inferExp e >>= knownArraySize
-    when (n' /= n) $ do
-        (iota, _) <- inferExp e >>= checkArrT
-        traceFusion $ text "emits" <+> ppr iota <+> text "paired with" <+>
-                      ppr rs
-        fusionFailed
-        mzero
-    emitTake e lss rss
-
 runLeft (EmitsC{} : _) _ =
-    faildoc $ text "emits paired with non-take."
+    faildoc $ text "Saw emits in producer."
 
 runLeft lss@(RepeatC _ _ c _ : _) rss =
     leftRepeat (unComp c ++ lss) rss
@@ -728,3 +701,69 @@ unrollBody :: IsLabel l
            -> Comp l
 unrollBody z n f =
     mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
+
+{- Note [Unrolling takes and emits]
+
+These are two small program transformartions that convert takes and emits into
+for loops whose bodies do nothing except take/emit. This allows us to use the
+usual fusion mechanisms to handle takes and emits. After fusion, we convert
+loops of take/emit back into single takes/emits.
+-}
+
+unrollTakes :: (IsLabel l, MonadPlus m, MonadTc m)
+            => Comp l -> m (Comp l)
+unrollTakes = runUT . compT
+
+newtype UT m a = UT { runUT :: m a }
+  deriving (Functor, Applicative, Monad,
+            Alternative, MonadPlus,
+            MonadException,
+            MonadUnique,
+            MonadErr,
+            MonadFlags,
+            MonadTrace,
+            MonadTc)
+
+instance MonadTc m => TransformExp (UT m) where
+
+instance (IsLabel l, MonadTc m) => TransformComp l (UT m) where
+    stepsT (TakesC _ n tau _ : steps) = do
+        comp  <- runK $
+                 letrefC "xs" (arrKnownT n tau) $ \xs -> do
+                 forC 0 n $ \i -> do
+                   x <- takeC tau
+                   liftC $ assignE (idxE xs i) x
+                 liftC $ derefE xs
+        steps' <- stepsT steps
+        return $ unComp comp ++ steps'
+
+    stepsT steps =
+        transSteps steps
+
+unrollEmits :: (IsLabel l, MonadPlus m, MonadTc m)
+            => Comp l -> m (Comp l)
+unrollEmits = runUE . compT
+
+newtype UE m a = UE { runUE :: m a }
+  deriving (Functor, Applicative, Monad,
+            Alternative, MonadPlus,
+            MonadException,
+            MonadUnique,
+            MonadErr,
+            MonadFlags,
+            MonadTrace,
+            MonadTc)
+
+instance MonadTc m => TransformExp (UE m) where
+
+instance (IsLabel l, MonadTc m) => TransformComp l (UE m) where
+    stepsT (EmitsC _ e _ : steps) = do
+        n      <- inferExp e >>= knownArraySize
+        comp   <- runK $
+                  forC 0 n $ \i ->
+                    emitC (idxE e i)
+        steps' <- stepsT steps
+        return $ unComp comp ++ steps'
+
+    stepsT steps =
+        transSteps steps
