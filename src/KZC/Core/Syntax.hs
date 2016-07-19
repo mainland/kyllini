@@ -1827,6 +1827,10 @@ instance LiftedNum Exp Exp where
     liftNum2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) | Just c' <- liftNum2 op f c1 c2 =
         ConstE c' (e1 `srcspan` e2)
 
+    -- We special-case addition here to aid tests in the simplifier.
+    liftNum2 Add _f (BinopE Add e1 (ConstE (FixC sc s w 0 x) sloc) sloc') (ConstE (FixC _ _ _ 0 y) _) =
+        BinopE Add e1 (ConstE (FixC sc s w 0 (x+y)) sloc) sloc'
+
     liftNum2 op _f e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)
 
