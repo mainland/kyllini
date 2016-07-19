@@ -242,6 +242,15 @@ collectSteps m =
     (x, steps) <- listen m
     return (x, toList steps)
 
+collectLoopBody :: forall a l m . (IsLabel l, MonadTc m)
+                => F l m a
+                -> F l m (a, Comp (Joint l))
+collectLoopBody m = do
+    ((x, steps), maybe_l) <- collectLoopHead $ collectSteps m
+    case maybe_l of
+      Nothing -> return (x, mkComp steps)
+      Just _  -> faildoc $ text "Unexpected loop head in body of computation."
+
 setLoopHead :: MonadTc m => Joint l -> F l m ()
 setLoopHead l = modify $ \s -> s { loopHead = Just l }
 
@@ -598,11 +607,11 @@ runRight lss rss = do
         joinWhile :: F l m (Step (Joint l))
         joinWhile = do
             l'         <- joint lss (rs:rss)
-            (lss', c') <- collectSteps $
+            (lss', c') <- collectLoopBody $
                           withRightKont rss $
                           runRight lss (unComp c)
             guardLeftConvergence lss lss'
-            return $ WhileC l' e (mkComp c') s
+            return $ WhileC l' e c' s
 
         divergeWhile :: F l m [Step l]
         divergeWhile = do
@@ -623,16 +632,16 @@ runRight lss rss = do
       , m == n && len_l == len_r
       = do
         traceFusion $ text "runRight: attempting to merge for loops"
-        (lss', steps) <- collectSteps $
-                         extendVars [(v_l, tau_l), (v_r, tau_r)] $
-                         runRight (unComp c_l) (unComp c_r)
+        (lss', c) <- collectLoopBody $
+                     extendVars [(v_l, tau_l), (v_r, tau_r)] $
+                     runRight (unComp c_l) (unComp c_r)
         unless (null lss') $
             traceFusion $ text "runRight: failed to merge with left for"
         guard (null lss')
         l_joint <- joint (ls:lss) (rs:rss)
         traceFusion $ text "runRight: merged for loops"
         let step = ForC l_joint AutoUnroll v_r tau_r ei_r elen_r
-                   (subst1 (v_l /-> varE v_r + intE (i_l - i_r)) (mkComp steps))
+                   (subst1 (v_l /-> varE v_r + intE (i_l - i_r)) c)
                    s
         jointStep step $ runRight lss rss
 
@@ -667,14 +676,14 @@ runRight lss rss = do
         join :: F l m (Step (Joint l))
         join = do
             traceFusion $ text "runRight: attempting to join right for"
-            (lss', steps) <- collectSteps $
-                             withRightKont rss $
-                             extendVars [(v, tau)] $
-                             runRight lss (unComp c)
+            (lss', c') <- collectLoopBody $
+                          withRightKont rss $
+                          extendVars [(v, tau)] $
+                          runRight lss (unComp c)
             guardLeftConvergence lss lss'
             traceFusion $ text "runRight: joined right for"
             l' <- joint lss (rs:rss)
-            return $ ForC l' ann v tau e1 e2 (mkComp steps) s
+            return $ ForC l' ann v tau e1 e2 c' s
 
         diverge :: F l m [Step l]
         diverge = do
@@ -695,14 +704,14 @@ runRight lss rss = do
         join :: F l m (Step (Joint l))
         join = do
             traceFusion $ text "runRight: attempting to join left for"
-            (rss', steps) <- collectSteps $
-                             withLeftKont lss $
-                             extendVars [(v, tau)] $
-                             runLeft (unComp c) rss
+            (rss', c') <- collectLoopBody $
+                          withLeftKont lss $
+                          extendVars [(v, tau)] $
+                          runLeft (unComp c) rss
             guardRightConvergence rss rss'
             traceFusion $ text "runRight: joined left for"
             l' <- joint (ls:lss) rss
-            return $ ForC l' AutoUnroll v tau e1 e2 (mkComp steps) s
+            return $ ForC l' AutoUnroll v tau e1 e2 c' s
 
         diverge :: F l m [Step l]
         diverge = do
@@ -791,11 +800,11 @@ runLeft lss rss = do
         joinWhile :: F l m (Step (Joint l))
         joinWhile = do
             l'         <- joint (ls:lss) rss
-            (rss', c') <- collectSteps $
+            (rss', c') <- collectLoopBody $
                           withLeftKont lss $
                           runLeft (unComp c) rss
             guardRightConvergence rss rss'
-            return $ WhileC l' e (mkComp c') s
+            return $ WhileC l' e c' s
 
         divergeWhile :: F l m [Step l]
         divergeWhile = do
