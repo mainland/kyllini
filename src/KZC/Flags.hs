@@ -89,6 +89,7 @@ data DynFlag = Quiet
              | Coalesce
              | VectOnlyBytes
              | VectFilterAnn
+             | CoalesceTop
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)

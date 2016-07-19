@@ -201,6 +201,7 @@ fDynFlagOpts =
   , (Coalesce,      "coalesce",     "coalesce computations")
   , (VectOnlyBytes, "vect-bytes",   "only vectorize to byte widths")
   , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
+  , (CoalesceTop,   "coalesce-top", "coalesce top-level computation")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]

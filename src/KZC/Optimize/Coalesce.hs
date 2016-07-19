@@ -310,6 +310,45 @@ instance Pretty BC where
 instance MonadTc m => TransformExp (Co m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
+    programT (Program decls comp tau) = do
+        (decls', comp') <-
+          declsT decls $
+          inSTScope tau $
+          inLocalScope $
+          withLocContext comp (text "In definition of main") $ do
+          traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
+          (_s, a, b) <- askSTIndTypes
+          comp'      <- compT comp
+          flags      <- askFlags
+          if testDynFlag CoalesceTop flags
+            then do
+              bcs <- coalesceComp comp'
+              whenVerb $ traceCoalesce $ nest 2 $
+                text "Top-level candidates:" </> stack (map ppr (sort bcs))
+              asz <- typeSize a
+              bsz <- typeSize b
+              applyBestBlocking (sortAscendingBy (topMetric asz bsz) bcs)
+                                a b comp'
+            else return comp'
+        return $ Program decls' comp' tau
+      where
+        applyBestBlocking :: [BC]
+                          -> Type
+                          -> Type
+                          -> Comp l
+                          -> Co m (Comp l)
+        applyBestBlocking [] _ _ comp =
+            return comp
+
+        applyBestBlocking (bc:_) a b comp = do
+            traceCoalesce $
+             text "      Chose vectorization:" <+> ppr bc </>
+             text "For top-level computation:" <+> ppr (compRate comp)
+            comp' <- runK $ coalesce bc a b comp
+            whenVerb $ traceCoalesce $ nest 2 $
+              text "Coalesced top-level:" </> ppr comp'
+            rateComp comp'
+
     compT c = transComp c >>= rateComp
 
     stepT c0@(ParC ann b c1 c2 sloc) = withSummaryContext c0 $ do
@@ -381,6 +420,13 @@ parMetric bc1 bc2 = go (outBlock bc1) (inBlock bc2)
   where
     go (Just (B i j)) (Just (B _k l)) = fromIntegral (2*i - abs(l-j)*i - (l+j) `quot` 2)
     go _              _               = 0
+
+topMetric :: Int -> Int -> BC -> Int
+topMetric asz bsz BC { inBlock = Just (B i _), outBlock = Just (B j _) } =
+    i*(if i*asz `rem` 8 == 0 then 8 else 1) +
+    j*(if j*bsz `rem` 8 == 0 then 8 else 1)
+
+topMetric _ _ _ = 0
 
 coalesce :: forall l m . (IsLabel l, MonadTc m)
          => BC
