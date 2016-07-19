@@ -599,15 +599,26 @@ coleft :: (IsLabel l, MonadTc m)
        => Int
        -> Type
        -> K l m Exp
+coleft 1 tau =
+    repeatC $ do
+      x <- takeC  tau
+      emitC x
+
 coleft n tau =
     repeatC $ do
       xs <- takesC n tau
-      forC 0 n $ \i -> emitC (idxE xs i)
+      forC 0 n $ \i ->
+        emitC (idxE xs i)
 
 coright :: (IsLabel l, MonadTc m)
         => Int
         -> Type
         -> K l m Exp
+coright 1 tau =
+    repeatC $ do
+      x <- takeC  tau
+      emitC x
+
 coright n tau =
     letrefC "xs" (arrKnownT n tau) $ \xs ->
     repeatC $ do
