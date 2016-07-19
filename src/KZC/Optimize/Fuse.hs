@@ -245,13 +245,21 @@ collectSteps m =
 setLoopHead :: MonadTc m => Joint l -> F l m ()
 setLoopHead l = modify $ \s -> s { loopHead = Just l }
 
-collectLoopHead :: MonadTc m => F l m a -> F l m (a, Maybe (Joint l))
+collectLoopHead :: (IsLabel l, MonadTc m)
+                => F l m a
+                -> F l m (a, Maybe (Joint l))
 collectLoopHead m = do
+    old_seen     <- gets seen
     old_loopHead <- gets loopHead
-    modify $ \s -> s { loopHead = Nothing }
+    modify $ \s -> s { seen     = mempty
+                     , loopHead = Nothing
+                     }
     x <- m
-    l <- gets loopHead
-    modify $ \s -> s { loopHead = old_loopHead }
+    new_seen <- gets seen
+    l        <- gets loopHead
+    modify $ \s -> s { seen     = new_seen <> old_seen
+                     , loopHead = old_loopHead
+                     }
     return (x, l)
 
 repeatLabel :: forall l m . MonadTc m => F l m (Maybe (Joint l))
