@@ -710,11 +710,11 @@ alphaRename :: Subst Exp Var a => Set Var -> a -> a
 alphaRename = subst (mempty :: Map Var Exp)
 
 -- | Return the given array type's size, which must be statically known.
-knownArraySize :: MonadTc m => Type -> m Int
+knownArraySize :: MonadTc m => Type -> m (Int, Type)
 knownArraySize tau = do
-    (iota, _) <- checkArrT tau
+    (iota, tau_elem) <- checkArrT tau
     case iota of
-      ConstI n _ -> return n
+      ConstI n _ -> return (n, tau_elem)
       _          -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.
@@ -955,12 +955,13 @@ instance MonadTc m => TransformExp (UE m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (UE m) where
     stepsT (EmitsC _ e _ : steps) = do
-        n      <- inferExp e >>= knownArraySize
-        comp   <- runK $
-                  forC 0 n $ \i ->
-                    emitC (idxE e i)
-        comp'  <- rateComp comp
-        steps' <- stepsT steps
+        (n, tau) <- inferExp e >>= knownArraySize
+        comp     <- runK $
+                    letC "xs" (arrKnownT n tau) e $ \xs ->
+                    forC 0 n $ \i ->
+                      emitC (idxE xs i)
+        comp'    <- rateComp comp
+        steps'   <- stepsT steps
         return $ unComp comp' ++ steps'
 
     stepsT steps =
