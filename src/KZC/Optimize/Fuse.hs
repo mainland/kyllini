@@ -23,6 +23,7 @@ import Control.Applicative (Alternative, Applicative, (<$>), (<*>), pure)
 import Control.Monad (MonadPlus(..),
                       guard,
                       unless,
+                      void,
                       when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO(..),
@@ -44,10 +45,14 @@ import Control.Monad.Trans (lift)
 import Data.Foldable (toList)
 import Data.Loc (srclocOf)
 import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String (IsString(..))
+import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Embed
@@ -63,9 +68,41 @@ import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
+import KZC.Util.SetLike
 import KZC.Vars
 
-type Joint l = (l, l)
+data Joint l = JointL l l
+             | NewL l
+  deriving (Eq, Ord, Read, Show)
+
+collapseJoint :: IsLabel l => Joint l -> l
+collapseJoint (JointL l1 l2) = jointLabel l1 l2
+collapseJoint (NewL l)       = l
+
+instance IsString l => IsString (Joint l) where
+    fromString s = NewL (fromString s)
+
+instance Pretty l => Pretty (Joint l) where
+    ppr (JointL l1 l2) = ppr (l1, l2)
+    ppr (NewL l)       = ppr l
+
+instance IsLabel l => C.ToIdent (Joint l) where
+    toIdent = C.toIdent . collapseJoint
+
+instance IsLabel l => Gensym (Joint l) where
+    gensym s = NewL <$> gensym s
+
+    uniquify l = NewL <$> uniquify (collapseJoint l)
+
+instance Ord l => Fvs (Joint l) (Joint l) where
+    fvs = singleton
+
+instance Ord l => Subst (Joint l) (Joint l) (Joint l) where
+    substM x (theta, _) = fromMaybe x (Map.lookup x theta)
+
+instance IsLabel l => IsLabel (Joint l) where
+    indexLabel i l   = NewL $ indexLabel i (collapseJoint l)
+    jointLabel l1 l2 = NewL $ jointLabel (collapseJoint l1) (collapseJoint l2)
 
 data FEnv l = FEnv
     { leftKont  :: !l -- Current left continuation label
@@ -166,7 +203,7 @@ joint :: (IsLabel l, MonadTc m)
       => [Step l]
       -> [Step l]
       -> F l m (Joint l)
-joint lss rss = (,) <$> leftStepsLabel lss <*> rightStepsLabel rss
+joint lss rss = JointL <$> leftStepsLabel lss <*> rightStepsLabel rss
 
 jointStep :: (IsLabel l, MonadTc m)
           => Step (Joint l)
@@ -176,12 +213,12 @@ jointStep step k = do
     l_repeat <- repeatLabel
     l_joint  <- stepLabel step
     whenVerbLevel 2 $ traceFusion $
-        text "jointStep:" <+> ppr l_joint <> colon </> ppr (jointLabel <$> step)
+        text "jointStep:" <+> ppr l_joint <> colon </> ppr step
     saw <- sawLabel l_joint
     if saw
       then do when (l_repeat /= Just l_joint)
                 unalignedRepeats
-              modify $ \s -> s { loopHead = Just l_joint }
+              setLoopHead l_joint
               return []
       else do when (l_repeat == Just l_joint) $
                 modify $ \s -> s { seen = mempty }
@@ -195,12 +232,24 @@ collectSteps m =
     (x, steps) <- listen m
     return (x, toList steps)
 
+setLoopHead :: MonadTc m => Joint l -> F l m ()
+setLoopHead l = modify $ \s -> s { loopHead = Just l }
+
+collectLoopHead :: MonadTc m => F l m a -> F l m (a, Maybe (Joint l))
+collectLoopHead m = do
+    old_loopHead <- gets loopHead
+    modify $ \s -> s { loopHead = Nothing }
+    x <- m
+    l <- gets loopHead
+    modify $ \s -> s { loopHead = old_loopHead }
+    return (x, l)
+
 repeatLabel :: forall l m . MonadTc m => F l m (Maybe (Joint l))
 repeatLabel = do
     maybe_left  <- gets leftLoopHead
     maybe_right <- gets rightLoopHead
     case (maybe_left, maybe_right) of
-      (Just left, Just right) -> return $ Just (left, right)
+      (Just left, Just right) -> return $ Just $ JointL left right
       _                       -> return Nothing
 
 leftRepeat :: (IsLabel l, MonadTc m)
@@ -300,13 +349,9 @@ fuse :: forall l m . (IsLabel l, MonadTc m)
      -> Comp l         -- ^ Right computation
      -> F l m (Comp l)
 fuse left right = do
-    (_, steps) <- collectSteps $
-                  runRight (unComp left) (unComp right)
-    maybe_l    <- gets loopHead
-    let comp   =  mkComp steps
-    case maybe_l of
-      Nothing -> return $ jointLabel <$> comp
-      Just l  -> recoverRepeat l comp
+    comp <- recoverRepeat_ $
+            void $ runRight (unComp left) (unComp right)
+    return $ collapseJoint <$> comp
 
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
@@ -366,21 +411,21 @@ runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
     joinIf :: F l m (Step (Joint l), [Step l])
     joinIf = do
         l'          <- joint lss (rs:rss)
-        (lss1, c1') <- collectSteps $
+        (lss1, c1') <- recoverRepeat $
                        withRightKont rss $
                        runRight lss (unComp c1)
-        (lss2, c2') <- collectSteps $
+        (lss2, c2') <- recoverRepeat $
                        withRightKont rss $
                        runRight lss (unComp c2)
         guardLeftConvergence lss1 lss2
-        return (IfC l' e (mkComp c1') (mkComp c2') s, lss1)
+        return (IfC l' e c1' c2' s, lss1)
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l'       <- joint lss (rs:rss)
-        (_, c1') <- collectSteps $ runRight lss (unComp c1 ++ rss)
-        (_, c2') <- collectSteps $ runRight lss (unComp c2 ++ rss)
-        jointStep (IfC l' e (mkComp c1') (mkComp c2') s) $
+        l'  <- joint lss (rs:rss)
+        c1' <- recoverRepeat_ $ void $ runRight lss (unComp c1 ++ rss)
+        c2' <- recoverRepeat_ $ void $ runRight lss (unComp c2 ++ rss)
+        jointStep (IfC l' e c1' c2' s) $
           return []
 
 runRight lss (rs@(WhileC _l e c s) : rss) =
@@ -458,21 +503,21 @@ runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
     joinIf :: F l m (Step (Joint l), [Step l])
     joinIf = do
         l'          <- joint (ls:lss) rss
-        (rss1, c1') <- collectSteps $
+        (rss1, c1') <- recoverRepeat $
                        withLeftKont lss $
                        runLeft (unComp c1) rss
-        (rss2, c2') <- collectSteps $
+        (rss2, c2') <- recoverRepeat $
                        withLeftKont lss $
                        runLeft (unComp c2) rss
         guardRightConvergence rss1 rss2
-        return (IfC l' e (mkComp c1') (mkComp c2') s, rss1)
+        return (IfC l' e c1' c2' s, rss1)
 
     divergeIf :: F l m [Step l]
     divergeIf = do
-        l'       <- joint (ls:lss) rss
-        (_, c1') <- collectSteps $ runLeft (unComp c1 ++ lss) rss
-        (_, c2') <- collectSteps $ runLeft (unComp c2 ++ lss) rss
-        jointStep (IfC l' e (mkComp c1') (mkComp c2') s) $
+        l'  <- joint (ls:lss) rss
+        c1' <- recoverRepeat_ $ void $ runLeft (unComp c1 ++ lss) rss
+        c2' <- recoverRepeat_ $ void $ runLeft (unComp c2 ++ lss) rss
+        jointStep (IfC l' e c1' c2' s) $
           return []
 
 runLeft (ls@(WhileC _l e c s) : lss) rss =
@@ -724,29 +769,37 @@ When we detect a loop, we save the loop's label, which is then used by
 `recoverRepeat` to recover the loop.
 -}
 
-recoverRepeat :: forall l m . (IsLabel l, MonadTc m)
-              => Joint l
-              -> Comp (Joint l)
-              -> m (Comp l)
-recoverRepeat l comp =
-    go (unComp comp) []
+recoverRepeat :: forall a l m . (IsLabel l, MonadTc m)
+              => F l m a
+              -> F l m (a, Comp (Joint l))
+recoverRepeat m = do
+    ((x, steps), maybe_l) <- collectLoopHead $ collectSteps m
+    case maybe_l of
+      Nothing -> return (x, mkComp steps)
+      Just l  -> (,) <$> pure x <*> recover l steps []
   where
-    go :: [Step (Joint l)] -- ^ Remaining steps in the computation
-       -> [Step (Joint l)] -- ^ Prefix (reversed) of the computation
-       -> m (Comp l)
-    go [] prefix =
-        return $ jointLabel <$> mkComp (reverse prefix)
+    recover :: Joint l
+            -> [Step (Joint l)]       -- ^ Remaining steps in the computation
+            -> [Step (Joint l)]       -- ^ Prefix (reversed) of the computation
+            -> F l m (Comp (Joint l)) -- ^ Computation with recovered repeat
+    recover _ [] _prefix =
+        faildoc $ text "Could not find repeat label!"
 
-    go (step:steps) prefix | stepLabel step == Just l = do
+    recover l steps@(step:_) prefix | stepLabel step == Just l = do
         l_repeat <- gensym "repeatk"
-        return $ (jointLabel <$> mkComp (reverse prefix)) <>
-                 mkComp [RepeatC l_repeat AutoVect c (srclocOf c)]
+        return $ mkComp $ reverse $
+          RepeatC l_repeat AutoVect c (srclocOf c) : prefix
       where
-        c :: Comp l
-        c = jointLabel <$> mkComp (step:steps)
+        c :: Comp (Joint l)
+        c = mkComp steps
 
-    go (step:steps) prefix =
-        go steps (step:prefix)
+    recover l (step:steps) prefix =
+        recover l steps (step:prefix)
+
+recoverRepeat_ :: forall l m . (IsLabel l, MonadTc m)
+               => F l m ()
+               -> F l m (Comp (Joint l))
+recoverRepeat_ m = snd <$> recoverRepeat m
 
 {- Note [Fusing For Loops]
 

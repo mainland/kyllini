@@ -63,8 +63,8 @@ instance Subst Label Label Label where
     substM x (theta, _) = fromMaybe x (Map.lookup x theta)
 
 instance IsLabel Label where
-    indexLabel          = IdxL
-    jointLabel (l1, l2) = ParL l1 l2
+    indexLabel = IdxL
+    jointLabel = ParL
 
 type LProgram = Program Label
 
