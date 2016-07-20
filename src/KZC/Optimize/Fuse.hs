@@ -285,14 +285,6 @@ getStats = F $ lift $ lift $ lift get
 modifyStats :: MonadTc m => (FusionStats -> FusionStats) -> F l m ()
 modifyStats = F . lift . lift . lift . modify
 
-parFused :: MonadTc m => F l m ()
-parFused =
-    modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
-
-fusionFailed :: MonadTc m => F l m ()
-fusionFailed =
-    modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
-
 fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadIO m, MonadTc m)
             => Program l -> m (Program l)
 fuseProgram = runF . fuseProg
@@ -318,33 +310,27 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                    compT c2
       steps1    <- ifte (fusePar c1' c2')
                         return
-                        (fusionFailed >> return [ParC ann b c1' c2' sloc])
+                        (fusionFailed c1' c2' >> return [ParC ann b c1' c2' sloc])
       steps'    <- stepsT steps
       return $ steps1 ++ steps'
     where
       fusePar :: Comp l -> Comp l -> F l m [Step l]
       fusePar left0 right0 = do
+          left <- unrollEmits left0
+          -- We need to make sure that the producer and consumer have unique sets of
+          -- binders, so we freshen all binders in the consumer. Why the consumer?
+          -- Because >>> is left-associative, so we hopefully avoid repeated re-naming
+          -- of binders by renaming the consumer.
+          right <- unrollTakes $ alphaRename (allVars left0) right0
           traceFusion $ text "Attempting to fuse" <+>
-              text "producer:" </> indent 2 (ppr left0) </>
-              text "and consumer:" </> indent 2 (ppr right0)
-          -- We need to make sure that the producer and consumer have unique
-          -- sets of binders, so we freshen all binders in the consumer. Why the
-          -- consumer? Because >>> is left-associative, so we hopefully avoid
-          -- repeated re-naming of binders by renaming the consumer.
-          left  <- unrollEmits left0
-          right <- alphaRename (allVars left) <$> unrollTakes right0
-          l     <- compLabel right0
-          comp  <- withLeftKont steps $
-                   withRightKont steps $
-                   fuse left right >>=
-                   return . setCompLabel l >>=
-                   simplComp
-          parFused
-          traceFusion $ text "Fused" <+>
               text "producer:" </> indent 2 (ppr left) </>
-              text "and consumer:" </> indent 2 (ppr right) </>
-              text "into:" </> indent 2 (ppr comp)
-          checkFusionBlowup (size left0 + size right0) (size comp)
+              text "and consumer:" </> indent 2 (ppr right)
+          comp <- withLeftKont steps $
+                  withRightKont steps $
+                  fuse left right >>=
+                  simplComp
+          checkFusionBlowup (size left + size right) (size comp)
+          fusionSucceeded left right comp
           return $ unComp comp
 
       checkFusionBlowup :: Int -> Int -> F l m ()
@@ -356,6 +342,21 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
         where
           r :: Double
           r = fromIntegral s2 / fromIntegral s1
+
+      fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
+      fusionSucceeded left right result = do
+          modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
+          traceFusion $ text "Fused" <+>
+              text "producer:" </> indent 2 (ppr left) </>
+              text "and consumer:" </> indent 2 (ppr right) </>
+              text "into:" </> indent 2 (ppr result)
+
+      fusionFailed :: Comp l -> Comp l -> F l m ()
+      fusionFailed left right = do
+          modifyStats $ \s -> s { fusionFailures = fusionFailures s + 1 }
+          traceFusion $ text "Failed to fuse" <+>
+              text "producer:" </> indent 2 (ppr left) </>
+              text "and consumer:" </> indent 2 (ppr right)
 
   stepsT steps =
       transSteps steps
