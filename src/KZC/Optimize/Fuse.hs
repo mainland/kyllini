@@ -481,7 +481,7 @@ runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        unrollingFor c
+        unrollingFor ann c
         unrolled <- unrollFor l v e1 e2 c
         runRight lss (unComp unrolled ++ rss)
 
@@ -573,7 +573,7 @@ runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
 
     divergeFor :: F l m [Step l]
     divergeFor = do
-        unrollingFor c
+        unrollingFor ann c
         unrolled <- unrollFor l v e1 e2 c
         runLeft (unComp unrolled ++ lss) rss
 
@@ -687,21 +687,33 @@ nestedPar = do
     traceFusion $ text "Saw nested par in producer during par fusion."
     mzero
 
--- | Indicate that we are unrolling a for loop during fusion. This will fail
--- unless the appropriate flag has been specified.
-unrollingFor :: forall l m . (IsLabel l, MonadTc m) => Comp l -> F l m ()
-unrollingFor c = do
+-- | Indicate that we are unrolling a for loop with the given body during
+-- fusion. This will fail unless the appropriate flag has been specified or if
+-- the loop is one that we always unroll.
+unrollingFor :: (IsLabel l, MonadTc m) => UnrollAnn -> Comp l -> F l m ()
+unrollingFor ann body = do
     doUnroll <- asksFlags (testDynFlag FuseUnroll)
-    unless (alwaysUnroll (unComp c) || doUnroll) $ do
-        traceFusion $ text "Encountered diverging loop during fusion."
-        mzero
+    unless (ann == Unroll || alwaysUnroll body || (doUnroll && mayUnroll ann)) $ do
+      traceFusion $ text "Encountered diverging loop during fusion."
+      mzero
   where
-    -- We only always unroll loops of the forms we output when translating
-    -- emits/takes to loops of individual emit and take steps.
-    alwaysUnroll :: [Step l] -> Bool
-    alwaysUnroll [EmitC{}]                               = True
-    alwaysUnroll [TakeC{}, BindC{}, LiftC _ AssignE{} _] = True
-    alwaysUnroll _                                       = False
+    alwaysUnroll :: Comp l -> Bool
+    alwaysUnroll comp = allEmits (unComp comp) || allTakes (unComp comp)
+      where
+        allEmits :: [Step l] -> Bool
+        allEmits []           = True
+        allEmits (EmitC{}:ss) = allEmits ss
+        allEmits _            = False
+
+        allTakes :: [Step l] -> Bool
+        allTakes [] =
+            True
+
+        allTakes (TakeC{}:BindC _ (TameV bv) _ _:LiftC _ (AssignE _ (VarE v' _) _) _:ss) =
+            v' == bVar bv && allTakes ss
+
+        allTakes _ =
+            False
 
 unalignedRepeats :: MonadTc m => F l m ()
 unalignedRepeats =
