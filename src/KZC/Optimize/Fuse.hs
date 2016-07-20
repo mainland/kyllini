@@ -474,6 +474,7 @@ runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
         l'            <- joint lss (rs:rss)
         (lss', steps) <- collectSteps $
                          withRightKont rss $
+                         extendVars [(v, tau)] $
                          runRight lss (unComp c)
         guardLeftConvergence lss lss'
         return $ ForC l' ann v tau e1 e2 (mkComp steps) s
@@ -565,6 +566,7 @@ runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
         l'            <- joint (ls:lss) rss
         (rss', steps) <- collectSteps $
                          withLeftKont lss $
+                         extendVars [(v, tau)] $
                          runLeft (unComp c) rss
         guardRightConvergence rss rss'
         return $ ForC l' ann v tau e1 e2 (mkComp steps) s
