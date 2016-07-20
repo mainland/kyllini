@@ -370,239 +370,256 @@ fuse left right = do
             void $ runRight (unComp left) (unComp right)
     return $ collapseJoint <$> comp
 
+pprFirstStep :: IsLabel l => [Step l] -> Doc
+pprFirstStep []       = empty
+pprFirstStep (step:_) = ppr step
+
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
          -> [Step l]
          -> F l m [Step l]
-runRight lss [] =
-    return lss
-
-{- Note ["Free" Left Steps]
-
-We want to go ahead and run all "free" left steps so that they have already been
-executed when we look for confluence. Consider:
-
-    { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
-
-We want to be at the left computation's repeat head when we fuse pars so that
-the trace will align when we fuse the repeats.
-
-When running a "free" return or lift, we need to be sure to also run the
-subsequent bind. However, we don't want to run a final lift or return, because
-those would be the final value of the overall fused computation---we need to
-wait until the right side is done running before running a final lift or return
-on the left.
--}
-
-runRight (ls1:ls2:lss) rss | isFree ls1 ls2 = do
-    l1' <- joint (ls1:ls2:lss) rss
-    l2' <- joint (ls2:lss) rss
-    relabelStep l1' ls1 $
-      relabelStep l2' ls2 $
-      runRight lss rss
+runRight lss rss = do
+    whenVerb $ traceFusion $ text "runRight:" </>
+        indent 2 (nest 2 $ text "left:" </> pprFirstStep lss) </>
+        indent 2 (nest 2 $ text "right:" </> pprFirstStep rss)
+    run lss rss
   where
-    isFree :: Step l -> Step l -> Bool
-    isFree ReturnC{} BindC{} = True
-    isFree LiftC{}   BindC{} = True
-    isFree _         _       = False
+    run :: [Step l] -> [Step l] -> F l m [Step l]
+    run lss [] =
+        return lss
 
--- lss@(_:_) ensures we won't match a final lift/return. A final let is weird
--- and useless anyway, so we don't worry about it :)
-runRight (ls:lss@(_:_)) rss | isFree ls = do
-    l' <- joint (ls:lss) rss
-    relabelStep l' ls $
-      runRight lss rss
-  where
-    isFree :: Step l -> Bool
-    isFree LetC{}              = True
-    isFree ReturnC{}           = True
-    isFree LiftC{}             = True
-    isFree (BindC _ WildV _ _) = True
-    isFree _                   = False
+    {- Note ["Free" Left Steps]
 
-runRight lss (rs@(IfC _l e c1 c2 s) : rss) =
-    ifte joinIf
-         (\(step, lss') -> jointStep step $ runRight lss' rss)
-         divergeIf
-  where
-    joinIf :: F l m (Step (Joint l), [Step l])
-    joinIf = do
-        l'          <- joint lss (rs:rss)
-        (lss1, c1') <- recoverRepeat $
-                       withRightKont rss $
-                       runRight lss (unComp c1)
-        (lss2, c2') <- recoverRepeat $
-                       withRightKont rss $
-                       runRight lss (unComp c2)
-        guardLeftConvergence lss1 lss2
-        return (IfC l' e c1' c2' s, lss1)
+    We want to go ahead and run all "free" left steps so that they have already
+    been executed when we look for confluence. Consider:
 
-    divergeIf :: F l m [Step l]
-    divergeIf = do
-        l'  <- joint lss (rs:rss)
-        c1' <- recoverRepeat_ $ void $ runRight lss (unComp c1 ++ rss)
-        c2' <- recoverRepeat_ $ void $ runRight lss (unComp c2 ++ rss)
-        jointStep (IfC l' e c1' c2' s) $
-          return []
+        { let x = ...; let y = ...; repeat { ... }} >>> repeat { ... }
 
-runRight lss (rs@(WhileC _l e c s) : rss) =
-    ifte joinWhile
-         (\step -> jointStep step $ runRight lss rss)
-         divergeWhile
-  where
-    joinWhile :: F l m (Step (Joint l))
-    joinWhile = do
-        l'         <- joint lss (rs:rss)
-        (lss', c') <- collectSteps $
-                      withRightKont rss $
-                      runRight lss (unComp c)
-        guardLeftConvergence lss lss'
-        return $ WhileC l' e (mkComp c') s
+    We want to be at the left computation's repeat head when we fuse pars so
+    that the trace will align when we fuse the repeats.
 
-    divergeWhile :: F l m [Step l]
-    divergeWhile = do
-        traceFusion $ text "Encountered diverging while in consumer"
-        mzero
+    When running a "free" return or lift, we need to be sure to also run the
+    subsequent bind. However, we don't want to run a final lift or return,
+    because those would be the final value of the overall fused computation---we
+    need to wait until the right side is done running before running a final
+    lift or return on the left.
+    -}
+    run (ls1:ls2:lss) rss | isFree ls1 ls2 = do
+        l1' <- joint (ls1:ls2:lss) rss
+        l2' <- joint (ls2:lss) rss
+        relabelStep l1' ls1 $
+          relabelStep l2' ls2 $
+          runRight lss rss
+      where
+        isFree :: Step l -> Step l -> Bool
+        isFree ReturnC{} BindC{} = True
+        isFree LiftC{}   BindC{} = True
+        isFree _         _       = False
 
--- See Note [Fusing For Loops]
-runRight lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
-    ifte joinFor
-         (\step -> jointStep step $ runRight lss rss)
-         divergeFor
-  where
-    joinFor :: F l m (Step (Joint l))
-    joinFor = do
-        l'            <- joint lss (rs:rss)
-        (lss', steps) <- collectSteps $
-                         withRightKont rss $
-                         extendVars [(v, tau)] $
-                         runRight lss (unComp c)
-        guardLeftConvergence lss lss'
-        return $ ForC l' ann v tau e1 e2 (mkComp steps) s
+    -- lss@(_:_) ensures we won't match a final lift/return. A final let is weird
+    -- and useless anyway, so we don't worry about it :)
+    run (ls:lss@(_:_)) rss | isFree ls = do
+        l' <- joint (ls:lss) rss
+        relabelStep l' ls $
+          runRight lss rss
+      where
+        isFree :: Step l -> Bool
+        isFree LetC{}              = True
+        isFree ReturnC{}           = True
+        isFree LiftC{}             = True
+        isFree (BindC _ WildV _ _) = True
+        isFree _                   = False
 
-    divergeFor :: F l m [Step l]
-    divergeFor = do
-        unrollingFor ann c
-        unrolled <- unrollFor l v e1 e2 c
-        runRight lss (unComp unrolled ++ rss)
+    run lss (rs@(IfC _l e c1 c2 s) : rss) =
+        ifte joinIf
+             (\(step, lss') -> jointStep step $ runRight lss' rss)
+             divergeIf
+      where
+        joinIf :: F l m (Step (Joint l), [Step l])
+        joinIf = do
+            l'          <- joint lss (rs:rss)
+            (lss1, c1') <- recoverRepeat $
+                           withRightKont rss $
+                           runRight lss (unComp c1)
+            (lss2, c2') <- recoverRepeat $
+                           withRightKont rss $
+                           runRight lss (unComp c2)
+            guardLeftConvergence lss1 lss2
+            return (IfC l' e c1' c2' s, lss1)
 
-runRight lss rss@(TakeC{} : _) =
-    runLeft lss rss
+        divergeIf :: F l m [Step l]
+        divergeIf = do
+            l'  <- joint lss (rs:rss)
+            c1' <- recoverRepeat_ $ void $ runRight lss (unComp c1 ++ rss)
+            c2' <- recoverRepeat_ $ void $ runRight lss (unComp c2 ++ rss)
+            jointStep (IfC l' e c1' c2' s) $
+              return []
 
-runRight _ (TakesC{} : _) =
-    faildoc $ text "Saw takes in consumer."
+    run lss (rs@(WhileC _l e c s) : rss) =
+        ifte joinWhile
+             (\step -> jointStep step $ runRight lss rss)
+             divergeWhile
+      where
+        joinWhile :: F l m (Step (Joint l))
+        joinWhile = do
+            l'         <- joint lss (rs:rss)
+            (lss', c') <- collectSteps $
+                          withRightKont rss $
+                          runRight lss (unComp c)
+            guardLeftConvergence lss lss'
+            return $ WhileC l' e (mkComp c') s
 
-runRight lss rss@(RepeatC _ _ c _ : _) =
-    withRightKont rss $ do
-    rightRepeat c
-    runRight lss (unComp c ++ rss)
+        divergeWhile :: F l m [Step l]
+        divergeWhile = do
+            traceFusion $ text "Encountered diverging while in consumer"
+            mzero
 
-runRight _lss (ParC{} : _rss) =
-    nestedPar
+    -- See Note [Fusing For Loops]
+    run lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
+        ifte joinFor
+             (\step -> jointStep step $ runRight lss rss)
+             divergeFor
+      where
+        joinFor :: F l m (Step (Joint l))
+        joinFor = do
+            l'            <- joint lss (rs:rss)
+            (lss', steps) <- collectSteps $
+                             withRightKont rss $
+                             extendVars [(v, tau)] $
+                             runRight lss (unComp c)
+            guardLeftConvergence lss lss'
+            return $ ForC l' ann v tau e1 e2 (mkComp steps) s
 
-runRight lss (rs:rss) = do
-    l' <- joint lss (rs:rss)
-    relabelStep l' rs $
-      runRight lss rss
+        divergeFor :: F l m [Step l]
+        divergeFor = do
+            unrollingFor ann c
+            unrolled <- unrollFor l v e1 e2 c
+            runRight lss (unComp unrolled ++ rss)
+
+    run lss rss@(TakeC{} : _) =
+        runLeft lss rss
+
+    run _ (TakesC{} : _) =
+        faildoc $ text "Saw takes in consumer."
+
+    run lss rss@(RepeatC _ _ c _ : _) =
+        withRightKont rss $ do
+        rightRepeat c
+        runRight lss (unComp c ++ rss)
+
+    run _lss (ParC{} : _rss) =
+        nestedPar
+
+    run lss (rs:rss) = do
+        l' <- joint lss (rs:rss)
+        relabelStep l' rs $
+          runRight lss rss
 
 runLeft :: forall l m . (IsLabel l, MonadTc m)
         => [Step l]
         -> [Step l]
         -> F l m [Step l]
-runLeft [] rss =
-    return rss
-
-runLeft (ls@(IfC _l e c1 c2 s) : lss) rss =
-    ifte joinIf
-         (\(step, rss') -> jointStep step $ runLeft lss rss')
-         divergeIf
+runLeft lss rss = do
+    whenVerb $ traceFusion $ text "runLeft:" </>
+        indent 2 (nest 2 $ text "left:" </> pprFirstStep lss) </>
+        indent 2 (nest 2 $ text "right:" </> pprFirstStep rss)
+    run lss rss
   where
-    joinIf :: F l m (Step (Joint l), [Step l])
-    joinIf = do
-        l'          <- joint (ls:lss) rss
-        (rss1, c1') <- recoverRepeat $
-                       withLeftKont lss $
-                       runLeft (unComp c1) rss
-        (rss2, c2') <- recoverRepeat $
-                       withLeftKont lss $
-                       runLeft (unComp c2) rss
-        guardRightConvergence rss1 rss2
-        return (IfC l' e c1' c2' s, rss1)
+    run :: [Step l] -> [Step l] -> F l m [Step l]
+    run [] rss =
+        return rss
 
-    divergeIf :: F l m [Step l]
-    divergeIf = do
-        l'  <- joint (ls:lss) rss
-        c1' <- recoverRepeat_ $ void $ runLeft (unComp c1 ++ lss) rss
-        c2' <- recoverRepeat_ $ void $ runLeft (unComp c2 ++ lss) rss
-        jointStep (IfC l' e c1' c2' s) $
-          return []
+    run (ls@(IfC _l e c1 c2 s) : lss) rss =
+        ifte joinIf
+             (\(step, rss') -> jointStep step $ runLeft lss rss')
+             divergeIf
+      where
+        joinIf :: F l m (Step (Joint l), [Step l])
+        joinIf = do
+            l'          <- joint (ls:lss) rss
+            (rss1, c1') <- recoverRepeat $
+                           withLeftKont lss $
+                           runLeft (unComp c1) rss
+            (rss2, c2') <- recoverRepeat $
+                           withLeftKont lss $
+                           runLeft (unComp c2) rss
+            guardRightConvergence rss1 rss2
+            return (IfC l' e c1' c2' s, rss1)
 
-runLeft (ls@(WhileC _l e c s) : lss) rss =
-    ifte joinWhile
-         (\step -> jointStep step $ runLeft lss rss)
-         divergeWhile
-  where
-    joinWhile :: F l m (Step (Joint l))
-    joinWhile = do
-        l'         <- joint (ls:lss) rss
-        (rss', c') <- collectSteps $
-                      withLeftKont lss $
-                      runLeft (unComp c) rss
-        guardRightConvergence rss rss'
-        return $ WhileC l' e (mkComp c') s
+        divergeIf :: F l m [Step l]
+        divergeIf = do
+            l'  <- joint (ls:lss) rss
+            c1' <- recoverRepeat_ $ void $ runLeft (unComp c1 ++ lss) rss
+            c2' <- recoverRepeat_ $ void $ runLeft (unComp c2 ++ lss) rss
+            jointStep (IfC l' e c1' c2' s) $
+              return []
 
-    divergeWhile :: F l m [Step l]
-    divergeWhile = do
-        traceFusion $ text "Encountered diverging while in producer"
+    run (ls@(WhileC _l e c s) : lss) rss =
+        ifte joinWhile
+             (\step -> jointStep step $ runLeft lss rss)
+             divergeWhile
+      where
+        joinWhile :: F l m (Step (Joint l))
+        joinWhile = do
+            l'         <- joint (ls:lss) rss
+            (rss', c') <- collectSteps $
+                          withLeftKont lss $
+                          runLeft (unComp c) rss
+            guardRightConvergence rss rss'
+            return $ WhileC l' e (mkComp c') s
+
+        divergeWhile :: F l m [Step l]
+        divergeWhile = do
+            traceFusion $ text "Encountered diverging while in producer"
+            mzero
+
+    -- See Note [Fusing For Loops]
+    run (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
+        ifte joinFor
+             (\step -> jointStep step $ runLeft lss rss)
+             divergeFor
+      where
+        joinFor :: F l m (Step (Joint l))
+        joinFor = do
+            l'            <- joint (ls:lss) rss
+            (rss', steps) <- collectSteps $
+                             withLeftKont lss $
+                             extendVars [(v, tau)] $
+                             runLeft (unComp c) rss
+            guardRightConvergence rss rss'
+            return $ ForC l' ann v tau e1 e2 (mkComp steps) s
+
+        divergeFor :: F l m [Step l]
+        divergeFor = do
+            unrollingFor ann c
+            unrolled <- unrollFor l v e1 e2 c
+            runLeft (unComp unrolled ++ lss) rss
+
+    run lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
+        emitTake e lss rss
+
+    run (ls@EmitC{} : _) (rs@TakesC{} : _) = do
+        traceFusion $ ppr ls <+> text "paired with" <+> ppr rs
         mzero
 
--- See Note [Fusing For Loops]
-runLeft (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
-    ifte joinFor
-         (\step -> jointStep step $ runLeft lss rss)
-         divergeFor
-  where
-    joinFor :: F l m (Step (Joint l))
-    joinFor = do
-        l'            <- joint (ls:lss) rss
-        (rss', steps) <- collectSteps $
-                         withLeftKont lss $
-                         extendVars [(v, tau)] $
-                         runLeft (unComp c) rss
-        guardRightConvergence rss rss'
-        return $ ForC l' ann v tau e1 e2 (mkComp steps) s
+    run (EmitC{} : _) _ =
+        faildoc $ text "emit paired with non-take."
 
-    divergeFor :: F l m [Step l]
-    divergeFor = do
-        unrollingFor ann c
-        unrolled <- unrollFor l v e1 e2 c
-        runLeft (unComp unrolled ++ lss) rss
+    run (EmitsC{} : _) _ =
+        faildoc $ text "Saw emits in producer."
 
-runLeft lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
-    emitTake e lss rss
+    run lss@(RepeatC _ _ c _ : _) rss =
+        withLeftKont lss $ do
+        leftRepeat c
+        runLeft (unComp c ++ lss) rss
 
-runLeft (ls@EmitC{} : _) (rs@TakesC{} : _) = do
-    traceFusion $ ppr ls <+> text "paired with" <+> ppr rs
-    mzero
+    run (ParC{} : _lss) _rss =
+        nestedPar
 
-runLeft (EmitC{} : _) _ =
-    faildoc $ text "emit paired with non-take."
-
-runLeft (EmitsC{} : _) _ =
-    faildoc $ text "Saw emits in producer."
-
-runLeft lss@(RepeatC _ _ c _ : _) rss =
-    withLeftKont lss $ do
-    leftRepeat c
-    runLeft (unComp c ++ lss) rss
-
-runLeft (ParC{} : _lss) _rss =
-    nestedPar
-
-runLeft (ls:lss) rss = do
-    l' <- joint (ls:lss) rss
-    relabelStep l' ls $
-      runLeft lss rss
+    run (ls:lss) rss = do
+        l' <- joint (ls:lss) rss
+        relabelStep l' ls $
+          runLeft lss rss
 
 -- | Add a step to the fused computation after re-labeling it with the given
 -- label, and then execute the continuation ensuring that the step's binders
