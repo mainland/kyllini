@@ -57,6 +57,7 @@ import Data.String (IsString(..))
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Rate
 import qualified KZC.Core.Comp as C
 import KZC.Core.Embed
 import KZC.Core.Lint
@@ -929,8 +930,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (UT m) where
                    x <- takeC tau
                    liftC $ assignE (idxE xs i) x
                  liftC $ derefE xs
+        comp'  <- rateComp comp
         steps' <- stepsT steps
-        return $ unComp comp ++ steps'
+        return $ unComp comp' ++ steps'
 
     stepsT steps =
         transSteps steps
@@ -957,8 +959,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (UE m) where
         comp   <- runK $
                   forC 0 n $ \i ->
                     emitC (idxE e i)
+        comp'  <- rateComp comp
         steps' <- stepsT steps
-        return $ unComp comp ++ steps'
+        return $ unComp comp' ++ steps'
 
     stepsT steps =
         transSteps steps
