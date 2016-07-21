@@ -52,6 +52,10 @@ module KZC.Core.Smart (
     isConstE,
     isArrE,
 
+    tagIdentityC,
+    isIdentityC,
+    identityRateC,
+
     refPathRoot
   ) where
 
@@ -248,6 +252,20 @@ isArrE :: Exp -> Bool
 isArrE (ConstE ArrayC{} _) = True
 isArrE ArrayE{}            = True
 isArrE _                   = False
+
+-- | Tag a computation as an identity with rate n.
+tagIdentityC :: Int -> Comp l -> Comp l
+tagIdentityC n comp = comp{compTag = Just (IdT n)}
+
+-- | Return 'True' if computation is an identity computation.
+isIdentityC :: Comp l -> Bool
+isIdentityC Comp{compTag = Just IdT{}} = True
+isIdentityC _                          = False
+
+-- | If a computation is the identityq, return its rate.
+identityRateC :: Comp l -> Maybe Int
+identityRateC Comp{compTag = Just (IdT n)} = Just n
+identityRateC _                            = Nothing
 
 -- | Given an expression of type @ref \tau@, return the source variable of type
 -- @ref@.

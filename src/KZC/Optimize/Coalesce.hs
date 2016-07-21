@@ -284,6 +284,33 @@ mAX_BLOCK_SIZE = 512
 mAX_BATCH_SIZE :: Int
 mAX_BATCH_SIZE = 288
 
+class Ord a => Metric a where
+    infixl 6  .+.
+
+    (.+.) :: a -> a -> a
+
+data BlockMetric = BlockMetric !Int -- ^ 1 if byte-sized, 0 otherwise
+                               !Int -- ^ Negated block count
+                               !Int -- ^ Negated block size
+  deriving (Eq, Ord, Show)
+
+instance Pretty BlockMetric where
+    ppr (BlockMetric x y z) = ppr (x, y, z)
+
+instance Metric BlockMetric where
+    BlockMetric s t u .+. BlockMetric x y z = BlockMetric (s+x) (t+y) (u+z)
+
+data ParMetric = ParMetric !BlockMetric -- ^ Block utilities
+                           !Int         -- ^ 1 if block sizes match, 0 otherwise
+                           !Int         -- ^ Negated size of necessary rate matcher
+  deriving (Eq, Ord, Show)
+
+instance Pretty ParMetric where
+    ppr (ParMetric x y z) = ppr (x, y, z)
+
+instance Metric ParMetric where
+    ParMetric s t u .+. ParMetric x y z = ParMetric (s.+.x) (t+y) (u+z)
+
 -- | Input/output blocking, of the form $i^j$.
 data B = B !Int !Int
   deriving (Eq, Ord, Show)
@@ -295,7 +322,7 @@ instance Pretty B where
 data BC = BC { inBlock   :: Maybe B
              , outBlock  :: Maybe B
              , batchFact :: !Int
-             , bcUtil    :: !Double
+             , bcUtil    :: !BlockMetric
              }
   deriving (Eq, Ord, Show)
 
@@ -310,6 +337,45 @@ instance Pretty BC where
 instance MonadTc m => TransformExp (Co m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
+    programT (Program decls comp tau) = do
+        (decls', comp') <-
+          declsT decls $
+          inSTScope tau $
+          inLocalScope $
+          withLocContext comp (text "In definition of main") $ do
+          traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
+          (_s, a, b) <- askSTIndTypes
+          comp'      <- compT comp
+          flags      <- askFlags
+          if testDynFlag CoalesceTop flags
+            then do
+              bcs <- coalesceComp comp'
+              whenVerb $ traceCoalesce $ nest 2 $
+                text "Top-level candidates:" </> stack (map ppr (sort bcs))
+              asz <- typeSize a
+              bsz <- typeSize b
+              applyBestBlocking (sortAscendingBy (topMetric asz bsz) bcs)
+                                a b comp'
+            else return comp'
+        return $ Program decls' comp' tau
+      where
+        applyBestBlocking :: [BC]
+                          -> Type
+                          -> Type
+                          -> Comp l
+                          -> Co m (Comp l)
+        applyBestBlocking [] _ _ comp =
+            return comp
+
+        applyBestBlocking (bc:_) a b comp = do
+            traceCoalesce $
+             text "      Chose vectorization:" <+> ppr bc </>
+             text "For top-level computation:" <+> ppr (compRate comp)
+            comp' <- runK $ coalesce Top bc a b comp
+            whenVerb $ traceCoalesce $ nest 2 $
+              text "Coalesced top-level:" </> ppr comp'
+            rateComp comp'
+
     compT c = transComp c >>= rateComp
 
     stepT c0@(ParC ann b c1 c2 sloc) = withSummaryContext c0 $ do
@@ -322,106 +388,266 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
           text "Producer:" <+> ppr (compRate c1) <+> text "::" <+> pprST a b </>
           ppr c1
         (c1', bcs1) <- localSTIndTypes (Just (s, a, b)) $
-                       withRightCtx (compRate c2) $
-                       coalesceComp c1
-        whenVerb $ traceCoalesce $ nest 2 $
-          text "Producer candidates:" </> stack (map ppr (sort bcs1))
+                       withRightCtx (compRate c2) $ do
+                       c1'  <- compT c1
+                       bcs1 <- coalesceComp c1'
+                       return (c1', bcs1)
         traceCoalesce $ nest 2 $
           text "Consumer:" <+> ppr (compRate c2) <+> text "::" <+> pprST b c </>
           ppr c2
         (c2', bcs2) <- localSTIndTypes (Just (b, b, c)) $
-                       withLeftCtx (compRate c1) $
-                       coalesceComp c2
+                       withLeftCtx (compRate c1) $ do
+                       c2'  <- compT c2
+                       bcs2 <- coalesceComp c2'
+                       return (c2', bcs2)
+        whenVerb $ traceCoalesce $ nest 2 $
+          text "Producer candidates:" </> stack (map ppr (sort bcs1))
         whenVerb $ traceCoalesce $ nest 2 $
           text "Consumer candidates:" </> stack (map ppr (sort bcs2))
-        let bcs = sortBy (flip compare `on` thrd)
-                  [(bc1, bc2, u) | bc1 <- bcs1,
-                                   bc2 <- bcs2,
-                                   compat bc1 bc2,
-                                   let u = bcUtil bc1 +
-                                           parUtil bc1 bc2 +
-                                           bcUtil bc2]
-        whenVerb $ traceCoalesce $ nest 2 $
-          text "Compatible candidates:" </> stack (map ppr bcs)
-        case bcs of
-          [] -> return $ ParC ann b c1' c2' sloc
-          bc@(bc1,bc2,_):_ -> do
+        let bcs = sortAscendingBy (uncurry parMetric)
+                                  [(bc1, bc2) | bc1 <- bcs1, bc2 <- bcs2]
+        c' <- applyBestBlocking bcs a b c c1' c2'
+        traceCoalesce $ nest 2 $
+          text "Final coalesced par:" </> ppr c'
+        return c'
+      where
+        applyBestBlocking :: [(BC,BC)]
+                          -> Type
+                          -> Type
+                          -> Type
+                          -> Comp l
+                          -> Comp l
+                          -> Co m (Step l)
+        applyBestBlocking [] _ b _ c1 c2 =
+            return $ ParC ann b c1 c2 sloc
+
+        applyBestBlocking (bc@(bc1,bc2):_) a b c c1 c2 = do
             traceCoalesce $ nest 2 $
-             text "Chose vectorization:" <+> ppr bc </>
-             text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
-            parc <- runK $ parC b (coalesce bc1 a b c1') (coalesce bc2 b c c2')
+              text "Chose vectorization:" <+> ppr bc </>
+              text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
+            parc <- runK $ coalescePar a b c c1 c2 bc1 bc2
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
-            return (head (unComp parc))
-      where
-        compat :: BC -> BC -> Bool
-        compat bc1 bc2 =
-            go (outBlock bc1) (inBlock bc2)
-          where
-            go :: Maybe B -> Maybe B -> Bool
-            go Nothing         Nothing       = True
-            go (Just (B i _)) (Just (B j _)) = j == i
-            go _              _              = False
+            head . unComp <$> rateComp parc
 
         pprST :: Type -> Type -> Doc
         pprST a b = text "ST" <+> pprPrec appPrec1 a <+> pprPrec appPrec1 b
 
-        thrd :: (a, b, c) -> c
-        thrd (_, _, x) = x
-
     stepT step = transStep step
 
+sortAscendingBy :: Ord b => (a -> b) -> [a] -> [a]
+sortAscendingBy f = sortBy (flip compare `on` f)
+
+blockMetric :: Int -> Maybe B -> BlockMetric
+blockMetric _ Nothing =
+    BlockMetric 0 0 0
+
+blockMetric sz (Just (B i j)) =
+    BlockMetric (if i*sz `rem` 8 == 0 then 1 else 0)
+                (-fromIntegral (i*(j-1)))
+                (-fromIntegral i)
+
+parMetric :: BC -> BC -> ParMetric
+parMetric bc1 bc2 =
+    go (outBlock bc1) (inBlock bc2)
+  where
+    go :: Maybe B -> Maybe B -> ParMetric
+    go (Just (B i _j)) (Just (B k _l)) =
+        ParMetric (bcUtil bc1 .+. bcUtil bc2)
+                  (if i == k then 1 else 0)
+                  (if i == k then 0 else -fromIntegral (lcm i k))
+
+    go _ _ =
+        ParMetric (bcUtil bc1 .+. bcUtil bc2) 0 0
+
+topMetric :: Int -> Int -> BC -> Int
+topMetric asz bsz BC { inBlock = Just (B i _), outBlock = Just (B j _) } =
+    i*(if i*asz `rem` 8 == 0 then 8 else 1) +
+    j*(if j*bsz `rem` 8 == 0 then 8 else 1)
+
+topMetric _ _ _ = 0
+
+data Mode = Top
+          | Producer
+          | Consumer
+  deriving (Eq, Ord, Show)
+
+coalescePar :: forall l m . (IsLabel l, MonadTc m)
+            => Type
+            -> Type
+            -> Type
+            -> Comp l
+            -> Comp l
+            -> BC
+            -> BC
+            -> K l m Exp
+coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)}
+  | i == j    = matchedRates
+  | otherwise = mismatchedRates
+  where
+    matchedRates :: K l m Exp
+    matchedRates =
+        parC (coArrT i b)
+             (coalesce Producer bc1 a b comp1)
+             (coalesce Consumer bc2 b c comp2)
+
+    mismatchedRates :: K l m Exp
+    mismatchedRates =
+        parC (coArrT j b)
+             (parC (coArrT i b)
+                   (coalesce Producer bc1 a b comp1)
+                   matcher)
+             (coalesce Consumer bc2 b c comp2)
+      where
+        n :: Int
+        n = lcm i j
+
+        matcher :: K l m Exp
+        matcher
+          -- Decrease rate for consumer
+          | i == n =
+            repeatC $ do
+            xs <- takeC (coArrT n b)
+            forC 0 (n `quot` j) $ \k ->
+               if j == 1
+                 then emitC (idxE xs (k*fromIntegral j))
+                 else emitC (coSliceE xs (k*fromIntegral j) (fromIntegral j))
+
+          -- Increase rate for consumer
+          | j == n =
+            repeatC $
+            letrefC "xs" (coArrT n b) $ \xs -> do
+              forC 0 (n `quot` i) $ \k -> do
+                ys <- takeC (coArrT i b)
+                liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+              ys <- liftC $ derefE xs
+              emitC ys
+
+          -- Increase both rates up to n
+          | otherwise =
+            repeatC $
+            letrefC "xs" (coArrT n b) $ \xs -> do
+              forC 0 (n `quot` i) $ \k -> do
+                ys <- takeC (coArrT i b)
+                liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
+              forC 0 (n `quot` j) $ \k -> do
+                ys <- liftC $ derefE xs
+                emitC (coSliceE ys (k*fromIntegral j) (fromIntegral j))
+
+coalescePar a b c comp1 comp2 bc1 bc2 =
+    parC b (coalesce Top bc1 a b comp1)
+           (coalesce Top bc2 b c comp2)
+
+-- The type of the block of n elements we pass between computers. When n =
+-- 1, we use elements rather than arrays of size 1.
+coArrT :: Int -> Type -> Type
+coArrT 1 tau = tau
+coArrT n tau = arrKnownT n tau
+
+-- Extract an array slice. If the slice is only 1 element in length, just return
+-- the element itself.
+coSliceE :: Exp -> Exp -> Int -> Exp
+coSliceE e1 e2 1   = idxE e1 e2
+coSliceE e1 e2 len = sliceE e1 e2 len
+
 coalesce :: forall l m . (IsLabel l, MonadTc m)
-         => BC
+         => Mode
+         -> BC
          -> Type
          -> Type
          -> Comp l
          -> K l m Exp
-coalesce bc a b comp =
+coalesce mode bc a b comp =
     go bc
   where
     go :: BC -> K l m Exp
     go BC{inBlock = Just (B i _j), outBlock = Just (B k _l)} =
-        parC a (coleft i a) (parC b (compC comp) (coright k b))
+        -- Associate to the right
+        coleft mode i a (coright mode k b (compC comp))
+        -- Associate to the left
+        -- coright mode k b (coleft mode i a (compC comp))
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
-        parC a (coleft i a) (compC comp)
+        coleft mode i a (compC comp)
 
     go BC{inBlock = Nothing, outBlock = Just (B k _l)} =
-        parC b (compC comp) (coright k b)
+        coright mode k b (compC comp)
 
     go _ =
         compC comp
 
-blockUtil :: Maybe B -> Double
-blockUtil Nothing        = 0
-blockUtil (Just (B i _)) = -(fromIntegral i)
-
-parUtil :: BC -> BC -> Double
-parUtil bc1 bc2 = go (outBlock bc1) (inBlock bc2)
+coleft :: forall l m . (IsLabel l, MonadTc m)
+       => Mode
+       -> Int       -- ^ Number of elements to take per round
+       -> Type      -- ^ Type of elements
+       -> K l m Exp -- ^ Right side of par
+       -> K l m Exp
+coleft mode n tau c_right =
+    parC tau (c_left mode n tau) c_right
   where
-    go (Just (B i j)) (Just (B _k l)) = fromIntegral (2*i - abs(l-j)*i - (l+j) `quot` 2)
-    go _              _               = 0
+    c_left :: Mode -> Int -> Type -> K l m Exp
+    c_left _ 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC tau
+          emitC x
+
+    c_left Consumer n tau =
+        repeatC $ do
+          xs <- takeC (coArrT n tau)
+          emitsC xs
+
+    c_left _ n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
+
+coright :: forall l m . (IsLabel l, MonadTc m)
+        => Mode
+        -> Int       -- ^ Number of elements to emit per round
+        -> Type      -- ^ Type of elements
+        -> K l m Exp -- ^ Left side of par
+        -> K l m Exp
+coright mode n tau c_left =
+    parC tau c_left (c_right mode n tau)
+  where
+    c_right :: Mode -> Int -> Type -> K l m Exp
+    c_right _ 1 tau =
+        identityC 1 $
+        repeatC $ do
+          x <- takeC tau
+          emitC x
+
+    c_right Producer n tau =
+        repeatC $ do
+          xs <- takesC n tau
+          emitC xs
+
+    c_right _ n tau =
+        identityC n $
+        repeatC $ do
+          xs <- takesC n tau
+          emitsC xs
 
 coalesceComp :: forall l m . (IsLabel l, MonadTc m)
              => Comp l
-             -> Co m (Comp l, [BC])
-coalesceComp c = do
-    c'        <- compT c
+             -> Co m [BC]
+coalesceComp comp = do
     (_, a, b) <- askSTIndTypes
     ctx_left  <- askLeftCtx
     ctx_right <- askRightCtx
     traceCoalesce $ text "Left context:" <+> ppr ctx_left
     traceCoalesce $ text "Right context:" <+> ppr ctx_right
-    traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn c)
+    traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn comp)
     asz   <- typeSize a
     bsz   <- typeSize b
     cs1   <- observeAll $ do
              guard (not (isBitArrT a) && not (isBitArrT b))
-             crules (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
+             crules asz asz (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
     cs2   <- observeAll $ do
              guard (not (isBitArrT a) && not (isBitArrT b))
-             brules ctx_left ctx_right
+             brules asz bsz ctx_left ctx_right
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
       text "C-rules:" </> stack (map ppr (sort cs1))
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
@@ -429,9 +655,9 @@ coalesceComp c = do
     dflags <- askFlags
     let cs :: [BC]
         cs = filter (byteSizePred dflags asz bsz) $
-             filter (vectAnnPred dflags (vectAnn c)) $
+             filter (vectAnnPred dflags (vectAnn comp)) $
              cs1 ++ cs2
-    return (c', cs)
+    return cs
   where
     byteSizePred :: Flags -> Int -> Int -> BC -> Bool
     byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
@@ -473,15 +699,17 @@ coalesceComp c = do
     -- | Implement the C rules.
     crules :: Int
            -> Int
+           -> Int
+           -> Int
            -> Co m BC
-    crules max_left max_right = do
-        (m_left, m_right) <- compInOutM c
+    crules asz bsz max_left max_right = do
+        (m_left, m_right) <- compInOutM comp
         b_in              <- crule m_left  max_left
         b_out             <- crule m_right max_right
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = 1
-                  , bcUtil    = blockUtil b_in + blockUtil b_out
+                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
                   }
       where
         crule :: M   -- ^ Multiplicity
@@ -491,21 +719,25 @@ coalesceComp c = do
         -- doesn't have a known multiplicity of i or i+.
         crule m maxBlock =
             ifte (fromP m)
-                 (\i -> Just <$> fact i blockingPred)
+                 (\i -> if i == 0
+                        then return Nothing
+                        else Just <$> fact i i blockingPred)
                  (return Nothing)
           where
             blockingPred :: B -> Bool
             blockingPred (B i _) = i <= maxBlock
 
     -- | Implement the B rules
-    brules :: Maybe M
+    brules :: Int
+           -> Int
+           -> Maybe M
            -> Maybe M
            -> Co m BC
-    brules ctx_left ctx_right = do
-        guard (isTransformer c)
-        (m_left, m_right) <- compInOutM c
+    brules asz bsz ctx_left ctx_right = do
+        guard (isTransformer comp)
+        (m_left, m_right) <- compInOutM comp
         let n_max         =  min (nBound m_left) (nBound m_right)
-        n                 <- choices [2..n_max]
+        n                 <- choices [1..n_max]
         b_in              <- brule ctx_left  m_left  n
         b_out             <- brule ctx_right m_right n
         -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
@@ -516,7 +748,7 @@ coalesceComp c = do
         return BC { inBlock   = b_in
                   , outBlock  = b_out
                   , batchFact = n
-                  , bcUtil    = blockUtil b_in + blockUtil b_out
+                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
                   }
       where
         -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
@@ -533,7 +765,9 @@ coalesceComp c = do
         brule ctx m n =
             ifte (fromP m)
                  (\i -> do p <- mkBlockingPred ctx m
-                           Just <$> fact (i*n) p)
+                           if i == 0
+                             then return Nothing
+                             else Just <$> fact i (i*n) p)
                  (return Nothing)
 
         -- | Upper bound on n.
@@ -581,33 +815,13 @@ divides x y = y `rem` x == 0
 -- | Factor a multiplicity into all possible blockings satisfying a given
 -- constraint on the blocking.
 fact :: (MonadPlus m, MonadTc m)
-     => Int         -- ^ Multiplicity
+     => Int         -- ^ Minimum multiplicity
+     -> Int         -- ^ Maximum multiplicity
      -> (B -> Bool) -- ^ Predicate on blocking
      -> m B
-fact n p =
-    choices [B i j | i <- [2..n],
-                     n `rem` i == 0,
-                     let j = n `quot` i,
+fact n m p =
+    choices [B i j | i <- [n..m],
+                     m `rem` i == 0,
+                     i `rem` n == 0,
+                     let j = m `quot` i,
                      p (B i j)]
-
-coleft :: (IsLabel l, MonadTc m)
-       => Int
-       -> Type
-       -> K l m Exp
-coleft n tau =
-    repeatC $ do
-      xs <- takesC n tau
-      forC 0 n $ \i -> emitC (idxE xs i)
-
-coright :: (IsLabel l, MonadTc m)
-        => Int
-        -> Type
-        -> K l m Exp
-coright n tau =
-    letrefC "xs" (arrKnownT n tau) $ \xs ->
-    repeatC $ do
-      forC 0 n $ \i -> do
-        x <- takeC tau
-        liftC $ assignE (idxE xs i) x
-      xs' <- liftC $ derefE xs
-      emitsC xs'

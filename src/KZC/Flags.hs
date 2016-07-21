@@ -89,6 +89,7 @@ data DynFlag = Quiet
              | Coalesce
              | VectOnlyBytes
              | VectFilterAnn
+             | CoalesceTop
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -237,7 +238,8 @@ defaultFlags =
     setFlags f xs flags = foldl' (flip f) flags xs
 
     defaultDynFlags :: [DynFlag]
-    defaultDynFlags = [LinePragmas]
+    defaultDynFlags = [ LinePragmas
+                      , VectFilterAnn]
 
     defaultWarnFlags :: [WarnFlag]
     defaultWarnFlags = [ WarnSimplifierBailout
