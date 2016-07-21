@@ -661,7 +661,7 @@ runRight lss rss = do
         ifte splitRight (\steps -> runRight lss (steps ++ rss)) $
         ifte splitLeft  (\steps -> runRight (steps ++ tail lss) (rs:rss)) $
         ifte join       (\step -> jointStep step $ runRight lss rss)
-        diverge
+        diverge `mplus` stepLeft lss
       where
         splitRight :: F l m [Step l]
         splitRight =
@@ -691,6 +691,30 @@ runRight lss rss = do
             unrolled <- unrollFor l v e1 e2 c
             traceFusion $ text "runRight: unrolling right for"
             runRight lss (unComp unrolled ++ rss)
+
+        -- If we can't fuse the right for loop and the left side doesn't emit,
+        -- we attempt to step the left side hoping we can fuse the rest of the
+        -- computation.
+        stepLeft :: [Step l] -> F l m [Step l]
+        stepLeft [] = do
+            traceFusion $ text "Failed to step left"
+            mzero
+
+        stepLeft (ls:_) = do
+            traceFusion $ text "Attempting to step left" </> indent 2 (ppr ls)
+            noEmit <- doesNotEmit ls
+            unless noEmit $ do
+              traceFusion $ text "Failed to step left"
+              mzero
+            l_right <- rightStepsLabel rss
+            let ls' =  fmap (`JointL` l_right) ls
+            jointStep ls' $
+              runLeft (tail lss) (rs:rss)
+          where
+            doesNotEmit :: Step l -> F l m Bool
+            doesNotEmit step = do
+                m <- rateComp (mkComp [step]) >>= compOutM
+                return $ m == N 0
 
     run (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
         ifte split (\steps -> runRight (steps ++ lss) rss) $
