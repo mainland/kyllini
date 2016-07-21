@@ -188,6 +188,14 @@ extendSubst :: MonadTc m
 extendSubst v rng =
     local $ \env -> env { simplTheta = Map.insert v rng (simplTheta env) }
 
+extendSubsts :: MonadTc m
+             => [(InVar, SubstRng l)]
+             -> SimplM l m a
+             -> SimplM l m a
+extendSubsts vrngs =
+    local $ \env ->
+      env { simplTheta = Map.fromList vrngs `Map.union` simplTheta env }
+
 withSubst :: MonadTc m
           => Theta l
           -> SimplM l m a
@@ -598,6 +606,110 @@ simplSteps (LetC l decl s : steps) = do
 simplSteps (BindC {} : _) =
     panicdoc $ text "simplSteps: leading BindC"
 
+--
+-- Move lift past take(s)
+--
+-- { lift e; x <- take; ... } -> { x <- take; lift e; ... }
+--
+simplSteps (s1@LiftC{} : s2 : s3@BindC{} : steps) | isTake s2 =
+    simplSteps (s2:s3:s1:steps)
+  where
+    isTake :: Step l -> Bool
+    isTake TakeC{}  = True
+    isTake TakesC{} = True
+    isTake _        = False
+
+--
+-- Coalesce multiples sequential TakesC
+--
+-- { xs <- takes n; ys <- takes m; ... } ->
+-- { zs <- takes (n+m); ... [xs -> zs[0:n]; ys -> zs[n:m]] }
+--
+simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
+                  TakesC{}           : BindC _  TameV{} _ _  :
+                  _) = do
+    zs <- gensym "zs"
+    extendVars [(zs, arrKnownT total tau)] $
+      extendSubsts [(v, DoneExp e) | (v, i, n) <- zip3 vs offs lens,
+                                     let e = sliceE (varE zs) (intE i) n] $ do
+      steps' <- simplSteps rest
+      simplSteps $ TakesC l1 total tau s1 :
+                   BindC l2 (TameV (mkBoundVar zs)) (arrKnownT total tau) s2 :
+                   steps'
+  where
+    vs :: [Var]
+    lens :: [Int]
+    offs :: [Int]
+    total :: Int
+    (vs, lens) = unzip takes
+    offs = scanl (+) 0 lens
+    total = last offs
+
+    takes :: [(Var, Int)]
+    rest :: [Step l]
+    (takes, rest) = go [] steps
+
+    go :: [(Var, Int)] -> [Step l] -> ([(Var, Int)], [Step l])
+    go takes (TakesC _ n _ _ : BindC _ (TameV xs) _ _ : steps) =
+      go ((bVar xs, n) : takes) steps
+
+    go takes steps =
+      (reverse takes, steps)
+
+--
+-- Coalesce multiple sequential EmitsC
+--
+-- { emits x[i,n]; emits x[i+n,m]; ... } ->
+-- { emits x[i,n+m]] }
+--
+simplSteps (EmitsC l1 (IdxE (VarE v  _) ei len1 s1) s2 :
+            EmitsC _  (IdxE (VarE v' _) ej len2 _)   _ :
+            steps)
+  | v' == v,
+    Just i <- fromIntE ei,
+    Just j <- fromIntE ej,
+    j == i + sliceLen len1 = do
+      rewrite
+      simplSteps $ EmitsC l1 (IdxE (varE v) ei len' s1) s2 : steps
+  where
+    len' :: Maybe Int
+    len' = Just $ sliceLen len1 + sliceLen len2
+
+--
+-- Convert assignment followed by dereference and emit(s) to an emit(s)
+--
+--   { x <- lift { y := e; !y }; emit(s) x; ... }
+--   ->
+--   { x <- lift { y := e; !y }; emit(s) e; ... }
+--
+--
+simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitsC l3 e2 s3 : steps)
+  | Just (_, rhs)  <- unAssignBangE e1
+  , VarE v' _ <- e2
+  , v' == bVar v = do
+    rewrite
+    simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitsC l3 rhs s3 : steps)
+
+simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 e2 s3 : steps)
+  | Just (_, rhs)  <- unAssignBangE e1
+  , VarE v' _ <- e2
+  , v' == bVar v = do
+    rewrite
+    simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 rhs s3 : steps)
+
+--
+-- Drop dead dereferences
+--
+--   { lift { y := e; !y }; ... }
+--   ->
+--   { lift { y := e }; ... }
+--
+--
+simplSteps (LiftC l1 e1 s1 : BindC l2 WildV _tau s2 : steps)
+  | Just (x, rhs) <- unAssignBangE e1 = do
+    rewrite
+    simplSteps (LiftC l1 (assignE (varE x) rhs) s1 : BindC l2 WildV unitT s2 : steps)
+
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
     tau'  <- simplType tau
@@ -613,6 +725,9 @@ simplSteps (step : BindC l wv tau s : steps) = do
         rewrite
         simplSteps steps
 
+    --
+    -- Default computation sequencing
+    --
     go [step'] tau' WildV = do
         steps' <- simplSteps steps
         simplLift $ step' : BindC l WildV tau' s : steps'
@@ -638,6 +753,9 @@ simplSteps (step : BindC l wv tau s : steps) = do
         rewrite
         simplLift $ LetC l (LetLD v' tau' e s) s : steps'
 
+    --
+    -- Default computation bind
+    --
     go [step'] tau' (TameV v) =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
@@ -645,9 +763,17 @@ simplSteps (step : BindC l wv tau s : steps) = do
         steps' <- simplSteps steps
         simplLift $ step' : BindC l (TameV v') tau' s : steps'
 
+    --
+    -- Can't happen---simplifying a step has to yield one or more steps
+    --
     go [] _tau' _wv =
         faildoc $ text "simplSteps: can't happen"
 
+    --
+    -- When simplifying a steps yields more than one step, simplify the
+    -- resulting sequence. A single step can simplify to many steps if we inline
+    -- a computation.
+    --
     go step' tau' wv =
         (++) <$> pure hd <*> go [tl] tau' wv >>= simplLift
       where
@@ -655,6 +781,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
         tl :: Step l
         hd = init step'
         tl = last step'
+
 --
 -- Drop an unbound return; we know the return isn't bound becasue it isn't the
 -- final step and we didn't match the bind case just above.
@@ -671,6 +798,17 @@ simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
 
 simplSteps (step : steps) =
     (++) <$> simplStep step <*> simplSteps steps >>= simplLift
+
+-- Pull apart expressions of the form
+--
+--    { x := e; !x }
+--
+unAssignBangE :: Exp -> Maybe (Var, Exp)
+unAssignBangE (BindE _ _ (AssignE (VarE v _) e _) (DerefE (VarE v' _) _) _) | v' == v =
+    Just (v, e)
+
+unAssignBangE _ =
+    Nothing
 
 -- | Return 'True' if the binders of @x@ are used in @y@, 'False' otherwise.
 notUsedIn :: (Binders a Var, Fvs b Var) => a -> b -> Bool
@@ -888,14 +1026,43 @@ simplStep LetC{} =
 simplStep (WhileC l e c s) =
     WhileC l <$> simplE e <*> simplC c <*> pure s >>= return1
 
-simplStep (ForC l ann v tau e1 e2 c s) = do
-    e1' <- simplE e1
-    e2' <- simplE e2
-    withUniqVar v $ \v' ->
+simplStep (ForC l ann v tau ei elen c s) = do
+    ei'   <- simplE ei
+    elen' <- simplE elen
+    unroll ann ei' elen'
+  where
+    unroll :: UnrollAnn
+           -> Exp
+           -> Exp
+           -> SimplM l m [Step l]
+    unroll _ _ elen' | Just 0 <- fromIntE elen' = do
+        rewrite
+        return1 $ ReturnC l unitE s
+
+    unroll _ ei' elen' | Just 1 <- fromIntE elen' = do
+        rewrite
+        extendSubst v (DoneExp ei') $
+          unComp <$> simplC c
+
+    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+        rewrite
+        unComp . mconcat <$> mapM body [i..len-1]
+      where
+        -- We must ensure that each unrolling has a unique set of labels
+        body :: Int -> SimplM l m (Comp l)
+        body i =
+            extendSubst v (DoneExp (idx i)) $
+            simplC c >>= traverse uniquify
+          where
+            idx :: Int -> Exp
+            idx i = constE $ FixC I s w 0 i
+
+    unroll _ ei' elen' =
+        withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplC c
-        return1 $ ForC l ann v' tau e1' e2' c' s
+        return1 $ ForC l ann v' tau ei' elen' c' s
 
 simplStep (LiftC l e s) =
     simplE e >>= go
@@ -945,9 +1112,6 @@ simplStep (ParC ann b c1 c2 sloc) = do
                  localSTIndTypes (Just (b, b, c)) $
                  simplC c2
     return1 $ ParC ann b c1' c2' sloc
-
-simplStep LoopC{} =
-    faildoc $ text "simplStep: saw LoopC"
 
 simplE :: forall l m . (IsLabel l, MonadTc m)
        => Exp
@@ -1000,9 +1164,8 @@ simplE e0@(VarE v _) =
     inline :: OutExp -> Maybe OccInfo -> Level -> Bool
     inline _rhs Nothing            _lvl = False
     inline _rhs (Just Dead)        _lvl = error "inline: saw Dead binding"
-    inline rhs (Just Once)         _lvl
-        | isArrE rhs                    = False
-        | otherwise                     = error "inline: saw Once binding"
+    -- We may choose not to inline a Once binding if, e.g., it is an array expression
+    inline _rhs (Just Once)        _lvl = False
     inline _rhs (Just OnceInFun)   _lvl = False
     inline _rhs (Just ManyBranch)  _lvl = False
     inline _rhs (Just Many)        _lvl = False
@@ -1224,7 +1387,7 @@ simplE (DerefE e s) = do
 simplE (AssignE e1 e2 s) = do
     e1'  <- simplE e1
     e2'  <- simplE e2
-    drop <- refPathRoot e1 >>= isDroppedRef
+    drop <- refPathRoot e1' >>= isDroppedRef
     if drop
       then do rewrite
               return $ returnE unitE
@@ -1233,17 +1396,75 @@ simplE (AssignE e1 e2 s) = do
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
-simplE (ForE ann v tau e1 e2 e3 s) = do
-    e1' <- simplE e1
-    e2' <- simplE e2
-    unroll ann e1' e2'
+--
+-- Simplify empty for loop
+--
+--   for i in ...
+--     return ()
+-- ->
+--   return ()
+
+simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
+    rewrite
+    return e
+
+--
+-- Simplify assignment loops.
+--
+--   for i in [0,len]
+--     xs[i] := e_yx[i + k]
+-- ->
+--   xs[0,len] := e_yx[k,len]
+--
+-- This loop form shows up regularly in fused code.
+--
+simplE (ForE _ann v _tau ei elen
+             (AssignE (IdxE (VarE xs _) (VarE v' _)  Nothing _) e_rhs _)
+             s)
+  | Just len <- fromIntE elen
+  , Just (e_ys, v'', f) <- unIdx e_rhs
+  , v' == v, v'' == v
+  = do rewrite
+       -- The recursive call to 'simplE' is important! We need to be sure to
+       -- recursively call simplE here in case @xs@ has been substituted away.
+       simplE $ AssignE (IdxE (VarE xs s) ei (Just len) s)
+                        (IdxE e_ys (f ei) (Just len) s)
+                        s
+  where
+    unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
+    unIdx (IdxE e1 (VarE v _) Nothing _) =
+        Just (e1, v, id)
+
+    unIdx (IdxE e1 (BinopE Add (VarE v _) e2 s) Nothing _) =
+        Just (e1, v, \e -> BinopE Add e e2 s)
+
+    unIdx (IdxE e1 (BinopE Add e2 (VarE v _) s) Nothing _) =
+        Just (e1, v, \e -> BinopE Add e e2 s)
+
+    unIdx _ =
+        Nothing
+
+simplE (ForE ann v tau ei elen e3 s) = do
+    ei'   <- simplE ei
+    elen' <- simplE elen
+    unroll ann ei' elen'
   where
     unroll :: UnrollAnn
            -> Exp
            -> Exp
            -> SimplM l m Exp
-    unroll Unroll (ConstE (FixC I s w 0 i) _) (ConstE (FixC _ _ _ _ j) _) = do
-        es <- mapM body [i..j-1]
+    unroll _ _ elen' | Just 0 <- fromIntE elen' = do
+        rewrite
+        return $ ReturnE AutoInline unitE s
+
+    unroll _ ei' elen' | Just 1 <- fromIntE elen' = do
+        rewrite
+        extendSubst v (DoneExp ei') $
+          simplE e3
+
+    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+        rewrite
+        es <- mapM body [i..len-1]
         return $ foldr seqE (returnE unitE) es
       where
         body :: Int -> SimplM l m Exp
@@ -1254,19 +1475,47 @@ simplE (ForE ann v tau e1 e2 e3 s) = do
             idx :: Int -> Exp
             idx i = constE $ FixC I s w 0 i
 
-    unroll _ e1' e2' =
+    unroll _ ei' elen' =
         withUniqVar v $ \v' ->
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplE e3
-        return $ ForE ann v' tau e1' e2' e3' s
+        return $ ForE ann v' tau ei' elen' e3' s
 
-simplE (ArrayE es s) = do
-    es <- mapM simplE es
-    if all isConstE es
-      then do cs <- mapM unConstE es
-              return $ ConstE (ArrayC cs) s
-      else return $ ArrayE es s
+simplE (ArrayE es s) =
+    mapM simplE es >>= go
+  where
+    go :: [Exp] -> SimplM l m Exp
+    --
+    -- Convert a non-constant array expression into a constant array expression
+    -- if we can.
+    --
+    go es' | all isConstE es' = do
+        cs <- mapM unConstE es
+        return $ ConstE (ArrayC cs) s
+
+    --
+    -- Convert an "exploded" array expression into a slice
+    --
+    -- arr { x[0], x[1], x[2] } -> x[0,3]
+    --
+    go (IdxE (VarE xs _) ei Nothing _ : es') | Just i  <- fromIntE ei
+                                             , Just e' <- coalesce xs i 1 es' =
+        return e'
+      where
+        coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
+        coalesce xs i len [] =
+            return $ sliceE (varE xs) (intE i) (fromIntegral len)
+
+        coalesce xs i len (IdxE (VarE xs' _) ej Nothing _ : es'')
+          | Just j <- fromIntE ej, j == i + len, xs' == xs =
+            coalesce xs i (len+1) es''
+
+        coalesce _ _ _ _ =
+            fail "Cannot coalesce"
+
+    go es' =
+        return $ ArrayE es' s
 
 simplE (IdxE e1 e2 len0 s) = do
     e1' <- simplE e1
@@ -1274,6 +1523,15 @@ simplE (IdxE e1 e2 len0 s) = do
     go e1' e2' len0
   where
     go :: Exp -> Exp -> Maybe Int -> SimplM l m Exp
+    --
+    -- Replace a slice of a slice with a single slice.
+    --
+    --  x[i, n][j, m] -> x[i+j, m]
+    --
+    go (IdxE e1' ei Just{} _) e2' len = do
+        rewrite
+        go e1' (ei + e2') len
+
     --
     -- Replace a whole-array slice with the array itself.
     --
@@ -1361,24 +1619,20 @@ simplE (BindE wv tau e1 e2 s) =
     --
     -- Combine sequential array assignments.
     --
-    --  { x[0] := y[0]; x[1] := y[1]; ... } -> { x[0:1] := y[0:1]; ... }
+    --  { x[e1] := y[e2]; x[e1+1] := y[e2+1]; ... } -> { x[e1:1] := y[e2:1]; ... }
     --
     -- We see this after coalescing/fusion
     --
     simplBind WildV _ e1 e_rest _
       | let (e2, mkBind) = unBind e_rest
-      , AssignE (IdxE xs  e_i len1 s1) (IdxE ys  e_k len1' s2) s3 <- e1
-      , Just i <- fromIntE e_i
-      , Just k <- fromIntE e_k
+      , AssignE (IdxE xs e_i len1 s1) (IdxE ys e_k len1' s2) s3 <- e1
       , len1' == len1
       , AssignE (IdxE xs' e_j len2 _)  (IdxE ys' e_l len2' _)  _ <- e2
-      , Just j <- fromIntE e_j
-      , Just l <- fromIntE e_l
       , len2' == len2
       , xs' == xs
       , ys' == ys
-      , i + sliceLen len1 == j
-      , k + sliceLen len1 == l
+      , e_i + sliceLen len1 == e_j
+      , e_k + sliceLen len1 == e_l
       = do
         rewrite
         let len = plusl len1 len2
@@ -1405,6 +1659,9 @@ simplE (BindE wv tau e1 e2 s) =
         rewrite
         simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
 
+    --
+    -- Default command sequencing
+    --
     simplBind WildV tau e1 e2 s = do
         tau' <- simplType tau
         e1'  <- simplE e1
@@ -1434,6 +1691,23 @@ simplE (BindE wv tau e1 e2 s) =
           rewrite
           return $ LetE (LetLD v' tau' e1' s) e2' s
 
+    --
+    -- Avoid an identity assignment
+    --
+    --   { v <- !x; x := v; ... } -> { v <- !x; ... }
+    --
+    simplBind (TameV v) tau e1@(DerefE e_rhs _ ) e_rest _
+      | let (e2, mkBind) = unBind e_rest
+      , AssignE e_lhs (VarE v' _) _ <- e2
+      , v' == bVar v
+      , e_lhs == e_rhs
+      = do
+        rewrite
+        simplBind (TameV v) tau e1 (mkBind (returnE unitE)) s
+
+    --
+    -- Default command bind
+    --
     simplBind (TameV v) tau e1 e2 s = do
         e1'  <- simplE e1
         tau' <- simplType tau
@@ -1474,6 +1748,7 @@ isSimple e =
     go (UnopE _ e _)      = go e
     go (BinopE _ e1 e2 _) = go e1 && go e2
     go (IfE e1 e2 e3 _)   = go e1 && go e2 && go e3
+    go (IdxE e1 e2 _ _)   = go e1 && go e2
     go (ProjE e _ _)      = go e
     go _                  = False
 

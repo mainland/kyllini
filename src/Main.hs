@@ -107,12 +107,8 @@ runPipeline filepath = do
         stopIf (testDynFlag StopAfterCheck) >=>
         traceExprPhase "lambdaLift" lambdaLiftPhase >=>
         traceCorePhase "exprToCore" exprToCorePhase >=>
-        -- Simplify, but don't inline functions or computations
-        runIf (testDynFlag Simplify) (onlyInliningValues $ iterateSimplPhase "-phase1") >=>
-        -- AutoLUT
-        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase1" autolutPhase) >=>
-        -- Simplify again, allowing inlining. This may inline LUTted functions.
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
+        -- Simplify
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase1") >=>
         -- Perform rate analysis
         traceCorePhase "rate" ratePhase >=>
         -- Perform pipeline coalescing
@@ -121,13 +117,13 @@ runPipeline filepath = do
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
         runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
         -- Auto-LUT, partially evaluate, and simplify once more
-        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut-phase2" autolutPhase) >=>
+        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut" autolutPhase) >=>
         runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase4") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
         -- One final round of simplification
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase5") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase4") >=>
         -- Clean up the code, do some analysis, and codegen
         traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
@@ -294,13 +290,6 @@ runPipeline filepath = do
         whenDynFlag Lint $
             C.withTc (C.checkProgram p)
         return p
-
-    onlyInliningValues :: (a -> MaybeT KZC a) -> a -> MaybeT KZC a
-    onlyInliningValues k x =
-        localFlags (unsetDynFlag MayInlineFun .
-                    unsetDynFlag MayInlineComp .
-                    unsetDynFlag AlwaysInlineComp) $
-        k x
 
     stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
     stopIf f x = do

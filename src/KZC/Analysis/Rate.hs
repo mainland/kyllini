@@ -226,9 +226,6 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         plusRate r
         return $ ParC ann b c1' c2' sloc
 
-    stepT LoopC{} =
-        panicdoc $ text "Saw LoopC during rate analysis."
-
 -- | Calculate the rate of a par given the rates of its left and right sides.
 parRate :: MonadTc m => Rate M -> Rate M -> m (Rate M)
 -- c >>> t

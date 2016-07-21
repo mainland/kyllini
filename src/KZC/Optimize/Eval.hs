@@ -496,9 +496,6 @@ evalStep (ParC ann tau c1 c2 s) = do
     steps2 <- toSteps val2
     partial $ CompV h [ParC ann tau (mkComp  steps1) (mkComp  steps2) s]
 
-evalStep LoopC{} =
-    panicdoc $ text "evalStep: saw LoopC"
-
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
 evalFullSteps :: (IsLabel l, MonadTcRef m)

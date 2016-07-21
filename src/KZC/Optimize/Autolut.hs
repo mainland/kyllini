@@ -12,7 +12,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.Autolut (
-    autolutProgram
+    autolutProgram,
+    autolutComp
   ) where
 
 import Control.Monad.Exception (MonadException(..),
@@ -52,6 +53,11 @@ autolutProgram :: (IsLabel l, MonadTc m)
                => Program l
                -> m (Program l)
 autolutProgram = runAutoM . programT
+
+autolutComp :: (IsLabel l, MonadTc m)
+            => Comp l
+            -> m (Comp l)
+autolutComp = runAutoM . compT
 
 instance MonadTc m => TransformExp (AutoM m) where
     expT (LutE _ e) =

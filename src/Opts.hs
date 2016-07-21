@@ -56,6 +56,9 @@ options =
         , Option [] ["fmin-lut-ops"]
             (ReqArg minLUTOpsOpt "N")
             "set minimum operation count to consider a LUT"
+        , Option [] ["fmax-fusion-blowup"]
+            (ReqArg maxFusionBlowupOpt "DOUBLE")
+            "set maximum allowd fusion blowup"
         , Option [] ["fsimpl"]
             (NoArg simplOpt)
             "run the simplifier"
@@ -87,6 +90,12 @@ options =
         case reads s of
           [(n, "")]  -> return fs { maxSimpl = n }
           _          -> fail "argument to --fmax-simplifier-iterations must be an integer"
+
+    maxFusionBlowupOpt :: String -> Flags -> m Flags
+    maxFusionBlowupOpt s fs =
+        case reads s of
+          [(n, "")]  -> return fs { maxFusionBlowup = n }
+          _          -> fail "argument to --fmax-fusion-blowup must be a float"
 
     dumpAll :: Flags -> m Flags
     dumpAll fs =
@@ -202,6 +211,7 @@ fDynFlagOpts =
   , (VectOnlyBytes, "vect-bytes",   "only vectorize to byte widths")
   , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
   , (CoalesceTop,   "coalesce-top", "coalesce top-level computation")
+  , (FuseUnroll,    "fuse-unroll",  "unroll loops during fusion")
   ]
 
 dDynFlagOpts :: [(DynFlag, String, String)]
@@ -270,6 +280,7 @@ fWarnFlagOpts =
   , (WarnUnsafeAutoCast,    "warn-unsafe-auto-cast",     "warn on potentially unsafe automatic cast")
   , (WarnUnsafeParAutoCast, "warn-unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
   , (WarnRateMismatch,      "warn-rate-mismatch",        "warn on producer/consumer rate mismatch in par")
+  , (WarnFusionFailure,     "warn-fusion-failure",       "warn on fusion failure par")
   ]
 
 compilerOpts :: [String] -> IO (Flags, [String])

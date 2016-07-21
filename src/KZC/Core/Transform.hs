@@ -195,9 +195,6 @@ transStep (ParC ann b c1 c2 sloc) = do
                <*> localSTIndTypes (Just (b, b, c)) (compT c2)
                <*> pure sloc
 
-transStep LoopC{} =
-    faildoc $ text "transStep: saw LoopC"
-
 transArg :: TransformComp l m => Arg l -> m (Arg l)
 transArg (ExpA e)  = ExpA  <$> expT e
 transArg (CompA c) = CompA <$> compT c

@@ -1958,9 +1958,6 @@ cgComp comp klbl = cgSteps (unComp comp)
           _ ->
             cgParSingleThreaded tau_res b left right klbl k
 
-    cgStep LoopC{} _ _k =
-        faildoc $ text "cgStep: saw LoopC"
-
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
 -- code for the par's take and emit.

@@ -21,7 +21,6 @@ instance Located (Step a) where
   locOf (EmitsC _ _ l) = locOf l
   locOf (RepeatC _ _ _ l) = locOf l
   locOf (ParC _ _ _ _ l) = locOf l
-  locOf (LoopC _) = NoLoc
 instance Located LocalDecl where
   locOf (LetLD _ _ _ l) = locOf l
   locOf (LetRefLD _ _ _ l) = locOf l

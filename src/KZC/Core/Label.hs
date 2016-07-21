@@ -33,6 +33,7 @@ import KZC.Vars
 
 -- | A code label
 data Label = SeqL !Symbol (Maybe Uniq)
+           | IdxL !Int Label
            | ParL Label Label
   deriving (Eq, Ord, Read, Show)
 
@@ -42,6 +43,7 @@ instance IsString Label where
 instance Pretty Label where
     ppr (SeqL s Nothing)  = text (unintern s)
     ppr (SeqL s (Just u)) = text (unintern s) <> braces (ppr u)
+    ppr (IdxL i l)        = ppr i <> char '@' <> ppr l
     ppr (ParL l1 l2)      = ppr (l1, l2)
 
 instance C.ToIdent Label where
@@ -51,16 +53,18 @@ instance Gensym Label where
     gensym s = SeqL (intern s) <$> maybeNewUnique
 
     uniquify (SeqL s _)   = SeqL s <$> maybeNewUnique
+    uniquify (IdxL i l)   = IdxL i <$> uniquify l
     uniquify (ParL l1 l2) = ParL <$> uniquify l1 <*> uniquify l2
-
-instance IsLabel Label where
-    pairLabel = ParL
 
 instance Fvs Label Label where
     fvs = singleton
 
 instance Subst Label Label Label where
     substM x (theta, _) = fromMaybe x (Map.lookup x theta)
+
+instance IsLabel Label where
+    indexLabel = IdxL
+    jointLabel = ParL
 
 type LProgram = Program Label
 

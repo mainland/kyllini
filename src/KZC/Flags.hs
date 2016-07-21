@@ -90,6 +90,7 @@ data DynFlag = Quiet
              | VectOnlyBytes
              | VectFilterAnn
              | CoalesceTop
+             | FuseUnroll
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -100,6 +101,7 @@ data WarnFlag = WarnError
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
               | WarnRateMismatch
+              | WarnFusionFailure
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data DumpFlag = DumpCPP
@@ -168,6 +170,8 @@ data Flags = Flags
     , maxLUTLog2 :: !Int
     , minLUTOps  :: !Int
 
+    , maxFusionBlowup :: !Double
+
     , dynFlags   :: !(FlagSet DynFlag)
     , warnFlags  :: !(FlagSet WarnFlag)
     , dumpFlags  :: !(FlagSet DumpFlag)
@@ -192,6 +196,13 @@ instance Monoid Flags where
         , minLUTOps  = 5 -- Minimum number of operations necessary to consider a
                          -- LUT for an expression
 
+        -- Maximum ratio of new code size to old code size. Why 3? Because
+        -- transforming an expression to work over segments of an array requires
+        -- a multiply and add for each index operation, which adds 2 operations,
+        -- meaning overall we get approximately 3x the number of original
+        -- operations.
+        , maxFusionBlowup = 3.0
+
         , dynFlags   = mempty
         , warnFlags  = mempty
         , dumpFlags  = mempty
@@ -212,6 +223,8 @@ instance Monoid Flags where
         , maxLUT     = max (maxLUT f1) (maxLUT f2)
         , maxLUTLog2 = max (maxLUT f1) (maxLUT f2)
         , minLUTOps  = min (minLUTOps f1) (minLUTOps f2)
+
+        , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
 
         , dynFlags   = dynFlags f1   <> dynFlags f2
         , warnFlags  = warnFlags f1  <> warnFlags f2
