@@ -1377,19 +1377,15 @@ simplE (BindE wv tau e1 e2 s) =
       , len2' == len2
       , xs' == xs
       , ys' == ys
-      , i + fromLen len1 == j
-      , k + fromLen len1 == l
+      , i + sliceLen len1 == j
+      , k + sliceLen len1 == l
       = do
         rewrite
         let len = plusl len1 len2
         simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
       where
-        fromLen :: Maybe Int -> Int
-        fromLen Nothing    = 1
-        fromLen (Just len) = len
-
         plusl :: Maybe Int -> Maybe Int -> Maybe Int
-        plusl len1 len2 = Just $ fromLen len1 + fromLen len2
+        plusl len1 len2 = Just $ sliceLen len1 + sliceLen len2
 
     --
     -- Combine sequential assignment and dereference.

@@ -52,6 +52,8 @@ module KZC.Core.Smart (
     isConstE,
     isArrE,
 
+    sliceLen,
+
     tagIdentityC,
     isIdentityC,
     identityRateC,
@@ -252,6 +254,10 @@ isArrE :: Exp -> Bool
 isArrE (ConstE ArrayC{} _) = True
 isArrE ArrayE{}            = True
 isArrE _                   = False
+
+sliceLen :: Num a => Maybe Int -> a
+sliceLen Nothing    = 1
+sliceLen (Just len) = fromInteger (toInteger len)
 
 -- | Tag a computation as an identity with rate n.
 tagIdentityC :: Int -> Comp l -> Comp l
