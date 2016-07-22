@@ -264,8 +264,9 @@ structC :: Struct -> [(Field, Const)] -> Const
 structC = StructC
 
 isArrC :: Const -> Bool
-isArrC ArrayC{} = True
-isArrC _        = False
+isArrC ArrayC{}     = True
+isArrC ReplicateC{} = True
+isArrC _            = False
 
 fromIntC :: Monad m => Const -> m Int
 fromIntC (FixC I _ _ (BP 0) x) =

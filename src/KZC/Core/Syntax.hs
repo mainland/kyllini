@@ -474,6 +474,7 @@ instance Size Const where
     size FloatC{}         = 1
     size StringC{}        = 1
     size (ArrayC cs)      = if V.null cs then 0 else V.length cs * size (V.head cs)
+    size (ReplicateC n c) = n * size c
     size (StructC _ flds) = size (map snd flds)
 
 instance Size LocalDecl where

@@ -230,6 +230,10 @@ inferConst l (ArrayC cs) = do
       faildoc $ text "Constant array elements do not all have the same type"
     return $ ArrT (ConstI (length cs) l) tau l
 
+inferConst l (ReplicateC n c) = do
+    tau <- inferConst l c
+    return $ arrKnownT n tau
+
 inferConst l (StructC s flds) = do
     fldDefs <- checkStructFields s (map fst flds)
     mapM_ (checkField fldDefs) flds

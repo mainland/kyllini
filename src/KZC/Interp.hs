@@ -412,7 +412,8 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit (Just e) = evalExp e >>= toRef
 
 evalConst :: MonadTcRef m => Const -> I s m Val
-evalConst = return
+evalConst (ReplicateC n c) = return $ ArrayC $ V.replicate n c
+evalConst c                = return c
 
 evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)
         => Exp -> I s m (Ref s)

@@ -563,29 +563,11 @@ cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
     ces      <- V.toList <$> V.mapM cgConst cs
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
-  where
-    cgArrayConstInits :: Type -> [CExp l] -> [C.Initializer]
-    cgArrayConstInits tau ces | isBitT tau =
-        finalizeBits $ foldl mkBits (0,0,[]) ces
-      where
-        mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
-        mkBits (cconst, i, cinits) ce
-            | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
-            | otherwise                    = (cconst', i+1, cinits)
-          where
-            cconst' :: CExp l
-            cconst' = cconst .|. (ce `shiftL` i)
 
-        finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
-        finalizeBits (_,      0, cinits) = reverse cinits
-        finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
-
-        const :: CExp l -> C.Initializer
-        const (CInt i) = [cinit|$(chexconst i)|]
-        const ce       = toInit ce
-
-    cgArrayConstInits _tau ces =
-        map toInit ces
+cgConst (ReplicateC n c) = do
+    tau <- inferConst noLoc c
+    ce  <- cgConst c
+    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
@@ -602,6 +584,29 @@ cgConst (StructC s flds) = do
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
         return $ toInit ce
+
+cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
+cgArrayConstInits tau ces | isBitT tau =
+    finalizeBits $ foldl mkBits (0,0,[]) ces
+  where
+    mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
+    mkBits (cconst, i, cinits) ce
+        | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
+        | otherwise                    = (cconst', i+1, cinits)
+      where
+        cconst' :: CExp l
+        cconst' = cconst .|. (ce `shiftL` i)
+
+    finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
+    finalizeBits (_,      0, cinits) = reverse cinits
+    finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+
+    const :: CExp l -> C.Initializer
+    const (CInt i) = [cinit|$(chexconst i)|]
+    const ce       = toInit ce
+
+cgArrayConstInits _tau ces =
+    map toInit ces
 
 {- Note [Bit Arrays]
 

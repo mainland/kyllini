@@ -532,6 +532,10 @@ evalConst c@(ArrayC cs) = do
       Nothing   -> partialExp $ arrayE (map toExp (V.toList vals))
       Just dflt -> return $ ArrayV $ P.fromVector dflt vals
 
+evalConst (ReplicateC n c) = do
+    val <- evalConst c
+    return $ ArrayV $ P.replicateDefault n val
+
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs
     return $ StructV s (Map.fromList (fs `zip` vals))
