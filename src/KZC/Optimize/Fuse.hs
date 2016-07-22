@@ -41,17 +41,13 @@ import Control.Monad.State (MonadState(..),
                             evalStateT,
                             gets,
                             modify)
-import Control.Monad.Writer (MonadWriter(..),
-                             WriterT(..),
-                             censor)
 import Control.Monad.Trans (lift)
 import Data.Foldable (toList)
 import Data.Loc (srclocOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
+import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
@@ -125,16 +121,18 @@ defaultFEnv = do
                 }
 
 data FState l = FState
-    { seen          :: !(Set (Joint l))   -- All seen labels
-    , loopHead      :: !(Maybe (Joint l)) -- Label of loop head
-    , leftLoopHead  :: !(Maybe l)         -- Label of head of left repeat
-    , rightLoopHead :: !(Maybe l)         -- Label of head of right repeat
+    { code          :: !(Seq (Step (Joint l))) -- Fused code
+    , seen          :: !(Set (Joint l))        -- All seen labels
+    , loopHead      :: !(Maybe (Joint l))      -- Label of loop head
+    , leftLoopHead  :: !(Maybe l)              -- Label of head of left repeat
+    , rightLoopHead :: !(Maybe l)              -- Label of head of right repeat
     , codeCache     :: !(Map l (Comp l))
     }
 
 defaultFState :: IsLabel l => FState l
 defaultFState = FState
-    { seen          = mempty
+    { code          = mempty
+    , seen          = mempty
     , loopHead      = Nothing
     , leftLoopHead  = Nothing
     , rightLoopHead = Nothing
@@ -160,14 +158,12 @@ instance Pretty FusionStats where
         text "Fusion failures:" <+> ppr (fusionFailures stats)
 
 newtype F l m a = F { unF :: ReaderT (FEnv l)
-                               (WriterT (Seq (Step (Joint l)))
-                                 (StateT (FState l)
-                                   (SEFKT (StateT FusionStats m)))) a }
+                               (StateT (FState l)
+                                 (SEFKT (StateT FusionStats m))) a }
     deriving (Functor, Applicative, Monad,
               Alternative, MonadPlus,
               MonadIO,
               MonadReader (FEnv l),
-              MonadWriter (Seq (Step (Joint l))),
               MonadState (FState l),
               MonadException,
               MonadLogic,
@@ -182,12 +178,8 @@ runF :: forall l m a . (IsLabel l, MonadTc m)
      -> m a
 runF m = do
   env <- defaultFEnv
-  fst <$> evalStateT (runSEFKT
-                       (evalStateT
-                         (runWriterT
-                           (runReaderT (unF m) env))
-                         defaultFState))
-                     mempty
+  evalStateT (runSEFKT (evalStateT (runReaderT (unF m) env) defaultFState))
+             mempty
 
 withLeftKont :: (IsLabel l, MonadTc m) => [Step l] -> F l m a -> F l m a
 withLeftKont steps m = do
@@ -233,14 +225,17 @@ jointStep step k = do
       else do when (l_repeat == Just l_joint) $
                 modify $ \s -> s { seen = mempty }
               recordLabel l_joint
-              tell (Seq.singleton step)
+              modify $ \s -> s { code = code s |> step }
               k
 
 collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
-collectSteps m =
-    censor (const mempty) $ do
-    (x, steps) <- listen m
-    return (x, toList steps)
+collectSteps m = do
+    old_code <- gets code
+    modify $ \s -> s { code = mempty }
+    x <- m
+    steps <- toList <$> gets code
+    modify $ \s -> s { code = old_code }
+    return (x, steps)
 
 collectLoopBody :: forall a l m . (IsLabel l, MonadTc m)
                 => F l m a
