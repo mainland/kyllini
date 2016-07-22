@@ -48,6 +48,7 @@ module KZC.Expr.Lint (
     checkIntT,
     checkNumT,
     checkArrT,
+    checkKnownArrT,
     checkArrOrRefArrT,
     checkStructT,
     checkStructFieldT,
@@ -1012,6 +1013,20 @@ checkArrT (ArrT iota alpha _) =
 checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
+
+-- | Check that a type is an array of known length, returning the length and
+--the type of the array elements
+checkKnownArrT :: forall m . MonadTc m => Type -> m (Int, Type)
+checkKnownArrT tau =
+    checkArrT tau >>= go
+  where
+    go :: (Iota, Type) -> m (Int, Type)
+    go (ConstI n _, tau) =
+        return (n, tau)
+
+    go _ =
+         faildoc $ text "Array type" <+> ppr tau <+>
+                   text "does not have known length."
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
