@@ -42,6 +42,7 @@ import KZC.Cg.CExp
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
+import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -568,6 +569,9 @@ cgConst (ReplicateC n c) = do
     tau <- inferConst noLoc c
     ce  <- cgConst c
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
+
+cgConst (EnumC tau) =
+    enumTypeArray tau >>= cgConst
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s

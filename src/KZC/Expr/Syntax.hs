@@ -211,6 +211,7 @@ data Const = UnitC
            | StringC String
            | ArrayC !(Vector Const)
            | ReplicateC Int Const
+           | EnumC Type
            | StructC Struct [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
@@ -658,6 +659,10 @@ instance Pretty Const where
     pprPrec _ (ReplicateC n c) =
         braces $
         pprPrec appPrec1 c <+> text "x" <+> ppr n
+
+    pprPrec _ (EnumC tau) =
+        braces $
+        ppr tau <+> text "..."
 
 pprSign :: Signedness -> Doc
 pprSign S = empty

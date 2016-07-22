@@ -49,6 +49,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lut
 import KZC.Core.Comp
+import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -535,6 +536,9 @@ evalConst c@(ArrayC cs) = do
 evalConst (ReplicateC n c) = do
     val <- evalConst c
     return $ ArrayV $ P.replicateDefault n val
+
+evalConst (EnumC tau) =
+    enumTypeArray tau >>= evalConst
 
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs

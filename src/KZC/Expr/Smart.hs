@@ -266,6 +266,7 @@ structC = StructC
 isArrC :: Const -> Bool
 isArrC ArrayC{}     = True
 isArrC ReplicateC{} = True
+isArrC EnumC{}      = True
 isArrC _            = False
 
 fromIntC :: Monad m => Const -> m Int

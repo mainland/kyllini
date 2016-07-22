@@ -70,6 +70,7 @@ import Data.Word (Word32,
 import GHC.Float (float2Double)
 import Text.PrettyPrint.Mainland
 
+import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax hiding (I)
@@ -413,6 +414,7 @@ evalDecl (LetRefLD v tau e _) k = do
 
 evalConst :: MonadTcRef m => Const -> I s m Val
 evalConst (ReplicateC n c) = return $ ArrayC $ V.replicate n c
+evalConst (EnumC tau)      = enumTypeArray tau >>= evalConst
 evalConst c                = return c
 
 evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)

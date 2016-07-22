@@ -234,6 +234,11 @@ inferConst l (ReplicateC n c) = do
     tau <- inferConst l c
     return $ arrKnownT n tau
 
+inferConst _ (EnumC tau) = do
+    checkKind tau TauK
+    w <- typeSize tau
+    return $ arrKnownT (2^w) tau
+
 inferConst l (StructC s flds) = do
     fldDefs <- checkStructFields s (map fst flds)
     mapM_ (checkField fldDefs) flds
