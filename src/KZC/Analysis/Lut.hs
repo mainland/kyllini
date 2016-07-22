@@ -437,3 +437,6 @@ lutStats e =
 
     go (LutE _ e) =
         go e
+
+    go (GenE e _ _) =
+        go e

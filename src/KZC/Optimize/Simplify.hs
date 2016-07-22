@@ -1732,6 +1732,10 @@ simplE (BindE wv tau e1 e2 s) =
 simplE (LutE sz e) =
     LutE sz <$> simplE e
 
+simplE (GenE e gs s) =
+    checkGenerators gs $ \_ ->
+    GenE <$> simplE e <*> pure gs <*> pure s
+
 isTrue :: Exp -> Bool
 isTrue (ConstE (BoolC True) _) = True
 isTrue _                       = False

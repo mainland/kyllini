@@ -45,3 +45,7 @@ instance Located Exp where
   locOf (ReturnE _ _ l) = locOf l
   locOf (BindE _ _ _ _ l) = locOf l
   locOf (LutE _ _) = NoLoc
+  locOf (GenE _ _ l) = locOf l
+instance Located Gen where
+  locOf (GenG _ _ _ l) = locOf l
+  locOf (GenRefG _ _ _ l) = locOf l

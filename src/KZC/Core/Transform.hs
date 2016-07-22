@@ -281,3 +281,7 @@ transExp (BindE (TameV v) tau e1 e2 s) =
 
 transExp (LutE sz e) =
     LutE sz <$> expT e
+
+transExp (GenE e gs s) =
+    checkGenerators gs $ \_ ->
+    GenE <$> expT e <*> pure gs <*> pure s

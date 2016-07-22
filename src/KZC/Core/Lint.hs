@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -30,6 +31,8 @@ module KZC.Core.Lint (
 
     inferExp,
     checkExp,
+
+    checkGenerators,
 
     refPath,
 
@@ -571,6 +574,37 @@ inferExp (BindE wv tau e1 e2 _) = do
 
 inferExp (LutE _ e) =
     inferExp e
+
+inferExp (GenE e gs _) =
+    checkGenerators gs $ \n -> do
+    tau <- inferExp e
+    case tau of
+      ST _ (C tau') _ _ _ _ -> do checkPureish tau
+                                  return $ arrKnownT n tau'
+      _                     -> return $ arrKnownT n tau
+
+checkGenerators :: forall a m . MonadTc m => [Gen] -> (Int -> m a) -> m a
+checkGenerators gs k =
+    -- Generators may not have any free variables.
+    withNoVars $ go 1 gs
+  where
+    withNoVars :: m a -> m a
+    withNoVars = localTc $ \env -> env { varTypes = mempty }
+
+    go :: Int -> [Gen] -> m a
+    go !n [] = k n
+
+    go !n (GenG v tau c l:gs) = do
+        (m, tau') <- inferConst l c >>= checkKnownArrT
+        checkTypeEquality tau tau'
+        extendVars [(v, tau)] $
+          go (n*m) gs
+
+    go !n (GenRefG v tau c l:gs) = do
+        (m, tau') <- inferConst l c >>= checkKnownArrT
+        checkTypeEquality tau tau'
+        extendVars [(v, refT tau)] $
+          go (n*m) gs
 
 inferCall :: forall m e . MonadTc m
           => Var -> [Iota] -> [e] -> m ([Type], Type)

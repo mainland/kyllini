@@ -1231,6 +1231,13 @@ cgExp e k =
     go (LutE _ e) k =
         cgExp e k
 
+    go (GenE e gs _) k =
+        cgGen e gs k
+
+cgGen :: forall l a . IsLabel l => Exp -> [Gen] -> Kont l a -> Cg l a
+cgGen _ _ _ =
+    faildoc $ text "Generator expressions not supported."
+
 -- | Generate code for a looping construct. Any identifiers used in the body of
 -- the loop are marked as used again after code for the body has been generated
 -- in case there is a label at the end of the loop's body.

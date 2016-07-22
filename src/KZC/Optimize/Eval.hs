@@ -943,6 +943,9 @@ evalExp e =
     eval flags (LutE _ e) =
         eval flags e
 
+    eval _ GenE{} =
+        faildoc $ text "Generator expressions not supported."
+
 lutExp :: forall l s m . (s ~ RealWorld, IsLabel l, MonadTcRef m)
        => Exp
        -> EvalM l m Exp
