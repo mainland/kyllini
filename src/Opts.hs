@@ -17,8 +17,7 @@ import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad ((>=>),
                       when)
-import Data.List (foldl',
-                  isPrefixOf)
+import Data.List (isPrefixOf)
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
@@ -98,8 +97,7 @@ options =
           _          -> fail "argument to --fmax-fusion-blowup must be a float"
 
     dumpAll :: Flags -> m Flags
-    dumpAll fs =
-        return $ foldl' (flip setDumpFlag) fs [minBound..maxBound]
+    dumpAll = return . setDumpFlags [minBound..maxBound]
 
     maxLUTOpt :: String -> Flags -> m Flags
     maxLUTOpt s fs = do

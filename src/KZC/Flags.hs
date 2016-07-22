@@ -23,16 +23,24 @@ module KZC.Flags (
     flagImplications,
 
     setMode,
+
     testDynFlag,
     setDynFlag,
+    setDynFlags,
     unsetDynFlag,
+
     testWarnFlag,
     setWarnFlag,
+    setWarnFlags,
     unsetWarnFlag,
+
     testDumpFlag,
     setDumpFlag,
+    setDumpFlags,
+
     testTraceFlag,
     setTraceFlag,
+    setTraceFlags,
 
     whenDynFlag,
     whenWarnFlag,
@@ -342,6 +350,9 @@ testDynFlag f flags = dynFlags flags `testFlag` f
 setDynFlag :: DynFlag -> Flags -> Flags
 setDynFlag f flags = flags { dynFlags = setFlag (dynFlags flags) f }
 
+setDynFlags :: [DynFlag] -> Flags -> Flags
+setDynFlags fs flags = foldl' (flip setDynFlag) flags fs
+
 unsetDynFlag :: DynFlag -> Flags -> Flags
 unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
 
@@ -350,6 +361,9 @@ testWarnFlag f flags = warnFlags flags `testFlag` f
 
 setWarnFlag :: WarnFlag -> Flags -> Flags
 setWarnFlag f flags = flags { warnFlags = setFlag (warnFlags flags) f }
+
+setWarnFlags :: [WarnFlag] -> Flags -> Flags
+setWarnFlags fs flags = foldl' (flip setWarnFlag) flags fs
 
 unsetWarnFlag :: WarnFlag -> Flags -> Flags
 unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
@@ -360,11 +374,17 @@ testDumpFlag f flags = dumpFlags flags `testFlag` f
 setDumpFlag :: DumpFlag -> Flags -> Flags
 setDumpFlag f flags = flags { dumpFlags = setFlag (dumpFlags flags) f }
 
+setDumpFlags :: [DumpFlag] -> Flags -> Flags
+setDumpFlags fs flags = foldl' (flip setDumpFlag) flags fs
+
 testTraceFlag :: TraceFlag -> Flags -> Bool
 testTraceFlag f flags = traceFlags flags `testFlag` f
 
 setTraceFlag :: TraceFlag -> Flags -> Flags
 setTraceFlag f flags = flags { traceFlags = setFlag (traceFlags flags) f }
+
+setTraceFlags :: [TraceFlag] -> Flags -> Flags
+setTraceFlags fs flags = foldl' (flip setTraceFlag) flags fs
 
 whenDynFlag :: MonadFlags m => DynFlag -> m () -> m ()
 whenDynFlag f act = do
