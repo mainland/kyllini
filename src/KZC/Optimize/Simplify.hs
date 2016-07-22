@@ -43,6 +43,7 @@ import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Lint
@@ -1491,7 +1492,7 @@ simplE (ArrayE es s) =
     -- if we can.
     --
     go es' | all isConstE es' = do
-        cs <- mapM unConstE es
+        cs <- V.mapM unConstE (V.fromList es)
         return $ ConstE (ArrayC cs) s
 
     --

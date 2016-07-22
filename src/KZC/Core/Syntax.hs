@@ -114,6 +114,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
 import Data.Symbol
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax (Var(..),
@@ -472,7 +473,7 @@ instance Size Const where
     size FixC{}           = 1
     size FloatC{}         = 1
     size StringC{}        = 1
-    size (ArrayC cs)      = if null cs then 0 else length cs * size (head cs)
+    size (ArrayC cs)      = if V.null cs then 0 else V.length cs * size (V.head cs)
     size (StructC _ flds) = size (map snd flds)
 
 instance Size LocalDecl where

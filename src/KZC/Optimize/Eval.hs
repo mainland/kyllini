@@ -44,6 +44,7 @@ import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lut
@@ -525,11 +526,11 @@ evalConst :: forall l m . (IsLabel l, MonadTcRef m)
           -> EvalM l m (Val l m Exp)
 evalConst c@(ArrayC cs) = do
     (_, tau)   <- inferConst noLoc c >>= checkArrT
-    vals       <- mapM evalConst cs
+    vals       <- V.mapM evalConst cs
     maybe_dflt <- runMaybeT $ defaultValue tau
     case maybe_dflt of
-      Nothing   -> partialExp $ arrayE (map toExp vals)
-      Just dflt -> return $ ArrayV $ P.fromList dflt vals
+      Nothing   -> partialExp $ arrayE (map toExp (V.toList vals))
+      Just dflt -> return $ ArrayV $ P.fromVector dflt vals
 
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs
@@ -1067,9 +1068,10 @@ lutExp e = do
             if null taus_in
               then do entry <- genLUTEntry mval []
                       return (v_lut, tau_entry, constE entry)
-              else do entries   <- I.enumValsList taus_in >>=
+              else do entries   <- V.fromList <$>
+                                   I.enumValsList taus_in >>=
                                    mapM (genLUTEntry mval)
-                      let n     =  length entries
+                      let n     =  V.length entries
                       let e_lut =  constE $ arrayC entries
                       return (v_lut, arrKnownT n tau_entry, e_lut)
           where

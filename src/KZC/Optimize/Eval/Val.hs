@@ -670,9 +670,7 @@ toConst (StructV s flds) =
     (fs, vals) = unzip $ Map.assocs flds
 
 toConst (ArrayV vvals) =
-    arrayC (map toConst vals)
-  where
-    vals = P.toList vvals
+    arrayC $ (V.map toConst . P.toVector) vvals
 
 toConst val =
     errordoc $ text "toConst: not a constant:" <+> ppr val
@@ -701,14 +699,11 @@ instance IsLabel l => ToExp (Val l m Exp) where
 
     toExp (ArrayV vvals) =
         fromMaybe (arrayE es) $ do
-            cs <- mapM unConstE es
+            cs <- V.mapM (unConstE . toExp) (P.toVector vvals)
             return $ constE $ arrayC cs
       where
-        vals :: [Val l m Exp]
-        vals = P.toList vvals
-
         es :: [Exp]
-        es = map toExp vals
+        es = map toExp (P.toList vvals)
 
     toExp (IdxV arr i) =
         idxE (toExp arr) (toExp i)
