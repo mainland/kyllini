@@ -558,9 +558,6 @@ inferExp (ReturnE _ e l) = do
     a = "a"
     b = "b"
 
-inferExp (LutE _ e) =
-    inferExp e
-
 inferExp (BindE wv tau e1 e2 _) = do
     (alphas, tau', s,  a,  b) <- withFvContext e1 $
                                  inferExp e1 >>= checkPureishSTC
@@ -571,6 +568,9 @@ inferExp (BindE wv tau e1 e2 _) = do
         (_, omega, _, _, _) <- checkPureishST tau_e2
         checkTypeEquality tau_e2 (ST alphas omega s a b noLoc)
         return tau_e2
+
+inferExp (LutE _ e) =
+    inferExp e
 
 inferCall :: forall m e . MonadTc m
           => Var -> [Iota] -> [e] -> m ([Type], Type)
