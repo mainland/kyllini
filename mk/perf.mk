@@ -1,7 +1,7 @@
 WHOLEPROGRAM=1
 include $(TOP)/mk/common.mk
 
-KZCFLAGS+=--ftimer --finline --fsimpl --fautolut --flut --ffuse --fpeval --fcoalesce-top --fcoalesce --fnowarn-unsafe-auto-cast
+KZCFLAGS+=-ftimers -finline -fsimpl -fautolut -flut -ffuse -fpeval -fcoalesce-top -fcoalesce -Wno-unsafe-auto-cast
 
 ifeq ($(GCC), 1)
 CFLAGS+=-pipe -march=native -mtune=native -Ofast -ggdb

@@ -20,22 +20,22 @@ clean :
 	$(_QUIET)$(BLINKDIFF) -f $< -g $<.ground -d -v -p
 
 issue03.c : issue03.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --fpeval $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -fpeval $< -o $@
 
 issue04.c : issue04.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -finline -fsimpl $< -o $@
 
 issue05.c : issue05.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -finline -fsimpl $< -o $@
 
 issue07.c : issue07.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -finline -fsimpl -fpeval $< -o $@
 
 issue07-simplified.c : issue07-simplified.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -finline -fsimpl -fpeval $< -o $@
 
 issue09.c : issue09.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --finline --fsimpl --fpeval --fautolut --flut $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -finline -fsimpl -fpeval -fautolut -flut $< -o $@
 
 issue16.c : issue16.wpl $(KZC)
-	$(_QUIET)$(KZC) $(KZCFLAGS) --ffuse $< -o $@
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse $< -o $@

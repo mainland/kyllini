@@ -78,6 +78,7 @@ data DynFlag = Quiet
              | StopAfterCheck
              | PrettyPrint
              | Lint
+             | WarnError
              | PrintUniques
              | ExpertTypes
              | LinePragmas
@@ -103,8 +104,7 @@ data DynFlag = Quiet
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-data WarnFlag = WarnError
-              | WarnSimplifierBailout
+data WarnFlag = WarnSimplifierBailout
               | WarnUnusedCommandBind
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast

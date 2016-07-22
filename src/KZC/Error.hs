@@ -105,7 +105,7 @@ class (MonadFlags m, MonadException m) => MonadErr m where
 
     warn :: Exception e => e -> m ()
     warn ex = do
-        werror <- asksFlags (testWarnFlag WarnError)
+        werror <- asksFlags (testDynFlag WarnError)
         if werror
           then err ex_warn
           else do ctx <- askErrCtx
