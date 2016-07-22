@@ -16,15 +16,22 @@
 Individual errors have a negated form, either `-Wno` or `-Wno-`, e.g.,
 `-Wno-unused-command-bind`.
 
-The default flags are `-Wsimplifier-bailout`, `-Wunused-command-bind`, and
-`-Wunsafe-auto-cast`.
+The only default warning flag is `-Wunused-command-bind`.
 
 Individual warnings can be turned into errors with `-Werror=`, e.g.,
 `-Werror=unused-command-bind`.
 
+`-Wall` turns on `-Wunused-command-bind` and `-Wunsafe-auto-cast`.
+
+The combined effect of multiple warning flag specifications is that they are
+applied in order. For example, `-Wunsafe-auto-cast -Werror
+-Wunused-command-bind` will fail with an error on an unsafe auto cast, but only
+warn on an unused command bind.
+
 | Flag                     | Description |
 | ---                      | --- |
 | `-w`                     | Inhibit all warnings |
+| `-Wall`                  | Enable all warnings about questionable constructs |
 | `-Werror`                | Make all warnings errors |
 | `-Wsimplifier-bailout`   | Warn when the simplifier bails out|
 | `-Wunused-command-bind`  | Warn when a non-unit command result is unused|
@@ -32,7 +39,6 @@ Individual warnings can be turned into errors with `-Werror=`, e.g.,
 | `-Wunsafe-par-auto-cast` | Warn on potentially unsafe automatic cast in par|
 | `-Wrate-mismatch`        | Warn on producer/consumer rate mismatch in par|
 | `-Wfusion-failure`       | Warn on fusion failure|
-
 
 ## Feature flags
 

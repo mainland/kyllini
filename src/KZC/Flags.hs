@@ -271,10 +271,7 @@ defaultFlags =
                       , VectFilterAnn]
 
     defaultWarnFlags :: [WarnFlag]
-    defaultWarnFlags = [ WarnSimplifierBailout
-                       , WarnUnusedCommandBind
-                       , WarnUnsafeAutoCast
-                       ]
+    defaultWarnFlags = [WarnUnusedCommandBind]
 
 class Monad m => MonadFlags m where
     askFlags   :: m Flags

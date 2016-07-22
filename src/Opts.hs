@@ -313,8 +313,14 @@ wFlags =
     ]
 
 wOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]
-wOpts = [FlagOption "error" (OptArg werror "WFLAG") "make warnings errors"]
+wOpts =
+    [ FlagOption "all"   (NoArg wAll)            "enable all warnings about questionable constructs"
+    , FlagOption "error" (OptArg werror "WFLAG") "make warnings errors"
+    ]
   where
+    wAll :: Flags -> m Flags
+    wAll = return . setWarnFlags [WarnUnusedCommandBind, WarnUnsafeAutoCast]
+
     werror :: Maybe String -> Flags -> m Flags
     werror Nothing  fs =
         return $ fs { werrorFlags = warnFlags fs }
@@ -323,9 +329,9 @@ wOpts = [FlagOption "error" (OptArg werror "WFLAG") "make warnings errors"]
         case maybe_fs' of
           Nothing  -> fail $ "Unrecognized flag `" ++ f ++ "`"
           Just fs' -> return fs'
-
-    werrorOpts :: [FlagOpt]
-    werrorOpts = mkFlagOpts "" wFlags setWerrorFlag (Just unsetWerrorFlag)
+      where
+        werrorOpts :: [FlagOpt]
+        werrorOpts = mkFlagOpts "" wFlags setWerrorFlag (Just unsetWerrorFlag)
 
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv =
