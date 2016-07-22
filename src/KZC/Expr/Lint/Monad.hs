@@ -33,6 +33,7 @@ module KZC.Expr.Lint.Monad (
     isInTopScope,
     askTopVars,
     isTopVar,
+    withTopVars,
 
     extendExtFuns,
     isExtFun,
@@ -282,6 +283,12 @@ askTopVars = asksTc topVars
 
 isTopVar :: MonadTc m => Var -> m Bool
 isTopVar v = asksTc (Set.member v . topVars)
+
+withTopVars :: MonadTc m => m a -> m a
+withTopVars =
+    localTc $ \env ->
+      env { varTypes = Map.filterWithKey (\v _ -> Set.member v (topVars env))
+                                         (varTypes env) }
 
 extendExtFuns :: MonadTc m => [(Var, Type)] -> m a -> m a
 extendExtFuns vtaus k =
