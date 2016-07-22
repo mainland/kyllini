@@ -9,15 +9,15 @@ echo "Validate: -DDFIRSTCLASSLABELS $KZCFLAGS"
 make clean-tests && CFLAGS="-DFIRSTCLASSLABELS" make -B test-all $@
 
 for FLAGS in \
-    "--fsimpl" \
-    "--fsimpl --finline" \
-    "--ffuse" \
-    "--fpeval" \
-    "--fsimpl --fpeval" \
-    "--ffuse --fpeval" \
-    "--fautolut --flut" \
-    "--fautolut --flut --fpeval" \
-    "--finline --fsimpl --fpeval --fautolut --flut" ; do
+    "-fsimpl" \
+    "-fsimpl -finline" \
+    "-ffuse" \
+    "-fpeval" \
+    "-fsimpl -fpeval" \
+    "-ffuse -fpeval" \
+    "-fautolut -flut" \
+    "-fautolut -flut -fpeval" \
+    "-finline -fsimpl -fpeval -fautolut -flut" ; do
     echo "Validate: $KZCFLAGS $FLAGS"
     make clean-tests && KZCFLAGS="$KZCFLAGS $FLAGS" make -B test-all $@
 done

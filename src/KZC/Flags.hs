@@ -23,19 +23,33 @@ module KZC.Flags (
     flagImplications,
 
     setMode,
+
     testDynFlag,
     setDynFlag,
+    setDynFlags,
     unsetDynFlag,
+
     testWarnFlag,
     setWarnFlag,
+    setWarnFlags,
     unsetWarnFlag,
+
+    testWerrorFlag,
+    setWerrorFlag,
+    setWerrorFlags,
+    unsetWerrorFlag,
+
     testDumpFlag,
     setDumpFlag,
+    setDumpFlags,
+
     testTraceFlag,
     setTraceFlag,
+    setTraceFlags,
 
     whenDynFlag,
     whenWarnFlag,
+    whenWerrorFlag,
     whenDumpFlag,
     whenVerb,
     whenVerbLevel
@@ -95,8 +109,7 @@ data DynFlag = Quiet
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-data WarnFlag = WarnError
-              | WarnSimplifierBailout
+data WarnFlag = WarnSimplifierBailout
               | WarnUnusedCommandBind
               | WarnUnsafeAutoCast
               | WarnUnsafeParAutoCast
@@ -172,10 +185,11 @@ data Flags = Flags
 
     , maxFusionBlowup :: !Double
 
-    , dynFlags   :: !(FlagSet DynFlag)
-    , warnFlags  :: !(FlagSet WarnFlag)
-    , dumpFlags  :: !(FlagSet DumpFlag)
-    , traceFlags :: !(FlagSet TraceFlag)
+    , dynFlags    :: !(FlagSet DynFlag)
+    , warnFlags   :: !(FlagSet WarnFlag)
+    , werrorFlags :: !(FlagSet WarnFlag)
+    , dumpFlags   :: !(FlagSet DumpFlag)
+    , traceFlags  :: !(FlagSet TraceFlag)
 
     , includePaths :: ![FilePath]
     , defines      :: ![(String, String)]
@@ -203,10 +217,11 @@ instance Monoid Flags where
         -- operations.
         , maxFusionBlowup = 3.0
 
-        , dynFlags   = mempty
-        , warnFlags  = mempty
-        , dumpFlags  = mempty
-        , traceFlags = mempty
+        , dynFlags    = mempty
+        , werrorFlags = mempty
+        , warnFlags   = mempty
+        , dumpFlags   = mempty
+        , traceFlags  = mempty
 
         , includePaths = []
         , defines      = []
@@ -226,10 +241,11 @@ instance Monoid Flags where
 
         , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
 
-        , dynFlags   = dynFlags f1   <> dynFlags f2
-        , warnFlags  = warnFlags f1  <> warnFlags f2
-        , dumpFlags  = dumpFlags f1  <> dumpFlags f2
-        , traceFlags = traceFlags f1 <> traceFlags f2
+        , dynFlags    = dynFlags f1    <> dynFlags f2
+        , warnFlags   = warnFlags f1   <> warnFlags f2
+        , werrorFlags = werrorFlags f1 <> werrorFlags f2
+        , dumpFlags   = dumpFlags f1   <> dumpFlags f2
+        , traceFlags  = traceFlags f1  <> traceFlags f2
 
         , includePaths = includePaths f1 <> includePaths f2
         , defines      = defines f1 <> defines f2
@@ -255,10 +271,7 @@ defaultFlags =
                       , VectFilterAnn]
 
     defaultWarnFlags :: [WarnFlag]
-    defaultWarnFlags = [ WarnSimplifierBailout
-                       , WarnUnusedCommandBind
-                       , WarnUnsafeAutoCast
-                       ]
+    defaultWarnFlags = [WarnUnusedCommandBind]
 
 class Monad m => MonadFlags m where
     askFlags   :: m Flags
@@ -342,6 +355,9 @@ testDynFlag f flags = dynFlags flags `testFlag` f
 setDynFlag :: DynFlag -> Flags -> Flags
 setDynFlag f flags = flags { dynFlags = setFlag (dynFlags flags) f }
 
+setDynFlags :: [DynFlag] -> Flags -> Flags
+setDynFlags fs flags = foldl' (flip setDynFlag) flags fs
+
 unsetDynFlag :: DynFlag -> Flags -> Flags
 unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
 
@@ -351,8 +367,23 @@ testWarnFlag f flags = warnFlags flags `testFlag` f
 setWarnFlag :: WarnFlag -> Flags -> Flags
 setWarnFlag f flags = flags { warnFlags = setFlag (warnFlags flags) f }
 
+setWarnFlags :: [WarnFlag] -> Flags -> Flags
+setWarnFlags fs flags = foldl' (flip setWarnFlag) flags fs
+
 unsetWarnFlag :: WarnFlag -> Flags -> Flags
 unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
+
+testWerrorFlag :: WarnFlag -> Flags -> Bool
+testWerrorFlag f flags = werrorFlags flags `testFlag` f
+
+setWerrorFlag :: WarnFlag -> Flags -> Flags
+setWerrorFlag f flags = flags { werrorFlags = setFlag (werrorFlags flags) f }
+
+setWerrorFlags :: [WarnFlag] -> Flags -> Flags
+setWerrorFlags fs flags = foldl' (flip setWerrorFlag) flags fs
+
+unsetWerrorFlag :: WarnFlag -> Flags -> Flags
+unsetWerrorFlag f flags = flags { werrorFlags = unsetFlag (werrorFlags flags) f }
 
 testDumpFlag :: DumpFlag -> Flags -> Bool
 testDumpFlag f flags = dumpFlags flags `testFlag` f
@@ -360,11 +391,17 @@ testDumpFlag f flags = dumpFlags flags `testFlag` f
 setDumpFlag :: DumpFlag -> Flags -> Flags
 setDumpFlag f flags = flags { dumpFlags = setFlag (dumpFlags flags) f }
 
+setDumpFlags :: [DumpFlag] -> Flags -> Flags
+setDumpFlags fs flags = foldl' (flip setDumpFlag) flags fs
+
 testTraceFlag :: TraceFlag -> Flags -> Bool
 testTraceFlag f flags = traceFlags flags `testFlag` f
 
 setTraceFlag :: TraceFlag -> Flags -> Flags
 setTraceFlag f flags = flags { traceFlags = setFlag (traceFlags flags) f }
+
+setTraceFlags :: [TraceFlag] -> Flags -> Flags
+setTraceFlags fs flags = foldl' (flip setTraceFlag) flags fs
 
 whenDynFlag :: MonadFlags m => DynFlag -> m () -> m ()
 whenDynFlag f act = do
@@ -374,6 +411,11 @@ whenDynFlag f act = do
 whenWarnFlag :: MonadFlags m => WarnFlag -> m () -> m ()
 whenWarnFlag f act = do
     doDump <- asksFlags (testWarnFlag f)
+    when doDump act
+
+whenWerrorFlag :: MonadFlags m => WarnFlag -> m () -> m ()
+whenWerrorFlag f act = do
+    doDump <- asksFlags (testWerrorFlag f)
     when doDump act
 
 whenDumpFlag :: MonadFlags m => DumpFlag -> m () -> m ()
