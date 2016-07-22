@@ -19,6 +19,9 @@ Individual errors have a negated form, either `-Wno` or `-Wno-`, e.g.,
 The default flags are `-Wsimplifier-bailout`, `-Wunused-command-bind`, and
 `-Wunsafe-auto-cast`.
 
+Individual warnings can be turned into errors with `-Werror=`, e.g.,
+`-Werror=unused-command-bind`.
+
 | Flag                     | Description |
 | ---                      | --- |
 | `-w`                     | Inhibit all warnings |

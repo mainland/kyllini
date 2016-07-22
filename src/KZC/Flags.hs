@@ -34,6 +34,11 @@ module KZC.Flags (
     setWarnFlags,
     unsetWarnFlag,
 
+    testWerrorFlag,
+    setWerrorFlag,
+    setWerrorFlags,
+    unsetWerrorFlag,
+
     testDumpFlag,
     setDumpFlag,
     setDumpFlags,
@@ -44,6 +49,7 @@ module KZC.Flags (
 
     whenDynFlag,
     whenWarnFlag,
+    whenWerrorFlag,
     whenDumpFlag,
     whenVerb,
     whenVerbLevel
@@ -78,7 +84,6 @@ data DynFlag = Quiet
              | StopAfterCheck
              | PrettyPrint
              | Lint
-             | WarnError
              | PrintUniques
              | ExpertTypes
              | LinePragmas
@@ -180,10 +185,11 @@ data Flags = Flags
 
     , maxFusionBlowup :: !Double
 
-    , dynFlags   :: !(FlagSet DynFlag)
-    , warnFlags  :: !(FlagSet WarnFlag)
-    , dumpFlags  :: !(FlagSet DumpFlag)
-    , traceFlags :: !(FlagSet TraceFlag)
+    , dynFlags    :: !(FlagSet DynFlag)
+    , warnFlags   :: !(FlagSet WarnFlag)
+    , werrorFlags :: !(FlagSet WarnFlag)
+    , dumpFlags   :: !(FlagSet DumpFlag)
+    , traceFlags  :: !(FlagSet TraceFlag)
 
     , includePaths :: ![FilePath]
     , defines      :: ![(String, String)]
@@ -211,10 +217,11 @@ instance Monoid Flags where
         -- operations.
         , maxFusionBlowup = 3.0
 
-        , dynFlags   = mempty
-        , warnFlags  = mempty
-        , dumpFlags  = mempty
-        , traceFlags = mempty
+        , dynFlags    = mempty
+        , werrorFlags = mempty
+        , warnFlags   = mempty
+        , dumpFlags   = mempty
+        , traceFlags  = mempty
 
         , includePaths = []
         , defines      = []
@@ -234,10 +241,11 @@ instance Monoid Flags where
 
         , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
 
-        , dynFlags   = dynFlags f1   <> dynFlags f2
-        , warnFlags  = warnFlags f1  <> warnFlags f2
-        , dumpFlags  = dumpFlags f1  <> dumpFlags f2
-        , traceFlags = traceFlags f1 <> traceFlags f2
+        , dynFlags    = dynFlags f1    <> dynFlags f2
+        , warnFlags   = warnFlags f1   <> warnFlags f2
+        , werrorFlags = werrorFlags f1 <> werrorFlags f2
+        , dumpFlags   = dumpFlags f1   <> dumpFlags f2
+        , traceFlags  = traceFlags f1  <> traceFlags f2
 
         , includePaths = includePaths f1 <> includePaths f2
         , defines      = defines f1 <> defines f2
@@ -368,6 +376,18 @@ setWarnFlags fs flags = foldl' (flip setWarnFlag) flags fs
 unsetWarnFlag :: WarnFlag -> Flags -> Flags
 unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
 
+testWerrorFlag :: WarnFlag -> Flags -> Bool
+testWerrorFlag f flags = werrorFlags flags `testFlag` f
+
+setWerrorFlag :: WarnFlag -> Flags -> Flags
+setWerrorFlag f flags = flags { werrorFlags = setFlag (werrorFlags flags) f }
+
+setWerrorFlags :: [WarnFlag] -> Flags -> Flags
+setWerrorFlags fs flags = foldl' (flip setWerrorFlag) flags fs
+
+unsetWerrorFlag :: WarnFlag -> Flags -> Flags
+unsetWerrorFlag f flags = flags { werrorFlags = unsetFlag (werrorFlags flags) f }
+
 testDumpFlag :: DumpFlag -> Flags -> Bool
 testDumpFlag f flags = dumpFlags flags `testFlag` f
 
@@ -394,6 +414,11 @@ whenDynFlag f act = do
 whenWarnFlag :: MonadFlags m => WarnFlag -> m () -> m ()
 whenWarnFlag f act = do
     doDump <- asksFlags (testWarnFlag f)
+    when doDump act
+
+whenWerrorFlag :: MonadFlags m => WarnFlag -> m () -> m ()
+whenWerrorFlag f act = do
+    doDump <- asksFlags (testWerrorFlag f)
     when doDump act
 
 whenDumpFlag :: MonadFlags m => DumpFlag -> m () -> m ()

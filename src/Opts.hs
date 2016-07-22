@@ -114,27 +114,16 @@ parseFlagOpts :: forall m . Monad m
               -> String
               -> Flags
               -> m Flags
-parseFlagOpts fs fopts arg =
+parseFlagOpts fopts foptdescrs arg fs =
     if null flagArg
-      then parseFlag fs
-      else parseOpts flag flagArg fopts
+      then do maybe_fs' <- parseFlag flag fopts fs
+              case maybe_fs' of
+                Nothing  -> parseOpts flag flagArg foptdescrs fs
+                Just fs' -> return fs'
+      else parseOpts flag flagArg foptdescrs fs
   where
     flag, flagArg :: String
     (flag, flagArg) = splitOn '=' arg
-
-    parseFlag :: [FlagOpt] -> Flags -> m Flags
-    parseFlag [] =
-        parseOpts flag flagArg fopts
-
-    parseFlag (FlagOpt f s _ set Nothing:fs')
-      | flag == s = return . set f
-      | otherwise = parseFlag fs'
-
-    parseFlag (FlagOpt f s _ set (Just unset):fs')
-      | flag == s          = return . set f
-      | flag == "no" ++ s  = return . unset f
-      | flag == "no-" ++ s = return . unset f
-      | otherwise          = parseFlag fs'
 
     parseOpts :: String
               -> String
@@ -156,6 +145,27 @@ parseFlagOpts fs fopts arg =
 
     parseOpts flag flagArg (_:opts) =
         parseOpts flag flagArg opts
+
+parseFlag :: forall m . Monad m
+          => String
+          -> [FlagOpt]
+          -> Flags
+          -> m (Maybe Flags)
+parseFlag flag = go
+  where
+    go :: [FlagOpt] -> Flags -> m (Maybe Flags)
+    go [] =
+        return . const Nothing
+
+    go (FlagOpt f s _ set Nothing:fs')
+      | flag == s = return . Just . set f
+      | otherwise = go fs'
+
+    go (FlagOpt f s _ set (Just unset):fs')
+      | flag == s          = return . Just . set f
+      | flag == "no" ++ s  = return . Just . unset f
+      | flag == "no-" ++ s = return . Just . unset f
+      | otherwise          = go fs'
 
 mkFlagOpts :: String
            -> [(a, String, String)]
@@ -303,10 +313,19 @@ wFlags =
     ]
 
 wOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]
-wOpts = [FlagOption "error" (NoArg werror) "make warnings errors"]
+wOpts = [FlagOption "error" (OptArg werror "WFLAG") "make warnings errors"]
   where
-    werror :: Flags -> m Flags
-    werror = return . setDynFlag WarnError
+    werror :: Maybe String -> Flags -> m Flags
+    werror Nothing  fs =
+        return $ fs { werrorFlags = warnFlags fs }
+    werror (Just f) fs = do
+        maybe_fs' <- parseFlag f werrorOpts fs
+        case maybe_fs' of
+          Nothing  -> fail $ "Unrecognized flag `" ++ f ++ "`"
+          Just fs' -> return fs'
+
+    werrorOpts :: [FlagOpt]
+    werrorOpts = mkFlagOpts "" wFlags setWerrorFlag (Just unsetWerrorFlag)
 
 compilerOpts :: [String] -> IO (Flags, [String])
 compilerOpts argv =

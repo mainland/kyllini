@@ -105,11 +105,8 @@ class (MonadFlags m, MonadException m) => MonadErr m where
 
     warn :: Exception e => e -> m ()
     warn ex = do
-        werror <- asksFlags (testDynFlag WarnError)
-        if werror
-          then err ex_warn
-          else do ctx <- askErrCtx
-                  displayWarning (toContextException ctx ex_warn)
+        ctx <- askErrCtx
+        displayWarning (toContextException ctx ex_warn)
       where
         ex_warn :: WarnException
         ex_warn = WarnException (toException ex)
@@ -221,7 +218,12 @@ warndoc :: MonadErr m => Doc -> m ()
 warndoc msg = warn (FailException msg)
 
 warnWhen :: (Exception e, MonadErr m) => WarnFlag -> e -> m ()
-warnWhen f e = whenWarnFlag f $ warn e
+warnWhen f e =
+    whenWarnFlag f $ do
+      isErr <- asksFlags (testWerrorFlag f)
+      if isErr
+        then err e
+        else warn e
 
 warndocWhen :: MonadErr m => WarnFlag -> Doc -> m ()
 warndocWhen f msg = warnWhen f (FailException msg)
