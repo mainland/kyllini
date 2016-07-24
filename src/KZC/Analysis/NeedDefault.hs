@@ -210,7 +210,7 @@ instance Pretty Val where
     ppr UnknownV       = text "unknown"
     ppr (IntV rng)     = ppr rng
     ppr (ArrV arr)     = ppr arr
-    ppr (StructV flds) = pprStruct (Map.toList flds)
+    ppr (StructV flds) = pprStruct equals (Map.toList flds)
     ppr TopV           = text "top"
 
 instance Poset Val where

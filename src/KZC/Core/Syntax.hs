@@ -697,7 +697,7 @@ instance IsLabel l => Pretty (Decl l) where
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> pprStruct flds))
+        group (nest 2 (lhs <+/> text "=" </> pprStruct colon flds))
       where
         lhs = text "struct" <+> ppr s
 
@@ -801,7 +801,7 @@ instance Pretty Exp where
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
     pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct fields
+        ppr s <+> pprStruct equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f

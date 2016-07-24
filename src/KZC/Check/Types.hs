@@ -173,7 +173,7 @@ instance Pretty IVar where
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct fields
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =

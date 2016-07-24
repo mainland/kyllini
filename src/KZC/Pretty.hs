@@ -60,13 +60,13 @@ semiEmbraceWrap ds =
       [d]  -> lbrace </> d </> rbrace
       _    -> nest 2 (lbrace </> (align . folddoc (</>) . punctuate semi) ds) </> rbrace
 
-pprStruct :: forall a b . (Pretty a, Pretty b) => [(a, b)] -> Doc
-pprStruct flds =
+pprStruct :: forall a b . (Pretty a, Pretty b) => Doc -> [(a, b)] -> Doc
+pprStruct sep flds =
     embrace commasep $
     map pprField flds
   where
     pprField :: (a, b) -> Doc
-    pprField (f, v) = ppr f <+> text "=" <+> ppr v
+    pprField (f, v) = ppr f <+> sep <+> ppr v
 
 data Fixity = Fixity Assoc Int
   deriving (Eq, Ord)

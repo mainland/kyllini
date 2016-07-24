@@ -514,7 +514,7 @@ instance Pretty Exp where
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
     pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct fields
+        ppr s <+> pprStruct equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -706,7 +706,7 @@ instance Pretty Cmd where
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct fields
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =

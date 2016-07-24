@@ -425,7 +425,7 @@ instance Pretty (CExp l) where
     ppr (CBitSlice e)            = ppr e
     ppr (CIdx _ carr cidx)       = ppr carr <> brackets (ppr cidx)
     ppr (CSlice _ carr cidx len) = ppr carr <> brackets (ppr cidx <> colon <> ppr len)
-    ppr (CStruct flds)           = pprStruct flds
+    ppr (CStruct flds)           = pprStruct equals flds
     ppr (CBits e)                = ppr e
     ppr (CAlias _ e)             = ppr e
     ppr CComp{}                  = text "<comp>"
