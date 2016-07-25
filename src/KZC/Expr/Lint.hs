@@ -754,10 +754,12 @@ checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
 checkCast tau1 tau2 =
     faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
--- | @checkBitcast tau1 tau2@ checks that a value of type @tau1@ can be bitcast to
--- a value of type @tau2@.
+-- | @checkBitcast tau1 tau2@ checks that a value of type @tau1@ can be bitcast
+-- to a value of type @tau2@.
 checkBitcast :: MonadTc m => Type -> Type -> m ()
 checkBitcast tau1 tau2 = do
+    checkKind tau1 TauK
+    checkKind tau2 TauK
     w1 <- typeSize tau1
     w2 <- typeSize tau2
     when (w2 /= w1) $
