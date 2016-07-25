@@ -24,6 +24,7 @@ module KZC.Expr.Smart (
     unRefT,
     arrT,
     arrKnownT,
+    structT,
     stT,
 
     isBaseT,
@@ -132,6 +133,9 @@ arrKnownT i tau = ArrT (ConstI i l) tau l
   where
     l :: SrcLoc
     l = srclocOf tau
+
+structT :: Struct -> Type
+structT struct = StructT struct (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
 stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)

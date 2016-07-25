@@ -80,6 +80,7 @@ import KZC.Expr.Smart (tyVarT,
                        unRefT,
                        arrT,
                        arrKnownT,
+                       structT,
                        stT,
 
                        isBaseT,
