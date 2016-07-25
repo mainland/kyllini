@@ -1210,6 +1210,11 @@ simplE (UnopE op e s) = do
     unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c =
         return $ ConstE c' s
 
+    -- Remove duplicate bitcast operations.
+    unop op@Bitcast{} (UnopE Bitcast{} e s) = do
+        rewrite
+        return $ UnopE op e s
+
     unop Len e' = do
         (iota, _) <- inferExp e' >>= checkArrOrRefArrT
         iota'     <- simplIota iota
