@@ -53,6 +53,8 @@ module KZC.Expr.Smart (
     arrayC,
     structC,
 
+    isArrC,
+
     fromIntC,
 
     mkVar,
@@ -235,6 +237,10 @@ arrayC = ArrayC
 
 structC :: Struct -> [(Field, Const)] -> Const
 structC = StructC
+
+isArrC :: Const -> Bool
+isArrC ArrayC{} = True
+isArrC _        = False
 
 fromIntC :: Monad m => Const -> m Int
 fromIntC (FixC I _ _ (BP 0) x) =

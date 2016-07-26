@@ -109,6 +109,8 @@ import KZC.Expr.Smart (tyVarT,
                        arrayC,
                        structC,
 
+                       isArrC,
+
                        fromIntC,
 
                        mkVar)
@@ -253,9 +255,9 @@ isConstE ConstE{} = True
 isConstE _        = False
 
 isArrE :: Exp -> Bool
-isArrE (ConstE ArrayC{} _) = True
-isArrE ArrayE{}            = True
-isArrE _                   = False
+isArrE (ConstE c _) = isArrC c
+isArrE ArrayE{}     = True
+isArrE _            = False
 
 sliceLen :: Num a => Maybe Int -> a
 sliceLen Nothing    = 1
