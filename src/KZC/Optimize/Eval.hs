@@ -956,7 +956,7 @@ lutExp e = do
                 Set.map unLUTVar (lutOutVars info)
     in_refs  <- mapM (lutVarRef v_refs) $ toList $ lutInVars info
     out_refs <- mapM (lutVarRef v_refs) $ toList $ lutOutVars info
-    ret_ref  <- resultVarRef (lutReturnedVar info) (lutResultType info)
+    ret_ref  <- resultVarRef (lutResultVar info) (lutResultType info)
     tau_ret  <- inferExp e
     traceLUT $ nest 2 $ text "LUT:" <+> ppr tau_ret </> ppr e </> ppr info
     e'       <- go [(v, ref, tau) | (v, (ref, tau)) <- Map.assocs v_refs]
