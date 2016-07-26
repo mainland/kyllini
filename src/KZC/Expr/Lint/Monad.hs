@@ -190,6 +190,24 @@ instance (Monoid w, MonadTc m) => MonadTc (S.WriterT w m) where
     askTc       = lift askTc
     localTc f m = S.WriterT $ localTc f (S.runWriterT m)
 
+instance MonadTcRef m => MonadTcRef (MaybeT m) where
+
+#if !MIN_VERSION_base(4,8,0)
+instance (Error e, MonadTcRef m) => MonadTcRef (ErrorT e m) where
+#endif /* !MIN_VERSION_base(4,8,0) */
+
+instance MonadTcRef m => MonadTcRef (ExceptT e m) where
+
+instance MonadTcRef m => MonadTcRef (ReaderT r m) where
+
+instance MonadTcRef m => MonadTcRef (StateT r m) where
+
+instance MonadTcRef m => MonadTcRef (S.StateT r m) where
+
+instance (Monoid w, MonadTcRef m) => MonadTcRef (WriterT w m) where
+
+instance (Monoid w, MonadTcRef m) => MonadTcRef (S.WriterT w m) where
+
 extendTcEnv :: forall k v a m . (Ord k, MonadTc m)
             => (TcEnv -> Map k v)
             -> (TcEnv -> Map k v -> TcEnv)
