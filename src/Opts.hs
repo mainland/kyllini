@@ -218,19 +218,19 @@ fOpts =
     maxErrCtxOpt s fs =
       case reads s of
         [(n, "")]  -> return fs { maxErrCtx = n }
-        _          -> fail "argument to --ferrctx must be an integer"
+        _          -> fail "argument to -ferrctx must be an integer"
 
     maxSimplIterationsOpt :: String -> Flags -> m Flags
     maxSimplIterationsOpt s fs =
         case reads s of
           [(n, "")]  -> return fs { maxSimpl = n }
-          _          -> fail "argument to --fmax-simplifier-iterations must be an integer"
+          _          -> fail "argument to -fmax-simplifier-iterations must be an integer"
 
     maxLUTOpt :: String -> Flags -> m Flags
     maxLUTOpt s fs = do
         n <- case humandReadable s of
                Just n  -> return n
-               Nothing -> fail $ "bad argument to --fmax-lut option: " ++ s
+               Nothing -> fail $ "bad argument to -fmax-lut option: " ++ s
         return fs { maxLUT     = n
                   , maxLUTLog2 = ceiling (logBase (2::Double) (fromIntegral n))
                   }
@@ -239,13 +239,13 @@ fOpts =
     minLUTOpsOpt s fs =
         case reads s of
           [(n, "")]  -> return fs { minLUTOps = n }
-          _          -> fail "argument to --fmin-lut-ops must be an integer"
+          _          -> fail "argument to -fmin-lut-ops must be an integer"
 
     maxFusionBlowupOpt :: String -> Flags -> m Flags
     maxFusionBlowupOpt s fs =
         case reads s of
           [(n, "")]  -> return fs { maxFusionBlowup = n }
-          _          -> fail "argument to --fmax-fusion-blowup must be a float"
+          _          -> fail "argument to -fmax-fusion-blowup must be a float"
 
 dFlags :: [(DynFlag, String, String)]
 dFlags =
