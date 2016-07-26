@@ -195,6 +195,7 @@ fFlags =
     , (VectFilterAnn, "vect-ann",     "use vectorization annotations")
     , (Coalesce,      "coalesce",     "coalesce computations")
     , (CoalesceTop,   "coalesce-top", "coalesce top-level computation")
+    , (LowerGen,      "lower-gen",    "lower generators to constants")
     ]
 
 fOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]

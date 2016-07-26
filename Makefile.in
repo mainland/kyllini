@@ -104,6 +104,8 @@ SOURCE = \
 	KZC/Optimize/Eval/Val.hs \
 	KZC/Optimize/Fuse.hs \
 	KZC/Optimize/HashConsConsts.hs \
+	KZC/Optimize/LowerGenerators.hs \
+	KZC/Optimize/LutToGen.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \
 	KZC/Pretty.hs \

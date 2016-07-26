@@ -19,36 +19,16 @@ module KZC.Interp (
     I,
     evalI,
 
-    Val,
-    fromConst,
-    toConst,
-    defaultVal,
-
-    enumVals,
-    enumValsList,
-
-    Ref,
-    fromRef,
-    toRef,
-    defaultRef,
-    idxR,
-
-    lookupVal,
-    extendVals,
-
-    lookupRef,
-    extendRefs,
-
-    assign,
-
     evalExp,
 
-    compileExp
+    compileExp,
+    compileAndRunGen
   ) where
 
 import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.IO.Class (MonadIO,
+                               liftIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
 import Control.Monad.Reader (MonadReader(..),
@@ -56,8 +36,6 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.Trans.Class (MonadTrans(..))
-import Data.Binary.IEEE754 (wordToFloat,
-                            wordToDouble)
 import Data.Bits
 import Data.IORef (IORef)
 import Data.Map (Map)
@@ -65,9 +43,6 @@ import qualified Data.Map as Map
 import qualified Data.Vector as V
 import Data.Vector.Mutable (MVector)
 import qualified Data.Vector.Mutable as MV
-import Data.Word (Word32,
-                  Word64)
-import GHC.Float (float2Double)
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Enum
@@ -89,17 +64,9 @@ isBaseV StructC{} = False
 isBaseV ArrayC{}  = False
 isBaseV _         = True
 
--- | Convert a constant to a value
-fromConst :: Const -> Val
-fromConst = id
-
--- | Convert a value to a constant
-toConst :: Val -> Const
-toConst = id
-
 -- | Produce a default value of the given type.
 defaultVal :: MonadTcRef m => Type -> m Val
-defaultVal tau = fromConst <$> defaultValueC tau
+defaultVal = defaultValueC
 
 -- | Convert an 'Integral' value to a 'Val' of the given (fixpoint) type.
 intV :: Integral i => Type -> i -> Val
@@ -134,72 +101,6 @@ projV (StructC _ flds) f =
 
 projV val _ =
   faildoc $ text "Cannot project from non-struct:" <+> ppr val
-
--- | Enumerate all values of a type /in bit order/.
-enumVals :: MonadTc m
-         => Type
-         -> m [Val]
-enumVals UnitT{} =
-    return [UnitC]
-
-enumVals BoolT{} =
-    return $ map BoolC [(minBound :: Bool)..]
-
-enumVals (FixT S.I U (W w) (BP 0) _) =
-    return $ map (FixC S.I U (W w) (BP 0))
-                 [0..hi]
-  where
-    hi :: Int
-    hi = 2^w-1
-
-enumVals (FixT S.I S (W w) (BP 0) _) =
-    return $ map (FixC S.I S (W w) (BP 0)) $
-                 [0..hi] ++ [lo..0]
-  where
-    hi, lo :: Int
-    hi = 2^(w-1)-1
-    lo = -(2^(w-1))
-
-enumVals (FloatT FP32 _) =
-    return $ map (FloatC FP32 . float2Double . wordToFloat)
-                 [(minBound :: Word32)..]
-
-enumVals (FloatT FP64 _) =
-    return $ map (FloatC FP64 . wordToDouble)
-                 [(minBound :: Word64)..]
-
-enumVals (RefT tau _) =
-    enumVals tau
-
-enumVals (StructT sname _) = do
-    StructDef _ flds _ <- lookupStruct sname
-    let fs :: [Field]
-        taus :: [Type]
-        (fs, taus) = unzip flds
-    valss <- enumValsList taus
-    return [StructC sname (fs `zip` vals) | vals <- valss]
-
-enumVals (ArrT (ConstI n _) tau _) = do
-    valss <- enumValsList (replicate n tau)
-    return [ArrayC (V.fromList vals) | vals <- valss]
-
-enumVals tau =
-    faildoc $ text "Cannot enumerate values of type" <+> ppr tau
-
-enumValsList :: MonadTc m
-             => [Type]
-             -> m [[Val]]
-enumValsList [] =
-    return []
-
-enumValsList [tau] = do
-    vals <- enumVals tau
-    return [[val] | val <- vals]
-
-enumValsList (tau:taus) = do
-    vals  <- enumVals tau
-    valss <- enumValsList taus
-    return [val':vals' | vals' <- valss, val' <- vals]
 
 -- | References
 data Ref s -- | A reference to a value
@@ -890,5 +791,71 @@ compileExp (BindE (TameV v) tau e1 e2 _) = do
 compileExp (LutE _ e) =
     compileExp e
 
+compileExp (GenE e gs _) =
+    compileGen e gs
+
 compileExp e =
     faildoc $ text "Cannot evaluate" <+> ppr e
+
+compileGen :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
+            => Exp
+            -> [Gen]
+            -> I s m (IO Const)
+compileGen e gs = do
+    w     <- sum <$> mapM typeSize taus
+    let n =  2^w
+    ref   <- newRef 0
+    mv    <- MV.new n
+    mval <- compileGens gs $ do
+            mval <- compileExp e
+            return $ do i   <- readRef ref
+                        val <- mval
+                        val `seq` MV.write mv i val
+                        let i' = i + 1
+                        i' `seq` writeRef ref i'
+    return $ do mval
+                ArrayC <$> V.freeze mv
+  where
+    taus :: [Type]
+    taus = map genType gs
+
+    genType :: Gen -> Type
+    genType (GenG    _ tau _ _) = tau
+    genType (GenRefG _ tau _ _) = tau
+
+    unGen :: Gen -> (Var, Type, Const)
+    unGen (GenG v tau c _)    = (v, tau, c)
+    unGen (GenRefG v tau c _) = (v, tau, c)
+
+    compileGens :: [Gen] -> I s m (IO ()) -> I s m (IO ())
+    compileGens gs k = do
+        mgs <- go gs
+        return $ mgs (return ())
+      where
+        go :: [Gen] -> I s m (IO () -> IO ())
+        go [] =
+            const <$> k
+
+        go (g:gs) = do
+            ref <- defaultRef tau
+            extendRefs [(v, ref)] $ do
+            ArrayC vs <- evalConst c
+            let n     =  V.length vs
+            mgs       <- go gs
+            let mg :: IO () -> IO ()
+                mg init = iter 0
+                  where
+                    iter :: Int -> IO ()
+                    iter i | i == n    = return ()
+                           | otherwise = do init
+                                            assign ref (vs V.! i)
+                                            mgs (init >> assign ref (vs V.! i))
+                                            iter (i+1)
+            return mg
+          where
+            (v, tau, c) = unGen g
+
+compileAndRunGen :: MonadTcRef m => Exp -> [Gen] -> m Const
+compileAndRunGen e gs = do
+    mval <- evalI $ compileGen e gs
+    liftIO mval

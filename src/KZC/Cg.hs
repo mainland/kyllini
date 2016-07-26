@@ -48,6 +48,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Name
 import KZC.Platform
@@ -823,18 +824,8 @@ cgExp e k =
   where
     go :: forall a . Exp -> Kont l a -> Cg l a
     go e@(ConstE c _) k = do
-        tau <- inferExp e
-        cgConst c >>= cgConstExp tau
-      where
-        cgConstExp :: Type -> CExp l -> Cg l a
-        cgConstExp tau (CInit cinit) = do
-            cv :: C.Id <- gensym "__const"
-            ctau       <- cgType tau
-            appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
-            runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
-
-        cgConstExp _ ce =
-            runKont k ce
+        ce <- cgConst c
+        cgConstExp e ce k
 
     go (VarE v _) k =
         lookupVarCExp v >>= runKont k
@@ -1231,12 +1222,20 @@ cgExp e k =
     go (LutE _ e) k =
         cgExp e k
 
-    go (GenE e gs _) k =
-        cgGen e gs k
+    go e0@(GenE e gs _) k = do
+        ce <- compileAndRunGen e gs >>= cgConst
+        cgConstExp e0 ce k
 
-cgGen :: forall l a . IsLabel l => Exp -> [Gen] -> Kont l a -> Cg l a
-cgGen _ _ _ =
-    faildoc $ text "Generator expressions not supported."
+cgConstExp :: IsLabel l => Exp -> CExp l -> Kont l a -> Cg l a
+cgConstExp e (CInit cinit) k = do
+    tau        <- inferExp e
+    cv :: C.Id <- gensym "__const"
+    ctau       <- cgType tau
+    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+    runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
+
+cgConstExp _ ce k =
+    runKont k ce
 
 -- | Generate code for a looping construct. Any identifiers used in the body of
 -- the loop are marked as used again after code for the body has been generated

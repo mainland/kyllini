@@ -64,6 +64,7 @@ warn on an unused command bind.
 | `-fcoalesce-top` | Coalesce top-level computation |
 | `-fsimpl`        | Run the simplifier|
 | `-finline`       | Inline when simplifying|
+| `-flower-gen`     | Lower generators to explicit constant arrays |
 | `-ferrctx=INT`                    | set maximum error context"
 | `-fmax-simplifier-iterations=INT` | Set maximum simplification iterations|
 | `-fmax-lut=INT`                   | Set maximum LUT size in bytes|
