@@ -526,7 +526,7 @@ evalConst (ReplicateC n c) = do
     return $ ArrayV $ P.replicateDefault n val
 
 evalConst (EnumC tau) =
-    enumTypeArray tau >>= evalConst
+    evalConst =<< ArrayC <$> enumType tau
 
 evalConst (StructC s flds) = do
     vals <- mapM evalConst cs

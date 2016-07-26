@@ -25,7 +25,8 @@ module KZC.Interp (
     compileAndRunGen
   ) where
 
-import Control.Monad (void)
+import Control.Monad (void,
+                      zipWithM_)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO,
                                liftIO)
@@ -40,9 +41,12 @@ import Data.Bits
 import Data.IORef (IORef)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Vector (Vector)
 import qualified Data.Vector as V
+import qualified Data.Vector.Fusion.Bundle.Monadic as B
+import qualified Data.Vector.Fusion.Bundle.Size as B
+import qualified Data.Vector.Generic.Mutable as MV
 import Data.Vector.Mutable (MVector)
-import qualified Data.Vector.Mutable as MV
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Enum
@@ -315,7 +319,7 @@ evalDecl (LetRefLD v tau e _) k = do
 
 evalConst :: MonadTcRef m => Const -> I s m Val
 evalConst (ReplicateC n c) = return $ ArrayC $ V.replicate n c
-evalConst (EnumC tau)      = enumTypeArray tau >>= evalConst
+evalConst (EnumC tau)      = evalConst =<< ArrayC <$> enumType tau
 evalConst c                = return c
 
 evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)
@@ -804,56 +808,26 @@ compileGen :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
 compileGen e gs = do
     w     <- sum <$> mapM typeSize taus
     let n =  2^w
-    ref   <- newRef 0
-    mv    <- MV.new n
-    mval <- compileGens gs $ do
-            mval <- compileExp e
-            return $ do i   <- readRef ref
-                        val <- mval
-                        val `seq` MV.write mv i val
-                        let i' = i + 1
-                        i' `seq` writeRef ref i'
-    return $ do mval
-                ArrayC <$> V.freeze mv
+    refs  <- mapM defaultRef taus
+    ss    <- mapM streamConst cs
+    mval  <- extendRefs (vs `zip` refs) $
+             compileExp e
+    let mgen :: Vector Const -> IO Const
+        mgen cs = do zipWithM_ assign refs (V.toList cs)
+                     mval
+    return $ do
+       mv <- MV.munstream $ B.mapM mgen $
+             B.fromStream (streamProduct (V.fromList ss)) (B.Exact n)
+       ArrayC <$> V.unsafeFreeze mv
   where
-    taus :: [Type]
-    taus = map genType gs
-
-    genType :: Gen -> Type
-    genType (GenG    _ tau _ _) = tau
-    genType (GenRefG _ tau _ _) = tau
+    -- Generators are listed so that the last generator varies fastest.
+    -- Therefore we must reverse the list of generators since when streaming a
+    -- product of streams, the **first** stream varies fastest.
+    (vs, taus, cs) = unzip3 (map unGen (reverse gs))
 
     unGen :: Gen -> (Var, Type, Const)
     unGen (GenG v tau c _)    = (v, tau, c)
     unGen (GenRefG v tau c _) = (v, tau, c)
-
-    compileGens :: [Gen] -> I s m (IO ()) -> I s m (IO ())
-    compileGens gs k = do
-        mgs <- go gs
-        return $ mgs (return ())
-      where
-        go :: [Gen] -> I s m (IO () -> IO ())
-        go [] =
-            const <$> k
-
-        go (g:gs) = do
-            ref <- defaultRef tau
-            extendRefs [(v, ref)] $ do
-            ArrayC vs <- evalConst c
-            let n     =  V.length vs
-            mgs       <- go gs
-            let mg :: IO () -> IO ()
-                mg init = iter 0
-                  where
-                    iter :: Int -> IO ()
-                    iter i | i == n    = return ()
-                           | otherwise = do init
-                                            assign ref (vs V.! i)
-                                            mgs (init >> assign ref (vs V.! i))
-                                            iter (i+1)
-            return mg
-          where
-            (v, tau, c) = unGen g
 
 compileAndRunGen :: MonadTcRef m => Exp -> [Gen] -> m Const
 compileAndRunGen e gs = do

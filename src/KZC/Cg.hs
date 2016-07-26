@@ -572,7 +572,7 @@ cgConst (ReplicateC n c) = do
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
-    enumTypeArray tau >>= cgConst
+    cgConst =<< ArrayC <$> enumType tau
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
