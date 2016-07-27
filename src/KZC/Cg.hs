@@ -2422,6 +2422,24 @@ cgAssign tau ce1 ce2 = do
         cgAssignBitArray ce1 ce2 clen
       where
         cgAssignBitArray :: CExp l -> CExp l -> CExp l -> Cg l ()
+        cgAssignBitArray ce1 ce2@CBits{} (CInt i) = do
+            appendComment $ text "Bit array (CBits):" <+> ppr ce1 <+> text ":=" <+> ppr ce2
+            go i
+          where
+            go :: Integer -> Cg l ()
+            go i | i <= 8    = appendStm [cstm|*((typename uint8_t*) $ce1) = $ce2;|]
+                 | i <= 16   = appendStm [cstm|*((typename uint16_t*) $ce1) = $ce2;|]
+                 | i <= 32   = appendStm [cstm|*((typename uint32_t*) $ce1) = $ce2;|]
+                 | i <= 64   = appendStm [cstm|*((typename uint64_t*) $ce1) = $ce2;|]
+                 | otherwise = faildoc $
+                               text "Bad bit array assignment:" </>
+                               ppr ce1 <+> text ":=" <+> ppr ce2
+
+        cgAssignBitArray ce1 ce2@CBits{} _ =
+            faildoc $
+            text "Bad bit array assignment:" </>
+            ppr ce1 <+> text ":=" <+> ppr ce2
+
         cgAssignBitArray ce1 ce2 clen = do
             appendComment $ text "Bit array:" <+> ppr ce1 <+> text ":=" <+> ppr ce2
             case (unBitCSliceBase ce1, unBitCSliceBase ce2, clen) of
