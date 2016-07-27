@@ -2564,15 +2564,14 @@ cgAssign tau ce1 ce2 = do
         cgArrayAddr ce =
             return ce
 
-    assign _ _ cv (CStruct flds) =
-        mapM_ cgAssignField flds
+    assign _ tau cv (CStruct flds) = do
+        structdef <- checkStructOrRefStructT tau >>= lookupStruct
+        mapM_ (cgAssignField structdef) flds
       where
-        cgAssignField :: (Field, CExp l) -> Cg l ()
-        cgAssignField (fld, ce) =
-            appendStm [cstm|$cv.$id:cfld = $ce;|]
-          where
-            cfld :: String
-            cfld = zencode (namedString fld)
+        cgAssignField :: StructDef -> (Field, CExp l) -> Cg l ()
+        cgAssignField structdef (fld, ce) = do
+            tau <- checkStructFieldT structdef fld
+            cgAssign tau (CExp [cexp|$cv.$id:(cfield fld)|]) ce
 
     -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
     -- may need to be dereferenced.
