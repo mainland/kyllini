@@ -2766,13 +2766,16 @@ cgLower tau = go
 
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg l ()
-appendTopComment doc =
-    appendTopDef [cedecl|$esc:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
+appendTopComment doc = appendTopDef [cedecl|$esc:(formatComment doc)|]
 
 -- | Append a comment to the current sequence of statements.
 appendComment :: Doc -> Cg l ()
-appendComment doc =
-    appendStm [cstm|$escstm:(pretty 80 (text "/*" <+> align doc <+> text "*/"))|]
+appendComment doc =   appendStm [cstm|$escstm:(formatComment doc)|]
+
+formatComment :: Doc -> String
+formatComment doc =
+    pretty 80 $ group $
+    text "/*" <+> align doc </> text "*/"
 
 -- | Reture 'True' if 'CExp' requires a bit mask.
 needsBitMask :: CExp l -> Bool
