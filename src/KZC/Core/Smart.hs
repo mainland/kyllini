@@ -21,6 +21,7 @@ module KZC.Core.Smart (
 
     unitE,
     intE,
+    uintE,
     varE,
     notE,
     catE,
@@ -157,6 +158,9 @@ unitE = ConstE UnitC noLoc
 
 intE :: Integral a => a -> Exp
 intE i = ConstE (intC i) noLoc
+
+uintE :: Integral a => a -> Exp
+uintE i = ConstE (uintC i) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
