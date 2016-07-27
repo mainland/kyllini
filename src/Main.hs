@@ -67,6 +67,8 @@ import KZC.Optimize.Coalesce
 import KZC.Optimize.Eval
 import KZC.Optimize.Fuse
 import KZC.Optimize.HashConsConsts
+import KZC.Optimize.LowerGenerators
+import KZC.Optimize.LutToGen
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.SysTools
@@ -116,14 +118,14 @@ runPipeline filepath = do
         -- Fuse pars
         runIf (testDynFlag Fuse) (traceCorePhase "fusion" fusionPhase) >=>
         -- Partially evaluate and simplify
-        runIf runEval (traceCorePhase "eval-phase1" evalPhase) >=>
+        runIf (testDynFlag PartialEval) (traceCorePhase "eval" evalPhase) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
-        -- Auto-LUT, partially evaluate, and simplify once more
-        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut" autolutPhase) >=>
-        runIf runEval (tracePhase "eval-phase2" evalPhase >=> tracePhase "lintCore" lintCore) >=>
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
+        -- Auto-LUT, convert LUTs to generators, and lower generators
+        runIf (testDynFlag AutoLUT)  (traceCorePhase "autolut" autolutPhase) >=>
+        runIf (testDynFlag LUT)      (traceCorePhase "lutToGen" lutToGenPhase) >=>
+        runIf (testDynFlag LowerGen) (traceCorePhase "lowerGen" lowerGenPhase) >=>
         -- One final round of simplification
-        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase4") >=>
+        runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
         -- Clean up the code, do some analysis, and codegen
         traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
@@ -185,9 +187,6 @@ runPipeline filepath = do
                           void $ lintCore prog''
                           go (i+1) n prog''
                   else return prog
-
-    runEval :: Flags -> Bool
-    runEval flags = testDynFlag PartialEval flags || testDynFlag LUT flags
 
     inputPhase :: FilePath -> MaybeT KZC T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
@@ -256,6 +255,16 @@ runPipeline filepath = do
     autolutPhase =
         lift . C.withTc . autolutProgram >=>
         dumpPass DumpAutoLUT "core" "autolut"
+
+    lutToGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lutToGenPhase =
+        lift . C.withTc . lutToGen >=>
+        dumpPass DumpLUT "core" "lutToGen"
+
+    lowerGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lowerGenPhase =
+        lift . C.withTc . lowerGenerators >=>
+        dumpPass DumpLUT "core" "lowerGen"
 
     evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     evalPhase =

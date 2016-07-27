@@ -34,8 +34,9 @@ module KZC.Core.Syntax (
     LocalDecl(..),
     BoundVar(..),
     OccInfo(..),
-    LutSize,
     Exp(..),
+    LutSize,
+    Gen(..),
     ToExp(..),
     UnrollAnn(..),
     InlineAnn(..),
@@ -261,10 +262,16 @@ data Exp = ConstE Const !SrcLoc
          | BindE WildVar Type Exp Exp !SrcLoc
          -- LUT
          | LutE !LutSize Exp
+         -- Generator expression
+         | GenE Exp [Gen] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | LUT size in bytes
 type LutSize = Integer
+
+data Gen = GenG    Var Type Const !SrcLoc
+         | GenRefG Var Type Const !SrcLoc
+  deriving (Eq, Ord, Read, Show)
 
 class ToExp a where
     toExp :: a -> Exp
@@ -474,6 +481,8 @@ instance Size Const where
     size FloatC{}         = 1
     size StringC{}        = 1
     size (ArrayC cs)      = if V.null cs then 0 else V.length cs * size (V.head cs)
+    size (ReplicateC n c) = n * size c
+    size EnumC{}          = 0
     size (StructC _ flds) = size (map snd flds)
 
 instance Size LocalDecl where
@@ -502,6 +511,7 @@ instance Size Exp where
     size (ReturnE _ e _)         = size e
     size (BindE _ _ e1 e2 _)     = size e1 + size e2
     size LutE{}                  = 1
+    size GenE{}                  = 0
 
 instance Size (Arg l) where
     size (ExpA e)  = size e
@@ -568,6 +578,7 @@ instance LUTSize Exp where
     lutSize (ReturnE _ e _)         = lutSize e
     lutSize (BindE _ _ e1 e2 _)     = lutSize e1 + lutSize e2
     lutSize (LutE sz _)             = sz
+    lutSize GenE{}                  = 0
 
 instance LUTSize (Arg l) where
     lutSize (ExpA e)  = lutSize e
@@ -827,6 +838,19 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         text "lut" <+> pprPrec appPrec1 e
 
+    pprPrec _ (GenE e gs _) =
+        lbracket <+>
+        align (ppr e <+> char '|' <+>
+               align (commasep (map ppr gs))) <+/>
+        rbracket
+
+instance Pretty Gen where
+    ppr (GenG v tau c _) =
+        ppr v <+> text ":" <+> ppr tau <+> text "<-" <+> ppr c
+
+    ppr (GenRefG v tau c _) =
+        ppr v <+> text ":" <+> ppr (RefT tau noLoc) <+> text "<-" <+> ppr c
+
 pprBody :: Exp -> Doc
 pprBody e =
     case expToStms e of
@@ -1042,6 +1066,11 @@ instance Fvs Exp Var where
     fvs (ReturnE _ e _)             = fvs e
     fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
     fvs (LutE _ e)                  = fvs e
+    fvs (GenE e gs _)               = fvs e <\\> binders gs
+
+instance Binders Gen Var where
+    binders (GenG    v _ _ _) = singleton v
+    binders (GenRefG v _ _ _) = singleton v
 
 instance Fvs (Arg l) Var where
     fvs (ExpA e)  = fvs e
@@ -1133,6 +1162,11 @@ instance HasVars Exp Var where
     allVars (ReturnE _ e _)             = allVars e
     allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
     allVars (LutE _ e)                  = allVars e
+    allVars (GenE e gs _)               = allVars e <> allVars gs
+
+instance HasVars Gen Var where
+    allVars (GenG    v _ _ _) = singleton v
+    allVars (GenRefG v _ _ _) = singleton v
 
 instance HasVars (Arg l) Var where
     allVars (ExpA e)  = allVars e
@@ -1299,6 +1333,13 @@ instance Subst Iota IVar Exp where
     substM (LutE sz e) =
         LutE sz <$> substM e
 
+    substM (GenE e gs l) =
+        GenE <$> substM e <*> substM gs <*> pure l
+
+instance Subst Iota IVar Gen where
+    substM (GenG    v tau c l)  = GenG v    <$> substM tau <*> pure c <*> pure l
+    substM (GenRefG v tau c l)  = GenRefG v <$> substM tau <*> pure c <*> pure l
+
 instance Subst Iota IVar (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e
     substM (CompA c) = CompA <$> substM c
@@ -1427,6 +1468,13 @@ instance Subst Type TyVar Exp where
 
     substM (LutE sz e) =
         LutE sz <$> substM e
+
+    substM (GenE e gs l) =
+        GenE <$> substM e <*> substM gs <*> pure l
+
+instance Subst Type TyVar Gen where
+    substM (GenG    v tau c l)  = GenG v    <$> substM tau <*> pure c <*> pure l
+    substM (GenRefG v tau c l)  = GenRefG v <$> substM tau <*> pure c <*> pure l
 
 instance Subst Type TyVar (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e
@@ -1563,6 +1611,9 @@ instance Subst Exp Var Exp where
 
     substM (LutE sz e) =
         LutE sz <$> substM e
+
+    substM (GenE e gs l) =
+        GenE <$> substM e <*> pure gs <*> pure l
 
 instance Subst Exp Var (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e

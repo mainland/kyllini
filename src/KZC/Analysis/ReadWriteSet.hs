@@ -482,6 +482,9 @@ rangeExp e =
     go (LutE _ e) =
         go e
 
+    go GenE{} =
+        return top
+
 rangeRef :: forall m . MonadTc m => Exp -> RW m Ref
 rangeRef = go
   where

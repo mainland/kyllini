@@ -76,18 +76,29 @@ shouldLUT info e = do
                  lutBytes info <= fromIntegral (maxLUT dflags)
 
 data LUTInfo = LUTInfo
-    { lutInVars      :: Set LUTVar
-    , lutOutVars     :: Set LUTVar
-    , lutReturnedVar :: Maybe Var
-    , lutResultType  :: Type
-    , lutReadSet     :: Map Var RWSet
-    , lutWriteSet    :: Map Var RWSet
+    { -- Free variables
+      lutInVars     :: Set LUTVar
+      -- Variables written to
+    , lutOutVars    :: Set LUTVar
+      -- The result of the expression iff it is an out variable.
+    , lutResultVar  :: Maybe Var
+      -- Type of the expressions
+    , lutResultType :: Type
+      -- Read set
+    , lutReadSet    :: Map Var RWSet
+      -- Write set
+    , lutWriteSet   :: Map Var RWSet
 
+      -- Bit size of LUT input
     , lutInBits     :: Int
+      -- Bit size of LUT output
     , lutOutBits    :: Int
+      -- Bit size of LUT result
     , lutResultBits :: Int
 
+      -- Size in bytes of the LUT
     , lutBytes     :: Integer
+      -- log_2 of the size in bytes of the LUT
     , lutBytesLog2 :: Int
     }
 
@@ -95,7 +106,7 @@ instance Pretty LUTInfo where
     ppr info =
         nest 2 (text "In vars:" </> ppr (lutInVars info)) </>
         nest 2 (text "Out vars:" </> ppr (lutOutVars info)) </>
-        nest 2 (text "Returned var:" <+> ppr (lutReturnedVar info)) </>
+        nest 2 (text "Result var:" <+> ppr (lutResultVar info)) </>
         nest 2 (text "Result type:" <+> ppr (lutResultType info)) </>
         nest 2 (text "Read set:" </> ppr (lutReadSet info)) </>
         nest 2 (text "Write set:" </> ppr (lutWriteSet info)) </>
@@ -162,22 +173,24 @@ inferLUTVar (IdxL v _ maybe_len) = do
 lutInfo :: forall m . MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
     tau_res           <- inferExp e
-    let resVar        =  resultVar e
     (rset, wset)      <- readWriteSets e
     (inVars, outVars) <- lutVars (rset, wset)
+    let resVar        =  case resultVar e of
+                           Just v | v `Set.member` Set.map unLUTVar outVars -> Just v
+                           _ -> Nothing
     inbits            <- sum <$> mapM lutVarSize (Set.toList inVars)
     outbits           <- sum <$> mapM lutVarSize (Set.toList outVars)
     resbits           <- case resVar of
-                           Just v | VarL v `Set.member` outVars -> return 0
-                           _ -> typeSize tau_res
+                           Just{}  -> return 0
+                           Nothing -> typeSize tau_res
     let outbytes :: Int
         outbytes = (outbits + resbits + 7) `div` 8
-    return LUTInfo { lutInVars      = inVars
-                   , lutOutVars     = outVars
-                   , lutReturnedVar = resVar
-                   , lutResultType  = tau_res
-                   , lutReadSet     = rset
-                   , lutWriteSet    = wset
+    return LUTInfo { lutInVars     = inVars
+                   , lutOutVars    = outVars
+                   , lutResultVar  = resVar
+                   , lutResultType = tau_res
+                   , lutReadSet    = rset
+                   , lutWriteSet   = wset
 
                    , lutInBits     = inbits
                    , lutOutBits    = outbits
@@ -436,4 +449,7 @@ lutStats e =
         go e2
 
     go (LutE _ e) =
+        go e
+
+    go (GenE e _ _) =
         go e

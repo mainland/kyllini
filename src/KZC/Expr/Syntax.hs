@@ -210,6 +210,8 @@ data Const = UnitC
            | FloatC FP {-# UNPACK #-} !Double
            | StringC String
            | ArrayC !(Vector Const)
+           | ReplicateC Int Const
+           | EnumC Type
            | StructC Struct [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
@@ -653,6 +655,14 @@ instance Pretty Const where
         bitDoc (FixC I U (W 1) 0 0) = char '0'
         bitDoc (FixC I U (W 1) 0 1) = char '1'
         bitDoc _                    = error "Not a bit"
+
+    pprPrec _ (ReplicateC n c) =
+        braces $
+        pprPrec appPrec1 c <+> text "x" <+> ppr n
+
+    pprPrec _ (EnumC tau) =
+        braces $
+        ppr tau <+> text "..."
 
 pprSign :: Signedness -> Doc
 pprSign S = empty

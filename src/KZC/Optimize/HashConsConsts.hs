@@ -110,6 +110,9 @@ instance (IsLabel l, MonadTc m) => TransformExp (HC l m) where
         v <- maybe (insertConst c) return =<< lookupConst c
         return $ varE v
 
+    expT e@GenE{} =
+        return e
+
     expT e =
         transExp e
 

@@ -72,6 +72,7 @@ SOURCE = \
 	KZC/Check/Types.hs \
 	KZC/Core/Comp.hs \
 	KZC/Core/Embed.hs \
+	KZC/Core/Enum.hs \
 	KZC/Core/Label.hs \
 	KZC/Core/Lint.hs \
 	KZC/Core/Smart.hs \
@@ -79,6 +80,7 @@ SOURCE = \
 	KZC/Core/Transform.hs \
 	KZC/Derive.hs \
 	KZC/Error.hs \
+	KZC/Expr/Enum.hs \
 	KZC/Expr/Lint.hs \
 	KZC/Expr/Lint/Monad.hs \
 	KZC/Expr/Smart.hs \
@@ -102,6 +104,8 @@ SOURCE = \
 	KZC/Optimize/Eval/Val.hs \
 	KZC/Optimize/Fuse.hs \
 	KZC/Optimize/HashConsConsts.hs \
+	KZC/Optimize/LowerGenerators.hs \
+	KZC/Optimize/LutToGen.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \
 	KZC/Pretty.hs \

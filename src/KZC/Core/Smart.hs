@@ -44,6 +44,10 @@ module KZC.Core.Smart (
     returnE,
     bindE,
     seqE,
+    genE,
+
+    genG,
+    genrefG,
 
     (.:=.),
     (.>>.),
@@ -242,6 +246,15 @@ seqE (ReturnE _ (ConstE UnitC _) _) e2 =
 
 seqE e1 e2 =
     BindE WildV unitT e1 e2 (e1 `srcspan` e2)
+
+genE :: Exp -> [Gen] -> Exp
+genE e gs = GenE e gs (e `srcspan` gs)
+
+genG :: Var -> Type -> Const -> Gen
+genG v tau c = GenG v tau c (v `srcspan` tau)
+
+genrefG :: Var -> Type -> Const -> Gen
+genrefG v tau c = GenRefG v tau c (v `srcspan` tau)
 
 infixr 1 .:=.
 

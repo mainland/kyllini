@@ -737,6 +737,10 @@ useExp (BindE (TameV v) tau e1 e2 s) =
 useExp (LutE sz e) =
     topA $ LutE sz <$> (fst <$> useExp e)
 
+useExp (GenE e gs l) = do
+    e' <- checkGenerators gs $ \_ -> fst <$> useExp e
+    return (GenE e' gs l, top)
+
 useIf :: MonadTc m => ND m a -> ND m b -> ND m (a, b)
 useIf ma mb = do
     s   <- get

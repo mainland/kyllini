@@ -42,13 +42,16 @@ import KZC.Cg.CExp
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
+import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
+import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Name
+import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
@@ -405,8 +408,9 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl (LetD decl _) k =
-    cgLocalDecl decl k
+cgDecl (LetD decl _) k = do
+    flags <- askFlags
+    cgLocalDecl flags decl k
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     cf <- cvar f
@@ -534,15 +538,26 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-cgLocalDecl :: forall l a . IsLabel l => LocalDecl -> Cg l a -> Cg l a
-cgLocalDecl decl@(LetLD v tau e _) k =
+cgLocalDecl :: forall l a . IsLabel l => Flags -> LocalDecl -> Cg l a -> Cg l a
+cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
+    withSummaryContext decl $ do
+    appendComment $ text "Lut:" </> ppr e0
+    cv <- cgBinder (bVar v) tau
+    extendVars [(bVar v, tau)] $
+      extendVarCExps [(bVar v, cv)] $ do
+      e'     <- lutGenToExp (bVar v) e gs
+      citems <- inLocalScope $ inNewBlock_ $ cgExp e' $ multishot cgVoid
+      appendStm [cstm|{ $items:citems }|]
+      k
+
+cgLocalDecl _flags decl@(LetLD v tau e _) k =
     withSummaryContext decl $
     cgExp e $
     cgLetBinding v tau $ \cv ->
     extendVars [(bVar v, tau)] $
     extendVarCExps [(bVar v, cv)] k
 
-cgLocalDecl decl@(LetRefLD v tau maybe_e _) k =
+cgLocalDecl _flags decl@(LetRefLD v tau maybe_e _) k =
     withSummaryContext decl $
     cgLetRefBinding v tau maybe_e $ \cve ->
     extendVars [(bVar v, refT tau)] $
@@ -563,29 +578,14 @@ cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
     ces      <- V.toList <$> V.mapM cgConst cs
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
-  where
-    cgArrayConstInits :: Type -> [CExp l] -> [C.Initializer]
-    cgArrayConstInits tau ces | isBitT tau =
-        finalizeBits $ foldl mkBits (0,0,[]) ces
-      where
-        mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
-        mkBits (cconst, i, cinits) ce
-            | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
-            | otherwise                    = (cconst', i+1, cinits)
-          where
-            cconst' :: CExp l
-            cconst' = cconst .|. (ce `shiftL` i)
 
-        finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
-        finalizeBits (_,      0, cinits) = reverse cinits
-        finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+cgConst (ReplicateC n c) = do
+    tau <- inferConst noLoc c
+    ce  <- cgConst c
+    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
-        const :: CExp l -> C.Initializer
-        const (CInt i) = [cinit|$(chexconst i)|]
-        const ce       = toInit ce
-
-    cgArrayConstInits _tau ces =
-        map toInit ces
+cgConst (EnumC tau) =
+    cgConst =<< ArrayC <$> enumType tau
 
 cgConst (StructC s flds) = do
     StructDef _ fldDefs _ <- lookupStruct s
@@ -602,6 +602,29 @@ cgConst (StructC s flds) = do
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
         return $ toInit ce
+
+cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
+cgArrayConstInits tau ces | isBitT tau =
+    finalizeBits $ foldl mkBits (0,0,[]) ces
+  where
+    mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
+    mkBits (cconst, i, cinits) ce
+        | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
+        | otherwise                    = (cconst', i+1, cinits)
+      where
+        cconst' :: CExp l
+        cconst' = cconst .|. (ce `shiftL` i)
+
+    finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
+    finalizeBits (_,      0, cinits) = reverse cinits
+    finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+
+    const :: CExp l -> C.Initializer
+    const (CInt i) = [cinit|$(chexconst i)|]
+    const ce       = toInit ce
+
+cgArrayConstInits _tau ces =
+    map toInit ces
 
 {- Note [Bit Arrays]
 
@@ -814,18 +837,8 @@ cgExp e k =
   where
     go :: forall a . Exp -> Kont l a -> Cg l a
     go e@(ConstE c _) k = do
-        tau <- inferExp e
-        cgConst c >>= cgConstExp tau
-      where
-        cgConstExp :: Type -> CExp l -> Cg l a
-        cgConstExp tau (CInit cinit) = do
-            cv :: C.Id <- gensym "__const"
-            ctau       <- cgType tau
-            appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
-            runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
-
-        cgConstExp _ ce =
-            runKont k ce
+        ce <- cgConst c
+        cgConstExp e ce k
 
     go (VarE v _) k =
         lookupVarCExp v >>= runKont k
@@ -1038,8 +1051,10 @@ cgExp e k =
         tau <- inferExp e2
         cgIf tau e1 (cgExp e2) (cgExp e3) k
 
-    go (LetE decl e _) k =
-        cgLocalDecl decl $ cgExp e k
+    go (LetE decl e _) k = do
+        flags <- askFlags
+        cgLocalDecl flags decl $
+          cgExp e k
 
     go (CallE f iotas es l) k = do
         FunT ivs _ tau_ret _ <- lookupVar f
@@ -1221,6 +1236,21 @@ cgExp e k =
 
     go (LutE _ e) k =
         cgExp e k
+
+    go e0@(GenE e gs _) k = do
+        ce <- compileAndRunGen e gs >>= cgConst
+        cgConstExp e0 ce k
+
+cgConstExp :: IsLabel l => Exp -> CExp l -> Kont l a -> Cg l a
+cgConstExp e (CInit cinit) k = do
+    tau        <- inferExp e
+    cv :: C.Id <- gensym "__const"
+    ctau       <- cgType tau
+    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+    runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
+
+cgConstExp _ ce k =
+    runKont k ce
 
 -- | Generate code for a looping construct. Any identifiers used in the body of
 -- the loop are marked as used again after code for the body has been generated
@@ -1825,10 +1855,11 @@ cgComp comp klbl = cgSteps (unComp comp)
     cgSteps [step] k =
         cgStep step klbl k
 
-    cgSteps (LetC l decl _ : steps) k =
+    cgSteps (LetC l decl _ : steps) k = do
+        flags <- askFlags
         cgWithLabel l $
-        cgLocalDecl decl $
-        cgSteps steps k
+          cgLocalDecl flags decl $
+          cgSteps steps k
 
     cgSteps (step : BindC l WildV tau _ : steps) k =
         cgStep step l $ oneshot tau $ \ce -> do
