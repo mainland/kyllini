@@ -270,7 +270,9 @@ defaultFlags =
 
     defaultDynFlags :: [DynFlag]
     defaultDynFlags = [ LinePragmas
-                      , VectFilterAnn]
+                      , VectFilterAnn
+                      , ComputeLUTs
+                      ]
 
     defaultWarnFlags :: [WarnFlag]
     defaultWarnFlags = [WarnUnusedCommandBind]
