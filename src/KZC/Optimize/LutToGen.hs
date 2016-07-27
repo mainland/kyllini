@@ -50,10 +50,13 @@ import KZC.Staged
 import KZC.Trace
 import KZC.Uniq
 
-data GState l = GState { topDecls :: !(Seq (Decl l)) }
+data GState l = GState
+    { topDecls :: !(Seq (Decl l))
+    , luts     :: Map Exp (Var, StructDef)
+    }
 
 defaultGState :: GState l
-defaultGState = GState mempty
+defaultGState = GState mempty mempty
 
 newtype G l m a = G { unG :: StateT (GState l) m a }
   deriving (Applicative, Functor, Monad, MonadIO,
@@ -79,6 +82,13 @@ getTopDecls = do
 
 appendTopDecl :: MonadTc m => Decl l -> G l m ()
 appendTopDecl decl = modify $ \s -> s { topDecls = topDecls s |> decl }
+
+lookupLUT :: MonadTc m => Exp -> G l m (Maybe (Var, StructDef))
+lookupLUT e = gets (Map.lookup e . luts)
+
+insertLUT :: MonadTc m => Exp -> Var -> StructDef -> G l m ()
+insertLUT e v structdef =
+    modify $ \s -> s { luts = Map.insert e (v, structdef) (luts s) }
 
 lutToGen :: forall l m . (IsLabel l, MonadTc m)
          => Program l
@@ -113,18 +123,27 @@ instance (IsLabel l, MonadTc m) => TransformComp l (G l m) where
 lutExp :: forall l m . MonadTc m => Exp -> LUTInfo -> G l m Exp
 lutExp e info = do
     traceLUT $ ppr e </> ppr info
-    structdef@(StructDef struct flds _) <- mkStructDef
-    appendTopDecl $ LetStructD struct flds noLoc
-    extendStructs [structdef] $ do
-    e'  <- lowerLUTVars (toList $ lutInVars info) e
-    lut <- mkLUT structdef e'
-    mkLUTLookup structdef lut
+    (v_lut, structdef) <- lookupLUT e >>= maybeMkLUT
+    mkLUTLookup structdef v_lut
   where
     tau_res :: Type
     tau_res = unSTC (lutResultType info)
 
     resultVars :: [LUTVar]
     resultVars = lutResultVars info
+
+    maybeMkLUT :: Maybe (Var, StructDef) -> G l m (Var, StructDef)
+    maybeMkLUT Nothing = do
+        structdef@(StructDef struct flds _) <- mkStructDef
+        appendTopDecl $ LetStructD struct flds noLoc
+        extendStructs [structdef] $ do
+        e'    <- lowerLUTVars (toList $ lutInVars info) e
+        v_lut <- mkLUT structdef e'
+        insertLUT e v_lut structdef
+        return (v_lut, structdef)
+
+    maybeMkLUT (Just (v_lut, structdef)) =
+        return (v_lut, structdef)
 
     mkStructDef :: G l m StructDef
     mkStructDef = do
