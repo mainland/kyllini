@@ -51,6 +51,7 @@ module KZC.Expr.Lint (
     checkKnownArrT,
     checkArrOrRefArrT,
     checkStructT,
+    checkStructOrRefStructT,
     checkStructFieldT,
     checkRefT,
     checkFunT,
@@ -1045,6 +1046,15 @@ checkStructT (StructT s _) =
     return s
 
 checkStructT tau =
+    faildoc $ nest 2 $
+    text "Expected struct type, but got:" <+/> ppr tau
+
+-- | Check that a type is a struct or struct reference type, returning the name
+-- of the struct.
+checkStructOrRefStructT :: MonadTc m => Type -> m Struct
+checkStructOrRefStructT (StructT s _)          = return s
+checkStructOrRefStructT (RefT (StructT s _) _) = return s
+checkStructOrRefStructT tau =
     faildoc $ nest 2 $
     text "Expected struct type, but got:" <+/> ppr tau
 
