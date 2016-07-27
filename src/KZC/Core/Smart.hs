@@ -82,6 +82,7 @@ import KZC.Expr.Smart (tyVarT,
                        arrKnownT,
                        structT,
                        stT,
+                       unSTC,
 
                        isBaseT,
                        isUnitT,
