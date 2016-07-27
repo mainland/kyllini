@@ -51,6 +51,7 @@ import KZC.Flags
 import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Name
+import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Staged
@@ -407,8 +408,9 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl (LetD decl _) k =
-    cgLocalDecl decl k
+cgDecl (LetD decl _) k = do
+    flags <- askFlags
+    cgLocalDecl flags decl k
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     cf <- cvar f
@@ -536,15 +538,26 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-cgLocalDecl :: forall l a . IsLabel l => LocalDecl -> Cg l a -> Cg l a
-cgLocalDecl decl@(LetLD v tau e _) k =
+cgLocalDecl :: forall l a . IsLabel l => Flags -> LocalDecl -> Cg l a -> Cg l a
+cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
+    withSummaryContext decl $ do
+    appendComment $ text "Lut:" </> ppr e0
+    cv <- cgBinder (bVar v) tau
+    extendVars [(bVar v, tau)] $
+      extendVarCExps [(bVar v, cv)] $ do
+      e'     <- lutGenToExp (bVar v) e gs
+      citems <- inLocalScope $ inNewBlock_ $ cgExp e' $ multishot cgVoid
+      appendStm [cstm|{ $items:citems }|]
+      k
+
+cgLocalDecl _flags decl@(LetLD v tau e _) k =
     withSummaryContext decl $
     cgExp e $
     cgLetBinding v tau $ \cv ->
     extendVars [(bVar v, tau)] $
     extendVarCExps [(bVar v, cv)] k
 
-cgLocalDecl decl@(LetRefLD v tau maybe_e _) k =
+cgLocalDecl _flags decl@(LetRefLD v tau maybe_e _) k =
     withSummaryContext decl $
     cgLetRefBinding v tau maybe_e $ \cve ->
     extendVars [(bVar v, refT tau)] $
@@ -1038,8 +1051,10 @@ cgExp e k =
         tau <- inferExp e2
         cgIf tau e1 (cgExp e2) (cgExp e3) k
 
-    go (LetE decl e _) k =
-        cgLocalDecl decl $ cgExp e k
+    go (LetE decl e _) k = do
+        flags <- askFlags
+        cgLocalDecl flags decl $
+          cgExp e k
 
     go (CallE f iotas es l) k = do
         FunT ivs _ tau_ret _ <- lookupVar f
@@ -1840,10 +1855,11 @@ cgComp comp klbl = cgSteps (unComp comp)
     cgSteps [step] k =
         cgStep step klbl k
 
-    cgSteps (LetC l decl _ : steps) k =
+    cgSteps (LetC l decl _ : steps) k = do
+        flags <- askFlags
         cgWithLabel l $
-        cgLocalDecl decl $
-        cgSteps steps k
+          cgLocalDecl flags decl $
+          cgSteps steps k
 
     cgSteps (step : BindC l WildV tau _ : steps) k =
         cgStep step l $ oneshot tau $ \ce -> do

@@ -106,6 +106,7 @@ data DynFlag = Quiet
              | CoalesceTop
              | FuseUnroll
              | LowerGen
+             | ComputeLUTs
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)

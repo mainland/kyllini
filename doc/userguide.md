@@ -65,6 +65,7 @@ warn on an unused command bind.
 | `-fsimpl`        | Run the simplifier|
 | `-finline`       | Inline when simplifying|
 | `-flower-gen`     | Lower generators to explicit constant arrays |
+| `-fcompute-luts` | Compute LUTs instead of compiling them to constants |
 | `-ferrctx=INT`                    | set maximum error context"
 | `-fmax-simplifier-iterations=INT` | Set maximum simplification iterations|
 | `-fmax-lut=INT`                   | Set maximum LUT size in bytes|
