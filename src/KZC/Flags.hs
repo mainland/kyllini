@@ -191,6 +191,8 @@ data Flags = Flags
 
     , maxFusionBlowup :: !Double
 
+    , minMemcpyBytes :: !Int
+
     , dynFlags    :: !(FlagSet DynFlag)
     , warnFlags   :: !(FlagSet WarnFlag)
     , werrorFlags :: !(FlagSet WarnFlag)
@@ -225,6 +227,9 @@ instance Monoid Flags where
         -- operations.
         , maxFusionBlowup = 3.0
 
+        -- Minimum number of bytes before we switch to memcpy
+        , minMemcpyBytes = 0
+
         , dynFlags    = mempty
         , werrorFlags = mempty
         , warnFlags   = mempty
@@ -250,6 +255,8 @@ instance Monoid Flags where
         , minLUTOps  = min (minLUTOps f1) (minLUTOps f2)
 
         , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
+
+        , minMemcpyBytes = min (minMemcpyBytes f1) (minMemcpyBytes f2)
 
         , dynFlags    = dynFlags f1    <> dynFlags f2
         , warnFlags   = warnFlags f1   <> warnFlags f2

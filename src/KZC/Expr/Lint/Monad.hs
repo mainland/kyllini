@@ -57,6 +57,7 @@ module KZC.Expr.Lint.Monad (
     inScopeTyVars,
 
     typeSize,
+    typeSizeInBytes,
 
     withFvContext,
 
@@ -426,6 +427,10 @@ typeSize = go
 
     go tau =
         faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
+
+-- | Compute the size of a type in bytes.
+typeSizeInBytes :: forall m . MonadTc m => Type -> m Int
+typeSizeInBytes tau = quot <$> typeSize tau <*> pure 8
 
 withFvContext :: (Summary e, Located e, Fvs e Var, MonadTc m)
               => e

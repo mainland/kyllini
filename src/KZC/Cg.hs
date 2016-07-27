@@ -2740,31 +2740,56 @@ cgAssign tau ce1 ce2 = do
                 incBitArrayCopies
                 appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
 
-    assign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0 = do
-        ctau <- cgType tau
-        ce1' <- cgArrayAddr ce1
-        ce2' <- cgArrayAddr ce2
-        clen <- cgIota iota
-        incMemCopies
-        if mayAlias
-          then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
-          else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+    assign mayAlias tau0 ce1 ce2 | Just (iota, tau_elem) <- checkArrOrRefArrT tau0 =
+        case iota of
+          ConstI n _ | not (isArrT tau_elem) -> do
+              bytes    <- typeSizeInBytes tau0
+              minBytes <- asksFlags minMemcpyBytes
+              if bytes >= minBytes
+                then cgMemcpyArray iota tau_elem
+                else cgAssignArray n tau_elem
+          _ -> cgMemcpyArray iota tau_elem
       where
-        cgArrayAddr :: CExp l -> Cg l (CExp l)
-        cgArrayAddr (CIdx tau carr cidx) | isArrT tau =
-            return $ CExp [cexp|&$carr[$cidx]|]
+        cgAssignArray :: Int -> Type -> Cg l ()
+        cgAssignArray n tau_elem =
+            forM_ [0..n-1] $ \i ->
+                let cdst_elem = CIdx tau_elem cdst (cdstIdx + fromIntegral i)
+                    csrc_elem = CIdx tau_elem csrc (csrcIdx + fromIntegral i)
+                in
+                  appendStm [cstm|$cdst_elem = $csrc_elem;|]
+          where
+            cdst, cdstIdx :: CExp l
+            (cdst, cdstIdx) = unCSlice ce1
 
-        cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
-            panicdoc $ text "cgArrayAddr: the impossible happened!"
+            csrc, csrcIdx :: CExp l
+            (csrc, csrcIdx) = unCSlice ce2
 
-        cgArrayAddr (CSlice _ carr cidx _) =
-            return $ CExp [cexp|&$carr[$cidx]|]
+        cgMemcpyArray :: Iota -> Type -> Cg l ()
+        cgMemcpyArray iota tau_elem = do
+            ctau <- cgType tau_elem
+            ce1' <- cgArrayAddr ce1
+            ce2' <- cgArrayAddr ce2
+            clen <- cgIota iota
+            incMemCopies
+            if mayAlias
+              then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+              else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
+          where
+            cgArrayAddr :: CExp l -> Cg l (CExp l)
+            cgArrayAddr (CIdx tau carr cidx) | isArrT tau =
+                return $ CExp [cexp|&$carr[$cidx]|]
 
-        cgArrayAddr (CAlias e ce) =
-            calias e <$> cgArrayAddr ce
+            cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
+                panicdoc $ text "cgArrayAddr: the impossible happened!"
 
-        cgArrayAddr ce =
-            return ce
+            cgArrayAddr (CSlice _ carr cidx _) =
+                return $ CExp [cexp|&$carr[$cidx]|]
+
+            cgArrayAddr (CAlias e ce) =
+                calias e <$> cgArrayAddr ce
+
+            cgArrayAddr ce =
+                return ce
 
     assign _ tau cv (CStruct flds) = do
         structdef <- checkStructOrRefStructT tau >>= lookupStruct

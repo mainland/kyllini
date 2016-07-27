@@ -208,6 +208,7 @@ fOpts =
     , FlagOption "max-lut"                   (ReqArg maxLUTOpt "INT")             "set maximum LUT size in bytes"
     , FlagOption "min-lut-ops"               (ReqArg minLUTOpsOpt "N")            "set minimum operation count to consider a LUT"
     , FlagOption "max-fusion-blowup"         (ReqArg maxFusionBlowupOpt "FLOAT")  "set maximum allowed fusion blowup"
+    , FlagOption "min-memcpy-bytes"          (ReqArg minMemcpyBytesOpt "INT")     "set minmum number of bytes before using memcpy"
     , FlagOption "simpl"                     (NoArg simplOpt)                     "run the simplifier"
     , FlagOption "inline"                    (NoArg inlineOpt)                    "inline when simplifying"
     ]
@@ -250,6 +251,12 @@ fOpts =
         case reads s of
           [(n, "")]  -> return fs { maxFusionBlowup = n }
           _          -> fail "argument to -fmax-fusion-blowup must be a float"
+
+    minMemcpyBytesOpt :: String -> Flags -> m Flags
+    minMemcpyBytesOpt s fs =
+        case reads s of
+          [(n, "")]  -> return fs { minMemcpyBytes = n }
+          _          -> fail "argument to -fmin-memcpy-bytes must be an integer"
 
 dFlags :: [(DynFlag, String, String)]
 dFlags =
