@@ -11,9 +11,11 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.LutToGen (
-    lutToGen
+    lutToGen,
+    lutGenToExp
   ) where
 
+import Control.Monad (unless)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
@@ -25,6 +27,7 @@ import Control.Monad.State (MonadState(..),
                             gets,
                             modify)
 import Control.Monad.Trans.Class (MonadTrans(..))
+import Data.Bits (shiftL)
 import Data.Foldable (toList)
 import Data.List ((\\))
 import Data.Loc (noLoc)
@@ -43,6 +46,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Name
+import KZC.Staged
 import KZC.Trace
 import KZC.Uniq
 
@@ -311,6 +315,81 @@ lutResultVars info =
     go v lvs@(VarL v':_)   | v' == v = lvs
     go v (IdxL v' _ _:lvs) | v' == v = VarL v : lvs
     go v (lv:lvs)                    = lv : go v lvs
+
+lutGenToExp :: forall m . MonadTc m
+            => Var
+            -> Exp
+            -> [Gen]
+            -> m Exp
+lutGenToExp v_lut e gs = do
+    unless (isLUTGen e gs) $
+      faildoc $ text "Cannot convert non-LUT generator expression to expression"
+    tau  <- checkGenerators gs $ \_ ->
+            inferExp e
+    bits <- sum <$> mapM typeSize taus
+    mkFor 0 (2^bits) $ \i ->
+        unpackLUTIdx i (reverse (vs `zip` taus)) $
+        mkAssign (idxE (varE v_lut) (castE intT i)) e tau
+  where
+    vs :: [Var]
+    taus :: [Type]
+    (vs, taus) = unzip $ map unGen gs
+
+    unGen :: Gen -> (Var, Type)
+    unGen (GenG    v tau _ _) = (v, tau)
+    unGen (GenRefG v tau _ _) = (v, refT tau)
+
+    mkFor :: Int -> Int -> (Exp -> m Exp) -> m Exp
+    mkFor from to k = do
+        i <- gensym "i"
+        forE AutoUnroll i uintT (fromIntegral from) (fromIntegral to) <$> k (varE i)
+
+    mkAssign :: Exp -> Exp -> Type -> m Exp
+    mkAssign e_lhs e_rhs tau | isPureT tau =
+        return $ assignE e_lhs e_rhs
+
+    mkAssign e_lhs e_rhs tau = do
+        x <- gensym "x"
+        return $ bindE x (unSTC tau) e_rhs $
+                 assignE e_lhs (varE x)
+
+isLUTGen :: Exp -> [Gen] -> Bool
+isLUTGen _ = all isEnumGen
+  where
+    isEnumGen :: Gen -> Bool
+    isEnumGen (GenG    _ _ EnumC{} _) = True
+    isEnumGen (GenRefG _ _ EnumC{} _) = True
+    isEnumGen _                       = False
+
+-- | Unpack LUT variables from a LUT index.
+unpackLUTIdx :: forall m . MonadTc m
+             => Exp           -- ^ The LUT index
+             -> [(Var, Type)] -- ^ The variables to unpack, from least
+                              -- significant bits to most significant bits.
+             -> m Exp         -- ^ The body over which unpacked variables scope.
+             -> m Exp
+unpackLUTIdx = go 0
+  where
+    go :: Int -> Exp -> [(Var, Type)] -> m Exp -> m Exp
+    go _ _ [] k =
+        k
+
+    go shift e_bits ((v, tau):vtaus) k = do
+        n     <- typeSize tau
+        let e =  bitcastE (unRefT tau) (extractBits e_bits shift n)
+        mkLet v tau e <$> go (shift+n) e_bits vtaus k
+      where
+        extractBits :: Exp -> Int -> Int -> Exp
+        extractBits bits shift n =
+            (bits `shiftR'` uintE shift) ..&.. uintE mask
+          where
+            mask :: Int
+            mask = (1 `shiftL` n) - 1
+
+        mkLet :: Var -> Type -> Exp -> Exp -> Exp
+        mkLet v tau e1 e2
+          | isRefT tau = letrefE v (unRefT tau) (Just e1) e2
+          | otherwise  = letE v tau e1 e2
 
 type LEnv = Map Var LUTVar
 
