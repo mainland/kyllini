@@ -20,6 +20,11 @@ module KZC.Expr.Smart (
     int16T,
     int32T,
     int64T,
+    uintT,
+    uint8T,
+    uint16T,
+    uint32T,
+    uint64T,
     refT,
     unRefT,
     arrT,
@@ -117,6 +122,21 @@ int32T = FixT I S 32 0 noLoc
 
 int64T :: Type
 int64T = FixT I S 64 0 noLoc
+
+uintT :: Type
+uintT = FixT I U dEFAULT_INT_WIDTH 0 noLoc
+
+uint8T :: Type
+uint8T = FixT I U 8 0 noLoc
+
+uint16T :: Type
+uint16T = FixT I U 16 0 noLoc
+
+uint32T :: Type
+uint32T = FixT I U 32 0 noLoc
+
+uint64T :: Type
+uint64T = FixT I U 64 0 noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
