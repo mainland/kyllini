@@ -50,8 +50,8 @@ import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Lattice (Bound(..),
-                         Lattice(..),
+import KZC.Util.Interval (IsInterval(..))
+import KZC.Util.Lattice (Lattice(..),
                          BoundedLattice(..))
 import KZC.Vars
 
@@ -218,7 +218,7 @@ lutVars (rsets, wsets) = do
   where
     -- | Convert a variable and its 'RWSet' to an in 'LUTVar'.
     readLutVar :: (Var, RWSet) -> m LUTVar
-    readLutVar (v, ArrayS (BI (KnownB (Interval lo hi))) _) = do
+    readLutVar (v, ArrayS i _) | Just (lo, hi) <- fromInterval i= do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         return $ rangeLUTVar v lo hi iota
 
@@ -227,7 +227,7 @@ lutVars (rsets, wsets) = do
 
     -- | Convert a variable and its 'RWSet' to an out 'LUTVar'.
     writeLutVar :: (Var, RWSet) -> m LUTVar
-    writeLutVar (v, ArrayS _ (PI (KnownB (Interval lo hi)))) = do
+    writeLutVar (v, ArrayS _ i) | Just (lo, hi) <- fromInterval i= do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         return $ rangeLUTVar v lo hi iota
 
@@ -257,8 +257,8 @@ lutVars (rsets, wsets) = do
     -- imprecisely updated, i.e., it is updated, but we cannot guarantee exactly
     -- which part is updated.
     impreciselyUpdated :: RWSet -> Bool
-    impreciselyUpdated (ArrayS _ (PI UnknownB)) = True
-    impreciselyUpdated _                        = False
+    impreciselyUpdated (ArrayS _ w) | w == bot = True
+    impreciselyUpdated _                       = False
 
 -- | Compute the variable that is the result expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its

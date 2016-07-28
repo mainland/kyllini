@@ -13,9 +13,6 @@
 
 module KZC.Analysis.ReadWriteSet (
     RWSet(..),
-    Interval(..),
-    BoundedInterval(..),
-    PreciseInterval(..),
 
     readWriteSets
   ) where
@@ -292,8 +289,8 @@ sliceToInterval :: Val -> Maybe Int -> Bound Interval
 sliceToInterval (IntV intv@KnownB{}) Nothing =
     intv
 
-sliceToInterval (IntV i) (Just len) | Just idx <- fromSingI i =
-    KnownB $ Interval idx (idx + fromIntegral len - 1)
+sliceToInterval (IntV i) (Just len) | Just idx <- fromUnit i =
+    interval idx (idx + fromIntegral len - 1 :: Integer)
 
 sliceToInterval _ _ =
     top
@@ -309,7 +306,7 @@ rangeExp e =
       where
         rangeConst :: Const -> Val
         rangeConst (BoolC b)               = BoolV (pure b)
-        rangeConst (FixC I _s _w (BP 0) x) = IntV $ singI x
+        rangeConst (FixC I _s _w (BP 0) x) = IntV $ unit x
         rangeConst _c                      = top
 
     go (VarE v _) = do
@@ -325,7 +322,7 @@ rangeExp e =
         unop Bnot (IntV _)                       = IntV top
         unop Bnot _                              = top
         unop Neg (IntV i)
-            | Just x <- fromSingI i              = IntV <$> singI $ negate x
+            | Just x <- fromUnit i               = IntV $ unit (negate x :: Integer)
         unop Neg _                               = top
         unop (Cast (FixT I _s _w (BP 0) _)) _    = IntV top
         unop Cast{} _                            = top
@@ -365,17 +362,17 @@ rangeExp e =
         binop LshR _ _ = top
         binop AshR _ _ = top
 
-        binop Add (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
-            IntV $ KnownB $ Interval (xlo + ylo) (xhi + yhi)
+        binop Add (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
+            IntV $ interval (xlo + ylo :: Integer) (xhi + yhi :: Integer)
 
-        binop Sub (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
-            IntV $ KnownB $ Interval (xlo - yhi) (xhi + ylo)
+        binop Sub (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
+            IntV $ interval (xlo - yhi :: Integer) (xhi + ylo :: Integer)
 
-        binop Mul (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
-            IntV $ KnownB $ Interval (xlo * ylo) (xhi * yhi)
+        binop Mul (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
+            IntV $ interval (xlo * ylo :: Integer) (xhi * yhi :: Integer)
 
-        binop Div (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
-            IntV $ KnownB $ Interval (xlo `quot` yhi) (xhi `quot` ylo)
+        binop Div (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
+            IntV $ interval (xlo `quot` yhi :: Integer) (xhi `quot` ylo :: Integer)
 
         binop Add _ _ = top
         binop Sub _ _ = top
@@ -498,7 +495,7 @@ rangeRef = go
         -- below.
         go :: Type -> RW m Ref
         go (ArrT (ConstI n _) _ _) =
-            pure $ IdxR (VarR v) (IntV $ singI (0::Integer)) (Just n)
+            pure $ IdxR (VarR v) (IntV $ unit (0::Integer)) (Just n)
 
         go (RefT tau _) =
             go tau
@@ -562,8 +559,8 @@ rangeWhile _ k = do
     return top
 
 rangeFor :: MonadTc m => Var -> Val -> Val -> RW m a -> RW m a
-rangeFor v (IntV i) (IntV j) k | Just start <- fromSingI i, Just len <- fromSingI j =
-    extendVals [(v, IntV $ KnownB $ Interval start (start+len-1))] k
+rangeFor v (IntV i) (IntV j) k | Just start <- fromUnit i, Just len <- fromUnit j =
+    extendVals [(v, IntV $ interval start (start+len-1 :: Integer))] k
 
 rangeFor v _v_start _v_len k =
     extendVals [(v, top)] k
