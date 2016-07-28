@@ -1,0 +1,9 @@
+fun comp test() {
+  a <- take
+  
+  let y = (var x : int := 0 in x)
+  
+  emit a;
+}
+
+let comp main = read[int] >>> test() >>> write[int]
