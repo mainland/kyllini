@@ -25,54 +25,55 @@ import KZC.Util.Lattice
 
 -- | An interval
 data Interval -- | Empty interval
-              = EmptyI
-              -- | Invariant: @'RangeI' i1 i2@ iff @i1@ <= @i2@.
-              | RangeI !Integer !Integer
+              = Empty
+              -- | An inclusive interval of numbers. Invariant: @'Interval' i1
+              -- i2@ iff @i1@ <= @i2@.
+              | Interval !Integer !Integer
   deriving (Eq, Ord, Show)
 
 instance Arbitrary Interval where
     arbitrary = do NonNegative x   <- arbitrary
                    NonNegative len <- arbitrary
-                   return $ if len == 0 then EmptyI else RangeI x (x+len)
+                   return $ if len == 0 then Empty else Interval x (x+len)
 
-    shrink EmptyI                    = []
-    shrink (RangeI x y) | y - x == 1 = [EmptyI]
-                        | otherwise  = [RangeI (x+1) y,RangeI x (y-1)]
+    shrink Empty                       = []
+    shrink (Interval x y) | y - x == 1 = [Empty]
+                          | otherwise  = [Interval (x+1) y,Interval x (y-1)]
 
 singI :: Integral a => a -> Bound Interval
-singI i = KnownB $ RangeI i' i'
+singI i = KnownB $ Interval i' i'
   where
     i' = fromIntegral i
 
 fromSingI :: Monad m => Bound Interval -> m Integer
-fromSingI (KnownB (RangeI i j)) | i == j =
+fromSingI (KnownB (Interval i j)) | i == j =
     return i
 
 fromSingI _ =
     fail "Non-unit interval"
 
 intersectionI :: Interval -> Interval -> Interval
-intersectionI (RangeI i j) (RangeI i' j') | j' >= i || i' <= j =
-    RangeI (max i i') (min j j')
+intersectionI (Interval i j) (Interval i' j') | j' >= i || i' <= j =
+    Interval (max i i') (min j j')
 
 intersectionI _ _ =
-    EmptyI
+    Empty
 
 instance Pretty Interval where
-    ppr EmptyI         = text "()"
-    ppr (RangeI lo hi)
+    ppr Empty          = text "()"
+    ppr (Interval lo hi)
         | hi == lo     = ppr lo
         | otherwise    = brackets $ ppr lo <> comma <> ppr hi
 
 instance Poset Interval where
-    EmptyI     <= _            = True
-    RangeI i j <= RangeI i' j' = i' <= i && j <= j'
-    _          <= _            = False
+    Empty        <= _              = True
+    Interval i j <= Interval i' j' = i' <= i && j <= j'
+    _            <= _              = False
 
 instance Lattice Interval where
-    EmptyI     `lub` i            = i
-    i          `lub` EmptyI       = i
-    RangeI i j `lub` RangeI i' j' = RangeI l h
+    Empty        `lub` i              = i
+    i            `lub` Empty          = i
+    Interval i j `lub` Interval i' j' = Interval l h
       where
         l = min i i'
         h = max j j'
@@ -100,9 +101,9 @@ instance Pretty PreciseInterval where
     ppr (PI x) = ppr x
 
 instance Lattice PreciseInterval where
-    PI (KnownB (RangeI i j)) `lub` PI (KnownB (RangeI i' j'))
+    PI (KnownB (Interval i j)) `lub` PI (KnownB (Interval i' j'))
         | gap       = top
-        | otherwise = PI (KnownB (RangeI l h))
+        | otherwise = PI (KnownB (Interval l h))
       where
         l   = min i i'
         h   = max j j'

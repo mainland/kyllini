@@ -293,7 +293,7 @@ sliceToInterval (IntV intv@KnownB{}) Nothing =
     intv
 
 sliceToInterval (IntV i) (Just len) | Just idx <- fromSingI i =
-    KnownB $ RangeI idx (idx + fromIntegral len - 1)
+    KnownB $ Interval idx (idx + fromIntegral len - 1)
 
 sliceToInterval _ _ =
     top
@@ -365,17 +365,17 @@ rangeExp e =
         binop LshR _ _ = top
         binop AshR _ _ = top
 
-        binop Add (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
-            IntV $ KnownB $ RangeI (xlo + ylo) (xhi + yhi)
+        binop Add (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
+            IntV $ KnownB $ Interval (xlo + ylo) (xhi + yhi)
 
-        binop Sub (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
-            IntV $ KnownB $ RangeI (xlo - yhi) (xhi + ylo)
+        binop Sub (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
+            IntV $ KnownB $ Interval (xlo - yhi) (xhi + ylo)
 
-        binop Mul (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
-            IntV $ KnownB $ RangeI (xlo * ylo) (xhi * yhi)
+        binop Mul (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
+            IntV $ KnownB $ Interval (xlo * ylo) (xhi * yhi)
 
-        binop Div (IntV (KnownB (RangeI xlo xhi))) (IntV (KnownB (RangeI ylo yhi))) =
-            IntV $ KnownB $ RangeI (xlo `quot` yhi) (xhi `quot` ylo)
+        binop Div (IntV (KnownB (Interval xlo xhi))) (IntV (KnownB (Interval ylo yhi))) =
+            IntV $ KnownB $ Interval (xlo `quot` yhi) (xhi `quot` ylo)
 
         binop Add _ _ = top
         binop Sub _ _ = top
@@ -563,7 +563,7 @@ rangeWhile _ k = do
 
 rangeFor :: MonadTc m => Var -> Val -> Val -> RW m a -> RW m a
 rangeFor v (IntV i) (IntV j) k | Just start <- fromSingI i, Just len <- fromSingI j =
-    extendVals [(v, IntV $ KnownB $ RangeI start (start+len-1))] k
+    extendVals [(v, IntV $ KnownB $ Interval start (start+len-1))] k
 
 rangeFor v _v_start _v_len k =
     extendVals [(v, top)] k

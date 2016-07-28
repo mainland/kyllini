@@ -218,7 +218,7 @@ lutVars (rsets, wsets) = do
   where
     -- | Convert a variable and its 'RWSet' to an in 'LUTVar'.
     readLutVar :: (Var, RWSet) -> m LUTVar
-    readLutVar (v, ArrayS (BI (KnownB (RangeI lo hi))) _) = do
+    readLutVar (v, ArrayS (BI (KnownB (Interval lo hi))) _) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         return $ rangeLUTVar v lo hi iota
 
@@ -227,7 +227,7 @@ lutVars (rsets, wsets) = do
 
     -- | Convert a variable and its 'RWSet' to an out 'LUTVar'.
     writeLutVar :: (Var, RWSet) -> m LUTVar
-    writeLutVar (v, ArrayS _ (PI (KnownB (RangeI lo hi)))) = do
+    writeLutVar (v, ArrayS _ (PI (KnownB (Interval lo hi)))) = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         return $ rangeLUTVar v lo hi iota
 
