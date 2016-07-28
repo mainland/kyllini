@@ -187,6 +187,32 @@ checkLetRef v ztau e_init l =
     withMaybeExpContext Nothing  m = m
     withMaybeExpContext (Just e) m = withExpContext e m
 
+-- | Check the body of a let expression. The let expression must be translated
+-- to a pure core expression.
+checkLetBody :: Z.Exp
+             -> Expected Type
+             -> Ti E.Decl
+             -> SrcLoc
+             -> Ti (Ti E.Exp)
+checkLetBody e exp_ty mcdecl l = do
+    mce <- tcExp e exp_ty
+    tau <- readExpected exp_ty >>= compress
+    go tau mce
+  where
+    go :: Type -> Ti E.Exp -> Ti (Ti E.Exp)
+    go (RefT tau _) mce = do
+        instType tau exp_ty
+        return $ do
+          cdecl <- mcdecl
+          cx    <- gensym "x"
+          ctau  <- trans tau
+          ce    <- withValCtx $ E.derefE <$> mce
+          tellValCtx $ \ce2 -> E.bindE cx ctau (E.LetE cdecl ce l) ce2
+          return $ E.varE cx
+
+    go _tau mce =
+        return $ E.LetE <$> mcdecl <*> mce <*> pure l
+
 checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
             -> Ti (Type, Ti E.Decl)
 checkLetFun f ztau ps e l = do
@@ -512,13 +538,9 @@ tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
     (tau, mcdecl) <- checkLet v ztau TauK e1 l
-    mce2          <- withExpContext e2 $
-                     extendVars [(v, tau)] $
-                     tcExp e2 exp_ty
-    return $ do
-        cdecl <- mcdecl
-        ce2   <- mce2
-        return $ E.LetE cdecl ce2 l
+    withExpContext e2 $
+      extendVars [(v, tau)] $
+      checkLetBody e2 exp_ty mcdecl l
 
 tcExp e@(Z.CallE f es l) exp_ty =
     withCallContext f e $ do
@@ -576,12 +598,9 @@ tcExp e@(Z.CallE f es l) exp_ty =
 
 tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
     (tau, mcdecl) <- checkLetRef v ztau e1 l
-    mce2          <- extendVars [(v, refT tau)] $
-                     tcExp e2 exp_ty
-    return $ do
-        cdecl <- mcdecl
-        ce2   <- mce2
-        return $ E.LetE cdecl ce2 l
+    withExpContext e2 $
+      extendVars [(v, refT tau)] $
+      checkLetBody e2 exp_ty mcdecl l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
     (gamma, mce1) <-
@@ -962,10 +981,7 @@ tcExp (Z.CompLetE cl e l) exp_ty =
     tau <- newMetaTvT MuK l
     instType tau exp_ty
     mce <- collectCheckValCtx tau $ checkExp e tau
-    return $ do
-        cdecl <- mcdecl
-        ce    <- mce
-        return $ E.LetE cdecl ce l
+    return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
@@ -1035,10 +1051,7 @@ tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
                       checkLet v ztau TauK e l
     mce2           <- extendVars [(v, tau1)] $
                       checkStms stms tau
-    return $ do
-        cdecl <- mcdecl
-        ce2   <- mce2
-        return $ E.LetE cdecl ce2 l
+    return $ E.LetE <$> mcdecl <*> mce2 <*> pure l
 
 tcStms [stm@Z.LetRefS{}] _ =
     withSummaryContext stm $

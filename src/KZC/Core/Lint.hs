@@ -404,7 +404,18 @@ inferExp (IfE e1 e2 e3 _) = do
     return tau
 
 inferExp (LetE decl body _) =
-    checkLocalDecl decl $ inferExp body
+    withSummaryContext decl $
+    checkLocalDecl decl $ do
+    tau <- inferExp body
+    inferKind tau >>= checkLetKind
+    return tau
+  where
+    checkLetKind :: Kind -> m ()
+    checkLetKind TauK = return ()
+    checkLetKind MuK  = return ()
+
+    checkLetKind kappa =
+      faildoc $ text "Body of let has kind" <+> ppr kappa
 
 inferExp (CallE f ies es _) = do
     (taus, tau_ret) <- inferCall f ies es
