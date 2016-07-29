@@ -32,20 +32,20 @@ class IsInterval a where
 
     extend :: Integral i => a -> i -> a
 
-instance IsInterval a => IsInterval (Bound a) where
-    empty = KnownB empty
+instance IsInterval a => IsInterval (Top a) where
+    empty = NotTop empty
 
-    unit i = KnownB $ unit i
+    unit i = NotTop $ unit i
 
-    fromUnit (KnownB i) = fromUnit i
+    fromUnit (NotTop i) = fromUnit i
     fromUnit _          = fail "Non-unit interval"
 
-    interval i j = KnownB $ interval i j
+    interval i j = NotTop $ interval i j
 
-    fromInterval (KnownB i) = fromInterval i
+    fromInterval (NotTop i) = fromInterval i
     fromInterval _          = fail "Non-interval"
 
-    extend (KnownB i) x = KnownB (extend i x)
+    extend (NotTop i) x = NotTop (extend i x)
     extend i          _ = i
 
 -- | An interval
@@ -121,7 +121,7 @@ instance BottomLattice Interval where
     bot = Empty
 
 -- | A bounded known interval
-newtype BoundedInterval = BI (Bound Interval)
+newtype BoundedInterval = BI (Top Interval)
   deriving (Eq, Ord, Show, IsInterval, Poset, Lattice,
             BottomLattice, TopLattice, BoundedLattice)
 
@@ -132,7 +132,7 @@ instance Pretty BoundedInterval where
     ppr (BI x) = ppr x
 
 -- | A precisely known interval
-newtype PreciseInterval = PI (Bound Interval)
+newtype PreciseInterval = PI (Top Interval)
   deriving (Eq, Ord, Show, IsInterval, Poset)
 
 instance Arbitrary PreciseInterval where
@@ -142,9 +142,9 @@ instance Pretty PreciseInterval where
     ppr (PI x) = ppr x
 
 instance Lattice PreciseInterval where
-    PI (KnownB (Interval i j)) `lub` PI (KnownB (Interval i' j'))
+    PI (NotTop (Interval i j)) `lub` PI (NotTop (Interval i' j'))
         | gap       = top
-        | otherwise = PI (KnownB (Interval l h))
+        | otherwise = PI (NotTop (Interval l h))
       where
         l   = min i i'
         h   = max j j'

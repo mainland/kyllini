@@ -79,10 +79,10 @@ instance Pretty Ref where
         pprPrec appPrec1 r <> text "." <> ppr f
 
 -- | Values
-data Val = UnknownV              -- ^ Unknown (not-yet defined)
-         | IntV (Bound Interval) -- ^ All integers in a range
-         | BoolV (Known Bool)    -- ^ Booleans
-         | TopV                  -- ^ Could be anything as far as we know...
+data Val = UnknownV            -- ^ Unknown (not-yet defined)
+         | IntV (Top Interval) -- ^ All integers in a range
+         | BoolV (Known Bool)  -- ^ Booleans
+         | TopV                -- ^ Could be anything as far as we know...
   deriving (Eq, Ord, Show)
 
 instance Pretty Val where
@@ -266,7 +266,7 @@ updateRWSet ref proj upd =
         new :: RWSet
         new = ArrayS (BI intv) (PI intv)
 
-        intv :: Bound Interval
+        intv :: Top Interval
         intv = sliceToInterval idx len
 
     go (IdxR r _ _) =
@@ -293,8 +293,8 @@ updateWriteSet ref =
     upd v old new =
       modify $ \s -> s { writeSet = Map.insert v (old `lub` new) (writeSet s) }
 
-sliceToInterval :: Val -> Maybe Int -> Bound Interval
-sliceToInterval (IntV intv@KnownB{}) Nothing =
+sliceToInterval :: Val -> Maybe Int -> Top Interval
+sliceToInterval (IntV intv@NotTop{}) Nothing =
     intv
 
 sliceToInterval (IntV i) (Just len) | Just idx <- fromUnit i =
@@ -390,10 +390,9 @@ rangeExp e =
         binop Pow _ _ = top
         binop Cat _ _ = top
 
-        toKnown :: Bound a -> Known a
-        toKnown UnknownB   = Unknown
-        toKnown (KnownB x) = Known x
-        toKnown AnyB       = Any
+        toKnown :: Top a -> Known a
+        toKnown (NotTop x) = Known x
+        toKnown Top        = Any
 
     go (IfE e1 e2 e3 _) = do
         val1 <- rangeExp e1

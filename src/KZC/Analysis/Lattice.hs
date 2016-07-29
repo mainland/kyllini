@@ -22,7 +22,7 @@ module KZC.Analysis.Lattice (
     topDoc,
 
     Known(..),
-    Bound(..)
+    Top(..)
   ) where
 
 import qualified Prelude
@@ -176,57 +176,49 @@ instance Poset a => TopLattice (Known a) where
 
 instance Poset a => BoundedLattice (Known a) where
 
--- | 'Bound' allows us to construct a bounded lattice from a lattice
-data Bound a = UnknownB
-             | KnownB a
-             | AnyB
+-- | 'Top' allows us to add a top element to a lattice.
+data Top a = NotTop a
+           | Top
   deriving (Eq, Ord, Show)
 
-instance Arbitrary a => Arbitrary (Bound a) where
-    arbitrary = oneof [pure UnknownB, KnownB <$> arbitrary, pure AnyB]
+instance Arbitrary a => Arbitrary (Top a) where
+    arbitrary = oneof [NotTop <$> arbitrary, pure Top]
 
-instance Pretty a => Pretty (Bound a) where
-    ppr UnknownB   = text "unknown"
-    ppr (KnownB a) = ppr a
-    ppr AnyB       = text "top"
+instance Pretty a => Pretty (Top a) where
+    ppr (NotTop a) = ppr a
+    ppr Top        = topDoc
 
-instance Functor Bound where
+instance Functor Top where
     fmap f x = x >>= return . f
 
-instance Applicative Bound where
+instance Applicative Top where
     pure  = return
     (<*>) = ap
 
-instance Monad Bound where
-    return = KnownB
+instance Monad Top where
+    return = NotTop
 
-    UnknownB >>= _ = UnknownB
-    KnownB x >>= f = f x
-    AnyB     >>= _ = AnyB
+    NotTop x >>= f = f x
+    Top      >>= _ = Top
 
-instance Lattice a => Poset (Bound a) where
-    UnknownB  <= _         = True
-    _         <= AnyB      = True
-    KnownB x1 <= KnownB x2 = x1 <= x2
+instance Lattice a => Poset (Top a) where
+    _         <= Top       = True
+    NotTop x1 <= NotTop x2 = x1 <= x2
     _         <= _         = False
 
-instance Lattice a => Lattice (Bound a) where
-    UnknownB  `lub` x         = x
-    x         `lub` UnknownB  = x
-    AnyB      `lub` _         = AnyB
-    _         `lub` AnyB      = AnyB
-    KnownB x1 `lub` KnownB x2 = KnownB (x1 `lub` x2)
+instance Lattice a => Lattice (Top a) where
+    Top       `lub` _         = Top
+    _         `lub` Top       = Top
+    NotTop x1 `lub` NotTop x2 = NotTop (x1 `lub` x2)
 
-    UnknownB  `glb` _         = UnknownB
-    _         `glb` UnknownB  = UnknownB
-    AnyB      `glb` x         = x
-    x         `glb` AnyB      = x
-    KnownB x1 `glb` KnownB x2 = KnownB (x1 `glb` x2)
+    Top       `glb` x         = x
+    x         `glb` Top       = x
+    NotTop x1 `glb` NotTop x2 = NotTop (x1 `glb` x2)
 
-instance Lattice a => BottomLattice (Bound a) where
-    bot = UnknownB
+instance BottomLattice a => BottomLattice (Top a) where
+    bot = NotTop bot
 
-instance Lattice a => TopLattice (Bound a) where
-    top = AnyB
+instance Lattice a => TopLattice (Top a) where
+    top = Top
 
-instance Lattice a => BoundedLattice (Bound a) where
+instance BottomLattice a => BoundedLattice (Top a) where
