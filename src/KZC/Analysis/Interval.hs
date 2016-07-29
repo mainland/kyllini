@@ -131,6 +131,9 @@ instance Arbitrary BoundedInterval where
 instance Pretty BoundedInterval where
     ppr (BI x) = ppr x
 
+instance BranchLattice BoundedInterval where
+    bub = lub
+
 -- | A precisely known interval
 newtype PreciseInterval = PI (Top Interval)
   deriving (Eq, Ord, Show, IsInterval, Poset)
@@ -162,4 +165,10 @@ instance BottomLattice PreciseInterval where
 instance TopLattice PreciseInterval where
     top = PI top
 
-instance BoundedLattice PreciseInterval where
+instance BoundedLattice PreciseInterval
+
+-- If the two branches don't result in the same precise intervals, then we go to
+-- top.
+instance BranchLattice PreciseInterval where
+    i `bub` j | i == j    = i
+              | otherwise = top
