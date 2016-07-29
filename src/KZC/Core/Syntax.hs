@@ -373,9 +373,13 @@ instance Lattice OccInfo where
         | y <= x    = y
         | otherwise = Dead
 
-instance BoundedLattice OccInfo where
+instance BottomLattice OccInfo where
     bot = Dead
+
+instance TopLattice OccInfo where
     top = Many
+
+instance BoundedLattice OccInfo where
 
 instance BranchLattice OccInfo where
     Dead       `bub` x          = x

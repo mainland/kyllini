@@ -153,9 +153,13 @@ instance Lattice PreciseRange where
               | j <= i    = j
               | otherwise = bot
 
-instance BoundedLattice PreciseRange where
-    top = PR top
+instance BottomLattice PreciseRange where
     bot = PR bot
+
+instance TopLattice PreciseRange where
+    top = PR top
+
+instance BoundedLattice PreciseRange where
 
 -- | An array value specifying which elements are certainly known.
 data Array = Arr Iota PreciseRange
@@ -246,9 +250,13 @@ instance BranchLattice Val where
     StructV x `bub` StructV y = StructV (x `bub` y)
     _         `bub` _         = bot
 
-instance BoundedLattice Val where
-    top = TopV
+instance BottomLattice Val where
     bot = UnknownV
+
+instance TopLattice Val where
+    top = TopV
+
+instance BoundedLattice Val where
 
 -- | Return 'True' when the value may be partial.
 partial :: Type -> Val -> Bool

@@ -112,9 +112,13 @@ instance BranchLattice Val where
     BoolV b `bub` BoolV b' = BoolV (b `lub` b')
     _       `bub` _        = top
 
-instance BoundedLattice Val where
-    top = TopV
+instance BottomLattice Val where
     bot = UnknownV
+
+instance TopLattice Val where
+    top = TopV
+
+instance BoundedLattice Val where
 
 -- | Read-write sets
 data RWSet = ArrayS BoundedInterval PreciseInterval
@@ -134,9 +138,13 @@ instance Lattice RWSet where
 instance BranchLattice RWSet where
     ArrayS rs ws `bub` ArrayS rs' ws' = ArrayS (rs `lub` rs') (ws `glb` ws')
 
-instance BoundedLattice RWSet where
-    top = ArrayS top top
+instance BottomLattice RWSet where
     bot = ArrayS bot bot
+
+instance TopLattice RWSet where
+    top = ArrayS top top
+
+instance BoundedLattice RWSet where
 
 -- | The range analysis state
 data RState = RState

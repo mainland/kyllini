@@ -41,8 +41,9 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.Interval (IsInterval(..))
-import KZC.Analysis.Lattice (Lattice(..),
-                             BoundedLattice(..))
+import KZC.Analysis.Lattice (bot,
+                             lub,
+                             top)
 import KZC.Analysis.ReadWriteSet
 import KZC.Core.Lint
 import KZC.Core.Smart

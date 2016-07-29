@@ -117,9 +117,13 @@ instance Lattice Interval where
     _ `glb` _ =
         Empty
 
+instance BottomLattice Interval where
+    bot = Empty
+
 -- | A bounded known interval
 newtype BoundedInterval = BI (Bound Interval)
-  deriving (Eq, Ord, Show, IsInterval, Poset, Lattice, BoundedLattice)
+  deriving (Eq, Ord, Show, IsInterval, Poset, Lattice,
+            BottomLattice, TopLattice, BoundedLattice)
 
 instance Arbitrary BoundedInterval where
     arbitrary = BI <$> arbitrary
@@ -152,6 +156,10 @@ instance Lattice PreciseInterval where
 
     PI i `glb` PI j = PI (i `glb` j)
 
-instance BoundedLattice PreciseInterval where
-    top = PI top
+instance BottomLattice PreciseInterval where
     bot = PI bot
+
+instance TopLattice PreciseInterval where
+    top = PI top
+
+instance BoundedLattice PreciseInterval where

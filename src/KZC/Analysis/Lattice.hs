@@ -13,7 +13,9 @@ module KZC.Analysis.Lattice (
     Poset(..),
 
     Lattice(..),
-    BoundedLattice(..),
+    BottomLattice(..),
+    TopLattice(..),
+    BoundedLattice,
     BranchLattice(..),
 
     Known(..),
@@ -47,12 +49,18 @@ class Poset a => Lattice a where
     -- | Greatest lower bound, aka "meet"
     glb :: a -> a -> a
 
--- | A lattice with a greatest and least element
-class Lattice a => BoundedLattice a where
-    -- | Greatest element of the lattice
-    top :: a
+-- | A lattice with least element
+class Lattice a => BottomLattice a where
     -- | Least element of the lattice
     bot :: a
+
+-- | A lattice with greatest element
+class Lattice a => TopLattice a where
+    -- | Greatest element of the lattice
+    top :: a
+
+-- | A lattice with a greatest and least element
+class (BottomLattice a, TopLattice a) => BoundedLattice a where
 
 class Lattice a => BranchLattice a where
     -- | Branch upper bound, i.e., join for different control flow paths.
@@ -153,9 +161,13 @@ instance Poset a => Lattice (Known a) where
         | x2 <= x1          = Known x2
         | otherwise         = Unknown
 
-instance Poset a => BoundedLattice (Known a) where
-    top = Any
+instance Poset a => BottomLattice (Known a) where
     bot = Unknown
+
+instance Poset a => TopLattice (Known a) where
+    top = Any
+
+instance Poset a => BoundedLattice (Known a) where
 
 -- | 'Bound' allows us to construct a bounded lattice from a lattice
 data Bound a = UnknownB
@@ -204,6 +216,10 @@ instance Lattice a => Lattice (Bound a) where
     x         `glb` AnyB      = x
     KnownB x1 `glb` KnownB x2 = KnownB (x1 `glb` x2)
 
-instance Lattice a => BoundedLattice (Bound a) where
-    top = AnyB
+instance Lattice a => BottomLattice (Bound a) where
     bot = UnknownB
+
+instance Lattice a => TopLattice (Bound a) where
+    top = AnyB
+
+instance Lattice a => BoundedLattice (Bound a) where
