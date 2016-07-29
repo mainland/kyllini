@@ -98,8 +98,8 @@ instance (Ord k, BoundedLattice a, BranchLattice a) => BranchLattice (Map k a) w
     m1 `bub` m2 = joinWith bub bot m1 m2
 
 -- | 'Known' allows us to construct a lattice from a partially ordered set by
--- adding top and bottom elements. The lattice is constructs /is not/ a valid
--- lattice if the type argument is a Lattice itself! Use 'Bound' to make a
+-- adding top and bottom elements. The lattice it constructs /is not/ a valid
+-- lattice if the type argument is a 'Lattice itself'! Use 'Bound' to make a
 -- lattice bounded.
 data Known a = Unknown
              | Known a
