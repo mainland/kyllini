@@ -18,6 +18,9 @@ module KZC.Analysis.Lattice (
     BoundedLattice,
     BranchLattice(..),
 
+    botDoc,
+    topDoc,
+
     Known(..),
     Bound(..)
   ) where
@@ -37,6 +40,10 @@ import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
 infix 4 <=
+
+botDoc, topDoc :: Doc
+botDoc = char '⊥'
+topDoc = char '⊤'
 
 -- | A partially ordered set
 class Eq a => Poset a where
