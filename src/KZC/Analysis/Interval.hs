@@ -1,12 +1,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
--- Module      :  KZC.Util.Interval
+-- Module      :  KZC.Analysis.Interval
 -- Copyright   :  (c) 2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Interval (
+module KZC.Analysis.Interval (
     IsInterval(..),
     Interval,
     BoundedInterval(..),
@@ -18,7 +18,7 @@ import Prelude hiding ((<=))
 import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 
-import KZC.Util.Lattice
+import KZC.Analysis.Lattice
 
 -- | An interval.
 class IsInterval a where

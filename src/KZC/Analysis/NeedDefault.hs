@@ -49,6 +49,7 @@ import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Lattice
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -57,7 +58,6 @@ import KZC.Flags
 import KZC.Pretty
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Lattice
 import KZC.Vars
 
 data Range = Range Iota Iota

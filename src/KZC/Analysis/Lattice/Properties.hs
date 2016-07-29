@@ -1,14 +1,14 @@
 -- |
--- Module      :  KZC.Util.Lattice.Properties
+-- Module      :  KZC.Analysis.Lattice.Properties
 -- Copyright   :  (c) 2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Lattice.Properties where
+module KZC.Util.Analysis.Properties where
 
 import Prelude hiding ((<=))
 
-import KZC.Util.Lattice
+import KZC.Analysis.Lattice
 
 import Test.QuickCheck
 

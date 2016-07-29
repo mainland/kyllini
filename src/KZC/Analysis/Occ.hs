@@ -40,6 +40,7 @@ import Data.Traversable (traverse)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Lattice
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -48,7 +49,6 @@ import KZC.Error
 import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Lattice
 
 type RefSet = Set Var
 

@@ -118,6 +118,7 @@ import Data.Symbol
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Lattice
 import KZC.Expr.Syntax (Var(..),
                         Field(..),
                         Struct(..),
@@ -172,7 +173,6 @@ import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
 import KZC.Uniq
-import KZC.Util.Lattice
 import KZC.Util.SetLike
 import KZC.Vars
 

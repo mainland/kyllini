@@ -40,6 +40,9 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
+import KZC.Analysis.Interval (IsInterval(..))
+import KZC.Analysis.Lattice (Lattice(..),
+                             BoundedLattice(..))
 import KZC.Analysis.ReadWriteSet
 import KZC.Core.Lint
 import KZC.Core.Smart
@@ -50,9 +53,6 @@ import KZC.Name
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq
-import KZC.Util.Interval (IsInterval(..))
-import KZC.Util.Lattice (Lattice(..),
-                         BoundedLattice(..))
 import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool

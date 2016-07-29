@@ -4,12 +4,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Util.Lattice
+-- Module      :  KZC.Analysis.Lattice
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Lattice (
+module KZC.Analysis.Lattice (
     Poset(..),
 
     Lattice(..),
