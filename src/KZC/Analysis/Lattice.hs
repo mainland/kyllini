@@ -21,6 +21,7 @@ module KZC.Analysis.Lattice (
     botDoc,
     topDoc,
 
+    All(..),
     Known(..),
     Top(..)
   ) where
@@ -111,6 +112,41 @@ instance (Ord k, BoundedLattice a) => Lattice (Map k a) where
 
 instance (Ord k, BoundedLattice a, BranchLattice a) => BranchLattice (Map k a) where
     m1 `bub` m2 = joinWith bub bot m1 m2
+
+-- | All/None lattice
+data All = None | All
+  deriving (Eq, Ord, Show)
+
+instance Pretty All where
+    ppr None = botDoc
+    ppr All  = topDoc
+
+instance Poset All where
+    None <= _   = True
+    All  <= All = True
+    _    <= _   = False
+
+instance Lattice All where
+    All  `lub` _    = All
+    _    `lub` All  = All
+    None `lub` None = None
+
+    None `glb` _    = None
+    _    `glb` None = None
+    All  `glb` All  = All
+
+instance BranchLattice All where
+    All  `bub` _    = All
+    _    `bub` All  = All
+    None `bub` None = None
+
+instance BottomLattice All where
+    bot = None
+
+instance TopLattice All where
+    top = All
+
+instance BoundedLattice All where
 
 -- | 'Known' allows us to construct a lattice from a partially ordered set by
 -- adding top and bottom elements. The lattice it constructs /is not/ a valid
