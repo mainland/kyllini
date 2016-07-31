@@ -153,9 +153,7 @@ instance Lattice PreciseInterval where
         h   = max j j'
         gap = i - j' > 1 && i' - j > 1
 
-    i `lub` j | i <= j    = j
-              | j <= i    = i
-              | otherwise = top
+    PI i `lub` PI j = PI (i `lub` j)
 
     PI i `glb` PI j = PI (i `glb` j)
 
