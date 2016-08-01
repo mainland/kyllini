@@ -122,27 +122,17 @@ instance BottomLattice Interval where
 
 -- | A bounded known interval
 newtype BoundedInterval = BI (Top Interval)
-  deriving (Eq, Ord, Show, IsInterval, Poset, Lattice,
+  deriving (Eq, Ord, Show, Pretty, Arbitrary,
+            IsInterval, Poset, Lattice,
             BottomLattice, TopLattice, BoundedLattice)
-
-instance Arbitrary BoundedInterval where
-    arbitrary = BI <$> arbitrary
-
-instance Pretty BoundedInterval where
-    ppr (BI x) = ppr x
 
 instance BranchLattice BoundedInterval where
     bub = lub
 
 -- | A precisely known interval
 newtype PreciseInterval = PI (Top Interval)
-  deriving (Eq, Ord, Show, IsInterval, Poset)
-
-instance Arbitrary PreciseInterval where
-    arbitrary = PI <$> arbitrary
-
-instance Pretty PreciseInterval where
-    ppr (PI x) = ppr x
+  deriving (Eq, Ord, Show, Pretty, Arbitrary,
+            IsInterval, Poset)
 
 instance Lattice PreciseInterval where
     PI (NotTop (Interval i j)) `lub` PI (NotTop (Interval i' j'))
