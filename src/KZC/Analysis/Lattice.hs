@@ -102,6 +102,9 @@ instance Ord a => Lattice (Set a) where
     s1 `lub` s2 = s1 `Set.union` s2
     s1 `glb` s2 = s1 `Set.intersection` s2
 
+instance Ord a => BottomLattice (Set a) where
+    bot = Set.empty
+
 joinWith :: Ord k => (a -> a -> a) -> a -> Map k a -> Map k a -> Map k a
 joinWith f dflt =
     Map.mergeWithKey (\_ a b -> Just (f a b)) (Map.map (f dflt)) (Map.map (f dflt))
