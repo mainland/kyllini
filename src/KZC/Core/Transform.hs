@@ -30,6 +30,9 @@ import KZC.Core.Syntax
 import KZC.Error
 
 class MonadTc m => TransformExp m where
+    viewT :: View ->m View
+    viewT = transView
+
     localDeclT :: LocalDecl -> m a -> m (LocalDecl, a)
     localDeclT = transLocalDecl
 
@@ -209,6 +212,15 @@ transLocalDecl (LetRefLD v tau e s) m = do
     e' <- traverse expT e
     x  <- extendVars [(bVar v, refT tau)] m
     return (LetRefLD v tau e' s, x)
+
+transLocalDecl (LetViewLD v tau vw s) m = do
+    vw' <- viewT vw
+    x   <- extendVars [(bVar v, tau)] m
+    return (LetViewLD v tau vw' s, x)
+
+transView :: TransformExp m => View -> m View
+transView (IdxVW v e len s) =
+    IdxVW v <$> expT e <*> pure len <*> pure s
 
 transExp :: TransformExp m => Exp -> m Exp
 transExp e@ConstE{} =

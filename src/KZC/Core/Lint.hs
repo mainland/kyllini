@@ -102,6 +102,7 @@ import KZC.Expr.Lint (Tc(..),
 
                       inferKind,
                       checkKind,
+                      checkTauOrRhoKind,
 
                       checkCast,
                       checkBitcast,
@@ -227,6 +228,32 @@ checkDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
 
+inferView :: forall m . MonadTc m => View -> m Type
+inferView (IdxVW v e len l) = do
+    tau_v <- lookupVar v
+    withFvContext e $ inferExp e >>= checkIntT
+    go tau_v
+  where
+    go :: Type -> m Type
+    go (RefT (ArrT _ tau _) _) =
+        return $ RefT (mkArrSlice tau len) l
+
+    go (ArrT _ tau _) =
+        return $ mkArrSlice tau len
+
+    go tau =
+        faildoc $ nest 2 $ group $
+        text "Expected array type but got:" <+/> ppr tau
+
+    mkArrSlice :: Type -> Maybe Int -> Type
+    mkArrSlice tau Nothing  = tau
+    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+
+checkView :: MonadTc m => View -> Type -> m ()
+checkView vw tau = do
+    tau' <- inferView vw
+    checkTypeEquality tau' tau
+
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do
     alwaysWithSummaryContext decl $
@@ -243,6 +270,13 @@ checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
           Nothing -> return ()
           Just e  -> withSummaryContext e $ checkExp e tau
     extendVars [(bVar v, refT tau)] k
+
+checkLocalDecl decl@(LetViewLD v tau vw _) k = do
+    alwaysWithSummaryContext decl $
+        inLocalScope $ do
+        checkTauOrRhoKind tau
+        checkView vw tau
+    extendVars [(bVar v, tau)] k
 
 inferExp :: forall m . MonadTc m => Exp -> m Type
 inferExp (ConstE c l) =

@@ -541,6 +541,9 @@ simplLocalDecl decl m = do
         isDead :: Bool
         isDead = bOccInfo v == Just Dead
 
+    preInlineUnconditionally _flags LetViewLD{} =
+        faildoc $ text "Views not supported"
+
     postInlineUnconditionally :: Flags -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     postInlineUnconditionally _flags (LetLD v tau e s) = do
         e'       <- simplE e
@@ -562,6 +565,9 @@ simplLocalDecl decl m = do
             extendDefinitions [(bVar v', Unknown)] $
             keepRef (bVar v) $
             withRefBinding v' tau' e' s m
+
+    postInlineUnconditionally _flags LetViewLD{} =
+        faildoc $ text "Views not supported"
 
     withoutBinding :: SimplM l m a -> SimplM l m (Maybe LocalDecl, a)
     withoutBinding m = (,) <$> pure Nothing <*> m

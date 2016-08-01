@@ -472,6 +472,9 @@ useLocalDecl (LetRefLD v tau (Just e) s) m = do
                  updateNeedDefault v m
     return (LetRefLD v' tau (Just e') s, x)
 
+useLocalDecl LetViewLD{} _ =
+    faildoc $ text "Views not supported."
+
 useComp :: MonadTc m => Comp l -> ND m (Comp l)
 useComp comp = do
     steps' <- useSteps (unComp comp)

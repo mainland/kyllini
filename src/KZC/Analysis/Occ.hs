@@ -155,6 +155,9 @@ instance MonadTc m => TransformExp (OccM m) where
                               withOccInfo v m
         return (LetRefLD (updStaticInfo (updOccInfo v occ) static) tau e' s, x)
 
+    localDeclT LetViewLD{} _ =
+        faildoc $ text "Views not supported."
+
     expT e@(VarE v _) = do
         occVar v
         return e

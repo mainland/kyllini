@@ -237,6 +237,9 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
         new' :: Val l m Exp
         new' = if isKnown new then new else old
 
+evalLocalDecl LetViewLD{} _k =
+    faildoc $ text "Views not supported"
+
 evalComp :: forall l m . (IsLabel l, MonadTcRef m)
          => Comp l
          -> EvalM l m (Val l m (Comp l))

@@ -31,6 +31,7 @@ module KZC.Core.Syntax (
     Const(..),
     Program(..),
     Decl(..),
+    View(..),
     LocalDecl(..),
     BoundVar(..),
     OccInfo(..),
@@ -223,8 +224,12 @@ data Decl l = LetD LocalDecl !SrcLoc
             | LetFunCompD BoundVar [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
+data View = IdxVW Var Exp (Maybe Int) !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data LocalDecl = LetLD BoundVar Type Exp !SrcLoc
                | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+               | LetViewLD BoundVar Type View !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data OccInfo = Dead
@@ -275,6 +280,9 @@ data Gen = GenG    Var Type Const !SrcLoc
 
 class ToExp a where
     toExp :: a -> Exp
+
+instance ToExp View where
+    toExp (IdxVW v e len l) = IdxE (VarE v l) e len l
 
 -- | An argument to a call to a computation function. Arguments may be
 -- expressions or computations.
@@ -493,6 +501,7 @@ instance Size LocalDecl where
     size (LetLD _ _ e _)           = 1 + size e
     size (LetRefLD _ _ Nothing _)  = 1
     size (LetRefLD _ _ (Just e) _) = 1 + size e
+    size LetViewLD{}               = 0
 
 instance Size Exp where
     size (ConstE c _)            = size c
@@ -560,6 +569,7 @@ instance LUTSize LocalDecl where
     lutSize (LetLD _ _ e _)           = lutSize e
     lutSize (LetRefLD _ _ Nothing _)  = 0
     lutSize (LetRefLD _ _ (Just e) _) = lutSize e
+    lutSize LetViewLD{}               = 0
 
 instance LUTSize Exp where
     lutSize ConstE{}                = 0
@@ -635,8 +645,9 @@ instance Summary (Decl l) where
     summary (LetFunCompD v _ _ _ _ _) = text "definition of" <+> ppr v
 
 instance Summary LocalDecl where
-    summary (LetLD v _ _ _)    = text "definition of" <+> ppr v
-    summary (LetRefLD v _ _ _) = text "definition of" <+> ppr v
+    summary (LetLD v _ _ _)     = text "definition of" <+> ppr v
+    summary (LetRefLD v _ _ _)  = text "definition of" <+> ppr v
+    summary (LetViewLD v _ _ _) = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -730,6 +741,13 @@ instance IsLabel l => Pretty (Decl l) where
 
     pprList decls = stack (map ppr decls)
 
+instance Pretty View where
+    pprPrec _ (IdxVW v e Nothing _) =
+        ppr v <> brackets (ppr e)
+
+    pprPrec _ (IdxVW v e (Just i) _) =
+        ppr v <> brackets (commasep [ppr e, ppr i])
+
 instance Pretty LocalDecl where
     pprPrec p (LetLD v tau e _) =
         parensIf (p > appPrec) $
@@ -746,6 +764,12 @@ instance Pretty LocalDecl where
         group (nest 2 (lhs <+/> text "=" </> ppr e))
       where
         lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
+
+    pprPrec p (LetViewLD v tau vw _) =
+        parensIf (p > appPrec) $
+        group (nest 2 (lhs <+/> text "=" </> ppr vw))
+      where
+        lhs = text "letview" <+> ppr v <+> text ":" <+> ppr tau
 
     pprList decls = stack (map ppr decls)
 
@@ -1041,13 +1065,18 @@ instance Binders (Decl l) Var where
     binders (LetCompD v _ _ _)        = singleton (bVar v)
     binders (LetFunCompD v _ _ _ _ _) = singleton (bVar v)
 
+instance Fvs View Var where
+    fvs (IdxVW v e _ _) = singleton v <> fvs e
+
 instance Fvs LocalDecl Var where
-    fvs (LetLD v _ e _)    = delete (bVar v) (fvs e)
-    fvs (LetRefLD v _ e _) = delete (bVar v) (fvs e)
+    fvs (LetLD v _ e _)      = delete (bVar v) (fvs e)
+    fvs (LetRefLD v _ e _)   = delete (bVar v) (fvs e)
+    fvs (LetViewLD v _ vw _) = delete (bVar v) (fvs vw)
 
 instance Binders LocalDecl Var where
-    binders (LetLD v _ _ _)    = singleton (bVar v)
-    binders (LetRefLD v _ _ _) = singleton (bVar v)
+    binders (LetLD v _ _ _)     =  singleton (bVar v)
+    binders (LetRefLD v _ _ _)  = singleton (bVar v)
+    binders (LetViewLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
     fvs ConstE{}                    = mempty
@@ -1141,9 +1170,13 @@ instance HasVars (Decl l) Var where
     allVars (LetCompD v _ ccomp _)      = singleton (bVar v) <> allVars ccomp
     allVars (LetFunCompD v _ vbs _ e _) = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
 
+instance HasVars View Var where
+    allVars (IdxVW v e _ _) = singleton v <> allVars e
+
 instance HasVars LocalDecl Var where
-    allVars (LetLD v _ e _)    = singleton (bVar v) <> allVars e
-    allVars (LetRefLD v _ e _) = singleton (bVar v) <> allVars e
+    allVars (LetLD v _ e _)      = singleton (bVar v) <> allVars e
+    allVars (LetRefLD v _ e _)   = singleton (bVar v) <> allVars e
+    allVars (LetViewLD v _ vw _) = singleton (bVar v) <> allVars vw
 
 instance HasVars Exp Var where
     allVars ConstE{}                    = mempty
@@ -1269,12 +1302,19 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
  -
  ------------------------------------------------------------------------------}
 
+instance Subst Iota IVar View where
+    substM (IdxVW v e i l) =
+        IdxVW v <$> substM e <*> pure i <*> pure l
+
 instance Subst Iota IVar LocalDecl where
     substM (LetLD v tau e s) =
         LetLD v <$> substM tau <*> substM e <*> pure s
 
     substM (LetRefLD v tau e s) =
         LetRefLD v <$> substM tau <*> substM e <*> pure s
+
+    substM (LetViewLD v tau vw s) =
+        LetViewLD v <$> substM tau <*> substM vw <*> pure s
 
 instance Subst Iota IVar Exp where
     substM e@ConstE{} =
@@ -1405,12 +1445,19 @@ instance Subst Iota IVar (Comp l) where
  -
  ------------------------------------------------------------------------------}
 
+instance Subst Type TyVar View where
+   substM (IdxVW v e i l) =
+       IdxVW v <$> substM e <*> pure i <*> pure l
+
 instance Subst Type TyVar LocalDecl where
     substM (LetLD v tau e l) =
         LetLD v <$> substM tau <*> substM e <*> pure l
 
     substM (LetRefLD v tau e l) =
         LetRefLD v <$> substM tau <*> substM e <*> pure l
+
+    substM (LetViewLD v tau vw s) =
+        LetViewLD v <$> substM tau <*> substM vw <*> pure s
 
 instance Subst Type TyVar Exp where
     substM e@ConstE{} =
@@ -1750,6 +1797,10 @@ instance Freshen LocalDecl Iota IVar where
         decl' <- LetRefLD v <$> substM tau <*> substM e <*> pure l
         k decl'
 
+    freshen (LetViewLD v tau vw l) k = do
+        decl' <- LetViewLD v <$> substM tau <*> substM vw <*> pure l
+        k decl'
+
 {------------------------------------------------------------------------------
  -
  - Freshening variables
@@ -1796,7 +1847,23 @@ instance Freshen LocalDecl Exp Var where
     freshen (LetRefLD v tau e l) k = do
         e' <- substM e
         freshen v $ \v' ->
-         k (LetRefLD v' tau e' l)
+          k (LetRefLD v' tau e' l)
+
+    freshen (LetViewLD v tau (IdxVW v_view e len _) l) k =
+        ask (Map.lookup v_view . fst) >>= go
+      where
+        go Nothing = do
+            e' <- substM e
+            freshen v $ \v' ->
+              k (LetViewLD v' tau (IdxVW v_view e' len l) l)
+
+        go (Just e_view) = do
+            e' <- substM e
+            freshen v $ \v' ->
+              let e_idx = IdxE e_view e' len l
+              in
+                local (\(theta, phi) -> (Map.insert (bVar v') e_idx theta, phi)) $
+                k (LetLD v' (UnitT l) (ConstE UnitC l) l)
 
 instance Freshen Var Exp Var where
     freshen v@(Var n) =
