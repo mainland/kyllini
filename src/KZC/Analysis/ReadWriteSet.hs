@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -12,7 +13,9 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Analysis.ReadWriteSet (
+    IntV(..),
     RWSet(..),
+    weaklyUpdated,
 
     readWriteSets
   ) where
@@ -23,8 +26,7 @@ import Prelude hiding ((<=))
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative, (<$>), (<*>), pure)
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad (unless,
-                      void)
+import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
@@ -40,6 +42,8 @@ import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (empty)
 
 import KZC.Analysis.Interval
@@ -54,42 +58,193 @@ import KZC.Uniq
 
 readWriteSets :: MonadTc m
               => Exp
-              -> m (Map Var RWSet, Map Var RWSet)
+              -> m (Map Var RWSet)
 readWriteSets e = do
-    s <- execRW (rangeExp e)
-    return (readSet s, writeSet s)
+    s <- execRW (evalExp e)
+    return $ rwsets s
 
--- | References
-data Ref = VarR Var
-         | IdxR Ref Val (Maybe Int)
-         | ProjR Ref Field
+-- | An interval. We track both a bounded interval containing all the values the
+-- integer /may/ have at some point during execution and a precise interval that
+-- contains all the values the integer /does/ have at some point during
+-- execution.
+data IntV = IV BoundedInterval PreciseInterval
   deriving (Eq, Ord, Show)
 
-instance Pretty Ref where
-    pprPrec _ (VarR v) =
-        ppr v
+instance Pretty IntV where
+    pprPrec p (IV bi pi) =
+        parensIf (p > appPrec) $
+        text "int" <+> ppr bi <+> ppr pi
 
-    pprPrec _ (IdxR r i Nothing) =
-        pprPrec appPrec1 r <> brackets (ppr i)
+instance IsInterval IntV where
+    empty = IV empty empty
 
-    pprPrec _ (IdxR r i (Just len)) =
-        pprPrec appPrec1 r <> brackets (commasep [ppr i, ppr len])
+    unit i = IV (unit i) (unit i)
 
-    pprPrec _ (ProjR r f) =
-        pprPrec appPrec1 r <> text "." <> ppr f
+    fromUnit (IV i j) = do
+        x <- fromUnit i
+        y <- fromUnit j
+        if x == y then return x else fail "Inconsistent intervals"
+
+    interval i j = IV (interval i j) (interval i j)
+
+    fromInterval (IV i j) = do
+        x <- fromInterval i
+        y <- fromInterval j
+        if x == y then return x else fail "Inconsistent intervals"
+
+    extend (IV i j) x = IV (extend i x) (extend j x)
+
+instance Poset IntV where
+    IV bi pi <= IV bi' pi' = bi <= bi' && pi <= pi'
+
+instance Lattice IntV where
+    IV bi pi `lub` IV bi' pi' = IV (bi `lub` bi') (pi `lub` pi')
+
+    IV bi pi `glb` IV bi' pi' = IV (bi `glb` bi') (pi `glb` pi')
+
+instance BottomLattice IntV where
+    bot = IV bot bot
+
+instance TopLattice IntV where
+    top = IV top top
+
+instance BoundedLattice IntV where
+
+instance BranchLattice IntV where
+    IV bi pi `bub` IV bi' pi' = IV (bi `bub` bi') (pi `bub` pi')
+
+-- | A type that represents a set of fields.
+class IsFields a where
+    field :: Field -> a
+    fields :: [Field] -> a
+
+instance IsFields Fields where
+    field  = Fields . Set.singleton
+    fields = Fields . Set.fromList
+
+instance IsFields a => IsFields (Top a) where
+    field  = NotTop . field
+    fields = NotTop . fields
+
+-- | A set of fields.
+newtype Fields = Fields (Set Field)
+  deriving (Eq, Ord, Show, Poset, Lattice, BottomLattice)
+
+instance Pretty Fields where
+    ppr (Fields fs) = (braces . commasep . map ppr . Set.toList) fs
+
+-- | A bounded set of fields.
+newtype BoundedFields = BF (Top Fields)
+  deriving (Eq, Ord, Show, Pretty, Poset, Lattice,
+            BottomLattice, TopLattice, BoundedLattice,
+            IsFields)
+
+instance BranchLattice BoundedFields where
+    bub = lub
+
+-- | A precise set of fields.
+newtype PreciseFields = PF (Top Fields)
+  deriving (Eq, Ord, Show, Pretty, Poset, Lattice,
+            BottomLattice, TopLattice, BoundedLattice,
+            IsFields)
+
+instance BranchLattice PreciseFields where
+    i `bub` j | i == j    = i
+              | otherwise = top
+
+-- | A read/write set.
+data RWSet = UnknownRW
+           | VarRW All All
+           | ArrayRW BoundedInterval PreciseInterval
+           | StructRW BoundedFields PreciseFields
+           | TopRW
+  deriving (Eq, Ord, Show)
+
+-- | Returns 'True' if the given read/write set is weakly, rather than
+-- precisely, updated.
+weaklyUpdated :: RWSet -> Bool
+weaklyUpdated UnknownRW            = True
+weaklyUpdated VarRW{}              = False
+weaklyUpdated (ArrayRW _ (PI i))   = i == top
+weaklyUpdated (StructRW _ (PF fs)) = fs == top
+weaklyUpdated TopRW                = True
+
+instance Pretty RWSet where
+    ppr UnknownRW      = botDoc
+    ppr (VarRW r w)    = text "var" <+> pprPrec appPrec1 r <+>pprPrec appPrec1 w
+    ppr (ArrayRW r w)  = text "array" <+> pprPrec appPrec1 r <+>pprPrec appPrec1 w
+    ppr (StructRW r w) = text "struct" <+> pprPrec appPrec1 r <+>pprPrec appPrec1 w
+    ppr TopRW          = topDoc
+
+instance Poset RWSet where
+    UnknownRW    <= _              = True
+    _            <= TopRW          = True
+    VarRW r w    <= VarRW r' w'    = r <= r' && w <= w'
+    ArrayRW r w  <= ArrayRW r' w'  = r <= r' && w <= w'
+    StructRW r w <= StructRW r' w' = r <= r' && w <= w'
+    _            <= _              = False
+
+instance Lattice RWSet where
+    UnknownRW     `lub` x              = x
+    x             `lub` UnknownRW      = x
+    VarRW r w     `lub` VarRW r' w'    = VarRW (r `lub` r') (w `lub` w')
+    ArrayRW r w   `lub` ArrayRW r' w'  = ArrayRW (r `lub` r') (w `lub` w')
+    StructRW r  w `lub` StructRW r' w' = StructRW (r `lub` r') (w `lub` w')
+    _             `lub` _              = top
+
+    UnknownRW    `glb` x              = x
+    x            `glb` UnknownRW      = x
+    VarRW r w    `glb` VarRW r' w'    = VarRW (r `glb` r') (w `glb` w')
+    ArrayRW r w  `glb` ArrayRW r' w'  = ArrayRW (r `glb` r') (w `glb` w')
+    StructRW r w `glb` StructRW r' w' = StructRW (r `glb` r') (w `glb` w')
+    _            `glb` _              = bot
+
+-- When calculating branch upper bounds, unknown values get mapped to bottom.
+-- However, we need extra precision to correctly compute the MUST values of
+-- field sets and intervals.
+instance BranchLattice RWSet where
+    UnknownRW   `bub` UnknownRW    = UnknownRW
+    x           `bub` UnknownRW    = UnknownRW `bub` x
+    UnknownRW   `bub` x@VarRW{}    = VarRW bot bot `bub` x
+    UnknownRW   `bub` x@ArrayRW{}  = ArrayRW bot bot `bub` x
+    UnknownRW   `bub` x@StructRW{} = StructRW bot bot `bub` x
+    UnknownRW   `bub` x            = x
+
+    VarRW r w    `bub` VarRW r' w'    = VarRW (r `bub` r') (w `bub` w')
+    ArrayRW r w  `bub` ArrayRW r' w'  = ArrayRW (r `bub` r') (w `bub` w')
+    StructRW r w `bub` StructRW r' w' = StructRW (r `bub` r') (w `bub` w')
+    _            `bub` _              = top
+
+instance BottomLattice RWSet where
+    bot = UnknownRW
+
+instance TopLattice RWSet where
+    top = TopRW
+
+instance BoundedLattice RWSet where
+
+-- | Abstract values that represent read/write set.
+class ReadWriteSet a b | a -> b, b -> a where
+    inPrecise :: a -> b -> Bool
+
+instance ReadWriteSet BoundedInterval PreciseInterval where
+    inPrecise (BI x) (PI y) = x <= y
+
+instance ReadWriteSet BoundedFields PreciseFields where
+    inPrecise (BF x) (PF y) = x <= y
 
 -- | Values
-data Val = UnknownV            -- ^ Unknown (not-yet defined)
-         | IntV (Top Interval) -- ^ All integers in a range
-         | BoolV (Known Bool)  -- ^ Booleans
-         | TopV                -- ^ Could be anything as far as we know...
+data Val = UnknownV           -- ^ Unknown (not-yet defined)
+         | IntV IntV          -- ^ Interval bound on the value
+         | BoolV (Known Bool) -- ^ Booleans
+         | TopV               -- ^ Could be anything as far as we know...
   deriving (Eq, Ord, Show)
 
 instance Pretty Val where
-    ppr UnknownV       = text "unknown"
-    ppr (IntV x)       = ppr x
-    ppr (BoolV x)      = ppr x
-    ppr TopV           = text "top"
+    ppr UnknownV  = botDoc
+    ppr (IntV x)  = ppr x
+    ppr (BoolV x) = ppr x
+    ppr TopV      = topDoc
 
 instance Poset Val where
     UnknownV <= _        = True
@@ -99,18 +254,27 @@ instance Poset Val where
     _        <= _        = False
 
 instance Lattice Val where
-    IntV bi `lub` IntV bi' = IntV (bi `lub` bi')
-    BoolV b `lub` BoolV b' = BoolV (b `lub` b')
-    _       `lub` _        = top
+    UnknownV `lub` x        = x
+    x        `lub` UnknownV = x
+    IntV bi  `lub` IntV bi' = IntV (bi `lub` bi')
+    BoolV b  `lub` BoolV b' = BoolV (b `lub` b')
+    _        `lub` _        = top
 
+    TopV    `glb` x        = x
+    x       `glb` TopV     = x
     IntV bi `glb` IntV bi' = IntV (bi `glb` bi')
     BoolV b `glb` BoolV b' = BoolV (b `glb` b')
     _       `glb` _        = bot
 
 instance BranchLattice Val where
-    IntV bi `bub` IntV bi' = IntV (bi `lub` bi')
-    BoolV b `bub` BoolV b' = BoolV (b `lub` b')
-    _       `bub` _        = top
+    UnknownV `bub` UnknownV = UnknownV
+    x        `bub` UnknownV = UnknownV `bub` x
+    UnknownV `bub` x@IntV{} = IntV bot `bub` x
+    UnknownV `bub` x        = x
+
+    IntV bi  `bub` IntV bi' = IntV (bi `bub` bi')
+    BoolV b  `bub` BoolV b' = BoolV (b `lub` b')
+    _        `bub` _        = top
 
 instance BottomLattice Val where
     bot = UnknownV
@@ -120,70 +284,40 @@ instance TopLattice Val where
 
 instance BoundedLattice Val where
 
--- | Read-write sets
-data RWSet = ArrayS BoundedInterval PreciseInterval
-  deriving (Eq, Ord, Show)
-
-instance Pretty RWSet where
-    ppr (ArrayS bi pi) = text "array" <+> ppr bi <+> ppr pi
-
-instance Poset RWSet where
-    ArrayS rs ws <= ArrayS rs' ws' = rs <= rs' && ws <= ws'
-
-instance Lattice RWSet where
-    ArrayS rs ws `lub` ArrayS rs' ws' = ArrayS (rs `lub` rs') (ws `lub` ws')
-
-    ArrayS rs ws `glb` ArrayS rs' ws' = ArrayS (rs `glb` rs') (ws `glb` ws')
-
-instance BranchLattice RWSet where
-    ArrayS rs ws `bub` ArrayS rs' ws' = ArrayS (rs `lub` rs') (ws `glb` ws')
-
-instance BottomLattice RWSet where
-    bot = ArrayS bot bot
-
-instance TopLattice RWSet where
-    top = ArrayS top top
-
-instance BoundedLattice RWSet where
-
--- | The range analysis state
+-- | The read-write set analysis state
 data RState = RState
-    { vals     :: Map Var Val
-    , readSet  :: Map Var RWSet
-    , writeSet :: Map Var RWSet
+    { vals   :: Map Var Val   -- Variable values
+    , rwsets :: Map Var RWSet -- Variable read/write sets
     }
   deriving (Eq)
 
 defaultRState :: RState
 defaultRState = RState
-    { vals     = mempty
-    , readSet  = mempty
-    , writeSet = mempty
+    { vals   = mempty
+    , rwsets = mempty
     }
 
+instance Pretty RState where
+    ppr s = ppr (vals s) </> ppr (rwsets s)
+
 instance Poset RState where
-    r1 <= r2 = vals r1 <= vals r2 &&
-               readSet r1 <= readSet r2 &&
-               writeSet r1 <= writeSet r2
+    r1 <= r2 = vals r1 <= vals r2 && rwsets r1 <= rwsets r2
 
 instance Lattice RState where
     r1 `lub` r2 = RState
-        { vals     = vals r1     `lub` vals r2
-        , readSet  = readSet r1  `lub` readSet r2
-        , writeSet = writeSet r1 `lub` writeSet r2
+        { vals   = vals r1 `lub` vals r2
+        , rwsets = rwsets r1 `lub` rwsets r2
         }
 
     r1 `glb` r2 = RState
-        { vals     = vals r1     `glb` vals r2
-        , readSet  = readSet r1  `glb` readSet r2
-        , writeSet = writeSet r1 `glb` writeSet r2
+        { vals   = vals r1 `glb` vals r2
+        , rwsets = rwsets r1 `glb` rwsets r2
         }
 
 instance BranchLattice RState where
     r1 `bub` r2 = RState
-        { vals     = vals r1     `bub` vals r2
-        , readSet  = readSet r1  `bub` readSet r2
-        , writeSet = writeSet r1 `bub` writeSet r2
+        { vals   = vals r1 `bub` vals r2
+        , rwsets = rwsets r1 `bub` rwsets r2
         }
 
 newtype RW m a = RW { unRW :: StateT RState m a }
@@ -211,19 +345,18 @@ collectState m = do
     return (x, post)
 
 lookupVal :: MonadTc m => Var -> RW m Val
-lookupVal v =
-    fromMaybe bot <$> gets (Map.lookup v . vals)
+lookupVal v = fromMaybe bot <$> gets (Map.lookup v . vals)
 
 extendVals :: forall a m . MonadTc m => [(Var, Val)] -> RW m a -> RW m a
 extendVals vvals m = do
-    old_vals     <- gets $ \s -> map (\v -> Map.lookup v (vals s)) vs
-    old_readSet  <- gets $ \s -> map (\v -> Map.lookup v (readSet s)) vs
-    old_writeSet <- gets $ \s -> map (\v -> Map.lookup v (writeSet s)) vs
+    old_vals   <- gets $ \s -> map (\v -> Map.lookup v (vals s)) vs
+    old_rwsets <- gets $ \s -> map (\v -> Map.lookup v (rwsets s)) vs
     modify $ \s -> s { vals = foldl' insert (vals s) vvals }
     x <- m
-    modify $ \s -> s { vals     = foldl' update (vals s)     (vs `zip` old_vals)
-                     , readSet  = foldl' update (readSet s)  (vs `zip` old_readSet)
-                     , writeSet = foldl' update (writeSet s) (vs `zip` old_writeSet)
+    -- We restore the old values here. This may mean deleting values, which is
+    -- why we must use update.
+    modify $ \s -> s { vals   = foldl' update (vals s) (vs `zip` old_vals)
+                     , rwsets = foldl' update (rwsets s) (vs `zip` old_rwsets)
                      }
     return x
   where
@@ -240,85 +373,186 @@ extendWildVals :: MonadTc m => [(WildVar, Val)] -> RW m a -> RW m a
 extendWildVals wvs = extendVals [(bVar bv, val) | (TameV bv, val) <- wvs]
 
 putVal :: MonadTc m => Var -> Val -> RW m ()
-putVal v val =
-    modify $ \s -> s { vals = Map.insert v val (vals s) }
+putVal v val = modify $ \s -> s { vals = Map.insert v val (vals s) }
 
-updateRWSet :: forall m .  MonadTc m
-            => Ref
-            -> (RState -> Map Var RWSet)
-            -> (Var -> RWSet -> RWSet -> RW m ())
-            -> RW m ()
-updateRWSet ref proj upd =
-    go ref
+lookupRWSet :: MonadTc m => Var -> RW m RWSet
+lookupRWSet v = do
+    maybe_ref <- gets (Map.lookup v . rwsets)
+    case maybe_ref of
+      Just rws -> return rws
+      Nothing  -> do rws <- newRWSet . unRefT <$> lookupVar v
+                     putRWSet v rws
+                     return rws
   where
-    go :: Ref -> RW m ()
-    go (VarR v) = do
-        old <- gets (fromMaybe bot . Map.lookup v . proj)
-        upd v old new
+    newRWSet :: Type -> RWSet
+    newRWSet ArrT{}    = ArrayRW bot bot
+    newRWSet StructT{} = StructRW bot bot
+    newRWSet _         = VarRW bot bot
+
+putRWSet :: MonadTc m => Var -> RWSet -> RW m ()
+putRWSet v rws = modify $ \s -> s { rwsets = Map.insert v rws (rwsets s) }
+
+fromLen :: Maybe Int -> Int
+fromLen Nothing    = 1
+fromLen (Just len) = len
+
+{- Note [Read/write Sets]
+
+We track read/write sets at the granularity of individual array elements and
+individual struct fields. In both cases, we track both bounded and precise sets
+(of array elements/fields) so that we can potentially determine the precise
+parts of an array/struct that are read.
+
+When tracking precise sets, we are careful not to push a write set stright to
+top when we assign an entire array/struct, becase top in a precise tracking
+context means that stuff is written, but we can't determien precisely what!
+Instead, we explicitly add all elements of the array/struct to the write set.
+-}
+
+data Ref = Ref Var [RefPath]
+  deriving (Eq, Ord)
+
+data RefPath = IdxP Val (Maybe Int)
+             | ProjP Field
+  deriving (Eq, Ord)
+
+evalRef :: forall m . MonadTc m => Exp -> RW m Ref
+evalRef = go []
+  where
+    go :: [RefPath] -> Exp -> RW m Ref
+    go path (VarE v _) =
+        return $ Ref v path
+
+    go path (IdxE e1 e2 len _) = do
+        val <- evalExp e2
+        go (IdxP val len : path) e1
+
+    go path (ProjE e f _) =
+        go (ProjP f : path) e
+
+    go _ e =
+        faildoc $ text "Not a reference:" <+> ppr e
+
+readRef :: forall m .  MonadTc m => Ref -> RW m ()
+readRef (Ref v path) = do
+    rws  <- lookupRWSet v
+    rws' <- go rws path
+    putRWSet v rws'
+  where
+    go :: RWSet -> [RefPath] -> RW m RWSet
+    -- We're reading the entire array. Rather than sending the read set to top,
+    -- we send it to the interval that includes all elements.
+    go ref@(ArrayRW _rs ws) [] = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        case iota of
+          ConstI n _ -> do let rs :: BoundedInterval
+                               rs = extend (unit (0::Integer)) n
+                           if rs `inPrecise` ws
+                             then return ref
+                             else return $ ArrayRW rs ws
+          _          -> return $ ArrayRW top ws
+
+    go ref@(ArrayRW rs ws) (IdxP (IntV (IV bi _pi)) len:_)
+      | new `inPrecise` ws = return ref
+      | otherwise          = return $ ArrayRW (rs `lub` new) ws
       where
-        new :: RWSet
-        new = top
+        new :: BoundedInterval
+        new = extend bi (fromLen len)
 
-    go (IdxR (VarR v) idx len) = do
-        old <- gets (fromMaybe bot . Map.lookup v . proj)
-        upd v old new
-      where
-        new :: RWSet
-        new = ArrayS (BI intv) (PI intv)
+    go (ArrayRW _rs ws) _ =
+        return $ ArrayRW top ws
 
-        intv :: Top Interval
-        intv = sliceToInterval idx len
+    go ref@(StructRW _rs ws) [] = do
+        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        let rs :: BoundedFields
+            rs = fields (map fst flds)
+        if rs `inPrecise` ws
+          then return ref
+          else return $ StructRW rs ws
 
-    go (IdxR r _ _) =
-        go r
+    go ref@(StructRW rs ws) (ProjP f:_)
+      | new `inPrecise` ws = return ref
+      | otherwise          = return $ StructRW (rs `lub` new) ws
+      where
+        new :: BoundedFields
+        new = field f
 
-    go (ProjR r _) =
-        go r
+    go (StructRW _rs ws) _ =
+        return $ StructRW top ws
 
-updateReadSet :: forall m . MonadTc m => Ref -> RW m ()
-updateReadSet ref =
-    updateRWSet ref readSet upd
+    go ref@(VarRW _rs ws) _
+        | ws == top = return ref
+        | otherwise = return $ VarRW top ws
+
+    go UnknownRW _ =
+        return TopRW
+
+    go TopRW _ =
+        return TopRW
+
+writeRef :: forall m .  MonadTc m => Ref -> RW m ()
+writeRef (Ref v path) = do
+    rws  <- lookupRWSet v
+    rws' <- go rws path
+    putRWSet v rws'
   where
-    upd :: Var -> RWSet -> RWSet -> RW m ()
-    upd v old new = do
-      wset <- gets (fromMaybe bot . Map.lookup v . writeSet)
-      unless (new <= wset) $
-        modify $ \s -> s { readSet = Map.insert v (old `lub` new) (readSet s) }
+    go :: RWSet -> [RefPath] -> RW m RWSet
+    -- We're writing the entire array. As above, rather than sending the write
+    -- set to top, we send it to the interval that includes all elements.
+    go (ArrayRW rs _ws) [] = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        case iota of
+          ConstI n _ -> do let ws :: PreciseInterval
+                               ws = extend (unit (0::Integer)) n
+                           return $ ArrayRW rs ws
+          _          -> return $ ArrayRW rs top
 
-updateWriteSet :: forall m . MonadTc m => Ref -> RW m ()
-updateWriteSet ref =
-    updateRWSet ref writeSet upd
-  where
-    upd :: Var -> RWSet -> RWSet -> RW m ()
-    upd v old new =
-      modify $ \s -> s { writeSet = Map.insert v (old `lub` new) (writeSet s) }
+    go (ArrayRW rs ws) [IdxP (IntV (IV _bi pi)) len] =
+        return $ ArrayRW rs (ws `lub` ws')
+      where
+        ws' :: PreciseInterval
+        ws' = extend pi (fromLen len)
 
-sliceToInterval :: Val -> Maybe Int -> Top Interval
-sliceToInterval (IntV intv@NotTop{}) Nothing =
-    intv
+    go (ArrayRW rs _ws) _ =
+        return $ ArrayRW rs top
 
-sliceToInterval (IntV i) (Just len) | Just idx <- fromUnit i =
-    interval idx (idx + fromIntegral len - 1 :: Integer)
+    go (StructRW rs _) [] = do
+        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        let ws :: PreciseFields
+            ws  = fields (map fst flds)
+        return $ StructRW rs ws
 
-sliceToInterval _ _ =
-    top
+    go (StructRW rs ws) [ProjP f] =
+        return $ StructRW rs (ws `lub` field f)
 
-rangeExp :: forall m . MonadTc m => Exp -> RW m Val
-rangeExp e =
+    go (StructRW rs _ws) _ =
+        return $ StructRW rs top
+
+    go (VarRW rs _ws) _ =
+        return $ VarRW rs top
+
+    go UnknownRW _ =
+        return TopRW
+
+    go TopRW _ =
+        return TopRW
+
+evalExp :: forall m . MonadTc m => Exp -> RW m Val
+evalExp e =
     withFvContext e $
     go e
   where
     go :: Exp -> RW m Val
     go (ConstE c _) =
-        return $ rangeConst c
+        return $ evalConst c
       where
-        rangeConst :: Const -> Val
-        rangeConst (BoolC b)               = BoolV (pure b)
-        rangeConst (FixC I _s _w (BP 0) x) = IntV $ unit x
-        rangeConst _c                      = top
+        evalConst :: Const -> Val
+        evalConst (BoolC b)               = BoolV (pure b)
+        evalConst (FixC I _s _w (BP 0) x) = IntV $ unit x
+        evalConst _c                      = top
 
-    go (VarE v _) = do
-        updateReadSet (VarR v)
+    go e@(VarE v _) = do
+        evalRef e >>= readRef
         lookupVal v
 
     go (UnopE op e _) =
@@ -342,12 +576,12 @@ rangeExp e =
         binop op <$> go e1 <*> go e2
       where
         binop :: Binop -> Val -> Val -> Val
-        binop Lt (IntV i) (IntV j) = BoolV . toKnown $ (<) <$> i <*> j
-        binop Le (IntV i) (IntV j) = BoolV . toKnown $ (P.<=) <$> i <*> j
-        binop Eq (IntV i) (IntV j) = BoolV . toKnown $ (==) <$> i <*> j
-        binop Ge (IntV i) (IntV j) = BoolV . toKnown $ (>=) <$> i <*> j
-        binop Gt (IntV i) (IntV j) = BoolV . toKnown $ (>) <$> i <*> j
-        binop Ne (IntV i) (IntV j) = BoolV . toKnown $ (/=) <$> i <*> j
+        binop Lt (IntV i) (IntV j) = BoolV . Known $ i < j
+        binop Le (IntV i) (IntV j) = BoolV . Known $ i P.<= j
+        binop Eq (IntV i) (IntV j) = BoolV . Known $ i == j
+        binop Ge (IntV i) (IntV j) = BoolV . Known $ i >= j
+        binop Gt (IntV i) (IntV j) = BoolV . Known $ i > j
+        binop Ne (IntV i) (IntV j) = BoolV . Known $ i /= j
 
         binop Lt _ _ = BoolV top
         binop Eq _ _ = BoolV top
@@ -370,17 +604,24 @@ rangeExp e =
         binop LshR _ _ = top
         binop AshR _ _ = top
 
-        binop Add (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
-            IntV $ interval (xlo + ylo :: Integer) (xhi + yhi :: Integer)
+        binop Add (IntV x) (IntV y) | Just (x1, x2) <- fromInterval x,
+                                      Just (y1, y2) <- fromInterval y =
+            IntV $ interval (x1 + y1 :: Integer) (x2 + y2 :: Integer)
 
-        binop Sub (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
-            IntV $ interval (xlo - yhi :: Integer) (xhi + ylo :: Integer)
+        binop Sub (IntV x) (IntV y) | Just (x1, x2) <- fromInterval x,
+                                      Just (y1, y2) <- fromInterval y =
+            IntV $ interval (x1 - y2 :: Integer) (x2 - y1 :: Integer)
 
-        binop Mul (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
-            IntV $ interval (xlo * ylo :: Integer) (xhi * yhi :: Integer)
+        binop Mul (IntV x) (IntV y) | Just (x1, x2) <- fromInterval x,
+                                      Just (y1, y2) <- fromInterval y =
+            IntV $ interval (x1 * y1 :: Integer) (x2 * y2 :: Integer)
 
-        binop Div (IntV x) (IntV y) | Just (xlo, xhi) <- fromInterval x, Just (ylo, yhi) <- fromInterval y =
-            IntV $ interval (xlo `quot` yhi :: Integer) (xhi `quot` ylo :: Integer)
+        binop Div (IntV x) (IntV y) | Just (x1, x2) <- fromInterval x,
+                                      Just (y1, y2) <- fromInterval y =
+            IntV $ interval (min (x1 `quot` y2 :: Integer)
+                                 (y1 `quot` x2 :: Integer))
+                            (max (x2 `quot` y1 :: Integer)
+                                 (y2 `quot` x1 :: Integer))
 
         binop Add _ _ = top
         binop Sub _ _ = top
@@ -390,98 +631,110 @@ rangeExp e =
         binop Pow _ _ = top
         binop Cat _ _ = top
 
-        toKnown :: Top a -> Known a
-        toKnown (NotTop x) = Known x
-        toKnown Top        = Any
-
     go (IfE e1 e2 e3 _) = do
-        val1 <- rangeExp e1
-        rangeIf val1 (rangeExp e2) (rangeExp e3)
+        val1 <- evalExp e1
+        evalIf val1 (evalExp e2) (evalExp e3)
 
     go (LetE (LetLD v tau e1 _) e2 _) = do
-        val1 <- rangeExp e1
+        val1 <- evalExp e1
         extendVars [(bVar v, tau)] $
-            extendVals [(bVar v, val1)] $
-            rangeExp e2
+          extendVals [(bVar v, val1)] $
+          evalExp e2
 
     go (LetE (LetRefLD v tau Nothing _) e2 _) =
         extendVars [(bVar v, refT tau)] $
         extendVals [(bVar v, bot)] $
-        rangeExp e2
+        evalExp e2
 
     go (LetE (LetRefLD v tau (Just e1) _) e2 _) = do
-        val1 <- rangeExp e1
+        val1 <- evalExp e1
         extendVars [(bVar v, refT tau)] $
             extendVals [(bVar v, val1)] $
-            rangeExp e2
+            evalExp e2
 
-    go (CallE _v _iotas es _) = do
-        mapM_ rangeArg es
+    go (CallE f _iotas es _) = do
+        isExt <- isExtFun f
+        mapM_ (evalArg isExt) es
         return top
+      where
+        -- We assume that ref arguments to an external function are written. For
+        -- a non-external function, we treat ref arguments as being both read
+        -- and written.
+        evalArg :: Bool -> Exp -> RW m ()
+        evalArg isExt e = do
+            tau <- inferExp e
+            case tau of
+              RefT {} | isExt     -> evalRef e >>= writeRef
+                      | otherwise -> do ref <- evalRef e
+                                        readRef ref
+                                        writeRef ref
+              _                   -> void $ evalExp e
 
     go (DerefE e _) = do
-        ref <- rangeRef e
-        updateReadSet ref
-        case ref of
-          VarR v -> lookupVal v
-          _      -> return top
+        evalRef e >>= readRef
+        case e of
+          VarE v _ -> lookupVal v
+          _        -> return top
 
     go (AssignE e1 e2 _) = do
-        ref <- rangeRef e1
-        val <- rangeExp e2
-        updateWriteSet ref
-        case ref of
-          VarR v -> putVal v val
-          _      -> return ()
+        val <- evalExp e2
+        evalRef e1 >>= writeRef
+        case e1 of
+          VarE v _ -> putVal v val
+          _        -> return ()
         return top
 
     go (WhileE e1 e2 _) = do
-        val <- rangeExp e1
-        rangeWhile val (rangeExp e2)
+        val <- evalExp e1
+        evalWhile val $
+          evalExp e2
 
     go (ForE _ v tau e_start e_len e_body _) = do
-        v_start <- rangeExp e_start
-        v_len   <- rangeExp e_len
+        v_start <- evalExp e_start
+        v_len   <- evalExp e_len
         extendVars [(v, tau)] $
-            rangeFor v v_start v_len (rangeExp e_body)
+          evalFor v v_start v_len (evalExp e_body)
 
     go (ArrayE es _) = do
-        mapM_ rangeExp es
+        mapM_ evalExp es
         return top
 
     go e@(IdxE VarE{} _ _ _) = do
-        ref <- rangeRef e
-        updateReadSet ref
+        evalRef e >>= readRef
         return top
 
     go (IdxE e1 e2 _ _) = do
-        void $ rangeExp e1
-        void $ rangeExp e2
+        void $ evalExp e1
+        void $ evalExp e2
         return top
 
     go (StructE _ flds _) = do
         mapM_ (go . snd) flds
         return top
 
+    go e@(ProjE VarE{} _ _) = do
+        evalRef e >>= readRef
+        return top
+
     go (ProjE e _ _) = do
-        void $ rangeExp e
+        void $ evalExp e
         return top
 
     go (PrintE _ es _) = do
-        mapM_ rangeExp es
+        mapM_ evalExp es
         return top
 
     go ErrorE{} =
         return top
 
     go (ReturnE _ e _) =
-        rangeExp e
+        evalExp e
 
     go (BindE wv tau e1 e2 _) = do
-        val1 <- rangeExp e1
+        val1 <- evalExp e1
         extendWildVars [(wv, tau)] $
           extendWildVals [(wv, val1)] $
-          rangeExp e2
+          evalExp e2
 
     go (LutE _ e) =
         go e
@@ -489,85 +742,37 @@ rangeExp e =
     go GenE{} =
         return top
 
-rangeRef :: forall m . MonadTc m => Exp -> RW m Ref
-rangeRef = go
-  where
-    go :: Exp -> RW m Ref
-    go (VarE v _) =
-        lookupVar v >>= go
-      where
-        -- For extra precision, when we read an entire array, we specify that we
-        -- read all its elements, not that we read top---the two are not equal!
-        -- We have to then deal with the returned IdxR range in the next case
-        -- below.
-        go :: Type -> RW m Ref
-        go (ArrT (ConstI n _) _ _) =
-            pure $ IdxR (VarR v) (IntV $ unit (0::Integer)) (Just n)
-
-        go (RefT tau _) =
-            go tau
-
-        go _ =
-            pure $ VarR v
-
-    go (IdxE e1 e2 len _) =
-        rangeRef e1 >>= go
-      where
-        -- We must handle IdxR specially here as noted above.
-        go :: Ref -> RW m Ref
-        go (IdxR ref _ _) = IdxR ref <$> rangeExp e2 <*> pure len
-        go ref            = IdxR ref <$> rangeExp e2 <*> pure len
-
-    go (ProjE e f _) =
-        ProjR <$> rangeRef e <*> pure f
-
-    go e =
-        faildoc $ nest 2$
-        text "Non-reference expression evaluated in reference context:" </> ppr e
-
-rangeArg :: forall m . MonadTc m => Exp -> RW m ()
-rangeArg e = do
-    tau <- inferExp e
-    case tau of
-      RefT {} -> rangeRefArg e
-      _       -> void $ rangeExp e
-  where
-    rangeRefArg :: MonadTc m => Exp -> RW m ()
-    rangeRefArg e = do
-        ref <- rangeRef e
-        updateWriteSet ref
-
-rangeIf :: (BranchLattice a, MonadTc m)
+evalIf :: (BranchLattice a, MonadTc m)
         => Val
         -> RW m a
         -> RW m a
         -> RW m a
-rangeIf (BoolV (Known True)) k2 _k3 =
+evalIf (BoolV (Known True)) k2 _k3 =
     k2
 
-rangeIf (BoolV (Known False)) _k2 k3 =
+evalIf (BoolV (Known False)) _k2 k3 =
     k3
 
-rangeIf _ k2 k3 = do
+evalIf _ k2 k3 = do
     (val2, post2) <- collectState k2
     (val3, post3) <- collectState k3
     put $ post2 `bub` post3
     return $ val2 `bub` val3
 
-rangeWhile :: (BoundedLattice a, MonadTc m)
+evalWhile :: (BoundedLattice a, MonadTc m)
            => Val
            -> RW m a
            -> RW m a
-rangeWhile (BoolV (Known False)) k =
+evalWhile (BoolV (Known False)) k =
     k
 
-rangeWhile _ k = do
+evalWhile _ k = do
     void k
     return top
 
-rangeFor :: MonadTc m => Var -> Val -> Val -> RW m a -> RW m a
-rangeFor v (IntV i) (IntV j) k | Just start <- fromUnit i, Just len <- fromUnit j =
-    extendVals [(v, IntV $ interval start (start+len-1 :: Integer))] k
+evalFor :: MonadTc m => Var -> Val -> Val -> RW m a -> RW m a
+evalFor v (IntV i) (IntV j) k | Just start <- fromUnit i, Just len <- fromUnit j =
+    extendVals [(v, IntV $ interval (start::Integer) (start + len - 1))] k
 
-rangeFor v _v_start _v_len k =
+evalFor v _v_start _v_len k =
     extendVals [(v, top)] k

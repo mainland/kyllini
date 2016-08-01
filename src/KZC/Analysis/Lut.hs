@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -35,15 +36,14 @@ import Control.Monad.Trans (MonadTrans(..))
 import Data.Loc (Located(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes,
+                   fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
 
 import KZC.Analysis.Interval (IsInterval(..))
-import KZC.Analysis.Lattice (bot,
-                             lub,
-                             top)
+import KZC.Analysis.Lattice (bot)
 import KZC.Analysis.ReadWriteSet
 import KZC.Core.Lint
 import KZC.Core.Smart
@@ -85,10 +85,8 @@ data LUTInfo = LUTInfo
     , lutResultVar  :: Maybe Var
       -- Type of the expressions
     , lutResultType :: Type
-      -- Read set
-    , lutReadSet    :: Map Var RWSet
-      -- Write set
-    , lutWriteSet   :: Map Var RWSet
+      -- LUT refs
+    , lutRWSets     :: Map Var RWSet
 
       -- Bit size of LUT input
     , lutInBits     :: Int
@@ -109,8 +107,7 @@ instance Pretty LUTInfo where
         nest 2 (text "Out vars:" </> ppr (lutOutVars info)) </>
         nest 2 (text "Result var:" <+> ppr (lutResultVar info)) </>
         nest 2 (text "Result type:" <+> ppr (lutResultType info)) </>
-        nest 2 (text "Read set:" </> ppr (lutReadSet info)) </>
-        nest 2 (text "Write set:" </> ppr (lutWriteSet info)) </>
+        nest 2 (text "Read/write sets:" </> ppr (lutRWSets info)) </>
         nest 2 (text "In bits:    " <+> ppr (lutInBits info)) </>
         nest 2 (text "Out bits:   " <+> ppr (lutOutBits info)) </>
         nest 2 (text "Result bits:" <+> ppr (lutResultBits info)) </>
@@ -174,8 +171,8 @@ inferLUTVar (IdxL v _ maybe_len) = do
 lutInfo :: forall m . MonadTc m => Exp -> m LUTInfo
 lutInfo e = withFvContext e $ do
     tau_res           <- inferExp e
-    (rset, wset)      <- readWriteSets e
-    (inVars, outVars) <- lutVars (rset, wset)
+    rw                <- readWriteSets e
+    (inVars, outVars) <- lutVars rw
     let resVar        =  case resultVar e of
                            Just v | v `Set.member` Set.map unLUTVar outVars -> Just v
                            _ -> Nothing
@@ -190,8 +187,7 @@ lutInfo e = withFvContext e $ do
                    , lutOutVars    = outVars
                    , lutResultVar  = resVar
                    , lutResultType = tau_res
-                   , lutReadSet    = rset
-                   , lutWriteSet   = wset
+                   , lutRWSets     = rw
 
                    , lutInBits     = inbits
                    , lutOutBits    = outbits
@@ -210,30 +206,54 @@ lutInfo e = withFvContext e $ do
         typeSize tau
 
 lutVars :: forall m . MonadTc m
-        => (Map Var RWSet, Map Var RWSet)
+        => Map Var RWSet
         -> m (Set LUTVar, Set LUTVar)
-lutVars (rsets, wsets) = do
-    inVars  <- mapM readLutVar (Map.assocs rsets')
-    outVars <- mapM writeLutVar (Map.assocs wsets)
+lutVars refs = do
+    inVars  <- catMaybes <$> mapM inLutVar (Map.assocs refs)
+    outVars <- catMaybes <$> mapM outLutVar (Map.assocs refs)
     return (Set.fromList inVars, Set.fromList outVars)
   where
-    -- | Convert a variable and its 'RWSet' to an in 'LUTVar'.
-    readLutVar :: (Var, RWSet) -> m LUTVar
-    readLutVar (v, ArrayS i _) | Just (lo, hi) <- fromInterval i= do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        return $ rangeLUTVar v lo hi iota
+    -- | Convert a variable and its reads/write set to an in 'LUTVar'.
+    inLutVar :: (Var, RWSet) -> m (Maybe LUTVar)
+    inLutVar (v, VarRW rs _ws) | rs /= bot =
+        return $ Just $ VarL v
 
-    readLutVar (v, _) =
-        return $ VarL v
+    inLutVar (v, ArrayRW rs _ws) | Just (lo, hi) <- fromInterval rs = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        return $ Just $ rangeLUTVar v lo hi iota
+
+    inLutVar (v, rws@(ArrayRW rs _ws)) | rs /= bot || weaklyUpdated rws =
+        return $ Just $ VarL v
+
+    inLutVar (v, rws@(StructRW rs _ws)) | rs /= bot || weaklyUpdated rws =
+        return $ Just $ VarL v
+
+    inLutVar (v, TopRW) =
+        return $ Just $ VarL v
+
+    inLutVar _ =
+        return Nothing
 
     -- | Convert a variable and its 'RWSet' to an out 'LUTVar'.
-    writeLutVar :: (Var, RWSet) -> m LUTVar
-    writeLutVar (v, ArrayS _ i) | Just (lo, hi) <- fromInterval i= do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        return $ rangeLUTVar v lo hi iota
+    outLutVar :: (Var, RWSet) -> m (Maybe LUTVar)
+    outLutVar (v, VarRW _rs ws) | ws /= bot =
+        return $ Just $ VarL v
 
-    writeLutVar (v, _) =
-        return $ VarL v
+    outLutVar (v, ArrayRW _rs ws) | Just (lo, hi) <- fromInterval ws = do
+        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
+        return $ Just $ rangeLUTVar v lo hi iota
+
+    outLutVar (v, ArrayRW _rs ws) | ws /= bot =
+        return $ Just $ VarL v
+
+    outLutVar (v, StructRW _rs ws) | ws /= bot =
+        return $ Just $ VarL v
+
+    outLutVar (v, TopRW) =
+        return $ Just $ VarL v
+
+    outLutVar _ =
+        return Nothing
 
     -- | Convert a variable range into a 'LUTVar'
     rangeLUTVar:: Var -> Integer -> Integer -> Iota -> LUTVar
@@ -245,21 +265,6 @@ lutVars (rsets, wsets) = do
     rangeLUTVar v lo hi _
       | hi == lo  = idxL v lo
       | otherwise = sliceL v lo (hi-lo+1)
-
-    -- | This is the read set with all imprecisely updated variables added.
-    rsets' :: Map Var RWSet
-    rsets' = rsets `lub` Map.fromList (vs `zip` repeat top)
-      where
-        -- Imprecisely updated variables
-        vs :: [Var]
-        vs = [v | (v, wset) <- Map.assocs wsets, impreciselyUpdated wset]
-
-    -- | Return 'True' if the given 'RWSet' indicates that a variable has been
-    -- imprecisely updated, i.e., it is updated, but we cannot guarantee exactly
-    -- which part is updated.
-    impreciselyUpdated :: RWSet -> Bool
-    impreciselyUpdated (ArrayS _ w) | w == bot = True
-    impreciselyUpdated _                       = False
 
 -- | Compute the variable that is the result expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its
