@@ -60,6 +60,9 @@ autolutComp :: (IsLabel l, MonadTc m)
 autolutComp = runAutoM . compT
 
 instance MonadTc m => TransformExp (AutoM m) where
+    expT e@ConstE{} =
+        return e
+
     expT (LutE _ e) =
         expT e
 
