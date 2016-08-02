@@ -547,8 +547,8 @@ tcExp e@(Z.CallE f es l) exp_ty =
     (taus, tau_ret, co1) <- lookupVar f >>= checkFunT f nargs
     when (length taus /= nargs) $
         faildoc $
-          text "Expected" <+> ppr nargs <+>
-          text "arguments but got" <+> ppr (length taus)
+          text "Expected" <+> ppr (length taus) <+>
+          text "arguments but got" <+> ppr nargs
     (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
     mces <- zipWithM checkArg es taus
