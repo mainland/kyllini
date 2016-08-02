@@ -303,7 +303,9 @@ flagImplications = fixpoint go
          imp MayInlineVal (setDynFlag Simplify) .
          imp MayInlineFun (setDynFlag Simplify) .
          imp MayInlineComp (setDynFlag Simplify) .
-         imp AlwaysInlineComp (setDynFlag Simplify)
+         imp AlwaysInlineComp (setDynFlag Simplify) .
+         imp AutoLUT (setDynFlag FloatViews) .
+         imp LUT (setDynFlag FloatViews)
 
     imp :: DynFlag
         -> (Flags -> Flags)
