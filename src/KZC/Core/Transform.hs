@@ -93,7 +93,7 @@ transDecl (LetFunD f iotas vbs tau_ret e l) m =
     tau = FunT iotas (map snd vbs) tau_ret l
 
 transDecl (LetExtFunD f iotas vbs tau_ret l) m = do
-    x <- extendVars [(bVar f, tau)] m
+    x <- extendExtFuns [(bVar f, tau)] m
     return (LetExtFunD f iotas vbs tau_ret l, x)
   where
     tau :: Type

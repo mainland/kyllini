@@ -4,20 +4,26 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Util.Lattice
+-- Module      :  KZC.Analysis.Lattice
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Lattice (
+module KZC.Analysis.Lattice (
     Poset(..),
 
     Lattice(..),
-    BoundedLattice(..),
+    BottomLattice(..),
+    TopLattice(..),
+    BoundedLattice,
     BranchLattice(..),
 
+    botDoc,
+    topDoc,
+
+    All(..),
     Known(..),
-    Bound(..)
+    Top(..)
   ) where
 
 import qualified Prelude
@@ -36,6 +42,10 @@ import Text.PrettyPrint.Mainland hiding (empty)
 
 infix 4 <=
 
+botDoc, topDoc :: Doc
+botDoc = char '⊥'
+topDoc = char '⊤'
+
 -- | A partially ordered set
 class Eq a => Poset a where
     (<=) :: a -> a -> Bool
@@ -47,12 +57,18 @@ class Poset a => Lattice a where
     -- | Greatest lower bound, aka "meet"
     glb :: a -> a -> a
 
--- | A lattice with a greatest and least element
-class Lattice a => BoundedLattice a where
-    -- | Greatest element of the lattice
-    top :: a
+-- | A lattice with least element
+class Lattice a => BottomLattice a where
     -- | Least element of the lattice
     bot :: a
+
+-- | A lattice with greatest element
+class Lattice a => TopLattice a where
+    -- | Greatest element of the lattice
+    top :: a
+
+-- | A lattice with a greatest and least element
+class (BottomLattice a, TopLattice a) => BoundedLattice a where
 
 class Lattice a => BranchLattice a where
     -- | Branch upper bound, i.e., join for different control flow paths.
@@ -86,6 +102,9 @@ instance Ord a => Lattice (Set a) where
     s1 `lub` s2 = s1 `Set.union` s2
     s1 `glb` s2 = s1 `Set.intersection` s2
 
+instance Ord a => BottomLattice (Set a) where
+    bot = Set.empty
+
 joinWith :: Ord k => (a -> a -> a) -> a -> Map k a -> Map k a -> Map k a
 joinWith f dflt =
     Map.mergeWithKey (\_ a b -> Just (f a b)) (Map.map (f dflt)) (Map.map (f dflt))
@@ -97,9 +116,44 @@ instance (Ord k, BoundedLattice a) => Lattice (Map k a) where
 instance (Ord k, BoundedLattice a, BranchLattice a) => BranchLattice (Map k a) where
     m1 `bub` m2 = joinWith bub bot m1 m2
 
+-- | All/None lattice
+data All = None | All
+  deriving (Eq, Ord, Show)
+
+instance Pretty All where
+    ppr None = botDoc
+    ppr All  = topDoc
+
+instance Poset All where
+    None <= _   = True
+    All  <= All = True
+    _    <= _   = False
+
+instance Lattice All where
+    All  `lub` _    = All
+    _    `lub` All  = All
+    None `lub` None = None
+
+    None `glb` _    = None
+    _    `glb` None = None
+    All  `glb` All  = All
+
+instance BranchLattice All where
+    All  `bub` _    = All
+    _    `bub` All  = All
+    None `bub` None = None
+
+instance BottomLattice All where
+    bot = None
+
+instance TopLattice All where
+    top = All
+
+instance BoundedLattice All where
+
 -- | 'Known' allows us to construct a lattice from a partially ordered set by
--- adding top and bottom elements. The lattice is constructs /is not/ a valid
--- lattice if the type argument is a Lattice itself! Use 'Bound' to make a
+-- adding top and bottom elements. The lattice it constructs /is not/ a valid
+-- lattice if the type argument is a 'Lattice itself'! Use 'Bound' to make a
 -- lattice bounded.
 data Known a = Unknown
              | Known a
@@ -153,57 +207,57 @@ instance Poset a => Lattice (Known a) where
         | x2 <= x1          = Known x2
         | otherwise         = Unknown
 
-instance Poset a => BoundedLattice (Known a) where
-    top = Any
+instance Poset a => BottomLattice (Known a) where
     bot = Unknown
 
--- | 'Bound' allows us to construct a bounded lattice from a lattice
-data Bound a = UnknownB
-             | KnownB a
-             | AnyB
+instance Poset a => TopLattice (Known a) where
+    top = Any
+
+instance Poset a => BoundedLattice (Known a) where
+
+-- | 'Top' allows us to add a top element to a lattice.
+data Top a = NotTop a
+           | Top
   deriving (Eq, Ord, Show)
 
-instance Arbitrary a => Arbitrary (Bound a) where
-    arbitrary = oneof [pure UnknownB, KnownB <$> arbitrary, pure AnyB]
+instance Arbitrary a => Arbitrary (Top a) where
+    arbitrary = oneof [NotTop <$> arbitrary, pure Top]
 
-instance Pretty a => Pretty (Bound a) where
-    ppr UnknownB   = text "unknown"
-    ppr (KnownB a) = ppr a
-    ppr AnyB       = text "top"
+instance Pretty a => Pretty (Top a) where
+    ppr (NotTop a) = ppr a
+    ppr Top        = topDoc
 
-instance Functor Bound where
+instance Functor Top where
     fmap f x = x >>= return . f
 
-instance Applicative Bound where
+instance Applicative Top where
     pure  = return
     (<*>) = ap
 
-instance Monad Bound where
-    return = KnownB
+instance Monad Top where
+    return = NotTop
 
-    UnknownB >>= _ = UnknownB
-    KnownB x >>= f = f x
-    AnyB     >>= _ = AnyB
+    NotTop x >>= f = f x
+    Top      >>= _ = Top
 
-instance Lattice a => Poset (Bound a) where
-    UnknownB  <= _         = True
-    _         <= AnyB      = True
-    KnownB x1 <= KnownB x2 = x1 <= x2
+instance Lattice a => Poset (Top a) where
+    _         <= Top       = True
+    NotTop x1 <= NotTop x2 = x1 <= x2
     _         <= _         = False
 
-instance Lattice a => Lattice (Bound a) where
-    UnknownB  `lub` x         = x
-    x         `lub` UnknownB  = x
-    AnyB      `lub` _         = AnyB
-    _         `lub` AnyB      = AnyB
-    KnownB x1 `lub` KnownB x2 = KnownB (x1 `lub` x2)
+instance Lattice a => Lattice (Top a) where
+    Top       `lub` _         = Top
+    _         `lub` Top       = Top
+    NotTop x1 `lub` NotTop x2 = NotTop (x1 `lub` x2)
 
-    UnknownB  `glb` _         = UnknownB
-    _         `glb` UnknownB  = UnknownB
-    AnyB      `glb` x         = x
-    x         `glb` AnyB      = x
-    KnownB x1 `glb` KnownB x2 = KnownB (x1 `glb` x2)
+    Top       `glb` x         = x
+    x         `glb` Top       = x
+    NotTop x1 `glb` NotTop x2 = NotTop (x1 `glb` x2)
 
-instance Lattice a => BoundedLattice (Bound a) where
-    top = AnyB
-    bot = UnknownB
+instance BottomLattice a => BottomLattice (Top a) where
+    bot = NotTop bot
+
+instance Lattice a => TopLattice (Top a) where
+    top = Top
+
+instance BottomLattice a => BoundedLattice (Top a) where
