@@ -69,13 +69,13 @@ options =
     inhibitWarnings fs = return fs { warnFlags = mempty }
 
     parseFFlags :: Monad m => String -> Flags -> m Flags
-    parseFFlags = parseFlagOpts opts fOpts
+    parseFFlags = parseFlagOpts "-f" opts fOpts
       where
         opts :: [FlagOpt]
         opts = mkFlagOpts "" fFlags setDynFlag (Just unsetDynFlag)
 
     parseDFlags :: Monad m => String -> Flags -> m Flags
-    parseDFlags = parseFlagOpts opts dOpts
+    parseDFlags = parseFlagOpts "-d" opts dOpts
       where
         opts :: [FlagOpt]
         opts =
@@ -84,7 +84,7 @@ options =
             mkFlagOpts "trace-" dTraceFlags setTraceFlag Nothing
 
     parseWFlags :: Monad m => String -> Flags -> m Flags
-    parseWFlags = parseFlagOpts opts wOpts
+    parseWFlags = parseFlagOpts "-W" opts wOpts
       where
         opts :: [FlagOpt]
         opts = mkFlagOpts "" wFlags setWarnFlag (Just unsetWarnFlag)
@@ -109,12 +109,13 @@ data FlagOpt = forall a . FlagOpt a String String (a -> Flags -> Flags) (Maybe (
 data FlagOptDescr a = FlagOption String (ArgDescr a) String
 
 parseFlagOpts :: forall m . Monad m
-              => [FlagOpt]
+              => String
+              -> [FlagOpt]
               -> [FlagOptDescr (Flags -> m Flags)]
               -> String
               -> Flags
               -> m Flags
-parseFlagOpts fopts foptdescrs arg fs =
+parseFlagOpts flagpfx fopts foptdescrs arg fs =
     if null flagArg
       then do maybe_fs' <- parseFlag flag fopts fs
               case maybe_fs' of
@@ -130,7 +131,7 @@ parseFlagOpts fopts foptdescrs arg fs =
               -> [FlagOptDescr (Flags -> m Flags)]
               -> Flags
               -> m Flags
-    parseOpts _ _ [] = fail $ "unrecognized option `" ++ arg ++ "'"
+    parseOpts _ _ [] = fail $ "unrecognized option `" ++ flagpfx ++ arg ++ "'"
 
     parseOpts flag flagArg (FlagOption flag' argOpt _:_) | flag' == flag =
         go argOpt
