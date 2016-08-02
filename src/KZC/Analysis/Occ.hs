@@ -50,33 +50,37 @@ import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 
-type RefSet = Set Var
+type OccsInfo = Map Var OccInfo
 
-newtype OccsInfo = Occ { unOcc :: Map Var OccInfo }
-  deriving (Eq, Poset, Lattice, BranchLattice)
+data Occs = Occs
+    { -- | Variable occurence info in the form of 'OccInfo'
+      occInfo :: OccsInfo
+      -- | References that are written to
+    , occRefs :: Set Var
+    }
+  deriving (Eq)
 
-instance Monoid OccsInfo where
-    mempty = Occ mempty
+instance Monoid Occs where
+    mempty  = Occs mempty mempty
+    mappend = lub
 
-    occ `mappend` occ' = occ `lub` occ'
+instance Poset Occs where
+    Occs info rs <= Occs info' rs' = info <= info' && rs <= rs'
 
-lookupOccInfo :: Var -> OccsInfo -> OccInfo
-lookupOccInfo v env =
-    fromMaybe Dead $ Map.lookup v (unOcc env)
+instance Lattice Occs where
+    Occs info rs `lub` Occs info' rs' = Occs (info `lub` info') (rs `lub` rs')
+    Occs info rs `glb` Occs info' rs' = Occs (info `glb` info') (rs `glb` rs')
 
-data OccEnv = OccEnv { occsInfo :: OccsInfo
-                     , refs     :: RefSet
-                     }
+instance BranchLattice Occs where
+    Occs info rs `bub` Occs info' rs' = Occs (info `bub` info') (rs `lub` rs')
 
-instance Monoid OccEnv where
-  mempty = OccEnv mempty mempty
+lookupOccInfo :: Var -> Occs -> OccInfo
+lookupOccInfo v occs =
+    fromMaybe Dead $ Map.lookup v (occInfo occs)
 
-  OccEnv info refs `mappend` OccEnv info' refs' =
-      OccEnv (info <> info') (refs <> refs')
-
-newtype OccM m a = OccM { unOccM :: WriterT OccEnv m a }
+newtype OccM m a = OccM { unOccM :: WriterT Occs m a }
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadWriter OccEnv,
+              MonadWriter Occs,
               MonadException,
               MonadUnique,
               MonadErr,
@@ -85,37 +89,37 @@ newtype OccM m a = OccM { unOccM :: WriterT OccEnv m a }
               MonadTc)
 
 instance MonadTrans OccM where
-    lift m = OccM $ lift m
+    lift = OccM . lift
 
 runOccM :: MonadTc m => OccM m a -> m a
 runOccM m = fst <$> runWriterT (unOccM m)
 
 writeRef :: MonadTc m => Var -> OccM m ()
-writeRef v = tell mempty { refs = Set.singleton v }
+writeRef v = tell mempty { occRefs = Set.singleton v }
 
 -- | Return a flag indicating whether or not the given variable was written to
 -- after running the specified action, after which the variable is purged from
 -- the static ref environment.
 withStaticRefFlag :: MonadTc m => BoundVar -> OccM m a -> OccM m (Bool, a)
 withStaticRefFlag v m =
-    censor (\env -> env { refs = Set.delete (bVar v) (refs env)}) $ do
+    censor (\env -> env { occRefs = Set.delete (bVar v) (occRefs env)}) $ do
     (x, env) <- listen m
-    return (Set.notMember (bVar v) (refs env), x)
+    return (Set.notMember (bVar v) (occRefs env), x)
 
 updStaticInfo :: BoundVar -> Bool -> BoundVar
 updStaticInfo v isStatic = v { bStaticRef = Just isStatic }
 
 occVar :: MonadTc m => Var -> OccM m ()
-occVar v = tellOcc $ Occ (Map.singleton v Once)
+occVar v = tellOcc $ Map.singleton v Once
 
 collectOcc :: MonadTc m => OccM m a -> OccM m (OccsInfo, a)
 collectOcc m =
-    censor (\env -> env { occsInfo = mempty }) $ do
+    censor (\env -> env { occInfo = mempty }) $ do
     (x, env) <- listen m
-    return (occsInfo env, x)
+    return (occInfo env, x)
 
 tellOcc :: MonadTc m => OccsInfo -> OccM m ()
-tellOcc occs = tell mempty { occsInfo = occs }
+tellOcc occs = tell mempty { occInfo = occs }
 
 -- | Return occurrence information for the given variable after running the
 -- specified action, after which the variable is purged from the occurrence
@@ -124,10 +128,10 @@ withOccInfo :: MonadTc m => BoundVar -> OccM m a -> OccM m (OccInfo, a)
 withOccInfo v m =
     censor f $ do
     (x, env) <- listen m
-    return (lookupOccInfo (bVar v) (occsInfo env), x)
+    return (lookupOccInfo (bVar v) env, x)
   where
-    f :: OccEnv -> OccEnv
-    f env = env { occsInfo = Occ $ Map.delete (bVar v) (unOcc (occsInfo env)) }
+    f :: Occs -> Occs
+    f env = env { occInfo = Map.delete (bVar v) (occInfo env) }
 
 updOccInfo :: BoundVar -> OccInfo -> BoundVar
 updOccInfo v occ = v { bOccInfo = Just occ }
@@ -167,12 +171,12 @@ instance MonadTc m => TransformExp (OccM m) where
         tellOcc $ occ2 `bub` occ3
         return $ IfE e1' e2' e3' s
 
-    expT (AssignE e1_0 e2_0 s) = do
-        refPathRoot e1_0 >>= writeRef
+    expT (AssignE e1_0 e2_0 s) =
         AssignE <$> occRef e1_0 <*> expT e2_0 <*> pure s
       where
         occRef :: Exp -> OccM m Exp
-        occRef e@VarE{} =
+        occRef e@(VarE v _) = do
+            writeRef v
             return e
 
         occRef (IdxE e1 e2 len s) =
@@ -253,7 +257,7 @@ instance MonadTc m => TransformComp l (OccM m) where
         e1'         <- expT e1
         (occ2, c2') <- collectOcc $ compT c2
         (occ3, c3') <- collectOcc $ compT c3
-        tellOcc$ occ2 `bub` occ3
+        tellOcc $ occ2 `bub` occ3
         return $ IfC l e1' c2' c3' s
 
     stepT step =
