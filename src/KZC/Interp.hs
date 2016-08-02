@@ -317,6 +317,9 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit Nothing  = defaultRef tau
     evalInit (Just e) = evalExp e >>= toRef
 
+evalDecl LetViewLD{} _ =
+     faildoc $ text "Views not supported"
+
 evalConst :: MonadTcRef m => Const -> I s m Val
 evalConst (ReplicateC n c) = return $ ArrayC $ V.replicate n c
 evalConst (EnumC tau)      = evalConst =<< ArrayC <$> enumType tau
@@ -550,6 +553,9 @@ compileDecl (LetRefLD v tau e _) k = do
     compileInit Nothing  = do val <- defaultVal tau
                               return $ return val
     compileInit (Just e) = compileExp e
+
+compileDecl LetViewLD{} _k =
+    faildoc $ text "Views not supported."
 
 isRef :: Exp -> Bool
 isRef VarE{}          = True

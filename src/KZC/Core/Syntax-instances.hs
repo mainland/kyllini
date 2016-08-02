@@ -21,9 +21,12 @@ instance Located (Step a) where
   locOf (EmitsC _ _ l) = locOf l
   locOf (RepeatC _ _ _ l) = locOf l
   locOf (ParC _ _ _ _ l) = locOf l
+instance Located View where
+  locOf (IdxVW _ _ _ l) = locOf l
 instance Located LocalDecl where
   locOf (LetLD _ _ _ l) = locOf l
   locOf (LetRefLD _ _ _ l) = locOf l
+  locOf (LetViewLD _ _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l

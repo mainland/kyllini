@@ -198,6 +198,7 @@ fFlags =
     , (CoalesceTop,   "coalesce-top", "coalesce top-level computation")
     , (LowerGen,      "lower-gen",    "lower generators to constants")
     , (ComputeLUTs,   "compute-luts", "compute LUTs instead of compiling them to constants")
+    , (FloatViews,    "float-views",  "float view slices")
     ]
 
 fOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]
@@ -275,6 +276,7 @@ dDumpFlags =
     , (DumpStaticRefs, "staticrefs", "dump result of static refs")
     , (DumpRate,       "rate",       "dump result of rate analysis")
     , (DumpCoalesce,   "coalesce",   "dump result of pipeline coalescing")
+    , (DumpViews,      "views",      "dump result of using views")
     ]
 
 dTraceFlags :: [(TraceFlag, String, String)]
@@ -297,6 +299,7 @@ dTraceFlags =
     , (TraceNeedDefault, "need-default", "trace default need")
     , (TraceRate,        "rate",         "trace rate analysis")
     , (TraceCoalesce,    "coalesce",     "trace pipeline coalescing")
+    , (TraceViews,       "views",        "trace use of views")
     ]
 
 dOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]

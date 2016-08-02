@@ -107,6 +107,7 @@ data DynFlag = Quiet
              | FuseUnroll
              | LowerGen
              | ComputeLUTs
+             | FloatViews
              | ShowCgStats
              | ShowFusionStats
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -133,6 +134,7 @@ data DumpFlag = DumpCPP
               | DumpStaticRefs
               | DumpRate
               | DumpCoalesce
+              | DumpViews
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -153,6 +155,7 @@ data TraceFlag = TracePhase
                | TraceNeedDefault
                | TraceRate
                | TraceCoalesce
+               | TraceViews
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 newtype FlagSet a = FlagSet Word32
@@ -300,7 +303,9 @@ flagImplications = fixpoint go
          imp MayInlineVal (setDynFlag Simplify) .
          imp MayInlineFun (setDynFlag Simplify) .
          imp MayInlineComp (setDynFlag Simplify) .
-         imp AlwaysInlineComp (setDynFlag Simplify)
+         imp AlwaysInlineComp (setDynFlag Simplify) .
+         imp AutoLUT (setDynFlag FloatViews) .
+         imp LUT (setDynFlag FloatViews)
 
     imp :: DynFlag
         -> (Flags -> Flags)

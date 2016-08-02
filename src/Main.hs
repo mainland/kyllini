@@ -65,9 +65,11 @@ import KZC.Monad.SEFKT as SEFKT
 import KZC.Optimize.Autolut
 import KZC.Optimize.Coalesce
 import KZC.Optimize.Eval
+import KZC.Optimize.FloatViews
 import KZC.Optimize.Fuse
 import KZC.Optimize.HashConsConsts
 import KZC.Optimize.LowerGenerators
+import KZC.Optimize.LowerViews
 import KZC.Optimize.LutToGen
 import KZC.Optimize.Simplify
 import KZC.Rename
@@ -120,9 +122,14 @@ runPipeline filepath = do
         -- Partially evaluate and simplify
         runIf (testDynFlag PartialEval) (traceCorePhase "eval" evalPhase) >=>
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase2") >=>
-        -- Auto-LUT, convert LUTs to generators, and lower generators
-        runIf (testDynFlag AutoLUT)  (traceCorePhase "autolut" autolutPhase) >=>
-        runIf (testDynFlag LUT)      (traceCorePhase "lutToGen" lutToGenPhase) >=>
+        -- Float views out for auto-LUTting
+        runIf (testDynFlag FloatViews) (traceCorePhase "float-views" floatViewsPhase) >=>
+        -- Auto-LUT, convert LUTs to generators
+        runIf (testDynFlag AutoLUT) (traceCorePhase "autolut" autolutPhase) >=>
+        runIf (testDynFlag LUT)     (traceCorePhase "lutToGen" lutToGenPhase) >=>
+        -- Lower views so we don't have to deal with them anymore
+        runIf (testDynFlag FloatViews) (traceCorePhase "lower-views" lowerViewsPhase) >=>
+        -- Lower generators
         runIf (testDynFlag LowerGen) (traceCorePhase "lowerGen" lowerGenPhase) >=>
         -- One final round of simplification
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
@@ -250,6 +257,16 @@ runPipeline filepath = do
     fusionPhase =
         lift . C.withTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "core" "fusion"
+
+    floatViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    floatViewsPhase =
+        lift . C.withTc . floatViews >=>
+        dumpPass DumpViews "core" "float-views"
+
+    lowerViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lowerViewsPhase =
+        lift . C.withTc . lowerViews >=>
+        dumpPass DumpViews "core" "lower-views"
 
     autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     autolutPhase =

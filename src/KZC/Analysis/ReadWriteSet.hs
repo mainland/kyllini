@@ -29,6 +29,9 @@ import Control.Applicative (Applicative, (<$>), (<*>), pure)
 import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Reader (MonadReader(..),
+                             ReaderT(..),
+                             asks)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
                             execStateT,
@@ -55,6 +58,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
+import KZC.Util.Env
 
 readWriteSets :: MonadTc m
               => Exp
@@ -284,6 +288,12 @@ instance TopLattice Val where
 
 instance BoundedLattice Val where
 
+data REnv = REnv { views :: Map Var View }
+  deriving (Eq)
+
+defaultREnv :: REnv
+defaultREnv = REnv { views = mempty }
+
 -- | The read-write set analysis state
 data RState = RState
     { vals   :: Map Var Val   -- Variable values
@@ -320,8 +330,9 @@ instance BranchLattice RState where
         , rwsets = rwsets r1 `bub` rwsets r2
         }
 
-newtype RW m a = RW { unRW :: StateT RState m a }
+newtype RW m a = RW { unRW :: ReaderT REnv (StateT RState m) a }
     deriving (Functor, Applicative, Monad, MonadIO,
+              MonadReader REnv,
               MonadState RState,
               MonadException,
               MonadUnique,
@@ -331,10 +342,19 @@ newtype RW m a = RW { unRW :: StateT RState m a }
               MonadTc)
 
 execRW :: MonadTc m => RW m a -> m RState
-execRW m = execStateT (unRW m) defaultRState
+execRW m = execStateT (runReaderT (unRW m) defaultREnv) defaultRState
 
 instance MonadTrans RW where
-    lift = RW . lift
+    lift = RW . lift . lift
+
+lookupView :: MonadTc m => Var -> RW m (Maybe View)
+lookupView v = asks (Map.lookup v . views)
+
+extendViews :: MonadTc m
+            => [(Var, View)]
+            -> RW m a
+            -> RW m a
+extendViews = extendEnv views (\env x -> env { views = x })
 
 collectState :: MonadTc m => RW m a -> RW m (a, RState)
 collectState m = do
@@ -420,8 +440,11 @@ evalRef :: forall m . MonadTc m => Exp -> RW m Ref
 evalRef = go []
   where
     go :: [RefPath] -> Exp -> RW m Ref
-    go path (VarE v _) =
-        return $ Ref v path
+    go path (VarE v _) = do
+        maybe_view <- lookupView v
+        case maybe_view of
+          Nothing   -> return $ Ref v path
+          Just view -> go path (toExp view)
 
     go path (IdxE e1 e2 len _) = do
         val <- evalExp e2
@@ -651,6 +674,11 @@ evalExp e =
         extendVars [(bVar v, refT tau)] $
             extendVals [(bVar v, val1)] $
             evalExp e2
+
+    go (LetE (LetViewLD v tau view _) e2 _) =
+        extendVars [(bVar v, tau)] $
+        extendViews [(bVar v, view)] $
+        evalExp e2
 
     go (CallE f _iotas es _) = do
         isExt <- isExtFun f

@@ -32,6 +32,7 @@ module KZC.Expr.Lint (
 
     inferKind,
     checkKind,
+    checkTauOrRhoKind,
 
     checkCast,
     checkBitcast,
@@ -963,6 +964,15 @@ checkKind :: MonadTc m => Type -> Kind -> m ()
 checkKind tau kappa = do
     kappa' <- inferKind tau
     checkKindEquality kappa' kappa
+
+checkTauOrRhoKind :: forall m . MonadTc m => Type -> m ()
+checkTauOrRhoKind tau =
+    inferKind tau >>= go
+  where
+    go :: Kind -> m ()
+    go TauK  = return ()
+    go RhoK  = return ()
+    go kappa = faildoc $ text "Expected tau or rho kind but got:" <+> ppr kappa
 
 checkKindEquality :: MonadTc m => Kind -> Kind -> m ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =

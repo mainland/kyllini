@@ -563,6 +563,9 @@ cgLocalDecl _flags decl@(LetRefLD v tau maybe_e _) k =
     extendVars [(bVar v, refT tau)] $
     extendVarCExps [(bVar v, cve)] k
 
+cgLocalDecl _flags LetViewLD{} _k =
+    faildoc $ text "Views not supported."
+
 -- | Generate a 'CExp' representing a constant. The 'CExp' produced is
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.

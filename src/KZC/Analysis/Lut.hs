@@ -406,6 +406,10 @@ lutStats e =
         go e1
         go e2
 
+    go (LetE (LetViewLD _ _ (IdxVW _ e1 _ _) _) e2 _) = do
+        go e1
+        go e2
+
     go CallE{} =
         fail "Cannot LUT function call"
 
