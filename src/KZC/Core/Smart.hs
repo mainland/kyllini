@@ -13,6 +13,7 @@ module KZC.Core.Smart (
 
     letD,
     letrefD,
+    letviewD,
 
     unConstE,
     constE,
@@ -31,6 +32,7 @@ module KZC.Core.Smart (
     localdeclsE,
     letE,
     letrefE,
+    letviewE,
     callE,
     derefE,
     assignE,
@@ -132,6 +134,13 @@ letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
 letrefD :: Var -> Type -> Maybe Exp -> LocalDecl
 letrefD v tau e = LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
 
+letviewD :: Var -> Type -> Var -> Exp -> Maybe Int -> LocalDecl
+letviewD v tau v_arr e_base len =
+    LetViewLD (mkBoundVar v) tau view (v `srcspan` view)
+  where
+    view :: View
+    view = IdxVW v_arr e_base len (v_arr `srcspan` e_base)
+
 -- | @'unConstE' e@ returns a constant version of @e@ if possible.
 unConstE :: forall m . Monad m => Exp -> m Const
 unConstE (ConstE c _) =
@@ -203,6 +212,12 @@ letrefE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
   where
     d :: LocalDecl
     d = letrefD v tau e1
+
+letviewE :: Var -> Type -> Var -> Exp -> Maybe Int -> Exp -> Exp
+letviewE v tau v_arr e_base len e2 = LetE d e2 (d `srcspan` e2)
+  where
+    d :: LocalDecl
+    d = letviewD v tau v_arr e_base len
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
