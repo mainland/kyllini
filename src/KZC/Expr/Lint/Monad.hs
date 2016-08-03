@@ -93,7 +93,6 @@ import Data.Monoid (Monoid, mempty)
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Error
@@ -249,7 +248,7 @@ defaultValueC (StructT s _) = do
 
 defaultValueC (ArrT (ConstI n _) tau _) = do
     c <- defaultValueC tau
-    return $ ArrayC (V.replicate n c)
+    return $ ReplicateC n c
 
 defaultValueC tau =
     faildoc $ text "Cannot generate default value for type" <+> ppr tau
