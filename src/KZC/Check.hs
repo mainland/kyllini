@@ -381,10 +381,6 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (BoolT l) exp_ty
         return $ E.BoolC b
 
-    tcConst (Z.BitC b)  = do
-        instType (BitT l) exp_ty
-        return $ E.FixC E.I E.U (E.W 1) 0 (if b then 1 else 0)
-
     tcConst (Z.FixC zsc zs zw zbp x) = do
         sc  <- fromZ zsc
         s   <- fromZ zs
@@ -2241,7 +2237,6 @@ instance FromZ Z.FP FP where
 instance FromZ Z.Type Type where
     fromZ (Z.UnitT l)          = pure $ UnitT l
     fromZ (Z.BoolT l)          = pure $ BoolT l
-    fromZ (Z.BitT l)           = pure $ BitT l
     fromZ (Z.FixT sc s w bp l) = FixT <$> fromZ sc <*> fromZ s <*> fromZ w <*> fromZ bp <*> pure l
     fromZ (Z.FloatT w l)       = FloatT <$> fromZ w <*> pure l
     fromZ (Z.ArrT i tau l)     = ArrT <$> fromZ i <*> fromZ tau <*> pure l

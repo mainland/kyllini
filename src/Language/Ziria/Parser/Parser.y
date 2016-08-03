@@ -215,8 +215,8 @@ scalar_value :
     '(' ')' { L (locOf $1) UnitC }
   | 'true'  { L (locOf $1) $ BoolC True }
   | 'false' { L (locOf $1) $ BoolC False }
-  | "'0"    { L (locOf $1) $ BitC False }
-  | "'1"    { L (locOf $1) $ BitC True }
+  | "'0"    { L (locOf $1) $ FixC I U (W 1) 0 0 }
+  | "'1"    { L (locOf $1) $ FixC I U (W 1) 0 1 }
   | INT     { L (locOf $1) $ FixC I S WDefault 0 (fromIntegral (snd (getINT $1))) }
   | UINT    { L (locOf $1) $ FixC I U WDefault 0 (fromIntegral (snd (getUINT $1))) }
   | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
@@ -487,7 +487,7 @@ gen_interval :
 
 simple_type :: { Type }
 simple_type :
-    'bit'             { BitT (srclocOf $1) }
+    'bit'             { FixT I U (W 1)    0 (srclocOf $1) }
   | 'int8'            { FixT I S (W 8)    0 (srclocOf $1) }
   | 'int16'           { FixT I S (W 16)   0 (srclocOf $1) }
   | 'int32'           { FixT I S (W 32)   0 (srclocOf $1) }

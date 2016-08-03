@@ -126,7 +126,6 @@ data FP = FP16
 
 data Const = UnitC
            | BoolC Bool
-           | BitC Bool
            | FixC Scale Signedness W BP Int
            | FloatC FP Double
            | StringC String
@@ -255,7 +254,6 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | BitT !SrcLoc
           | FixT Scale Signedness W BP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Ind Type !SrcLoc
@@ -413,14 +411,14 @@ instance Pretty BP where
     ppr (BP bp) = ppr bp
 
 instance Pretty Const where
-    pprPrec _ UnitC              = text "()"
-    pprPrec _ (BoolC False)      = text "false"
-    pprPrec _ (BoolC True)       = text "true"
-    pprPrec _ (BitC False)       = text "'0"
-    pprPrec _ (BitC True)        = text "'1"
-    pprPrec p (FixC sc s _ bp x) = pprScaled p sc s bp x <> pprSign s
-    pprPrec _ (FloatC _ f)       = ppr f
-    pprPrec _ (StringC s)        = text (show s)
+    pprPrec _ UnitC                = text "()"
+    pprPrec _ (BoolC False)        = text "false"
+    pprPrec _ (BoolC True)         = text "true"
+    pprPrec _ (FixC I U (W 1) 0 0) = text "'0"
+    pprPrec _ (FixC I U (W 1) 0 1) = text "'1"
+    pprPrec p (FixC sc s _ bp x)   = pprScaled p sc s bp x <> pprSign s
+    pprPrec _ (FloatC _ f)         = ppr f
+    pprPrec _ (StringC s)          = text (show s)
 
 pprSign :: Signedness -> Doc
 pprSign S = empty
@@ -715,7 +713,7 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (BitT _) =
+    pprPrec _ (FixT I U (W 1) (BP 0) _) =
         text "bit"
 
     pprPrec _ (FixT sc s w bp _) =
