@@ -69,8 +69,8 @@ isBaseV ArrayC{}  = False
 isBaseV _         = True
 
 -- | Produce a default value of the given type.
-defaultVal :: MonadTcRef m => Type -> m Val
-defaultVal = defaultValueC
+defaultVal :: MonadTcRef m => Type -> I s m Val
+defaultVal tau = defaultValueC tau >>= evalConst
 
 -- | Convert an 'Integral' value to a 'Val' of the given (fixpoint) type.
 intV :: Integral i => Type -> i -> Val
@@ -159,8 +159,8 @@ toRef (StructC struct flds) =
 toRef val =
     ValR <$> newRef val
 
--- | Produce a default referec of the given type.
-defaultRef :: MonadTcRef m => Type -> m (Ref (PrimState m))
+-- | Produce a default reference of the given type.
+defaultRef :: (MonadTcRef m, s ~ PrimState m) => Type -> I s m (Ref s)
 defaultRef (RefT tau _) =
     defaultRef tau
 
