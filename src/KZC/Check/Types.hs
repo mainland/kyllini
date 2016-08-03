@@ -70,7 +70,6 @@ data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
 data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | BitT !SrcLoc
           | FixT Scale Signedness W BP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
@@ -182,7 +181,7 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (BitT _) =
+    pprPrec _ (FixT I U (W 1) (BP 0) _) =
         text "bit"
 
     pprPrec _ (FixT sc s w bp _) =
@@ -314,7 +313,6 @@ instance Pretty Kind where
 instance Fvs Type TyVar where
     fvs UnitT{}                            = mempty
     fvs BoolT{}                            = mempty
-    fvs BitT{}                             = mempty
     fvs FixT{}                             = mempty
     fvs FloatT{}                           = mempty
     fvs StringT{}                          = mempty
@@ -335,7 +333,6 @@ instance Fvs Type TyVar where
 instance Fvs Type IVar where
     fvs UnitT{}                       = mempty
     fvs BoolT{}                       = mempty
-    fvs BitT{}                        = mempty
     fvs FixT{}                        = mempty
     fvs FloatT{}                      = mempty
     fvs StringT{}                     = mempty
@@ -356,7 +353,6 @@ instance Fvs Type IVar where
 instance Fvs Type MetaTv where
     fvs UnitT{}                       = mempty
     fvs BoolT{}                       = mempty
-    fvs BitT{}                        = mempty
     fvs FixT{}                        = mempty
     fvs FloatT{}                      = mempty
     fvs StringT{}                     = mempty
@@ -379,7 +375,6 @@ instance Fvs Type n => Fvs [Type] n where
 instance HasVars Type TyVar where
     allVars UnitT{}                            = mempty
     allVars BoolT{}                            = mempty
-    allVars BitT{}                             = mempty
     allVars FixT{}                             = mempty
     allVars FloatT{}                           = mempty
     allVars StringT{}                          = mempty
@@ -402,7 +397,6 @@ instance HasVars Type TyVar where
 instance HasVars Type IVar where
     allVars UnitT{}                       = mempty
     allVars BoolT{}                       = mempty
-    allVars BitT{}                        = mempty
     allVars FixT{}                        = mempty
     allVars FloatT{}                      = mempty
     allVars StringT{}                     = mempty
@@ -423,7 +417,6 @@ instance HasVars Type IVar where
 instance HasVars Type MetaTv where
     allVars UnitT{}                       = mempty
     allVars BoolT{}                       = mempty
-    allVars BitT{}                        = mempty
     allVars FixT{}                        = mempty
     allVars FloatT{}                      = mempty
     allVars StringT{}                     = mempty
@@ -446,9 +439,6 @@ instance Subst Type MetaTv Type where
         pure tau
 
     substM tau@BoolT{} =
-        pure tau
-
-    substM tau@BitT{} =
         pure tau
 
     substM tau@FixT{} =
@@ -501,9 +491,6 @@ instance Subst Type IVar Type where
     substM tau@BoolT{} =
         pure tau
 
-    substM tau@BitT{} =
-        pure tau
-
     substM tau@FixT{} =
         pure tau
 
@@ -553,9 +540,6 @@ instance Subst Type TyVar Type where
         pure tau
 
     substM tau@BoolT{} =
-        pure tau
-
-    substM tau@BitT{} =
         pure tau
 
     substM tau@FixT{} =

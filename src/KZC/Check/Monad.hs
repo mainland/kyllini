@@ -322,9 +322,6 @@ instance Compress Type where
     compress tau@BoolT{}    =
         pure tau
 
-    compress tau@BitT{}    =
-        pure tau
-
     compress tau@FixT{}    =
         pure tau
 

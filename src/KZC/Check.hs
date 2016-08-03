@@ -1238,7 +1238,6 @@ checkBoolVal e = do
 kcType :: Type -> Expected Kind -> Ti ()
 kcType tau@UnitT{}    kappa_exp = instKind tau TauK kappa_exp
 kcType tau@BoolT{}    kappa_exp = instKind tau TauK kappa_exp
-kcType tau@BitT{}     kappa_exp = instKind tau TauK kappa_exp
 kcType tau@FixT{}     kappa_exp = instKind tau TauK kappa_exp
 kcType tau@FloatT{}   kappa_exp = instKind tau TauK kappa_exp
 kcType tau@StringT{}  kappa_exp = instKind tau TauK kappa_exp
@@ -1451,7 +1450,6 @@ checkOrdT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go BitT{}                 = return ()
     go FixT{}                 = return ()
     go FloatT{}               = return ()
     go (StructT s _)
@@ -1470,7 +1468,6 @@ checkBoolT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go BitT{}  = return ()
     go BoolT{} = return ()
     go FixT{}  = return ()
     go tau     = unifyTypes tau intT `catch`
@@ -1487,7 +1484,6 @@ checkBitT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go BitT{}           = return ()
     go (FixT _ U _ _ _) = return ()
     go tau              = unifyTypes tau intT `catch`
                               \(_ :: UnificationException) -> err
@@ -1855,12 +1851,6 @@ checkLegalCast tau1 tau2 = do
     go FixT{} FixT{} =
         return ()
 
-    go FixT{} BitT{} =
-        return ()
-
-    go BitT{} FixT{} =
-        return ()
-
     go FixT{} FloatT{} =
         return ()
 
@@ -2033,7 +2023,6 @@ unifyTypes tau1 tau2 = do
 
     go _ _ UnitT{} UnitT{} = return ()
     go _ _ BoolT{} BoolT{} = return ()
-    go _ _ BitT{}  BitT{}  = return ()
 
     go _ _ (FixT sc1 w1 s1 bp1 _) (FixT sc2 w2 s2 bp2 _)
         | sc1 == sc2 && w1 == w2 && s1 == s2 && bp1 == bp2 = return ()
@@ -2329,7 +2318,6 @@ instance Trans Type E.Type where
         go :: Type -> Ti E.Type
         go (UnitT l)          = E.UnitT <$> pure l
         go (BoolT l)          = E.BoolT <$> pure l
-        go (BitT l)           = E.FixT E.I E.U (E.W 1) 0 <$> pure l
         go (FixT sc s w bp l) = E.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
         go (FloatT w l)       = E.FloatT <$> trans w <*> pure l
         go (StringT l)        = pure $ E.StringT l
