@@ -588,7 +588,7 @@ cgConst (ReplicateC n c) = do
     ce     <- cgConst c
     return $
       if c == c_dflt
-      then CInit [cinit|{ $init:(toInit ce) }|]
+      then CInit [cinit|{ $init:(toInitializer ce) }|]
       else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
@@ -608,7 +608,7 @@ cgConst (StructC s flds) = do
         ce <- case lookup f flds of
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
-        return $ toInit ce
+        return $ toInitializer ce
 
 cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
 cgArrayConstInits tau ces | isBitT tau =
@@ -628,10 +628,10 @@ cgArrayConstInits tau ces | isBitT tau =
 
     const :: CExp l -> C.Initializer
     const (CInt i) = [cinit|$(chexconst i)|]
-    const ce       = toInit ce
+    const ce       = toInitializer ce
 
 cgArrayConstInits _tau ces =
-    map toInit ces
+    map toInitializer ces
 
 {- Note [Bit Arrays]
 
@@ -1755,7 +1755,7 @@ cgStorage cv tau init =
        | otherwise  = CExp $ rl cv [cexp|$id:cv|]
 
 cgDefault :: Type -> Cg l C.Initializer
-cgDefault tau = toInit <$> (defaultValueC tau >>= cgConst)
+cgDefault tau = toInitializer <$> (defaultValueC tau >>= cgConst)
 
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer

@@ -5,11 +5,16 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Cg.Util (
+    ToInitializer(..),
     zencode
   ) where
 
 import Data.Char (ord)
 import Numeric (showHex)
+import qualified Language.C.Quote as C
+
+class ToInitializer a where
+    toInitializer :: a -> C.Initializer
 
 -- | Z-encode a string. This converts a string with special characters into a
 -- form that is guaranteed to be usable as an identifier by a C compiler or
