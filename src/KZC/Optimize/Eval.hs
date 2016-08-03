@@ -1108,8 +1108,8 @@ evalWhileC e1 c2 =
 
 -- | Convert an integral value to a 'Val Exp' of the given (fixpoint) type.
 toFixVal :: Integral i => Type -> i -> Val l m Exp
-toFixVal ~(FixT sc s w bp _) i =
-    ConstV $ FixC sc s w bp (fromIntegral i)
+toFixVal ~(FixT ip _) i =
+    ConstV $ FixC ip (fromIntegral i)
 
 evalForE :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn

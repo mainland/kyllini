@@ -189,15 +189,15 @@ intV :: Integral a => a -> Val l m Exp
 intV i = ConstV $ intC i
 
 fromIntV :: Val l m Exp -> Maybe Int
-fromIntV (ConstV (FixC I _ _ (BP 0) x)) =
+fromIntV (ConstV (FixC _ x)) =
     Just x
 
 fromIntV _ =
     Nothing
 
 zeroBitV, oneBitV :: Val l m Exp
-zeroBitV = ConstV $ FixC I U (W 1) (BP 0) 0
-oneBitV  = ConstV $ FixC I U (W 1) (BP 0) 1
+zeroBitV = ConstV $ FixC (U 1) 0
+oneBitV  = ConstV $ FixC (U 1) 1
 
 isTrue :: Val l m Exp -> Bool
 isTrue (ConstV (BoolC b)) = b
@@ -208,14 +208,14 @@ isFalse (ConstV (BoolC b)) = not b
 isFalse _                  = False
 
 isZero :: Val l m Exp -> Bool
-isZero (ConstV (FixC _ _ _ _ 0)) = True
-isZero (ConstV (FloatC _ 0))     = True
-isZero _                         = False
+isZero (ConstV (FixC _ 0))   = True
+isZero (ConstV (FloatC _ 0)) = True
+isZero _                     = False
 
 isOne :: Val l m Exp -> Bool
-isOne (ConstV (FixC _ _ _ _ 1)) = True
-isOne (ConstV (FloatC _ 1))     = True
-isOne _                         = False
+isOne (ConstV (FixC _ 1))   = True
+isOne (ConstV (FloatC _ 1)) = True
+isOne _                     = False
 
 -- | Return 'True' if a 'Val l m Exp' is actually a value and 'False'
 -- otherwise.
@@ -233,11 +233,11 @@ defaultValue :: forall l m m' . (MonadTc m, MonadTc m')
 defaultValue = go
   where
     go :: Type -> m' (Val l m Exp)
-    go UnitT{}            = return $ ConstV UnitC
-    go BoolT{}            = return $ ConstV $ BoolC False
-    go (FixT sc s w bp _) = return $ ConstV $ FixC sc s w bp 0
-    go (FloatT fp _)      = return $ ConstV $ FloatC fp 0
-    go StringT{}          = return $ ConstV $ StringC ""
+    go UnitT{}       = return $ ConstV UnitC
+    go BoolT{}       = return $ ConstV $ BoolC False
+    go (FixT ip _)   = return $ ConstV $ FixC ip 0
+    go (FloatT fp _) = return $ ConstV $ FloatC fp 0
+    go StringT{}     = return $ ConstV $ StringC ""
 
     go (StructT s _) = do
         StructDef s flds _ <- lookupStruct s
@@ -255,14 +255,14 @@ defaultValue = go
 -- | Given a type and a value, return 'True' if the value is the
 -- default of that type and 'False' otherwise.
 isDefaultValue :: Val l m Exp -> Bool
-isDefaultValue (ConstV UnitC)            = True
-isDefaultValue (ConstV (BoolC False))    = True
-isDefaultValue (ConstV (FixC _ _ _ _ 0)) = True
-isDefaultValue (ConstV (FloatC _ 0))     = True
-isDefaultValue (ConstV (StringC ""))     = True
-isDefaultValue (StructV _ flds)          = all isDefaultValue (Map.elems flds)
-isDefaultValue (ArrayV vals)             = all isDefaultValue (P.toList vals)
-isDefaultValue _                         = False
+isDefaultValue (ConstV UnitC)         = True
+isDefaultValue (ConstV (BoolC False)) = True
+isDefaultValue (ConstV (FixC _ 0))    = True
+isDefaultValue (ConstV (FloatC _ 0))  = True
+isDefaultValue (ConstV (StringC ""))  = True
+isDefaultValue (StructV _ flds)       = all isDefaultValue (Map.elems flds)
+isDefaultValue (ArrayV vals)          = all isDefaultValue (P.toList vals)
+isDefaultValue _                      = False
 
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
@@ -327,10 +327,10 @@ toBitsV = go
     go (ConstV (BoolC f)) _ =
         toBitArr (fromIntegral (fromEnum f)) 1
 
-    go (ConstV (FixC I U (W w) (BP 0) x)) _ =
+    go (ConstV (FixC (U w) x)) _ =
         toBitArr x w
 
-    go (ConstV (FixC I S (W w) (BP 0) x)) _
+    go (ConstV (FixC (I w) x)) _
         | x >= 0    = toBitArr x w
         | otherwise = toBitArr (x + 2^w) w
 
@@ -388,15 +388,15 @@ fromBitsV (ArrayV vs) tau =
     go vs BoolT{} =
         ConstV . BoolC . toEnum . fromIntegral <$> fromBitArr vs
 
-    go vs (FixT I U (W w) (BP 0) _) =
-        ConstV . FixC I U (W w) (BP 0) . fromIntegral <$> fromBitArr vs
+    go vs (FixT ip@(U _) _) =
+        ConstV . FixC ip . fromIntegral <$> fromBitArr vs
 
-    go vs (FixT I S (W w) (BP 0) _) = do
+    go vs (FixT ip@(I w) _) = do
         i <- fromBitArr vs
         return $ ConstV $
             if i < 2^(w-1)
-            then FixC I S (W w) (BP 0) (fromIntegral i)
-            else FixC I S (W w) (BP 0) (fromIntegral (i - 2^w))
+            then FixC ip (fromIntegral i)
+            else FixC ip (fromIntegral (i - 2^w))
 
     go vs (FloatT FP32 _) =
         ConstV . FloatC FP32 . float2Double . wordToFloat . fromIntegral <$> fromBitArr vs
@@ -424,9 +424,9 @@ fromBitsV (ArrayV vs) tau =
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
         set :: Int -> Val l m Exp -> EvalM l m Int
-        set i (ConstV (FixC I U (W 1) (BP 0) 0)) = return $ i `shiftL` 1
-        set i (ConstV (FixC I U (W 1) (BP 0) 1)) = return $ i `shiftL` 1 .|. 1
-        set _ val                                = faildoc $ text "Not a bit:" <+> ppr val
+        set i (ConstV (FixC (U 1) 0)) = return $ i `shiftL` 1
+        set i (ConstV (FixC (U 1) 1)) = return $ i `shiftL` 1 .|. 1
+        set _ val                     = faildoc $ text "Not a bit:" <+> ppr val
 
 fromBitsV val tau = do
     w <- typeSize tau
@@ -463,15 +463,15 @@ enumVals UnitT{} =
 enumVals BoolT{} =
     return $ map (ConstV    . BoolC) [(minBound :: Bool)..]
 
-enumVals (FixT I U (W w) (BP 0) _) =
-    return $ map (ConstV . FixC I U (W w) (BP 0) . fromInteger)
+enumVals (FixT ip@(U w) _) =
+    return $ map (ConstV . FixC ip . fromInteger)
                  [0..hi]
   where
     hi :: Integer
     hi = 2^w-1
 
-enumVals (FixT I S (W w) (BP 0) _) =
-    return $ map (ConstV . FixC I S (W w) (BP 0) . fromInteger) $
+enumVals (FixT ip@(I w) _) =
+    return $ map (ConstV . FixC ip . fromInteger) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Integer

@@ -47,7 +47,7 @@ import KZC.Analysis.Lattice (bot)
 import KZC.Analysis.ReadWriteSet
 import KZC.Core.Lint
 import KZC.Core.Smart
-import KZC.Core.Syntax hiding (PI)
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Name
