@@ -140,7 +140,7 @@ $(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
 TESTDIR = $(TOP)/testsuite
 
 KZC?=$(TOP)/kzc
-KZCFLAGS+=-I$(TESTDIR)/lib -dlint -dprint-uniques -fno-line-pragmas
+KZCFLAGS := -I$(TESTDIR)/lib -dlint -dprint-uniques -fno-line-pragmas $(KZCFLAGS)
 
 RUNTIME_SRC=\
 	$(TOP)/libkz/src/bits.c \
