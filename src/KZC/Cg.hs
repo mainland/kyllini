@@ -335,8 +335,8 @@ cgTimed m = do
         cpu_time_end    :: C.Id <- gensym "cpu_time_end"
         real_time_start :: C.Id <- gensym "real_time_start"
         real_time_end   :: C.Id <- gensym "real_time_end"
-        appendTopDecl [cdecl|long double $id:cpu_time_start, $id:cpu_time_end;|]
-        appendTopDecl [cdecl|long double $id:real_time_start, $id:real_time_end;|]
+        appendTopDecl [cdecl|static long double $id:cpu_time_start, $id:cpu_time_end;|]
+        appendTopDecl [cdecl|static long double $id:real_time_start, $id:real_time_end;|]
         appendStm [cstm|$id:cpu_time_start = kz_get_cpu_time();|]
         appendStm [cstm|$id:real_time_start = kz_get_real_time();|]
         x <- m
@@ -433,9 +433,9 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
          then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                 appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
+                 appendTopDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
          else do ctau_res <- cgType tau_res
-                 appendTopDef $ rl l [cedecl|$ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+                 appendTopDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
     k
   where
     tau_res :: Type
@@ -1244,7 +1244,7 @@ cgConstExp e (CInit cinit) k = do
     tau        <- inferExp e
     cv :: C.Id <- gensym "__const"
     ctau       <- cgType tau
-    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+    appendTopDecl [cdecl|static const $ty:ctau $id:cv = $init:cinit;|]
     runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
 
 cgConstExp _ ce k =
@@ -2227,7 +2227,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
             cgThread tau comp donek
         cgLabels clabels
         appendTopDef [cedecl|
-void* $id:cf(void* _tinfo)
+static void* $id:cf(void* _tinfo)
 {
     typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
 
