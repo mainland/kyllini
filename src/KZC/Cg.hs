@@ -94,7 +94,7 @@ splitOneshot (OneshotK Nothing tau f) = do
     tau_res = resultType tau
 
 splitOneshot (OneshotK (Just bv) tau f) = do
-    cv <- cgBinder (bVar bv) tau
+    cv <- cgBinder (bVar bv) tau False
     return (MultishotK $ cgAssign tau cv, f cv)
 
 splitOneshot MultishotK{} =
@@ -115,7 +115,7 @@ splitMultishotBind v _ _needsLvalue (OneshotK Nothing tau f) = do
     tau_res = resultType tau
 
 splitMultishotBind _v _tau _needsLvalue (OneshotK (Just bv) tau f) = do
-    cv <- cgBinder (bVar bv) tau
+    cv <- cgBinder (bVar bv) tau False
     return (cv, f cv)
 
 splitMultishotBind v tau _needsLvalue (MultishotK f) = do
@@ -542,7 +542,7 @@ cgLocalDecl :: forall l a . IsLabel l => Flags -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
     withSummaryContext decl $ do
     appendComment $ text "Lut:" </> ppr e0
-    cv <- cgBinder (bVar v) tau
+    cv <- cgBinder (bVar v) tau False
     extendVars [(bVar v, tau)] $
       extendVarCExps [(bVar v, cv)] $ do
       e'     <- lutGenToExp (bVar v) e gs
@@ -1561,7 +1561,7 @@ cgLetBinding bv tau k =
         k (f ce)
 
     oneshotk f ce = do
-        cv <- cgBinder (bVar bv) tau
+        cv <- cgBinder (bVar bv) tau False
         cgAssign tau cv ce
         k (f cv)
 
@@ -1575,10 +1575,9 @@ cgLetRefBinding :: forall l a . IsLabel l
                 -> (CExp l -> Cg l a) -- ^ Our continuation
                 -> Cg l a
 cgLetRefBinding bv tau Nothing k = do
-    cv <- cgBinder (bVar bv) tau
+    cv <- cgBinder (bVar bv) tau (needDefault bv)
     if needDefault bv
-      then do incDefaultInits
-              cgInitDefault cv tau
+      then incDefaultInits
       else cgInitAlways cv tau
     k cv
   where
@@ -1587,7 +1586,7 @@ cgLetRefBinding bv tau Nothing k = do
     needDefault _                                  = True
 
 cgLetRefBinding bv tau (Just e) k = do
-    cve <- cgBinder (bVar bv) tau
+    cve <- cgBinder (bVar bv) tau False
     inLocalScope $ cgExp e $ multishotBind tau cve
     k cve
 
@@ -1638,7 +1637,7 @@ cgMonadicBinding bv tau k =
     -- call. Perhaps we should be more aggressive about binding
     -- computationally expensive values here?
     oneshotk f ce | isTainted bv || mayHaveEffect ce = do
-        cv <- cgBinder (bVar bv) tau
+        cv <- cgBinder (bVar bv) tau False
         cgAssign tau cv ce
         k (f cv)
 
@@ -1651,44 +1650,21 @@ isTainted BoundV{ bTainted = Just taint } = taint
 
 -- | Declare C storage for the given variable. If we are in top scope, declare
 -- the storage at top level; otherwise, declare it at thread scope.
-cgBinder :: Var -> Type -> Cg l (CExp l)
-cgBinder _ UnitT{} =
+cgBinder :: Var -> Type -> Bool -> Cg l (CExp l)
+cgBinder _ UnitT{} _ =
     return CVoid
 
-cgBinder v tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
-    cgBinder v tau'
+cgBinder v tau@(ST _ (C tau') _ _ _ _) init | isPureishT tau =
+    cgBinder v tau' init
 
-cgBinder v tau = do
+cgBinder v tau init = do
     isTop       <- isInTopScope
     cv          <- cvar v
-    (cdecl, ce) <- cgStorage cv tau
+    (cdecl, ce) <- cgStorage cv tau init
     if isTop
       then appendTopDecl cdecl
       else appendDecl cdecl
     return ce
-
--- | Initialize an l-value with its default value.
-cgInitDefault :: CExp l -> Type -> Cg l ()
-cgInitDefault cv tau@BoolT{}  = cgAssign tau cv (CExp [cexp|0|])
-cgInitDefault cv tau@FixT{}   = cgAssign tau cv (CExp [cexp|0|])
-cgInitDefault cv tau@FloatT{} = cgAssign tau cv (CExp [cexp|0.0|])
-
-cgInitDefault cv (ArrT iota tau _) | isBitT tau = do
-    cn <- cgIota iota
-    appendStm [cstm|memset($cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
-  where
-    ctau :: C.Type
-    ctau = bIT_ARRAY_ELEM_TYPE
-
-cgInitDefault cv (ArrT iota tau _) = do
-    cn    <- cgIota iota
-    ctau  <- cgType tau
-    appendStm [cstm|memset($cv, 0, $cn*sizeof($ty:ctau));|]
-
-cgInitDefault cv tau = do
-    ctau  <- cgType tau
-    caddr <- cgAddrOf tau cv
-    appendStm [cstm|memset($caddr, 0, sizeof($ty:ctau));|]
 
 -- | Perform mandatory initialization of an l-value.
 cgInitAlways :: CExp l -> Type -> Cg l ()
@@ -1709,47 +1685,86 @@ cgTemp _ UnitT{} =
 
 cgTemp s tau = do
     cv          <- gensym ("__" ++ s)
-    (cdecl, ce) <- cgStorage cv tau
+    (cdecl, ce) <- cgStorage cv tau False
     appendDecl cdecl
     cgInitAlways ce tau
     return ce
 
--- | Allocate storage for a C identifier with the given core type. The first
--- argument is a boolean flag that is 'True' if this binding corresponds to a
--- top-level core binding and 'False' otherwise.
-cgStorage :: C.Id
-          -> Type
+-- | Allocate storage for a C identifier with the given core type.
+cgStorage :: C.Id -- ^ C identifier for storage
+          -> Type -- ^ Type of storage
+          -> Bool -- ^ 'True' if storage should be initialized to default value
           -> Cg l (C.InitGroup, CExp l)
-cgStorage _ UnitT{} =
+cgStorage _ UnitT{} _ =
     faildoc "cgStorage: asked to allocate storage for unit type."
 
-cgStorage cv (ArrT iota tau _) | isBitT tau = do
-    cn        <- cgIota iota
-    let cinit =  case cn of
-                   CInt n -> rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)];|]
-                   _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
-    return (cinit, CExp $ rl cv [cexp|$id:cv|])
+-- Note that we use 'appendStm' for initialization code for arrays allocated
+-- with @alloca@. This is OK since the only time we don't statically know an
+-- array's size is when we are in a function body.
+cgStorage cv (ArrT iota tau _) init | isBitT tau =
+    cgIota iota >>= go
   where
+    go :: CExp l -> Cg l (C.InitGroup, CExp l)
+    go (CInt n) | init = do
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)] = {0};|]
+        return (cinit, ce)
+
+    go (CInt n) = do
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+        return (cinit, ce)
+
+    go cn = do
+        let cinit = rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
+        appendStm [cstm|memset($id:cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+        return (cinit, ce)
+
     ctau :: C.Type
     ctau = bIT_ARRAY_ELEM_TYPE
 
-cgStorage cv (ArrT iota tau _) = do
-    ctau      <- cgType tau
-    cn        <- cgIota iota
-    let cinit =  case cn of
-                   CInt n -> rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:n];|]
-                   _      -> rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
-    return (cinit, CExp $ rl cv [cexp|$id:cv|])
+    ce :: CExp l
+    ce = CExp $ rl cv [cexp|$id:cv|]
 
-cgStorage cv tau@RefT{} = do
-    ctau      <- cgType tau
-    let cinit =  rl cv [cdecl|$ty:ctau $id:cv;|]
-    return (cinit, CPtr $ CExp $ rl cv [cexp|$id:cv|])
+cgStorage cv (ArrT iota tau _) init = do
+    ctau <- cgType tau
+    cgIota iota >>= go ctau
+  where
+    go :: C.Type -> CExp l -> Cg l (C.InitGroup, CExp l)
+    go ctau (CInt n) | init = do
+        cdflt    <- cgDefault tau
+        let cinit =  rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:n] = { $init:cdflt };|]
+        return (cinit, ce)
 
-cgStorage cv tau = do
-    ctau      <- cgType tau
-    let cinit =  rl cv [cdecl|$ty:ctau $id:cv;|]
-    return (cinit, CExp $ rl cv [cexp|$id:cv|])
+    go ctau (CInt n) = do
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:n];|]
+        return (cinit, ce)
+
+    go ctau cn = do
+        let cinit = rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($cn * sizeof($ty:ctau));|]
+        appendStm [cstm|memset($id:cv, 0, $cn*sizeof($ty:ctau));|]
+        return (cinit, ce)
+
+    ce :: CExp l
+    ce = CExp $ rl cv [cexp|$id:cv|]
+
+cgStorage cv tau init =
+    cgType tau >>= go
+  where
+    go :: C.Type -> Cg l (C.InitGroup, CExp l)
+    go ctau | init = do
+        cdflt     <- cgDefault (unRefT tau)
+        let cinit =  rl cv [cdecl|$ty:ctau $id:cv = $init:cdflt;|]
+        return (cinit, ce)
+
+    go ctau = do
+        let cinit =  rl cv [cdecl|$ty:ctau $id:cv;|]
+        return (cinit, ce)
+
+    ce :: CExp l
+    ce | isRefT tau = CPtr $ CExp $ rl cv [cexp|$id:cv|]
+       | otherwise  = CExp $ rl cv [cexp|$id:cv|]
+
+cgDefault :: Type -> Cg l C.Initializer
+cgDefault tau = toInit <$> (defaultValueC tau >>= cgConst)
 
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer
