@@ -74,16 +74,13 @@ defaultVal tau = defaultValueC tau >>= evalConst
 
 -- | Convert an 'Integral' value to a 'Val' of the given (fixpoint) type.
 intV :: Integral i => Type -> i -> Val
-intV ~(FixT sc s w bp _) i =
-    FixC sc s w bp (fromIntegral i)
+intV ~(FixT ip _) i = FixC ip (fromIntegral i)
 
 -- | Convert a 'Val' to an 'Integral' value.
 fromIntV :: (Integral a, Monad m) => Val -> m a
-fromIntV (FixC S.I _ _ 0 x) =
-    return $ fromIntegral x
-
-fromIntV val =
-    faildoc $ text "Not an integer:" <+> ppr val
+fromIntV (FixC S.I{} x) = return $ fromIntegral x
+fromIntV (FixC U{} x)   = return $ fromIntegral x
+fromIntV val            = faildoc $ text "Not an integer:" <+> ppr val
 
 idxV :: Monad m => Val -> Int -> Maybe Int -> m Val
 idxV (ArrayC v) i Nothing =

@@ -55,22 +55,22 @@ boolT :: Type
 boolT = BoolT noLoc
 
 bitT :: Type
-bitT = FixT I U (W 1) 0 noLoc
+bitT = FixT (U 1) noLoc
 
 intT :: Type
-intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
+intT = FixT (I dEFAULT_INT_WIDTH) noLoc
 
 int8T :: Type
-int8T = FixT I S 8 0 noLoc
+int8T = FixT (I 8) noLoc
 
 int16T :: Type
-int16T = FixT I S 16 0 noLoc
+int16T = FixT (I 16) noLoc
 
 int32T :: Type
-int32T = FixT I S 32 0 noLoc
+int32T = FixT (I 32) noLoc
 
 int64T :: Type
-int64T = FixT I S 64 0 noLoc
+int64T = FixT (I 64) noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)

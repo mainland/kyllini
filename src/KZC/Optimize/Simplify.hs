@@ -1051,7 +1051,7 @@ simplStep (ForC l ann v tau ei elen c s) = do
         extendSubst v (DoneExp ei') $
           unComp <$> simplC c
 
-    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+    unroll Unroll (ConstE (FixC ip i) _) elen' | Just len <- fromIntE elen' = do
         rewrite
         unComp . mconcat <$> mapM body [i..len-1]
       where
@@ -1062,7 +1062,7 @@ simplStep (ForC l ann v tau ei elen c s) = do
             simplC c >>= traverse uniquify
           where
             idx :: Int -> Exp
-            idx i = constE $ FixC I s w 0 i
+            idx i = constE $ FixC ip i
 
     unroll _ ei' elen' =
         withUniqVar v $ \v' ->
@@ -1474,7 +1474,7 @@ simplE (ForE ann v tau ei elen e3 s) = do
         extendSubst v (DoneExp ei') $
           simplE e3
 
-    unroll Unroll (ConstE (FixC I s w 0 i) _) elen' | Just len <- fromIntE elen' = do
+    unroll Unroll (ConstE (FixC ip i) _) elen' | Just len <- fromIntE elen' = do
         rewrite
         es <- mapM body [i..len-1]
         return $ foldr seqE (returnE unitE) es
@@ -1485,7 +1485,7 @@ simplE (ForE ann v tau ei elen e3 s) = do
             simplE e3
           where
             idx :: Int -> Exp
-            idx i = constE $ FixC I s w 0 i
+            idx i = constE $ FixC ip i
 
     unroll _ ei' elen' =
         withUniqVar v $ \v' ->

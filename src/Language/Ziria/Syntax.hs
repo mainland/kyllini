@@ -17,10 +17,11 @@ module Language.Ziria.Syntax (
     Field(..),
     Struct(..),
 
-    Scale(..),
-    Signedness(..),
-    W(..),
-    BP(..),
+    IP(..),
+    ipWidth,
+    ipIsSigned,
+    ipIsIntegral,
+
     FP(..),
 
     Const(..),
@@ -99,24 +100,22 @@ instance Named Struct where
 
     mapName f (Struct n) = Struct (f n)
 
--- | Fixed point scale factor
-data Scale = I
-           | PI
+-- | Fixed-point format.
+data IP = I (Maybe Int)
+        | U (Maybe Int)
   deriving (Eq, Ord, Read, Show)
 
--- | Fixed point signedness
-data Signedness = S
-                | U
-  deriving (Eq, Ord, Read, Show)
+ipWidth :: IP -> Maybe Int
+ipWidth (I w) = w
+ipWidth (U w) = w
 
--- | Fixed-point width
-data W = WDefault
-       | W Int
-  deriving (Eq, Ord, Read, Show)
+ipIsSigned :: IP -> Bool
+ipIsSigned I{} = True
+ipIsSigned U{} = False
 
--- | Fixed-point binary point
-newtype BP = BP Int
-  deriving (Eq, Ord, Read, Show, Num)
+ipIsIntegral :: IP -> Bool
+ipIsIntegral I{} = True
+ipIsIntegral U{} = True
 
 -- | Floating-point width
 data FP = FP16
@@ -126,7 +125,7 @@ data FP = FP16
 
 data Const = UnitC
            | BoolC Bool
-           | FixC Scale Signedness W BP Int
+           | FixC IP Int
            | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
@@ -254,7 +253,7 @@ data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT Scale Signedness W BP !SrcLoc
+          | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Ind Type !SrcLoc
           | StructT Struct !SrcLoc
@@ -403,37 +402,16 @@ instance Pretty FP where
     ppr FP32 = text "32"
     ppr FP64 = text "64"
 
-instance Pretty W where
-    ppr (W w)    = ppr w
-    ppr WDefault = text "<default>"
-
-instance Pretty BP where
-    ppr (BP bp) = ppr bp
-
 instance Pretty Const where
-    pprPrec _ UnitC                = text "()"
-    pprPrec _ (BoolC False)        = text "false"
-    pprPrec _ (BoolC True)         = text "true"
-    pprPrec _ (FixC I U (W 1) 0 0) = text "'0"
-    pprPrec _ (FixC I U (W 1) 0 1) = text "'1"
-    pprPrec p (FixC sc s _ bp x)   = pprScaled p sc s bp x <> pprSign s
-    pprPrec _ (FloatC _ f)         = ppr f
-    pprPrec _ (StringC s)          = text (show s)
-
-pprSign :: Signedness -> Doc
-pprSign S = empty
-pprSign U = char 'u'
-
-pprScaled :: Int -> Scale -> Signedness -> BP -> Int -> Doc
-pprScaled p I _ (BP 0) x =
-    pprPrec p x
-
-pprScaled p sc _ (BP bp) x =
-    pprPrec p (fromIntegral x * scale sc / 2^bp :: Double)
-  where
-    scale :: Scale -> Double
-    scale I  = 1.0
-    scale PI = pi
+    pprPrec _ UnitC                 = text "()"
+    pprPrec _ (BoolC False)         = text "false"
+    pprPrec _ (BoolC True)          = text "true"
+    pprPrec _ (FixC (U (Just 1)) 0) = text "'0"
+    pprPrec _ (FixC (U (Just 1)) 1) = text "'1"
+    pprPrec _ (FixC I{} x)          = ppr x
+    pprPrec _ (FixC U{} x)          = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)          = ppr f
+    pprPrec _ (StringC s)           = text (show s)
 
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
@@ -713,23 +691,20 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT I U (W 1) (BP 0) _) =
+    pprPrec _ (FixT (U (Just 1)) _) =
         text "bit"
 
-    pprPrec _ (FixT sc s w bp _) =
-        pprBase sc s <> pprW w bp
-      where
-        pprBase :: Scale -> Signedness -> Doc
-        pprBase I  S = "int"
-        pprBase I  U = "uint"
-        pprBase PI S = "rad"
-        pprBase PI U = "urad"
+    pprPrec _ (FixT (I Nothing) _) =
+        text "int"
 
-        pprW :: W -> BP -> Doc
-        pprW WDefault (BP 0)  = empty
-        pprW WDefault (BP bp) = parens (commasep [text "default", ppr bp])
-        pprW (W w)    (BP 0)  = ppr w
-        pprW (W w)    (BP bp) = parens (commasep [ppr w, ppr bp])
+    pprPrec _ (FixT (I (Just w)) _) =
+        text "int" <> ppr w
+
+    pprPrec _ (FixT (U Nothing) _) =
+        text "uint"
+
+    pprPrec _ (FixT (U (Just w)) _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

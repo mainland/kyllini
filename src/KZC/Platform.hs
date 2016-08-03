@@ -8,8 +8,6 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Platform (
-    W(..),
-
     dEFAULT_INT_WIDTH,
 
     bIT_ARRAY_ELEM_TYPE,
@@ -22,19 +20,11 @@ module KZC.Platform (
   ) where
 
 import qualified Language.C.Syntax as C
-import Text.PrettyPrint.Mainland
 
 import KZC.Quote.C
 
--- | Fixed-point width
-newtype W = W Int
-  deriving (Eq, Ord, Read, Show, Num)
-
-instance Pretty W where
-    ppr (W w) = ppr w
-
-dEFAULT_INT_WIDTH :: W
-dEFAULT_INT_WIDTH = W 32
+dEFAULT_INT_WIDTH :: Int
+dEFAULT_INT_WIDTH = 32
 
 -- Change these next three definitions to change the type of bit array elements.
 bIT_ARRAY_ELEM_TYPE :: C.Type

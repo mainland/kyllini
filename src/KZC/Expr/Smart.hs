@@ -107,37 +107,37 @@ boolT :: Type
 boolT = BoolT noLoc
 
 bitT :: Type
-bitT = FixT I U (W 1) (BP 0) noLoc
+bitT = FixT (U 1) noLoc
 
 intT :: Type
-intT = FixT I S dEFAULT_INT_WIDTH 0 noLoc
+intT = FixT (I dEFAULT_INT_WIDTH) noLoc
 
 int8T :: Type
-int8T = FixT I S 8 0 noLoc
+int8T = FixT (I 8) noLoc
 
 int16T :: Type
-int16T = FixT I S 16 0 noLoc
+int16T = FixT (I 16) noLoc
 
 int32T :: Type
-int32T = FixT I S 32 0 noLoc
+int32T = FixT (I 32) noLoc
 
 int64T :: Type
-int64T = FixT I S 64 0 noLoc
+int64T = FixT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT I U dEFAULT_INT_WIDTH 0 noLoc
+uintT = FixT (U dEFAULT_INT_WIDTH) noLoc
 
 uint8T :: Type
-uint8T = FixT I U 8 0 noLoc
+uint8T = FixT (U 8) noLoc
 
 uint16T :: Type
-uint16T = FixT I U 16 0 noLoc
+uint16T = FixT (U 16) noLoc
 
 uint32T :: Type
-uint32T = FixT I U 32 0 noLoc
+uint32T = FixT (U 32) noLoc
 
 uint64T :: Type
-uint64T = FixT I U 64 0 noLoc
+uint64T = FixT (U 64) noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
@@ -181,8 +181,8 @@ isUnitT UnitT{} = True
 isUnitT _       = False
 
 isBitT :: Type -> Bool
-isBitT (FixT I U (W 1) (BP 0) _) = True
-isBitT _                         = False
+isBitT (FixT (U 1) _) = True
+isBitT _              = False
 
 isBitArrT :: Type -> Bool
 isBitArrT (ArrT _ tau _) = isBitT tau
@@ -250,13 +250,13 @@ constI :: Integral a => a -> Iota
 constI x = ConstI (fromIntegral x) noLoc
 
 bitC :: Bool -> Const
-bitC b = FixC I U 1 0 (if b then 1 else 0)
+bitC b = FixC (U 1) (if b then 1 else 0)
 
 intC :: Integral i => i -> Const
-intC i = FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)
+intC i = FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)
 
 uintC :: Integral i => i -> Const
-uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
+uintC i = FixC (U dEFAULT_INT_WIDTH) (fromIntegral i)
 
 arrayC :: Vector Const -> Const
 arrayC cs
@@ -276,7 +276,7 @@ isArrC EnumC{}      = True
 isArrC _            = False
 
 fromIntC :: Monad m => Const -> m Int
-fromIntC (FixC I _ _ (BP 0) x) =
+fromIntC (FixC _ x) =
     return x
 
 fromIntC _ =
@@ -295,7 +295,7 @@ unitE :: Exp
 unitE = ConstE UnitC noLoc
 
 intE :: Integer -> Exp
-intE i = ConstE (FixC I S dEFAULT_INT_WIDTH 0 (fromIntegral i)) noLoc
+intE i = ConstE (FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

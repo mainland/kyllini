@@ -351,8 +351,8 @@ compR _                         = error "compR: no rate"
 
 -- | Convert an 'Exp' to an iteration factor
 expM :: Exp -> Rate M -> Rate M
-expM (ConstE (FixC I _ _ 0 x) _) = rtimes (fromIntegral x)
-expM _                           = rstar
+expM (ConstE (FixC _ i) _) = rtimes i
+expM _                     = rstar
 
 -- | Convert an 'Iota' to a multiplicity.
 iotaM :: Iota -> M

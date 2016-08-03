@@ -360,12 +360,12 @@ checkCompLets (cl:cls) k =
     k (mcdecl:mcdecls)
 
 mkSigned :: Type -> Type
-mkSigned (FixT sc U w bp l) = FixT sc S w bp l
-mkSigned tau                = tau
+mkSigned (FixT (U w) l) = FixT (I w) l
+mkSigned tau            = tau
 
 mkUnsigned :: Type -> Type
-mkUnsigned (FixT sc S w bp l) = FixT sc U w bp l
-mkUnsigned tau                = tau
+mkUnsigned (FixT (I w) l) = FixT (U w) l
+mkUnsigned tau            = tau
 
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
@@ -381,17 +381,11 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (BoolT l) exp_ty
         return $ E.BoolC b
 
-    tcConst (Z.FixC zsc zs zw zbp x) = do
-        sc  <- fromZ zsc
-        s   <- fromZ zs
-        w   <- fromZ zw
-        bp  <- fromZ zbp
-        csc <- trans sc
-        cs  <- trans s
-        cw  <- trans w
-        cbp <- trans bp
-        instType (FixT sc s w bp l) exp_ty
-        return $ E.FixC csc cs cw cbp x
+    tcConst (Z.FixC zip x) = do
+        ip  <- fromZ zip
+        cip <- trans ip
+        instType (FixT ip l) exp_ty
+        return $ E.FixC cip x
 
     tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
@@ -1024,11 +1018,11 @@ refPath e =
     go (Z.VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 x) _) Nothing _) path =
-        go e (IdxP (fromIntegral x) 1 : path)
+    go (Z.IdxE e (Z.ConstE (Z.FixC _ i) _) Nothing _) path =
+        go e (IdxP i 1 : path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC Z.I _ _ 0 x) _) (Just len) _) path =
-        go e (IdxP (fromIntegral x) len : path)
+    go (Z.IdxE e (Z.ConstE (Z.FixC _ i) _) (Just len) _) path =
+        go e (IdxP i len : path)
 
     go (Z.IdxE e _ _ _) _ =
         go e []
@@ -1484,9 +1478,9 @@ checkBitT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go (FixT _ U _ _ _) = return ()
-    go tau              = unifyTypes tau intT `catch`
-                              \(_ :: UnificationException) -> err
+    go (FixT U{} _) = return ()
+    go tau          = unifyTypes tau intT `catch`
+                        \(_ :: UnificationException) -> err
 
     err :: Ti a
     err = do
@@ -1873,9 +1867,9 @@ checkLegalCast tau1 tau2 = do
 -- safe. If it is definitely unsafe, signal an error; if it may be unsafe,
 -- signal a warning if the specified warning flag is set.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
-checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) l)) tau1 tau2 =
+checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
     withSummaryContext e $ do
-    tau1' <- fromZ $ Z.FixT sc1 s1 w1 bp1 l
+    tau1' <- fromZ $ Z.FixT ip l
     when (tau1' /= tau1) $
         withSummaryContext e $
         faildoc $ align $
@@ -1884,20 +1878,22 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) l)) tau1 tau2 =
     go tau2
   where
     go :: Type -> Ti ()
-    go (FixT _ U _ _ _) | x < 0 =
-        return ()
-
-    go (FixT _ U (W w) (BP 0) _) | x > 2^w-1 =
+    go (FixT U{} _) | x < 0 =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT _ S (W w) (BP 0) _) | x > 2^(w-1)-1 =
+    go (FixT (U w) _) | x > 2^w-1 =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT _ S (W w) (BP 0) _) | x < -2^(w-1) =
+    go (FixT (I w) _) | x > 2^(w-1)-1 =
+        faildoc $ align $
+        text "Integer constant" <+> ppr x <+>
+        text "cannot be represented as type" <+> ppr tau2
+
+    go (FixT (I w) _) | x < -2^(w-1) =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
@@ -1905,12 +1901,12 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) l)) tau1 tau2 =
     go _ =
         return ()
 
-checkSafeCast f e tau1@(FixT _ _ (W w1) (BP 0) _) tau2@(FixT _ _ (W w2) (BP 0) _) | w2 < w1 =
+checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) | ipWidth ip2 < ipWidth ip1 =
     maybeWithSummaryContext e $
     warndocWhen f $ align $
     text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
-checkSafeCast f e tau1@(FixT _ s1 _ (BP 0) _) tau2@(FixT _ s2 _ (BP 0) _) | s1 /= s2 =
+checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) | ipIsSigned ip2 /= ipIsSigned ip1 =
     maybeWithSummaryContext e $
     warndocWhen f $ align $
     text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
@@ -1925,16 +1921,16 @@ constFold :: Z.Exp -> Z.Exp
 constFold (Z.ArrayE es l) =
     Z.ArrayE (map constFold es) l
 
-constFold (Z.UnopE Z.Neg (Z.ConstE (Z.FixC sc _ w bp r) l) _) =
-    Z.ConstE (Z.FixC sc Z.S w bp (negate r)) l
+constFold (Z.UnopE Z.Neg (Z.ConstE (Z.FixC ip r) l) _) =
+    Z.ConstE (Z.FixC (Z.I (Z.ipWidth ip)) (negate r)) l
 
 constFold (Z.BinopE op e1 e2 l) =
     constFoldBinopE op (constFold e1) (constFold e2)
   where
     constFoldBinopE :: Z.Binop -> Z.Exp -> Z.Exp -> Z.Exp
-    constFoldBinopE op (Z.ConstE (Z.FixC sc1 s1 w1 bp1 x) _) (Z.ConstE (Z.FixC sc2 s2 w2 bp2 y) _)
-        | (sc1, s1, w1, bp1) == (sc2, s2, w2, bp2), Just z <- constFoldBinop op x y =
-           Z.ConstE (Z.FixC sc1 s1 w1 bp1 z) l
+    constFoldBinopE op (Z.ConstE (Z.FixC ip x) _) (Z.ConstE (Z.FixC ip' y) _)
+        | ip' == ip, Just z <- constFoldBinop op x y =
+           Z.ConstE (Z.FixC ip z) l
 
     constFoldBinopE op e1 e2 = Z.BinopE op e1 e2 l
 
@@ -2024,12 +2020,10 @@ unifyTypes tau1 tau2 = do
     go _ _ UnitT{} UnitT{} = return ()
     go _ _ BoolT{} BoolT{} = return ()
 
-    go _ _ (FixT sc1 w1 s1 bp1 _) (FixT sc2 w2 s2 bp2 _)
-        | sc1 == sc2 && w1 == w2 && s1 == s2 && bp1 == bp2 = return ()
-
-    go _ _ (FloatT w1 _)  (FloatT w2 _)  | w1 == w2 = return ()
-    go _ _ StringT{}      StringT{}                 = return ()
-    go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2 = return ()
+    go _ _ (FixT ip _)    (FixT ip' _)   | ip' == ip = return ()
+    go _ _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
+    go _ _ StringT{}      StringT{}                  = return ()
+    go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2  = return ()
 
     go theta phi (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
         unify theta phi tau1a tau1b
@@ -2141,16 +2135,16 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         return (tau, co1 mce1, co2 mce2)
 
     lubType :: Type -> Type -> Ti Type
-    lubType (FixT sc1 s1 w1 0 l) (FixT sc2 s2 w2 0 _) | sc1 == sc2 =
-        return $ FixT sc1 (lubSignedness s1 s2) (max w1 w2) 0 l
+    lubType (FixT ip l) (FixT ip' _) =
+        return $ FixT (lubIP ip ip') l
 
-    lubType (FloatT w1 l) (FloatT w2 _) =
-        return $ FloatT (max w1 w2) l
+    lubType (FloatT fp l) (FloatT fp' _) =
+        return $ FloatT (max fp fp') l
 
-    lubType (FixT _ _ _ _ l) (FloatT w _) =
+    lubType (FixT _ l) (FloatT w _) =
         return $ FloatT w l
 
-    lubType (FloatT w _) (FixT _ _ _ _ l) =
+    lubType (FloatT w _) (FixT _ l) =
         return $ FloatT w l
 
     lubType (StructT s1 l) (StructT s2 _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
@@ -2169,10 +2163,11 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         unifyTypes tau1 tau2
         return tau1
 
-    lubSignedness :: Signedness -> Signedness -> Signedness
-    lubSignedness S _ = S
-    lubSignedness _ S = S
-    lubSignedness _ _ = U
+    lubIP :: IP -> IP -> IP
+    lubIP (I w) (I w') = I (max w w')
+    lubIP (I w) (U w') = I (max w w')
+    lubIP (U w) (I w') = I (max w w')
+    lubIP (U w) (U w') = U (max w w')
 
     lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
     lubComplex s1 s2 = do
@@ -2203,20 +2198,11 @@ traceVar v tau = do
 class FromZ a b where
     fromZ :: a -> Ti b
 
-instance FromZ Z.Scale Scale where
-    fromZ Z.I  = pure I
-    fromZ Z.PI = pure PI
-
-instance FromZ Z.Signedness Signedness where
-    fromZ Z.S = pure S
-    fromZ Z.U = pure U
-
-instance FromZ Z.W W where
-    fromZ (Z.W w)    = pure $ W w
-    fromZ Z.WDefault = pure dEFAULT_INT_WIDTH
-
-instance FromZ Z.BP BP where
-    fromZ (Z.BP w) = pure $ BP w
+instance FromZ Z.IP IP where
+    fromZ (Z.I Nothing)  = pure $ I dEFAULT_INT_WIDTH
+    fromZ (Z.I (Just w)) = pure $ I w
+    fromZ (Z.U Nothing)  = pure $ U dEFAULT_INT_WIDTH
+    fromZ (Z.U (Just w)) = pure $ U w
 
 instance FromZ Z.FP FP where
     fromZ Z.FP16 = pure FP16
@@ -2224,14 +2210,14 @@ instance FromZ Z.FP FP where
     fromZ Z.FP64 = pure FP64
 
 instance FromZ Z.Type Type where
-    fromZ (Z.UnitT l)          = pure $ UnitT l
-    fromZ (Z.BoolT l)          = pure $ BoolT l
-    fromZ (Z.FixT sc s w bp l) = FixT <$> fromZ sc <*> fromZ s <*> fromZ w <*> fromZ bp <*> pure l
-    fromZ (Z.FloatT w l)       = FloatT <$> fromZ w <*> pure l
-    fromZ (Z.ArrT i tau l)     = ArrT <$> fromZ i <*> fromZ tau <*> pure l
-    fromZ (Z.StructT s l)      = pure $ StructT s l
-    fromZ (Z.C tau l)          = C <$> fromZ tau <*> pure l
-    fromZ (Z.T l)              = T <$> pure l
+    fromZ (Z.UnitT l)      = pure $ UnitT l
+    fromZ (Z.BoolT l)      = pure $ BoolT l
+    fromZ (Z.FixT ip l)    = FixT <$> fromZ ip <*> pure l
+    fromZ (Z.FloatT fp l)  = FloatT <$> fromZ fp <*> pure l
+    fromZ (Z.ArrT i tau l) = ArrT <$> fromZ i <*> fromZ tau <*> pure l
+    fromZ (Z.StructT s l)  = pure $ StructT s l
+    fromZ (Z.C tau l)      = C <$> fromZ tau <*> pure l
+    fromZ (Z.T l)          = T <$> pure l
 
     fromZ (Z.ST omega tau1 tau2 l) =
         ST <$> pure [] <*> fromZ omega <*> newMetaTvT TauK l <*>
@@ -2295,18 +2281,7 @@ instance Trans TyVar E.TyVar where
 instance Trans IVar E.IVar where
     trans (IVar n) = pure $ E.IVar n
 
-instance Trans Scale E.Scale where
-    trans I  = pure E.I
-    trans PI = pure E.PI
-
-instance Trans Signedness E.Signedness where
-    trans S = pure E.S
-    trans U = pure E.U
-
-instance Trans W E.W where
-    trans = pure
-
-instance Trans BP E.BP where
+instance Trans IP E.IP where
     trans = pure
 
 instance Trans FP E.FP where
@@ -2316,14 +2291,14 @@ instance Trans Type E.Type where
     trans tau = compress tau >>= go
       where
         go :: Type -> Ti E.Type
-        go (UnitT l)          = E.UnitT <$> pure l
-        go (BoolT l)          = E.BoolT <$> pure l
-        go (FixT sc s w bp l) = E.FixT <$> trans sc <*> trans s <*> trans w <*> trans bp <*> pure l
-        go (FloatT w l)       = E.FloatT <$> trans w <*> pure l
-        go (StringT l)        = pure $ E.StringT l
-        go (StructT s l)      = E.StructT <$> trans s <*> pure l
-        go (RefT tau l)       = E.RefT <$> go tau <*> pure l
-        go (ArrT i tau l)     = E.ArrT <$> trans i <*> go tau <*> pure l
+        go (UnitT l)     = E.UnitT <$> pure l
+        go (BoolT l)     = E.BoolT <$> pure l
+        go (FixT ip l)   = E.FixT <$> trans ip <*> pure l
+        go (FloatT fp l) = E.FloatT <$> trans fp <*> pure l
+        go (StringT l)   = pure $ E.StringT l
+        go (StructT s l) = E.StructT <$> trans s <*> pure l
+        go (RefT tau l)  = E.RefT <$> go tau <*> pure l
+        go (ArrT i tau l)= E.ArrT <$> trans i <*> go tau <*> pure l
 
         go (ST alphas omega tau1 tau2 tau3 l) =
             extendTyVars (alphas `zip` repeat TauK) $

@@ -82,20 +82,20 @@ streamTypeValues BoolT{} = return $ Stream f 0
     hi :: Int
     hi = fromEnum (maxBound :: Bool)
 
-streamTypeValues (FixT I U (W w) (BP 0) _) = return $ Stream f 0
+streamTypeValues (FixT ip@(U w) _) = return $ Stream f 0
   where
     f :: Int -> m' (Step Int Const)
-    f i | i <= hi   = return $ Yield (FixC I U (W w) (BP 0) i) (i+1)
+    f i | i <= hi   = return $ Yield (FixC ip i) (i+1)
         | otherwise = return Done
 
     hi :: Int
     hi = 2^w-1
 
-streamTypeValues (FixT I S (W w) (BP 0) _) = return $ Stream f 0
+streamTypeValues (FixT ip@(I w) _) = return $ Stream f 0
   where
     f :: Int -> m' (Step Int Const)
-    f i | i <= pos  = return $ Yield (FixC I S (W w) (BP 0) i)       (i+1)
-        | i <= neg  = return $ Yield (FixC I S (W w) (BP 0) (i-2^w)) (i+1)
+    f i | i <= pos  = return $ Yield (FixC ip i)       (i+1)
+        | i <= neg  = return $ Yield (FixC ip (i-2^w)) (i+1)
         | otherwise = return Done
 
     pos, neg :: Int

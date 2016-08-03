@@ -14,10 +14,10 @@
 module KZC.Check.Types (
     TyVar(..),
     IVar(..),
-    Scale(..),
-    Signedness(..),
-    W(..),
-    BP(..),
+    IP(..),
+    ipWidth,
+    ipIsSigned,
+    ipIsIntegral,
     FP(..),
     StructDef(..),
     Type(..),
@@ -46,9 +46,10 @@ import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z
 
-import KZC.Expr.Syntax (Scale(..),
-                        Signedness(..),
-                        BP(..),
+import KZC.Expr.Syntax (IP(..),
+                        ipWidth,
+                        ipIsSigned,
+                        ipIsIntegral,
                         FP(..))
 import KZC.Globals
 import KZC.Name
@@ -70,7 +71,7 @@ data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
 data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT Scale Signedness W BP !SrcLoc
+          | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct !SrcLoc
@@ -181,23 +182,16 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT I U (W 1) (BP 0) _) =
+    pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT sc s w bp _) =
-        pprBase sc s <> pprW w bp
-      where
-        pprBase :: Scale -> Signedness -> Doc
-        pprBase I  S = text "int"
-        pprBase I  U = text "uint"
-        pprBase PI S = text "rad"
-        pprBase PI U = text "urad"
+    pprPrec _ (FixT (I w) _)
+      | w == dEFAULT_INT_WIDTH = text "int"
+      | otherwise              = text "int" <> ppr w
 
-        pprW :: W -> BP -> Doc
-        pprW w (BP 0)
-            | w == dEFAULT_INT_WIDTH = empty
-            | otherwise              = ppr w
-        pprW w (BP bp)               = parens (commasep [ppr w, ppr bp])
+    pprPrec _ (FixT (U w) _)
+      | w == dEFAULT_INT_WIDTH = text "uint"
+      | otherwise              = text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

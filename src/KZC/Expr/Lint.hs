@@ -216,11 +216,11 @@ checkDecl decl@(LetStructD s flds l) k = do
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
 inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
-inferConst l UnitC              = return (UnitT l)
-inferConst l BoolC{}            = return (BoolT l)
-inferConst l (FixC sc s w bp _) = return (FixT sc s w bp l)
-inferConst l (FloatC w _)       = return (FloatT w l)
-inferConst l (StringC _)        = return (StringT l)
+inferConst l UnitC         = return (UnitT l)
+inferConst l BoolC{}       = return (BoolT l)
+inferConst l (FixC ip _)   = return (FixT ip l)
+inferConst l (FloatC fp _) = return (FloatT fp l)
+inferConst l (StringC _)   = return (StringT l)
 
 inferConst l (ArrayC cs) = do
     taus <- V.mapM (inferConst l) cs
@@ -282,8 +282,8 @@ inferExp (UnopE op e1 _) = do
         return $ mkSigned tau
       where
         mkSigned :: Type -> Type
-        mkSigned (FixT sc _ w bp l) = FixT sc S w bp l
-        mkSigned tau                = tau
+        mkSigned (FixT (U w) l) = FixT (I w) l
+        mkSigned tau            = tau
 
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
@@ -702,11 +702,11 @@ refPath e =
     go (VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (IdxE e (ConstE (FixC I _ _ 0 x) _) Nothing _) path =
-        go e (IdxP (fromIntegral x) 1 : path)
+    go (IdxE e (ConstE (FixC _ i) _) Nothing _) path =
+        go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (FixC I _ _ 0 x) _) (Just len) _) path =
-        go e (IdxP (fromIntegral x) len : path)
+    go (IdxE e (ConstE (FixC _ i) _) (Just len) _) path =
+        go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =
         go e []
@@ -802,11 +802,11 @@ checkTypeEquality tau1 tau2 =
     checkT _ _ UnitT{} UnitT{} = return ()
     checkT _ _ BoolT{} BoolT{} = return ()
 
-    checkT _ _ (FixT sc1 s1 w1 bp1 _) (FixT sc2 s2 w2 bp2 _)
-        | sc1 == sc2 && s1 == s2 && w1 == w2 && bp1 == bp2 = return ()
+    checkT _ _ (FixT ip _) (FixT ip' _) | ip' == ip =
+        return ()
 
-    checkT _ _ (FloatT w1 _)  (FloatT w2 _)
-        | w1 == w2 = return ()
+    checkT _ _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
+        return ()
 
     checkT _ _ StringT{} StringT{} = return ()
 
@@ -1015,15 +1015,16 @@ checkBoolT tau =
 
 -- | Check that a type is a type on which we can perform bitwise operations.
 checkBitT :: MonadTc m => Type -> m ()
-checkBitT BoolT{}          = return ()
-checkBitT (FixT _ U _ _ _) = return ()
+checkBitT BoolT{}      = return ()
+checkBitT (FixT U{} _) = return ()
 checkBitT tau =
     faildoc $ nest 2 $ group $
     text "Expected a bit type, e.g., bool or uint, but got:" <+/> ppr tau
 
 -- | Check that a type is an integer type.
 checkIntT :: MonadTc m => Type -> m ()
-checkIntT FixT{} = return ()
+checkIntT (FixT I{} _) = return ()
+checkIntT (FixT U{} _) = return ()
 checkIntT tau =
     faildoc $ nest 2 $ group $
     text "Expected integer type but got:" <+/> ppr tau

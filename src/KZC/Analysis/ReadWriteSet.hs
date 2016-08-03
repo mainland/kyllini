@@ -53,7 +53,7 @@ import KZC.Analysis.Interval
 import KZC.Analysis.Lattice
 import KZC.Core.Lint
 import KZC.Core.Smart
-import KZC.Core.Syntax hiding (PI)
+import KZC.Core.Syntax
 import KZC.Error
 import KZC.Flags
 import KZC.Trace
@@ -570,9 +570,9 @@ evalExp e =
         return $ evalConst c
       where
         evalConst :: Const -> Val
-        evalConst (BoolC b)               = BoolV (pure b)
-        evalConst (FixC I _s _w (BP 0) x) = IntV $ unit x
-        evalConst _c                      = top
+        evalConst (BoolC b)  = BoolV (pure b)
+        evalConst (FixC _ i) = IntV $ unit i
+        evalConst _c         = top
 
     go e@(VarE v _) = do
         evalRef e >>= readRef
@@ -582,18 +582,18 @@ evalExp e =
         unop op <$> go e
       where
         unop :: Unop -> Val -> Val
-        unop Lnot (BoolV b)                      = BoolV $ not <$> b
-        unop Lnot _                              = BoolV top
-        unop Bnot (IntV _)                       = IntV top
-        unop Bnot _                              = top
+        unop Lnot (BoolV b)        = BoolV $ not <$> b
+        unop Lnot _                = BoolV top
+        unop Bnot (IntV _)         = IntV top
+        unop Bnot _                = top
         unop Neg (IntV i)
-            | Just x <- fromUnit i               = IntV $ unit (negate x :: Integer)
-        unop Neg _                               = top
-        unop (Cast (FixT I _s _w (BP 0) _)) _    = IntV top
-        unop Cast{} _                            = top
-        unop (Bitcast (FixT I _s _w (BP 0) _)) _ = IntV top
-        unop Bitcast{} _                         = top
-        unop Len _                               = IntV top
+            | Just x <- fromUnit i = IntV $ unit (negate x :: Integer)
+        unop Neg _                 = top
+        unop (Cast FixT{}) _       = IntV top
+        unop Cast{} _              = top
+        unop (Bitcast FixT{}) _    = IntV top
+        unop Bitcast{} _           = top
+        unop Len _                 = IntV top
 
     go (BinopE op e1 e2 _) =
         binop op <$> go e1 <*> go e2

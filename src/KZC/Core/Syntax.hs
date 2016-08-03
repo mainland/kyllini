@@ -23,11 +23,15 @@ module KZC.Core.Syntax (
     Struct(..),
     TyVar(..),
     IVar(..),
-    Scale(..),
-    Signedness(..),
-    W(..),
-    BP(..),
+
+    IP(..),
+    ipWidth,
+    ipIsSigned,
+    ipIsIntegral,
+
     FP(..),
+    fpWidth,
+
     Const(..),
     Program(..),
     Decl(..),
@@ -125,10 +129,15 @@ import KZC.Expr.Syntax (Var(..),
                         Struct(..),
                         TyVar(..),
                         IVar(..),
-                        Scale(..),
-                        Signedness(..),
-                        BP(..),
+
+                        IP(..),
+                        ipWidth,
+                        ipIsSigned,
+                        ipIsIntegral,
+
                         FP(..),
+                        fpWidth,
+
                         Const(..),
                         UnrollAnn(..),
                         mayUnroll,
@@ -169,7 +178,6 @@ import KZC.Expr.Syntax (Var(..),
                        )
 import KZC.Label
 import KZC.Name
-import KZC.Platform
 import KZC.Pretty
 import KZC.Staged
 import KZC.Summary
@@ -1903,14 +1911,14 @@ instance Num Exp where
     signum _ = error "Num Exp: signum not implemented"
 
 isZero :: Exp -> Bool
-isZero (ConstE (FixC _ _ _ _ 0) _) = True
-isZero (ConstE (FloatC _ 0) _)     = True
-isZero _                           = False
+isZero (ConstE (FixC _ 0) _)   = True
+isZero (ConstE (FloatC _ 0) _) = True
+isZero _                       = False
 
 isOne :: Exp -> Bool
-isOne (ConstE (FixC I _ _ (BP 0) 1) _) = True
-isOne (ConstE (FloatC _ 1) _)          = True
-isOne _                                = False
+isOne (ConstE (FixC _ 1) _)   = True
+isOne (ConstE (FloatC _ 1) _) = True
+isOne _                       = False
 
 instance LiftedNum Exp Exp where
     liftNum op f e@(ConstE c _) | Just c' <- liftNum op f c =
@@ -1934,8 +1942,8 @@ instance LiftedNum Exp Exp where
         ConstE c' (e1 `srcspan` e2)
 
     -- We special-case addition here to aid tests in the simplifier.
-    liftNum2 Add _f (BinopE Add e1 (ConstE (FixC sc s w 0 x) sloc) sloc') (ConstE (FixC _ _ _ 0 y) _) =
-        BinopE Add e1 (ConstE (FixC sc s w 0 (x+y)) sloc) sloc'
+    liftNum2 Add _f (BinopE Add e1 (ConstE (FixC ip x) sloc) sloc') (ConstE (FixC _ y) _) =
+        BinopE Add e1 (ConstE (FixC ip (x+y)) sloc) sloc'
 
     liftNum2 op _f e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)

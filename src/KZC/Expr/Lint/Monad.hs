@@ -234,11 +234,11 @@ lookupTcEnv proj onerr k = do
 
 -- | Given a type, produce a default (constant) value of that type
 defaultValueC :: MonadTc m => Type -> m Const
-defaultValueC UnitT{}            = return UnitC
-defaultValueC BoolT{}            = return $ BoolC False
-defaultValueC (FixT sc s w bp _) = return $ FixC sc s w bp 0
-defaultValueC (FloatT fp _)      = return $ FloatC fp 0
-defaultValueC StringT{}          = return $ StringC ""
+defaultValueC UnitT{}       = return UnitC
+defaultValueC BoolT{}       = return $ BoolC False
+defaultValueC (FixT ip _)   = return $ FixC ip 0
+defaultValueC (FloatT fp _) = return $ FloatC fp 0
+defaultValueC StringT{}     = return $ StringC ""
 
 defaultValueC (StructT s _) = do
     StructDef s flds _ <- lookupStruct s
@@ -409,9 +409,9 @@ typeSize = go
     go :: Type -> m Int
     go UnitT{}                   = pure 0
     go BoolT{}                   = pure 1
-    go (FixT _ _ w _ _)          = pure $ width w
+    go (FixT ip _)               = pure $ ipWidth ip
     go (FloatT fp _)             = pure $ fpWidth fp
-    go (StructT "complex" _)     = pure $ 2 * width dEFAULT_INT_WIDTH
+    go (StructT "complex" _)     = pure $ 2 * dEFAULT_INT_WIDTH
     go (StructT "complex8" _)    = pure 16
     go (StructT "complex16" _)   = pure 32
     go (StructT "complex32" _)   = pure 64
@@ -426,14 +426,6 @@ typeSize = go
 
     go tau =
         faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
-
-    width :: W -> Int
-    width (W n) = n
-
-    fpWidth :: FP -> Int
-    fpWidth FP16 = 16
-    fpWidth FP32 = 32
-    fpWidth FP64 = 64
 
 withFvContext :: (Summary e, Located e, Fvs e Var, MonadTc m)
               => e
