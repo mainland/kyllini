@@ -583,9 +583,13 @@ cgConst c@(ArrayC cs) = do
     return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
 
 cgConst (ReplicateC n c) = do
-    tau <- inferConst noLoc c
-    ce  <- cgConst c
-    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
+    tau    <- inferConst noLoc c
+    c_dflt <- defaultValueC tau
+    ce     <- cgConst c
+    return $
+      if c == c_dflt
+      then CInit [cinit|{ $init:(toInit ce) }|]
+      else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
     cgConst =<< ArrayC <$> enumType tau
