@@ -171,10 +171,7 @@ checkLetRef v ztau e_init l =
     withMaybeExpContext e_init $ do
     tau <- fromZ ztau
     extendVars [(v, refT tau)] $ do
-    mce <- case e_init of
-             Nothing -> return $ return Nothing
-             Just e  -> do mce <- castVal tau e
-                           return $ Just <$> mce
+    mce <- mkRhs tau e_init
     let mcdecl = do
         checkUnresolvedMtvs v tau
         cv   <- trans v
@@ -186,6 +183,14 @@ checkLetRef v ztau e_init l =
     withMaybeExpContext :: Maybe Z.Exp -> Ti a -> Ti a
     withMaybeExpContext Nothing  m = m
     withMaybeExpContext (Just e) m = withExpContext e m
+
+    mkRhs :: Type -> Maybe Z.Exp -> Ti (Ti (Maybe E.Exp))
+    mkRhs tau (Just e) = do
+        mce <- castVal tau e
+        return $ Just <$> mce
+
+    mkRhs _ Nothing =
+        return $ return Nothing
 
 -- | Check the body of a let expression. The let expression must be translated
 -- to a pure core expression.

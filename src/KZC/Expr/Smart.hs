@@ -90,6 +90,7 @@ import Control.Applicative
 import Data.List (sort)
 import Data.Loc
 import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax
@@ -258,7 +259,12 @@ uintC :: Integral i => i -> Const
 uintC i = FixC I U dEFAULT_INT_WIDTH 0 (fromIntegral i)
 
 arrayC :: Vector Const -> Const
-arrayC = ArrayC
+arrayC cs
+  | n > 0 && V.all (== V.head cs) cs = ReplicateC n (V.head cs)
+  | otherwise                         = ArrayC cs
+  where
+    n :: Int
+    n = V.length cs
 
 structC :: Struct -> [(Field, Const)] -> Const
 structC = StructC

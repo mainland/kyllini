@@ -57,6 +57,7 @@ module KZC.Optimize.Eval.Val (
     defaultValue,
     isDefaultValue,
     isKnown,
+    isUnknown,
 
     ToComp(..),
     toConst
@@ -275,6 +276,14 @@ isKnown (IdxV arr i)     = isKnown arr && isKnown i
 isKnown (SliceV arr i _) = isKnown arr && isKnown i
 isKnown ExpV{}           = True
 isKnown _                = False
+
+-- | Return 'True' is a 'Val' is completely unknown.
+isUnknown :: Eq l => Val l m Exp -> Bool
+isUnknown UnknownV         = True
+isUnknown (StructV _ flds) = all isUnknown (Map.elems flds)
+isUnknown (ArrayV vals)    = isUnknown (P.defaultValue vals) &&
+                             all (isUnknown . snd) (P.nonDefaultValues vals)
+isUnknown _                = False
 
 catV :: IsLabel l => Val l m Exp -> Val l m Exp -> Val l m Exp
 catV (ArrayV vs1) (ArrayV vs2) =

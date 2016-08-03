@@ -228,11 +228,9 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
       withSummaryContext e1 $ evalExp e1
 
     mkRhs :: Val l m Exp -> Val l m Exp -> EvalM l m (Maybe Exp)
-    mkRhs new old =
-        case new' of
-          UnknownV                -> return Nothing
-          _ | isDefaultValue new' -> return Nothing
-            | otherwise           -> return $ Just (toExp new')
+    mkRhs new old
+      | isUnknown new' || isDefaultValue new' = return Nothing
+      | otherwise                             = return $ Just (toExp new')
       where
         new' :: Val l m Exp
         new' = if isKnown new then new else old
