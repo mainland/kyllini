@@ -28,6 +28,9 @@ module KZC.Cg.Monad (
     withEmitK,
     withEmitsK,
 
+    wrapTakeK,
+    wrapTakesK,
+
     cgTake,
     cgTakes,
     cgEmit,
@@ -242,6 +245,12 @@ withEmitK f = local (\env -> env { emitCg = f})
 
 withEmitsK :: EmitsK l -> Cg l a -> Cg l a
 withEmitsK f = local (\env -> env { emitsCg = f})
+
+wrapTakeK :: (TakeK l -> TakeK l) -> Cg l a -> Cg l a
+wrapTakeK f = local (\env -> env { takeCg = f (takeCg env)})
+
+wrapTakesK :: (TakesK l -> TakesK l) -> Cg l a -> Cg l a
+wrapTakesK f = local (\env -> env { takesCg = f (takesCg env)})
 
 cgTake :: TakeK l
 cgTake tau klbl k = do

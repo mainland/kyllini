@@ -2220,8 +2220,8 @@ cgParMultiThreaded tau_res b left right klbl k = do
         (clabels, cblock) <-
             collectLabels $
             inNewThreadBlock_ $
-            withTakeK  takek $
-            withTakesK takesk $
+            wrapTakeK  takek $
+            wrapTakesK takesk $
             withEmitK  emitk $
             withEmitsK emitsk $
             cgThread tau comp donek
@@ -2247,15 +2247,15 @@ static void* $id:cf(void* _tinfo)
         -- When the producer takes, we need to make sure that the consumer has
         -- asked for more data than we have given it, so we spin until the
         -- consumer requests data.
-        takek :: TakeK l
-        takek tau klbl k = do
+        takek :: TakeK l -> TakeK l
+        takek takek0 tau klbl k = do
             cgWaitForConsumerRequest ctinfo exitk
-            cgTake tau klbl k
+            takek0 tau klbl k
 
-        takesk :: TakesK l
-        takesk n tau klbl k = do
+        takesk :: TakesK l -> TakesK l
+        takesk takesk0 n tau klbl k = do
             cgWaitForConsumerRequest ctinfo exitk
-            cgTakes n tau klbl k
+            takesk0 n tau klbl k
 
         emitk :: EmitK l
         -- @tau@ must be a base (scalar) type
