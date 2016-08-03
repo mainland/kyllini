@@ -1836,13 +1836,19 @@ cgWithLabel lbl k = do
     l :: SrcLoc
     C.Id ident l = C.toIdent lbl noLoc
 
--- | Compile a computation and throw away he result.
+-- | Compile a computation and throw away the result.
 cgCompVoid :: IsLabel l
            => Comp l -- ^ Computation to compiled
            -> l      -- ^ Label of our continuation
            -> Cg l ()
-cgCompVoid comp klbl =
-    cgComp comp klbl $ multishot cgVoid
+cgCompVoid comp klbl = do
+    -- We place the generated code in a new block because the generated code may
+    -- have a label placed after it, e.g., when we are generating code for a
+    -- loop body. That can mess with declaration initializers.
+    citems <- inNewBlock_ $
+              cgComp comp klbl $
+              multishot cgVoid
+    appendStm [cstm|{ $items:citems }|]
 
 -- | 'cgComp' compiles a computation and ensures that the continuation label is
 -- jumped to. We assume that the continuation labels the code that will be
