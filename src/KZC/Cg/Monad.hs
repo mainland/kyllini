@@ -66,11 +66,11 @@ module KZC.Cg.Monad (
     collectDecls_,
     collectStms,
     collectStms_,
-    collectThreadBlock,
+    collectCodeBlock,
     collectBlock,
 
-    inNewThreadBlock,
-    inNewThreadBlock_,
+    inNewCodeBlock,
+    inNewCodeBlock_,
     inNewBlock,
     inNewBlock_,
 
@@ -398,8 +398,8 @@ collectStms m = do
 collectStms_ :: Cg l () -> Cg l [C.Stm]
 collectStms_ m = fst <$> collectStms m
 
-collectThreadBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
-collectThreadBlock m = do
+collectCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
+collectCodeBlock m = do
     (c, x) <- collect m
     tell c { codeThreadDecls       = mempty
            , codeThreadInitStms    = mempty
@@ -407,8 +407,11 @@ collectThreadBlock m = do
            , codeDecls             = mempty
            , codeStms              = mempty
            }
-    return (codeThreadDecls c <> codeDecls c
-           ,codeThreadInitStms c <> codeStms c <> codeThreadCleanupStms c
+    return (CodeBlock { blockDecls       = codeThreadDecls c <> codeDecls c
+                      , blockInitStms    = codeThreadInitStms c
+                      , blockStms        = codeStms c
+                      , blockCleanupStms = codeThreadCleanupStms c
+                      }
            ,x)
 
 collectBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
@@ -450,16 +453,12 @@ collectBlock m = do
     -- Return the untainted declarations
     return (untaintedDecl, codeStms c, x)
 
-inNewThreadBlock :: Cg l a -> Cg l ([C.BlockItem], a)
-inNewThreadBlock m = do
-    (decls, stms, x) <- collectThreadBlock m
-    return ((map C.BlockDecl . toList) decls ++
-            (map C.BlockStm .  toList) stms
-           ,x)
+inNewCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
+inNewCodeBlock = collectCodeBlock
 
-inNewThreadBlock_ :: Cg l a -> Cg l [C.BlockItem]
-inNewThreadBlock_ m =
-    fst <$> inNewThreadBlock m
+inNewCodeBlock_ :: Cg l a -> Cg l CodeBlock
+inNewCodeBlock_ m =
+    fst <$> inNewCodeBlock m
 
 inNewBlock :: Cg l a -> Cg l ([C.BlockItem], a)
 inNewBlock m = do

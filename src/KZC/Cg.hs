@@ -28,6 +28,7 @@ import Control.Monad (forM_,
                       when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
+import Data.Foldable (toList)
 import Data.Loc
 import Data.Maybe (isJust)
 import Data.Set (Set)
@@ -39,6 +40,7 @@ import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
 import KZC.Cg.CExp
+import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
@@ -156,7 +158,7 @@ compileProgram (Program decls comp tau) = do
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
     (clabels, cblock) <-
         collectLabels $
-        inNewThreadBlock_ $
+        inNewCodeBlock_ $
         cgDecls decls $ do
         -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
@@ -179,7 +181,7 @@ compileProgram (Program decls comp tau) = do
     appendTopDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
-    $items:cblock
+    $items:(toBlockItems cblock)
 }|]
     dumpStats <- asksFlags (testDynFlag ShowCgStats)
     when dumpStats $ do
@@ -386,7 +388,7 @@ cgThread tau comp k = do
     cblock <-
         inSTScope tau $
         inLocalScope $
-        inNewThreadBlock_ $ do
+        inNewCodeBlock_ $ do
         -- Keep track of the current continuation. This is only used when
         -- we do not have first class labels.
         l_start <- compLabel comp
@@ -398,8 +400,13 @@ cgThread tau comp k = do
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
         cgComp comp l_done $ oneshot tau $ runKont k
-    appendDecls [decl | C.BlockDecl decl <- cblock]
-    appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
+    appendDecls (toList (blockDecls cblock))
+    appendStms [cstms|$stms:(toList (blockInitStms cblock))
+                      BEGIN_DISPATCH;
+                      $stms:(toList (blockStms cblock))
+                      END_DISPATCH;
+                      $stms:(toList (blockCleanupStms cblock))
+                     |]
   where
     cUR_KONT :: C.Id
     cUR_KONT = "curk"
@@ -422,7 +429,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
         (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
         (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
         cres_ident         <- gensym "let_res"
-        citems <- inNewThreadBlock_ $
+        cblock <- inNewCodeBlock_ $
                   extendIVarCExps (iotas `zip` ciotas) $
                   extendVarCExps  (map fst vbs `zip` cvbs) $ do
                   cres <- if isReturnedByRef tau_res
@@ -433,9 +440,9 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
          then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                 appendTopDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
+                 appendTopDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
          else do ctau_res <- cgType tau_res
-                 appendTopDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+                 appendTopDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
     k
   where
     tau_res :: Type
@@ -2219,7 +2226,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         tau <- inferComp comp
         (clabels, cblock) <-
             collectLabels $
-            inNewThreadBlock_ $
+            inNewCodeBlock_ $
             wrapTakeK  takek $
             wrapTakesK takesk $
             withEmitK  emitk $
@@ -2234,7 +2241,7 @@ static void* $id:cf(void* _tinfo)
     for (;;) {
         kz_check_error(kz_thread_wait(tinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
         {
-            $items:cblock
+            $items:(toBlockItems cblock)
         }
         (*tinfo).done = 1;
     }
