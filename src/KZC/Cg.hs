@@ -2010,11 +2010,16 @@ cgComp comp klbl = cgSteps (unComp comp)
         withSummaryContext step $ do
         dflags  <- askFlags
         tau_res <- resultType <$> inferStep step
-        case ann of
-          AlwaysPipeline | testDynFlag Pipeline dflags ->
-            cgParMultiThreaded tau_res b left right klbl k
-          _ ->
-            cgParSingleThreaded tau_res b left right klbl k
+        if shouldPipeline dflags ann
+          then cgParMultiThreaded tau_res b left right klbl k
+          else cgParSingleThreaded tau_res b left right klbl k
+      where
+        shouldPipeline :: Flags -> PipelineAnn -> Bool
+        shouldPipeline dflags AlwaysPipeline | testDynFlag Pipeline dflags =
+            True
+
+        shouldPipeline _ _ =
+            False
 
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
