@@ -92,6 +92,8 @@ module KZC.Cg.Monad (
 
     collectUsed,
     collectUsed_,
+
+    newThreadScope,
     newLabelScope,
     newScope,
     promoteScope,
@@ -211,24 +213,31 @@ data CgState l = CgState
       code :: Code
     , -- | C identifiers that have been used
       used :: Set C.Id
-    , -- | C identifiers that are currently declared. This is not the same as
-      -- the set of identifiers in the 'code' field of our 'CgState' because we
-      -- may be in a nested scope.
-      declared :: Set C.Id
+    , -- | C identifiers that are currently declared in thread scope.
+      threadDeclared :: Set C.Id
+    , -- | C identifiers that were declared but are now out of scope due to a
+      -- new thread.
+      outOfThreadScope :: Set C.Id
+    , -- | C identifiers that are currently locally declared. This is not the
+      -- same as the set of identifiers in the 'code' field of our 'CgState'
+      -- because we may be in a nested scope.
+      localDeclared :: Set C.Id
     , -- | C identifiers that were declared but are now out of scope due to an
       -- intervening code label. If we use one of these, we need to promote its
       -- declaration.
-      outOfScope :: Set C.Id
+      outOfLocalScope :: Set C.Id
     }
 
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
-    { stats      = mempty
-    , labels     = mempty
-    , code       = mempty
-    , declared   = mempty
-    , used       = mempty
-    , outOfScope = mempty
+    { stats            = mempty
+    , labels           = mempty
+    , code             = mempty
+    , used             = mempty
+    , threadDeclared   = mempty
+    , outOfThreadScope = mempty
+    , localDeclared    = mempty
+    , outOfLocalScope  = mempty
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -403,20 +412,44 @@ collectStms_ m = fst <$> collectStms m
 
 collectCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
 collectCodeBlock m = do
-    (c, x) <- collect m
+    (c, x) <- collect $ do
+              (decls, stms, x) <- collectBlock m
+              tell mempty { codeDecls = decls, codeStms = stms }
+              return x
+
     tell c { codeThreadDecls       = mempty
            , codeThreadInitStms    = mempty
            , codeThreadCleanupStms = mempty
            , codeDecls             = mempty
            , codeStms              = mempty
            }
-    removeDeclared (codeDecls c)
-    return (CodeBlock { blockDecls       = codeThreadDecls c <> codeDecls c
+
+    -- Figure out which local declarations we need to promote.
+    outOfScope        <- gets outOfThreadScope
+    (promote, retain) <- promoteOutOfScope outOfScope (codeThreadDecls c)
+
+    -- Remove retained declarations from user-tracking state.
+    removeUsed retain
+    removeThreadDeclared (codeThreadDecls c)
+
+    -- Promote declarations to top level.
+    appendTopDecls (toList promote)
+
+    return (CodeBlock { blockDecls       = retain <> codeDecls c
                       , blockInitStms    = codeThreadInitStms c
                       , blockStms        = codeStms c
                       , blockCleanupStms = codeThreadCleanupStms c
                       }
            ,x)
+  where
+    removeThreadDeclared :: Seq C.InitGroup -> Cg l ()
+    removeThreadDeclared decls =
+        modify $ \s -> s { threadDeclared    = threadDeclared s Set.\\ cids
+                         , outOfThreadScope  = outOfThreadScope s Set.\\ cids
+                         }
+     where
+        cids :: Set C.Id
+        cids = Set.fromList (initsIdents (toList decls))
 
 collectBlock :: Cg l a -> Cg l (Seq C.InitGroup, Seq C.Stm, a)
 collectBlock m = do
@@ -425,41 +458,56 @@ collectBlock m = do
            , codeStms  = mempty
            }
 
+    -- Figure out which local declarations we need to promote.
+    outOfScope        <- gets outOfLocalScope
+    (promote, retain) <- promoteOutOfScope outOfScope (codeDecls c)
+
+    -- Remove retained declarations from user-tracking state.
+    removeUsed retain
+    removeLocalDeclared (codeDecls c)
+
+    -- Promote declarations to thread scope.
+    appendThreadDecls (toList promote)
+
+    -- Return the untainted declarations
+    return (retain, codeStms c, x)
+  where
+    removeLocalDeclared :: Seq C.InitGroup -> Cg l ()
+    removeLocalDeclared decls =
+        modify $ \s -> s { localDeclared    = localDeclared s Set.\\ cids
+                         , outOfLocalScope  = outOfLocalScope s Set.\\ cids
+                         }
+      where
+        cids :: Set C.Id
+        cids = Set.fromList (initsIdents (toList decls))
+
+removeUsed :: Seq C.InitGroup -> Cg l ()
+removeUsed decls =
+    modify $ \s -> s { used = used s Set.\\ cids }
+  where
+    cids :: Set C.Id
+    cids = Set.fromList (initsIdents (toList decls))
+
+promoteOutOfScope :: Set C.Id
+                  -> Seq C.InitGroup
+                  -> Cg l (Seq C.InitGroup, Seq C.InitGroup)
+promoteOutOfScope outOfScope cdecls = do
     -- Figure out the set of variables that were used after they went out of
     -- scope.
-    escaped <- Set.intersection <$> gets used <*> gets outOfScope
+    escaped <- Set.intersection <$> gets used <*> pure outOfScope
 
     -- Partition the declarations into those that involve tainted variables and
     -- those that do not
-    let promote, local :: Seq C.InitGroup
-        (promote, local) = Seq.partition (declIn escaped) (codeDecls c)
+    let promote, retain :: Seq C.InitGroup
+        (promote, retain) = Seq.partition (declIn escaped) cdecls
 
-    -- Any tainted local declaration gets promoted to a thread-level
-    -- declaration. The rest end up being returned.
-    tell mempty { codeThreadDecls = promote }
-
-    -- Remove declared variables from the state
-    removeDeclared (codeDecls c)
-
-    -- Return the untainted declarations
-    return (local, codeStms c, x)
+    return (promote, retain)
   where
     declIn :: Set C.Id -> C.InitGroup -> Bool
     declIn cids decl = not $ Set.null $ cids' `Set.intersection` cids
       where
         cids' :: Set C.Id
         cids' = Set.fromList (initIdents decl)
-
--- | Remove declared variables from the state.
-removeDeclared :: Seq C.InitGroup -> Cg l ()
-removeDeclared cdecls =
-    modify $ \s -> s { used       = used s Set.\\ vs
-                     , declared   = declared s Set.\\ vs
-                     , outOfScope = outOfScope s Set.\\ vs
-                     }
-  where
-    vs :: Set C.Id
-    vs = Set.fromList (initsIdents (toList cdecls))
 
 inNewCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
 inNewCodeBlock = collectCodeBlock
@@ -509,10 +557,16 @@ appendTopDecls cdecls =
   tell mempty { codeDefs = Seq.fromList [C.DecDef decl noLoc | decl <- cdecls] }
 
 appendThreadDecl :: C.InitGroup -> Cg l ()
-appendThreadDecl cdecl = tell mempty { codeThreadDecls = Seq.singleton cdecl }
+appendThreadDecl cdecl = do
+    tell mempty { codeThreadDecls = Seq.singleton cdecl }
+    modify $ \s ->
+      s { threadDeclared = threadDeclared s <> Set.fromList (initIdents cdecl) }
 
 appendThreadDecls :: [C.InitGroup] -> Cg l ()
-appendThreadDecls cdecls = tell mempty { codeThreadDecls = Seq.fromList cdecls }
+appendThreadDecls cdecls = do
+    tell mempty { codeThreadDecls = Seq.fromList cdecls }
+    modify $ \s ->
+      s { threadDeclared = threadDeclared s <> Set.fromList (initsIdents cdecls) }
 
 appendThreadInitStm :: C.Stm -> Cg l ()
 appendThreadInitStm cstm =
@@ -526,13 +580,13 @@ appendDecl :: C.InitGroup -> Cg l ()
 appendDecl cdecl = do
     tell mempty { codeDecls = Seq.singleton cdecl }
     modify $ \s ->
-        s { declared = declared s <> Set.fromList (initIdents cdecl) }
+      s { localDeclared = localDeclared s <> Set.fromList (initIdents cdecl) }
 
 appendDecls :: [C.InitGroup] -> Cg l ()
 appendDecls cdecls = do
     tell mempty { codeDecls = Seq.fromList cdecls }
     modify $ \s ->
-        s { declared = declared s <> Set.fromList (initsIdents cdecls) }
+      s { localDeclared = localDeclared s <> Set.fromList (initsIdents cdecls) }
 
 appendStm :: C.Stm -> Cg l ()
 appendStm cstm = tell mempty { codeStms = Seq.singleton cstm }
@@ -562,11 +616,17 @@ collectUsed m = do
 collectUsed_ :: Cg l () -> Cg l (Set C.Id)
 collectUsed_ m = fst <$> collectUsed m
 
+-- | Start a new thread scope.
+newThreadScope :: Cg l ()
+newThreadScope = do
+    cids <- (<>) <$> gets localDeclared <*> gets threadDeclared
+    modify $ \s -> s { outOfThreadScope = outOfThreadScope s <> cids }
+
 -- | Start a new label scope.
 newLabelScope :: Cg l ()
 newLabelScope = do
-    cids <- gets declared
-    modify $ \s -> s { outOfScope = outOfScope s <> cids }
+    cids <- gets localDeclared
+    modify $ \s -> s { outOfLocalScope = outOfLocalScope s <> cids }
 
 -- | Run the continuation, enclosing the code it produces in a single block.
 newScope :: Cg l a -> Cg l a
@@ -597,8 +657,8 @@ newScope k = do
 promoteScope :: forall l . CExp l -> Cg l ()
 promoteScope ce = do
     cid <- cexpId ce
-    modify $ \s -> s { used       = Set.insert cid (used s)
-                     , outOfScope = Set.insert cid (outOfScope s)
+    modify $ \s -> s { used            = Set.insert cid (used s)
+                     , outOfLocalScope = Set.insert cid (outOfLocalScope s)
                      }
   where
     cexpId :: forall m . Monad m => CExp l -> m C.Id

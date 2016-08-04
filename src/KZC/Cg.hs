@@ -2228,7 +2228,8 @@ cgParMultiThreaded tau_res b left right klbl k = do
             wrapTakeK  takek $
             wrapTakesK takesk $
             withEmitK  emitk $
-            withEmitsK emitsk $
+            withEmitsK emitsk $ do
+            newThreadScope
             cgThread tau comp donek
         cgLabels clabels
         appendTopFunDef [cedecl|
