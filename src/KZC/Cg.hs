@@ -2214,7 +2214,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
     cgExitWhenDone ctinfo exitk = do
         cblock <- inNewBlock_ exitk
-        appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
+        appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
 
     -- | Insert a memory barrier
     cgMemoryBarrier :: Cg l ()
