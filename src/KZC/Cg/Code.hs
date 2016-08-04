@@ -74,6 +74,8 @@ instance ToBlockItems CodeBlock where
 data Code = Code
     { -- | Top-level definitions
       codeDefs :: !(Seq C.Definition)
+    , -- | Top-level function definitions
+      codeFunDefs :: !(Seq C.Definition)
     , -- | Thread-level declarations
       codeThreadDecls :: !(Seq C.InitGroup)
     , -- | Initialization
@@ -90,6 +92,7 @@ data Code = Code
 instance Pretty Code where
     ppr c = stack $
             (map ppr . toList . codeDefs) c ++
+            (map ppr . toList . codeFunDefs) c ++
             (map ppr . toList . codeThreadDecls) c ++
             (map ppr . toList . codeThreadInitStms) c ++
             (map ppr . toList . codeThreadCleanupStms) c ++
@@ -99,6 +102,7 @@ instance Pretty Code where
 instance Monoid Code where
     mempty = Code
         { codeDefs              = mempty
+        , codeFunDefs           = mempty
         , codeThreadDecls       = mempty
         , codeThreadInitStms    = mempty
         , codeThreadCleanupStms = mempty
@@ -108,6 +112,7 @@ instance Monoid Code where
 
     a `mappend` b = Code
         { codeDefs              = codeDefs a <> codeDefs b
+        , codeFunDefs           = codeFunDefs a <> codeFunDefs b
         , codeThreadDecls       = codeThreadDecls a <> codeThreadDecls b
         , codeThreadInitStms    = codeThreadInitStms a <> codeThreadInitStms b
         , codeThreadCleanupStms = codeThreadCleanupStms a <> codeThreadCleanupStms b

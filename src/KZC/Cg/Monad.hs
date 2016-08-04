@@ -76,6 +76,8 @@ module KZC.Cg.Monad (
 
     appendTopDef,
     appendTopDefs,
+    appendTopFunDef,
+    appendTopFunDefs,
     appendTopDecl,
     appendTopDecls,
     appendThreadDecl,
@@ -233,7 +235,7 @@ defaultCgState = CgState
 evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
-    return $ (toList . codeDefs . code) s
+    return $ toList $ (codeDefs . code) s <> (codeFunDefs . code) s
 
 withTakeK :: TakeK l -> Cg l a -> Cg l a
 withTakeK f = local (\env -> env { takeCg = f})
@@ -477,13 +479,26 @@ inNewBlock_ :: Cg l a -> Cg l [C.BlockItem]
 inNewBlock_ m =
     fst <$> inNewBlock m
 
+-- | Append a top-level definition.
 appendTopDef :: C.Definition -> Cg l ()
 appendTopDef cdef =
   tell mempty { codeDefs = Seq.singleton cdef }
 
+-- | Append top-level definitions.
 appendTopDefs :: [C.Definition] -> Cg l ()
 appendTopDefs cdefs =
   tell mempty { codeDefs = Seq.fromList cdefs }
+
+-- | Append a top-level function definition. Function definitions appear after
+-- regular top-level definitions.
+appendTopFunDef :: C.Definition -> Cg l ()
+appendTopFunDef cdef =
+  tell mempty { codeFunDefs = Seq.singleton cdef }
+
+-- | Append top-level functions definitions.
+appendTopFunDefs :: [C.Definition] -> Cg l ()
+appendTopFunDefs cdefs =
+  tell mempty { codeFunDefs = Seq.fromList cdefs }
 
 appendTopDecl :: C.InitGroup -> Cg l ()
 appendTopDecl cdecl =

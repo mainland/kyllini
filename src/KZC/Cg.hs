@@ -178,7 +178,7 @@ compileProgram (Program decls comp tau) = do
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels clabels
-    appendTopDef [cedecl|
+    appendTopFunDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
     $items:(toBlockItems cblock)
@@ -433,9 +433,9 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
          then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                 appendTopDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
+                 appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
          else do ctau_res <- cgType tau_res
-                 appendTopDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
+                 appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
     k
   where
     tau_res :: Type
@@ -453,9 +453,9 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
           then do cretparam <- cgRetParam tau_res Nothing
-                  appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
+                  appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
           else do ctau_ret <- cgType tau_res
-                  appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+                  appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
@@ -2231,7 +2231,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
             withEmitsK emitsk $
             cgThread tau comp donek
         cgLabels clabels
-        appendTopDef [cedecl|
+        appendTopFunDef [cedecl|
 static void* $id:cf(void* _tinfo)
 {
     typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
