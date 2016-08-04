@@ -90,9 +90,9 @@ module KZC.Cg.Monad (
 
     collectUsed,
     collectUsed_,
-    taintScope,
+    newLabelScope,
     newScope,
-    taintAndUseCExp,
+    promoteScope,
     useCIds,
     useCId,
     useCExp,
@@ -202,30 +202,31 @@ instance Pretty CgStats where
 
 data CgState l = CgState
     { -- | Codegen statistics
-      stats   :: CgStats
+      stats :: CgStats
     , -- | All labels used
-      labels  :: Set l
-    , -- | Current code block being generated
-      code    :: Code
-    , -- | C identifiers that are currently declared
-      declared :: Set C.Id
+      labels :: Set l
+    , -- | Generated code
+      code :: Code
     , -- | C identifiers that have been used
       used :: Set C.Id
-    , -- | C identifiers that were declared prior to a code label
-      tainted :: Set C.Id
-    , -- | The set of tainted variables that have been used
-      usedTainted :: Set C.Id
+    , -- | C identifiers that are currently declared. This is not the same as
+      -- the set of identifiers in the 'code' field of our 'CgState' because we
+      -- may be in a nested scope.
+      declared :: Set C.Id
+    , -- | C identifiers that were declared but are now out of scope due to an
+      -- intervening code label. If we use one of these, we need to promote its
+      -- declaration.
+      outOfScope :: Set C.Id
     }
 
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
-    { stats       = mempty
-    , labels      = mempty
-    , code        = mempty
-    , declared    = mempty
-    , used        = mempty
-    , tainted     = mempty
-    , usedTainted = mempty
+    { stats      = mempty
+    , labels     = mempty
+    , code       = mempty
+    , declared   = mempty
+    , used       = mempty
+    , outOfScope = mempty
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -407,6 +408,7 @@ collectCodeBlock m = do
            , codeDecls             = mempty
            , codeStms              = mempty
            }
+    removeDeclared (codeDecls c)
     return (CodeBlock { blockDecls       = codeThreadDecls c <> codeDecls c
                       , blockInitStms    = codeThreadInitStms c
                       , blockStms        = codeStms c
@@ -421,37 +423,41 @@ collectBlock m = do
            , codeStms  = mempty
            }
 
-    -- Figure out the set of variables that were used after a label that
-    -- occurred between their use and their declaration.
-    usedAfterTaint <- gets usedTainted
+    -- Figure out the set of variables that were used after they went out of
+    -- scope.
+    escaped <- Set.intersection <$> gets used <*> gets outOfScope
 
     -- Partition the declarations into those that involve tainted variables and
     -- those that do not
-    let isTainted :: C.InitGroup -> Bool
-        isTainted decl = not $ Set.null $ cids `Set.intersection` usedAfterTaint
-          where
-            cids :: Set C.Id
-            cids = Set.fromList (initIdents decl)
+    let promote, local :: Seq C.InitGroup
+        (promote, local) = Seq.partition (declIn escaped) (codeDecls c)
 
-        taintedDecls, untaintedDecl :: Seq C.InitGroup
-        (taintedDecls, untaintedDecl) = Seq.partition isTainted (codeDecls c)
-
-    -- Any tainted declaration gets promoted to a thread-level declaration. The
-    -- rest end up being returned.
-    tell mempty { codeThreadDecls = taintedDecls }
+    -- Any tainted local declaration gets promoted to a thread-level
+    -- declaration. The rest end up being returned.
+    tell mempty { codeThreadDecls = promote }
 
     -- Remove declared variables from the state
-    let vs :: Set C.Id
-        vs = Set.fromList (initsIdents (toList (codeDecls c)))
-
-    modify $ \s -> s { used        = used s Set.\\ vs
-                     , declared    = declared s Set.\\ vs
-                     , tainted     = tainted s Set.\\ vs
-                     , usedTainted = usedTainted s Set.\\ vs
-                     }
+    removeDeclared (codeDecls c)
 
     -- Return the untainted declarations
-    return (untaintedDecl, codeStms c, x)
+    return (local, codeStms c, x)
+  where
+    declIn :: Set C.Id -> C.InitGroup -> Bool
+    declIn cids decl = not $ Set.null $ cids' `Set.intersection` cids
+      where
+        cids' :: Set C.Id
+        cids' = Set.fromList (initIdents decl)
+
+-- | Remove declared variables from the state.
+removeDeclared :: Seq C.InitGroup -> Cg l ()
+removeDeclared cdecls =
+    modify $ \s -> s { used       = used s Set.\\ vs
+                     , declared   = declared s Set.\\ vs
+                     , outOfScope = outOfScope s Set.\\ vs
+                     }
+  where
+    vs :: Set C.Id
+    vs = Set.fromList (initsIdents (toList cdecls))
 
 inNewCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
 inNewCodeBlock = collectCodeBlock
@@ -541,11 +547,11 @@ collectUsed m = do
 collectUsed_ :: Cg l () -> Cg l (Set C.Id)
 collectUsed_ m = fst <$> collectUsed m
 
--- | Taint current declarations.
-taintScope :: Cg l ()
-taintScope = do
+-- | Start a new label scope.
+newLabelScope :: Cg l ()
+newLabelScope = do
     cids <- gets declared
-    modify $ \s -> s { tainted = tainted s <> cids }
+    modify $ \s -> s { outOfScope = outOfScope s <> cids }
 
 -- | Run the continuation, enclosing the code it produces in a single block.
 newScope :: Cg l a -> Cg l a
@@ -572,16 +578,16 @@ newScope k = do
         citems = (map C.BlockDecl . toList) decls ++
                  (map C.BlockStm . toList) cbefore
 
--- | Taint and use a 'CExp'.
-taintAndUseCExp :: forall l . CExp l -> Cg l ()
-taintAndUseCExp ce = do
-    cid <- taint ce
-    modify $ \s -> s { tainted     = tainted s <> Set.singleton cid
-                     , usedTainted = Set.insert cid (usedTainted s)
+-- | Promote the identifier used in a 'CExp' out of local scope.
+promoteScope :: forall l . CExp l -> Cg l ()
+promoteScope ce = do
+    cid <- cexpId ce
+    modify $ \s -> s { used       = Set.insert cid (used s)
+                     , outOfScope = Set.insert cid (outOfScope s)
                      }
   where
-    taint :: forall m . Monad m => CExp l -> m C.Id
-    taint (CExp ce) = go ce
+    cexpId :: forall m . Monad m => CExp l -> m C.Id
+    cexpId (CExp ce) = go ce
       where
         go :: C.Exp -> m C.Id
         go (C.Var cid _)          = return cid
@@ -589,25 +595,21 @@ taintAndUseCExp ce = do
         go (C.PtrMember ce _ _)   = go ce
         go (C.Index ce _ _)       = go ce
         go (C.UnOp C.Deref ce _ ) = go ce
-        go _                      = faildoc $ text "Cannot taint:" <+> ppr ce
+        go _                      = faildoc $ text "Cannot find root identifier:" <+> ppr ce
 
-    taint (CPtr ce)         = taint ce
-    taint (CBitSlice ce)    = taint ce
-    taint (CIdx _ ce _)     = taint ce
-    taint (CSlice _ ce _ _) = taint ce
-    taint (CAlias _ ce)     = taint ce
-    taint ce                = faildoc $ text "Cannot taint:" <+> ppr ce
+    cexpId (CPtr ce)         = cexpId ce
+    cexpId (CBitSlice ce)    = cexpId ce
+    cexpId (CIdx _ ce _)     = cexpId ce
+    cexpId (CSlice _ ce _ _) = cexpId ce
+    cexpId (CAlias _ ce)     = cexpId ce
+    cexpId ce                = faildoc $ text "Cannot find root identifier:" <+> ppr ce
 
 -- | Mark a set of C identifiers as used. This allows us to
 -- track which C declarations are used after they have been tainted by an
 -- intervening label.
 useCIds :: Set C.Id -> Cg l ()
-useCIds cids = do
+useCIds cids =
     modify $ \s -> s { used = used s <> cids }
-    taint <- gets tainted
-    modify $ \s ->
-        s { usedTainted = usedTainted s <>
-                          Set.filter (`Set.member` taint) cids }
 
 -- | Mark a C identifier as used.
 useCId :: C.Id -> Cg l ()
