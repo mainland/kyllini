@@ -2844,7 +2844,7 @@ appendTopComment doc = appendTopDef [cedecl|$esc:(formatComment doc)|]
 
 -- | Append a comment to the current sequence of statements.
 appendComment :: Doc -> Cg l ()
-appendComment doc =   appendStm [cstm|$escstm:(formatComment doc)|]
+appendComment doc = appendStm [cstm|$escstm:(formatComment doc)|]
 
 formatComment :: Doc -> String
 formatComment doc =
