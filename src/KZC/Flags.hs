@@ -100,6 +100,7 @@ data DynFlag = Quiet
              | LUT
              | NoGensym
              | Pipeline
+             | PipelineAll
              | Coalesce
              | VectOnlyBytes
              | VectFilterAnn

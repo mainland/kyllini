@@ -254,6 +254,7 @@ fOpts =
 dFlags :: [(DynFlag, String, String)]
 dFlags =
     [ (Lint,            "lint",          "lint core")
+    , (PipelineAll,     "pipeline-all",  "pipeline all computations")
     , (PrintUniques,    "print-uniques", "show uniques when pretty-printing")
     , (ExpertTypes,     "expert-types",  "show \"expert\" types when pretty-printing")
     , (ShowCgStats,     "cg-stats",      "show code generator statistics")

@@ -2018,8 +2018,8 @@ cgComp comp klbl = cgSteps (unComp comp)
         shouldPipeline dflags AlwaysPipeline | testDynFlag Pipeline dflags =
             True
 
-        shouldPipeline _ _ =
-            False
+        shouldPipeline dflags _ =
+            testDynFlag PipelineAll dflags
 
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
