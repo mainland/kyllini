@@ -2317,8 +2317,7 @@ static void* $id:cf(void* _tinfo)
           cgComp comp klbl $
           multishotBind tau_res cres
         appendStm [cstm|$ctinfo.done = 1;|]
-        appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
-        appendStm [cstm|JUMP($id:l_pardone);|]
+        exitk
       where
         takek :: TakeK l
         takek _tau _klbl k = do
@@ -2337,7 +2336,9 @@ static void* $id:cf(void* _tinfo)
             k carr
 
         exitk :: Cg l ()
-        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
+        exitk = do
+            appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
+            appendStm [cstm|JUMP($id:l_pardone);|]
 
         -- | Consumer a single data element from the buffer. We take a consumption
         -- continuation, because we must be sure that we insert a memory barrier
