@@ -354,20 +354,13 @@ cgTimed m = do
 
 cgLabels :: forall l . IsLabel l => Set l -> Cg l ()
 cgLabels ls =
-    go (Set.toList ls)
+    unless (Set.null ls) $ do
+      appendTopDef [cedecl|$esc:("#if !defined(FIRSTCLASSLABELS)")|]
+      appendTopDef [cedecl|enum { $enums:(cls) };|]
+      appendTopDef [cedecl|$esc:("#endif /* !defined(FIRSTCLASSLABELS) */")|]
   where
-    go :: [l] -> Cg l ()
-    go [] = return ()
-
-    go (l:ls) = do
-        appendTopDef [cedecl|$esc:("#if !defined(FIRSTCLASSLABELS)")|]
-        appendTopDef [cedecl|enum { $enums:(cl:cls) };|]
-        appendTopDef [cedecl|$esc:("#endif /* !defined(FIRSTCLASSLABELS) */")|]
-      where
-        cl  :: C.CEnum
-        cls :: [C.CEnum]
-        cl  = [cenum|$id:l = 0|]
-        cls = [ [cenum|$id:l|] | l <- ls]
+    cls :: [C.CEnum]
+    cls = [[cenum|$id:l|] | l <- Set.toList ls]
 
 -- | Generate code to check return value of a function call.
 cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
