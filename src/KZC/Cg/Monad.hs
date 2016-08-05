@@ -15,6 +15,7 @@
 module KZC.Cg.Monad (
     Thread(..),
 
+    GuardTakeK,
     TakeK,
     TakesK,
     EmitK,
@@ -25,14 +26,13 @@ module KZC.Cg.Monad (
     CgStats(..),
     evalCg,
 
+    withGuardTakeK,
     withTakeK,
     withTakesK,
     withEmitK,
     withEmitsK,
 
-    wrapTakeK,
-    wrapTakesK,
-
+    cgGuardTake,
     cgTake,
     cgTakes,
     cgEmit,
@@ -149,6 +149,9 @@ data Thread l = Thread
     }
   deriving (Eq, Ord, Show)
 
+-- | Generate code to guard a take.
+type GuardTakeK l = Cg l ()
+
 -- | Generate code to take a value of the specified type, jumping to the
 -- specified label when the take is complete. A 'CExp' representing the taken
 -- value is returned. We assume that the continuation labels the code that will
@@ -171,10 +174,11 @@ type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
 data CgEnv l = CgEnv
-    { takeCg     :: TakeK l
-    , takesCg    :: TakesK l
-    , emitCg     :: EmitK l
-    , emitsCg    :: EmitsK l
+    { guardTakeCg :: GuardTakeK l
+    , takeCg      :: TakeK l
+    , takesCg     :: TakesK l
+    , emitCg      :: EmitK l
+    , emitsCg     :: EmitsK l
 
     , varCExps   :: !(Map Var (CExp l))
     , ivarCExps  :: !(Map IVar (CExp l))
@@ -186,10 +190,11 @@ instance Show (CgEnv l) where
 
 defaultCgEnv :: CgEnv l
 defaultCgEnv = CgEnv
-    { takeCg     = error "no take code generator"
-    , takesCg    = error "no takes code generator"
-    , emitCg     = error "no emit code generator"
-    , emitsCg    = error "no emits code generator"
+    { guardTakeCg = error "no guard take code generator"
+    , takeCg      = error "no take code generator"
+    , takesCg     = error "no takes code generator"
+    , emitCg      = error "no emit code generator"
+    , emitsCg     = error "no emits code generator"
 
     , varCExps   = mempty
     , ivarCExps  = mempty
@@ -266,6 +271,9 @@ evalCg m = do
     s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
     return $ toList $ (codeDefs . code) s <> (codeFunDefs . code) s
 
+withGuardTakeK :: GuardTakeK l -> Cg l a -> Cg l a
+withGuardTakeK f = local (\env -> env { guardTakeCg = f})
+
 withTakeK :: TakeK l -> Cg l a -> Cg l a
 withTakeK f = local (\env -> env { takeCg = f})
 
@@ -278,20 +286,21 @@ withEmitK f = local (\env -> env { emitCg = f})
 withEmitsK :: EmitsK l -> Cg l a -> Cg l a
 withEmitsK f = local (\env -> env { emitsCg = f})
 
-wrapTakeK :: (TakeK l -> TakeK l) -> Cg l a -> Cg l a
-wrapTakeK f = local (\env -> env { takeCg = f (takeCg env)})
-
-wrapTakesK :: (TakesK l -> TakesK l) -> Cg l a -> Cg l a
-wrapTakesK f = local (\env -> env { takesCg = f (takesCg env)})
+cgGuardTake :: GuardTakeK l
+cgGuardTake = do
+    f <- asks guardTakeCg
+    f
 
 cgTake :: TakeK l
 cgTake tau klbl k = do
     f <- asks takeCg
+    cgGuardTake
     f tau klbl k
 
 cgTakes :: TakesK l
 cgTakes n tau klbl k = do
     f <- asks takesCg
+    cgGuardTake
     f n tau klbl k
 
 cgEmit :: EmitK l

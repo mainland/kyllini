@@ -168,6 +168,7 @@ compileProgram (Program decls comp tau) = do
         cres <- cgLocalTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
         cgTimed $
+            withGuardTakeK guardtakek $
             withTakeK  takek $
             withTakesK takesk $
             withEmitK  emitk $
@@ -195,6 +196,9 @@ void kz_main(const typename kz_params_t* $id:params)
     in_buf  = "in"
     out_buf = "out"
     params = "params"
+
+    guardtakek :: GuardTakeK l
+    guardtakek = return ()
 
     takek :: TakeK l
     takek tau _klbl k = do
@@ -2246,10 +2250,9 @@ cgParMultiThreaded tau_res b left right klbl k = do
         (clabels, cblock) <-
             collectLabels $
             inNewCodeBlock_ $
-            wrapTakeK  takek $
-            wrapTakesK takesk $
-            withEmitK  emitk $
-            withEmitsK emitsk $ do
+            withGuardTakeK guardtakek $
+            withEmitK      emitk $
+            withEmitsK     emitsk $ do
             newThreadScope
             cgThread tau comp donek
         cgLabels clabels
@@ -2266,18 +2269,11 @@ static void* $id:cf(void* dummy)
     return NULL;
 }|]
       where
-        -- When the producer takes, we need to make sure that the consumer has
-        -- asked for more data than we have given it, so we spin until the
-        -- consumer requests data.
-        takek :: TakeK l -> TakeK l
-        takek takek0 tau klbl k = do
+        -- Before the producer can take, it must wait for the consumer to ask
+        -- for data.
+        guardtakek :: GuardTakeK l
+        guardtakek =
             cgWaitForConsumerRequest ctinfo exitk
-            takek0 tau klbl k
-
-        takesk :: TakesK l -> TakesK l
-        takesk takesk0 n tau klbl k = do
-            cgWaitForConsumerRequest ctinfo exitk
-            takesk0 n tau klbl k
 
         emitk :: EmitK l
         -- @tau@ must be a base (scalar) type
