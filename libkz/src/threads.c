@@ -76,7 +76,7 @@ int kz_thread_init(kz_tinfo_t *tinfo,
     if ((err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) != 0)
         return err;
 
-    return pthread_create(thread, NULL, start_routine, tinfo);
+    return pthread_create(thread, NULL, start_routine, NULL);
 }
 
 int kz_thread_post(kz_tinfo_t *tinfo)

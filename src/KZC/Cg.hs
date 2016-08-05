@@ -2230,7 +2230,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgConsumer cthread ctinfo cbuf cres right' l_pardone
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
-        cgProducer cf cbuf cres left
+        cgProducer cf ctinfo cbuf cres left
     -- Label the end of the computation
     cgWithLabel l_pardone $
         runKont k cres
@@ -2240,8 +2240,8 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgMemoryBarrier =
         appendStm [cstm|kz_memory_barrier();|]
 
-    cgProducer :: C.Id -> CExp l -> CExp l -> Comp l -> Cg l ()
-    cgProducer cf cbuf cres comp = do
+    cgProducer :: C.Id -> CExp l -> CExp l -> CExp l -> Comp l -> Cg l ()
+    cgProducer cf ctinfo cbuf cres comp = do
         tau <- inferComp comp
         (clabels, cblock) <-
             collectLabels $
@@ -2254,23 +2254,18 @@ cgParMultiThreaded tau_res b left right klbl k = do
             cgThread tau comp donek
         cgLabels clabels
         appendTopFunDef [cedecl|
-static void* $id:cf(void* _tinfo)
+static void* $id:cf(void* dummy)
 {
-    typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
-
     for (;;) {
-        kz_check_error(kz_thread_wait(tinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
+        kz_check_error(kz_thread_wait(&$ctinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
         {
             $items:(toBlockItems cblock)
         }
-        (*tinfo).done = 1;
+        $ctinfo.done = 1;
     }
     return NULL;
 }|]
       where
-        ctinfo :: CExp l
-        ctinfo = CExp [cexp|*tinfo|]
-
         -- When the producer takes, we need to make sure that the consumer has
         -- asked for more data than we have given it, so we spin until the
         -- consumer requests data.
