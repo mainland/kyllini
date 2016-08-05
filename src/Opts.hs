@@ -304,10 +304,19 @@ dTraceFlags =
     ]
 
 dOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]
-dOpts = [FlagOption "dump-all" (NoArg dumpAll) "dump all output"]
+dOpts =
+  [ FlagOption "dump-all" (NoArg dumpAll)        "dump all output"
+  , FlagOption "fuel"     (ReqArg addFuel "INT") "add debug fuel"
+  ]
   where
     dumpAll :: Flags -> m Flags
     dumpAll = return . setDumpFlags [minBound..maxBound]
+
+    addFuel :: String -> Flags -> m Flags
+    addFuel s fs =
+      case reads s of
+        [(n, "")]  -> return fs { fuel = n }
+        _          -> fail "argument to -dfuel must be an integer"
 
 wFlags :: [(WarnFlag, String, String)]
 wFlags =

@@ -202,6 +202,8 @@ data Flags = Flags
 
     , output  :: Maybe FilePath
     , dumpDir :: Maybe FilePath
+
+    , fuel :: !Int
     }
   deriving (Eq, Ord, Show)
 
@@ -234,6 +236,8 @@ instance Monoid Flags where
 
         , output  = Nothing
         , dumpDir = Nothing
+
+        , fuel = 0
         }
 
     mappend f1 f2 = Flags
@@ -258,6 +262,8 @@ instance Monoid Flags where
 
         , output  = output  f1 <> output f2
         , dumpDir = dumpDir f1 <> dumpDir f2
+
+        , fuel = fuel f1 + fuel f2
         }
 
 defaultFlags :: Flags
