@@ -13,6 +13,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Cg.Monad (
+    Thread(..),
+
     TakeK,
     TakesK,
     EmitK,
@@ -45,6 +47,9 @@ module KZC.Cg.Monad (
     extendTyVarTypes,
     lookupTyVarType,
     askTyVarTypeSubst,
+
+    addThread,
+    getThreads,
 
     getStats,
     incDefaultInits,
@@ -132,6 +137,18 @@ import KZC.Quote.C
 import KZC.Staged
 import KZC.Util.Env
 
+data Thread l = Thread
+    { -- | Thread info struct, of type kz_tinfo_t
+      threadInfo :: CExp l
+     -- | Thread struct, of type kz_thread_t
+    , thread  :: CExp l
+     -- | Thread result
+    , threadRes :: CExp l
+     -- | Thread function
+    , threadFun :: C.Id
+    }
+  deriving (Eq, Ord, Show)
+
 -- | Generate code to take a value of the specified type, jumping to the
 -- specified label when the take is complete. A 'CExp' representing the taken
 -- value is returned. We assume that the continuation labels the code that will
@@ -207,6 +224,8 @@ instance Pretty CgStats where
 data CgState l = CgState
     { -- | Codegen statistics
       stats :: CgStats
+    , -- | Threads
+      threads :: [Thread l]
     , -- | All labels used
       labels :: Set l
     , -- | Generated code
@@ -231,6 +250,7 @@ data CgState l = CgState
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
     { stats            = mempty
+    , threads          = mempty
     , labels           = mempty
     , code             = mempty
     , used             = mempty
@@ -322,6 +342,12 @@ lookupTyVarType alpha =
 -- instantiation.
 askTyVarTypeSubst :: Cg l (Map TyVar Type)
 askTyVarTypeSubst = asks tyvarTypes
+
+addThread :: Thread l -> Cg l ()
+addThread t = modify $ \s -> s { threads = t : threads s }
+
+getThreads :: Cg l [Thread l]
+getThreads = gets (reverse . threads)
 
 getStats :: Cg l CgStats
 getStats = gets stats

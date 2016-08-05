@@ -174,6 +174,8 @@ compileProgram (Program decls comp tau) = do
             withEmitsK emitsk $
             cgThread tau comp $
             multishotBind (resultType tau) cres
+        -- Generate code to initialize threads
+        cgInitThreads comp
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -325,6 +327,18 @@ void kz_main(const typename kz_params_t* $id:params)
         go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+
+cgInitThreads :: Located a => a -> Cg l ()
+cgInitThreads x =
+    getThreads >>= mapM_ cgInitThread
+  where
+    cgInitThread :: Thread l -> Cg l ()
+    cgInitThread t =
+      cgInitCheckErr [cexp|kz_thread_init(&$(threadInfo t),
+                                          &$(thread t),
+                                          $id:(threadFun t))|]
+                     "Cannot create thread."
+                     x
 
 cgTimed :: forall l a . Cg l a -> Cg l a
 cgTimed m = do
@@ -2192,6 +2206,12 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTopTemp "par_res" tau_res
+    -- Record the thread
+    addThread Thread { threadInfo = ctinfo
+                     , thread     = cthread
+                     , threadRes  = cres
+                     , threadFun  = cf
+                     }
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
     useLabel l_pardone
@@ -2202,8 +2222,6 @@ cgParMultiThreaded tau_res b left right klbl k = do
     l_consumer  <- compLabel right
     l_consumer' <- gensym "consumer"
     let right'  =  setCompLabel l_consumer' right
-    -- Generate to initialize the thread
-    cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
     -- Generate to start the thread
     cgWithLabel l_consumer $
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
