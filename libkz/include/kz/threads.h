@@ -78,8 +78,6 @@ typedef struct {
     volatile unsigned int cons_cnt; /* count of items consumed */
     volatile unsigned int cons_req; /* number of items consumer has requested */
     volatile int done;              /* set to 1 when either computation is done */
-    void* result;                   /* Pointer to storage for the result of the
-                                       computation */
 } kz_tinfo_t;
 
 typedef pthread_t kz_thread_t;

@@ -1688,6 +1688,10 @@ cgTemp isTop s tau = do
 cgLocalTemp :: String -> Type -> Cg l (CExp l)
 cgLocalTemp = cgTemp False
 
+-- | Allocate global storage for a temporary.
+cgTopTemp :: String -> Type -> Cg l (CExp l)
+cgTopTemp = cgTemp True
+
 -- | Allocate storage for a C identifier with the given core type.
 cgStorage :: C.Id -- ^ C identifier for storage
           -> Type -- ^ Type of storage
@@ -2187,7 +2191,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Generate a temporary to hold the thread.
     cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
     -- Generate a temporary to hold the result of the par construct.
-    cres <- cgLocalTemp "par_res" tau_res
+    cres <- cgTopTemp "par_res" tau_res
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
     useLabel l_pardone
@@ -2200,9 +2204,6 @@ cgParMultiThreaded tau_res b left right klbl k = do
     let right'  =  setCompLabel l_consumer' right
     -- Generate to initialize the thread
     cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
-    unless (isUnitT tau_res) $ do
-        useCExp cres
-        appendThreadInitStm [cstm|$ctinfo.result = &$cres;|]
     -- Generate to start the thread
     cgWithLabel l_consumer $
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
@@ -2211,7 +2212,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgConsumer cthread ctinfo cbuf cres right' l_pardone
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
-        cgProducer cf cbuf left
+        cgProducer cf cbuf cres left
     -- Label the end of the computation
     cgWithLabel l_pardone $
         runKont k cres
@@ -2221,8 +2222,8 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgMemoryBarrier =
         appendStm [cstm|kz_memory_barrier();|]
 
-    cgProducer :: C.Id -> CExp l -> Comp l -> Cg l ()
-    cgProducer cf cbuf comp = do
+    cgProducer :: C.Id -> CExp l -> CExp l -> Comp l -> Cg l ()
+    cgProducer cf cbuf cres comp = do
         tau <- inferComp comp
         (clabels, cblock) <-
             collectLabels $
@@ -2286,8 +2287,7 @@ static void* $id:cf(void* _tinfo)
 
         donek :: Kont l ()
         donek = multishot $ \ce -> do
-            ctau_res <- cgType tau_res
-            cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
+            cgAssign tau_res cres ce
             cgMemoryBarrier
             appendStm [cstm|$ctinfo.done = 1;|]
 

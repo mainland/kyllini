@@ -60,7 +60,6 @@ int kz_thread_init(kz_tinfo_t *tinfo,
     tinfo->cons_cnt = 0;
     tinfo->cons_req = 1;
     tinfo->done = 0;
-    tinfo->result = NULL;
 
 #if HAVE_DISPATCH_DISPATCH_H
     tinfo->sem = dispatch_semaphore_create(0);
