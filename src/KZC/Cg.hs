@@ -2366,10 +2366,10 @@ static void* $id:cf(void* dummy)
         cgConsume :: forall a . CExp l -> CExp l -> Type -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
         cgConsume ctinfo cbuf tau exitk consumek = do
             appendComment $ text "Mark previous element as consumed"
+            cgMemoryBarrier
             appendStm [cstm|++$ctinfo.cons_cnt;|]
             cgWaitWhileBufferEmpty ctinfo exitk
             let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
-            cgMemoryBarrier
             consumek (CIdx tau cbuf cidx)
 
         -- | Request @cn@ data elements.
