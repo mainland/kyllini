@@ -2313,7 +2313,7 @@ static void* $id:cf(void* dummy)
         cgWaitForConsumerRequest :: CExp l -> ExitK l -> Cg l ()
         cgWaitForConsumerRequest ctinfo exitk = do
             appendComment $ text "Wait for consumer to request input"
-            appendStm [cstm|while (!$ctinfo.done && $ctinfo.cons_req - $ctinfo.prod_cnt == 0);|]
+            appendStm [cstm|while (!$ctinfo.done && ((int) ($ctinfo.prod_cnt - $ctinfo.cons_req)) >= 0);|]
             cgExitWhenDone ctinfo exitk
 
         -- | Wait while the buffer is full
