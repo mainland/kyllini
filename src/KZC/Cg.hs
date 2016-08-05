@@ -2209,11 +2209,6 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgWithLabel l_pardone $
         runKont k cres
   where
-    cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
-    cgExitWhenDone ctinfo exitk = do
-        cblock <- inNewBlock_ exitk
-        appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
-
     -- | Insert a memory barrier
     cgMemoryBarrier :: Cg l ()
     cgMemoryBarrier =
@@ -2309,6 +2304,12 @@ static void* $id:cf(void* _tinfo)
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
             cgExitWhenDone ctinfo exitk
 
+        -- | Exit if the consumer has computed a final value.
+        cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
+        cgExitWhenDone ctinfo exitk = do
+            cblock <- inNewBlock_ exitk
+            appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
+
     cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
     cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
         withTakeK takek $
@@ -2361,6 +2362,12 @@ static void* $id:cf(void* _tinfo)
         cgWaitWhileBufferEmpty ctinfo exitk = do
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
             cgExitWhenDone ctinfo exitk
+
+        -- | Exit if the producer has computed a final value and the queue is empty.
+        cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
+        cgExitWhenDone ctinfo exitk = do
+            cblock <- inNewBlock_ exitk
+            appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp l -> Bool
