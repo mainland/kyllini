@@ -2154,8 +2154,8 @@ cgParSingleThreaded tau_res b left right klbl k = do
         useLabel loopl
         appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
         cgFor 0 cn $ \ci -> do
-            cidx <- cgIdx tau ce cn ci
-            cgAssignBufp tau cbuf cbufp cidx
+            celem <- cgIdx tau ce cn ci
+            cgAssignBufp tau cbuf cbufp celem
             appendStm [cstm|INDJUMP($crightk);|]
             -- Because we need a statement to label, but the continuation is
             -- the next loop iteration...
@@ -2296,8 +2296,8 @@ static void* $id:cf(void* _tinfo)
         emitsk iota tau ce _klbl k = do
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx tau ce cn ci
-                cgProduce ctinfo cbuf exitk tau cidx
+                celem <- cgIdx tau ce cn ci
+                cgProduce ctinfo cbuf exitk tau celem
             k
 
         exitk :: Cg l ()
