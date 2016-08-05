@@ -2289,7 +2289,8 @@ static void* $id:cf(void* _tinfo)
         cgProduce :: CExp l -> CExp l -> ExitK l -> Type -> CExp l -> Cg l ()
         cgProduce ctinfo cbuf exitk tau ce = do
             cgWaitWhileBufferFull ctinfo exitk
-            cgAssign tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
+            let cidx = CExp [cexp|$ctinfo.prod_cnt % KZ_BUFFER_SIZE|]
+            cgAssign (refT tau) (CIdx tau cbuf cidx) ce
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
@@ -2324,9 +2325,9 @@ static void* $id:cf(void* _tinfo)
         exitk
       where
         takek :: TakeK l
-        takek _tau _klbl k = do
+        takek tau _klbl k = do
             cgRequestData ctinfo 1
-            cgConsume ctinfo cbuf exitk k
+            cgConsume ctinfo cbuf tau exitk k
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
@@ -2335,8 +2336,8 @@ static void* $id:cf(void* _tinfo)
             cgInitAlways carr (arrKnownT n tau)
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
-                cgConsume ctinfo cbuf exitk $ \ce ->
-                    appendStm [cstm|$carr[$ci] = $ce;|]
+                cgConsume ctinfo cbuf tau exitk $ \ce ->
+                    cgAssign (refT tau) (CIdx tau carr ci) ce
             k carr
 
         exitk :: Cg l ()
@@ -2344,17 +2345,17 @@ static void* $id:cf(void* _tinfo)
             appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
             appendStm [cstm|JUMP($id:l_pardone);|]
 
-        -- | Consumer a single data element from the buffer. We take a consumption
-        -- continuation, because we must be sure that we insert a memory barrier
-        -- before incrementing the consumer count.
-        cgConsume :: forall a . CExp l -> CExp l -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
-        cgConsume ctinfo cbuf exitk consumek = do
+        -- | Consume a single data element from the buffer. We take a
+        -- consumption continuation because we must be sure that we insert a
+        -- memory barrier before incrementing the consumer count.
+        cgConsume :: forall a . CExp l -> CExp l -> Type -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
+        cgConsume ctinfo cbuf tau exitk consumek = do
             appendComment $ text "Mark previous element as consumed"
             appendStm [cstm|++$ctinfo.cons_cnt;|]
             cgWaitWhileBufferEmpty ctinfo exitk
             let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
             cgMemoryBarrier
-            consumek (CExp [cexp|$cbuf[$cidx]|])
+            consumek (CIdx tau cbuf cidx)
 
         -- | Request @cn@ data elements.
         cgRequestData :: CExp l -> CExp l -> Cg l ()
