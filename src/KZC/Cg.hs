@@ -2295,12 +2295,14 @@ static void* $id:cf(void* _tinfo)
         -- | Wait until the consumer requests data
         cgWaitForConsumerRequest :: CExp l -> ExitK l -> Cg l ()
         cgWaitForConsumerRequest ctinfo exitk = do
+            appendComment $ text "Wait for consumer to request input"
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.cons_req - $ctinfo.prod_cnt == 0);|]
             cgExitWhenDone ctinfo exitk
 
         -- | Wait while the buffer is full
         cgWaitWhileBufferFull :: CExp l -> ExitK l -> Cg l ()
         cgWaitWhileBufferFull ctinfo exitk = do
+            appendComment $ text "Wait for room in the buffer"
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
             cgExitWhenDone ctinfo exitk
 
@@ -2308,6 +2310,7 @@ static void* $id:cf(void* _tinfo)
         cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
         cgExitWhenDone ctinfo exitk = do
             cblock <- inNewBlock_ exitk
+            appendComment $ text "Exit if the consumer has computed a final value"
             appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
 
     cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
@@ -2354,12 +2357,14 @@ static void* $id:cf(void* _tinfo)
 
         -- | Request @cn@ data elements.
         cgRequestData :: CExp l -> CExp l -> Cg l ()
-        cgRequestData ctinfo cn =
+        cgRequestData ctinfo cn = do
+            appendComment $ text "Request" <+> ppr cn <+> text "elements"
             appendStm [cstm|$ctinfo.cons_req += $cn;|]
 
         -- | Wait while the buffer is empty
         cgWaitWhileBufferEmpty :: CExp l -> ExitK l -> Cg l ()
         cgWaitWhileBufferEmpty ctinfo exitk = do
+            appendComment $ text "Wait while the buffer is empty"
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
             cgExitWhenDone ctinfo exitk
 
@@ -2367,6 +2372,7 @@ static void* $id:cf(void* _tinfo)
         cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
         cgExitWhenDone ctinfo exitk = do
             cblock <- inNewBlock_ exitk
+            appendComment $ text "Exit if the producer has computed a final value and the queue is empty"
             appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
 
 -- | Return 'True' if a compiled expression is a C lvalue.
