@@ -2348,11 +2348,11 @@ static void* $id:cf(void* _tinfo)
         -- before incrementing the consumer count.
         cgConsume :: forall a . CExp l -> CExp l -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
         cgConsume ctinfo cbuf exitk consumek = do
-            cgWaitWhileBufferEmpty ctinfo exitk
-            cidx <- cgCTemp right "cons_idx" [cty|int|] Nothing
-            appendStm [cstm|$cidx = $ctinfo.cons_cnt % KZ_BUFFER_SIZE;|]
-            cgMemoryBarrier
+            appendComment $ text "Mark previous element as consumed"
             appendStm [cstm|++$ctinfo.cons_cnt;|]
+            cgWaitWhileBufferEmpty ctinfo exitk
+            let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
+            cgMemoryBarrier
             consumek (CExp [cexp|$cbuf[$cidx]|])
 
         -- | Request @cn@ data elements.
