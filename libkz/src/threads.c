@@ -51,16 +51,6 @@ int kz_thread_init(kz_tinfo_t *tinfo,
     pthread_attr_t attr;
     int err;
 
-    /* We start out having "produced" a phantom element that the consumer marks
-     * as consumed when it next requests input. This allows us to avoid copying
-     * the item in the producer/consumer buffer because it is not marked as
-     * consumed until the next request from the consumer
-     */
-    tinfo->prod_cnt = 1;
-    tinfo->cons_cnt = 0;
-    tinfo->cons_req = 1;
-    tinfo->done = 0;
-
 #if HAVE_DISPATCH_DISPATCH_H
     tinfo->sem = dispatch_semaphore_create(0);
     if (tinfo->sem == NULL)
@@ -81,6 +71,14 @@ int kz_thread_init(kz_tinfo_t *tinfo,
 
 int kz_thread_post(kz_tinfo_t *tinfo)
 {
+    /* We start out having "produced" a phantom element that the consumer marks
+     * as consumed when it next requests input. This allows us to avoid copying
+     * the item in the producer/consumer buffer because it is not marked as
+     * consumed until the next request from the consumer
+     */
+    tinfo->prod_cnt = 1;
+    tinfo->cons_cnt = 0;
+    tinfo->cons_req = 1;
     tinfo->done = 0;
     kz_memory_barrier();
 #if HAVE_DISPATCH_DISPATCH_H
