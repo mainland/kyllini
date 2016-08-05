@@ -454,7 +454,8 @@ inferExp (LetE decl body _) =
 inferExp (CallE f ies es _) = do
     (taus, tau_ret) <- inferCall f ies es
     zipWithM_ checkArg es taus
-    checkNoAliasing (es `zip` taus)
+    unless (isPureishT tau_ret) $
+        checkNoAliasing (es `zip` taus)
     return tau_ret
   where
     checkArg :: Exp -> Type -> m ()
