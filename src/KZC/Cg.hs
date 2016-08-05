@@ -2193,9 +2193,10 @@ cgParMultiThreaded tau_res b left right klbl k = do
     l_consumer' <- gensym "consumer"
     let right'  =  setCompLabel l_consumer' right
     -- Generate to initialize the thread
-    unless (isUnitT tau_res) $
-        appendThreadInitStm [cstm|ctinfo.result = &$cres;|]
     cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
+    unless (isUnitT tau_res) $ do
+        useCExp cres
+        appendThreadInitStm [cstm|$ctinfo.result = &$cres;|]
     -- Generate to start the thread
     cgWithLabel l_consumer $
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
