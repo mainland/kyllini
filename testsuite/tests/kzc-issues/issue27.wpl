@@ -1,0 +1,40 @@
+fun butterfly( var as: arr complex16
+             , var bs: arr[length(as)] complex16
+             , var cs: arr[length(as)] complex16
+             , var ds: arr[length(as)] complex16 ) {
+    var ac:  complex16
+    var bd:  complex16
+    var a_c: complex16
+    var b_d: complex16
+
+    for i in [0, length(as)] {
+        ac  := as[i] + cs[i]
+        bd  := bs[i] + ds[i]
+        a_c := as[i] - cs[i]
+        b_d := as[i] - ds[i]
+
+        as[i] := ac  + bd
+        bs[i] := ac  - bd
+        cs[i] := a_c - b_d
+        ds[i] := a_c + b_d
+    }
+}
+
+fun comp FFT() {
+    (symbols: arr[64] complex16) <- takes 64
+    var output: arr[64] complex16 := symbols
+
+    -- Radix 4 stage of FFT
+    for i in [0,4] {
+        butterfly(output[16*i+0, 4], output[16*i+4, 4], output[16*i+8, 4], output[16*i+12,4])
+    }
+
+    --butterfly(output[0, 4], output[4, 4], output[8, 4], output[12,4])
+    --butterfly(output[16,4], output[20,4], output[24,4], output[28,4])
+    --butterfly(output[32,4], output[36,4], output[40,4], output[44,4])
+    --butterfly(output[48,4], output[52,4], output[56,4], output[60,4])
+
+    emits output
+}
+
+let comp main = read >>> repeat FFT() >>> write
