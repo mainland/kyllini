@@ -2177,9 +2177,9 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Generate a name for the producer thread function
     cf <- gensym "producer"
     -- Generate a temporary to hold the thread info.
-    ctinfo <- cgThreadCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
+    ctinfo <- cgTopCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
     -- Generate a temporary to hold the thread.
-    cthread <- cgThreadCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
+    cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgTemp "par_res" tau_res
     -- Create a label for the computation that follows the par.
