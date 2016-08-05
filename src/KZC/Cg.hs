@@ -89,7 +89,7 @@ isOneshot MultishotBindK{} = False
 -- the temporary and does the real work.
 splitOneshot :: Kont l a -> Cg l (Kont l (), Cg l a)
 splitOneshot (OneshotK Nothing tau f) = do
-    ctemp <- cgTemp "oneshot" tau_res
+    ctemp <- cgLocalTemp "oneshot" tau_res
     return (MultishotK $ cgAssign tau_res ctemp, f ctemp)
   where
     tau_res :: Type
@@ -110,7 +110,7 @@ splitOneshot MultishotBindK{} =
 -- the 'CExp'.
 splitMultishotBind :: String -> Type -> Bool -> Kont l a -> Cg l (CExp l, Cg l a)
 splitMultishotBind v _ _needsLvalue (OneshotK Nothing tau f) = do
-    ctemp <- cgTemp v tau_res
+    ctemp <- cgLocalTemp v tau_res
     return (ctemp, f ctemp)
   where
     tau_res :: Type
@@ -121,11 +121,11 @@ splitMultishotBind _v _tau _needsLvalue (OneshotK (Just bv) tau f) = do
     return (cv, f cv)
 
 splitMultishotBind v tau _needsLvalue (MultishotK f) = do
-    ctemp <- cgTemp v tau
+    ctemp <- cgLocalTemp v tau
     return (ctemp, f ctemp)
 
 splitMultishotBind v tau True (MultishotBindK _tau' cv f) | not (isLvalue cv) = do
-    ctemp <- cgTemp v tau
+    ctemp <- cgLocalTemp v tau
     return (ctemp, cgAssign tau cv ctemp >> f cv)
 
 splitMultishotBind _v _tau _ (MultishotBindK _tau' cv f) =
@@ -165,7 +165,7 @@ compileProgram (Program decls comp tau) = do
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
         -- Create storage for the result
-        cres <- cgTemp "main_res" (resultType tau)
+        cres <- cgLocalTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
         cgTimed $
             withTakeK  takek $
@@ -427,7 +427,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                   extendVarCExps  (map fst vbs `zip` cvbs) $ do
                   cres <- if isReturnedByRef tau_res
                           then return $ CExp [cexp|$id:cres_ident|]
-                          else cgTemp "let_res" tau_res
+                          else cgLocalTemp "let_res" tau_res
                   cgExp e $ multishotBind tau_res cres
                   when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
                       appendStm $ rl l [cstm|return $cres;|]
@@ -892,13 +892,13 @@ cgExp e k =
         cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
         cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
             (a, b) <- unComplex ce
-            ctemp  <- cgTemp "cast_complex" tau_to
+            ctemp  <- cgLocalTemp "cast_complex" tau_to
             appendStm $ rl l [cstm|$ctemp.re = $a;|]
             appendStm $ rl l [cstm|$ctemp.im = $b;|]
             return ctemp
 
         cgCast ce _ tau_to | isComplexT tau_to = do
-            ctemp <- cgTemp "cast_complex" tau_to
+            ctemp <- cgLocalTemp "cast_complex" tau_to
             appendStm $ rl l [cstm|$ctemp.re = $ce;|]
             appendStm $ rl l [cstm|$ctemp.im = $ce;|]
             return ctemp
@@ -1671,16 +1671,22 @@ cgInitAlways _ _ =
 
 -- | Allocate storage for a temporary of the given core type. The name of the
 -- temporary is gensym'd using @s@ with a prefix of @__@.
-cgTemp :: String -> Type -> Cg l (CExp l)
-cgTemp _ UnitT{} =
+cgTemp :: Bool -> String -> Type -> Cg l (CExp l)
+cgTemp _ _ UnitT{} =
     return CVoid
 
-cgTemp s tau = do
+cgTemp isTop s tau = do
     cv          <- gensym ("__" ++ s)
     (cdecl, ce) <- cgStorage cv tau False
-    appendDecl cdecl
+    if isTop
+      then appendTopDecl cdecl
+      else appendDecl cdecl
     cgInitAlways ce tau
     return ce
+
+-- | Allocate local storage for a temporary.
+cgLocalTemp :: String -> Type -> Cg l (CExp l)
+cgLocalTemp = cgTemp False
 
 -- | Allocate storage for a C identifier with the given core type.
 cgStorage :: C.Id -- ^ C identifier for storage
@@ -2029,7 +2035,7 @@ cgParSingleThreaded :: forall a l . IsLabel l
 cgParSingleThreaded tau_res b left right klbl k = do
     (s, a, c) <- askSTIndTypes
     -- Generate a temporary to hold the result of the par construct.
-    cres <- cgTemp "par_res" tau_res
+    cres <- cgLocalTemp "par_res" tau_res
     -- Create the computation that follows the par.
     l_pardone <- gensym "par_done"
     useLabel l_pardone
@@ -2181,7 +2187,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Generate a temporary to hold the thread.
     cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
     -- Generate a temporary to hold the result of the par construct.
-    cres <- cgTemp "par_res" tau_res
+    cres <- cgLocalTemp "par_res" tau_res
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
     useLabel l_pardone
@@ -2742,12 +2748,12 @@ cgAddrOf _ ce | isLvalue ce = do
     return $ CExp [cexp|&$ce|]
 
 cgAddrOf tau ce | isArrOrRefArrT tau = do
-    ctemp <- cgTemp "addrof" tau
+    ctemp <- cgLocalTemp "addrof" tau
     cgAssign tau ctemp ce
     return $ CExp [cexp|$ctemp|]
 
 cgAddrOf tau ce = do
-    ctemp <- cgTemp "addrof" tau
+    ctemp <- cgLocalTemp "addrof" tau
     cgAssign tau ctemp ce
     return $ CExp [cexp|&$ctemp|]
 
@@ -2838,7 +2844,7 @@ cgLower tau = go
   where
     go :: CExp l -> Cg l (CExp l)
     go ce@CStruct{} = do
-        cv <- cgTemp "lower" tau
+        cv <- cgLocalTemp "lower" tau
         cgAssign tau cv ce
         return cv
 
