@@ -2269,6 +2269,13 @@ static void* $id:cf(void* dummy)
     return NULL;
 }|]
       where
+        donek :: Kont l ()
+        donek = multishot $ \ce -> do
+            cgAssign tau_res cres ce
+            cgMemoryBarrier
+            appendStm [cstm|$ctinfo.done = 1;|]
+            exitk
+
         exitk :: ExitK l
         exitk = appendStm [cstm|BREAK;|]
 
@@ -2293,12 +2300,6 @@ static void* $id:cf(void* dummy)
                 celem <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf tau celem
             k
-
-        donek :: Kont l ()
-        donek = multishot $ \ce -> do
-            cgAssign tau_res cres ce
-            cgMemoryBarrier
-            appendStm [cstm|$ctinfo.done = 1;|]
 
         -- | Put a single data element in the buffer.
         cgProduce :: CExp l -> CExp l -> Type -> CExp l -> Cg l ()
@@ -2330,14 +2331,18 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
 
     cgConsumer :: CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
-    cgConsumer ctinfo cbuf cres comp l_pardone = do
+    cgConsumer ctinfo cbuf cres comp l_pardone =
         withTakeK takek $
-          withTakesK takesk $
-          cgComp comp klbl $
-          multishotBind tau_res cres
-        appendStm [cstm|$ctinfo.done = 1;|]
-        exitk
+        withTakesK takesk $
+        cgComp comp klbl donek
       where
+        donek :: Kont l ()
+        donek = multishot $ \ce -> do
+            cgAssign tau_res cres ce
+            cgMemoryBarrier
+            appendStm [cstm|$ctinfo.done = 1;|]
+            exitk
+
         exitk :: ExitK l
         exitk = appendStm [cstm|JUMP($id:l_pardone);|]
 
