@@ -2231,7 +2231,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
-        cgConsumer cthread ctinfo cbuf cres right' l_pardone
+        cgConsumer ctinfo cbuf cres right' l_pardone
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
         cgProducer cf ctinfo cbuf cres left
@@ -2329,8 +2329,8 @@ static void* $id:cf(void* dummy)
             appendComment $ text "Exit if the consumer has computed a final value"
             appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
 
-    cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
-    cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
+    cgConsumer :: CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
+    cgConsumer ctinfo cbuf cres comp l_pardone = do
         withTakeK takek $
           withTakesK takesk $
           cgComp comp klbl $
@@ -2355,8 +2355,7 @@ static void* $id:cf(void* dummy)
             k carr
 
         exitk :: Cg l ()
-        exitk = do
-            appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
+        exitk =
             appendStm [cstm|JUMP($id:l_pardone);|]
 
         -- | Consume a single data element from the buffer. We take a
