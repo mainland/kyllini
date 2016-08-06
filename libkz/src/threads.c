@@ -76,9 +76,9 @@ int kz_thread_post(kz_tinfo_t *tinfo)
      * the item in the producer/consumer buffer because it is not marked as
      * consumed until the next request from the consumer
      */
-    tinfo->prod_cnt = 1;
-    tinfo->cons_cnt = 0;
-    tinfo->cons_req = 1;
+    tinfo->prod_cnt = 0;
+    tinfo->cons_cnt = -1;
+    tinfo->cons_req = 0;
     tinfo->done = 0;
     kz_memory_barrier();
 #if HAVE_DISPATCH_DISPATCH_H
