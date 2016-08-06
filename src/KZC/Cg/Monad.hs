@@ -20,6 +20,7 @@ module KZC.Cg.Monad (
     TakesK,
     EmitK,
     EmitsK,
+    ExitK,
 
     Cg,
     CgEnv,
@@ -31,12 +32,14 @@ module KZC.Cg.Monad (
     withTakesK,
     withEmitK,
     withEmitsK,
+    withExitK,
 
     cgGuardTake,
     cgTake,
     cgTakes,
     cgEmit,
     cgEmits,
+    cgExit,
 
     extendVarCExps,
     lookupVarCExp,
@@ -170,6 +173,9 @@ type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
 -- | Generate code to emit multiple values.
 type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 
+-- | Generate code to exit a computation.
+type ExitK l = Cg l ()
+
 -- | The 'Cg' monad.
 type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
@@ -179,6 +185,7 @@ data CgEnv l = CgEnv
     , takesCg     :: TakesK l
     , emitCg      :: EmitK l
     , emitsCg     :: EmitsK l
+    , exitCg      :: ExitK l
 
     , varCExps   :: !(Map Var (CExp l))
     , ivarCExps  :: !(Map IVar (CExp l))
@@ -195,6 +202,7 @@ defaultCgEnv = CgEnv
     , takesCg     = error "no takes code generator"
     , emitCg      = error "no emit code generator"
     , emitsCg     = error "no emits code generator"
+    , exitCg      = error "no exit continuation"
 
     , varCExps   = mempty
     , ivarCExps  = mempty
@@ -286,6 +294,9 @@ withEmitK f = local (\env -> env { emitCg = f})
 withEmitsK :: EmitsK l -> Cg l a -> Cg l a
 withEmitsK f = local (\env -> env { emitsCg = f})
 
+withExitK :: ExitK l -> Cg l a -> Cg l a
+withExitK f = local (\env -> env { exitCg = f})
+
 cgGuardTake :: GuardTakeK l
 cgGuardTake = do
     f <- asks guardTakeCg
@@ -312,6 +323,11 @@ cgEmits :: EmitsK l
 cgEmits iota tau ce klbl k = do
     f <- asks emitsCg
     f iota tau ce klbl k
+
+cgExit :: ExitK l
+cgExit = do
+    f <- asks exitCg
+    f
 
 extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
 extendVarCExps = extendEnv varCExps (\env x -> env { varCExps = x })

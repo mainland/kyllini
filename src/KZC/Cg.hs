@@ -2066,7 +2066,9 @@ cgParSingleThreaded tau_res b left right klbl k = do
     let donek :: Kont l ()
         donek = multishot $ \ce -> do
                 cgAssign tau_res cres ce
-                appendStm [cstm|JUMP($id:l_pardone);|]
+                cgExit
+    let exitk :: ExitK l
+        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
     -- Generate variables to hold the left and right computations'
     -- continuations.
     leftl   <- compLabel left
@@ -2084,10 +2086,12 @@ cgParSingleThreaded tau_res b left right klbl k = do
     localSTIndTypes (Just (b, b, c)) $
         withTakeK  (takek cleftk crightk cbuf cbufp) $
         withTakesK (takesk cleftk crightk cbuf cbufp) $
+        withExitK  exitk $
         cgComp right klbl donek
     localSTIndTypes (Just (s, a, b)) $
         withEmitK  (emitk cleftk crightk cbuf cbufp) $
         withEmitsK (emitsk cleftk crightk cbuf cbufp) $
+        withExitK  exitk $
         cgComp left klbl donek
     cgWithLabel l_pardone $
         runKont k cres
@@ -2182,9 +2186,6 @@ cgParSingleThreaded tau_res b left right klbl k = do
         cgAssign tau cbuf ce
         appendStm [cstm|$cbufp = &$cbuf;|]
 
--- | Generate code that exits from a computation that is part of a par.
-type ExitK l = Cg l ()
-
 -- | Compile a par, i.e., a producer/consumer pair, using the multi-threaded
 -- strategy. The take and emit code generators passed as arguments to
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
@@ -2219,6 +2220,14 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
     useLabel l_pardone
+    -- donek will generate code to store the result of the par and exit the the
+    -- continuation.
+    let donek :: Kont l ()
+        donek = multishot $ \ce -> do
+          cgAssign tau_res cres ce
+          cgMemoryBarrier
+          appendStm [cstm|$ctinfo.done = 1;|]
+          cgExit
     -- Re-label the consumer computation. We have to do this because we need to
     -- generate code that initializes the par construct, and this initialization
     -- code needs to have the label of the consumer computation because that is
@@ -2231,10 +2240,12 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
-        cgConsumer ctinfo cbuf cres right' l_pardone
+        withExitK (appendStm [cstm|JUMP($id:l_pardone);|]) $
+        cgConsumer ctinfo cbuf right' donek
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
-        cgProducer cf ctinfo cbuf cres left
+        withExitK (appendStm [cstm|BREAK;|]) $
+        cgProducer cf ctinfo cbuf left donek
     -- Label the end of the computation
     cgWithLabel l_pardone $
         runKont k cres
@@ -2244,8 +2255,8 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgMemoryBarrier =
         appendStm [cstm|kz_memory_barrier();|]
 
-    cgProducer :: C.Id -> CExp l -> CExp l -> CExp l -> Comp l -> Cg l ()
-    cgProducer cf ctinfo cbuf cres comp = do
+    cgProducer :: C.Id -> CExp l -> CExp l -> Comp l -> Kont l () -> Cg l ()
+    cgProducer cf ctinfo cbuf comp k = do
         tau <- inferComp comp
         (clabels, cblock) <-
             collectLabels $
@@ -2254,7 +2265,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
             withEmitK      emitk $
             withEmitsK     emitsk $ do
             newThreadScope
-            cgThread tau comp donek
+            cgThread tau comp k
         cgLabels clabels
         appendTopFunDef [cedecl|
 static void* $id:cf(void* dummy)
@@ -2269,16 +2280,6 @@ static void* $id:cf(void* dummy)
     return NULL;
 }|]
       where
-        donek :: Kont l ()
-        donek = multishot $ \ce -> do
-            cgAssign tau_res cres ce
-            cgMemoryBarrier
-            appendStm [cstm|$ctinfo.done = 1;|]
-            exitk
-
-        exitk :: ExitK l
-        exitk = appendStm [cstm|BREAK;|]
-
         -- Before the producer can take, it must wait for the consumer to ask
         -- for data.
         guardtakek :: GuardTakeK l
@@ -2326,26 +2327,16 @@ static void* $id:cf(void* dummy)
         -- | Exit if the consumer has computed a final value.
         cgExitWhenDone :: CExp l -> Cg l ()
         cgExitWhenDone ctinfo = do
-            cblock <- inNewBlock_ exitk
+            cblock <- inNewBlock_ cgExit
             appendComment $ text "Exit if the consumer has computed a final value"
             appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
 
-    cgConsumer :: CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
-    cgConsumer ctinfo cbuf cres comp l_pardone =
+    cgConsumer :: CExp l -> CExp l -> Comp l -> Kont l () -> Cg l ()
+    cgConsumer ctinfo cbuf comp k =
         withTakeK takek $
         withTakesK takesk $
-        cgComp comp klbl donek
+        cgComp comp klbl k
       where
-        donek :: Kont l ()
-        donek = multishot $ \ce -> do
-            cgAssign tau_res cres ce
-            cgMemoryBarrier
-            appendStm [cstm|$ctinfo.done = 1;|]
-            exitk
-
-        exitk :: ExitK l
-        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
-
         takek :: TakeK l
         takek tau _klbl k = do
             cgRequestData ctinfo 1
@@ -2390,7 +2381,7 @@ static void* $id:cf(void* dummy)
         -- | Exit if the producer has computed a final value and the queue is empty.
         cgExitWhenDone :: CExp l -> Cg l ()
         cgExitWhenDone ctinfo = do
-            cblock <- inNewBlock_ exitk
+            cblock <- inNewBlock_ cgExit
             appendComment $ text "Exit if the producer has computed a final value and the queue is empty"
             appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
 
