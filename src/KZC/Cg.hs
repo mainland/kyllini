@@ -2278,7 +2278,7 @@ static void* $id:cf(void* dummy)
         emitk :: EmitK l
         -- @tau@ must be a base (scalar) type
         emitk tau ce _klbl k = do
-            cgProduce ctinfo cbuf exitk tau ce
+            cgProduce ctinfo cbuf tau ce
             k
 
         emitsk :: EmitsK l
@@ -2288,7 +2288,7 @@ static void* $id:cf(void* dummy)
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
                 celem <- cgIdx tau ce cn ci
-                cgProduce ctinfo cbuf exitk tau celem
+                cgProduce ctinfo cbuf tau celem
             k
 
         exitk :: Cg l ()
@@ -2301,9 +2301,9 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|$ctinfo.done = 1;|]
 
         -- | Put a single data element in the buffer.
-        cgProduce :: CExp l -> CExp l -> ExitK l -> Type -> CExp l -> Cg l ()
-        cgProduce ctinfo cbuf exitk tau ce = do
-            cgWaitWhileBufferFull ctinfo exitk
+        cgProduce :: CExp l -> CExp l -> Type -> CExp l -> Cg l ()
+        cgProduce ctinfo cbuf tau ce = do
+            cgWaitWhileBufferFull ctinfo
             let cidx = CExp [cexp|$ctinfo.prod_cnt % KZ_BUFFER_SIZE|]
             cgAssign (refT tau) (CIdx tau cbuf cidx) ce
             cgMemoryBarrier
@@ -2317,11 +2317,10 @@ static void* $id:cf(void* dummy)
             cgExitWhenDone ctinfo exitk
 
         -- | Wait while the buffer is full
-        cgWaitWhileBufferFull :: CExp l -> ExitK l -> Cg l ()
-        cgWaitWhileBufferFull ctinfo exitk = do
+        cgWaitWhileBufferFull :: CExp l -> Cg l ()
+        cgWaitWhileBufferFull ctinfo = do
             appendComment $ text "Wait for room in the buffer"
-            appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
-            cgExitWhenDone ctinfo exitk
+            appendStm [cstm|while ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
 
         -- | Exit if the consumer has computed a final value.
         cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
