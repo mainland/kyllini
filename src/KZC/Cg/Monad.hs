@@ -797,6 +797,14 @@ hasLabel (C.Comment _ s _)       = hasLabel s
 hasLabel (C.AntiComment _ s _)   = hasLabel s
 hasLabel _                       = False
 
+instance IfThenElse C.Exp (Cg l ()) where
+    ifThenElse c t e = do
+       cthen_items <- inNewBlock_ t
+       celse_items <- inNewBlock_ e
+       if null celse_items
+         then appendStm [cstm|if ($c) { $items:cthen_items }|]
+         else appendStm [cstm|if ($c) { $items:cthen_items } else { $items:celse_items }|]
+
 instance IfThenElse (CExp l) (Cg l ()) where
     ifThenElse (CBool True)  t _ = t
     ifThenElse (CBool False) _ e = e

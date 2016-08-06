@@ -2327,9 +2327,10 @@ static void* $id:cf(void* dummy)
         -- | Exit if the consumer has computed a final value.
         cgExitWhenDone :: CExp l -> Cg l ()
         cgExitWhenDone ctinfo = do
-            cblock <- inNewBlock_ cgExit
             appendComment $ text "Exit if the consumer has computed a final value"
-            appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
+            if [cexp|$ctinfo.done|]
+              then cgExit
+              else return ()
 
     cgConsumer :: CExp l -> CExp l -> Comp l -> Kont l () -> Cg l ()
     cgConsumer ctinfo cbuf comp k =
@@ -2381,9 +2382,10 @@ static void* $id:cf(void* dummy)
         -- | Exit if the producer has computed a final value and the queue is empty.
         cgExitWhenDone :: CExp l -> Cg l ()
         cgExitWhenDone ctinfo = do
-            cblock <- inNewBlock_ cgExit
             appendComment $ text "Exit if the producer has computed a final value and the queue is empty"
-            appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
+            if [cexp|$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0|]
+              then cgExit
+              else return ()
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp l -> Bool
