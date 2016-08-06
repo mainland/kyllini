@@ -2269,11 +2269,14 @@ static void* $id:cf(void* dummy)
     return NULL;
 }|]
       where
+        exitk :: ExitK l
+        exitk = appendStm [cstm|BREAK;|]
+
         -- Before the producer can take, it must wait for the consumer to ask
         -- for data.
         guardtakek :: GuardTakeK l
         guardtakek =
-            cgWaitForConsumerRequest ctinfo exitk
+            cgWaitForConsumerRequest ctinfo
 
         emitk :: EmitK l
         -- @tau@ must be a base (scalar) type
@@ -2291,9 +2294,6 @@ static void* $id:cf(void* dummy)
                 cgProduce ctinfo cbuf tau celem
             k
 
-        exitk :: Cg l ()
-        exitk = appendStm [cstm|BREAK;|]
-
         donek :: Kont l ()
         donek = multishot $ \ce -> do
             cgAssign tau_res cres ce
@@ -2310,11 +2310,11 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
         -- | Wait until the consumer requests data
-        cgWaitForConsumerRequest :: CExp l -> ExitK l -> Cg l ()
-        cgWaitForConsumerRequest ctinfo exitk = do
+        cgWaitForConsumerRequest :: CExp l -> Cg l ()
+        cgWaitForConsumerRequest ctinfo = do
             appendComment $ text "Wait for consumer to request input"
             appendStm [cstm|while (!$ctinfo.done && ((int) ($ctinfo.prod_cnt - $ctinfo.cons_req)) >= 0);|]
-            cgExitWhenDone ctinfo exitk
+            cgExitWhenDone ctinfo
 
         -- | Wait while the buffer is full
         cgWaitWhileBufferFull :: CExp l -> Cg l ()
@@ -2323,8 +2323,8 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|while ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
 
         -- | Exit if the consumer has computed a final value.
-        cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
-        cgExitWhenDone ctinfo exitk = do
+        cgExitWhenDone :: CExp l -> Cg l ()
+        cgExitWhenDone ctinfo = do
             cblock <- inNewBlock_ exitk
             appendComment $ text "Exit if the consumer has computed a final value"
             appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
@@ -2338,10 +2338,13 @@ static void* $id:cf(void* dummy)
         appendStm [cstm|$ctinfo.done = 1;|]
         exitk
       where
+        exitk :: ExitK l
+        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
+
         takek :: TakeK l
         takek tau _klbl k = do
             cgRequestData ctinfo 1
-            cgConsume ctinfo cbuf tau exitk k
+            cgConsume ctinfo cbuf tau k
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
@@ -2350,23 +2353,19 @@ static void* $id:cf(void* dummy)
             cgInitAlways carr (arrKnownT n tau)
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
-                cgConsume ctinfo cbuf tau exitk $ \ce ->
+                cgConsume ctinfo cbuf tau $ \ce ->
                     cgAssign (refT tau) (CIdx tau carr ci) ce
             k carr
-
-        exitk :: Cg l ()
-        exitk =
-            appendStm [cstm|JUMP($id:l_pardone);|]
 
         -- | Consume a single data element from the buffer. We take a
         -- consumption continuation because we must be sure that we insert a
         -- memory barrier before incrementing the consumer count.
-        cgConsume :: forall a . CExp l -> CExp l -> Type -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
-        cgConsume ctinfo cbuf tau exitk consumek = do
+        cgConsume :: forall a . CExp l -> CExp l -> Type -> (CExp l -> Cg l a) -> Cg l a
+        cgConsume ctinfo cbuf tau consumek = do
             appendComment $ text "Mark previous element as consumed"
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.cons_cnt;|]
-            cgWaitWhileBufferEmpty ctinfo exitk
+            cgWaitWhileBufferEmpty ctinfo
             let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
             consumek (CIdx tau cbuf cidx)
 
@@ -2377,15 +2376,15 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|$ctinfo.cons_req += $cn;|]
 
         -- | Wait while the buffer is empty
-        cgWaitWhileBufferEmpty :: CExp l -> ExitK l -> Cg l ()
-        cgWaitWhileBufferEmpty ctinfo exitk = do
+        cgWaitWhileBufferEmpty :: CExp l -> Cg l ()
+        cgWaitWhileBufferEmpty ctinfo = do
             appendComment $ text "Wait while the buffer is empty"
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
-            cgExitWhenDone ctinfo exitk
+            cgExitWhenDone ctinfo
 
         -- | Exit if the producer has computed a final value and the queue is empty.
-        cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
-        cgExitWhenDone ctinfo exitk = do
+        cgExitWhenDone :: CExp l -> Cg l ()
+        cgExitWhenDone ctinfo = do
             cblock <- inNewBlock_ exitk
             appendComment $ text "Exit if the producer has computed a final value and the queue is empty"
             appendStm [cstm|if ($ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0) { $items:cblock }|]
