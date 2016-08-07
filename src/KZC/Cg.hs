@@ -2055,17 +2055,22 @@ cgParSingleThreaded :: forall a l . IsLabel l
                     -> Kont l a -- ^ Continuation accepting the compilation result
                     -> Cg l a
 cgParSingleThreaded tau_res b left right klbl k = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c)          <- askSTIndTypes
+    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+                          inferComp left >>= checkST
+    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+                          inferComp right >>= checkST
     -- Generate a temporary to hold the result of the par construct.
     cres <- cgLocalTemp "par_res" tau_res
     -- Create the computation that follows the par.
     l_pardone <- gensym "par_done"
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
-    let donek :: Kont l ()
-        donek = multishot $ \ce -> do
-                cgAssign tau_res cres ce
-                cgExit
+    let donek :: Omega -> Kont l ()
+        donek C{} = multishot $ \ce -> do
+                    cgAssign tau_res cres ce
+                    cgExit
+        donek T   = multishot $ const $ return ()
     let exitk :: ExitK l
         exitk = cgJump l_pardone
     -- Generate variables to hold the left and right computations'
@@ -2086,12 +2091,12 @@ cgParSingleThreaded tau_res b left right klbl k = do
         withTakeK  (takek cleftk crightk cbuf cbufp) $
         withTakesK (takesk cleftk crightk cbuf cbufp) $
         withExitK  exitk $
-        cgComp right klbl donek
+        cgComp right klbl (donek omega_r)
     localSTIndTypes (Just (s, a, b)) $
         withEmitK  (emitk cleftk crightk cbuf cbufp) $
         withEmitsK (emitsk cleftk crightk cbuf cbufp) $
         withExitK  exitk $
-        cgComp left klbl donek
+        cgComp left klbl (donek omega_l)
     cgWithLabel l_pardone $
         runKont k cres
   where
@@ -2198,7 +2203,11 @@ cgParMultiThreaded :: forall a l . IsLabel l
                    -> Kont l a -- ^ Continuation accepting the compilation result
                    -> Cg l a
 cgParMultiThreaded tau_res b left right klbl k = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c)          <- askSTIndTypes
+    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+                          inferComp left >>= checkST
+    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+                          inferComp right >>= checkST
     -- Generate a temporary to hold the par buffer.
     cb   <- cgType b
     cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
@@ -2220,12 +2229,13 @@ cgParMultiThreaded tau_res b left right klbl k = do
     l_pardone <- gensym "par_done"
     -- donek will generate code to store the result of the par and exit the the
     -- continuation.
-    let donek :: Kont l ()
-        donek = multishot $ \ce -> do
-          cgAssign tau_res cres ce
-          cgMemoryBarrier
-          appendStm [cstm|$ctinfo.done = 1;|]
-          cgExit
+    let donek :: Omega -> Kont l ()
+        donek C{} = multishot $ \ce -> do
+                    cgAssign tau_res cres ce
+                    cgMemoryBarrier
+                    appendStm [cstm|$ctinfo.done = 1;|]
+                    cgExit
+        donek T   = multishot $ const $ return ()
     -- Re-label the consumer computation. We have to do this because we need to
     -- generate code that initializes the par construct, and this initialization
     -- code needs to have the label of the consumer computation because that is
@@ -2239,11 +2249,11 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
         withExitK (cgJump l_pardone) $
-        cgConsumer ctinfo cbuf right' donek
+        cgConsumer ctinfo cbuf right' (donek omega_r)
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
         withExitK (appendStm [cstm|BREAK;|]) $
-        cgProducer cf ctinfo cbuf left donek
+        cgProducer cf ctinfo cbuf left (donek omega_l)
     -- Label the end of the computation
     cgWithLabel l_pardone $
         runKont k cres
