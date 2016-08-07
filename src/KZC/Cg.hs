@@ -2060,7 +2060,6 @@ cgParSingleThreaded tau_res b left right klbl k = do
     cres <- cgLocalTemp "par_res" tau_res
     -- Create the computation that follows the par.
     l_pardone <- gensym "par_done"
-    useLabel l_pardone
     -- donek will generate code to store the result of the par and jump to
     -- the continuation.
     let donek :: Kont l ()
@@ -2068,7 +2067,7 @@ cgParSingleThreaded tau_res b left right klbl k = do
                 cgAssign tau_res cres ce
                 cgExit
     let exitk :: ExitK l
-        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
+        exitk = cgJump l_pardone
     -- Generate variables to hold the left and right computations'
     -- continuations.
     leftl   <- compLabel left
@@ -2219,7 +2218,6 @@ cgParMultiThreaded tau_res b left right klbl k = do
                      }
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
-    useLabel l_pardone
     -- donek will generate code to store the result of the par and exit the the
     -- continuation.
     let donek :: Kont l ()
@@ -2240,7 +2238,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
-        withExitK (appendStm [cstm|JUMP($id:l_pardone);|]) $
+        withExitK (cgJump l_pardone) $
         cgConsumer ctinfo cbuf right' donek
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
@@ -2863,6 +2861,12 @@ cgLower tau = go
 
     go ce =
         return ce
+
+-- | Generate code to jump to the specified label.
+cgJump :: IsLabel l => l -> Cg l ()
+cgJump l = do
+    useLabel l
+    appendStm [cstm|JUMP($id:l);|]
 
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg l ()
