@@ -174,7 +174,9 @@ compileProgram (Program decls comp tau) = do
             withEmitK  emitk $
             withEmitsK emitsk $
             cgThread tau comp $
-            multishotBind (resultType tau) cres
+            multishot$ \ce -> do
+              cgAssign (resultType tau) cres ce
+              appendStm [cstm|BREAK;|]
         -- Generate code to initialize threads
         cgInitThreads comp
         -- Clean up input and output buffers
