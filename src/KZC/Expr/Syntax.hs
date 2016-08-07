@@ -550,8 +550,12 @@ instance LiftedCast Const (Maybe Const) where
     liftCast (FixT ip _) (FloatC _ x) =
         Just $ FixC ip (fromIntegral (truncate x :: Integer))
 
-    -- Cast int to float
-    liftCast (FloatT fp _) (FixC (I 0) x) =
+    -- Cast signed int to float
+    liftCast (FloatT fp _) (FixC I{} x) =
+        Just $ FloatC fp (fromIntegral x)
+
+    -- Cast unsigned int to float
+    liftCast (FloatT fp _) (FixC U{} x) =
         Just $ FloatC fp (fromIntegral x)
 
     liftCast _ _ =
