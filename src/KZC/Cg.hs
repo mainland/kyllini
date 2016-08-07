@@ -1706,10 +1706,6 @@ cgTemp isTop s tau = do
 cgLocalTemp :: String -> Type -> Cg l (CExp l)
 cgLocalTemp = cgTemp False
 
--- | Allocate global storage for a temporary.
-cgTopTemp :: String -> Type -> Cg l (CExp l)
-cgTopTemp = cgTemp True
-
 -- | Allocate storage for a C identifier with the given core type.
 cgStorage :: C.Id -- ^ C identifier for storage
           -> Type -- ^ Type of storage
@@ -2060,8 +2056,9 @@ cgParSingleThreaded tau_res b left right klbl k = do
                           inferComp left >>= checkST
     (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
                           inferComp right >>= checkST
-    -- Generate a temporary to hold the result of the par construct.
-    cres <- cgLocalTemp "par_res" tau_res
+    -- Create storage for the result of the par and a continuation to consume
+    -- the storage.
+    (cres, k') <- splitMultishotBind "par_res" tau_res False k
     -- Create the computation that follows the par.
     l_pardone <- gensym "par_done"
     -- donek will generate code to store the result of the par and jump to
@@ -2097,8 +2094,7 @@ cgParSingleThreaded tau_res b left right klbl k = do
         withEmitsK (emitsk cleftk crightk cbuf cbufp) $
         withExitK  exitk $
         cgComp left klbl (donek omega_l)
-    cgWithLabel l_pardone $
-        runKont k cres
+    cgWithLabel l_pardone k'
   where
     cgBufPtrType :: Type -> Cg l C.Type
     cgBufPtrType (ArrT _ tau _) = do
@@ -2208,6 +2204,9 @@ cgParMultiThreaded tau_res b left right klbl k = do
                           inferComp left >>= checkST
     (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
                           inferComp right >>= checkST
+    -- Create storage for the result of the par and a continuation to consume
+    -- the storage.
+    (cres, k') <- splitMultishotBind "par_res" tau_res False k
     -- Generate a temporary to hold the par buffer.
     cb   <- cgType b
     cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
@@ -2217,8 +2216,6 @@ cgParMultiThreaded tau_res b left right klbl k = do
     ctinfo <- cgTopCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
     -- Generate a temporary to hold the thread.
     cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
-    -- Generate a temporary to hold the result of the par construct.
-    cres <- cgTopTemp "par_res" tau_res
     -- Record the thread
     addThread Thread { threadInfo = ctinfo
                      , thread     = cthread
@@ -2255,8 +2252,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
         withExitK (appendStm [cstm|BREAK;|]) $
         cgProducer cf ctinfo cbuf left (donek omega_l)
     -- Label the end of the computation
-    cgWithLabel l_pardone $
-        runKont k cres
+    cgWithLabel l_pardone k'
   where
     -- | Insert a memory barrier
     cgMemoryBarrier :: Cg l ()
