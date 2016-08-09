@@ -2213,7 +2213,7 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cb   <- cgType b
     cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
     -- Generate a name for the producer thread function
-    cf <- gensym "producer"
+    cf <- gensym "par_threadfun"
     -- Generate a temporary to hold the thread info.
     ctinfo <- cgTopCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
     -- Generate a temporary to hold the thread.
@@ -2248,11 +2248,13 @@ cgParMultiThreaded tau_res b left right klbl k = do
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
         withExitK (cgJump l_pardone) $
-        cgConsumer ctinfo cbuf right' (donek omega_r)
+        cgConsumer ctinfo cbuf $
+        cgComp right' klbl (donek omega_r)
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
         withExitK (appendStm [cstm|BREAK;|]) $
-        cgProducer cf ctinfo cbuf left (donek omega_l)
+        cgProducer ctinfo cbuf $
+        cgParSpawn cf ctinfo left (donek omega_l)
     -- Label the end of the computation
     cgWithLabel l_pardone k'
   where
@@ -2261,15 +2263,17 @@ cgParMultiThreaded tau_res b left right klbl k = do
     cgMemoryBarrier =
         appendStm [cstm|kz_memory_barrier();|]
 
-    cgProducer :: C.Id -> CExp l -> CExp l -> Comp l -> Kont l () -> Cg l ()
-    cgProducer cf ctinfo cbuf comp k = do
+    -- | Generate code to spawn a thread that is one side of a par construct.
+    cgParSpawn :: forall a . C.Id
+               -> CExp l
+               -> Comp l
+               -> Kont l a
+               -> Cg l a
+    cgParSpawn cf ctinfo comp k = do
         tau <- inferComp comp
-        (clabels, cblock) <-
+        (clabels, (cblock, x)) <-
             collectLabels $
-            inNewCodeBlock_ $
-            withGuardTakeK guardtakek $
-            withEmitK      emitk $
-            withEmitsK     emitsk $ do
+            inNewCodeBlock $ do
             newThreadScope
             cgThread tau comp k
         cgLabels clabels
@@ -2285,6 +2289,13 @@ static void* $id:cf(void* dummy)
     }
     return NULL;
 }|]
+        return x
+
+    cgProducer :: forall a . CExp l -> CExp l -> Cg l a -> Cg l a
+    cgProducer ctinfo cbuf m =
+        withGuardTakeK guardtakek $
+        withEmitK emitk $
+        withEmitsK emitsk m
       where
         -- Before the producer can take, it must wait for the consumer to ask
         -- for data.
@@ -2338,11 +2349,10 @@ static void* $id:cf(void* dummy)
               then cgExit
               else return ()
 
-    cgConsumer :: CExp l -> CExp l -> Comp l -> Kont l () -> Cg l ()
-    cgConsumer ctinfo cbuf comp k =
+    cgConsumer :: forall a . CExp l -> CExp l -> Cg l a -> Cg l a
+    cgConsumer ctinfo cbuf m =
         withTakeK takek $
-        withTakesK takesk $
-        cgComp comp klbl k
+        withTakesK takesk m
       where
         takek :: TakeK l
         takek tau _klbl k = do
