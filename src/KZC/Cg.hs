@@ -2046,26 +2046,12 @@ cgParSingleThreaded :: forall a l . IsLabel l
                     -> l        -- ^ The computation's continuation
                     -> Kont l a -- ^ Continuation accepting the compilation result
                     -> Cg l a
-cgParSingleThreaded tau_res b left right klbl k = do
+cgParSingleThreaded _tau_res b left right klbl k = do
     (s, a, c)          <- askSTIndTypes
     (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
                           inferComp left >>= checkST
     (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
                           inferComp right >>= checkST
-    -- Create storage for the result of the par and a continuation to consume
-    -- the storage.
-    (cres, k') <- splitMultishotBind "par_res" tau_res False k
-    -- Create the computation that follows the par.
-    l_pardone <- gensym "par_done"
-    -- donek will generate code to store the result of the par and jump to
-    -- the continuation.
-    let donek :: Omega -> Kont l ()
-        donek C{} = multishot $ \ce -> do
-                    cgAssign tau_res cres ce
-                    cgExit
-        donek T   = multishot $ const $ return ()
-    let exitk :: ExitK l
-        exitk = cgJump l_pardone
     -- Generate variables to hold the left and right computations'
     -- continuations.
     leftl   <- compLabel left
@@ -2079,18 +2065,37 @@ cgParSingleThreaded tau_res b left right klbl k = do
     ctauptr <- cgBufPtrType b
     cbuf    <- cgThreadCTemp b "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
     cbufp   <- cgThreadCTemp b "par_bufp" ctauptr                        Nothing
+    -- The void continuation simply swallows its argument and does nothing. We
+    -- use this for transformers since they never return anyway.
+    let voidk :: Kont l ()
+        voidk = multishot $ const $ return ()
+    -- k' is our continuation k suitably modifed to restore the current Cg
+    -- environment so that we can call it from within one of the branches of the
+    -- par. We need to save/restore the Cg environment so k uses the take/emit
+    -- in effect *right here* rather than those in effect within the branches of
+    -- the par.
+    restore <- saveCgEnv
+    let k'  =  mapKont (\f ce -> restore $ f ce) k
+    -- Code generators for left and right sides
+    let cgLeft, cgRight :: forall a . Kont l a -> Cg l a
+        cgLeft k  = localSTIndTypes (Just (s, a, b)) $
+                    withEmitK  (emitk cleftk crightk cbuf cbufp) $
+                    withEmitsK (emitsk cleftk crightk cbuf cbufp) $
+                    cgComp left klbl k
+        cgRight k = localSTIndTypes (Just (b, b, c)) $
+                    withTakeK  (takek cleftk crightk cbuf cbufp) $
+                    withTakesK (takesk cleftk crightk cbuf cbufp) $
+                    cgComp right klbl k
     -- Generate code for the left and right computations.
-    localSTIndTypes (Just (b, b, c)) $
-        withTakeK  (takek cleftk crightk cbuf cbufp) $
-        withTakesK (takesk cleftk crightk cbuf cbufp) $
-        withExitK  exitk $
-        cgComp right klbl (donek omega_r)
-    localSTIndTypes (Just (s, a, b)) $
-        withEmitK  (emitk cleftk crightk cbuf cbufp) $
-        withEmitsK (emitsk cleftk crightk cbuf cbufp) $
-        withExitK  exitk $
-        cgComp left klbl (donek omega_l)
-    cgWithLabel l_pardone k'
+    case (omega_l, omega_r) of
+      (C{}, _) -> do cgRight voidk
+                     cgLeft k'
+      (_, C{}) -> do x <- cgRight k'
+                     cgLeft voidk
+                     return x
+      _        -> do cgRight voidk
+                     cgLeft voidk
+                     runKont k CVoid
   where
     cgBufPtrType :: Type -> Cg l C.Type
     cgBufPtrType (ArrT _ tau _) = do
