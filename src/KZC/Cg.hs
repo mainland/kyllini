@@ -2652,6 +2652,9 @@ cgAssign tau ce1 ce2 = do
           else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
       where
         cgArrayAddr :: CExp l -> Cg l (CExp l)
+        cgArrayAddr (CIdx tau carr cidx) | isArrT tau =
+            return $ CExp [cexp|&$carr[$cidx]|]
+
         cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
             panicdoc $ text "cgArrayAddr: the impossible happened!"
 
