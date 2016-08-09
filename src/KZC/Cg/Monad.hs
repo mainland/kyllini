@@ -27,6 +27,8 @@ module KZC.Cg.Monad (
     CgStats(..),
     evalCg,
 
+    saveCgEnv,
+
     withGuardTakeK,
     withTakeK,
     withTakesK,
@@ -132,7 +134,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Cg.CExp
 import KZC.Cg.Code
-import KZC.Core.Lint (Tc, liftTc, isInTopScope)
+import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Monad
@@ -278,6 +280,14 @@ evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
     s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
     return $ toList $ (codeDefs . code) s <> (codeFunDefs . code) s
+
+-- | Save the current codegen environment in the form of a function that can
+-- restore it.
+saveCgEnv :: Cg l (Cg l a -> Cg l a)
+saveCgEnv = do
+    (s, a, c)   <- askSTIndTypes
+    env         <- ask
+    return $ localSTIndTypes (Just (s, a, c)) . local (const env)
 
 withGuardTakeK :: GuardTakeK l -> Cg l a -> Cg l a
 withGuardTakeK f = local (\env -> env { guardTakeCg = f})
