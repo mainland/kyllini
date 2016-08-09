@@ -393,15 +393,15 @@ cgCheckErr ce msg x =
     appendStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 cgThread :: IsLabel l
-         => Type      -- ^ Type of the result of the computation
-         -> Comp l    -- ^ Computation to compiled
-         -> Kont l () -- ^ Code generator to deal with result of computation
-         -> Cg l ()
+         => Type     -- ^ Type of the result of the computation
+         -> Comp l   -- ^ Computation to compiled
+         -> Kont l a -- ^ Code generator to deal with result of computation
+         -> Cg l a
 cgThread tau comp k = do
-    cblock <-
+    (cblock, x) <-
         inSTScope tau $
         inLocalScope $
-        inNewCodeBlock_ $ do
+        inNewCodeBlock $ do
         -- Keep track of the current continuation. This is only used when
         -- we do not have first class labels.
         l_start <- compLabel comp
@@ -420,6 +420,7 @@ cgThread tau comp k = do
                       END_DISPATCH;
                       $stms:(toList (blockCleanupStms cblock))
                      |]
+    return x
   where
     cUR_KONT :: C.Id
     cUR_KONT = "curk"
