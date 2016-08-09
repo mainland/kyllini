@@ -175,7 +175,8 @@ type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
 -- | Generate code to emit multiple values.
 type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 
--- | Generate code to exit a computation.
+-- | Generate code to exit a computation. A computation is exited either when it
+-- has no more input, or when it computes a result.
 type ExitK l = Cg l ()
 
 -- | The 'Cg' monad.

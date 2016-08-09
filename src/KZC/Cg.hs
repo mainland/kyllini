@@ -173,6 +173,7 @@ compileProgram (Program decls comp tau) = do
             withTakesK takesk $
             withEmitK  emitk $
             withEmitsK emitsk $
+            withExitK  (appendStm [cstm|BREAK;|]) $
             cgThread tau comp $
             multishot$ \ce -> do
               cgAssign (resultType tau) cres ce
@@ -209,7 +210,9 @@ void kz_main(const typename kz_params_t* $id:params)
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
+        if [cexp|$cbuf == NULL|]
+          then cgExit
+          else return ()
         go tau cbuf
       where
         go tau cbuf
@@ -224,7 +227,9 @@ void kz_main(const typename kz_params_t* $id:params)
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
+        if [cexp|$cbuf == NULL|]
+          then cgExit
+          else return ()
         go tau cbuf
       where
         go tau cbuf
@@ -2232,9 +2237,9 @@ cgParMultiThreaded tau_res b left right klbl k = do
         donek C{} = multishot $ \ce -> do
                     cgAssign tau_res cres ce
                     cgMemoryBarrier
-                    appendStm [cstm|$ctinfo.done = 1;|]
                     cgExit
-        donek T   = multishot $ const $ return ()
+        donek T   = multishot $ const $
+                    cgExit
     -- Re-label the consumer computation. We have to do this because we need to
     -- generate code that initializes the par construct, and this initialization
     -- code needs to have the label of the consumer computation because that is
@@ -2247,12 +2252,12 @@ cgParMultiThreaded tau_res b left right klbl k = do
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
     -- Generate code for the consumer
     localSTIndTypes (Just (b, b, c)) $
-        withExitK (cgJump l_pardone) $
+        withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
         cgConsumer ctinfo cbuf $
         cgComp right' klbl (donek omega_r)
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
-        withExitK (appendStm [cstm|BREAK;|]) $
+        withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
         cgProducer ctinfo cbuf $
         cgParSpawn cf ctinfo left (donek omega_l)
     -- Label the end of the computation
@@ -2285,7 +2290,6 @@ static void* $id:cf(void* dummy)
         {
             $items:(toBlockItems cblock)
         }
-        $ctinfo.done = 1;
     }
     return NULL;
 }|]
