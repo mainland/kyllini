@@ -29,7 +29,8 @@ module KZC.Core.Embed (
 
     repeatC,
 
-    parC
+    parC,
+    parC'
   ) where
 
 import Data.Loc
@@ -241,7 +242,15 @@ parC :: (IsLabel l, MonadTc m)
      -> K l m a
      -> K l m b
      -> K l m Exp
-parC b m1 m2 = do
+parC = parC' AutoPipeline
+
+parC' :: (IsLabel l, MonadTc m)
+     => PipelineAnn
+     -> Type
+     -> K l m a
+     -> K l m b
+     -> K l m Exp
+parC' ann b m1 m2 = do
     (s, a, c) <- askSTIndTypes
     c1        <- runComp $ localSTIndTypes (Just (s, a, b)) m1
     c2        <- runComp $ localSTIndTypes (Just (b, b, c)) m2
@@ -249,7 +258,7 @@ parC b m1 m2 = do
       case (identityRateC c1, identityRateC c2) of
         (Just n, _) | hasLeftIdentity  c2 == Just n -> c2
         (_, Just n) | hasRightIdentity c1 == Just n -> c1
-        _ -> mkComp [ParC AutoPipeline b c1 c2 (c1 `srcspan` c2)]
+        _ -> mkComp [ParC ann b c1 c2 (c1 `srcspan` c2)]
   where
     hasLeftIdentity :: Comp l -> Maybe Int
     hasLeftIdentity Comp{unComp=[ParC _ _ c _ _]} =
