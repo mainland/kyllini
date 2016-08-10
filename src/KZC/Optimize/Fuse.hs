@@ -407,8 +407,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
         return $ steps1 ++ steps'
       where
         shouldFuse :: PipelineAnn -> Bool
-        shouldFuse AlwaysPipeline = True
-        shouldFuse _              = False
+        shouldFuse AlwaysPipeline = False
+        shouldFuse _              = True
 
         didntFusePar :: Comp l -> Comp l -> F l m [Step l]
         didntFusePar left right | isIdentityC left = do
