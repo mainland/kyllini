@@ -227,12 +227,18 @@ lutExp e info = do
         lookupVar v
 
     lookupLUTVar (IdxL v _ Nothing) = do
-        (_, tau) <- lookupVar v >>= checkArrOrRefArrT
-        return tau
+        tau           <- lookupVar v
+        (_, tau_elem) <- checkArrOrRefArrT tau
+        if isRefT tau
+          then return $ refT tau_elem
+          else return tau_elem
 
     lookupLUTVar (IdxL v _ (Just n)) = do
-        (_, tau) <- lookupVar v >>= checkArrOrRefArrT
-        return $ arrKnownT n tau
+        tau           <- lookupVar v
+        (_, tau_elem) <- checkArrOrRefArrT tau
+        if isRefT tau
+          then return $ refT $ arrKnownT n tau_elem
+          else return $ arrKnownT n tau_elem
 
 -- | Pack LUT variables into a LUT index. Note that the variables may have ref
 -- type.
