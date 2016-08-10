@@ -2037,8 +2037,9 @@ cgComp comp klbl = cgSteps (unComp comp)
         withSummaryContext step $ do
         dflags  <- askFlags
         tau_res <- resultType <$> inferStep step
+        free    <- isFreeRunning
         if shouldPipeline dflags ann
-          then cgParMultiThreaded tau_res b left right klbl k
+          then cgParMultiThreaded free tau_res b left right klbl k
           else cgParSingleThreaded tau_res b left right klbl k
       where
         shouldPipeline :: Flags -> PipelineAnn -> Bool
@@ -2205,14 +2206,15 @@ cgParSingleThreaded _tau_res b left right klbl k = do
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
 -- inner take and emit is done with a producer-consumer buffer.
 cgParMultiThreaded :: forall a l . IsLabel l
-                   => Type     -- ^ The type of the result of the par
+                   => Bool     -- ^ 'True' if we are in a free-running context.
+                   -> Type     -- ^ The type of the result of the par
                    -> Type     -- ^ The type of the par's internal buffer
                    -> Comp l   -- ^ The producer computation
                    -> Comp l   -- ^ The consumer computation
                    -> l        -- ^ The computation's continuation
                    -> Kont l a -- ^ Continuation accepting the compilation result
                    -> Cg l a
-cgParMultiThreaded tau_res b left right klbl k = do
+cgParMultiThreaded free tau_res b left right klbl k = do
     (s, a, c)          <- askSTIndTypes
     (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
                           inferComp left >>= checkST
@@ -2341,6 +2343,11 @@ static void* $id:cf(void* dummy)
 
         -- | Wait until the consumer requests data
         cgWaitForConsumerRequest :: CExp l -> Cg l ()
+        -- A free-running computation does not need to wait for the consumer to
+        -- request input.
+        cgWaitForConsumerRequest _ | free =
+            appendComment $ text "Free running (no need to wait for consumer to request input)"
+
         cgWaitForConsumerRequest ctinfo = do
             appendComment $ text "Wait for consumer to request input"
             appendStm [cstm|while (!$ctinfo.done && ((int) ($ctinfo.prod_cnt - $ctinfo.cons_req)) >= 0);|]
@@ -2348,6 +2355,15 @@ static void* $id:cf(void* dummy)
 
         -- | Wait while the buffer is full
         cgWaitWhileBufferFull :: CExp l -> Cg l ()
+        -- A free-running computation *does* need to test if the consumer has
+        -- exited. It is possible for the consumer to exit leaving the buffer
+        -- full, so we perform the test here instead of in
+        -- 'cgWaitForConsumerRequest'.
+        cgWaitWhileBufferFull ctinfo | free = do
+            appendComment $ text "Wait for room in the buffer"
+            appendStm [cstm|while (!$ctinfo.done && ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE));|]
+            cgExitWhenDone ctinfo
+
         cgWaitWhileBufferFull ctinfo = do
             appendComment $ text "Wait for room in the buffer"
             appendStm [cstm|while ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
