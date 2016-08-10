@@ -357,15 +357,15 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                        withLeftKont [] $
                        withRightKont [] $
                        compT c2
-          ifte (do ssfuse1 <- localSTIndTypes (Just (b, b, c)) $
-                              ifte (fusePar c2' c3)
+          ifte (do ssfuse1 <- localSTIndTypes (Just (s, a, c)) $
+                              ifte (fusePar c1 c2')
                                    return
-                                   (fusionFailed c2' c3 >> mzero)
+                                   (fusionFailed c1 c2' >> mzero)
                    cfuse1  <- rateComp (mkComp ssfuse1)
                    ssfuse2 <- localSTIndTypes (Just (s, a, d)) $
-                              ifte (fusePar c1 cfuse1)
+                              ifte (fusePar cfuse1 c3)
                                    return
-                                   (fusionFailed c1 cfuse1 >> mzero)
+                                   (fusionFailed cfuse1 c3 >> mzero)
                    cfuse2  <- rateComp (mkComp ssfuse2)
                    -- Drop the fused computation if it is more than twice as big
                    -- as the unfused computation *unless* it is small.
