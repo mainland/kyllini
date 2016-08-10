@@ -165,21 +165,31 @@ compileProgram (Program decls comp tau) = do
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
         -- Create storage for the result
-        cres <- cgTemp "main_res" (resultType tau)
+        cdone <- cgTopCTemp tau "done" [cty|int|] (Just [cinit|0|])
+        cres  <- cgTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
+        let exitk = do whenUsesConsumerThread $
+                         appendStm [cstm|$cdone = 1;|]
+                       appendStm [cstm|BREAK;|]
         cgTimed $
             withGuardTakeK guardtakek $
             withTakeK  takek $
             withTakesK takesk $
             withEmitK  emitk $
             withEmitsK emitsk $
-            withExitK  (appendStm [cstm|BREAK;|]) $
+            withExitK  exitk $
             cgThread tau comp $
             multishot$ \ce -> do
               cgAssign (resultType tau) cres ce
+              whenUsesConsumerThread $ do
+                cgMemoryBarrier
+                appendStm [cstm|$cdone = 1;|]
               appendStm [cstm|BREAK;|]
         -- Generate code to initialize threads
         cgInitThreads comp
+        whenUsesConsumerThread $
+          -- Wait for result
+          appendThreadCleanupStm [cstm|while (!$cdone);|]
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
@@ -2038,16 +2048,18 @@ cgComp comp klbl = cgSteps (unComp comp)
         dflags  <- askFlags
         tau_res <- resultType <$> inferStep step
         free    <- isFreeRunning
-        if shouldPipeline dflags ann
-          then cgParMultiThreaded free tau_res b left right klbl k
+        if testDynFlag PipelineAll dflags
+          then cgParMultiThreaded ForkProducer free tau_res b left right klbl k
+          else if free && shouldPipeline dflags ann
+          then cgParMultiThreaded ForkConsumer free tau_res b left right klbl k
           else cgParSingleThreaded tau_res b left right klbl k
       where
         shouldPipeline :: Flags -> PipelineAnn -> Bool
         shouldPipeline dflags AlwaysPipeline | testDynFlag Pipeline dflags =
             True
 
-        shouldPipeline dflags _ =
-            testDynFlag PipelineAll dflags
+        shouldPipeline _ _ =
+            False
 
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
@@ -2201,20 +2213,25 @@ cgParSingleThreaded _tau_res b left right klbl k = do
         cgAssign tau cbuf ce
         appendStm [cstm|$cbufp = &$cbuf;|]
 
+data ParStrategy = ForkProducer
+                 | ForkConsumer
+  deriving (Eq, Ord, Show)
+
 -- | Compile a par, i.e., a producer/consumer pair, using the multi-threaded
 -- strategy. The take and emit code generators passed as arguments to
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
 -- inner take and emit is done with a producer-consumer buffer.
 cgParMultiThreaded :: forall a l . IsLabel l
-                   => Bool     -- ^ 'True' if we are in a free-running context.
-                   -> Type     -- ^ The type of the result of the par
-                   -> Type     -- ^ The type of the par's internal buffer
-                   -> Comp l   -- ^ The producer computation
-                   -> Comp l   -- ^ The consumer computation
-                   -> l        -- ^ The computation's continuation
-                   -> Kont l a -- ^ Continuation accepting the compilation result
+                   => ParStrategy -- ^ Strategy for compiling par
+                   -> Bool        -- ^ 'True' if we are in a free-running context.
+                   -> Type        -- ^ The type of the result of the par
+                   -> Type        -- ^ The type of the par's internal buffer
+                   -> Comp l      -- ^ The producer computation
+                   -> Comp l      -- ^ The consumer computation
+                   -> l           -- ^ The computation's continuation
+                   -> Kont l a    -- ^ Continuation accepting the compilation result
                    -> Cg l a
-cgParMultiThreaded free tau_res b left right klbl k = do
+cgParMultiThreaded strategy free tau_res b left right klbl k = do
     (s, a, c)          <- askSTIndTypes
     (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
                           inferComp left >>= checkST
@@ -2247,36 +2264,71 @@ cgParMultiThreaded free tau_res b left right klbl k = do
     let right'  =  setCompLabel l_consumer' right
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
-    -- donek will generate code to store the result of the par and exit the the
-    -- continuation.
-    let donek :: Omega -> Kont l ()
-        donek C{} = multishot $ \ce -> do
-                    cgAssign tau_res cres ce
-                    cgMemoryBarrier
-                    cgExit
-        donek T   = multishot $ const $
-                    cgExit
-    -- Generate to start the thread
-    cgWithLabel l_consumer $
-        cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
-    -- Generate code for the producer
-    localSTIndTypes (Just (s, a, b)) $
-        withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
-        cgProducer ctinfo cbuf $
-        cgParSpawn cf ctinfo left (donek omega_l)
-    -- Generate code for the consumer
-    localSTIndTypes (Just (b, b, c)) $
-        withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
-        cgConsumer ctinfo cbuf $
-        cgComp right' klbl (donek omega_r)
-    -- Label the end of the computation
-    cgWithLabel l_pardone k'
-  where
-    -- | Insert a memory barrier
-    cgMemoryBarrier :: Cg l ()
-    cgMemoryBarrier =
-        appendStm [cstm|kz_memory_barrier();|]
+    case strategy of
+      ForkProducer -> do
+        -- donek will generate code to store the result of the par and exit the the
+        -- continuation.
+        let donek :: Omega -> Kont l ()
+            donek C{} = multishot $ \ce -> do
+                        cgAssign tau_res cres ce
+                        cgMemoryBarrier
+                        cgExit
+            donek T   = multishot $ const $
+                        cgExit
+        -- Generate to start the thread
+        cgWithLabel l_consumer $
+            cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
+        -- Generate code for the producer
+        localSTIndTypes (Just (s, a, b)) $
+            withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
+            cgProducer ctinfo cbuf $
+            cgParSpawn cf ctinfo left (donek omega_l)
+        -- Generate code for the consumer
+        localSTIndTypes (Just (b, b, c)) $
+            withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
+            cgConsumer ctinfo cbuf $
+            cgComp right' klbl (donek omega_r)
+        -- Label the end of the computation
+        cgWithLabel l_pardone k'
 
+      ForkConsumer -> do
+        setUsesConsumerThread
+        -- We save the current codegen environment so we can call k' from within
+        -- rightdonek. The right done continuation now calls k' directly.
+        restore <- saveCgEnv
+        let leftdonek :: Omega -> Kont l ()
+            leftdonek C{} = multishot $ \ce -> do
+                            appendComment $ text "Left computer done"
+                            cgAssign tau_res cres ce
+                            cgMemoryBarrier
+                            cgExit
+            leftdonek T   = multishot $ const $ do
+                            appendComment $ text "Left transformer done"
+                            cgExit
+        let rightdonek :: Omega -> Kont l a
+            rightdonek C{} = oneshot tau_res $ \ce -> do
+                             appendComment $ text "Right computer done"
+                             cgAssign tau_res cres ce
+                             appendStm [cstm|$ctinfo.done = 1;|]
+                             cgWithLabel l_pardone (restore k')
+            rightdonek T   = oneshot tau_res $ \_ce -> do
+                             appendComment $ text "Right transformer done"
+                             appendStm [cstm|$ctinfo.done = 1;|]
+                             cgWithLabel l_pardone (restore k')
+        -- Generate to start the thread
+        cgWithLabel l_consumer $
+            cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
+        -- Generate code for the producer
+        localSTIndTypes (Just (s, a, b)) $
+            withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
+            cgProducer ctinfo cbuf $
+            cgComp left klbl (leftdonek omega_l)
+        -- Generate code for the consumer
+        localSTIndTypes (Just (b, b, c)) $
+            withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
+            cgConsumer ctinfo cbuf $
+            cgParSpawn cf ctinfo right' (rightdonek omega_r)
+  where
     -- | Generate code to spawn a thread that is one side of a par construct.
     cgParSpawn :: forall a . C.Id
                -> CExp l
@@ -2480,6 +2532,10 @@ isPassByRef _               = False
 isReturnedByRef :: Type -> Bool
 isReturnedByRef ArrT{} = True
 isReturnedByRef _      = False
+
+-- | Insert a memory barrier
+cgMemoryBarrier :: Cg l ()
+cgMemoryBarrier = appendStm [cstm|kz_memory_barrier();|]
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.

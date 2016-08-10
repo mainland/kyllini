@@ -59,6 +59,10 @@ module KZC.Cg.Monad (
     addThread,
     getThreads,
 
+    setUsesConsumerThread,
+    getUsesConsumerThread,
+    whenUsesConsumerThread,
+
     getStats,
     incDefaultInits,
     incMemCopies,
@@ -270,19 +274,22 @@ data CgState l = CgState
       -- intervening code label. If we use one of these, we need to promote its
       -- declaration.
       outOfLocalScope :: Set C.Id
+    , -- | Set if consumer threads were used
+      usesConsumerThreads :: Bool
     }
 
 defaultCgState :: IsLabel l => CgState l
 defaultCgState = CgState
-    { stats            = mempty
-    , threads          = mempty
-    , labels           = mempty
-    , code             = mempty
-    , used             = mempty
-    , threadDeclared   = mempty
-    , outOfThreadScope = mempty
-    , localDeclared    = mempty
-    , outOfLocalScope  = mempty
+    { stats               = mempty
+    , threads             = mempty
+    , labels              = mempty
+    , code                = mempty
+    , used                = mempty
+    , threadDeclared      = mempty
+    , outOfThreadScope    = mempty
+    , localDeclared       = mempty
+    , outOfLocalScope     = mempty
+    , usesConsumerThreads = False
     }
 
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
@@ -399,6 +406,17 @@ addThread t = modify $ \s -> s { threads = t : threads s }
 
 getThreads :: Cg l [Thread l]
 getThreads = gets (reverse . threads)
+
+setUsesConsumerThread :: Cg l ()
+setUsesConsumerThread = modify $ \s -> s { usesConsumerThreads = True }
+
+getUsesConsumerThread :: Cg l Bool
+getUsesConsumerThread = gets usesConsumerThreads
+
+whenUsesConsumerThread :: Cg l () -> Cg l ()
+whenUsesConsumerThread m = do
+    flag <- getUsesConsumerThread
+    when flag m
 
 getStats :: Cg l CgStats
 getStats = gets stats
