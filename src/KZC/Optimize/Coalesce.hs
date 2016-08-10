@@ -425,7 +425,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
             traceCoalesce $ nest 2 $
               text "Chose vectorization:" <+> ppr bc </>
               text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
-            parc <- runK $ coalescePar a b c c1 c2 bc1 bc2
+            parc <- runK $ coalescePar ann a b c c1 c2 bc1 bc2
             traceCoalesce $ nest 2 $
               text "Coalesced par:" </> ppr parc
             head . unComp <$> rateComp parc
@@ -473,7 +473,8 @@ data Mode = Top
   deriving (Eq, Ord, Show)
 
 coalescePar :: forall l m . (IsLabel l, MonadTc m)
-            => Type
+            => PipelineAnn
+            -> Type
             -> Type
             -> Type
             -> Comp l
@@ -481,23 +482,24 @@ coalescePar :: forall l m . (IsLabel l, MonadTc m)
             -> BC
             -> BC
             -> K l m Exp
-coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)}
+coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)}
   | i == j    = matchedRates
   | otherwise = mismatchedRates
   where
     matchedRates :: K l m Exp
     matchedRates =
-        parC (coArrT i b)
-             (coalesce Producer bc1 a b comp1)
-             (coalesce Consumer bc2 b c comp2)
+        parC' ann
+              (coArrT i b)
+              (coalesce Producer bc1 a b comp1)
+              (coalesce Consumer bc2 b c comp2)
 
     mismatchedRates :: K l m Exp
     mismatchedRates =
-        parC (coArrT j b)
-             (parC (coArrT i b)
-                   (coalesce Producer bc1 a b comp1)
-                   matcher)
-             (coalesce Consumer bc2 b c comp2)
+        parC' ann (coArrT j b)
+              (parC (coArrT i b)
+                    (coalesce Producer bc1 a b comp1)
+                    matcher)
+              (coalesce Consumer bc2 b c comp2)
       where
         n :: Int
         n = lcm i j
@@ -534,9 +536,9 @@ coalescePar a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just 
                 ys <- liftC $ derefE xs
                 emitC (coSliceE ys (k*fromIntegral j) (fromIntegral j))
 
-coalescePar a b c comp1 comp2 bc1 bc2 =
-    parC b (coalesce Top bc1 a b comp1)
-           (coalesce Top bc2 b c comp2)
+coalescePar ann a b c comp1 comp2 bc1 bc2 =
+    parC' ann b (coalesce Top bc1 a b comp1)
+                (coalesce Top bc2 b c comp2)
 
 -- The type of the block of n elements we pass between computers. When n =
 -- 1, we use elements rather than arrays of size 1.
