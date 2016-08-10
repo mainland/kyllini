@@ -446,6 +446,11 @@ evalRef = go []
           Nothing   -> return $ Ref v path
           Just view -> go path (toExp view)
 
+    -- We combine ref paths involving indexing into a slice.
+    go (IdxP val0 len : path) (IdxE e1 e2 Just{} _) = do
+        val <- evalExp e2
+        go (IdxP (addVals val0 val) len : path) e1
+
     go path (IdxE e1 e2 len _) = do
         val <- evalExp e2
         go (IdxP val len : path) e1
@@ -455,6 +460,14 @@ evalRef = go []
 
     go _ e =
         faildoc $ text "Not a reference:" <+> ppr e
+
+    addVals :: Val -> Val -> Val
+    addVals (IntV x) (IntV y) | Just (x1, x2) <- fromInterval x,
+                                Just (y1, y2) <- fromInterval y =
+        IntV $ interval (x1 + y1 :: Integer) (x2 + y2 :: Integer)
+
+    addVals _ _ =
+        top
 
 readRef :: forall m .  MonadTc m => Ref -> RW m ()
 readRef (Ref v path) = do
