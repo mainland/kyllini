@@ -270,7 +270,7 @@ packLUTElement :: forall m . MonadTc m
 packLUTElement info (StructDef struct flds _) e =
     bindFreeOutVars $
       bindResult e $
-      bindResultVars (reverse (map unLUTVar resultVars `zip` taus))
+      bindResultVars (reverse (resultVars `zip` taus))
   where
     fs :: [Field]
     taus :: [Type]
@@ -315,16 +315,16 @@ packLUTElement info (StructDef struct flds _) e =
           then letE x tau_res e <$> k vals
           else bindE x tau_res e <$> k vals
 
-    bindResultVars :: [(Var, Type)] -> [Exp] -> m Exp
+    bindResultVars :: [(LUTVar, Type)] -> [Exp] -> m Exp
     bindResultVars [] vals | isPureT (lutResultType info) =
         return $ structE struct (fs `zip` vals)
 
     bindResultVars [] vals =
         return $ returnE $ structE struct (fs `zip` vals)
 
-    bindResultVars ((v,tau):vtaus) vals = do
-        x <- gensym (namedString v)
-        bindE x tau (derefE (varE v)) <$>
+    bindResultVars ((lv,tau):vtaus) vals = do
+        x <- gensym (namedString (unLUTVar lv))
+        bindE x tau (derefE (toExp lv)) <$>
             bindResultVars vtaus (varE x:vals)
 
 -- | Given a 'LUTInfo', calculate the set of result variables, of type 'LUTVar',
