@@ -1,10 +1,12 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      :  KZC.Cg.Monad
@@ -126,9 +128,21 @@ import Prelude hiding (elem)
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
-import Control.Monad.Reader
-import Control.Monad.State
+import Control.Monad (when)
+import Control.Monad.Exception (MonadException(..))
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Primitive (PrimMonad(..))
+import Control.Monad.Ref (MonadRef)
+import Control.Monad.Reader (MonadReader(..),
+                             ReaderT(..),
+                             asks)
+import Control.Monad.State (MonadState(..),
+                            StateT,
+                            execStateT,
+                            gets,
+                            modify)
 import Data.Foldable (toList)
+import Data.IORef (IORef)
 import Data.Loc
 import Data.Map (Map)
 import Data.Monoid
@@ -143,10 +157,14 @@ import KZC.Cg.CExp
 import KZC.Cg.Code
 import KZC.Core.Lint
 import KZC.Core.Syntax
+import KZC.Error
+import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Quote.C
 import KZC.Staged
+import KZC.Trace
+import KZC.Uniq
 import KZC.Util.Env
 
 data Thread l = Thread
@@ -185,9 +203,6 @@ type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
 -- | Generate code to exit a computation. A computation is exited either when it
 -- has no more input, or when it computes a result.
 type ExitK l = Cg l ()
-
--- | The 'Cg' monad.
-type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
 
 data CgEnv l = CgEnv
     { guardTakeCg :: GuardTakeK l
@@ -292,10 +307,28 @@ defaultCgState = CgState
     , usesConsumerThreads = False
     }
 
+-- | The 'Cg' monad.
+newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadException,
+              MonadReader (CgEnv l),
+              MonadState (CgState l),
+              MonadUnique,
+              MonadErr,
+              MonadFlags,
+              MonadTrace,
+              MonadRef IORef,
+              MonadTc,
+              MonadTcRef)
+
+instance PrimMonad (Cg l) where
+    type PrimState (Cg l) = PrimState Tc
+    primitive = Cg . primitive
+
 -- | Evaluate a 'Cg' action and return a list of 'C.Definition's.
 evalCg :: IsLabel l => Cg l () -> KZC [C.Definition]
 evalCg m = do
-    s <- liftTc $ execStateT (runReaderT m defaultCgEnv) defaultCgState
+    s <- liftTc $ execStateT (runReaderT (unCg m) defaultCgEnv) defaultCgState
     return $ toList $ (codeDefs . code) s <> (codeFunDefs . code) s
 
 -- | Save the current codegen environment in the form of a function that can

@@ -16,7 +16,7 @@ import Control.Monad.State (StateT)
 
 import KZC.Core.Lint (Tc)
 
-type Cg l a = ReaderT (CgEnv l) (StateT (CgState l) Tc) a
+newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
 
 type role CgEnv nominal
 
