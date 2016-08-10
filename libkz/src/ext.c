@@ -451,20 +451,34 @@ void __kz_v_or8(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 FORCEINLINE
 void __kz_v_or_48(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
+#if defined(SANITIZE)
+    for (int i = 0; i < BIT_ARRAY_LEN(48); ++i)
+        out[i] = xs[i] | ys[i];
+#else /* !defined(SANITIZE) */
     *(uint32_t *) out = *(uint32_t *) xs | *(uint32_t *) ys;
     *(uint16_t *) (out+4) = *(uint16_t *) (xs+4) | *(uint16_t *) (ys+4);
+#endif /* !defined(SANITIZE) */
 }
 
 FORCEINLINE
 void __kz_v_or_96(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
+#if defined(SANITIZE)
+    for (int i = 0; i < BIT_ARRAY_LEN(96); ++i)
+        out[i] = xs[i] | ys[i];
+#else /* !defined(SANITIZE) */
     *(uint64_t *) out = *(uint64_t *) xs | *(uint64_t *) ys;
     *(uint32_t *) (out+8) = *(uint32_t *) (xs+8) | *(uint32_t *) (ys+8);
+#endif /* !defined(SANITIZE) */
 }
 
 FORCEINLINE
 void __kz_v_or_192(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
+#if defined(SANITIZE)
+    for (int i = 0; i < BIT_ARRAY_LEN(192); ++i)
+        out[i] = xs[i] | ys[i];
+#else /* !defined(SANITIZE) */
 #if defined(ZIRIA_COMPAT)
     *(uint64_t *) out = *(uint64_t *) xs | *(uint64_t *) ys;
     *(uint64_t *) (out+8) = *(uint64_t *) (xs+8) | *(uint64_t *) (ys+8);
@@ -472,12 +486,16 @@ void __kz_v_or_192(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
     *(__m128i *) out = _mm_or_si128(*(__m128i *) xs, *(__m128i *) ys);
 #endif /* !defined(ZIRIA_COMPAT) */
     *(uint64_t *) (out+16) = *(uint64_t *) (xs+16) | *(uint64_t *) (ys+16);
+#endif /* !defined(SANITIZE) */
 }
-
 
 FORCEINLINE
 void __kz_v_or_288(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
 {
+#if defined(SANITIZE)
+    for (int i = 0; i < BIT_ARRAY_LEN(288); ++i)
+        out[i] = xs[i] | ys[i];
+#else /* !defined(SANITIZE) */
 #if defined(ZIRIA_COMPAT)
     __kz_v_or_192(xs, ys, out);
     __kz_v_or_96(xs + 24, ys + 24, out + 24);
@@ -485,6 +503,7 @@ void __kz_v_or_288(const uint8_t *xs, const uint8_t *ys, uint8_t *out)
     *(__m256i *) out = _mm256_or_si256(*(__m256i *) xs, *(__m256i *) ys);
     *(uint32_t *) (out+32) = *(uint32_t *) (xs+32) | *(uint32_t *) (ys+32);
 #endif /* !defined(ZIRIA_COMPAT) */
+#endif /* !defined(SANITIZE) */
 }
 
 FORCEINLINE

@@ -396,26 +396,32 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                      compT c1
         c2'       <- localSTIndTypes (Just (b, b, c)) $
                      compT c2
-        steps1    <- ifte (withLeftKont steps $
-                           withRightKont steps $
-                           fusePar c1' c2')
-                          return
-                          (fusionFailed c1' c2' >> dontFusePar c1' c2')
-        steps'    <- stepsT steps
+        steps1    <- if shouldFuse ann
+                     then ifte (withLeftKont steps $
+                                withRightKont steps $
+                                fusePar c1' c2')
+                               return
+                               (fusionFailed c1' c2' >> didntFusePar c1' c2')
+                     else return [ParC ann b c1' c2' sloc]
+        steps' <- stepsT steps
         return $ steps1 ++ steps'
       where
-        dontFusePar :: Comp l -> Comp l -> F l m [Step l]
-        dontFusePar left right | isIdentityC left = do
+        shouldFuse :: PipelineAnn -> Bool
+        shouldFuse AlwaysPipeline = True
+        shouldFuse _              = False
+
+        didntFusePar :: Comp l -> Comp l -> F l m [Step l]
+        didntFusePar left right | isIdentityC left = do
             warndoc $ text "Dropping left identity coercion"
             traceFusion $ text "Dropping left identity:" </> ppr left
             return (unComp right)
 
-        dontFusePar left right | isIdentityC right = do
+        didntFusePar left right | isIdentityC right = do
             warndoc $ text "Dropping right identity coercion"
             traceFusion $ text "Dropping right identity:" </> ppr right
             return (unComp left)
 
-        dontFusePar left right =
+        didntFusePar left right =
             return [ParC ann b left right sloc]
 
     stepsT steps =

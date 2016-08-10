@@ -28,6 +28,7 @@ import Control.Monad (forM_,
                       when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
+import Data.Foldable (toList)
 import Data.Loc
 import Data.Maybe (isJust)
 import Data.Set (Set)
@@ -39,6 +40,7 @@ import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
 import KZC.Cg.CExp
+import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
@@ -156,30 +158,46 @@ compileProgram (Program decls comp tau) = do
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
     (clabels, cblock) <-
         collectLabels $
-        inNewThreadBlock_ $
+        inNewCodeBlock_ $
         cgDecls decls $ do
         -- Allocate and initialize input and output buffers
         (_, _, a, b) <- checkST tau
         cgInitInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgInitOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
         -- Create storage for the result
-        cres <- cgTemp "main_res" (resultType tau)
+        cdone <- cgTopCTemp tau "done" [cty|int|] (Just [cinit|0|])
+        cres  <- cgTemp "main_res" (resultType tau)
         -- The done continuation simply puts the computation's result in cres
+        let exitk = do whenUsesConsumerThread $
+                         appendStm [cstm|$cdone = 1;|]
+                       appendStm [cstm|BREAK;|]
         cgTimed $
+            withGuardTakeK guardtakek $
             withTakeK  takek $
             withTakesK takesk $
             withEmitK  emitk $
             withEmitsK emitsk $
+            withExitK  exitk $
             cgThread tau comp $
-            multishotBind (resultType tau) cres
+            multishot$ \ce -> do
+              cgAssign (resultType tau) cres ce
+              whenUsesConsumerThread $ do
+                cgMemoryBarrier
+                appendStm [cstm|$cdone = 1;|]
+              appendStm [cstm|BREAK;|]
+        -- Generate code to initialize threads
+        cgInitThreads comp
+        whenUsesConsumerThread $
+          -- Wait for result
+          appendThreadCleanupStm [cstm|while (!$cdone);|]
         -- Clean up input and output buffers
         cgCleanupInput  a (CExp [cexp|$id:params|]) (CExp [cexp|$id:in_buf|])
         cgCleanupOutput b (CExp [cexp|$id:params|]) (CExp [cexp|$id:out_buf|])
     cgLabels clabels
-    appendTopDef [cedecl|
+    appendTopFunDef [cedecl|
 void kz_main(const typename kz_params_t* $id:params)
 {
-    $items:cblock
+    $items:(toBlockItems cblock)
 }|]
     dumpStats <- asksFlags (testDynFlag ShowCgStats)
     when dumpStats $ do
@@ -192,6 +210,9 @@ void kz_main(const typename kz_params_t* $id:params)
     out_buf = "out"
     params = "params"
 
+    guardtakek :: GuardTakeK l
+    guardtakek = return ()
+
     takek :: TakeK l
     takek tau _klbl k = do
         -- Generate a pointer to the current element in the buffer.
@@ -199,7 +220,9 @@ void kz_main(const typename kz_params_t* $id:params)
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
+        if [cexp|$cbuf == NULL|]
+          then cgExit
+          else return ()
         go tau cbuf
       where
         go tau cbuf
@@ -214,7 +237,9 @@ void kz_main(const typename kz_params_t* $id:params)
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
         appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        appendStm [cstm|if ($cbuf == NULL) { BREAK; }|]
+        if [cexp|$cbuf == NULL|]
+          then cgExit
+          else return ()
         go tau cbuf
       where
         go tau cbuf
@@ -324,6 +349,18 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau                     = do ctau <- cgType tau
                                         appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
+cgInitThreads :: Located a => a -> Cg l ()
+cgInitThreads x =
+    getThreads >>= mapM_ cgInitThread
+  where
+    cgInitThread :: Thread l -> Cg l ()
+    cgInitThread t =
+      cgInitCheckErr [cexp|kz_thread_init(&$(threadInfo t),
+                                          &$(thread t),
+                                          $id:(threadFun t))|]
+                     "Cannot create thread."
+                     x
+
 cgTimed :: forall l a . Cg l a -> Cg l a
 cgTimed m = do
     flags <- askFlags
@@ -335,8 +372,8 @@ cgTimed m = do
         cpu_time_end    :: C.Id <- gensym "cpu_time_end"
         real_time_start :: C.Id <- gensym "real_time_start"
         real_time_end   :: C.Id <- gensym "real_time_end"
-        appendTopDecl [cdecl|long double $id:cpu_time_start, $id:cpu_time_end;|]
-        appendTopDecl [cdecl|long double $id:real_time_start, $id:real_time_end;|]
+        appendTopDecl [cdecl|static long double $id:cpu_time_start, $id:cpu_time_end;|]
+        appendTopDecl [cdecl|static long double $id:real_time_start, $id:real_time_end;|]
         appendStm [cstm|$id:cpu_time_start = kz_get_cpu_time();|]
         appendStm [cstm|$id:real_time_start = kz_get_real_time();|]
         x <- m
@@ -352,20 +389,13 @@ cgTimed m = do
 
 cgLabels :: forall l . IsLabel l => Set l -> Cg l ()
 cgLabels ls =
-    go (Set.toList ls)
+    unless (Set.null ls) $ do
+      appendTopDef [cedecl|$esc:("#if !defined(FIRSTCLASSLABELS)")|]
+      appendTopDef [cedecl|enum { $enums:(cls) };|]
+      appendTopDef [cedecl|$esc:("#endif /* !defined(FIRSTCLASSLABELS) */")|]
   where
-    go :: [l] -> Cg l ()
-    go [] = return ()
-
-    go (l:ls) = do
-        appendTopDef [cedecl|$esc:("#if !defined(FIRSTCLASSLABELS)")|]
-        appendTopDef [cedecl|enum { $enums:(cl:cls) };|]
-        appendTopDef [cedecl|$esc:("#endif /* !defined(FIRSTCLASSLABELS) */")|]
-      where
-        cl  :: C.CEnum
-        cls :: [C.CEnum]
-        cl  = [cenum|$id:l = 0|]
-        cls = [ [cenum|$id:l|] | l <- ls]
+    cls :: [C.CEnum]
+    cls = [[cenum|$id:l|] | l <- Set.toList ls]
 
 -- | Generate code to check return value of a function call.
 cgInitCheckErr :: Located a => C.Exp -> String -> a -> Cg l ()
@@ -378,15 +408,15 @@ cgCheckErr ce msg x =
     appendStm [cstm|kz_check_error($ce, $string:(renderLoc x), $string:msg);|]
 
 cgThread :: IsLabel l
-         => Type      -- ^ Type of the result of the computation
-         -> Comp l    -- ^ Computation to compiled
-         -> Kont l () -- ^ Code generator to deal with result of computation
-         -> Cg l ()
+         => Type     -- ^ Type of the result of the computation
+         -> Comp l   -- ^ Computation to compiled
+         -> Kont l a -- ^ Code generator to deal with result of computation
+         -> Cg l a
 cgThread tau comp k = do
-    cblock <-
+    (cblock, x) <-
         inSTScope tau $
         inLocalScope $
-        inNewThreadBlock_ $ do
+        inNewCodeBlock $ do
         -- Keep track of the current continuation. This is only used when
         -- we do not have first class labels.
         l_start <- compLabel comp
@@ -398,8 +428,14 @@ cgThread tau comp k = do
         -- Generate code for the computation
         useLabels (compUsedLabels comp)
         cgComp comp l_done $ oneshot tau $ runKont k
-    appendDecls [decl | C.BlockDecl decl <- cblock]
-    appendStms [cstms|BEGIN_DISPATCH; $stms:([stm | C.BlockStm stm <- cblock]) END_DISPATCH;|]
+    appendDecls (toList (blockDecls cblock))
+    appendStms [cstms|$stms:(toList (blockInitStms cblock))
+                      BEGIN_DISPATCH;
+                      $stms:(toList (blockStms cblock))
+                      END_DISPATCH;
+                      $stms:(toList (blockCleanupStms cblock))
+                     |]
+    return x
   where
     cUR_KONT :: C.Id
     cUR_KONT = "curk"
@@ -422,7 +458,7 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
         (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
         (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
         cres_ident         <- gensym "let_res"
-        citems <- inNewThreadBlock_ $
+        cblock <- inNewCodeBlock_ $
                   extendIVarCExps (iotas `zip` ciotas) $
                   extendVarCExps  (map fst vbs `zip` cvbs) $ do
                   cres <- if isReturnedByRef tau_res
@@ -433,9 +469,9 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
                       appendStm $ rl l [cstm|return $cres;|]
         if isReturnedByRef tau_res
          then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                 appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:citems }|]
+                 appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
          else do ctau_res <- cgType tau_res
-                 appendTopDef $ rl l [cedecl|$ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:citems }|]
+                 appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
     k
   where
     tau_res :: Type
@@ -453,9 +489,9 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
           then do cretparam <- cgRetParam tau_res Nothing
-                  appendTopDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
+                  appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
           else do ctau_ret <- cgType tau_res
-                  appendTopDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+                  appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
     k
   where
     tau :: Type
@@ -588,7 +624,7 @@ cgConst (ReplicateC n c) = do
     ce     <- cgConst c
     return $
       if c == c_dflt
-      then CInit [cinit|{ $init:(toInit ce) }|]
+      then CInit [cinit|{ $init:(toInitializer ce) }|]
       else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
@@ -608,7 +644,7 @@ cgConst (StructC s flds) = do
         ce <- case lookup f flds of
                 Nothing -> panicdoc $ text "cgField: missing field"
                 Just c -> cgConst c
-        return $ toInit ce
+        return $ toInitializer ce
 
 cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
 cgArrayConstInits tau ces | isBitT tau =
@@ -628,10 +664,10 @@ cgArrayConstInits tau ces | isBitT tau =
 
     const :: CExp l -> C.Initializer
     const (CInt i) = [cinit|$(chexconst i)|]
-    const ce       = toInit ce
+    const ce       = toInitializer ce
 
 cgArrayConstInits _tau ces =
-    map toInit ces
+    map toInitializer ces
 
 {- Note [Bit Arrays]
 
@@ -682,7 +718,7 @@ i.e., 'ForE' loops. We now make a serious effort to minimize the scope of a
 declaration. Hopefully this will make the C compiler's job easier and will lead
 to less stack space being used.
 
-The complication is that we used labels. Consider the following quote from the
+The complication is that we use labels. Consider the following quote from the
 C11 standard, 6.8.6.1p1:
 
     The identifier in a goto statement shall name a label located somewhere in
@@ -698,20 +734,21 @@ beginning of the function's body.
 
 We maintain this invariant by tracking the set of declared identifiers (in the
 'declared' field of 'CgState'), the set of identifiers that have been used (in
-'used'), the set of identifiers that have been "tainted" by a label that
-occurred after their declaration ('tainted'), and the set of identifiers that
-have been used after they were tainted ('usedTainted'). The current set of
-declarations is tainted by calling 'taintScope'.
+'used'), the set of identifiers that are out of scope by virtue of an
+intervening label that occurred after their declaration ('outOfScope'), and the
+set of identifiers that have been used after they went out of scope
+('usedOutOfScope'). The current set of declarations is marked out of scope by
+virtue of an intervening label by calling 'newLabelScope'.
 
 When we collect declarations and statements to create a new block of code,
-declarations for identifiers that were used after they were tainted are
-automatically promoted to thread-level declarations.
+declarations for identifiers that were used after they were makred out of scope
+are automatically promoted to thread-level declarations.
 
-A new block of code that collects untainted declarations is constructed with
-'newScope', which transparently collects code generated by its computation
-argument and adds it as a single block.
+A new block of code that collects declarations is constructed with 'newScope',
+which transparently collects code generated by its computation argument and adds
+it as a single block.
 
-When do we need to call 'newBlock'? Right after we have called 'taintScope',
+When do we need to call 'newBlock'? Right after we have called 'newLocalScope',
 i.e., after we have generated a label that will be the target of some goto. Most
 of the time this is taken care of automatically by 'cgWithLabel', but we need to
 manually call 'newScope' after generating code for loops that call cgLabel.
@@ -1244,7 +1281,7 @@ cgConstExp e (CInit cinit) k = do
     tau        <- inferExp e
     cv :: C.Id <- gensym "__const"
     ctau       <- cgType tau
-    appendTopDecl [cdecl|const $ty:ctau $id:cv = $init:cinit;|]
+    appendTopDecl [cdecl|static const $ty:ctau $id:cv = $init:cinit;|]
     runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
 
 cgConstExp _ ce k =
@@ -1755,7 +1792,7 @@ cgStorage cv tau init =
        | otherwise  = CExp $ rl cv [cexp|$id:cv|]
 
 cgDefault :: Type -> Cg l C.Initializer
-cgDefault tau = toInit <$> (defaultValueC tau >>= cgConst)
+cgDefault tau = toInitializer <$> (defaultValueC tau >>= cgConst)
 
 -- | Generate code for a C temporary with a gensym'd name, based on @s@ and
 -- prefixed with @__@, having C type @ctau@, and with the initializer
@@ -1824,7 +1861,7 @@ cgWithLabel :: IsLabel l => l -> Cg l a -> Cg l a
 cgWithLabel lbl k = do
     required <- isLabelUsed lbl
     if required
-      then do taintScope
+      then do newLabelScope
               (stms, x) <- collectStms $ newScope k
               case stms of
                 []     -> appendStm [cstm|$id:lblMacro:;|]
@@ -1881,12 +1918,12 @@ cgComp comp klbl = cgSteps (unComp comp)
           cgSteps steps k
 
     cgSteps (step : BindC l WildV tau _ : steps) k =
-        cgStep step l $ oneshot tau $ \ce -> do
+        cgSeqStep step l $ oneshot tau $ \ce -> do
         cgVoid ce
         cgWithLabel l $ cgSteps steps k
 
     cgSteps (step : BindC l (TameV v) tau _ : steps) k =
-        cgStep step l $
+        cgSeqStep step l $
         mapKont cgBind $
         cgMonadicBinding v tau $ \cv ->
           extendVars [(bVar v, tau)] $
@@ -1906,9 +1943,16 @@ cgComp comp klbl = cgSteps (unComp comp)
     cgSteps (step : steps) k = do
         l   <- stepLabel (head steps)
         tau <- inferStep step
-        cgStep step l $ oneshot tau $ \ce -> do
+        cgSeqStep step l $ oneshot tau $ \ce -> do
             cgVoid ce
             cgSteps steps k
+
+    cgSeqStep :: forall a . Step l -> l -> Kont l a -> Cg l a
+    cgSeqStep step klbl k = do
+        free <- isFreeRunning
+        withFreeRunning False $
+          cgStep step klbl $
+          mapKont (\f -> withFreeRunning free . f) k
 
     cgStep :: forall a . Step l -> l -> Kont l a -> Cg l a
     cgStep (VarC l v _) klbl k =
@@ -2003,11 +2047,19 @@ cgComp comp klbl = cgSteps (unComp comp)
         withSummaryContext step $ do
         dflags  <- askFlags
         tau_res <- resultType <$> inferStep step
-        case ann of
-          AlwaysPipeline | testDynFlag Pipeline dflags ->
-            cgParMultiThreaded tau_res b left right klbl k
-          _ ->
-            cgParSingleThreaded tau_res b left right klbl k
+        free    <- isFreeRunning
+        if testDynFlag PipelineAll dflags
+          then cgParMultiThreaded ForkProducer free tau_res b left right klbl k
+          else if free && shouldPipeline dflags ann
+          then cgParMultiThreaded ForkConsumer free tau_res b left right klbl k
+          else cgParSingleThreaded tau_res b left right klbl k
+      where
+        shouldPipeline :: Flags -> PipelineAnn -> Bool
+        shouldPipeline dflags AlwaysPipeline | testDynFlag Pipeline dflags =
+            True
+
+        shouldPipeline _ _ =
+            False
 
 -- | Compile a par, i.e., a producer/consumer pair, using the simple
 -- single-threaded strategy. The take and emit code generators should generate
@@ -2020,19 +2072,12 @@ cgParSingleThreaded :: forall a l . IsLabel l
                     -> l        -- ^ The computation's continuation
                     -> Kont l a -- ^ Continuation accepting the compilation result
                     -> Cg l a
-cgParSingleThreaded tau_res b left right klbl k = do
-    (s, a, c) <- askSTIndTypes
-    -- Generate a temporary to hold the result of the par construct.
-    cres <- cgTemp "par_res" tau_res
-    -- Create the computation that follows the par.
-    l_pardone <- gensym "par_done"
-    useLabel l_pardone
-    -- donek will generate code to store the result of the par and jump to
-    -- the continuation.
-    let donek :: Kont l ()
-        donek = multishot $ \ce -> do
-                cgAssign tau_res cres ce
-                appendStm [cstm|JUMP($id:l_pardone);|]
+cgParSingleThreaded _tau_res b left right klbl k = do
+    (s, a, c)          <- askSTIndTypes
+    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+                          inferComp left >>= checkST
+    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+                          inferComp right >>= checkST
     -- Generate variables to hold the left and right computations'
     -- continuations.
     leftl   <- compLabel left
@@ -2046,17 +2091,37 @@ cgParSingleThreaded tau_res b left right klbl k = do
     ctauptr <- cgBufPtrType b
     cbuf    <- cgThreadCTemp b "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
     cbufp   <- cgThreadCTemp b "par_bufp" ctauptr                        Nothing
+    -- The void continuation simply swallows its argument and does nothing. We
+    -- use this for transformers since they never return anyway.
+    let voidk :: Kont l ()
+        voidk = multishot $ const $ return ()
+    -- k' is our continuation k suitably modifed to restore the current Cg
+    -- environment so that we can call it from within one of the branches of the
+    -- par. We need to save/restore the Cg environment so k uses the take/emit
+    -- in effect *right here* rather than those in effect within the branches of
+    -- the par.
+    restore <- saveCgEnv
+    let k'  =  mapKont (\f ce -> restore $ f ce) k
+    -- Code generators for left and right sides
+    let cgLeft, cgRight :: forall a . Kont l a -> Cg l a
+        cgLeft k  = localSTIndTypes (Just (s, a, b)) $
+                    withEmitK  (emitk cleftk crightk cbuf cbufp) $
+                    withEmitsK (emitsk cleftk crightk cbuf cbufp) $
+                    cgComp left klbl k
+        cgRight k = localSTIndTypes (Just (b, b, c)) $
+                    withTakeK  (takek cleftk crightk cbuf cbufp) $
+                    withTakesK (takesk cleftk crightk cbuf cbufp) $
+                    cgComp right klbl k
     -- Generate code for the left and right computations.
-    localSTIndTypes (Just (b, b, c)) $
-        withTakeK  (takek cleftk crightk cbuf cbufp) $
-        withTakesK (takesk cleftk crightk cbuf cbufp) $
-        cgComp right klbl donek
-    localSTIndTypes (Just (s, a, b)) $
-        withEmitK  (emitk cleftk crightk cbuf cbufp) $
-        withEmitsK (emitsk cleftk crightk cbuf cbufp) $
-        cgComp left klbl donek
-    cgWithLabel l_pardone $
-        runKont k cres
+    case (omega_l, omega_r) of
+      (C{}, _) -> do cgRight voidk
+                     cgLeft k'
+      (_, C{}) -> do x <- cgRight k'
+                     cgLeft voidk
+                     return x
+      _        -> do cgRight voidk
+                     cgLeft voidk
+                     runKont k CVoid
   where
     cgBufPtrType :: Type -> Cg l C.Type
     cgBufPtrType (ArrT _ tau _) = do
@@ -2124,8 +2189,8 @@ cgParSingleThreaded tau_res b left right klbl k = do
         useLabel loopl
         appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
         cgFor 0 cn $ \ci -> do
-            cidx <- cgIdx tau ce cn ci
-            cgAssignBufp tau cbuf cbufp cidx
+            celem <- cgIdx tau ce cn ci
+            cgAssignBufp tau cbuf cbufp celem
             appendStm [cstm|INDJUMP($crightk);|]
             -- Because we need a statement to label, but the continuation is
             -- the next loop iteration...
@@ -2138,10 +2203,9 @@ cgParSingleThreaded tau_res b left right klbl k = do
     -- reference.
     cgAssignBufp :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgAssignBufp tau _ cbufp ce | isLvalue ce = do
-        -- We take the address of @ce@, so we need to mark it as tainted /and/
-        -- as used after tainted so that its declaration gets promoted out of
+        -- We take the address of @ce@, so we need to promote its scope out of
         -- local scope.
-        taintAndUseCExp ce
+        promoteScope ce
         caddr <- cgAddrOf tau ce
         appendStm [cstm|$cbufp = $caddr;|]
 
@@ -2149,37 +2213,48 @@ cgParSingleThreaded tau_res b left right klbl k = do
         cgAssign tau cbuf ce
         appendStm [cstm|$cbufp = &$cbuf;|]
 
--- | Generate code that exits from a computation that is part of a par.
-type ExitK l = Cg l ()
+data ParStrategy = ForkProducer
+                 | ForkConsumer
+  deriving (Eq, Ord, Show)
 
 -- | Compile a par, i.e., a producer/consumer pair, using the multi-threaded
 -- strategy. The take and emit code generators passed as arguments to
 -- 'cgParMultiThreaded' should generate code for the outer take and emit---the
 -- inner take and emit is done with a producer-consumer buffer.
 cgParMultiThreaded :: forall a l . IsLabel l
-                   => Type     -- ^ The type of the result of the par
-                   -> Type     -- ^ The type of the par's internal buffer
-                   -> Comp l   -- ^ The producer computation
-                   -> Comp l   -- ^ The consumer computation
-                   -> l        -- ^ The computation's continuation
-                   -> Kont l a -- ^ Continuation accepting the compilation result
+                   => ParStrategy -- ^ Strategy for compiling par
+                   -> Bool        -- ^ 'True' if we are in a free-running context.
+                   -> Type        -- ^ The type of the result of the par
+                   -> Type        -- ^ The type of the par's internal buffer
+                   -> Comp l      -- ^ The producer computation
+                   -> Comp l      -- ^ The consumer computation
+                   -> l           -- ^ The computation's continuation
+                   -> Kont l a    -- ^ Continuation accepting the compilation result
                    -> Cg l a
-cgParMultiThreaded tau_res b left right klbl k = do
-    (s, a, c) <- askSTIndTypes
+cgParMultiThreaded strategy free tau_res b left right klbl k = do
+    (s, a, c)          <- askSTIndTypes
+    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+                          inferComp left >>= checkST
+    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+                          inferComp right >>= checkST
+    -- Create storage for the result of the par and a continuation to consume
+    -- the storage.
+    (cres, k') <- splitMultishotBind "par_res" tau_res False k
     -- Generate a temporary to hold the par buffer.
     cb   <- cgType b
     cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
     -- Generate a name for the producer thread function
-    cf <- gensym "producer"
+    cf <- gensym "par_threadfun"
     -- Generate a temporary to hold the thread info.
-    ctinfo <- cgThreadCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
+    ctinfo <- cgTopCTemp b "par_tinfo" [cty|typename kz_tinfo_t|] Nothing
     -- Generate a temporary to hold the thread.
-    cthread <- cgThreadCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
-    -- Generate a temporary to hold the result of the par construct.
-    cres <- cgTemp "par_res" tau_res
-    -- Create a label for the computation that follows the par.
-    l_pardone <- gensym "par_done"
-    useLabel l_pardone
+    cthread <- cgTopCTemp b "par_thread" [cty|typename kz_thread_t|] Nothing
+    -- Record the thread
+    addThread Thread { threadInfo = ctinfo
+                     , thread     = cthread
+                     , threadRes  = cres
+                     , threadFun  = cf
+                     }
     -- Re-label the consumer computation. We have to do this because we need to
     -- generate code that initializes the par construct, and this initialization
     -- code needs to have the label of the consumer computation because that is
@@ -2187,80 +2262,116 @@ cgParMultiThreaded tau_res b left right klbl k = do
     l_consumer  <- compLabel right
     l_consumer' <- gensym "consumer"
     let right'  =  setCompLabel l_consumer' right
-    -- Generate to initialize the thread
-    unless (isUnitT tau_res) $
-        appendThreadInitStm [cstm|ctinfo.result = &$cres;|]
-    cgInitCheckErr [cexp|kz_thread_init(&$ctinfo, &$cthread, $id:cf)|] "Cannot create thread." right
-    -- Generate to start the thread
-    cgWithLabel l_consumer $
-        cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
-    -- Generate code for the consumer
-    localSTIndTypes (Just (b, b, c)) $
-        cgConsumer cthread ctinfo cbuf cres right' l_pardone
-    -- Generate code for the producer
-    localSTIndTypes (Just (s, a, b)) $
-        cgProducer cf cbuf left
-    -- Label the end of the computation
-    cgWithLabel l_pardone $
-        runKont k cres
+    -- Create a label for the computation that follows the par.
+    l_pardone <- gensym "par_done"
+    case strategy of
+      ForkProducer -> do
+        -- donek will generate code to store the result of the par and exit the the
+        -- continuation.
+        let donek :: Omega -> Kont l ()
+            donek C{} = multishot $ \ce -> do
+                        cgAssign tau_res cres ce
+                        cgMemoryBarrier
+                        cgExit
+            donek T   = multishot $ const $
+                        cgExit
+        -- Generate to start the thread
+        cgWithLabel l_consumer $
+            cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
+        -- Generate code for the producer
+        localSTIndTypes (Just (s, a, b)) $
+            withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
+            cgProducer ctinfo cbuf $
+            cgParSpawn cf ctinfo left (donek omega_l)
+        -- Generate code for the consumer
+        localSTIndTypes (Just (b, b, c)) $
+            withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
+            cgConsumer ctinfo cbuf $
+            cgComp right' klbl (donek omega_r)
+        -- Label the end of the computation
+        cgWithLabel l_pardone k'
+
+      ForkConsumer -> do
+        setUsesConsumerThread
+        -- We save the current codegen environment so we can call k' from within
+        -- rightdonek. The right done continuation now calls k' directly.
+        restore <- saveCgEnv
+        let leftdonek :: Omega -> Kont l ()
+            leftdonek C{} = multishot $ \ce -> do
+                            appendComment $ text "Left computer done"
+                            cgAssign tau_res cres ce
+                            cgMemoryBarrier
+                            cgExit
+            leftdonek T   = multishot $ const $ do
+                            appendComment $ text "Left transformer done"
+                            cgExit
+        let rightdonek :: Omega -> Kont l a
+            rightdonek C{} = oneshot tau_res $ \ce -> do
+                             appendComment $ text "Right computer done"
+                             cgAssign tau_res cres ce
+                             appendStm [cstm|$ctinfo.done = 1;|]
+                             cgWithLabel l_pardone (restore k')
+            rightdonek T   = oneshot tau_res $ \_ce -> do
+                             appendComment $ text "Right transformer done"
+                             appendStm [cstm|$ctinfo.done = 1;|]
+                             cgWithLabel l_pardone (restore k')
+        -- Generate to start the thread
+        cgWithLabel l_consumer $
+            cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
+        -- Generate code for the producer
+        localSTIndTypes (Just (s, a, b)) $
+            withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
+            cgProducer ctinfo cbuf $
+            cgComp left klbl (leftdonek omega_l)
+        -- Generate code for the consumer
+        localSTIndTypes (Just (b, b, c)) $
+            withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
+            cgConsumer ctinfo cbuf $
+            cgParSpawn cf ctinfo right' (rightdonek omega_r)
   where
-    cgExitWhenDone :: CExp l -> ExitK l -> Cg l ()
-    cgExitWhenDone ctinfo exitk = do
-        cblock <- inNewBlock_ exitk
-        appendStm [cstm|if ($ctinfo.done) { $items:cblock }|]
-
-    -- | Insert a memory barrier
-    cgMemoryBarrier :: Cg l ()
-    cgMemoryBarrier =
-        appendStm [cstm|kz_memory_barrier();|]
-
-    cgProducer :: C.Id -> CExp l -> Comp l -> Cg l ()
-    cgProducer cf cbuf comp = do
+    -- | Generate code to spawn a thread that is one side of a par construct.
+    cgParSpawn :: forall a . C.Id
+               -> CExp l
+               -> Comp l
+               -> Kont l a
+               -> Cg l a
+    cgParSpawn cf ctinfo comp k = do
         tau <- inferComp comp
-        (clabels, cblock) <-
+        (clabels, (cblock, x)) <-
             collectLabels $
-            inNewThreadBlock_ $
-            withTakeK  takek $
-            withTakesK takesk $
-            withEmitK  emitk $
-            withEmitsK emitsk $
-            cgThread tau comp donek
+            inNewCodeBlock $ do
+            newThreadScope
+            cgThread tau comp k
         cgLabels clabels
-        appendTopDef [cedecl|
-void* $id:cf(void* _tinfo)
+        appendTopFunDef [cedecl|
+static void* $id:cf(void* dummy)
 {
-    typename kz_tinfo_t* tinfo = (typename kz_tinfo_t*) _tinfo;
-
     for (;;) {
-        kz_check_error(kz_thread_wait(tinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
+        kz_check_error(kz_thread_wait(&$ctinfo), $string:(renderLoc comp), "Error waiting for thread to start.");
         {
-            $items:cblock
+            $items:(toBlockItems cblock)
         }
-        (*tinfo).done = 1;
     }
     return NULL;
 }|]
+        return x
+
+    cgProducer :: forall a . CExp l -> CExp l -> Cg l a -> Cg l a
+    cgProducer ctinfo cbuf m =
+        withGuardTakeK guardtakek $
+        withEmitK emitk $
+        withEmitsK emitsk m
       where
-        ctinfo :: CExp l
-        ctinfo = CExp [cexp|*tinfo|]
-
-        -- When the producer takes, we need to make sure that the consumer has
-        -- asked for more data than we have given it, so we spin until the
-        -- consumer requests data.
-        takek :: TakeK l
-        takek tau klbl k = do
-            cgWaitForConsumerRequest ctinfo exitk
-            cgTake tau klbl k
-
-        takesk :: TakesK l
-        takesk n tau klbl k = do
-            cgWaitForConsumerRequest ctinfo exitk
-            cgTakes n tau klbl k
+        -- Before the producer can take, it must wait for the consumer to ask
+        -- for data.
+        guardtakek :: GuardTakeK l
+        guardtakek =
+            cgWaitForConsumerRequest ctinfo
 
         emitk :: EmitK l
         -- @tau@ must be a base (scalar) type
         emitk tau ce _klbl k = do
-            cgProduce ctinfo cbuf exitk tau ce
+            cgProduce ctinfo cbuf tau ce
             k
 
         emitsk :: EmitsK l
@@ -2269,54 +2380,63 @@ void* $id:cf(void* _tinfo)
         emitsk iota tau ce _klbl k = do
             cn <- cgIota iota
             cgFor 0 cn $ \ci -> do
-                cidx <- cgIdx tau ce cn ci
-                cgProduce ctinfo cbuf exitk tau cidx
+                celem <- cgIdx tau ce cn ci
+                cgProduce ctinfo cbuf tau celem
             k
 
-        exitk :: Cg l ()
-        exitk = appendStm [cstm|BREAK;|]
-
-        donek :: Kont l ()
-        donek = multishot $ \ce -> do
-            ctau_res <- cgType tau_res
-            cgAssign tau_res (CPtr (CExp [cexp|($ty:ctau_res*) $ctinfo.result|])) ce
-            cgMemoryBarrier
-            appendStm [cstm|$ctinfo.done = 1;|]
-
         -- | Put a single data element in the buffer.
-        cgProduce :: CExp l -> CExp l -> ExitK l -> Type -> CExp l -> Cg l ()
-        cgProduce ctinfo cbuf exitk tau ce = do
-            cgWaitWhileBufferFull ctinfo exitk
-            cgAssign tau (CExp [cexp|$cbuf[$ctinfo.prod_cnt % KZ_BUFFER_SIZE]|]) ce
+        cgProduce :: CExp l -> CExp l -> Type -> CExp l -> Cg l ()
+        cgProduce ctinfo cbuf tau ce = do
+            cgWaitWhileBufferFull ctinfo
+            let cidx = CExp [cexp|$ctinfo.prod_cnt % KZ_BUFFER_SIZE|]
+            cgAssign (refT tau) (CIdx tau cbuf cidx) ce
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
         -- | Wait until the consumer requests data
-        cgWaitForConsumerRequest :: CExp l -> ExitK l -> Cg l ()
-        cgWaitForConsumerRequest ctinfo exitk = do
-            appendStm [cstm|while (!$ctinfo.done && $ctinfo.cons_req - $ctinfo.prod_cnt == 0);|]
-            cgExitWhenDone ctinfo exitk
+        cgWaitForConsumerRequest :: CExp l -> Cg l ()
+        -- A free-running computation does not need to wait for the consumer to
+        -- request input.
+        cgWaitForConsumerRequest _ | free =
+            appendComment $ text "Free running (no need to wait for consumer to request input)"
+
+        cgWaitForConsumerRequest ctinfo = do
+            appendComment $ text "Wait for consumer to request input"
+            appendStm [cstm|while (!$ctinfo.done && ((int) ($ctinfo.prod_cnt - $ctinfo.cons_req)) >= 0);|]
+            cgExitWhenDone ctinfo
 
         -- | Wait while the buffer is full
-        cgWaitWhileBufferFull :: CExp l -> ExitK l -> Cg l ()
-        cgWaitWhileBufferFull ctinfo exitk = do
-            appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
-            cgExitWhenDone ctinfo exitk
+        cgWaitWhileBufferFull :: CExp l -> Cg l ()
+        -- A free-running computation *does* need to test if the consumer has
+        -- exited. It is possible for the consumer to exit leaving the buffer
+        -- full, so we perform the test here instead of in
+        -- 'cgWaitForConsumerRequest'.
+        cgWaitWhileBufferFull ctinfo | free = do
+            appendComment $ text "Wait for room in the buffer"
+            appendStm [cstm|while (!$ctinfo.done && ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE));|]
+            cgExitWhenDone ctinfo
 
-    cgConsumer :: CExp l -> CExp l -> CExp l -> CExp l -> Comp l -> l -> Cg l ()
-    cgConsumer cthread ctinfo cbuf cres comp l_pardone = do
+        cgWaitWhileBufferFull ctinfo = do
+            appendComment $ text "Wait for room in the buffer"
+            appendStm [cstm|while ($ctinfo.prod_cnt - $ctinfo.cons_cnt == KZ_BUFFER_SIZE);|]
+
+        -- | Exit if the consumer has computed a final value.
+        cgExitWhenDone :: CExp l -> Cg l ()
+        cgExitWhenDone ctinfo = do
+            appendComment $ text "Exit if the consumer has computed a final value"
+            if [cexp|$ctinfo.done|]
+              then cgExit
+              else return ()
+
+    cgConsumer :: forall a . CExp l -> CExp l -> Cg l a -> Cg l a
+    cgConsumer ctinfo cbuf m =
         withTakeK takek $
-          withTakesK takesk $
-          cgComp comp klbl $
-          multishotBind tau_res cres
-        appendStm [cstm|$ctinfo.done = 1;|]
-        appendStm [cstm|kz_check_error(kz_thread_join($cthread, NULL), $string:(renderLoc comp), "Cannot join on thread.");|]
-        appendStm [cstm|JUMP($id:l_pardone);|]
+        withTakesK takesk m
       where
         takek :: TakeK l
-        takek _tau _klbl k = do
+        takek tau _klbl k = do
             cgRequestData ctinfo 1
-            cgConsume ctinfo cbuf exitk k
+            cgConsume ctinfo cbuf tau k
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
@@ -2325,35 +2445,42 @@ void* $id:cf(void* _tinfo)
             cgInitAlways carr (arrKnownT n tau)
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
-                cgConsume ctinfo cbuf exitk $ \ce ->
-                    appendStm [cstm|$carr[$ci] = $ce;|]
+                cgConsume ctinfo cbuf tau $ \ce ->
+                    cgAssign (refT tau) (CIdx tau carr ci) ce
             k carr
 
-        exitk :: Cg l ()
-        exitk = appendStm [cstm|JUMP($id:l_pardone);|]
-
-        -- | Consumer a single data element from the buffer. We take a consumption
-        -- continuation, because we must be sure that we insert a memory barrier
-        -- before incrementing the consumer count.
-        cgConsume :: forall a . CExp l -> CExp l -> ExitK l -> (CExp l -> Cg l a) -> Cg l a
-        cgConsume ctinfo cbuf exitk consumek = do
-            cgWaitWhileBufferEmpty ctinfo exitk
-            cidx <- cgCTemp right "cons_idx" [cty|int|] Nothing
-            appendStm [cstm|$cidx = $ctinfo.cons_cnt % KZ_BUFFER_SIZE;|]
+        -- | Consume a single data element from the buffer. We take a
+        -- consumption continuation because we must be sure that we insert a
+        -- memory barrier before incrementing the consumer count.
+        cgConsume :: forall a . CExp l -> CExp l -> Type -> (CExp l -> Cg l a) -> Cg l a
+        cgConsume ctinfo cbuf tau consumek = do
+            appendComment $ text "Mark previous element as consumed"
             cgMemoryBarrier
             appendStm [cstm|++$ctinfo.cons_cnt;|]
-            consumek (CExp [cexp|$cbuf[$cidx]|])
+            cgWaitWhileBufferEmpty ctinfo
+            let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
+            consumek (CIdx tau cbuf cidx)
 
         -- | Request @cn@ data elements.
         cgRequestData :: CExp l -> CExp l -> Cg l ()
-        cgRequestData ctinfo cn =
+        cgRequestData ctinfo cn = do
+            appendComment $ text "Request" <+> ppr cn <+> text "elements"
             appendStm [cstm|$ctinfo.cons_req += $cn;|]
 
         -- | Wait while the buffer is empty
-        cgWaitWhileBufferEmpty :: CExp l -> ExitK l -> Cg l ()
-        cgWaitWhileBufferEmpty ctinfo exitk = do
+        cgWaitWhileBufferEmpty :: CExp l -> Cg l ()
+        cgWaitWhileBufferEmpty ctinfo = do
+            appendComment $ text "Wait while the buffer is empty"
             appendStm [cstm|while (!$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0);|]
-            cgExitWhenDone ctinfo exitk
+            cgExitWhenDone ctinfo
+
+        -- | Exit if the producer has computed a final value and the queue is empty.
+        cgExitWhenDone :: CExp l -> Cg l ()
+        cgExitWhenDone ctinfo = do
+            appendComment $ text "Exit if the producer has computed a final value and the queue is empty"
+            if [cexp|$ctinfo.done && $ctinfo.prod_cnt - $ctinfo.cons_cnt == 0|]
+              then cgExit
+              else return ()
 
 -- | Return 'True' if a compiled expression is a C lvalue.
 isLvalue :: CExp l -> Bool
@@ -2405,6 +2532,10 @@ isPassByRef _               = False
 isReturnedByRef :: Type -> Bool
 isReturnedByRef ArrT{} = True
 isReturnedByRef _      = False
+
+-- | Insert a memory barrier
+cgMemoryBarrier :: Cg l ()
+cgMemoryBarrier = appendStm [cstm|kz_memory_barrier();|]
 
 -- | @'cgAssign' tau ce1 ce2@ generates code to assign @ce2@, which has type
 -- @tau@, to @ce1@.
@@ -2620,6 +2751,9 @@ cgAssign tau ce1 ce2 = do
           else appendStm [cstm|memcpy($ce1', $ce2', $clen*sizeof($ty:ctau));|]
       where
         cgArrayAddr :: CExp l -> Cg l (CExp l)
+        cgArrayAddr (CIdx tau carr cidx) | isArrT tau =
+            return $ CExp [cexp|&$carr[$cidx]|]
+
         cgArrayAddr (CSlice tau _ _ _) | isBitT tau =
             panicdoc $ text "cgArrayAddr: the impossible happened!"
 
@@ -2832,13 +2966,19 @@ cgLower tau = go
     go ce =
         return ce
 
+-- | Generate code to jump to the specified label.
+cgJump :: IsLabel l => l -> Cg l ()
+cgJump l = do
+    useLabel l
+    appendStm [cstm|JUMP($id:l);|]
+
 -- | Append a comment to the list of top-level definitions.
 appendTopComment :: Doc -> Cg l ()
 appendTopComment doc = appendTopDef [cedecl|$esc:(formatComment doc)|]
 
 -- | Append a comment to the current sequence of statements.
 appendComment :: Doc -> Cg l ()
-appendComment doc =   appendStm [cstm|$escstm:(formatComment doc)|]
+appendComment doc = appendStm [cstm|$escstm:(formatComment doc)|]
 
 formatComment :: Doc -> String
 formatComment doc =

@@ -24,9 +24,7 @@ module KZC.Cg.CExp (
 
     unCIdx,
     unCSlice,
-    unBitCSliceBase,
-
-    toInit
+    unBitCSliceBase
   ) where
 
 import Prelude hiding (elem)
@@ -38,6 +36,7 @@ import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import {-# SOURCE #-} KZC.Cg.Monad
+import KZC.Cg.Util
 import KZC.Core.Lint (refPath)
 import KZC.Core.Smart
 import KZC.Core.Syntax
@@ -431,6 +430,10 @@ instance Pretty (CExp l) where
     ppr CComp{}                  = text "<comp>"
     ppr CFunComp{}               = text "<fun comp>"
 
+instance ToInitializer (CExp l) where
+    toInitializer (CInit cinit) = cinit
+    toInitializer ce            = [cinit|$ce|]
+
 -- | Tag the translation of an expression with the expression is aliases.
 calias :: Exp -> CExp l -> CExp l
 calias _ ce@CVoid    = ce
@@ -509,10 +512,6 @@ unBitCSliceBase CSlice{} =
 
 unBitCSliceBase ce =
     Just ce
-
-toInit :: CExp l -> C.Initializer
-toInit (CInit cinit) = cinit
-toInit ce            = [cinit|$ce|]
 
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: forall l . Type -> CExp l -> CExp l -> C.Exp

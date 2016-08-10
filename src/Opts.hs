@@ -254,6 +254,7 @@ fOpts =
 dFlags :: [(DynFlag, String, String)]
 dFlags =
     [ (Lint,            "lint",          "lint core")
+    , (PipelineAll,     "pipeline-all",  "pipeline all computations")
     , (PrintUniques,    "print-uniques", "show uniques when pretty-printing")
     , (ExpertTypes,     "expert-types",  "show \"expert\" types when pretty-printing")
     , (ShowCgStats,     "cg-stats",      "show code generator statistics")
@@ -303,10 +304,19 @@ dTraceFlags =
     ]
 
 dOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]
-dOpts = [FlagOption "dump-all" (NoArg dumpAll) "dump all output"]
+dOpts =
+  [ FlagOption "dump-all" (NoArg dumpAll)        "dump all output"
+  , FlagOption "fuel"     (ReqArg addFuel "INT") "add debug fuel"
+  ]
   where
     dumpAll :: Flags -> m Flags
     dumpAll = return . setDumpFlags [minBound..maxBound]
+
+    addFuel :: String -> Flags -> m Flags
+    addFuel s fs =
+      case reads s of
+        [(n, "")]  -> return fs { fuel = n }
+        _          -> fail "argument to -dfuel must be an integer"
 
 wFlags :: [(WarnFlag, String, String)]
 wFlags =
