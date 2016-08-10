@@ -46,6 +46,7 @@ import KZC.Error
 import KZC.Flags
 import KZC.Label
 import KZC.Name
+import KZC.Optimize.LowerViews
 import KZC.Staged
 import KZC.Trace
 import KZC.Uniq
@@ -435,8 +436,17 @@ lowerLUTVars :: MonadTc m
              => [LUTVar]
              -> Exp
              -> m Exp
-lowerLUTVars lvs e =
-    runL env $ expT e
+lowerLUTVars lvs e = do
+    -- We lower views here so we don't have to deal with them ocurring *inside*
+    -- a LUTted expression. In fact, this re-indexing transformation can't deal
+    -- with views at all!
+    --
+    -- Why not ditch views entirely before we even reach this pass? Because
+    -- LutToGen needs the views that are *free* in a LUTted expression so that
+    -- it can accurately determine the width of the LUT's input/output
+    -- variables!
+    e' <- lowerExpViews e
+    runL env $ expT e'
   where
     env :: LEnv
     env = Map.fromList [(unLUTVar lv, lv) | lv <- lvs]
