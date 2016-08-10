@@ -1281,7 +1281,7 @@ cgConstExp e (CInit cinit) k = do
     tau        <- inferExp e
     cv :: C.Id <- gensym "__const"
     ctau       <- cgType tau
-    appendTopDecl [cdecl|static const $ty:ctau $id:cv = $init:cinit;|]
+    appendTopDecl [cdecl|static $tyqual:calign const $ty:ctau $id:cv = $init:cinit;|]
     runKont k $ CExp $ reloc (locOf e) [cexp|$id:cv|]
 
 cgConstExp _ ce k =
