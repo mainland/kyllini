@@ -11,7 +11,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.LowerViews (
-    lowerViews
+    lowerViews,
+    lowerExpViews
   ) where
 
 import Prelude hiding ((<=))
@@ -65,6 +66,9 @@ lowerViews = runL . lower
   where
     lower :: Program l -> L l m (Program l)
     lower = programT
+
+lowerExpViews :: MonadTc m => Exp -> m Exp
+lowerExpViews = runL . expT
 
 lookupView :: MonadTc m => Var -> L l m (Maybe View)
 lookupView v = asks (Map.lookup v . views)
