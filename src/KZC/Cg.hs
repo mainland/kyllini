@@ -1908,12 +1908,12 @@ cgComp comp klbl = cgSteps (unComp comp)
           cgSteps steps k
 
     cgSteps (step : BindC l WildV tau _ : steps) k =
-        cgStep step l $ oneshot tau $ \ce -> do
+        cgSeqStep step l $ oneshot tau $ \ce -> do
         cgVoid ce
         cgWithLabel l $ cgSteps steps k
 
     cgSteps (step : BindC l (TameV v) tau _ : steps) k =
-        cgStep step l $
+        cgSeqStep step l $
         mapKont cgBind $
         cgMonadicBinding v tau $ \cv ->
           extendVars [(bVar v, tau)] $
@@ -1933,9 +1933,16 @@ cgComp comp klbl = cgSteps (unComp comp)
     cgSteps (step : steps) k = do
         l   <- stepLabel (head steps)
         tau <- inferStep step
-        cgStep step l $ oneshot tau $ \ce -> do
+        cgSeqStep step l $ oneshot tau $ \ce -> do
             cgVoid ce
             cgSteps steps k
+
+    cgSeqStep :: forall a . Step l -> l -> Kont l a -> Cg l a
+    cgSeqStep step klbl k = do
+        free <- isFreeRunning
+        withFreeRunning False $
+          cgStep step klbl $
+          mapKont (\f -> withFreeRunning free . f) k
 
     cgStep :: forall a . Step l -> l -> Kont l a -> Cg l a
     cgStep (VarC l v _) klbl k =

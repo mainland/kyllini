@@ -43,6 +43,9 @@ module KZC.Cg.Monad (
     cgEmits,
     cgExit,
 
+    isFreeRunning,
+    withFreeRunning,
+
     extendVarCExps,
     lookupVarCExp,
 
@@ -190,6 +193,10 @@ data CgEnv l = CgEnv
     , emitsCg     :: EmitsK l
     , exitCg      :: ExitK l
 
+    -- | 'True' if we are compiling in a free-running context, i.e., where we
+    -- are the final consumer of input.
+    , freeRunning :: !Bool
+
     , varCExps   :: !(Map Var (CExp l))
     , ivarCExps  :: !(Map IVar (CExp l))
     , tyvarTypes :: !(Map TyVar Type)
@@ -206,6 +213,8 @@ defaultCgEnv = CgEnv
     , emitCg      = error "no emit code generator"
     , emitsCg     = error "no emits code generator"
     , exitCg      = error "no exit continuation"
+
+    , freeRunning = True
 
     , varCExps   = mempty
     , ivarCExps  = mempty
@@ -339,6 +348,12 @@ cgExit :: ExitK l
 cgExit = do
     f <- asks exitCg
     f
+
+isFreeRunning :: Cg l Bool
+isFreeRunning = asks freeRunning
+
+withFreeRunning :: Bool -> Cg l a -> Cg l a
+withFreeRunning free = local $ \env -> env { freeRunning = free }
 
 extendVarCExps :: [(Var, CExp l)] -> Cg l a -> Cg l a
 extendVarCExps = extendEnv varCExps (\env x -> env { varCExps = x })
