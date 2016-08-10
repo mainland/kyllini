@@ -2238,6 +2238,13 @@ cgParMultiThreaded free tau_res b left right klbl k = do
                      , threadRes  = cres
                      , threadFun  = cf
                      }
+    -- Re-label the consumer computation. We have to do this because we need to
+    -- generate code that initializes the par construct, and this initialization
+    -- code needs to have the label of the consumer computation because that is
+    -- the label that will be jumped to to run the consumer computation.
+    l_consumer  <- compLabel right
+    l_consumer' <- gensym "consumer"
+    let right'  =  setCompLabel l_consumer' right
     -- Create a label for the computation that follows the par.
     l_pardone <- gensym "par_done"
     -- donek will generate code to store the result of the par and exit the the
@@ -2249,26 +2256,19 @@ cgParMultiThreaded free tau_res b left right klbl k = do
                     cgExit
         donek T   = multishot $ const $
                     cgExit
-    -- Re-label the consumer computation. We have to do this because we need to
-    -- generate code that initializes the par construct, and this initialization
-    -- code needs to have the label of the consumer computation because that is
-    -- the label that will be jumped to to run the consumer computation.
-    l_consumer  <- compLabel right
-    l_consumer' <- gensym "consumer"
-    let right'  =  setCompLabel l_consumer' right
     -- Generate to start the thread
     cgWithLabel l_consumer $
         cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
-    -- Generate code for the consumer
-    localSTIndTypes (Just (b, b, c)) $
-        withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
-        cgConsumer ctinfo cbuf $
-        cgComp right' klbl (donek omega_r)
     -- Generate code for the producer
     localSTIndTypes (Just (s, a, b)) $
         withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
         cgProducer ctinfo cbuf $
         cgParSpawn cf ctinfo left (donek omega_l)
+    -- Generate code for the consumer
+    localSTIndTypes (Just (b, b, c)) $
+        withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
+        cgConsumer ctinfo cbuf $
+        cgComp right' klbl (donek omega_r)
     -- Label the end of the computation
     cgWithLabel l_pardone k'
   where
