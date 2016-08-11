@@ -13,7 +13,8 @@
 -- Maintainer  :  mainland@cs.drexel.edu
 
 module KZC.Optimize.FloatViews (
-    floatViews
+    floatViews,
+    floatViewsComp
   ) where
 
 import Prelude hiding ((<=))
@@ -108,6 +109,9 @@ runF m = evalStateT (runReaderT (unF m) defaultFEnv) defaultFState
 
 floatViews :: (IsLabel l, MonadTc m) => Program l -> m (Program l)
 floatViews = runF . programT
+
+floatViewsComp :: (IsLabel l, MonadTc m) => Comp l -> m (Comp l)
+floatViewsComp = runF . compT
 
 lookupLoopVar :: MonadTc m => Var -> F m (Maybe Int)
 lookupLoopVar v = asks (Map.lookup v . loopVars)
