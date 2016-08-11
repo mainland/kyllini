@@ -356,31 +356,37 @@ void free_buf(kz_buf_t* buf)
 }
 
 #define DECLARE_IO(D,T) \
+FORCEINLINE \
 void kz_init_input_##D(const kz_params_t* params, kz_buf_t* buf) \
 { \
     init_input<T>(params, buf); \
 } \
 \
+FORCEINLINE \
 void kz_init_output_##D(const kz_params_t* params, kz_buf_t* buf) \
 { \
     init_output<T>(params, buf); \
 } \
 \
+FORCEINLINE \
 void kz_cleanup_input_##D(const kz_params_t* params, kz_buf_t* buf) \
 { \
     cleanup_input<T>(params, buf); \
 } \
 \
+FORCEINLINE \
 void kz_cleanup_output_##D(const kz_params_t* params, kz_buf_t* buf) \
 { \
     cleanup_output<T>(params, buf); \
 } \
 \
+FORCEINLINE \
 const T* kz_input_##D(kz_buf_t* buf, size_t n) \
 { \
     return input<T>(buf, n); \
 } \
 \
+FORCEINLINE \
 void kz_output_##D(kz_buf_t* buf, const T* data, size_t n) \
 { \
     output(buf, data, n); \
@@ -622,11 +628,13 @@ void kz_cleanup_output_complex16(const kz_params_t* params, kz_buf_t* buf)
     cleanup_output<int16_t>(params, buf);
 }
 
+FORCEINLINE
 const complex16_t* kz_input_complex16(kz_buf_t* buf, size_t n)
 {
     return input<complex16_t>(buf, n);
 }
 
+FORCEINLINE
 void kz_output_complex16(kz_buf_t* buf, const complex16_t* data, size_t n)
 {
     output<complex16_t>(buf, data, n);
