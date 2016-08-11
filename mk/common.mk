@@ -146,6 +146,7 @@ RUNTIME_SRC=\
 	$(TOP)/libkz/src/bits.c \
 	$(TOP)/libkz/src/driver.c \
 	$(TOP)/libkz/src/ext.c \
+	$(TOP)/libkz/src/ext_zira.c \
 	$(TOP)/libkz/src/io.cpp \
 	$(TOP)/libkz/src/threads.c \
 	$(TOP)/libkz/src/sora/kz_sora.cpp

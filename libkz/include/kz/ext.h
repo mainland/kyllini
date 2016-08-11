@@ -32,6 +32,8 @@ SUCH DAMAGE.
 
 #include <kz/types.h>
 
+#define ZIRIA_COMPAT
+
 #ifdef __cplusplus
 extern "C" {
 #endif

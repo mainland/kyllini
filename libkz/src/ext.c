@@ -38,8 +38,6 @@ SUCH DAMAGE.
 
 #include <kz/ext.h>
 
-#define ZIRIA_COMPAT
-
 FORCEINLINE
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src)
 {
@@ -266,6 +264,7 @@ void __kz_v_hadd_complex16(complex16_t *z, const complex16_t x[4])
     z[3].im = im;
 }
 
+#if !defined(ZIRIA_COMPAT)
 FORCEINLINE
 void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b, int32_t shift)
 {
@@ -276,6 +275,7 @@ void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const com
         c[i].im = (a[i].re * b[i].im + a[i].im * b[i].re) >> shift;
     }
 }
+#endif /* !defined(ZIRIA_COMPAT) */
 
 FORCEINLINE
 void __kz_v_mul_complex16_int32(int n, int32_t *re, int32_t *im, const complex16_t *a, const complex16_t *b)
@@ -299,6 +299,7 @@ void __kz_v_conj_mul_complex16(int n, complex16_t *c, const complex16_t *a, cons
     }
 }
 
+#if !defined(ZIRIA_COMPAT)
 FORCEINLINE
 void __kz_v_conj_mul_complex16_int32(int n, int32_t *re, int32_t *im, const complex16_t *a, const complex16_t *b)
 {
@@ -309,6 +310,7 @@ void __kz_v_conj_mul_complex16_int32(int n, int32_t *re, int32_t *im, const comp
         im[i] = a[i].im * b[i].re - a[i].re * b[i].im;
     }
 }
+#endif /* !defined(ZIRIA_COMPAT) */
 
 FORCEINLINE
 void __kz_v_shift_right_int16(int n, int16_t *z, const int16_t *x, int32_t shift)
@@ -328,6 +330,7 @@ void __kz_v_shift_right_int32(int n, int32_t *z, const int32_t *x, int32_t shift
         z[i] = x[i] >> shift;
 }
 
+#if !defined(ZIRIA_COMPAT)
 FORCEINLINE
 void __kz_v_shift_right_complex16(int n, complex16_t *z, const complex16_t *x, int32_t shift)
 {
@@ -338,6 +341,7 @@ void __kz_v_shift_right_complex16(int n, complex16_t *z, const complex16_t *x, i
         z[i].im = x[i].im >> shift;
     }
 }
+#endif /* !defined(ZIRIA_COMPAT) */
 
 FORCEINLINE
 void __kz_v_shift_right_complex32(int n, complex32_t *z, const complex32_t *x, int32_t shift)

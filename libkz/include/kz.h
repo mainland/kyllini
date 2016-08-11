@@ -47,6 +47,7 @@ SUCH DAMAGE.
 #include <bits.c>
 #include <driver.c>
 #include <ext.c>
+#include <ext_zira.c>
 #include <io.cpp>
 #include <threads.c>
 #include <sora/kz_sora.cpp>
