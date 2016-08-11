@@ -21,7 +21,9 @@ module KZC.Cg.CExp (
     CExp(..),
 
     calias,
+    cdiv,
 
+    unCInt,
     unCIdx,
     unCSlice,
     unBitCSliceBase
@@ -445,6 +447,51 @@ calias e ce          = case refPath e of
                          Nothing -> ce
                          Just _  -> CAlias e ce
 
+-- | Return the result of dividing the 'CExp' by a constant. A result is
+-- returned only if the quotient can be symbolically computed and has a
+-- remainder of zero.
+cdiv :: forall l m . Monad m => CExp l -> Integer -> m (CExp l)
+cdiv (CInt x) n | r == 0    = return $ CInt q
+                | otherwise = fail "cdiv: not divisible"
+  where
+    (q, r) = x `quotRem` n
+
+cdiv ce n = go (C.toExp ce noLoc)
+  where
+    go :: C.Exp -> m (CExp l)
+    go [cexp|$int:x|] | r == 0 = return $ CInt q
+      where
+        (q, r) = x `quotRem` n
+
+    go [cexp|$int:x * $ce|]
+        | q == 1 && r == 0 = return $ CExp ce
+        | r == 0           = return $ CExp [cexp|$int:q * $ce|]
+      where
+        (q, r) = x `quotRem` n
+
+    go [cexp|$ce * $int:x|]
+        | q == 1 && r == 0 = return $ CExp ce
+        | r == 0           = return $ CExp [cexp|$ce * $int:q|]
+      where
+        (q, r) = x `quotRem` n
+
+    go [cexp|$ce1 + $ce2|] = do
+        ce1' <- go ce1
+        ce2' <- go ce2
+        return $ CExp [cexp|$ce1' + $ce2'|]
+
+    go _ =
+        faildoc $
+        text "cdiv:" <+> ppr ce <+> text "not divisible by" <+> ppr n
+
+-- | Return the 'Integer' value of a 'CExp'. This is necessarily a partial
+-- operation.
+unCInt :: Monad m => CExp l -> m Integer
+unCInt (CInt i) = return i
+unCInt ce       = case C.toExp ce noLoc of
+                    [cexp|$int:i|] -> return i
+                    _ -> fail "fromCInt: not an integer"
+
 -- | Given a 'CExp' that is potentially an index into array, return the base
 -- array and the index.
 unCIdx :: Monad m => CExp l -> m (CExp l, CExp l)
@@ -480,7 +527,7 @@ unCSlice carr =
 -- array base of the slice, i.e., a pointer to the beginning of the slice. This
 -- function is partial; the base array can only be calculated if the index of
 -- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
-unBitCSliceBase :: CExp l -> Maybe (CExp l)
+unBitCSliceBase :: Monad m => CExp l -> m (CExp l)
 unBitCSliceBase (CSlice tau (CAlias _ carr) ci clen) =
     unBitCSliceBase (CSlice tau carr ci clen)
 
@@ -488,30 +535,17 @@ unBitCSliceBase (CSlice tau (CSlice _ carr ci _) cj clen) =
     unBitCSliceBase (CSlice tau carr (ci + cj) clen)
 
 unBitCSliceBase (CSlice _ carr (CInt i) _) | bitOff == 0 =
-    Just $ CBitSlice $ CExp [cexp|&$carr[$int:bitIdx]|]
+    return $ CBitSlice $ CExp [cexp|&$carr[$int:bitIdx]|]
   where
     bitIdx, bitOff :: Integer
     (bitIdx, bitOff) = i `quotRem` bIT_ARRAY_ELEM_BITS
 
-unBitCSliceBase (CSlice _ carr (CExp [cexp|$int:n * $ce|]) _)
-    | q == 1 && r == 0 = Just $ CBitSlice $ CExp [cexp|&$carr[$ce]|]
-    | r == 0           = Just $ CBitSlice $ CExp [cexp|&$carr[$int:q * $ce]|]
-  where
-    q, r :: Integer
-    (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
-
-unBitCSliceBase (CSlice _ carr (CExp [cexp|$ce * $int:n|]) _)
-    | q == 1 && r == 0 = Just $ CBitSlice $ CExp [cexp|&$carr[$ce]|]
-    | r == 0           = Just $ CBitSlice $ CExp [cexp|&$carr[$int:q * $ce]|]
-  where
-    q, r :: Integer
-    (q, r) = n `quotRem` bIT_ARRAY_ELEM_BITS
-
-unBitCSliceBase CSlice{} =
-    Nothing
+unBitCSliceBase (CSlice _ carr cidx _) = do
+    cidx' <- cdiv cidx bIT_ARRAY_ELEM_BITS
+    return $ CBitSlice $ CExp [cexp|&$carr[$cidx']|]
 
 unBitCSliceBase ce =
-    Just ce
+    return ce
 
 -- | Lower an array indexing operation to a 'C.Exp'
 lowerIdx :: forall l . Type -> CExp l -> CExp l -> C.Exp
