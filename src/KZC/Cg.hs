@@ -2736,6 +2736,9 @@ cgAssign tau ce1 ce2 = do
             slowPath cdst cdstIdx csrc csrcIdx clen = do
                 csrc' <- cgLower tau0 csrc
                 incBitArrayCopies
+                warndocWhen WarnBitArrayCopy $
+                  nest 4 $
+                  text "Bit array copy:" </> ppr ce1 <+> text ":=" <+> ppr ce2
                 appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
 
     assign mayAlias tau0 ce1 ce2 | Just (iota, tau_elem) <- checkArrOrRefArrT tau0 =

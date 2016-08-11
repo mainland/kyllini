@@ -39,6 +39,7 @@ warn on an unused command bind.
 | `-Wunsafe-par-auto-cast` | Warn on potentially unsafe automatic cast in par|
 | `-Wrate-mismatch`        | Warn on producer/consumer rate mismatch in par|
 | `-Wfusion-failure`       | Warn on fusion failure|
+| `-Wbitarray-copy`        | Warn on an unoptimized bit array copy|
 
 ## Feature flags
 

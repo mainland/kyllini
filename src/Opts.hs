@@ -333,6 +333,7 @@ wFlags =
     , (WarnUnsafeParAutoCast, "unsafe-par-auto-cast", "warn on potentially unsafe automatic cast in par")
     , (WarnRateMismatch,      "rate-mismatch",        "warn on producer/consumer rate mismatch in par")
     , (WarnFusionFailure,     "fusion-failure",       "warn on fusion failure")
+    , (WarnBitArrayCopy,      "bitarray-copy",        "warn on a bit array copy")
     ]
 
 wOpts :: forall m . Monad m => [FlagOptDescr (Flags -> m Flags)]

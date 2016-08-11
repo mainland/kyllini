@@ -119,6 +119,7 @@ data WarnFlag = WarnSimplifierBailout
               | WarnUnsafeParAutoCast
               | WarnRateMismatch
               | WarnFusionFailure
+              | WarnBitArrayCopy
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data DumpFlag = DumpCPP

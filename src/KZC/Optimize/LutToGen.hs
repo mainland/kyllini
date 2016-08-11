@@ -347,7 +347,8 @@ lutGenToExp :: forall m . MonadTc m
             -> Exp
             -> [Gen]
             -> m Exp
-lutGenToExp v_lut e gs = do
+lutGenToExp v_lut e gs =
+    localFlags (unsetWarnFlag WarnBitArrayCopy) $ do
     unless (isLUTGen e gs) $
       faildoc $ text "Cannot convert non-LUT generator expression to expression"
     tau  <- checkGenerators gs $ \_ ->
