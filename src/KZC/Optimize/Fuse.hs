@@ -67,6 +67,7 @@ import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Name
 import KZC.Optimize.Autolut (autolutComp)
+import KZC.Optimize.FloatViews (floatViewsComp)
 import KZC.Optimize.Simplify (simplComp)
 import KZC.Summary
 import KZC.Trace
@@ -367,12 +368,11 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                                    return
                                    (fusionFailed cfuse1 c3 >> mzero)
                    cfuse2  <- rateComp (mkComp ssfuse2)
-                   -- Drop the fused computation if it is more than twice as big
-                   -- as the unfused computation *unless* it is small.
-                   when (size cfuse2 > 100 && size cfuse2 > 2 * size c2') $ do
-                     warndoc $ text "Dropping top-level coercions"
-                     mzero
-                   rateComp cfuse2)
+                   cfuse1' <- floatViewsComp cfuse1 >>= autolutComp
+                   cfuse2' <- floatViewsComp cfuse2 >>= autolutComp
+                   if lutSize cfuse2' > lutSize cfuse1'
+                     then rateComp cfuse2
+                     else rateComp cfuse1)
                 return
                 (return c2')
 
