@@ -219,8 +219,7 @@ void kz_main(const typename kz_params_t* $id:params)
         ctau   <- cgType tau
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
-        appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        if [cexp|$cbuf == NULL|]
+        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
           then cgExit
           else return ()
         go tau cbuf
@@ -236,8 +235,7 @@ void kz_main(const typename kz_params_t* $id:params)
         ctau   <- cgType tau
         cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
         cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
-        appendStm [cstm|$cbuf = (const $ty:ctau*) $cinput;|]
-        if [cexp|$cbuf == NULL|]
+        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
           then cgExit
           else return ()
         go tau cbuf
