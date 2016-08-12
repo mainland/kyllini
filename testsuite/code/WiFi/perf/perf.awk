@@ -7,7 +7,7 @@
     nosamples=substr($1, x+1, length($1));
 }
 
-/Time elapsed \(usec\):/ {
-    time = $4;
-    print filename " " nosamples / time
+/Elapsed cpu time \(sec\):/ {
+    time = $5;
+    print filename " " nosamples / time / 1e6
 }

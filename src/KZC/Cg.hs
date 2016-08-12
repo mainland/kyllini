@@ -378,8 +378,8 @@ cgTimed m = do
         appendStm [cstm|$id:cpu_time_end = kz_get_cpu_time();|]
         appendStm [cstm|$id:real_time_end = kz_get_real_time();|]
         appendStm [cstm|printf("Time elapsed (usec): %d\n", (int) (($id:cpu_time_end - $id:cpu_time_start) * 1000000));|]
-        appendStm [cstm|printf("Elapsed cpu time: %Les\n", $id:cpu_time_end - $id:cpu_time_start);|]
-        appendStm [cstm|printf("Elapsed real time: %Les\n", $id:real_time_end - $id:real_time_start);|]
+        appendStm [cstm|printf("Elapsed cpu time (sec): %Le\n", $id:cpu_time_end - $id:cpu_time_start);|]
+        appendStm [cstm|printf("Elapsed real time (sec): %Le\n", $id:real_time_end - $id:real_time_start);|]
         return x
 
     go _flags =
