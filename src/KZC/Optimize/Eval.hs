@@ -245,7 +245,7 @@ evalComp comp = evalSteps (unComp comp)
   where
     evalSteps :: [Step l] -> EvalM l m (Val l m (Comp l))
     evalSteps [] =
-        faildoc $ text "Cannot evaluate empty sequence of steps"
+        return $ CompReturnV unitV
 
     evalSteps [step] =
         evalStep step

@@ -751,8 +751,12 @@ inferComp comp =
             void $ checkST tau
         return tau
 
-    inferBind _ [BindC{}] _ =
-        panicdoc $ text "Computation ends with a bind!"
+    inferBind step [BindC{}] _ =
+        appSTScope $ ST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
+      where
+        s = "s"
+        a = "a"
+        b = "b"
 
     inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $
