@@ -1672,26 +1672,30 @@ simplE (BindE wv tau e1 e2 s) =
     --  { x := e; !x; ... } -> { x := e; return e; ... }
     --
     -- We see this after coalescing/fusion. We must be careful not to duplicate
-    -- work!
+    -- work! To avoid work duplication, we onlt inline e_rhs when it is simple
+    -- or when x is used only once, i.e., only here!
     --
     simplBind WildV tau e1 e_rest s
       | let (e2, mkBind) = unBind e_rest
       , AssignE (VarE v  _) e_rhs _ <- e1
       , DerefE  (VarE v' _)       _ <- e2
       , v' == v
-      , isSimple e_rhs
       = do
-        rewrite
-        simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
+        theta  <- lookupSubst v
+        let v' =  case theta of
+                    Just (DoneExp (VarE v' _)) -> v'
+                    _ -> v
+        occ    <- lookupOccInfo v'
+        if isSimple e_rhs || occ == Just Once
+          then do rewrite
+                  simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
+          else simplWildBind tau e1 e_rest s
 
     --
     -- Default command sequencing
     --
-    simplBind WildV tau e1 e2 s = do
-        tau' <- simplType tau
-        e1'  <- simplE e1
-        e2'  <- simplE e2
-        return $ BindE WildV tau' e1' e2' s
+    simplBind WildV tau e1 e2 s =
+        simplWildBind tau e1 e2 s
 
     --
     -- Drop unused bindings. The expression whose result is bound might have an
@@ -1741,6 +1745,18 @@ simplE (BindE wv tau e1 e2 s) =
           extendDefinitions [(bVar v', Unknown)] $ do
           e2' <- simplE e2
           return $ BindE (TameV v') tau' e1' e2' s
+
+    -- Default code for simplifying a WildV binding
+    simplWildBind :: Type
+                  -> Exp
+                  -> Exp
+                  -> SrcLoc
+                  -> SimplM l m Exp
+    simplWildBind tau e1 e2 s = do
+        tau' <- simplType tau
+        e1'  <- simplE e1
+        e2'  <- simplE e2
+        return $ BindE WildV tau' e1' e2' s
 
     -- This gives us a handy way to pull apart binds so we don't have to
     -- separately handle the cases { e1; e2; } and { e1; e2; ... }
