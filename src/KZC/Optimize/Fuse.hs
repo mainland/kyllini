@@ -1269,7 +1269,7 @@ instance MonadTc m => TransformExp (UT m) where
 instance (IsLabel l, MonadTc m) => TransformComp l (UT m) where
     stepsT (TakesC _ n tau _ : steps) = do
         comp  <- runK $
-                 letrefC "xs" (arrKnownT n tau) $ \xs -> do
+                 letrefC "xs_unrolltakes" (arrKnownT n tau) $ \xs -> do
                  forC 0 n $ \i -> do
                    x <- takeC tau
                    liftC $ assignE (idxE xs i) x
@@ -1301,7 +1301,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (UE m) where
     stepsT (EmitsC _ e _ : steps) = do
         (n, tau) <- inferExp e >>= knownArraySize
         comp     <- runK $
-                    letC "xs" (arrKnownT n tau) e $ \xs ->
+                    letC "xs_unrollemits" (arrKnownT n tau) e $ \xs ->
                     forC 0 n $ \i ->
                       emitC (idxE xs i)
         comp'    <- rateComp comp

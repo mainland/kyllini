@@ -518,7 +518,7 @@ coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=J
           -- Increase rate for consumer
           | j == n =
             repeatC $
-            letrefC "xs" (coArrT n b) $ \xs -> do
+            letrefC "xs_upconsumer" (coArrT n b) $ \xs -> do
               forC 0 (n `quot` i) $ \k -> do
                 ys <- takeC (coArrT i b)
                 liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
@@ -528,7 +528,7 @@ coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=J
           -- Increase both rates up to n
           | otherwise =
             repeatC $
-            letrefC "xs" (coArrT n b) $ \xs -> do
+            letrefC "xs_upboth" (coArrT n b) $ \xs -> do
               forC 0 (n `quot` i) $ \k -> do
                 ys <- takeC (coArrT i b)
                 liftC $ assignE (coSliceE xs (k*fromIntegral i) (fromIntegral i)) ys
