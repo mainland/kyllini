@@ -115,7 +115,8 @@ instance Monoid SimplStats where
                    }
 
 data SimplEnv l = SimplEnv
-    { simplTheta   :: !(Theta l)
+    { simplOccInfo :: !(Map Var OccInfo)
+    , simplTheta   :: !(Theta l)
     , simplVarDefs :: !(VarDefs l)
     , simplPhi     :: !Phi
     , simplPsi     :: !Psi
@@ -123,7 +124,7 @@ data SimplEnv l = SimplEnv
     }
 
 defaultSimplEnv :: SimplEnv l
-defaultSimplEnv = SimplEnv mempty mempty mempty mempty mempty
+defaultSimplEnv = SimplEnv mempty mempty mempty mempty mempty mempty
 
 data SimplState = SimplState
     { simplStats :: {-# UNPACK #-} !SimplStats }
@@ -166,6 +167,15 @@ inlineBinding _v =
 rewrite :: MonadTc m => SimplM l m ()
 rewrite =
     mappendStats mempty { simplRewrites = 1 }
+
+extendOccInfo :: MonadTc m => BoundVar -> SimplM l m a -> SimplM l m a
+extendOccInfo BoundV{bVar=v, bOccInfo=Just occ} =
+    local $ \env -> env { simplOccInfo = Map.insert v occ (simplOccInfo env) }
+
+extendOccInfo _ = id
+
+lookupOccInfo :: MonadTc m => Var -> SimplM l m (Maybe OccInfo)
+lookupOccInfo v = asks (Map.lookup v . simplOccInfo)
 
 askSubst :: MonadTc m => SimplM l m (Theta l)
 askSubst = asks simplTheta
@@ -555,6 +565,7 @@ simplLocalDecl decl m = do
                withoutBinding m
           else withUniqBoundVar v $ \v' ->
                extendVars [(bVar v', tau)] $
+               extendOccInfo v' $
                extendDefinitions [(bVar v', BoundToExp (bOccInfo v') Top e')] $
                withBinding (LetLD v' tau' e' s) m
 
@@ -585,10 +596,12 @@ simplLocalDecl decl m = do
         rewrite
         e <- maybe (constE <$> defaultValueC tau) return maybe_e
         extendVars [(bVar v, tau)] $
+          extendOccInfo v $
           (,) <$> pure (Just (LetLD v tau e s)) <*> m
 
     withRefBinding v tau e s m =
         extendVars [(bVar v, refT tau)] $
+        extendOccInfo v $
         (,) <$> pure (Just (LetRefLD v tau e s)) <*> m
 
 simplC :: (IsLabel l, MonadTc m) => Comp l -> SimplM l m (Comp l)
