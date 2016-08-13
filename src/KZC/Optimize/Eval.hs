@@ -562,7 +562,11 @@ evalExp e =
         -- #13.
         isVarNotComp <- isInScope v'
         if isVarNotComp
-          then lookupVarBind v'
+          then do val <- lookupVarBind v'
+                  case val of
+                    ExpV VarE{} -> return val
+                    ExpV{}      -> partialExp $ varE v'
+                    _           -> return val
           else lookupCVarBind v' >>= compValToExpVal
 
     eval _flags (VarE v s) = do
