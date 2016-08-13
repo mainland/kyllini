@@ -1,16 +1,38 @@
 #!/bin/sh
 WIFIDIR=../testsuite/code/WiFi
 
-BRANCH="$(git symbolic-ref HEAD 2>/dev/null)" || BRANCH="detached-head"
-BRANCH=${BRANCH##refs/heads/}
+githash() {
+    DIR=$1
+    shift
 
-REV=$(git rev-parse --short=8 HEAD)
+    BRANCH="$(cd $DIR && git symbolic-ref HEAD 2>/dev/null)" || BRANCH="detached-head"
+    BRANCH=${BRANCH##refs/heads/}
 
-FILE=$BRANCH-$REV-perf.txt
+    REV=$(cd $DIR && git rev-parse --short=8 HEAD)
+
+    echo $BRANCH-$REV
+}
+
+REV=$(githash $WIFIDIR)
+
+FILE="$REV.csv"
 
 truncate -s 0 "$FILE"
 
-for DIR in receiver/perf transmitter/perf perf; do
-    (cd $WIFIDIR/$DIR && make all) | awk -v category=$DIR -f perf.awk | sort >>"$FILE"
-    (cd $WIFIDIR/$DIR && make clean)
-done
+if [ "$#" != 0 ]; then
+    ZIRIADIR=$1
+    shift
+
+    ZIRIAREV=$(githash $ZIRIADIR)
+fi
+
+if [ -n "ZIRIADIR" ]; then
+    ./perfrun.sh \
+        kzc "$REV" "$WIFIDIR" \
+        ziria "$ZIRIAREV" "$ZIRIADIR" \
+        >>"$FILE"
+else
+    ./perfrun.sh \
+        kzc "$REV" "$WIFIDIR" \
+        >>"$FILE"
+fi

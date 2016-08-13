@@ -1,13 +1,43 @@
-/--input-dev=dummy/ {
-    filename = substr($1, 3, length($1) - 6);
+/Elapsed cpu time \(sec\):/ {
+    cpuTime = $5;
 }
 
-/--dummy-samples/ {
-    x=index($1, "=");
-    nosamples=substr($1, x+1, length($1));
+/Elapsed real time \(sec\):/ {
+    realTime = $5;
 }
 
-/Time elapsed \(usec\):/ {
-    time = $4;
-    print category "," filename "," nosamples / time
+/branch-instructions/ {
+    branchInstructions = $1;
+}
+
+/branch-misses/ {
+    branchMisses = $1;
+}
+
+/cache-misses/ {
+    cacheMisses = $1;
+}
+
+/cpu-cycles/ {
+    cpuCycles = $1;
+}
+
+/instructions/ {
+    instructions = $1;
+}
+
+/context-switches/ {
+    contextSwitches = $1;
+}
+
+/cpu-migrations/ {
+    cpuMigrations = $1;
+}
+
+/page-faults/ {
+    pageFaults = $1;
+}
+
+END {
+    print platform "," gitRev "," test "," nsamples "," cpuTime "," realTime "," branchInstructions "," branchMisses "," cacheMisses "," cpuCycles "," instructions "," contextSwitches "," cpuMigrations "," pageFaults
 }
