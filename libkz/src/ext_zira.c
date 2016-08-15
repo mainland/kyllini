@@ -30,6 +30,52 @@
 
 #if defined(ZIRIA_COMPAT)
 FORCEINLINE
+void __kz_v_add_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
+{
+    const unsigned wlen = 4;
+
+    __m128i* As = (__m128i*) a;
+    __m128i* Bs = (__m128i*) b;
+    __m128i* Cs = (__m128i*) c;
+
+    for (int i = 0; i < n / wlen; i++) {
+      __m128i ma = _mm_loadu_si128(&As[i]);
+      __m128i mb = _mm_loadu_si128(&Bs[i]);
+      _mm_storeu_si128(&Cs[i], _mm_add_epi16(ma, mb));
+    }
+
+    for (int i = (n / wlen) * wlen; i < n; i++) {
+      c[i].re = a[i].re + b[i].re;
+      c[i].im = a[i].im + b[i].im;
+    }
+}
+#endif /* defined(ZIRIA_COMPAT) */
+
+#if defined(ZIRIA_COMPAT)
+FORCEINLINE
+void __kz_v_sub_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
+{
+    const unsigned wlen = 4;
+
+    __m128i* As = (__m128i*) a;
+    __m128i* Bs = (__m128i*) b;
+    __m128i* Cs = (__m128i*) c;
+
+    for (int i = 0; i < n / wlen; i++) {
+        __m128i ma = _mm_loadu_si128(&As[i]);
+        __m128i mb = _mm_loadu_si128(&Bs[i]);
+        _mm_storeu_si128(&Cs[i], _mm_sub_epi16(ma, mb));
+    }
+
+    for (int i = (n / wlen) * wlen; i < n; i++) {
+        c[i].re = a[i].re - b[i].re;
+        c[i].im = a[i].im - b[i].im;
+    }
+}
+#endif /* defined(ZIRIA_COMPAT) */
+
+#if defined(ZIRIA_COMPAT)
+FORCEINLINE
 void __kz_v_mul_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b, int32_t shift)
 {
     const unsigned wlen = 4;

@@ -169,6 +169,7 @@ void __kz_v_add_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
         c[i] = a[i] + b[i];
 }
 
+#if !defined(ZIRIA_COMPAT)
 FORCEINLINE
 void __kz_v_add_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
 {
@@ -179,6 +180,7 @@ void __kz_v_add_complex16(int n, complex16_t *c, const complex16_t *a, const com
         c[i].im = a[i].im + b[i].im;
     }
 }
+#endif /* !defined(ZIRIA_COMPAT) */
 
 FORCEINLINE
 void __kz_v_add_complex32(int n, complex32_t *c, const complex32_t *a, const complex32_t *b)
@@ -209,6 +211,7 @@ void __kz_v_sub_int32(int n, int32_t *c, const int32_t *a, const int32_t *b)
         c[i] = a[i] - b[i];
 }
 
+#if !defined(ZIRIA_COMPAT)
 FORCEINLINE
 void __kz_v_sub_complex16(int n, complex16_t *c, const complex16_t *a, const complex16_t *b)
 {
@@ -219,6 +222,7 @@ void __kz_v_sub_complex16(int n, complex16_t *c, const complex16_t *a, const com
         c[i].im = a[i].im - b[i].im;
     }
 }
+#endif /* !defined(ZIRIA_COMPAT) */
 
 FORCEINLINE
 void __kz_v_sub_complex32(int n, complex32_t *c, const complex32_t *a, const complex32_t *b)
