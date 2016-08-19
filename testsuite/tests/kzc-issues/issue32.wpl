@@ -1,0 +1,20 @@
+fun comp Viterbi() {
+    var trellisIndex: int
+
+    times 5 {
+        x <- take
+        do { trellisIndex := trellisIndex + 1 }
+        emit trellisIndex
+    }
+}
+
+fun comp id() {
+    (x: int) <- take
+    emit x
+}
+
+fun comp test() {
+    repeat id() >>> repeat Viterbi()
+}
+
+let comp main = read[int] >>> test() >>> write[int]

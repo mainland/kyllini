@@ -553,8 +553,8 @@ collectCodeBlock m = do
            }
 
     -- Figure out which local declarations we need to promote.
-    outOfScope        <- gets outOfThreadScope
-    (promote, retain) <- promoteOutOfScope outOfScope (codeThreadDecls c)
+    outOfScope                  <- gets outOfThreadScope
+    (promote, retain, initStms) <- promoteOutOfScope outOfScope (codeThreadDecls c)
 
     -- Remove retained declarations from user-tracking state.
     removeUsed retain
@@ -564,7 +564,7 @@ collectCodeBlock m = do
     appendTopDecls (toList promote)
 
     return (CodeBlock { blockDecls       = retain <> codeDecls c
-                      , blockInitStms    = codeThreadInitStms c
+                      , blockInitStms    = initStms <> codeThreadInitStms c
                       , blockStms        = codeStms c
                       , blockCleanupStms = codeThreadCleanupStms c
                       }
@@ -587,8 +587,8 @@ collectBlock m = do
            }
 
     -- Figure out which local declarations we need to promote.
-    outOfScope        <- gets outOfLocalScope
-    (promote, retain) <- promoteOutOfScope outOfScope (codeDecls c)
+    outOfScope                  <- gets outOfLocalScope
+    (promote, retain, initStms) <- promoteOutOfScope outOfScope (codeDecls c)
 
     -- Remove retained declarations from user-tracking state.
     removeUsed retain
@@ -598,7 +598,7 @@ collectBlock m = do
     appendThreadDecls (toList promote)
 
     -- Return the untainted declarations
-    return (retain, codeStms c, x)
+    return (retain, initStms <> codeStms c, x)
   where
     removeLocalDeclared :: Seq C.InitGroup -> Cg l ()
     removeLocalDeclared decls =
@@ -618,7 +618,9 @@ removeUsed decls =
 
 promoteOutOfScope :: Set C.Id
                   -> Seq C.InitGroup
-                  -> Cg l (Seq C.InitGroup, Seq C.InitGroup)
+                  -> Cg l (Seq C.InitGroup,
+                           Seq C.InitGroup,
+                           Seq C.Stm)
 promoteOutOfScope outOfScope cdecls = do
     -- Figure out the set of variables that were used after they went out of
     -- scope.
@@ -629,13 +631,58 @@ promoteOutOfScope outOfScope cdecls = do
     let promote, retain :: Seq C.InitGroup
         (promote, retain) = Seq.partition (declIn escaped) cdecls
 
-    return (promote, retain)
+    let promoteInits :: [C.InitGroup]
+        promoteInitStms0 :: [Seq C.Stm]
+        promoteInitStms :: Seq C.Stm
+        (promoteInits, promoteInitStms0) =
+            unzip $ map splitInitialization $ toList promote
+        promoteInitStms = mconcat promoteInitStms0
+
+    when (not (Seq.null promoteInitStms)) $
+      traceCg $ nest 2 $ text "Promoted uninitialized:" </>
+        stack (map ppr (toList promoteInitStms))
+
+    return (Seq.fromList promoteInits, retain, promoteInitStms)
   where
     declIn :: Set C.Id -> C.InitGroup -> Bool
     declIn cids decl = not $ Set.null $ cids' `Set.intersection` cids
       where
         cids' :: Set C.Id
         cids' = Set.fromList (initIdents decl)
+
+    splitInitialization :: C.InitGroup -> (C.InitGroup, Seq C.Stm)
+    splitInitialization (C.InitGroup dspec attr inits s) =
+        (C.InitGroup dspec attr inits' s, mconcat stms)
+      where
+        inits' :: [C.Init]
+        stms :: [Seq C.Stm]
+        (inits', stms) = unzip $ map splitInit inits
+
+        splitInit :: C.Init -> (C.Init, Seq C.Stm)
+        splitInit (C.Init cid decl asm (Just (C.ExpInitializer e _)) attr s) =
+            (C.Init cid decl asm Nothing attr s,
+             Seq.singleton [cstm|$id:cid = $e;|])
+
+        splitInit (C.Init cid decl asm (Just C.CompoundInitializer{}) attr s) =
+            (C.Init cid decl asm Nothing attr s,
+             Seq.singleton (czero ctau cid))
+          where
+            ctau :: C.Type
+            ctau = C.Type dspec decl s
+
+        splitInit ini =
+            (ini, mempty)
+
+    splitInitialization group = (group, mempty)
+
+    czero :: C.Type -> C.Id -> C.Stm
+    czero ctau cid
+        | isArray ctau = [cstm|kz_zero($id:cid, sizeof($ty:ctau));|]
+        | otherwise    = [cstm|kz_zero(&$id:cid, sizeof($ty:ctau));|]
+      where
+        isArray :: C.Type -> Bool
+        isArray (C.Type _ C.Array{} _) = True
+        isArray _                      = False
 
 inNewCodeBlock :: Cg l a -> Cg l (CodeBlock, a)
 inNewCodeBlock = collectCodeBlock

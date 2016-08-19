@@ -75,6 +75,8 @@ void kz_assert(int flag, const char* loc, const char *format, ...)
 void kz_check_error(int err, const char* loc, const char *format, ...)
     __attribute__((format (printf, 3, 4)));
 
+#define kz_zero(x, n) bzero(x, n)
+
 void kz_error(const char*);
 
 long double kz_get_cpu_time(void);
