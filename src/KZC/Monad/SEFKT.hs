@@ -32,9 +32,9 @@ import Control.Monad.State (MonadState(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Error
 import KZC.Expr.Lint.Monad
-import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 

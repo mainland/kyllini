@@ -21,7 +21,7 @@ import Control.Monad ((>=>),
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
-import KZC.Flags
+import KZC.Config
 import KZC.Globals
 
 options :: forall m . Monad m => [OptDescr (Flags -> m Flags)]

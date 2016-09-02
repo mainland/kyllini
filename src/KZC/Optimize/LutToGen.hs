@@ -38,12 +38,12 @@ import Data.Sequence ((|>),
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lut
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Name
 import KZC.Optimize.LowerViews

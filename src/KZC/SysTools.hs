@@ -39,7 +39,7 @@ import System.IO (hClose,
                   hFlush)
 import Text.PrettyPrint.Mainland
 
-import KZC.Flags
+import KZC.Config
 import KZC.Monad
 
 globalDefines :: [(String, String)]

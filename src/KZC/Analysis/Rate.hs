@@ -42,11 +42,11 @@ import Control.Monad.State (MonadState(..),
 import Data.Maybe (fromJust)
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Trace
 import KZC.Uniq

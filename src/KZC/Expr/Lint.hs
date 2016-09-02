@@ -97,11 +97,11 @@ import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
+import KZC.Config
 import KZC.Error
 import KZC.Expr.Lint.Monad
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
-import KZC.Flags
 import KZC.Monad
 import KZC.Summary
 import KZC.Trace

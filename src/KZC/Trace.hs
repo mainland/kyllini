@@ -54,7 +54,7 @@ import System.IO (hPutStrLn,
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
 
-import KZC.Flags
+import KZC.Config
 
 class MonadFlags m => MonadTrace m where
     askTraceDepth   :: m Int

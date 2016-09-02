@@ -44,12 +44,12 @@ import KZC.Cg.Code
 import KZC.Cg.Monad
 import KZC.Cg.Util
 import KZC.Check.Path
+import KZC.Config
 import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Name

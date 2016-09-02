@@ -45,11 +45,11 @@ import Text.PrettyPrint.Mainland hiding (width)
 import KZC.Analysis.Interval (IsInterval(..))
 import KZC.Analysis.Lattice (bot)
 import KZC.Analysis.ReadWriteSet
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Name
 import KZC.Summary
 import KZC.Trace

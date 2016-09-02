@@ -24,11 +24,11 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.IORef (IORef)
 import Data.Loc (noLoc)
 
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Interp (compileAndRunGen)
 import KZC.Trace
 import KZC.Uniq

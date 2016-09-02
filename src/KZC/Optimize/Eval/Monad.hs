@@ -121,12 +121,12 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as MV
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Core.Comp
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Optimize.Eval.Val
 import KZC.Trace

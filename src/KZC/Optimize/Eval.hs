@@ -40,13 +40,13 @@ import qualified Data.Set as Set
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Core.Comp
 import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P

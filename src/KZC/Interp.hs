@@ -49,13 +49,13 @@ import qualified Data.Vector.Generic.Mutable as MV
 import Data.Vector.Mutable (MVector)
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax hiding (I)
 import qualified KZC.Core.Syntax as S
 import KZC.Error
-import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 import KZC.Util.Env
