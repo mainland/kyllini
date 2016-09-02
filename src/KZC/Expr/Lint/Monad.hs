@@ -96,10 +96,10 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Error
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
-import KZC.Flags
 import KZC.Platform
 import KZC.Summary
 import KZC.Trace

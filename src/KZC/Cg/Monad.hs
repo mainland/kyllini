@@ -155,10 +155,10 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Cg.CExp
 import KZC.Cg.Code
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Monad
 import KZC.Quote.C

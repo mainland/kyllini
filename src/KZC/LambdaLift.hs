@@ -35,11 +35,11 @@ import qualified Data.Set as Set
 import Data.Sequence (Seq,
                       (|>))
 
+import KZC.Config
 import KZC.Error
 import KZC.Expr.Lint
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
-import KZC.Flags
 import KZC.Summary
 import KZC.Trace
 import KZC.Uniq

@@ -41,12 +41,12 @@ import Data.Traversable (traverse)
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lattice
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 

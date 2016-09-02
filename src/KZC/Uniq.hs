@@ -39,7 +39,7 @@ import Data.Monoid (Monoid)
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Flags
+import KZC.Config
 
 newtype Uniq = Uniq Int
   deriving (Eq, Ord, Read, Show)

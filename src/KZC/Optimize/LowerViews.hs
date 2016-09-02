@@ -29,11 +29,11 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Trace
 import KZC.Uniq

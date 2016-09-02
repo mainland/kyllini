@@ -62,7 +62,7 @@ import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
 
-import KZC.Flags
+import KZC.Config
 import KZC.Globals
 import KZC.Pretty
 

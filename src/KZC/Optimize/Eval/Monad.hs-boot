@@ -19,9 +19,9 @@ import Control.Monad.Exception (MonadException(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 
+import KZC.Config (MonadFlags)
 import KZC.Core.Lint (MonadTc, MonadTcRef)
 import KZC.Error (MonadErr)
-import KZC.Flags (MonadFlags)
 import KZC.Trace (MonadTrace)
 import KZC.Uniq (MonadUnique)
 

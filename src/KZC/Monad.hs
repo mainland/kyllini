@@ -39,10 +39,10 @@ import KZC.Check.State (TiEnv,
                         TiState,
                         defaultTiEnv,
                         defaultTiState)
+import KZC.Config
 import KZC.Error
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
-import KZC.Flags
 import KZC.Trace
 import KZC.Uniq
 

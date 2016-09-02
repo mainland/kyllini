@@ -24,9 +24,9 @@ import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Text.PrettyPrint.Mainland
 
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Error
-import KZC.Flags
 import KZC.Uniq
 import KZC.Trace
 

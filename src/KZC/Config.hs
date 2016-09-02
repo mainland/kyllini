@@ -2,12 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Flags
+-- Module      :  KZC.Config
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Flags (
+module KZC.Config (
     ModeFlag(..),
     DynFlag(..),
     WarnFlag(..),

@@ -50,6 +50,7 @@ import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
 import KZC.Cg
 import KZC.Check
+import KZC.Config
 import qualified KZC.Core.Label as C
 import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
@@ -57,7 +58,6 @@ import KZC.Error
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
-import KZC.Flags
 import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad

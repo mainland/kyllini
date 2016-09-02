@@ -25,11 +25,11 @@ import Text.PrettyPrint.Mainland hiding (width)
 import KZC.Analysis.Lut (LUTInfo(..),
                          lutInfo,
                          shouldLUT)
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Trace
 import KZC.Uniq

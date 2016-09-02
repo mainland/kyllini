@@ -55,6 +55,7 @@ import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Rate
+import KZC.Config
 import qualified KZC.Core.Comp as C
 import KZC.Core.Embed
 import KZC.Core.Lint
@@ -62,7 +63,6 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Error
-import KZC.Flags
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Name

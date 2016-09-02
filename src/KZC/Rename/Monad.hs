@@ -33,8 +33,8 @@ import qualified Data.Map as Map
 
 import Language.Ziria.Syntax
 
+import KZC.Config
 import KZC.Error
-import KZC.Flags
 import KZC.Monad
 import KZC.Trace
 import KZC.Uniq

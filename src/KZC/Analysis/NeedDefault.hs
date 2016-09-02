@@ -50,11 +50,11 @@ import Data.Traversable (traverse)
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lattice
+import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Error
-import KZC.Flags
 import KZC.Pretty
 import KZC.Trace
 import KZC.Uniq
@@ -566,7 +566,7 @@ useExp :: forall m . MonadTc m
        -> ND m (Exp, Val)
 useExp e@(ConstE (FixC I{} x) _) =
     return (e, intV x)
-    
+
 useExp e@(ConstE (FixC U{} x) _) =
     return (e, intV x)
 
