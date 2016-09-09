@@ -58,11 +58,11 @@ import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool
 shouldLUT info e = do
-    dflags <- askFlags
+    dflags <- askConfig
     ((Right <$> lutStats e) `catch`
         \(err :: SomeException) -> return (Left err)) >>= go dflags
   where
-    go :: Flags -> Either SomeException LUTStats -> m Bool
+    go :: Config -> Either SomeException LUTStats -> m Bool
     go _ Left{} =
         return False
 
@@ -328,7 +328,7 @@ newtype L m a = L { unL :: StateT LUTStats m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

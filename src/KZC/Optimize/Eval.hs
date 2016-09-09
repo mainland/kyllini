@@ -57,7 +57,7 @@ import KZC.Util.SetLike
 import KZC.Vars
 
 -- | Return 'True' if we should partially-evaluate.
-peval :: Flags -> Bool
+peval :: Config -> Bool
 peval = testDynFlag PartialEval
 
 evalProgram :: (IsLabel l, MonadTcRef m)
@@ -545,10 +545,10 @@ evalExp :: forall l m . (IsLabel l, MonadTcRef m)
         -> EvalM l m (Val l m Exp)
 evalExp e =
     withSummaryContext e $ do
-    flags <- askFlags
+    flags <- askConfig
     eval flags e
   where
-    eval :: Flags -> Exp -> EvalM l m (Val l m Exp)
+    eval :: Config -> Exp -> EvalM l m (Val l m Exp)
     eval flags (ConstE c _) | peval flags =
         evalConst c
 

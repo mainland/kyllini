@@ -84,7 +84,7 @@ newtype OccM m a = OccM { unOccM :: WriterT Occs m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

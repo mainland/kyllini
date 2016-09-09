@@ -97,7 +97,7 @@ newtype F m a = F { unF :: ReaderT FEnv (StateT FState m) a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

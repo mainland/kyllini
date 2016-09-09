@@ -13,12 +13,12 @@ module KZC.Config (
     WarnFlag(..),
     DumpFlag(..),
     TraceFlag(..),
-    Flags(..),
+    Config(..),
 
-    defaultFlags,
+    defaultConfig,
 
-    MonadFlags(..),
-    asksFlags,
+    MonadConfig(..),
+    asksConfig,
 
     flagImplications,
 
@@ -181,7 +181,7 @@ instance (Enum a, Bounded a, Show a) => Show (FlagSet a) where
     show (FlagSet n) = show [f | f <- [minBound..maxBound::a],
                                  n `testBit` fromEnum f]
 
-data Flags = Flags
+data Config = Config
     { mode       :: !ModeFlag
     , verbLevel  :: !Int
     , maxErrCtx  :: !Int
@@ -210,8 +210,8 @@ data Flags = Flags
     }
   deriving (Eq, Ord, Show)
 
-instance Monoid Flags where
-    mempty = Flags
+instance Monoid Config where
+    mempty = Config
         { mode       = Compile
         , verbLevel  = 0
         , maxErrCtx  = 1
@@ -246,7 +246,7 @@ instance Monoid Flags where
         , fuel = 0
         }
 
-    mappend f1 f2 = Flags
+    mappend f1 f2 = Config
         { mode       = mode f2
         , verbLevel  = verbLevel f1 + verbLevel f2
         , maxErrCtx  = max (maxErrCtx f1) (maxErrCtx f2)
@@ -274,16 +274,16 @@ instance Monoid Flags where
         , fuel = fuel f1 + fuel f2
         }
 
-defaultFlags :: Flags
-defaultFlags =
+defaultConfig :: Config
+defaultConfig =
     setFlags setDynFlag  defaultDynFlags $
     setFlags setWarnFlag defaultWarnFlags
     mempty
   where
-    setFlags :: (a -> Flags -> Flags)
+    setFlags :: (a -> Config -> Config)
              -> [a]
-             -> Flags
-             -> Flags
+             -> Config
+             -> Config
     setFlags f xs flags = foldl' (flip f) flags xs
 
     defaultDynFlags :: [DynFlag]
@@ -295,15 +295,15 @@ defaultFlags =
     defaultWarnFlags :: [WarnFlag]
     defaultWarnFlags = [WarnUnusedCommandBind]
 
-class Monad m => MonadFlags m where
-    askFlags   :: m Flags
-    localFlags :: (Flags -> Flags) -> m a -> m a
+class Monad m => MonadConfig m where
+    askConfig   :: m Config
+    localConfig :: (Config -> Config) -> m a -> m a
 
-asksFlags :: MonadFlags m => (Flags -> a) -> m a
-asksFlags f = fmap f askFlags
+asksConfig :: MonadConfig m => (Config -> a) -> m a
+asksConfig f = fmap f askConfig
 
 -- | Set all flags implied by other flags
-flagImplications :: Flags -> Flags
+flagImplications :: Config -> Config
 flagImplications = fixpoint go
   where
     fixpoint :: Eq a => (a -> a) -> a -> a
@@ -312,7 +312,7 @@ flagImplications = fixpoint go
       where
         x' = f x
 
-    go :: Flags -> Flags
+    go :: Config -> Config
     go = imp Fuse (setDynFlag AlwaysInlineComp) .
          imp Coalesce (setDynFlag AlwaysInlineComp) .
          imp MayInlineVal (setDynFlag Simplify) .
@@ -323,134 +323,134 @@ flagImplications = fixpoint go
          imp LUT (setDynFlag FloatViews)
 
     imp :: DynFlag
-        -> (Flags -> Flags)
-        -> Flags -> Flags
+        -> (Config -> Config)
+        -> Config -> Config
     imp f g fs =
         if testDynFlag f fs then g fs else fs
 
-instance MonadFlags m => MonadFlags (MaybeT m) where
-    askFlags       = lift askFlags
-    localFlags f m = MaybeT $ localFlags f (runMaybeT m)
+instance MonadConfig m => MonadConfig (MaybeT m) where
+    askConfig       = lift askConfig
+    localConfig f m = MaybeT $ localConfig f (runMaybeT m)
 
-instance MonadFlags m => MonadFlags (ContT r m) where
-    askFlags   = lift askFlags
-    localFlags = Cont.liftLocal askFlags localFlags
+instance MonadConfig m => MonadConfig (ContT r m) where
+    askConfig   = lift askConfig
+    localConfig = Cont.liftLocal askConfig localConfig
 
 #if !MIN_VERSION_base(4,8,0)
-instance (Error e, MonadFlags m) => MonadFlags (ErrorT e m) where
-    askFlags       = lift askFlags
-    localFlags f m = ErrorT $ localFlags f (runErrorT m)
+instance (Error e, MonadConfig m) => MonadConfig (ErrorT e m) where
+    askConfig       = lift askConfig
+    localConfig f m = ErrorT $ localConfig f (runErrorT m)
 #endif /* !MIN_VERSION_base(4,8,0) */
 
-instance (MonadFlags m) => MonadFlags (ExceptT e m) where
-    askFlags       = lift askFlags
-    localFlags f m = ExceptT $ localFlags f (runExceptT m)
+instance (MonadConfig m) => MonadConfig (ExceptT e m) where
+    askConfig       = lift askConfig
+    localConfig f m = ExceptT $ localConfig f (runExceptT m)
 
-instance (MonadFlags m) => MonadFlags (ExceptionT m) where
-    askFlags       = lift askFlags
-    localFlags f m = ExceptionT $ localFlags f (runExceptionT m)
+instance (MonadConfig m) => MonadConfig (ExceptionT m) where
+    askConfig       = lift askConfig
+    localConfig f m = ExceptionT $ localConfig f (runExceptionT m)
 
-instance MonadFlags m => MonadFlags (ReaderT r m) where
-    askFlags       = lift askFlags
-    localFlags f m = ReaderT $ \r -> localFlags f (runReaderT m r)
+instance MonadConfig m => MonadConfig (ReaderT r m) where
+    askConfig       = lift askConfig
+    localConfig f m = ReaderT $ \r -> localConfig f (runReaderT m r)
 
-instance MonadFlags m => MonadFlags (StateT s m) where
-    askFlags       = lift askFlags
-    localFlags f m = StateT $ \s -> localFlags f (runStateT m s)
+instance MonadConfig m => MonadConfig (StateT s m) where
+    askConfig       = lift askConfig
+    localConfig f m = StateT $ \s -> localConfig f (runStateT m s)
 
-instance MonadFlags m => MonadFlags (S.StateT s m) where
-    askFlags       = lift askFlags
-    localFlags f m = S.StateT $ \s -> localFlags f (S.runStateT m s)
+instance MonadConfig m => MonadConfig (S.StateT s m) where
+    askConfig       = lift askConfig
+    localConfig f m = S.StateT $ \s -> localConfig f (S.runStateT m s)
 
-instance (Monoid w, MonadFlags m) => MonadFlags (WriterT w m) where
-    askFlags       = lift askFlags
-    localFlags f m = WriterT $ localFlags f (runWriterT m)
+instance (Monoid w, MonadConfig m) => MonadConfig (WriterT w m) where
+    askConfig       = lift askConfig
+    localConfig f m = WriterT $ localConfig f (runWriterT m)
 
-instance (Monoid w, MonadFlags m) => MonadFlags (S.WriterT w m) where
-    askFlags       = lift askFlags
-    localFlags f m = S.WriterT $ localFlags f (S.runWriterT m)
+instance (Monoid w, MonadConfig m) => MonadConfig (S.WriterT w m) where
+    askConfig       = lift askConfig
+    localConfig f m = S.WriterT $ localConfig f (S.runWriterT m)
 
-setMode :: ModeFlag -> Flags -> Flags
+setMode :: ModeFlag -> Config -> Config
 setMode f flags = flags { mode = f }
 
-testDynFlag :: DynFlag -> Flags -> Bool
+testDynFlag :: DynFlag -> Config -> Bool
 testDynFlag f flags = dynFlags flags `testFlag` f
 
-setDynFlag :: DynFlag -> Flags -> Flags
+setDynFlag :: DynFlag -> Config -> Config
 setDynFlag f flags = flags { dynFlags = setFlag (dynFlags flags) f }
 
-setDynFlags :: [DynFlag] -> Flags -> Flags
+setDynFlags :: [DynFlag] -> Config -> Config
 setDynFlags fs flags = foldl' (flip setDynFlag) flags fs
 
-unsetDynFlag :: DynFlag -> Flags -> Flags
+unsetDynFlag :: DynFlag -> Config -> Config
 unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
 
-testWarnFlag :: WarnFlag -> Flags -> Bool
+testWarnFlag :: WarnFlag -> Config -> Bool
 testWarnFlag f flags = warnFlags flags `testFlag` f
 
-setWarnFlag :: WarnFlag -> Flags -> Flags
+setWarnFlag :: WarnFlag -> Config -> Config
 setWarnFlag f flags = flags { warnFlags = setFlag (warnFlags flags) f }
 
-setWarnFlags :: [WarnFlag] -> Flags -> Flags
+setWarnFlags :: [WarnFlag] -> Config -> Config
 setWarnFlags fs flags = foldl' (flip setWarnFlag) flags fs
 
-unsetWarnFlag :: WarnFlag -> Flags -> Flags
+unsetWarnFlag :: WarnFlag -> Config -> Config
 unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
 
-testWerrorFlag :: WarnFlag -> Flags -> Bool
+testWerrorFlag :: WarnFlag -> Config -> Bool
 testWerrorFlag f flags = werrorFlags flags `testFlag` f
 
-setWerrorFlag :: WarnFlag -> Flags -> Flags
+setWerrorFlag :: WarnFlag -> Config -> Config
 setWerrorFlag f flags = flags { werrorFlags = setFlag (werrorFlags flags) f }
 
-setWerrorFlags :: [WarnFlag] -> Flags -> Flags
+setWerrorFlags :: [WarnFlag] -> Config -> Config
 setWerrorFlags fs flags = foldl' (flip setWerrorFlag) flags fs
 
-unsetWerrorFlag :: WarnFlag -> Flags -> Flags
+unsetWerrorFlag :: WarnFlag -> Config -> Config
 unsetWerrorFlag f flags = flags { werrorFlags = unsetFlag (werrorFlags flags) f }
 
-testDumpFlag :: DumpFlag -> Flags -> Bool
+testDumpFlag :: DumpFlag -> Config -> Bool
 testDumpFlag f flags = dumpFlags flags `testFlag` f
 
-setDumpFlag :: DumpFlag -> Flags -> Flags
+setDumpFlag :: DumpFlag -> Config -> Config
 setDumpFlag f flags = flags { dumpFlags = setFlag (dumpFlags flags) f }
 
-setDumpFlags :: [DumpFlag] -> Flags -> Flags
+setDumpFlags :: [DumpFlag] -> Config -> Config
 setDumpFlags fs flags = foldl' (flip setDumpFlag) flags fs
 
-testTraceFlag :: TraceFlag -> Flags -> Bool
+testTraceFlag :: TraceFlag -> Config -> Bool
 testTraceFlag f flags = traceFlags flags `testFlag` f
 
-setTraceFlag :: TraceFlag -> Flags -> Flags
+setTraceFlag :: TraceFlag -> Config -> Config
 setTraceFlag f flags = flags { traceFlags = setFlag (traceFlags flags) f }
 
-setTraceFlags :: [TraceFlag] -> Flags -> Flags
+setTraceFlags :: [TraceFlag] -> Config -> Config
 setTraceFlags fs flags = foldl' (flip setTraceFlag) flags fs
 
-whenDynFlag :: MonadFlags m => DynFlag -> m () -> m ()
+whenDynFlag :: MonadConfig m => DynFlag -> m () -> m ()
 whenDynFlag f act = do
-    doDump <- asksFlags (testDynFlag f)
+    doDump <- asksConfig (testDynFlag f)
     when doDump act
 
-whenWarnFlag :: MonadFlags m => WarnFlag -> m () -> m ()
+whenWarnFlag :: MonadConfig m => WarnFlag -> m () -> m ()
 whenWarnFlag f act = do
-    doDump <- asksFlags (testWarnFlag f)
+    doDump <- asksConfig (testWarnFlag f)
     when doDump act
 
-whenWerrorFlag :: MonadFlags m => WarnFlag -> m () -> m ()
+whenWerrorFlag :: MonadConfig m => WarnFlag -> m () -> m ()
 whenWerrorFlag f act = do
-    doDump <- asksFlags (testWerrorFlag f)
+    doDump <- asksConfig (testWerrorFlag f)
     when doDump act
 
-whenDumpFlag :: MonadFlags m => DumpFlag -> m () -> m ()
+whenDumpFlag :: MonadConfig m => DumpFlag -> m () -> m ()
 whenDumpFlag f act = do
-    doDump <- asksFlags (testDumpFlag f)
+    doDump <- asksConfig (testDumpFlag f)
     when doDump act
 
-whenVerb :: MonadFlags m => m () -> m ()
+whenVerb :: MonadConfig m => m () -> m ()
 whenVerb = whenVerbLevel 1
 
-whenVerbLevel :: MonadFlags m => Int -> m () -> m ()
+whenVerbLevel :: MonadConfig m => Int -> m () -> m ()
 whenVerbLevel lvlNeeded act = do
-    lvl <- asksFlags verbLevel
+    lvl <- asksConfig verbLevel
     when (lvl >= lvlNeeded) act

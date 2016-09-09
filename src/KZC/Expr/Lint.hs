@@ -115,7 +115,7 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace)
 
 instance MonadTc Tc where

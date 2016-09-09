@@ -47,8 +47,8 @@ globalDefines = [("__KZC__", "1")]
 
 runCpp :: FilePath -> T.Text -> KZC T.Text
 runCpp filepath txt = do
-    includePaths  <-  asksFlags includePaths
-    defines       <-  asksFlags defines
+    includePaths  <-  asksConfig includePaths
+    defines       <-  asksConfig defines
     let args'     =   args ++ ["-undef", "-", "-o", "-"] ++
                       ["-I"++path | path <- takeDirectory filepath : includePaths] ++
                       ["-D"++d++"="++def | (d, def) <- defines ++ globalDefines]

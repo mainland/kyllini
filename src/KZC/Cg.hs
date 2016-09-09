@@ -199,7 +199,7 @@ void kz_main(const typename kz_params_t* $id:params)
 {
     $items:(toBlockItems cblock)
 }|]
-    dumpStats <- asksFlags (testDynFlag ShowCgStats)
+    dumpStats <- asksConfig (testDynFlag ShowCgStats)
     when dumpStats $ do
         stats  <- getStats
         liftIO $ putDocLn $ nest 2 $
@@ -361,10 +361,10 @@ cgInitThreads x =
 
 cgTimed :: forall l a . Cg l a -> Cg l a
 cgTimed m = do
-    flags <- askFlags
+    flags <- askConfig
     go flags
   where
-    go :: Flags -> Cg l a
+    go :: Config -> Cg l a
     go flags | testDynFlag Timers flags = do
         cpu_time_start  :: C.Id <- gensym "cpu_time_start"
         cpu_time_end    :: C.Id <- gensym "cpu_time_end"
@@ -443,7 +443,7 @@ cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
 cgDecl (LetD decl _) k = do
-    flags <- askFlags
+    flags <- askConfig
     cgLocalDecl flags decl k
 
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
@@ -572,7 +572,7 @@ withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
 withInstantiatedTyVars _tau k =
     k
 
-cgLocalDecl :: forall l a . IsLabel l => Flags -> LocalDecl -> Cg l a -> Cg l a
+cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
     withSummaryContext decl $ do
     appendComment $ text "Lut:" </> ppr e0
@@ -1084,7 +1084,7 @@ cgExp e k =
         cgIf tau e1 (cgExp e2) (cgExp e3) k
 
     go (LetE decl e _) k = do
-        flags <- askFlags
+        flags <- askConfig
         cgLocalDecl flags decl $
           cgExp e k
 
@@ -1910,7 +1910,7 @@ cgComp comp klbl = cgSteps (unComp comp)
         cgStep step klbl k
 
     cgSteps (LetC l decl _ : steps) k = do
-        flags <- askFlags
+        flags <- askConfig
         cgWithLabel l $
           cgLocalDecl flags decl $
           cgSteps steps k
@@ -2043,7 +2043,7 @@ cgComp comp klbl = cgSteps (unComp comp)
 
     cgStep step@(ParC ann b left right _) _ k =
         withSummaryContext step $ do
-        dflags  <- askFlags
+        dflags  <- askConfig
         tau_res <- resultType <$> inferStep step
         free    <- isFreeRunning
         if testDynFlag PipelineAll dflags
@@ -2052,7 +2052,7 @@ cgComp comp klbl = cgSteps (unComp comp)
           then cgParMultiThreaded ForkConsumer free tau_res b left right klbl k
           else cgParSingleThreaded tau_res b left right klbl k
       where
-        shouldPipeline :: Flags -> PipelineAnn -> Bool
+        shouldPipeline :: Config -> PipelineAnn -> Bool
         shouldPipeline dflags AlwaysPipeline | testDynFlag Pipeline dflags =
             True
 
@@ -2745,7 +2745,7 @@ cgAssign tau ce1 ce2 = do
         case iota of
           ConstI n _ | not (isArrT tau_elem) -> do
               bytes    <- typeSizeInBytes tau0
-              minBytes <- asksFlags minMemcpyBytes
+              minBytes <- asksConfig minMemcpyBytes
               if bytes >= minBytes
                 then cgMemcpyArray iota tau_elem
                 else cgAssignArray n tau_elem
@@ -2808,7 +2808,7 @@ cgAssign tau ce1 ce2 = do
 
 cgBoundsCheck :: CExp l -> CExp l -> Cg l ()
 cgBoundsCheck clen cidx = do
-    boundsCheck <- asksFlags (testDynFlag BoundsCheck)
+    boundsCheck <- asksConfig (testDynFlag BoundsCheck)
     when boundsCheck $
       appendStm [cstm|kz_assert($cidx >= 0 && $cidx < $clen, $string:(renderLoc cidx), "Array index %d out of bounds (%d)", $cidx, $clen);|]
 

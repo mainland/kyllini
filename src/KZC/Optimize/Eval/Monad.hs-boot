@@ -19,7 +19,7 @@ import Control.Monad.Exception (MonadException(..))
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 
-import KZC.Config (MonadFlags)
+import KZC.Config (MonadConfig)
 import KZC.Core.Lint (MonadTc, MonadTcRef)
 import KZC.Error (MonadErr)
 import KZC.Trace (MonadTrace)
@@ -36,7 +36,7 @@ instance Functor m => Functor (EvalM l m) where
 instance Monad m => Monad (EvalM l m) where
 instance MonadException m => MonadException (EvalM l m) where
 instance MonadErr m => MonadErr (EvalM l m) where
-instance MonadFlags m => MonadFlags (EvalM l m) where
+instance MonadConfig m => MonadConfig (EvalM l m) where
 instance MonadUnique m => MonadUnique (EvalM l m) where
 instance MonadTrace m => MonadTrace (EvalM l m) where
 instance MonadTc m => MonadTc (EvalM l m) where

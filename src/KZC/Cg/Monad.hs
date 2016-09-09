@@ -315,7 +315,7 @@ newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
               MonadState (CgState l),
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadRef IORef,
               MonadTc,
