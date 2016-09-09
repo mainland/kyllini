@@ -38,7 +38,7 @@ type EK m r = SomeException -> m r
 
 -- | The continuation monad transformer. Can be used to add continuation
 -- handling to a member of 'MonadErr'. The transformed monad correctly supports
--- exceptions via 'MonadException' as well as 'MonadErr', 'MonadFlags',
+-- exceptions via 'MonadException' as well as 'MonadErr', 'MonadConfig',
 -- 'MonadTrace', and 'MonadTc'.
 newtype KT r m a = KT { unKT :: EK m r -> SK m r a -> m r }
 
@@ -110,9 +110,9 @@ instance MonadErr m => MonadErr (KT r m) where
 instance (MonadErr m, MonadUnique m) => MonadUnique (KT r m) where
     newUnique = lift newUnique
 
-instance (MonadErr m, MonadFlags m) => MonadFlags (KT r m) where
-    askFlags   = lift askFlags
-    localFlags = liftLocal askFlags localFlags
+instance (MonadErr m, MonadConfig m) => MonadConfig (KT r m) where
+    askConfig   = lift askConfig
+    localConfig = liftLocal askConfig localConfig
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (KT r m) where
     askTraceDepth   = lift askTraceDepth

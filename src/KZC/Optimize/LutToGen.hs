@@ -65,7 +65,7 @@ newtype G l m a = G { unG :: StateT (GState l) m a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc)
 
@@ -348,7 +348,7 @@ lutGenToExp :: forall m . MonadTc m
             -> [Gen]
             -> m Exp
 lutGenToExp v_lut e gs =
-    localFlags (unsetWarnFlag WarnBitArrayCopy) $ do
+    localConfig (unsetWarnFlag WarnBitArrayCopy) $ do
     unless (isLUTGen e gs) $
       faildoc $ text "Cannot convert non-LUT generator expression to expression"
     tau  <- checkGenerators gs $ \_ ->
@@ -426,7 +426,7 @@ newtype L m a = L { unL :: ReaderT LEnv m a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc)
 

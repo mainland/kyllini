@@ -84,7 +84,7 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc,
             MonadLogic)
@@ -143,7 +143,7 @@ coalesceProgram = runCo . coalesceProg
     coalesceProg :: Program l -> Co m (Program l)
     coalesceProg prog = do
         prog'     <- programT prog
-        dumpStats <- asksFlags (testDynFlag ShowFusionStats)
+        dumpStats <- asksConfig (testDynFlag ShowFusionStats)
         when dumpStats $ do
             stats  <- getStats
             liftIO $ putDocLn $ nest 2 $
@@ -346,7 +346,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
           traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
           (_s, a, b) <- askSTIndTypes
           comp'      <- compT comp
-          flags      <- askFlags
+          flags      <- askConfig
           if testDynFlag CoalesceTop flags
             then do
               bcs <- coalesceComp comp'
@@ -654,14 +654,14 @@ coalesceComp comp = do
       text "C-rules:" </> stack (map ppr (sort cs1))
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
       text "B-rules:" </> stack (map ppr (sort cs2))
-    dflags <- askFlags
+    dflags <- askConfig
     let cs :: [BC]
         cs = filter (byteSizePred dflags asz bsz) $
              filter (vectAnnPred dflags (vectAnn comp)) $
              cs1 ++ cs2
     return cs
   where
-    byteSizePred :: Flags -> Int -> Int -> BC -> Bool
+    byteSizePred :: Config -> Int -> Int -> BC -> Bool
     byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
         (byteSized asz . inBlock) bc && (byteSized bsz . outBlock) bc
       where
@@ -672,7 +672,7 @@ coalesceComp comp = do
     byteSizePred _ _ _ _ =
         True
 
-    vectAnnPred :: Flags -> Maybe VectAnn -> BC -> Bool
+    vectAnnPred :: Config -> Maybe VectAnn -> BC -> Bool
     vectAnnPred dflags ann | VectFilterAnn `testDynFlag` dflags =
         matchVectAnn ann
       where

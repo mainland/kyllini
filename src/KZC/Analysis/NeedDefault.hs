@@ -300,7 +300,7 @@ newtype ND m a = ND { unND :: StateT NDState m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

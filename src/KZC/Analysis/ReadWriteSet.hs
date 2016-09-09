@@ -337,7 +337,7 @@ newtype RW m a = RW { unRW :: ReaderT REnv (StateT RState m) a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

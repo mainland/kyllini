@@ -87,7 +87,7 @@ prettyFromException x = do
     PrettyException a <- fromException x
     cast a
 
-class (MonadFlags m, MonadException m) => MonadErr m where
+class (MonadConfig m, MonadException m) => MonadErr m where
     askErrCtx    :: m [ErrorContext]
     localErrCtx  :: ([ErrorContext] -> [ErrorContext]) -> m a -> m a
 
@@ -220,7 +220,7 @@ warndoc msg = warn (FailException msg)
 warnWhen :: (Exception e, MonadErr m) => WarnFlag -> e -> m ()
 warnWhen f e =
     whenWarnFlag f $ do
-      isErr <- asksFlags (testWerrorFlag f)
+      isErr <- asksConfig (testWerrorFlag f)
       if isErr
         then err e
         else warn e

@@ -115,7 +115,7 @@ newtype RM m a = RM { unRM :: StateT RateState m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

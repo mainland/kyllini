@@ -94,7 +94,7 @@ newtype RF m a = RF { unRF :: StateT RFState (WriterT RefSet m) a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

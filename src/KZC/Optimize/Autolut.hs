@@ -39,7 +39,7 @@ newtype AutoM m a = AutoM { unAutoM :: m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

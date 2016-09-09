@@ -62,7 +62,7 @@ newtype HC l m a = HC { unHC :: StateT (HCState l) m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

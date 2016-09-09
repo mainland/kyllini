@@ -56,7 +56,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 
-class MonadFlags m => MonadTrace m where
+class MonadConfig m => MonadTrace m where
     askTraceDepth   :: m Int
     localTraceDepth :: (Int -> Int) -> m a -> m a
 
@@ -116,7 +116,7 @@ trace prefix doc = do
 
 traceIfSet :: MonadTrace m => TraceFlag -> String -> Doc -> m ()
 traceIfSet flag prefix doc = do
-    doTrace <- asksFlags (testTraceFlag flag)
+    doTrace <- asksConfig (testTraceFlag flag)
     when doTrace $
         trace prefix doc
 

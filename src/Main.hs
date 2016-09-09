@@ -160,7 +160,7 @@ runPipeline filepath = do
                    -> a
                    -> MaybeT KZC b
         tracePhase phase act x = do
-            doTrace <- asksFlags (testTraceFlag TracePhase)
+            doTrace <- asksConfig (testTraceFlag TracePhase)
             if doTrace
               then do pass       <- lift getPass
                       phaseStart <- liftIO getCPUTime
@@ -177,7 +177,7 @@ runPipeline filepath = do
 
         iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
         iterateSimplPhase desc prog0 = do
-            n <- asksFlags maxSimpl
+            n <- asksConfig maxSimpl
             go 0 n prog0
           where
             go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
@@ -317,14 +317,14 @@ runPipeline filepath = do
             C.withTc (C.checkProgram p)
         return p
 
-    stopIf :: (Flags -> Bool) -> a -> MaybeT KZC a
+    stopIf :: (Config -> Bool) -> a -> MaybeT KZC a
     stopIf f x = do
-        stop <- asksFlags f
+        stop <- asksConfig f
         if stop then MaybeT (return Nothing) else return x
 
-    runIf :: (Flags -> Bool) -> (a -> MaybeT KZC a) -> a -> MaybeT KZC a
+    runIf :: (Config -> Bool) -> (a -> MaybeT KZC a) -> a -> MaybeT KZC a
     runIf f g x = do
-        run <- asksFlags f
+        run <- asksConfig f
         if run then g x else return x
 
     writeOutput :: Pretty a
@@ -332,8 +332,8 @@ runPipeline filepath = do
                 -> KZC ()
     writeOutput x = do
         let defaultOutpath = replaceExtension filepath ".c"
-        outpath     <- asksFlags (fromMaybe defaultOutpath . output)
-        linePragmas <- asksFlags (testDynFlag LinePragmas)
+        outpath     <- asksConfig (fromMaybe defaultOutpath . output)
+        linePragmas <- asksConfig (testDynFlag LinePragmas)
         let pprint | linePragmas = prettyPragmaLazyText 80 . ppr
                    | otherwise   = prettyLazyText 80 . ppr
         h <- liftIO $ openFile outpath WriteMode

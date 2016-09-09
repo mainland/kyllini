@@ -144,7 +144,7 @@ defaultTcEnv = TcEnv
     complexStruct s tau =
         StructDef s [("re", tau), ("im", tau)] noLoc
 
-class (Functor m, Applicative m, MonadErr m, MonadFlags m, MonadTrace m, MonadUnique m) => MonadTc m where
+class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 

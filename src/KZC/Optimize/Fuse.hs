@@ -170,7 +170,7 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadLogic,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 
@@ -330,7 +330,7 @@ fuseProgram = runF . fuseProg
     fuseProg :: Program l -> F l m (Program l)
     fuseProg prog = do
         prog'     <- programT prog
-        dumpStats <- asksFlags (testDynFlag ShowFusionStats)
+        dumpStats <- asksConfig (testDynFlag ShowFusionStats)
         when dumpStats $ do
             stats  <- getStats
             liftIO $ putDocLn $ nest 2 $
@@ -459,9 +459,9 @@ fusePar left0 right0 = do
   where
     checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
     checkFusionBlowup left right comp = do
-        k <- asksFlags maxFusionBlowup
+        k <- asksConfig maxFusionBlowup
         when (r > k) $
-          askFlags >>= tryAutoLUT
+          askConfig >>= tryAutoLUT
       where
         sz_orig :: Int
         sz_orig = size left + size right
@@ -469,7 +469,7 @@ fusePar left0 right0 = do
         r :: Double
         r = fromIntegral (size comp) / fromIntegral sz_orig
 
-        tryAutoLUT :: Flags -> F l m ()
+        tryAutoLUT :: Config -> F l m ()
         -- XXX if we don't cut off search based on the size of the original
         -- computation, we hang on, e.g., test_encdec_18mbps.blk.
         tryAutoLUT flags | testDynFlag AutoLUT flags && sz_orig < 1000 = do
@@ -1005,7 +1005,7 @@ nestedPar = do
 -- the loop is one that we always unroll.
 unrollingFor :: (IsLabel l, MonadTc m) => UnrollAnn -> Comp l -> F l m ()
 unrollingFor ann body = do
-    doUnroll <- asksFlags (testDynFlag FuseUnroll)
+    doUnroll <- asksConfig (testDynFlag FuseUnroll)
     unless (ann == Unroll || alwaysUnroll body || (doUnroll && mayUnroll ann)) $ do
       traceFusion $ text "Encountered diverging loop during fusion."
       mzero
@@ -1260,7 +1260,7 @@ newtype UT m a = UT { runUT :: m a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc)
 
@@ -1291,7 +1291,7 @@ newtype UE m a = UE { runUE :: m a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc)
 

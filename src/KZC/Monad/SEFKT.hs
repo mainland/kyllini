@@ -204,9 +204,9 @@ instance MonadErr m => MonadErr (SEFKT m) where
 instance (MonadErr m, MonadUnique m) => MonadUnique (SEFKT m) where
     newUnique = lift newUnique
 
-instance (MonadErr m, MonadFlags m) => MonadFlags (SEFKT m) where
-    askFlags   = lift askFlags
-    localFlags = liftLocal askFlags localFlags
+instance (MonadErr m, MonadConfig m) => MonadConfig (SEFKT m) where
+    askConfig   = lift askConfig
+    localConfig = liftLocal askConfig localConfig
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (SEFKT m) where
     askTraceDepth   = lift askTraceDepth

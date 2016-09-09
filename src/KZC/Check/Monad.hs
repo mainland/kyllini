@@ -97,7 +97,7 @@ newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)

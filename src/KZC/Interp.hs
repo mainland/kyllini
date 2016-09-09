@@ -221,7 +221,7 @@ newtype I s m a = I { unI :: ReaderT (IEnv s) m a }
             MonadException,
             MonadUnique,
             MonadErr,
-            MonadFlags,
+            MonadConfig,
             MonadTrace,
             MonadTc)
 

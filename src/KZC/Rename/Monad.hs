@@ -59,7 +59,7 @@ newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace)
 
 runRn :: Rn a -> KZC a

@@ -68,7 +68,7 @@ newtype LiftM m a = LiftM { unLiftM:: ReaderT LiftEnv (StateT LiftState m) a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 

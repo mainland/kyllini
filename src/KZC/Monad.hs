@@ -51,14 +51,14 @@ data KZCEnv = KZCEnv
     , tracedepth :: !Int
     , pass       :: !(IORef Int)
     , errctx     :: ![ErrorContext]
-    , flags      :: !Flags
+    , flags      :: !Config
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
-              => Flags
+              => Config
               -> m KZCEnv
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
@@ -88,7 +88,7 @@ instance PrimMonad KZC where
 runKZC :: KZC a -> KZCEnv -> IO a
 runKZC = runReaderT . unKZC
 
-evalKZC :: Flags -> KZC a -> IO a
+evalKZC :: Config -> KZC a -> IO a
 evalKZC fs m = do
     env <- defaultKZCEnv fs
     runKZC m env
@@ -125,9 +125,9 @@ instance MonadErr KZC where
 
     displayWarning ex = liftIO $ hPutDocLn stderr $ ppr ex
 
-instance MonadFlags KZC where
-    askFlags     = asks flags
-    localFlags f = local (\env -> env { flags = f (flags env) })
+instance MonadConfig KZC where
+    askConfig     = asks flags
+    localConfig f = local (\env -> env { flags = f (flags env) })
 
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth

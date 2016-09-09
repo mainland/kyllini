@@ -140,7 +140,7 @@ newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 
@@ -333,7 +333,7 @@ simplComp :: forall l m . (IsLabel l, MonadTc m)
           => Comp l
           -> m (Comp l)
 simplComp c = do
-    n <- asksFlags maxSimpl
+    n <- asksConfig maxSimpl
     go 0 n c
   where
     go :: Int -> Int -> Comp l -> m (Comp l)
@@ -380,12 +380,12 @@ simplDecl (LetD decl s) m = do
       Just decl' -> return (Just (LetD decl' s), x)
 
 simplDecl decl m = do
-    flags <- askFlags
+    flags <- askConfig
     preInlineUnconditionally flags decl
   where
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
-    preInlineUnconditionally :: Flags -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    preInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
     preInlineUnconditionally _flags LetD{} =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
@@ -439,7 +439,7 @@ simplDecl decl m = do
     -- inline it unconditionally. If so, add it to the current
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
-    postInlineUnconditionally :: Flags -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
     postInlineUnconditionally _flags LetD{} =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
@@ -526,10 +526,10 @@ simplLocalDecl :: forall a l m . (IsLabel l, MonadTc m)
                -> SimplM l m a
                -> SimplM l m (Maybe LocalDecl, a)
 simplLocalDecl decl m = do
-    flags <- askFlags
+    flags <- askConfig
     preInlineUnconditionally flags decl
   where
-    preInlineUnconditionally :: Flags -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
+    preInlineUnconditionally :: Config -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     preInlineUnconditionally flags decl@(LetLD v _ e _)
         | isDead = dropBinding v >> withoutBinding m
         | isOnce && not (isArrE e) && testDynFlag MayInlineVal flags = do
@@ -554,7 +554,7 @@ simplLocalDecl decl m = do
     preInlineUnconditionally _flags LetViewLD{} =
         faildoc $ text "Views not supported"
 
-    postInlineUnconditionally :: Flags -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
+    postInlineUnconditionally :: Config -> LocalDecl -> SimplM l m (Maybe LocalDecl, a)
     postInlineUnconditionally _flags (LetLD v tau e s) = do
         e'       <- simplE e
         tau'     <- simplType tau
@@ -934,10 +934,10 @@ simplStep step@(VarC l v _) =
 
     callSiteInline :: Maybe (Definition l) -> SimplM l m [Step l]
     callSiteInline maybe_def = do
-        flags <- askFlags
+        flags <- askConfig
         go flags maybe_def
       where
-        go :: Flags -> Maybe (Definition l) -> SimplM l m [Step l]
+        go :: Config -> Maybe (Definition l) -> SimplM l m [Step l]
         go flags (Just (BoundToComp occ rhs)) | testDynFlag MayInlineComp flags && inline occ rhs =
             inlineCompRhs rhs
 
@@ -990,10 +990,10 @@ simplStep (CallC l f0 iotas0 args0 s) = do
                    -> Maybe (Definition l)
                    -> SimplM l m [Step l]
     callSiteInline f iotas args maybe_def = do
-        flags <- askFlags
+        flags <- askConfig
         go flags maybe_def
       where
-        go :: Flags -> Maybe (Definition l) -> SimplM l m [Step l]
+        go :: Config -> Maybe (Definition l) -> SimplM l m [Step l]
         go flags (Just (BoundToFunComp _occ ivs vbs tau_ret rhs))
             | testDynFlag MayInlineComp flags =
           inlineFunCompRhs iotas args ivs vbs tau_ret rhs
@@ -1171,10 +1171,10 @@ simplE e0@(VarE v _) =
 
     callSiteInline :: Maybe (Definition l) -> SimplM l m Exp
     callSiteInline maybe_def = do
-        flags <- askFlags
+        flags <- askConfig
         go flags maybe_def
       where
-        go :: Flags -> Maybe (Definition l) -> SimplM l m Exp
+        go :: Config -> Maybe (Definition l) -> SimplM l m Exp
         go flags (Just (BoundToExp occ lvl rhs)) | testDynFlag MayInlineVal flags && inline rhs occ lvl =
             inlineRhs rhs
 
@@ -1372,10 +1372,10 @@ simplE (CallE f0 iotas0 es0 s) = do
                    -> Maybe (Definition l)
                    -> SimplM l m Exp
     callSiteInline f iotas args maybe_def = do
-        flags <- askFlags
+        flags <- askConfig
         go flags maybe_def
       where
-        go :: Flags -> Maybe (Definition l) -> SimplM l m Exp
+        go :: Config -> Maybe (Definition l) -> SimplM l m Exp
         go flags (Just (BoundToFun _occ ivs vbs tau_ret rhs))
             | testDynFlag MayInlineFun flags =
           inlineFunRhs iotas args ivs vbs tau_ret rhs
@@ -1800,7 +1800,7 @@ isSimple e =
 shouldInlineExpUnconditionally :: MonadTc m
                                => InExp -> SimplM l m Bool
 shouldInlineExpUnconditionally e | isSimple e =
-    asksFlags (testDynFlag MayInlineVal)
+    asksConfig (testDynFlag MayInlineVal)
 
 shouldInlineExpUnconditionally _ =
     return False
@@ -1812,7 +1812,7 @@ shouldInlineFunUnconditionally :: MonadTc m
                                -> OutExp
                                -> SimplM l m Bool
 shouldInlineFunUnconditionally _ _ _ e | isSimple e =
-    asksFlags (testDynFlag MayInlineFun)
+    asksConfig (testDynFlag MayInlineFun)
 
 shouldInlineFunUnconditionally _ _ _ _ =
     return False
@@ -1820,7 +1820,7 @@ shouldInlineFunUnconditionally _ _ _ _ =
 shouldInlineCompUnconditionally :: MonadTc m
                                 => InComp l -> SimplM l m Bool
 shouldInlineCompUnconditionally _ =
-    asksFlags (testDynFlag AlwaysInlineComp)
+    asksConfig (testDynFlag AlwaysInlineComp)
 
 shouldInlineCompFunUnconditionally :: MonadTc m
                                    => [IVar]
@@ -1829,4 +1829,4 @@ shouldInlineCompFunUnconditionally :: MonadTc m
                                    -> OutComp l
                                    -> SimplM l m Bool
 shouldInlineCompFunUnconditionally _ _ _ _ =
-    asksFlags (testDynFlag AlwaysInlineComp)
+    asksConfig (testDynFlag AlwaysInlineComp)

@@ -47,12 +47,12 @@ newtype Uniq = Uniq Int
 instance Pretty Uniq where
     ppr (Uniq u) = ppr u
 
-class (Monad m, MonadFlags m) => MonadUnique m where
+class (Monad m, MonadConfig m) => MonadUnique m where
     newUnique :: m Uniq
 
 maybeNewUnique :: MonadUnique m => m (Maybe Uniq)
 maybeNewUnique = do
-    noGensym <- asksFlags $ testDynFlag NoGensym
+    noGensym <- asksConfig $ testDynFlag NoGensym
     if noGensym
         then return Nothing
         else Just <$> newUnique

@@ -56,7 +56,7 @@ newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
               MonadException,
               MonadUnique,
               MonadErr,
-              MonadFlags,
+              MonadConfig,
               MonadTrace,
               MonadTc)
 
