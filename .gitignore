@@ -11,7 +11,7 @@
 /include/KzcConfig.h
 /include/KzcSysTools.h
 /kzc
-/kzc.buildinfo
+/kyllini.buildinfo
 /libkz/src/*.o
 /libkz/src/sora/*.o
 /obj/

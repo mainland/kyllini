@@ -3,14 +3,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  Opts
+-- Module      :  KZC.Driver.Opts
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cdrexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
-module Opts (
-    compilerOpts,
-    usage
+module KZC.Driver.Opts (
+    parseKzcOpts,
+    kzcUsage
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -357,8 +357,8 @@ wOpts =
         werrorOpts :: [FlagOpt]
         werrorOpts = mkFlagOpts "" wFlags setWerrorFlag (Just unsetWerrorFlag)
 
-compilerOpts :: [String] -> IO (Config, [String])
-compilerOpts argv =
+parseKzcOpts :: [String] -> IO (Config, [String])
+parseKzcOpts argv =
     case getOpt Permute options argv of
       (fs,n,[])  -> do fs' <- flagImplications <$> foldl (>=>) return fs defaultConfig
                        setMaxErrContext (maxErrCtx fs')
@@ -367,11 +367,11 @@ compilerOpts argv =
                        when (testDynFlag ExpertTypes fs') $
                            setExpertTypes True
                        return (fs', n)
-      (_,_,errs) -> do usageDesc <- usage
+      (_,_,errs) -> do usageDesc <- kzcUsage
                        ioError (userError (concat errs ++ usageDesc))
 
-usage :: IO String
-usage = do
+kzcUsage :: IO String
+kzcUsage = do
     progname   <- getProgName
     let header =  "Usage: " ++ progname ++ " [OPTION...] files..."
     return $ usageInfo header (options :: [OptDescr (Config -> IO Config)])

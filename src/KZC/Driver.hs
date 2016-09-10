@@ -1,12 +1,19 @@
 {-# LANGUAGE CPP #-}
 
 -- |
--- Module      :  Main
--- Copyright   :  (c) 2015-2016 Drexel University
--- License     :  BSD-style
--- Maintainer  :  mainland@cdrexel.edu
+-- Module      : KZC.Driver
+-- Copyright   : (c) 2015-2016 Drexel University
+-- License     : BSD-style
+-- Author      : Geoffrey Mainland <mainland@drexel.edu>
+-- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
-module Main where
+module KZC.Driver (
+    defaultMainWith,
+    defaultMain,
+
+    parseKzcOpts,
+    kzcUsage
+  ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
@@ -54,6 +61,7 @@ import KZC.Config
 import qualified KZC.Core.Label as C
 import qualified KZC.Core.Lint as C
 import qualified KZC.Core.Syntax as C
+import KZC.Driver.Opts
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
@@ -75,15 +83,17 @@ import KZC.Rename
 import KZC.Util.Error
 import KZC.Util.SysTools
 
-import Opts
+defaultMain :: IO ()
+defaultMain = do
+    args          <- getArgs
+    (conf, files) <- parseKzcOpts args
+    if mode conf == Help
+      then kzcUsage >>= hPutStrLn stderr
+      else defaultMainWith conf files
 
-main :: IO ()
-main = do
-    args        <- getArgs
-    (fs, files) <- compilerOpts args
-    if mode fs == Help
-      then usage >>= hPutStrLn stderr
-      else evalKZC fs (mapM_ runPipeline files) `catch` printFailure
+defaultMainWith :: Config -> [FilePath] -> IO ()
+defaultMainWith conf files =
+    evalKZC conf (mapM_ runPipeline files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = hPrint stderr e >> exitFailure
