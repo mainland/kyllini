@@ -390,12 +390,13 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
             Nothing
 
     stepsT (ParC ann b c1 c2 sloc : steps) = do
+        conf      <- askConfig
         (s, a, c) <- askSTIndTypes
         c1'       <- localSTIndTypes (Just (s, a, b)) $
                      compT c1
         c2'       <- localSTIndTypes (Just (b, b, c)) $
                      compT c2
-        steps1    <- if shouldFuse ann
+        steps1    <- if shouldFuse conf ann
                      then ifte (withLeftKont steps $
                                 withRightKont steps $
                                 fusePar c1' c2')
@@ -405,9 +406,14 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
         steps' <- stepsT steps
         return $ steps1 ++ steps'
       where
-        shouldFuse :: PipelineAnn -> Bool
-        shouldFuse AlwaysPipeline = False
-        shouldFuse _              = True
+        -- We fuse a par unless it is marked always pipeline /and/ pipelining is
+        -- enabled.
+        shouldFuse :: Config -> PipelineAnn -> Bool
+        shouldFuse conf AlwaysPipeline | testDynFlag Pipeline conf =
+            False
+
+        shouldFuse _ _ =
+            True
 
         didntFusePar :: Comp l -> Comp l -> F l m [Step l]
         didntFusePar left right | isIdentityC left = do
