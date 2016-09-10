@@ -15,7 +15,7 @@ import Data.String (IsString(..))
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Uniq
+import KZC.Util.Uniq
 import KZC.Vars
 
 class ( Ord l

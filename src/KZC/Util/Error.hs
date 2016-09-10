@@ -5,12 +5,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Error
+-- Module      :  KZC.Util.Error
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Error (
+module KZC.Util.Error (
     PrettyException(..),
     prettyToException,
     prettyFromException,
@@ -64,7 +64,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Globals
-import KZC.Pretty
+import KZC.Util.Pretty
 
 data PrettyException = forall a . (Pretty a, Exception a) => PrettyException a
   deriving (Typeable)

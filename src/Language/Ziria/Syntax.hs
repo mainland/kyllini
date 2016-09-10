@@ -56,10 +56,10 @@ import Data.String
 import Text.PrettyPrint.Mainland
 
 import KZC.Name
-import KZC.Pretty
-import KZC.Summary
-import KZC.Uniq
+import KZC.Util.Pretty
 import KZC.Util.SetLike
+import KZC.Util.Summary
+import KZC.Util.Uniq
 import KZC.Vars
 
 newtype Var = Var Name

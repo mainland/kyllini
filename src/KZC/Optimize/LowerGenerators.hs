@@ -28,10 +28,10 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
-import KZC.Error
 import KZC.Interp (compileAndRunGen)
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 newtype L m a = L { unL :: m a }
   deriving (Applicative, Functor, Monad, MonadIO,

@@ -40,11 +40,11 @@ import KZC.Check.State (TiEnv,
                         defaultTiEnv,
                         defaultTiState)
 import KZC.Config
-import KZC.Error
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)

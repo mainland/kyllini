@@ -58,14 +58,14 @@ import KZC.Check.Path
 import KZC.Check.Smart
 import KZC.Check.Types
 import KZC.Config
-import KZC.Error
 import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
 import KZC.Platform
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
 import KZC.Util.SetLike
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 import KZC.Vars
 
 type CoDecl = Ti E.Decl -> Ti E.Decl

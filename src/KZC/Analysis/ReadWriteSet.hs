@@ -55,10 +55,10 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
-import KZC.Trace
-import KZC.Uniq
 import KZC.Util.Env
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 readWriteSets :: MonadTc m
               => Exp

@@ -178,11 +178,11 @@ import KZC.Expr.Syntax (Var(..),
                        )
 import KZC.Label
 import KZC.Name
-import KZC.Pretty
-import KZC.Staged
-import KZC.Summary
-import KZC.Uniq
+import KZC.Util.Pretty
 import KZC.Util.SetLike
+import KZC.Util.Staged
+import KZC.Util.Summary
+import KZC.Util.Uniq
 import KZC.Vars
 
 data BoundVar = BoundV

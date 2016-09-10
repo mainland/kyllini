@@ -34,7 +34,7 @@ import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import KZC.Uniq
+import KZC.Util.Uniq
 import KZC.Util.SetLike
 
 class Ord n => Binders x n where

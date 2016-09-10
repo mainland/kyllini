@@ -37,13 +37,13 @@ import KZC.Config
 import KZC.Core.Comp
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Expr.Lint
 import qualified KZC.Expr.Syntax as E
 import KZC.Label
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 data TCEnv = TCEnv { tcSubst :: Map Var Var }
 

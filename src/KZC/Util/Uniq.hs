@@ -3,12 +3,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 -- |
--- Module      :  KZC.Uniq
+-- Module      :  KZC.Util.Uniq
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Uniq (
+module KZC.Util.Uniq (
     Uniq(..),
     MonadUnique(..),
     maybeNewUnique,

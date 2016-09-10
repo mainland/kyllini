@@ -27,8 +27,8 @@ import Text.PrettyPrint.Mainland
 import KZC.Cg.Util
 import KZC.Core.Syntax
 import KZC.Label
-import KZC.Uniq
 import KZC.Util.SetLike
+import KZC.Util.Uniq
 import KZC.Vars
 
 -- | A code label

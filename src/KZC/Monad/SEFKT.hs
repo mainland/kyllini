@@ -33,10 +33,10 @@ import Control.Monad.Trans (MonadTrans(..))
 import Text.PrettyPrint.Mainland
 
 import KZC.Config
-import KZC.Error
 import KZC.Expr.Lint.Monad
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 type SK ans a = a -> EK ans -> FK ans -> ans
 

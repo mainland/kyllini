@@ -42,8 +42,8 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Monad.KT
-import KZC.Summary
-import KZC.Uniq
+import KZC.Util.Summary
+import KZC.Util.Uniq
 import KZC.Vars
 
 type K l m a = KT (Comp l) m a

@@ -19,7 +19,7 @@ import Data.Symbol
 import Text.PrettyPrint.Mainland
 
 import KZC.Globals
-import KZC.Uniq
+import KZC.Util.Uniq
 
 data Name = Name
     { nameSort :: !NameSort

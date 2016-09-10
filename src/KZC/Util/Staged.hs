@@ -2,12 +2,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
--- Module      :  KZC.Staged
+-- Module      :  KZC.Util.Staged
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Staged (
+module KZC.Util.Staged (
   IfThenElse(..),
 
   IsEq(..),

@@ -27,7 +27,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
+import KZC.Util.Error
 
 class MonadTc m => TransformExp m where
     viewT :: View ->m View

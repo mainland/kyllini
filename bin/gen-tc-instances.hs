@@ -9,10 +9,10 @@ import Data.Generics
 
 import qualified Language.Ziria.Syntax as Z
 
-import KZC.Derive
 import KZC.Name
 import KZC.Check.Types
-import KZC.Uniq
+import KZC.Util.Derive
+import KZC.Util.Uniq
 
 #define DERIVE(a) \
 deriving instance Typeable a; \

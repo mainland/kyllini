@@ -26,9 +26,9 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Core.Lint
-import KZC.Error
-import KZC.Uniq
-import KZC.Trace
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 -- | Success continuation
 type SK m r a = EK m r -> a -> m r

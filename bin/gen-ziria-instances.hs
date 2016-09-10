@@ -7,9 +7,9 @@ module Main where
 
 import Data.Generics
 
-import KZC.Derive
 import KZC.Name
-import KZC.Uniq
+import KZC.Util.Derive
+import KZC.Util.Uniq
 import Language.Ziria.Syntax
 
 #define DERIVE(a) \

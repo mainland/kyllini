@@ -91,7 +91,6 @@ import Text.PrettyPrint.Mainland
 import KZC.Check.Path
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Expr.Lint (Tc(..),
                       runTc,
                       liftTc,
@@ -138,7 +137,8 @@ import KZC.Expr.Lint (Tc(..),
                       checkPureishSTCUnit)
 import KZC.Expr.Lint.Monad
 import KZC.Label
-import KZC.Summary
+import KZC.Util.Error
+import KZC.Util.Summary
 import KZC.Vars
 
 extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a

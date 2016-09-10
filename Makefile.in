@@ -82,8 +82,6 @@ SOURCE = \
 	KZC/Core/Smart.hs \
 	KZC/Core/Syntax.hs \
 	KZC/Core/Transform.hs \
-	KZC/Derive.hs \
-	KZC/Error.hs \
 	KZC/Expr/Enum.hs \
 	KZC/Expr/Lint.hs \
 	KZC/Expr/Lint/Monad.hs \
@@ -113,17 +111,19 @@ SOURCE = \
 	KZC/Optimize/LutToGen.hs \
 	KZC/Optimize/Simplify.hs \
 	KZC/Platform.hs \
-	KZC/Pretty.hs \
 	KZC/Quote/C.hs \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \
-	KZC/Summary.hs \
-	KZC/Staged.hs \
-	KZC/SysTools.hs \
-	KZC/Trace.hs \
-	KZC/Uniq.hs \
+	KZC/Util/Derive.hs \
+	KZC/Util/Error.hs \
 	KZC/Util/Logic.hs \
+	KZC/Util/Pretty.hs \
 	KZC/Util/SetLike.hs \
+	KZC/Util/Staged.hs \
+	KZC/Util/Summary.hs \
+	KZC/Util/SysTools.hs \
+	KZC/Util/Trace.hs \
+	KZC/Util/Uniq.hs \
 	KZC/Vars.hs \
 	Language/Ziria/Parser/Alex.hs \
 	Language/Ziria/Parser/Exceptions.hs \
@@ -202,16 +202,16 @@ kzc.prof : kzc
 #
 # Generated instances
 #
-$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Check/Types.hs
+$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Check/Types.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
+$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
+$(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #

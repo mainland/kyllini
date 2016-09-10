@@ -98,14 +98,14 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
 import KZC.Config
-import KZC.Error
 import KZC.Expr.Lint.Monad
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Monad
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 import KZC.Vars
 
 newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
