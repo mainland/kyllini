@@ -43,6 +43,12 @@ warn on an unused command bind.
 
 ## Feature flags
 
+The flags -finline-val`, `-finline-fun`, and `-finline-comp` imply `-fsimpl`
+since they require the simplifier.
+
+The flags `-fautolut` and `-flut` both imply `-ffloat-views` since without views
+far fewer expressions are LUTted.
+
 | Flag             | Description |
 | ---              | --- |
 | `-fpprint`       | Pretty-print file (for debugging) |
@@ -65,8 +71,9 @@ warn on an unused command bind.
 | `-fcoalesce-top` | Coalesce top-level computation |
 | `-fsimpl`        | Run the simplifier|
 | `-finline`       | Inline when simplifying|
-| `-flower-gen`     | Lower generators to explicit constant arrays |
+| `-flower-gen`    | Lower generators to explicit constant arrays |
 | `-fcompute-luts` | Compute LUTs instead of compiling them to constants |
+| `-float-views`   | Float views out |
 | `-ferrctx=INT`                    | set maximum error context"
 | `-fmax-simplifier-iterations=INT` | Set maximum simplification iterations|
 | `-fmax-lut=INT`                   | Set maximum LUT size in bytes|
@@ -83,25 +90,28 @@ warn on an unused command bind.
 | `-dexpert-types`  | Show "expert" types when pretty-printing |
 | `-dcg-stats`      | Show code generator statistics |
 | `-dfusion-stats`  | Show fusion statistics |
+| `-dfuel`          | Add debug fuel |
+| `-dpipeline-all`  | Force all pars to be pipelined |
 
 ### Dump flags
 
-| Flag                | Description |
-| ---                 | --- |
-| `-ddump-cpp`        | Dump preprocessor output |
-| `-ddump-rn`         | Dump renamer output |
-| `-ddump-lift`       | Dump lambda lifter output |
-| `-ddump-fusion`     | Dump fusion output |
-| `-ddump-core`       | Dump core |
-| `-ddump-occ`        | Dump occurrence info |
-| `-ddump-simpl`      | Dump simplifier output |
-| `-ddump-peval`      | Dump partial evaluator output |
-| `-ddump-autolut`    | Dump auto-LUTter |
-| `-ddump-lut`        | Dump LUTter |
-| `-ddump-hashcons`   | Dump hashcons of constants |
-| `-ddump-staticrefs` | Dump result of static refs |
-| `-ddump-rate`       | Dump result of rate analysis |
-| `-ddump-coalesce`   | Dump result of pipeline coalescing |
+| Flag                 | Description |
+| ---                  | --- |
+| `-ddump-cpp`         | Dump preprocessor output |
+| `-ddump-rn`          | Dump renamer output |
+| `-ddump-lift`        | Dump lambda lifter output |
+| `-ddump-fusion`      | Dump fusion output |
+| `-ddump-core`        | Dump core |
+| `-ddump-occ`         | Dump occurrence info |
+| `-ddump-simpl`       | Dump simplifier output |
+| `-ddump-peval`       | Dump partial evaluator output |
+| `-ddump-autolut`     | Dump auto-LUTter |
+| `-ddump-lut`         | Dump LUTter |
+| `-ddump-hashcons`    | Dump hashcons of constants |
+| `-ddump-staticrefs`  | Dump result of static refs |
+| `-ddump-rate`        | Dump result of rate analysis |
+| `-ddump-coalesce`    | Dump result of pipeline coalescing |
+| `-ddump-float-views` | Dump result of floating views |
 
 ### Tracing flags
 
