@@ -5,7 +5,7 @@ AC_PREREQ([2.62])
 AC_CONFIG_SRCDIR([src/KZC/Monad.hs])
 
 AC_CONFIG_HEADERS([include/KzcConfig.h])
-AC_CONFIG_FILES([Makefile kzc.buildinfo include/KzcSysTools.h])
+AC_CONFIG_FILES([Makefile kyllini.buildinfo include/KzcSysTools.h])
 
 #
 # Find the C compiler

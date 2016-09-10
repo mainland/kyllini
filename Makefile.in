@@ -82,6 +82,8 @@ SOURCE = \
 	KZC/Core/Smart.hs \
 	KZC/Core/Syntax.hs \
 	KZC/Core/Transform.hs \
+	KZC/Driver.hs \
+	KZC/Driver/Opts.hs \
 	KZC/Expr/Enum.hs \
 	KZC/Expr/Lint.hs \
 	KZC/Expr/Lint/Monad.hs \
@@ -132,9 +134,7 @@ SOURCE = \
 	Language/Ziria/Parser/Tokens.hs \
 	Language/Ziria/Parser.hs \
 	Language/Ziria/Smart.hs \
-	Language/Ziria/Syntax.hs \
-	Main.hs \
-	Opts.hs
+	Language/Ziria/Syntax.hs
 
 GENERATED = \
 	KZC/Core/Syntax-instances.hs \
@@ -189,14 +189,16 @@ TAGS : $(SRC)
 #
 # kzc compiler
 #
+KZCMAIN = tools/kzc/Main.hs
+
 kzc : $(SRC) dist/build/autogen/cabal_macros.h
 	@mkdir -p obj
-	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
+	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(KZCMAIN) -odir obj -hidir obj \
 		-o $@
 
 kzc.prof : kzc
 	@mkdir -p obj
-	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(SRCDIR)Main.hs -odir obj -hidir obj \
+	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(KZCMAIN) -odir obj -hidir obj \
 		-prof -auto-all -caf-all -osuf p_o -hisuf p_hi -hcsuf p_hc -o $@
 
 #
