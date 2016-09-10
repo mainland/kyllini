@@ -8,7 +8,7 @@
 -- Module      :  KZC.Expr.Lint
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Expr.Lint (
     module KZC.Expr.Lint.Monad,

@@ -8,7 +8,7 @@
 -- Module      :  KZC.Check.State
 -- Copyright   :  (c) 2014-2015 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Check.State (
     TiEnv(..),

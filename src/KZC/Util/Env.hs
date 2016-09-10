@@ -4,7 +4,7 @@
 -- Module      :  KZC.Util.Env
 -- Copyright   :  (c) Drexel University 2015
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Util.Env (
     extendEnv,

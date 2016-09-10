@@ -8,7 +8,7 @@
 Module      :  KZC.Analysis.NeedDefault
 Copyright   :  (c) 2016 Drexel University
 License     :  BSD-style
-Maintainer  :  mainland@cs.drexel.edu
+Maintainer  :  mainland@drexel.edu
 
 Analyzes programs to determine which variables' default values are actually
 used. In other words, determine if we need to implicitly initialize a variable

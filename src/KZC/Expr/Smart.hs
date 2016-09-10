@@ -6,8 +6,8 @@
 -- Module      : KZC.Expr.Smart
 -- Copyright   : (c) 2015-2016 Drexel University
 -- License     : BSD-style
--- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
--- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
+-- Author      : Geoffrey Mainland <mainland@drexel.edu>
+-- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Expr.Smart (
     tyVarT,

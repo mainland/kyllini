@@ -2,7 +2,7 @@
 Module      :  KZC.Monad.KT
 Copyright   :  (c) 2016 Drexel University
 License     :  BSD-style
-Maintainer  :  mainland@cs.drexel.edu
+Maintainer  :  mainland@drexel.edu
 
 A continuation monad transformer supporting delimited continuations as well as
 exception handling.

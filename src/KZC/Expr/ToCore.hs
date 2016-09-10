@@ -8,7 +8,7 @@
 -- Module      :  KZC.Expr.ToCore
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Expr.ToCore (
     runTC,
