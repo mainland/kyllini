@@ -4,7 +4,7 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Util.Analysis.Properties where
+module KZC.Analysis.Lattice.Properties where
 
 import Prelude hiding ((<=))
 
