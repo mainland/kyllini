@@ -3,7 +3,7 @@ version:       0.1
 cabal-version: >= 1.10
 license:       BSD3
 license-file:  LICENSE
-copyright:     (c) 2014-2015 Drexel University
+copyright:     (c) 2014-2016 Drexel University
 author:        Geoffrey Mainland <mainland@drexel.edu>
 maintainer:    Geoffrey Mainland <mainland@drexel.edu>
 stability:     alpha
