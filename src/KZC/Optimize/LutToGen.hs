@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -138,10 +137,10 @@ lutExp e info = do
         structdef@(StructDef struct flds _) <- mkStructDef
         appendTopDecl $ LetStructD struct flds noLoc
         extendStructs [structdef] $ do
-        e'    <- lowerLUTVars (toList $ lutInVars info) e
-        v_lut <- mkLUT structdef e'
-        insertLUT e v_lut structdef
-        return (v_lut, structdef)
+          e'    <- lowerLUTVars (toList $ lutInVars info) e
+          v_lut <- mkLUT structdef e'
+          insertLUT e v_lut structdef
+          return (v_lut, structdef)
 
     maybeMkLUT (Just (v_lut, structdef)) =
         return (v_lut, structdef)
@@ -189,12 +188,12 @@ lutExp e info = do
         v_idx       <- gensym "lutidx"
         let tau_idx =  FixT (U w_in) noLoc
         packLUTIdx (lvs_in `zip` taus_in) $ \e_bits -> do
-        let e_idx   =  bitcastE tau_idx e_bits
-        let e_lut   =  idxE (varE v_lut) (varE v_idx)
-        let es_assn =  [assignE (toExp lv) (projE e_lut f) |
-                         (lv, f) <- resultVars `zip` fs]
-        e_result    <- mkResult e_lut (lutResultVar info) (lutResultType info)
-        return $ letE v_idx tau_idx e_idx $ foldr seqE e_result es_assn
+          let e_idx   =  bitcastE tau_idx e_bits
+          let e_lut   =  idxE (varE v_lut) (varE v_idx)
+          let es_assn =  [assignE (toExp lv) (projE e_lut f) |
+                           (lv, f) <- resultVars `zip` fs]
+          e_result    <- mkResult e_lut (lutResultVar info) (lutResultType info)
+          return $ letE v_idx tau_idx e_idx $ foldr seqE e_result es_assn
       where
         lvs_in :: [LUTVar]
         lvs_in = toList (lutInVars info)

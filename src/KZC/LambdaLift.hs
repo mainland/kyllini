@@ -141,15 +141,15 @@ liftDecl decl@(LetD v tau e l) k = do
     v'   <- uniquifyLifted v
     fvbs <- nonFunFvs decl
     extendFunFvs [(v, (v', map fst fvbs))] $ do
-    e'   <- extendLet v tau $
+      e' <- extendLet v tau $
             withSummaryContext decl $
             withFvContext e $
             liftExp e
-    extendVars [(v, tau)] $ do
-    if null fvbs
-      then appendTopDecl $ LetD v' tau e' l
-      else appendTopDecl $ LetFunD v' [] fvbs tau e' l
-    k Nothing
+      extendVars [(v, tau)] $ do
+        if null fvbs
+          then appendTopDecl $ LetD v' tau e' l
+          else appendTopDecl $ LetFunD v' [] fvbs tau e' l
+        k Nothing
 
 liftDecl decl@(LetRefD v tau maybe_e l) k = do
     maybe_e' <-  withSummaryContext decl $
@@ -164,12 +164,12 @@ liftDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     f'   <- uniquifyLifted f
     fvbs <- nonFunFvs decl
     extendFunFvs [(f, (f', map fst fvbs))] $ do
-    e' <- withSummaryContext decl $
-          extendLetFun f ivs vbs tau_ret $
-          withFvContext e $
-          liftExp e
-    appendTopDecl $ LetFunD f' ivs (fvbs ++ vbs) tau_ret e' l
-    k Nothing
+      e' <- withSummaryContext decl $
+            extendLetFun f ivs vbs tau_ret $
+            withFvContext e $
+            liftExp e
+      appendTopDecl $ LetFunD f' ivs (fvbs ++ vbs) tau_ret e' l
+      k Nothing
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l

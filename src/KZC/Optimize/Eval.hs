@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -150,11 +149,11 @@ evalDecl decl@(LetCompD v tau comp s) k =
     extendVars [(bVar v, tau)] $ do
     theta <- askSubst
     withUniqBoundVar v $ \v' -> do
-    comp' <- extendLet v tau $
-             killHeap $
-             evalComp comp >>= toComp
-    extendCVarBinds [(bVar v', CompClosV theta tau eval)] $
-      k $ const . return $ LetCompD v' tau comp' s
+      comp' <- extendLet v tau $
+               killHeap $
+               evalComp comp >>= toComp
+      extendCVarBinds [(bVar v', CompClosV theta tau eval)] $
+        k $ const . return $ LetCompD v' tau comp' s
   where
     eval :: EvalM l m (Val l m (Comp l))
     eval =

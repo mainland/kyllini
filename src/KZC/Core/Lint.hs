@@ -659,10 +659,10 @@ inferCall f ies args = do
     checkNumIotas (length ies)  (length ivs)
     checkNumArgs  (length args) (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do
-    mapM_ checkIotaArg ies
-    let theta = Map.fromList (ivs `zip` ies)
-    let phi   = fvs taus
-    return (subst theta phi taus, subst theta phi tau_ret)
+      mapM_ checkIotaArg ies
+      let theta = Map.fromList (ivs `zip` ies)
+      let phi   = fvs taus
+      return (subst theta phi taus, subst theta phi tau_ret)
   where
     checkIotaArg :: Iota -> m ()
     checkIotaArg ConstI{} =
