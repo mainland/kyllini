@@ -9,9 +9,9 @@ module Main where
 import Data.Generics
 
 import KZC.Core.Syntax
-import KZC.Derive
 import KZC.Name
-import KZC.Uniq
+import KZC.Util.Derive
+import KZC.Util.Uniq
 
 #define DERIVE(a) \
 deriving instance Typeable a; \

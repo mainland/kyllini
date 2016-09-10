@@ -46,14 +46,14 @@ import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Label
 import KZC.Optimize.Eval.Monad
 import qualified KZC.Optimize.Eval.PArray as P
 import KZC.Optimize.Eval.Val
-import KZC.Summary
-import KZC.Uniq
+import KZC.Util.Error
 import KZC.Util.SetLike
+import KZC.Util.Summary
+import KZC.Util.Uniq
 import KZC.Vars
 
 -- | Return 'True' if we should partially-evaluate.

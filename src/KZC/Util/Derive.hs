@@ -5,12 +5,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
--- Module      :  KZC.Derive
+-- Module      :  KZC.Util.Derive
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Derive (
+module KZC.Util.Derive (
     deriveM,
     deriveInstanceHeader,
     deriveBinary,

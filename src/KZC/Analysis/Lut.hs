@@ -49,11 +49,11 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Name
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 import KZC.Vars
 
 shouldLUT :: forall m . MonadTc m => LUTInfo -> Exp -> m Bool

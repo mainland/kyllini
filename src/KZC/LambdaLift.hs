@@ -36,16 +36,16 @@ import Data.Sequence (Seq,
                       (|>))
 
 import KZC.Config
-import KZC.Error
 import KZC.Expr.Lint
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
-import KZC.Vars
 import KZC.Util.Env
+import KZC.Util.Error
 import KZC.Util.SetLike
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
+import KZC.Vars
 
 data LiftEnv = LiftEnv
     { funFvs :: Map Var (Var, [Var]) }

@@ -43,9 +43,9 @@ import KZC.Core.Lint (refPath)
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Platform
-import KZC.Pretty
 import KZC.Quote.C
-import KZC.Staged
+import KZC.Util.Pretty
+import KZC.Util.Staged
 
 -- | A 'Kont a' is a code generator continuation---it takes a 'CExp' and
 -- executes an action in the 'Cg' monad. This is distinct from a continuation

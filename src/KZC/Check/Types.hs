@@ -54,9 +54,9 @@ import KZC.Expr.Syntax (IP(..),
 import KZC.Globals
 import KZC.Name
 import KZC.Platform
-import KZC.Pretty
-import KZC.Uniq
+import KZC.Util.Pretty
 import KZC.Util.SetLike
+import KZC.Util.Uniq
 import KZC.Vars
 
 newtype TyVar = TyVar Name

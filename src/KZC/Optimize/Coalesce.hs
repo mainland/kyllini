@@ -46,12 +46,12 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
-import KZC.Error
 import KZC.Label
 import KZC.Monad.SEFKT
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 data CoEnv = CoEnv { leftCtx  :: !(Rate M)
                    , rightCtx :: !(Rate M)

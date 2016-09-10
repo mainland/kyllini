@@ -34,10 +34,10 @@ import qualified Data.Map as Map
 import Language.Ziria.Syntax
 
 import KZC.Config
-import KZC.Error
 import KZC.Monad
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 data RnEnv = RnEnv
     { vars      :: Map Var Var

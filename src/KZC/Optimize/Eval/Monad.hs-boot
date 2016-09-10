@@ -21,9 +21,9 @@ import Control.Monad.State (StateT(..))
 
 import KZC.Config (MonadConfig)
 import KZC.Core.Lint (MonadTc, MonadTcRef)
-import KZC.Error (MonadErr)
-import KZC.Trace (MonadTrace)
-import KZC.Uniq (MonadUnique)
+import KZC.Util.Error (MonadErr)
+import KZC.Util.Trace (MonadTrace)
+import KZC.Util.Uniq (MonadUnique)
 
 data EvalEnv l (m :: * -> *)
 

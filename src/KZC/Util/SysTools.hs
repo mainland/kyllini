@@ -3,7 +3,7 @@
 
 --------------------------------------------------------------------------------
 -- |
--- Module      : KZC.SysTools
+-- Module      : KZC.Util.SysTools
 -- Copyright   : (c) 2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
@@ -13,7 +13,7 @@
 
 #include "KzcSysTools.h"
 
-module KZC.SysTools (
+module KZC.Util.SysTools (
     runCpp
   ) where
 

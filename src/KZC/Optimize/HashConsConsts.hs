@@ -40,10 +40,10 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
-import KZC.Error
 import KZC.Label
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 data HCState l = HCState
     { topDecls :: !(Seq (Decl l))

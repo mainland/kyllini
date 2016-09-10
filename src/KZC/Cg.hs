@@ -49,17 +49,17 @@ import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Error
 import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Name
 import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Platform
 import KZC.Quote.C
-import KZC.Staged
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Staged
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a

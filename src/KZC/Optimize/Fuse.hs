@@ -62,18 +62,18 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
-import KZC.Error
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Name
 import KZC.Optimize.Autolut (autolutComp)
 import KZC.Optimize.FloatViews (floatViewsComp)
 import KZC.Optimize.Simplify (simplComp)
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
 import KZC.Util.Logic
 import KZC.Util.SetLike
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 import KZC.Vars
 
 data Joint l = JointL l l

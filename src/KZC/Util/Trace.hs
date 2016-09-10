@@ -3,12 +3,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Trace
+-- Module      :  KZC.Util.Trace
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Trace (
+module KZC.Util.Trace (
     MonadTrace(..),
 
     traceNest,

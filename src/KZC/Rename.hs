@@ -25,11 +25,11 @@ import Text.PrettyPrint.Mainland
 
 import Language.Ziria.Syntax
 
-import KZC.Error
 import KZC.Rename.Monad
-import KZC.Summary
-import KZC.Uniq
 import KZC.Util.Env
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Uniq
 
 renameProgram :: [CompLet] -> Rn [CompLet]
 renameProgram = rnCompLets

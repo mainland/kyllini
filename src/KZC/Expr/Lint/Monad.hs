@@ -97,13 +97,13 @@ import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Config
-import KZC.Error
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Platform
-import KZC.Summary
-import KZC.Trace
-import KZC.Uniq
+import KZC.Util.Error
+import KZC.Util.Summary
+import KZC.Util.Trace
+import KZC.Util.Uniq
 import KZC.Vars
 
 data TcEnv = TcEnv

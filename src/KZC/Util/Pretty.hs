@@ -1,13 +1,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      : KZC.Pretty
+-- Module      : KZC.Util.Pretty
 -- Copyright   : (c) 2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
 
-module KZC.Pretty (
+module KZC.Util.Pretty (
     quote,
 
     commaEmbrace,

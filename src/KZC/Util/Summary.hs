@@ -1,10 +1,10 @@
 -- |
--- Module      :  KZC.Summary
+-- Module      :  KZC.Util.Summary
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@cs.drexel.edu
 
-module KZC.Summary (
+module KZC.Util.Summary (
     Summary(..),
     withSummaryContext,
     alwaysWithSummaryContext,
@@ -14,7 +14,7 @@ module KZC.Summary (
 import Data.Loc
 import Text.PrettyPrint.Mainland
 
-import KZC.Error
+import KZC.Util.Error
 
 class Summary a where
     summary :: a -> Doc

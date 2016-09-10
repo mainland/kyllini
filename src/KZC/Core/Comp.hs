@@ -37,7 +37,7 @@ import Data.Loc
 
 import KZC.Core.Syntax
 import KZC.Label
-import KZC.Uniq
+import KZC.Util.Uniq
 
 varC :: (IsLabel l, MonadUnique m) => Var -> m (Comp l)
 varC v = do
