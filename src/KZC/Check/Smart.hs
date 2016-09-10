@@ -6,7 +6,7 @@
 -- Module      :  KZC.Check.Smart
 -- Copyright   :  (c) 2015 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Check.Smart (
     tyVarT,

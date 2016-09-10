@@ -7,7 +7,7 @@
 -- Module      :  KZC.Optimize.Simplify
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cs.drexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module KZC.Optimize.Simplify (
     SimplStats(..),

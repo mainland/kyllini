@@ -4,7 +4,7 @@
 -- Module      :  Main
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@cdrexel.edu
+-- Maintainer  :  mainland@drexel.edu
 
 module Main (
     main

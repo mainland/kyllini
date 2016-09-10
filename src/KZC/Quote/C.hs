@@ -6,7 +6,7 @@
 Module      :  KZC.Quote.C
 Copyright   :  (c) 2015-2016 Drexel University
 License     :  BSD-style
-Maintainer  :  mainland@cs.drexel.edu
+Maintainer  :  mainland@drexel.edu
 
 This module recreates the standard C quasiquoters, but location information is
 only included when the @DEBUG@is defined. By not including location information

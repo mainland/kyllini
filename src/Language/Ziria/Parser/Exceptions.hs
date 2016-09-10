@@ -2,8 +2,8 @@
 -- Module      : Language.Ziria.Parser.Exceptions
 -- Copyright   : (c) 2014-2015 Drexel University
 -- License     : BSD-style
--- Author      : Geoffrey Mainland <mainland@cs.drexel.edu>
--- Maintainer  : Geoffrey Mainland <mainland@cs.drexel.edu>
+-- Author      : Geoffrey Mainland <mainland@drexel.edu>
+-- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 {-# LANGUAGE DeriveDataTypeable #-}
 
