@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RebindableSyntax #-}
@@ -449,28 +448,28 @@ cgDecl (LetD decl _) k = do
 cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     cf <- cvar f
     extendVars [(bVar f, tau)] $ do
-    extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
-    appendTopComment (ppr f <+> colon <+> align (ppr tau))
-    withSummaryContext decl $
-        extendLetFun f iotas vbs tau_ret $ do
-        (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
-        (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
-        cres_ident         <- gensym "let_res"
-        cblock <- inNewCodeBlock_ $
-                  extendIVarCExps (iotas `zip` ciotas) $
-                  extendVarCExps  (map fst vbs `zip` cvbs) $ do
-                  cres <- if isReturnedByRef tau_res
-                          then return $ CExp [cexp|$id:cres_ident|]
-                          else cgTemp "let_res" tau_res
-                  cgExp e $ multishotBind tau_res cres
-                  when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
-                      appendStm $ rl l [cstm|return $cres;|]
-        if isReturnedByRef tau_res
-         then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                 appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
-         else do ctau_res <- cgType tau_res
-                 appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
-    k
+      extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
+        appendTopComment (ppr f <+> colon <+> align (ppr tau))
+        withSummaryContext decl $
+            extendLetFun f iotas vbs tau_ret $ do
+            (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
+            (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
+            cres_ident         <- gensym "let_res"
+            cblock <- inNewCodeBlock_ $
+                      extendIVarCExps (iotas `zip` ciotas) $
+                      extendVarCExps  (map fst vbs `zip` cvbs) $ do
+                      cres <- if isReturnedByRef tau_res
+                              then return $ CExp [cexp|$id:cres_ident|]
+                              else cgTemp "let_res" tau_res
+                      cgExp e $ multishotBind tau_res cres
+                      when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
+                          appendStm $ rl l [cstm|return $cres;|]
+            if isReturnedByRef tau_res
+              then do cretparam <- cgRetParam tau_res (Just cres_ident)
+                      appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
+              else do ctau_res <- cgType tau_res
+                      appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
+        k
   where
     tau_res :: Type
     tau_res = resultType tau_ret
@@ -2934,14 +2933,14 @@ cgIf tau e1 me2 me3 k | isPureT tau =
 cgIf tau e1 me2 me3 k | isOneshot k = do
     (oneshotk, k') <- splitOneshot k
     cgExp e1 $ oneshot tau $ \ce1 -> do
-    citems2 <- inNewBlock_ $ me2 oneshotk
-    citems3 <- inNewBlock_ $ me3 oneshotk
-    let stm =  cif ce1 citems2 citems3
-    appendStm stm
-    -- See Note [Declaration Scopes]
-    if hasLabel stm
-      then newScope k'
-      else k'
+      citems2 <- inNewBlock_ $ me2 oneshotk
+      citems3 <- inNewBlock_ $ me3 oneshotk
+      let stm =  cif ce1 citems2 citems3
+      appendStm stm
+      -- See Note [Declaration Scopes]
+      if hasLabel stm
+        then newScope k'
+        else k'
 
 cgIf tau e1 me2 me3 k =
     cgExp e1 $ oneshot tau $ \ce1 -> do

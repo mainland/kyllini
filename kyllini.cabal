@@ -22,7 +22,7 @@ executable kzc
     Main.hs
 
   default-language:
-    Haskell98
+    Haskell2010
 
   other-modules:
     Language.Ziria.Parser.Lexer
@@ -75,7 +75,7 @@ executable BlinkDiff
     BlinkDiff.hs
 
   default-language:
-    Haskell98
+    Haskell2010
 
   build-depends:
     base                   >= 4     && < 5,

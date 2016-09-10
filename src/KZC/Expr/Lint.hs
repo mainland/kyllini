@@ -181,12 +181,12 @@ checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k = do
     alwaysWithSummaryContext decl $
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
-    alwaysWithSummaryContext decl $ do
-        tau_ret' <- extendLetFun f ivs vbs tau_ret $
-                    withFvContext e $
-                    inferExp e >>= absSTScope
-        checkTypeEquality tau_ret' tau_ret
-    k
+      alwaysWithSummaryContext decl $ do
+          tau_ret' <- extendLetFun f ivs vbs tau_ret $
+                      withFvContext e $
+                      inferExp e >>= absSTScope
+          checkTypeEquality tau_ret' tau_ret
+      k
   where
     tau :: Type
     tau = FunT ivs (map snd vbs) tau_ret l
@@ -448,13 +448,13 @@ inferExp (CallE f ies es _) = do
     checkNumIotas (length ies) (length ivs)
     checkNumArgs  (length es)  (length taus)
     extendIVars (ivs `zip` repeat IotaK) $ do
-    mapM_ checkIotaArg ies
-    let theta = Map.fromList (ivs `zip` ies)
-    let phi   = fvs taus
-    zipWithM_ checkArg es (subst theta phi taus)
-    unless (isPureishT tau_ret) $
-        checkNoAliasing (es `zip` taus)
-    return $ subst theta phi tau_ret
+      mapM_ checkIotaArg ies
+      let theta = Map.fromList (ivs `zip` ies)
+      let phi   = fvs taus
+      zipWithM_ checkArg es (subst theta phi taus)
+      unless (isPureishT tau_ret) $
+          checkNoAliasing (es `zip` taus)
+      return $ subst theta phi tau_ret
   where
     checkIotaArg :: Iota -> m ()
     checkIotaArg ConstI{} =

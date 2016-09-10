@@ -5,7 +5,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -137,14 +136,13 @@ checkLet v ztau TauK e l =
     withExpContext e $ do
     tau <- fromZ (ztau, TauK)
     extendVars [(v, tau)] $ do
-    mce <- castVal tau e
-    let mcdecl = do
-        checkUnresolvedMtvs v tau
-        cv   <- trans v
-        ctau <- trans tau
-        ce   <- mce
-        return $ E.LetD cv ctau ce l
-    return (tau, mcdecl)
+      mce <- castVal tau e
+      let mcdecl = do checkUnresolvedMtvs v tau
+                      cv   <- trans v
+                      ctau <- trans tau
+                      ce   <- mce
+                      return $ E.LetD cv ctau ce l
+      return (tau, mcdecl)
 
 checkLet f ztau MuK e l =
     withExpContext e $ do
@@ -154,11 +152,10 @@ checkLet f ztau MuK e l =
            checkExp e tau
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
-    let mcdecl = co $ do
-        cf   <- trans f
-        ctau <- trans tau_gen
-        ce   <- mce
-        return $ E.LetD cf ctau ce l
+    let mcdecl = co $ do cf   <- trans f
+                         ctau <- trans tau_gen
+                         ce   <- mce
+                         return $ E.LetD cf ctau ce l
     return (tau_gen, mcdecl)
 
 checkLet _ _ kappa _ _ =
@@ -171,14 +168,13 @@ checkLetRef v ztau e_init l =
     withMaybeExpContext e_init $ do
     tau <- fromZ ztau
     extendVars [(v, refT tau)] $ do
-    mce <- mkRhs tau e_init
-    let mcdecl = do
-        checkUnresolvedMtvs v tau
-        cv   <- trans v
-        ctau <- trans tau
-        ce   <- mce
-        return $ E.LetRefD cv ctau ce l
-    return (tau, mcdecl)
+      mce <- mkRhs tau e_init
+      let mcdecl = do checkUnresolvedMtvs v tau
+                      cv   <- trans v
+                      ctau <- trans tau
+                      ce   <- mce
+                      return $ E.LetRefD cv ctau ce l
+      return (tau, mcdecl)
   where
     withMaybeExpContext :: Maybe Z.Exp -> Ti a -> Ti a
     withMaybeExpContext Nothing  m = m
@@ -233,12 +229,11 @@ checkLetFun f ztau ps e l = do
         return (tau_ret_gen, mce)
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
-    let mkLetFun = co $ do
-        cf       <- trans f
-        cptaus   <- mapM trans ptaus
-        ctau_ret <- trans tau_ret
-        ce       <- withSummaryContext e mce
-        return $ E.LetFunD cf [] cptaus ctau_ret ce l
+    let mkLetFun = co $ do cf       <- trans f
+                           cptaus   <- mapM trans ptaus
+                           ctau_ret <- trans tau_ret
+                           ce       <- withSummaryContext e mce
+                           return $ E.LetFunD cf [] cptaus ctau_ret ce l
     return (tau_gen, mkLetFun)
 
 {- Note [External Functions]
@@ -262,11 +257,10 @@ checkLetExtFun f ps ztau_ret isPure l = do
     let tau       =  funT (map snd ptaus) tau_ret
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
-    let mkLetExtFun = co $ do
-        cf       <- trans f
-        cptaus   <- mapM trans ptaus
-        ctau_ret <- trans tau_ret
-        return $ E.LetExtFunD cf [] cptaus ctau_ret l
+    let mkLetExtFun = co $ do cf       <- trans f
+                              cptaus   <- mapM trans ptaus
+                              ctau_ret <- trans tau_ret
+                              return $ E.LetExtFunD cf [] cptaus ctau_ret l
     return (tau_gen, mkLetExtFun)
   where
     checkRetType :: Z.Type -> Ti Type
@@ -318,11 +312,10 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
         checkDuplicates "field names" zfnames
         taus <- mapM fromZ ztaus
         mapM_ (`checkKind` TauK) taus
-        let mkLetStruct = do
-            cs      <- trans zs
-            cfnames <- mapM trans zfnames
-            ctaus   <- mapM trans taus
-            return $ E.LetStructD cs (cfnames `zip` ctaus) l
+        let mkLetStruct = do cs      <- trans zs
+                             cfnames <- mapM trans zfnames
+                             ctaus   <- mapM trans taus
+                             return $ E.LetStructD cs (cfnames `zip` ctaus) l
         return (taus, mkLetStruct)
     let mcdecl = alwaysWithSummaryContext cl mkLetStruct
     extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
@@ -1042,11 +1035,11 @@ tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
     collectCheckValCtx tau $ do
-    (tau1, mcdecl) <- withSummaryContext stm $
-                      checkLet v ztau TauK e l
-    mce2           <- extendVars [(v, tau1)] $
-                      checkStms stms tau
-    return $ E.LetE <$> mcdecl <*> mce2 <*> pure l
+      (tau1, mcdecl) <- withSummaryContext stm $
+                        checkLet v ztau TauK e l
+      mce2           <- extendVars [(v, tau1)] $
+                        checkStms stms tau
+      return $ E.LetE <$> mcdecl <*> mce2 <*> pure l
 
 tcStms [stm@Z.LetRefS{}] _ =
     withSummaryContext stm $
@@ -1056,11 +1049,11 @@ tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
     collectCheckValCtx tau $ do
-    (tau1, mcdecl) <- withSummaryContext stm $
-                      checkLetRef v ztau e_init l
-    mce2           <- extendVars [(v, refT tau1)] $
-                      checkStms stms tau
-    return $ do
+      (tau1, mcdecl) <- withSummaryContext stm $
+                        checkLetRef v ztau e_init l
+      mce2           <- extendVars [(v, refT tau1)] $
+                        checkStms stms tau
+      return $ do
         cdecl <- mcdecl
         ce2   <- mce2
         return $ E.LetE cdecl ce2 l
@@ -1185,12 +1178,11 @@ tcVal e exp_ty = do
   where
     go :: Type -> Ti E.Exp -> Ti (Ti E.Exp)
     go (RefT tau _) mce = do
-        let mce' = do
-            ce1  <- mce
-            cx   <- gensymAt "x" ce1
-            ctau <- trans tau
-            tellValCtx $ \ce2 -> E.bindE cx ctau (E.derefE ce1) ce2
-            return $ E.varE cx
+        let mce' = do ce1  <- mce
+                      cx   <- gensymAt "x" ce1
+                      ctau <- trans tau
+                      tellValCtx $ \ce2 -> E.bindE cx ctau (E.derefE ce1) ce2
+                      return $ E.varE cx
         instType tau exp_ty
         return mce'
 
@@ -1248,10 +1240,10 @@ kcType tau@(T _) kappa_exp =
 kcType tau0@(ST alphas omega sigma tau1 tau2 _) kappa_exp = do
     checkKind omega OmegaK
     extendTyVars (alphas `zip` repeat TauK) $ do
-    checkKind sigma TauK
-    checkKind tau1 TauK
-    checkKind tau2 TauK
-    instKind tau0 MuK kappa_exp
+      checkKind sigma TauK
+      checkKind tau1 TauK
+      checkKind tau2 TauK
+      instKind tau0 MuK kappa_exp
 
 kcType tau0@(RefT tau _) kappa_exp = do
     checkKind tau TauK
@@ -1628,10 +1620,9 @@ checkMapFunT f tau = do
     unifyTypes c a
     unifyTypes s a
     unifyTypes d b
-    let co mce = co2 $ co1 $ do
-        cf <- trans f
-        ce <- mce
-        return $ E.callE cf [ce]
+    let co mce = co2 $ co1 $ do cf <- trans f
+                                ce <- mce
+                                return $ E.callE cf [ce]
     return (a, b, co)
   where
     checkMapReturnType :: Type -> Ti ()

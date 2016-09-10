@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -394,8 +393,8 @@ simplDecl decl m = do
         | isOnce && testDynFlag MayInlineFun flags = do
               theta <- askSubst
               extendSubst (bVar f) (SuspFun theta ivs vbs tau_ret e) $ do
-              dropBinding f
-              withoutBinding m
+                dropBinding f
+                withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead = bOccInfo f == Just Dead
@@ -415,8 +414,8 @@ simplDecl decl m = do
         | isOnce && testDynFlag MayInlineComp flags = do
               theta <- askSubst
               extendSubst (bVar v) (SuspComp theta comp) $ do
-              dropBinding v
-              withoutBinding m
+                dropBinding v
+                withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead = bOccInfo v == Just Dead
@@ -428,8 +427,8 @@ simplDecl decl m = do
               theta <- askSubst
               extendSubst (bVar f)
                           (SuspFunComp theta ivs vbs tau_ret comp) $ do
-              dropBinding f
-              withoutBinding m
+                dropBinding f
+                withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead = bOccInfo f == Just Dead
@@ -535,8 +534,8 @@ simplLocalDecl decl m = do
         | isOnce && not (isArrE e) && testDynFlag MayInlineVal flags = do
               theta <- askSubst
               extendSubst (bVar v) (SuspExp theta e) $ do
-              dropBinding v
-              withoutBinding m
+                dropBinding v
+                withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead, isOnce :: Bool

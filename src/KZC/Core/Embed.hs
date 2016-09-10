@@ -74,12 +74,12 @@ bindC c1 tau = do
     l <- gensym "bindk"
     v <- gensym "v"
     shift $ \k -> do
-    c2 <- extendVars [(v, tau)] $
-          k (varE v)
-    return $
-      if v `Set.member` fvs c2
-      then c1 <> mkComp (BindC l (TameV (mkBoundVar v)) tau s : unComp c2)
-      else c1 <> c2
+      c2 <- extendVars [(v, tau)] $
+            k (varE v)
+      return $
+        if v `Set.member` fvs c2
+        then c1 <> mkComp (BindC l (TameV (mkBoundVar v)) tau s : unComp c2)
+        else c1 <> c2
   where
     s :: SrcLoc
     s = srclocOf tau
