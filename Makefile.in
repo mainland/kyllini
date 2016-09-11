@@ -229,20 +229,23 @@ $(SRCDIR)Language/Ziria/Parser/Lexer.hs : $(SRCDIR)Language/Ziria/Parser/Lexer.x
 # Tests
 #
 TESTDIR = testsuite
+WIFIDIR = examples/wifi
 
 TESTS = \
-	$(shell ls $(TESTDIR)/tests/parser/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/backend/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/libs/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/kzc-issues/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/tests/threads/*.wpl | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/sniffer/sniffer_example.blk) \
-	$(shell ls $(TESTDIR)/code/WiFi/tests/*.blk | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.blk | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.blk | sort)
+	$(shell ls $(TESTDIR)/parser/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/backend/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/libs/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/kzc-issues/*.wpl | sort) \
+	$(shell ls $(TESTDIR)/threads/*.wpl | sort) \
+	$(shell ls $(WIFIDIR)/sniffer/sniffer_example.blk) \
+	$(shell ls $(WIFIDIR)/tests/*.blk | sort) \
+	$(shell ls $(WIFIDIR)/transmitter/tests/*.blk | sort) \
+	$(shell ls $(WIFIDIR)/receiver/tests/*.blk | sort)
 
 PERFTESTS = \
-	$(shell ls $(TESTDIR)/code/WiFi/perf/*.blk | sort)
+	$(shell ls $(WIFIDIR)/perf/*.blk | sort) \
+	$(shell ls $(WIFIDIR)/transmitter/perf/*.blk | sort) \
+	$(shell ls $(WIFIDIR)/receiver/perf/*.blk | sort)
 
 .PHONY : test-parser
 test-parser : kzc
@@ -270,15 +273,15 @@ test-compiler : kzc
 	done
 
 GROUNDFILES= \
-	$(shell ls $(TESTDIR)/tests/backend/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/tests/libs/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/tests/lut/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/tests/kzc-issues/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/tests/threads/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/sniffer/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/tests/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/transmitter/tests/*.outfile.ground | sort) \
-	$(shell ls $(TESTDIR)/code/WiFi/receiver/tests/*.outfile.ground | sort)
+	$(shell ls $(TESTDIR)/backend/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/libs/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/lut/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/kzc-issues/*.outfile.ground | sort) \
+	$(shell ls $(TESTDIR)/threads/*.outfile.ground | sort) \
+	$(shell ls $(WIFIDIR)/sniffer/*.outfile.ground | sort) \
+	$(shell ls $(WIFIDIR)/tests/*.outfile.ground | sort) \
+	$(shell ls $(WIFIDIR)/transmitter/tests/*.outfile.ground | sort) \
+	$(shell ls $(WIFIDIR)/receiver/tests/*.outfile.ground | sort)
 
 .PHONY : test-ground
 test-ground : $(patsubst %.outfile.ground,%.test,$(GROUNDFILES))
@@ -287,16 +290,19 @@ test-ground : $(patsubst %.outfile.ground,%.test,$(GROUNDFILES))
 test-all :
 	set -e; \
 	for DIR in \
-	  tests/backend \
-	  tests/lut \
-	  tests/libs \
-	  tests/kzc-issues \
-	  tests/threads \
-	  code/WiFi/transmitter/tests \
-	  code/WiFi/receiver/tests \
-	  code/WiFi/tests \
-	  code/WiFi/sniffer; do \
+	  backend \
+	  lut \
+	  libs \
+	  kzc-issues \
+	  threads; do \
 		(cd $(TESTDIR)/$$DIR && $(MAKE) $(VIRTUAL_GOALS)); \
+	done; \
+	for DIR in \
+	  transmitter/tests \
+	  receiver/tests \
+	  tests \
+	  sniffer; do \
+		(cd $(WIFIDIR)/$$DIR && $(MAKE) $(VIRTUAL_GOALS)); \
 	done
 
 #

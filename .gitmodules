@@ -1,0 +1,3 @@
+[submodule "examples/wifi"]
+	path = examples/wifi
+	url = git@lambda.cs.drexel.edu:ziria/wifi.git

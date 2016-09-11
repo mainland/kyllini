@@ -1,5 +1,5 @@
 #!/bin/sh
-WIFIDIR=../testsuite/code/WiFi
+WIFIDIR=../examples/wifi
 
 githash() {
     DIR=$1
