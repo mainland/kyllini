@@ -2,24 +2,52 @@
 set -e
 make
 
-echo "Validate: base $KZCFLAGS"
-make clean-tests && make -B test-all $@
+test_run() {
+    BASEDIR=$1
+    shift
+    
+    TESTDIRS=$1
+    shift
+    
+    LIBDIR=$(realpath $BASEDIR/lib)
+    
+    echo "Validate: base $KZCFLAGS"
+    make clean-tests
+    for DIR in $TESTDIRS; do
+        (cd "$BASEDIR/$DIR" && make -B KZCLIB="$LIBDIR" $@)
+    done
 
-echo "Validate: -DDFIRSTCLASSLABELS $KZCFLAGS"
-make clean-tests && CFLAGS="-DFIRSTCLASSLABELS" make -B test-all $@
+    echo "Validate: -DDFIRSTCLASSLABELS $KZCFLAGS"
+    make clean-tests
+    for DIR in $TESTDIRS; do
+        (cd "$BASEDIR/$DIR" && CFLAGS="-DFIRSTCLASSLABELS" make -B KZCLIB="$LIBDIR" $@)
+    done
 
-for FLAGS in \
-    "-fsimpl" \
-    "-fsimpl -finline" \
-    "-ffuse" \
-    "-fpeval" \
-    "-fsimpl -fpeval" \
-    "-ffuse -fpeval" \
-    "-fautolut -flut" \
-    "-fautolut -flut -fpeval" \
-    "-finline -fsimpl -fpeval -fautolut -flut" ; do
-    echo "Validate: $KZCFLAGS $FLAGS"
-    make clean-tests && KZCFLAGS="$KZCFLAGS $FLAGS" make -B test-all $@
-done
+    for FLAGS in \
+        "-fsimpl" \
+        "-fsimpl -finline" \
+        "-ffuse" \
+        "-fpeval" \
+        "-fsimpl -fpeval" \
+        "-ffuse -fpeval" \
+        "-fautolut -flut" \
+        "-fautolut -flut -fpeval" \
+        "-finline -fsimpl -fpeval -fautolut -flut" ; do
+        echo "Validate: $KZCFLAGS $FLAGS"
+        make clean-tests
+        for DIR in $TESTDIRS; do
+            (cd "$BASEDIR/$DIR" && KZCFLAGS="$KZCFLAGS $FLAGS" make -B KZCLIB="$LIBDIR" $@)
+        done
+    done
 
-make clean-tests
+    make clean-tests
+}
+
+# Standard test suite
+test_run testsuite "backend lut libs kzc-issues threads" $@
+
+# WiFi tests
+test_run examples/wifi "transmitter/tests receiver/tests tests sniffer" $@
+
+# WiFi perf tests
+#test_run examples/wifi "transmitter/perf receiver/perf perf" $@
