@@ -38,6 +38,11 @@ SUCH DAMAGE.
 extern "C" {
 #endif
 
+void __kz_butterfly16_fft(int n, complex16_t *in);
+void __kz_butterfly128_ifft(int n, complex16_t *in);
+void __kz_butterfly32_ifft(int n, complex16_t *in);
+void __kz_butterfly8_ifft(int n, complex16_t *in);
+
 void __kz_hexprint_int8(int n, const int8_t *a, int32_t length);
 
 void __kz_bits_to_int8(int n, int m, int8_t *dst, const uint8_t *src);
