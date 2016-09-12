@@ -1112,8 +1112,8 @@ cgExp e k =
             go tau | isPassByRef tau =
                 cgExp e $ oneshot tau $ cgAddrOf tau
 
-            go _ =
-                cgExpOneshot e
+            go tau =
+                cgExpOneshot e >>= cgLower tau
 
     go (DerefE e _) k =
         cgExp e $ mapKont (\f ce -> f (cgDeref ce)) k
