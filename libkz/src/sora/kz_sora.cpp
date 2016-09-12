@@ -31,6 +31,30 @@
 #include <sora/viterbicore.h>
 #include <sora/ieee80211const.h>
 
+FORCEINLINE
+void __kz_butterfly16_fft(int n, complex16_t *in)
+{
+        FFTSSE<16>(in);
+}
+
+FORCEINLINE
+void __kz_butterfly128_ifft(int n, complex16_t *in)
+{
+        IFFTSSE<128>(in);
+}
+
+FORCEINLINE
+void __kz_butterfly32_ifft(int n, complex16_t *in)
+{
+        IFFTSSE<32>(in);
+}
+
+FORCEINLINE
+void __kz_butterfly8_ifft(int n, complex16_t *in)
+{
+        IFFTSSEEx<8>(in);
+}
+
 //
 // We support Fixed Point Radians in this file.
 // FP_RAD maps PI (and -PI) to 0x8000 and it represents only radians [-PI, PI)
