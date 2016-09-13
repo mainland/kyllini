@@ -82,6 +82,7 @@ import Control.Monad (unless,
                       when,
                       zipWithM,
                       zipWithM_)
+import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -147,8 +148,14 @@ extendWildVars wvs = extendVars [(bVar v, tau) | (TameV v, tau) <- wvs]
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m ()
-checkProgram (Program decls (Main comp tau)) =
+checkProgram (Program decls main) =
     checkDecls decls $
+    traverse_ checkMain main
+
+checkMain :: (IsLabel l, MonadTc m)
+          => Main l
+          -> m ()
+checkMain (Main comp tau) =
     withLocContext comp (text "In definition of main") $
     inSTScope tau $
     inLocalScope $

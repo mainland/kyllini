@@ -373,14 +373,12 @@ fuseProgram = runF . fuseProg
 instance MonadTc m => TransformExp (F l m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
-    programT (Program decls (Main comp tau)) = do
-        (decls', comp') <-
-            declsT decls $
-            inSTScope tau $
-            inLocalScope $
-            withLocContext comp (text "In definition of main") $
-            go comp (uncoalesce comp)
-        return $ Program decls' (Main comp' tau)
+    mainT (Main comp tau) = do
+        comp' <- inSTScope tau $
+                 inLocalScope $
+                 withLocContext comp (text "In definition of main") $
+                 go comp (uncoalesce comp)
+        return $ Main comp' tau
       where
         go :: Comp l
            -> Maybe (Type, Type, Comp l, Comp l, Comp l)

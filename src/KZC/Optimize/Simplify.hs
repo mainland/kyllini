@@ -319,14 +319,20 @@ withInstantiatedTyVars _tau k =
 simplProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m (Program l, SimplStats)
-simplProgram (Program decls (Main comp tau)) = runSimplM $ do
-  (decls', comp') <-
-      simplDecls decls $
-      inSTScope tau $
-      inLocalScope $
-      withLocContext comp (text "In definition of main") $
-      simplC comp
-  return $ Program decls' (Main comp' tau)
+simplProgram (Program decls main) = runSimplM $ do
+    (decls', main') <- simplDecls decls $
+                       traverse simplMain main
+    return $ Program decls' main'
+
+simplMain :: (IsLabel l, MonadTc m)
+          => Main l
+          -> SimplM l m (Main l)
+simplMain (Main comp tau) = do
+    comp' <- inSTScope tau $
+             inLocalScope $
+             withLocContext comp (text "In definition of main") $
+             simplC comp
+    return $ Main comp' tau
 
 simplComp :: forall l m . (IsLabel l, MonadTc m)
           => Comp l

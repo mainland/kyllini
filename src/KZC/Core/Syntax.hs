@@ -224,7 +224,7 @@ data WildVar = WildV
 data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
-data Program l = Program [Decl l] (Main l)
+data Program l = Program [Decl l] (Maybe (Main l))
   deriving (Eq, Ord, Read, Show)
 
 data Decl l = LetD LocalDecl !SrcLoc
@@ -712,10 +712,15 @@ instance Pretty OccInfo where
     ppr ManyBranch = text "*branch"
     ppr Many       = text "*"
 
+instance IsLabel l => Pretty (Main l) where
+    ppr (Main comp tau) = ppr (LetCompD "main" tau comp noLoc)
+
 instance IsLabel l => Pretty (Program l) where
-    ppr (Program decls (Main comp tau)) =
-        ppr decls </>
-        ppr (LetCompD "main" tau comp noLoc)
+    ppr (Program decls Nothing) =
+        ppr decls
+
+    ppr (Program decls (Just main)) =
+        ppr decls </> ppr main
 
 instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetD decl _) =
