@@ -17,3 +17,18 @@ flag combinations. Running it is as simple as executing
 
 Extra flags can be passed to the compiler during validation by setting the
 `KZCFLAGS` environment variable.
+
+All compiler changes should be validated before being pushed! It is also a good
+idea to validate after changes to *any* component of the system.
+
+# Performance testing
+
+There are a number of scripts that will automatically run the WiFi performance
+tests, generating a CSV file performance data. The performance tests can be run
+for Ziria by invoking the `perf-ziria.sh` script with the path to the Ziria WiFi
+implementation, e.g.,
+
+    ./perf-ziria.sh ~/projects/ziria/Ziria/code/WiFi/
+
+The other perf scripts, e.g., `perf-wifi.sh` and `perf-wifi-sid.sh` should be
+run with no additional arguments.
