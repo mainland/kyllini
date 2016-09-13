@@ -11,6 +11,7 @@ module Language.Ziria.Smart (
     mkStruct,
 
     varE,
+    letDeclE,
     stmsE,
     letS
   ) where
@@ -33,8 +34,11 @@ mkStruct = Struct
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
+letDeclE :: Decl -> Exp -> Exp
+letDeclE decl e = LetDeclE decl e (decl `srcspan` e)
+
 stmsE :: [Stm] -> Exp
 stmsE stms = StmE stms (srclocOf stms)
 
-letS :: CompLet -> Stm
+letS :: Decl -> Stm
 letS l = LetS l (srclocOf l)

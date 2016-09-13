@@ -79,8 +79,8 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.CompLet] -> Ti [E.Decl]
-checkProgram cls = checkCompLets cls sequence
+checkProgram :: [Z.Decl] -> Ti [E.Decl]
+checkProgram cls = checkDecls cls sequence
 
 {- Note [Value Contexts]
 
@@ -280,34 +280,34 @@ checkLetExtFun f ps ztau_ret isPure l = do
     checkRetType ztau =
         fromZ ztau
 
-checkCompLet :: Z.CompLet
-             -> (Ti E.Decl -> Ti a)
-             -> Ti a
-checkCompLet cl@(Z.LetCL v ztau e l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
+checkDecl :: Z.Decl
+          -> (Ti E.Decl -> Ti a)
+          -> Ti a
+checkDecl decl@(Z.LetD v ztau e l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLet v ztau TauK e l
-    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetFunD f ztau ps e l) k = do
+    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
                        checkLetFun f ztau ps e l
-    let mcdecl = alwaysWithSummaryContext cl mkLetFun
+    let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret isPure l) k = do
-    (tau, mkLetExtFun) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetFunExternalD f ps ztau_ret isPure l) k = do
+    (tau, mkLetExtFun) <- alwaysWithSummaryContext decl $
                           checkLetExtFun f ps ztau_ret isPure l
-    let mcdecl = alwaysWithSummaryContext cl mkLetExtFun
+    let mcdecl = alwaysWithSummaryContext decl mkLetExtFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
+checkDecl decl@(Z.LetStructD (Z.StructDef zs zflds l) _) k = do
     (taus, mkLetStruct) <-
-        alwaysWithSummaryContext cl $ do
+        alwaysWithSummaryContext decl $ do
         checkStructNotRedefined zs
         checkDuplicates "field names" zfnames
         taus <- mapM fromZ ztaus
@@ -317,7 +317,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
                              ctaus   <- mapM trans taus
                              return $ E.LetStructD cs (cfnames `zip` ctaus) l
         return (taus, mkLetStruct)
-    let mcdecl = alwaysWithSummaryContext cl mkLetStruct
+    let mcdecl = alwaysWithSummaryContext decl mkLetStruct
     extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
   where
     (zfnames, ztaus) = unzip zflds
@@ -330,26 +330,26 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
         Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
-checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLet v ztau MuK e l
-    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetFunCompD f ztau _ ps e l) k = do
+    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
                        checkLetFun f ztau ps e l
-    let mcdecl = alwaysWithSummaryContext cl mkLetFun
+    let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLets :: [Z.CompLet]
-              -> ([Ti E.Decl] -> Ti a)
-              -> Ti a
-checkCompLets [] k =
+checkDecls :: [Z.Decl]
+           -> ([Ti E.Decl] -> Ti a)
+           -> Ti a
+checkDecls [] k =
     k []
 
-checkCompLets (cl:cls) k =
-    checkCompLet  cl  $ \mcdecl  ->
-    checkCompLets cls $ \mcdecls ->
+checkDecls (decl:decls) k =
+    checkDecl  decl  $ \mcdecl  ->
+    checkDecls decls $ \mcdecls ->
     k (mcdecl:mcdecls)
 
 mkSigned :: Type -> Type
@@ -530,6 +530,19 @@ tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
       extendVars [(v, tau)] $
       checkLetBody e2 exp_ty mcdecl l
 
+tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
+    (tau, mcdecl) <- checkLetRef v ztau e1 l
+    withExpContext e2 $
+      extendVars [(v, refT tau)] $
+      checkLetBody e2 exp_ty mcdecl l
+
+tcExp (Z.LetDeclE decl e l) exp_ty =
+    checkDecl decl $ \mcdecl -> do
+    tau <- newMetaTvT MuK l
+    instType tau exp_ty
+    mce <- collectCheckValCtx tau $ checkExp e tau
+    return $ E.LetE <$> mcdecl <*> mce <*> pure l
+
 tcExp e@(Z.CallE f es l) exp_ty =
     withCallContext f e $ do
     (taus, tau_ret, co1) <- lookupVar f >>= checkFunT f nargs
@@ -583,12 +596,6 @@ tcExp e@(Z.CallE f es l) exp_ty =
         alwaysWithLocContext e doc
       where
         doc = text "In argument:" <+> ppr e
-
-tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
-    (tau, mcdecl) <- checkLetRef v ztau e1 l
-    withExpContext e2 $
-      extendVars [(v, refT tau)] $
-      checkLetBody e2 exp_ty mcdecl l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
     (gamma, mce1) <-
@@ -964,13 +971,6 @@ tcExp (Z.MapE ann f ztau l) exp_ty = do
                          E.bindE cy cb ccalle $
                          E.emitE (E.varE cy)
 
-tcExp (Z.CompLetE cl e l) exp_ty =
-    checkCompLet cl $ \mcdecl -> do
-    tau <- newMetaTvT MuK l
-    instType tau exp_ty
-    mce <- collectCheckValCtx tau $ checkExp e tau
-    return $ E.LetE <$> mcdecl <*> mce <*> pure l
-
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
 
@@ -1028,11 +1028,11 @@ tcStms [stm@Z.LetS{}] _ =
     withSummaryContext stm $
     faildoc $ text "Last command in command sequence must be an expression"
 
-tcStms (Z.LetS cl l : stms) exp_ty = do
+tcStms (Z.LetS decl l : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
     collectCheckValCtx tau $
-      checkCompLet cl $ \mcdecl -> do
+      checkDecl decl $ \mcdecl -> do
       mce <- checkStms stms tau
       return $ do
           cdecl <- mcdecl

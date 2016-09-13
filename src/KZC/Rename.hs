@@ -31,8 +31,8 @@ import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Uniq
 
-renameProgram :: [CompLet] -> Rn [CompLet]
-renameProgram = rnCompLets
+renameProgram :: [Decl] -> Rn [Decl]
+renameProgram = rnDecls
 
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
@@ -111,12 +111,17 @@ instance Rename Exp where
         extendVars (text "definition") [v] $
         LetE <$> rn v <*> pure tau <*> rn e1 <*> rn e2 <*> pure l
 
-    rn (CallE f es l) =
-        CallE <$> lookupMaybeCompVar f <*> rn es <*> pure l
-
     rn (LetRefE v tau e1 e2 l) =
         extendVars (text "definition") [v] $
         LetRefE <$> rn v <*> pure tau <*> rn e1 <*> rn e2 <*> pure l
+
+    rn (LetDeclE decl e l) =
+        rnDecl decl $ \decl' -> do
+        e' <- rn e
+        return $ LetDeclE decl' e' l
+
+    rn (CallE f es l) =
+        CallE <$> lookupMaybeCompVar f <*> rn es <*> pure l
 
     rn (AssignE e1 e2 l) =
         AssignE <$> rn e1 <*> rn e2 <*> pure l
@@ -193,72 +198,67 @@ instance Rename Exp where
     rn (FilterE v tau l) =
         FilterE <$> rn v <*> pure tau <*> pure l
 
-    rn (CompLetE cl e l) =
-        rnCompLet cl $ \cl' -> do
-        e' <- rn e
-        return $ CompLetE cl' e' l
-
     rn (StmE stms l) =
         StmE <$> rnStms stms <*> pure l
 
-rnCompLet :: CompLet -> (CompLet -> Rn a) -> Rn a
-rnCompLet cl@(LetCL v tau e l) k =
+rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
+rnDecl decl@(LetD v tau e l) k =
     extendVars (text "variable") [v] $ do
-    cl' <- withSummaryContext cl $
-           LetCL <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             LetD <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
+    k decl'
 
-rnCompLet cl@(LetRefCL v tau e l) k =
+rnDecl decl@(LetRefD v tau e l) k =
     extendVars (text "mutable variable") [v] $ do
-    cl' <-withSummaryContext cl $
-            LetRefCL <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             LetRefD <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
+    k decl'
 
-rnCompLet cl@(LetFunCL v tau vbs e l) k =
+rnDecl decl@(LetFunD v tau vbs e l) k =
     extendVars (text "function") [v] $ do
-    cl' <- withSummaryContext cl $
-           extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-           LetFunCL <$> rn v <*> pure tau <*> rn vbs <*> rn e <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
+             LetFunD <$> rn v <*> pure tau <*> rn vbs <*> rn e <*> pure l
+    k decl'
 
-rnCompLet cl@(LetFunExternalCL v vbs tau isPure l) k =
+rnDecl decl@(LetFunExternalD v vbs tau isPure l) k =
     extendVars (text "external function") [v] $ do
-    cl' <- withSummaryContext cl $
-           extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-           LetFunExternalCL <$> rn v <*> rn vbs  <*> pure tau <*> pure isPure <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
+             LetFunExternalD <$> rn v <*> rn vbs  <*> pure tau <*> pure isPure <*> pure l
+    k decl'
 
-rnCompLet cl@(LetStructCL s l) k = do
-    cl' <- withSummaryContext cl $
-           LetStructCL <$> pure s <*> pure l
-    k cl'
+rnDecl decl@(LetStructD s l) k = do
+    decl' <- withSummaryContext decl $
+             LetStructD <$> pure s <*> pure l
+    k decl'
 
-rnCompLet cl@(LetCompCL v tau range e l) k =
+rnDecl decl@(LetCompD v tau range e l) k =
     extendVars (text "computation") [v] $ do
-    cl' <- withSummaryContext cl $
-           LetCompCL <$> rn v <*> pure tau <*> pure range <*> inCompScope (rn e) <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             LetCompD <$> rn v <*> pure tau <*> pure range <*> inCompScope (rn e) <*> pure l
+    k decl'
 
-rnCompLet cl@(LetFunCompCL f tau range vbs e l) k =
+rnDecl decl@(LetFunCompD f tau range vbs e l) k =
     extendCompVars (text "computation function") [f] $ do
-    cl' <- withSummaryContext cl $
-           extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-           LetFunCompCL <$> inCompScope (lookupMaybeCompVar f) <*>
-               pure tau <*> pure range <*> rn vbs <*> rn e <*> pure l
-    k cl'
+    decl' <- withSummaryContext decl $
+             extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
+             LetFunCompD <$> inCompScope (lookupMaybeCompVar f) <*>
+                 pure tau <*> pure range <*> rn vbs <*> rn e <*> pure l
+    k decl'
 
-rnCompLets :: [CompLet] -> Rn [CompLet]
-rnCompLets [] =
+rnDecls :: [Decl] -> Rn [Decl]
+rnDecls [] =
     return []
 
-rnCompLets (cl:cls) =
-    rnCompLet cl $ \cl' -> do
-    cls' <- rnCompLets cls
-    return (cl':cls')
+rnDecls (decl:decls) =
+    rnDecl decl $ \decl' -> do
+    decls' <- rnDecls decls
+    return (decl':decls')
 
 rnStm :: Stm -> (Stm -> Rn a) -> Rn a
 rnStm (LetS cl l) k =
-    rnCompLet cl $ \cl' ->
+    rnDecl cl $ \cl' ->
       k (LetS cl' l)
 
 rnStm (BindS v tau e l) k =

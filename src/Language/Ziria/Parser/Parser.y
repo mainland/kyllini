@@ -566,10 +566,10 @@ stm :
     'let' var_bind '=' exp
       { let { (v, tau) = $2 }
         in
-          letS $ LetCL v tau $4 ($1 `srcspan` $4)
+          letS $ LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'var' ID ':' base_type maybe_initializer
-      { letS $ LetRefCL (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { letS $ LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
   | stm_exp { ExpS $1 (srclocOf $1) }
 
 stm_exp :: { Exp }
@@ -640,7 +640,7 @@ commands :: { [Stm] }
 commands :
     {- empty -}
       { [] }
-  | comp_let_decl opt_semi commands
+  | decl opt_semi commands
       { LetS $1 (srclocOf $1) : $3 }
   | var_bind '<-' comp opt_semi commands
       { let { (v, tau) = $1
@@ -652,37 +652,37 @@ commands :
   | comp opt_semi commands
       { ExpS $1 (srclocOf $1) : $3 }
 
-comp_let_decl :: { CompLet }
-comp_let_decl :
+decl :: { Decl }
+decl :
     'let' var_bind '=' exp
       { let { (v, tau) = $2 }
         in
-          LetCL v tau $4 ($1 `srcspan` $4)
+          LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefCL (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
   | struct
-      { LetStructCL $1 (srclocOf $1) }
+      { LetStructD $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type
-      { LetFunExternalCL (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
+      { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
-      { LetFunExternalCL (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
+      { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
   | 'fun' 'comp' maybe_comp_range comp_var_bind comp_params '{' commands '}'
       { let { (v, tau) = $4 }
         in
-          LetFunCompCL v tau $3 $5 (stmsE $7) ($1 `srcspan` $8)
+          LetFunCompD v tau $3 $5 (stmsE $7) ($1 `srcspan` $8)
       }
   | 'fun' var_bind params stm_block
       { let { (v, tau) = $2 }
         in
-          LetFunCL v tau $3 (stmsE $4) ($1 `srcspan` $4)
+          LetFunD v tau $3 (stmsE $4) ($1 `srcspan` $4)
       }
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' comp
       { let { (v, tau) = $4 }
         in
-          LetCompCL v tau $3 $6 ($1 `srcspan` $6)
+          LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
 
 acomp :: { Exp }
@@ -721,9 +721,9 @@ acomp :
   | 'if' exp error
       {% expected ["then clause"] Nothing }
 
-  | comp_let_decl 'in' comp
-      { CompLetE $1 $3 ($1 `srcspan` $3) }
-  | comp_let_decl error
+  | decl 'in' comp
+      { LetDeclE $1 $3 ($1 `srcspan` $3) }
+  | decl error
       {% expected ["'in'"] Nothing }
 
   | 'do' stm_block
@@ -899,14 +899,14 @@ comp_param :
  -
  ------------------------------------------------------------------------------}
 
-program :: { [CompLet] }
+program :: { [Decl] }
 program :
-    comp_let_decl_rlist opt_semi { rev $1 }
+    decl_rlist opt_semi { rev $1 }
 
-comp_let_decl_rlist :: { RevList CompLet }
-comp_let_decl_rlist :
-    comp_let_decl                              { rsingleton $1 }
-  | comp_let_decl_rlist opt_semi comp_let_decl { rcons $3 $1 }
+decl_rlist :: { RevList Decl }
+decl_rlist :
+    decl                     { rsingleton $1 }
+  | decl_rlist opt_semi decl { rcons $3 $1 }
 
 {------------------------------------------------------------------------------
  -
