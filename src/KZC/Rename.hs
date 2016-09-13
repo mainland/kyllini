@@ -201,9 +201,6 @@ instance Rename Exp where
     rn (StmE stms l) =
         StmE <$> rnStms stms <*> pure l
 
-    rn (CmdE cmds l) =
-        CmdE <$> rnCmds cmds <*> pure l
-
 rnCompLet :: CompLet -> (CompLet -> Rn a) -> Rn a
 rnCompLet cl@(LetCL v tau e l) k =
     extendVars (text "variable") [v] $ do
@@ -260,18 +257,17 @@ rnCompLets (cl:cls) =
     return (cl':cls')
 
 rnStm :: Stm -> (Stm -> Rn a) -> Rn a
-rnStm (LetS v tau e l) k =
-    extendVars (text "definition") [v] $ do
-    stm' <- LetS <$> rn v <*> pure tau <*> rn e <*> pure l
-    k stm'
+rnStm (LetS cl l) k =
+    rnCompLet cl $ \cl' ->
+      k (LetS cl' l)
 
-rnStm (LetRefS v tau e l) k =
+rnStm (BindS v tau e l) k =
     extendVars (text "definition") [v] $ do
-    stm' <- LetRefS <$> rn v <*> pure tau <*> rn e <*> pure l
+    stm' <- BindS <$> rn v <*> pure tau <*> inCompScope (rn e) <*> pure l
     k stm'
 
 rnStm (ExpS e l) k = do
-    stm' <- ExpS <$> rn e <*> pure l
+    stm' <- ExpS <$> inCompScope (rn e) <*> pure l
     k stm'
 
 rnStms :: [Stm] -> Rn [Stm]
@@ -282,26 +278,3 @@ rnStms (stm:stms) =
     rnStm stm $ \stm' -> do
     stms' <- rnStms stms
     return (stm':stms')
-
-rnCmd :: Cmd -> (Cmd -> Rn a) -> Rn a
-rnCmd (LetC cl l) k =
-    rnCompLet cl $ \cl' ->
-      k (LetC cl' l)
-
-rnCmd (BindC v tau e l) k =
-    extendVars (text "definition") [v] $ do
-    cmd' <- BindC <$> rn v <*> pure tau <*> inCompScope (rn e) <*> pure l
-    k cmd'
-
-rnCmd (ExpC e l) k = do
-    cmd' <- ExpC <$> inCompScope (rn e) <*> pure l
-    k cmd'
-
-rnCmds :: [Cmd] -> Rn [Cmd]
-rnCmds [] =
-    return []
-
-rnCmds (cmd:cmds) =
-    rnCmd cmd $ \cmd' -> do
-    cmds' <- rnCmds cmds
-    return (cmd':cmds')

@@ -12,8 +12,7 @@ module Language.Ziria.Smart (
 
     varE,
     stmsE,
-    cmdsE,
-    letC
+    letS
   ) where
 
 import Data.Loc
@@ -37,8 +36,5 @@ varE v = VarE v (srclocOf v)
 stmsE :: [Stm] -> Exp
 stmsE stms = StmE stms (srclocOf stms)
 
-cmdsE :: [Cmd] -> Exp
-cmdsE cmds = CmdE cmds (srclocOf cmds)
-
-letC :: CompLet -> Cmd
-letC l = LetC l (srclocOf l)
+letS :: CompLet -> Stm
+letS l = LetS l (srclocOf l)

@@ -38,7 +38,6 @@ module Language.Ziria.Syntax (
 
     CompLet(..),
     Stm(..),
-    Cmd(..),
 
     StructDef(..),
     Type(..),
@@ -171,7 +170,6 @@ data Exp = ConstE Const !SrcLoc
          | FilterE Var (Maybe Type) !SrcLoc
          | CompLetE CompLet Exp !SrcLoc
          | StmE [Stm] !SrcLoc
-         | CmdE [Cmd] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
@@ -238,14 +236,9 @@ data CompLet = LetCL Var (Maybe Type) Exp !SrcLoc
              | LetFunCompCL Var (Maybe Type) (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Stm = LetS Var (Maybe Type) Exp !SrcLoc
-         | LetRefS Var Type (Maybe Exp) !SrcLoc
+data Stm = LetS CompLet !SrcLoc
+         | BindS Var (Maybe Type) Exp !SrcLoc
          | ExpS Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-data Cmd = LetC CompLet !SrcLoc
-         | BindC Var (Maybe Type) Exp !SrcLoc
-         | ExpC Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
@@ -316,22 +309,15 @@ instance Fvs Exp Var where
     fvs (FilterE v _ _)         = singleton v
     fvs (CompLetE cl e _)       = fvs cl <> (fvs e <\\> binders cl)
     fvs (StmE stms _)           = fvs stms
-    fvs (CmdE cmds _)           = fvs cmds
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
 
 instance Fvs [Stm] Var where
-    fvs []                       = mempty
-    fvs (LetS v _ e _    : stms) = delete v (fvs e <> fvs stms)
-    fvs (LetRefS v _ e _ : stms) = delete v (fvs e <> fvs stms)
-    fvs (ExpS e _        : stms) = fvs e <> fvs stms
-
-instance Fvs [Cmd] Var where
     fvs []                     = mempty
-    fvs (LetC cl _     : cmds) = fvs cl <> (fvs cmds <\\> binders cl)
-    fvs (BindC v _ e _ : cmds) = delete v (fvs e <> fvs cmds)
-    fvs (ExpC e _      : cmds) = fvs e <> fvs cmds
+    fvs (LetS cl _     : cmds) = fvs cl <> (fvs cmds <\\> binders cl)
+    fvs (BindS v _ e _ : cmds) = delete v (fvs e <> fvs cmds)
+    fvs (ExpS e _      : cmds) = fvs e <> fvs cmds
 
 instance Fvs CompLet Var where
     fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
@@ -373,14 +359,9 @@ instance Summary CompLet where
     summary (LetFunCompCL v _ _ _ _ _)   = text "definition of" <+> ppr v
 
 instance Summary Stm where
-    summary (LetS v _ _ _)    = text "definition of" <+> ppr v
-    summary (LetRefS v _ _ _) = text "definition of" <+> ppr v
-    summary (ExpS e _)        = summary e
-
-instance Summary Cmd where
-    summary (LetC cl _)     = summary cl
-    summary (BindC v _ _ _) = text "definition of" <+> ppr v
-    summary (ExpC e _)      = summary e
+    summary (LetS cl _)     = summary cl
+    summary (BindS v _ _ _) = text "definition of" <+> ppr v
+    summary (ExpS e _)      = summary e
 
 {------------------------------------------------------------------------------
  -
@@ -558,10 +539,7 @@ instance Pretty Exp where
         nest 2 $ ppr cl <+/> text "in" <+/> ppr e
 
     pprPrec _ (StmE stms _) =
-        text "do" <+> ppr stms
-
-    pprPrec _ (CmdE cmds _) =
-        ppr cmds
+        ppr stms
 
 instance Pretty VarBind where
     pprPrec p (VarBind v True tau) =
@@ -653,28 +631,13 @@ instance Pretty CompLet where
     pprList cls = stack (map ppr cls)
 
 instance Pretty Stm where
-    ppr (LetS v tau e _) =
-        nest 2 $
-        text "let" <+> pprSig v tau <+> text "=" <+> ppr e
-
-    ppr (LetRefS v tau e _) =
-        nest 2 $
-        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
-
-    ppr (ExpS e _) =
-        ppr e
-
-    pprList stms =
-        semiEmbrace (map ppr stms)
-
-instance Pretty Cmd where
-    ppr (LetC l _) =
+    ppr (LetS l _) =
         ppr l
 
-    ppr (BindC v tau e _) =
+    ppr (BindS v tau e _) =
         pprSig v tau <+> text "<-" <+> ppr e
 
-    ppr (ExpC e _) =
+    ppr (ExpS e _) =
         ppr e
 
     pprList cmds =

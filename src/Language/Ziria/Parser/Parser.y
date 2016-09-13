@@ -566,10 +566,10 @@ stm :
     'let' var_bind '=' exp
       { let { (v, tau) = $2 }
         in
-          LetS v tau $4 ($1 `srcspan` $4)
+          letS $ LetCL v tau $4 ($1 `srcspan` $4)
       }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefS (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { letS $ LetRefCL (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
   | stm_exp { ExpS $1 (srclocOf $1) }
 
 stm_exp :: { Exp }
@@ -636,21 +636,21 @@ unroll_info :
  -
  ------------------------------------------------------------------------------}
 
-commands :: { [Cmd] }
+commands :: { [Stm] }
 commands :
     {- empty -}
       { [] }
   | comp_let_decl opt_semi commands
-      { LetC $1 (srclocOf $1) : $3 }
+      { LetS $1 (srclocOf $1) : $3 }
   | var_bind '<-' comp opt_semi commands
       { let { (v, tau) = $1
             ; body     = $3
             }
         in
-          BindC v tau body (v `srcspan` $3) : $5
+          BindS v tau body (v `srcspan` $3) : $5
       }
   | comp opt_semi commands
-      { ExpC $1 (srclocOf $1) : $3 }
+      { ExpS $1 (srclocOf $1) : $3 }
 
 comp_let_decl :: { CompLet }
 comp_let_decl :
@@ -672,7 +672,7 @@ comp_let_decl :
   | 'fun' 'comp' maybe_comp_range comp_var_bind comp_params '{' commands '}'
       { let { (v, tau) = $4 }
         in
-          LetFunCompCL v tau $3 $5 (cmdsE $7) ($1 `srcspan` $8)
+          LetFunCompCL v tau $3 $5 (stmsE $7) ($1 `srcspan` $8)
       }
   | 'fun' var_bind params stm_block
       { let { (v, tau) = $2 }
@@ -729,9 +729,9 @@ acomp :
   | 'do' stm_block
       { stmsE $2 }
   | 'seq' '{' commands '}'
-      { cmdsE $3 }
+      { stmsE $3 }
   | '{' commands '}'
-      { cmdsE $2 }
+      { stmsE $2 }
 
   | ID
       { varE (mkVar (varid $1)) }

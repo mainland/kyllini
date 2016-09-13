@@ -974,9 +974,6 @@ tcExp (Z.CompLetE cl e l) exp_ty =
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
 
-tcExp (Z.CmdE cmds _) exp_ty =
-    tcCmds cmds exp_ty
-
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
 
 checkExp :: Z.Exp -> Type -> Ti (Ti E.Exp)
@@ -1029,34 +1026,50 @@ refPath e =
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti E.Exp)
 tcStms [stm@Z.LetS{}] _ =
     withSummaryContext stm $
-    faildoc $ text "Last statement in statement sequence must be an expression"
+    faildoc $ text "Last command in command sequence must be an expression"
 
-tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
+tcStms (Z.LetS cl l : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectCheckValCtx tau $ do
-      (tau1, mcdecl) <- withSummaryContext stm $
-                        checkLet v ztau TauK e l
-      mce2           <- extendVars [(v, tau1)] $
-                        checkStms stms tau
-      return $ E.LetE <$> mcdecl <*> mce2 <*> pure l
-
-tcStms [stm@Z.LetRefS{}] _ =
-    withSummaryContext stm $
-    faildoc $ text "Last statement in statement sequence must be an expression"
-
-tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $ do
-      (tau1, mcdecl) <- withSummaryContext stm $
-                        checkLetRef v ztau e_init l
-      mce2           <- extendVars [(v, refT tau1)] $
-                        checkStms stms tau
+    collectCheckValCtx tau $
+      checkCompLet cl $ \mcdecl -> do
+      mce <- checkStms stms tau
       return $ do
-        cdecl <- mcdecl
-        ce2   <- mce2
-        return $ E.LetE cdecl ce2 l
+          cdecl <- mcdecl
+          ce    <- mce
+          return $ E.LetE cdecl ce l
+
+tcStms [stm@Z.BindS{}] _ =
+    withSummaryContext stm $
+    faildoc $ text "Last command in command sequence must be an expression"
+
+tcStms (stm@(Z.BindS v ztau e l) : stms) exp_ty = do
+    nu                     <- fromZ (ztau, TauK)
+    tau1@(ST [] _ s a b _) <- mkSTC nu
+    omega2                 <- newMetaTvT OmegaK l
+    let tau2               =  ST [] omega2 s a b l
+    instType tau2 exp_ty
+    mce1 <- withSummaryContext stm $
+            collectCheckValCtx tau1 $
+            checkExp e tau1
+    mce2 <- extendVars [(v, nu)] $
+            checkStms stms tau2
+    withSummaryContext e checkForUnusedReturn
+    return $ do checkUnresolvedMtvs v nu
+                cv  <- trans v
+                ce1 <- withSummaryContext stm mce1
+                cnu <- trans nu
+                ce2 <- mce2
+                return $ E.BindE (E.TameV cv) cnu ce1 ce2 l
+  where
+    checkForUnusedReturn :: Ti ()
+    checkForUnusedReturn =
+        when (isReturn e && Set.notMember v (fvs stms)) $
+        faildoc "Result of return is not used"
+
+    isReturn :: Z.Exp -> Bool
+    isReturn Z.ReturnE{} = True
+    isReturn _              = False
 
 tcStms [stm@(Z.ExpS e _)] exp_ty =
     withSummaryContext stm $ do
@@ -1071,101 +1084,25 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
     omega2                 <- newMetaTvT OmegaK l
     let tau2               =  ST [] omega2 s a b l
     instType tau2 exp_ty
-    mce1  <- withSummaryContext stm $
-             collectCheckValCtx tau1 $
-             checkExp e tau1
-    mce2  <- checkStms stms tau2
+    mce1 <- withSummaryContext stm $
+            collectCheckValCtx tau1 $
+            checkExp e tau1
+    nu' <- compress nu
+    unless (isUnitT nu') $
+        withSummaryContext stm $
+        warndocWhen WarnUnusedCommandBind $
+        text "Command discarded a result of type" <+> ppr nu'
+    mce2 <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm mce1
                 cnu <- trans nu
                 ce2 <- mce2
                 return $ E.seqE cnu ce1 ce2
 
 tcStms [] _ =
-    panicdoc $ text "Empty statement sequence!"
+    panicdoc $ text "Empty command sequence!"
 
 checkStms :: [Z.Stm] -> Type -> Ti (Ti E.Exp)
 checkStms stms tau = tcStms stms (Check tau)
-
-tcCmds :: [Z.Cmd] -> Expected Type -> Ti (Ti E.Exp)
-tcCmds [cmd@Z.LetC{}] _ =
-    withSummaryContext cmd $
-    faildoc $ text "Last command in command sequence must be an expression"
-
-tcCmds (Z.LetC cl l : cmds) exp_ty = do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $
-      checkCompLet cl $ \mcdecl -> do
-      mce <- checkCmds cmds tau
-      return $ do
-          cdecl <- mcdecl
-          ce    <- mce
-          return $ E.LetE cdecl ce l
-
-tcCmds [cmd@Z.BindC{}] _ =
-    withSummaryContext cmd $
-    faildoc $ text "Last command in command sequence must be an expression"
-
-tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
-    nu                     <- fromZ (ztau, TauK)
-    tau1@(ST [] _ s a b _) <- mkSTC nu
-    omega2                 <- newMetaTvT OmegaK l
-    let tau2               =  ST [] omega2 s a b l
-    instType tau2 exp_ty
-    mce1 <- withSummaryContext cmd $
-            collectCheckValCtx tau1 $
-            checkExp e tau1
-    mce2 <- extendVars [(v, nu)] $
-            checkCmds cmds tau2
-    withSummaryContext e checkForUnusedReturn
-    return $ do checkUnresolvedMtvs v nu
-                cv  <- trans v
-                ce1 <- withSummaryContext cmd mce1
-                cnu <- trans nu
-                ce2 <- mce2
-                return $ E.BindE (E.TameV cv) cnu ce1 ce2 l
-  where
-    checkForUnusedReturn :: Ti ()
-    checkForUnusedReturn =
-        when (isReturn e && Set.notMember v (fvs cmds)) $
-        faildoc "Result of return is not used"
-
-    isReturn :: Z.Exp -> Bool
-    isReturn Z.ReturnE{} = True
-    isReturn _              = False
-
-tcCmds [cmd@(Z.ExpC e _)] exp_ty =
-    withSummaryContext cmd $ do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $
-      checkExp e tau
-
-tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
-    nu                     <- newMetaTvT TauK l
-    tau1@(ST [] _ s a b _) <- mkSTC nu
-    omega2                 <- newMetaTvT OmegaK l
-    let tau2               =  ST [] omega2 s a b l
-    instType tau2 exp_ty
-    mce1 <- withSummaryContext cmd $
-            collectCheckValCtx tau1 $
-            checkExp e tau1
-    nu' <- compress nu
-    unless (isUnitT nu') $
-        withSummaryContext cmd $
-        warndocWhen WarnUnusedCommandBind $
-        text "Command discarded a result of type" <+> ppr nu'
-    mce2 <- checkCmds cmds tau2
-    return $ do ce1 <- withSummaryContext cmd mce1
-                cnu <- trans nu
-                ce2 <- mce2
-                return $ E.seqE cnu ce1 ce2
-
-tcCmds [] _ =
-    panicdoc $ text "Empty command sequence!"
-
-checkCmds :: [Z.Cmd] -> Type -> Ti (Ti E.Exp)
-checkCmds cmds tau = tcCmds cmds (Check tau)
 
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type

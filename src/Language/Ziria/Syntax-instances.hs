@@ -38,7 +38,6 @@ instance Located Exp where
   locOf (FilterE _ _ l) = locOf l
   locOf (CompLetE _ _ l) = locOf l
   locOf (StmE _ l) = locOf l
-  locOf (CmdE _ l) = locOf l
 instance Located VarBind where
   locOf (VarBind _ _ _) = NoLoc
 instance Located CompLet where
@@ -50,13 +49,9 @@ instance Located CompLet where
   locOf (LetCompCL _ _ _ _ l) = locOf l
   locOf (LetFunCompCL _ _ _ _ _ l) = locOf l
 instance Located Stm where
-  locOf (LetS _ _ _ l) = locOf l
-  locOf (LetRefS _ _ _ l) = locOf l
+  locOf (LetS _ l) = locOf l
+  locOf (BindS _ _ _ l) = locOf l
   locOf (ExpS _ l) = locOf l
-instance Located Cmd where
-  locOf (LetC _ l) = locOf l
-  locOf (BindC _ _ _ l) = locOf l
-  locOf (ExpC _ l) = locOf l
 instance Located StructDef where
   locOf (StructDef _ _ l) = locOf l
 instance Located Type where
