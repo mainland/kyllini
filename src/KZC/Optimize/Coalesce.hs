@@ -337,7 +337,7 @@ instance Pretty BC where
 instance MonadTc m => TransformExp (Co m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
-    programT (Program decls comp tau) = do
+    programT (Program decls (Main comp tau)) = do
         (decls', comp') <-
           declsT decls $
           inSTScope tau $
@@ -357,7 +357,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
               applyBestBlocking (sortAscendingBy (topMetric asz bsz) bcs)
                                 a b comp'
             else return comp'
-        return $ Program decls' comp' tau
+        return $ Program decls' (Main comp' tau)
       where
         applyBestBlocking :: [BC]
                           -> Type

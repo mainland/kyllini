@@ -86,7 +86,7 @@ exprToCore :: forall l m . (IsLabel l, MonadTc m)
 exprToCore cdecls =
     transDecls cdecls $ \decls -> do
     (comp, tau) <- findMain decls
-    return $ Program (filter (not . isMain) decls) comp tau
+    return $ Program (filter (not . isMain) decls) (Main comp tau)
   where
     findMain :: [Decl l] -> TC m (Comp l, Type)
     findMain decls =

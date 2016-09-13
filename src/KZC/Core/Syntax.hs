@@ -32,6 +32,7 @@ module KZC.Core.Syntax (
     fpWidth,
 
     Const(..),
+    Main(..),
     Program(..),
     Decl(..),
     View(..),
@@ -220,7 +221,10 @@ data WildVar = WildV
              | TameV BoundVar
   deriving (Eq, Ord, Read, Show)
 
-data Program l = Program [Decl l] (Comp l) Type
+data Main l = Main (Comp l) Type
+  deriving (Eq, Ord, Read, Show)
+
+data Program l = Program [Decl l] (Main l)
   deriving (Eq, Ord, Read, Show)
 
 data Decl l = LetD LocalDecl !SrcLoc
@@ -709,7 +713,7 @@ instance Pretty OccInfo where
     ppr Many       = text "*"
 
 instance IsLabel l => Pretty (Program l) where
-    ppr (Program decls comp tau) =
+    ppr (Program decls (Main comp tau)) =
         ppr decls </>
         ppr (LetCompD "main" tau comp noLoc)
 

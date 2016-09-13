@@ -63,7 +63,7 @@ peval = testDynFlag PartialEval
 evalProgram :: (IsLabel l, MonadTcRef m)
             => Program l
             -> m (Program l)
-evalProgram (Program decls comp tau) =
+evalProgram (Program decls (Main comp tau)) =
     evalEvalM $
     evalDecls decls $ \mkDecls ->
     inSTScope tau $
@@ -80,7 +80,7 @@ evalProgram (Program decls comp tau) =
                                         ppr val
     (sdecls1, decls1) <- partition isStructD <$> mkDecls h'
     (sdecls2, decls2) <- partition isStructD <$> getTopDecls
-    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) comp' tau
+    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) (Main comp' tau)
 
 evalDecls :: (IsLabel l, MonadTcRef m)
           => [Decl l]

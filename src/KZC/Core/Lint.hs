@@ -147,7 +147,7 @@ extendWildVars wvs = extendVars [(bVar v, tau) | (TameV v, tau) <- wvs]
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m ()
-checkProgram (Program decls comp tau) =
+checkProgram (Program decls (Main comp tau)) =
     checkDecls decls $
     withLocContext comp (text "In definition of main") $
     inSTScope tau $
