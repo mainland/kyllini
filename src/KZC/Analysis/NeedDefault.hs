@@ -392,10 +392,10 @@ defaultsUsedExp e =
     vs = fvs e
 
 needDefaultProgram :: MonadTc m => Program l -> m (Program l)
-needDefaultProgram (Program decls main) = runND $ do
+needDefaultProgram (Program imports decls main) = runND $ do
   (decls', main') <- useDecls decls $
                      traverse needDefaultMain main
-  return $ Program decls' main'
+  return $ Program imports decls' main'
 
 needDefaultMain :: MonadTc m => Main l -> ND m (Main l)
 needDefaultMain (Main comp tau) = do

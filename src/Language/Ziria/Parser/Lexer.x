@@ -200,6 +200,7 @@ keywords = Map.fromList kws
           , ("forceinline", Tforceinline)
           , ("fun",         Tfun)
           , ("if",          Tif)
+          , ("import",      Timport)
           , ("impure",      Timpure)
           , ("in",          Tin)
           , ("int",         Tint)

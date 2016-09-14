@@ -31,8 +31,9 @@ import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Uniq
 
-renameProgram :: [Decl] -> Rn [Decl]
-renameProgram = rnDecls
+renameProgram :: Program -> Rn Program
+renameProgram (Program imports decls) =
+    Program imports <$> rnDecls decls
 
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do

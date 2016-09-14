@@ -79,8 +79,11 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.Decl] -> Ti [E.Decl]
-checkProgram cls = checkDecls cls sequence
+checkProgram :: Z.Program -> Ti E.Program
+checkProgram (Z.Program zimports zdecls) = do
+    decls       <- checkDecls zdecls sequence
+    let imports =  [E.Import m | Z.Import m <- zimports]
+    return $ E.Program imports decls
 
 {- Note [Value Contexts]
 

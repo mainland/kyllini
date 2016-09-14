@@ -65,10 +65,10 @@ class TransformExp m => TransformComp l m where
     argT = transArg
 
 transProgram :: TransformComp l m => Program l -> m (Program l)
-transProgram (Program decls main) = do
+transProgram (Program imports decls main) = do
     (decls', main') <- declsT decls $
                        traverse mainT main
-    return $ Program decls' main'
+    return $ Program imports decls' main'
 
 transMain :: TransformComp l m => Main l -> m (Main l)
 transMain (Main comp tau) = do

@@ -5,7 +5,7 @@
 
 -- |
 -- Module      : Language.Ziria.Parser.Parser
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -66,6 +66,7 @@ import KZC.Name
   'forceinline' { L _ T.Tforceinline }
   'fun'         { L _ T.Tfun }
   'if'          { L _ T.Tif }
+  'import'      { L _ T.Timport }
   'impure'      { L _ T.Timpure }
   'in'          { L _ T.Tin }
   'int'         { L _ T.Tint }
@@ -190,6 +191,25 @@ import KZC.Name
 %name parseProgram program
 
 %%
+{------------------------------------------------------------------------------
+ -
+ - modules
+ -
+ ------------------------------------------------------------------------------}
+
+module :: { ModuleName }
+module : modids { mkModuleName (map unLoc (rev $1)) (locOf (rev $1)) }
+
+modids :: { RevList (L Symbol) }
+modids :
+    modid            { rsingleton $1 }
+  | modids '.' modid { rcons $3 $1 }
+
+modid :: { L Symbol }
+modid :
+    ID       { L (locOf $1) (getID $1) }
+  | STRUCTID { L (locOf $1) (getSTRUCTID $1) }
+
 {------------------------------------------------------------------------------
  -
  - Identifiers
@@ -893,9 +913,19 @@ comp_param :
  -
  ------------------------------------------------------------------------------}
 
-program :: { [Decl] }
+program :: { Program }
 program :
-    decl_rlist opt_semi { rev $1 }
+    imports decl_rlist opt_semi { Program $1 (rev $2) }
+
+import :: { Import }
+import :
+    'import' module { Import $2 }
+  | 'import' error  {% expected ["module"] Nothing }
+
+imports :: { [Import] }
+imports :
+    {- empty -}             { [] }
+  | import opt_semi imports { $1 : $3 }
 
 decl_rlist :: { RevList Decl }
 decl_rlist :

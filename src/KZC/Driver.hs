@@ -151,9 +151,9 @@ runPipeline filepath = do
         tracePhase "compile" compilePhase
       where
         traceExprPhase :: String
-                       -> (a -> MaybeT KZC [E.Decl])
+                       -> (a -> MaybeT KZC E.Program)
                        -> a
-                       -> MaybeT KZC [E.Decl]
+                       -> MaybeT KZC E.Program
         traceExprPhase phase act =
             tracePhase phase act >=> tracePhase "lint" lintExpr
 
@@ -211,31 +211,31 @@ runPipeline filepath = do
     cppPhase :: T.Text -> MaybeT KZC T.Text
     cppPhase = lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
 
-    parsePhase :: T.Text -> MaybeT KZC [Z.Decl]
+    parsePhase :: T.Text -> MaybeT KZC Z.Program
     parsePhase text = lift $ liftIO $ parseProgram text start
 
-    pprPhase :: [Z.Decl] -> MaybeT KZC [Z.Decl]
+    pprPhase :: Z.Program -> MaybeT KZC Z.Program
     pprPhase decls = do
         whenDynFlag PrettyPrint $
             liftIO $ putDocLn $ ppr decls
         return decls
 
-    renamePhase :: [Z.Decl] -> MaybeT KZC [Z.Decl]
+    renamePhase :: Z.Program -> MaybeT KZC Z.Program
     renamePhase =
         lift . runRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
-    checkPhase :: [Z.Decl] -> MaybeT KZC [E.Decl]
+    checkPhase :: Z.Program -> MaybeT KZC E.Program
     checkPhase =
         lift . withTi . checkProgram >=>
         dumpPass DumpCore "expr" "tc"
 
-    lambdaLiftPhase :: [E.Decl] -> MaybeT KZC [E.Decl]
+    lambdaLiftPhase :: E.Program -> MaybeT KZC E.Program
     lambdaLiftPhase =
         lift . C.withTc . runLift . liftProgram >=>
         dumpPass DumpLift "expr" "ll"
 
-    exprToCorePhase :: IsLabel l => [E.Decl] -> MaybeT KZC (C.Program l)
+    exprToCorePhase :: IsLabel l => E.Program -> MaybeT KZC (C.Program l)
     exprToCorePhase =
         lift . C.withTc . E.runTC . E.exprToCore >=>
         dumpPass DumpLift "core" "exprToCore"
@@ -313,19 +313,19 @@ runPipeline filepath = do
         lift . CGen.compileProgram >=>
         lift . writeOutput
 
-    lintExpr :: [E.Decl] -> MaybeT KZC [E.Decl]
-    lintExpr decls = lift $ do
+    lintExpr :: E.Program -> MaybeT KZC E.Program
+    lintExpr prog = lift $ do
         whenDynFlag Lint $
-            E.withTc (E.checkDecls decls)
-        return decls
+            E.withTc (E.checkProgram prog)
+        return prog
 
     lintCore :: IsLabel l
              => C.Program l
              -> MaybeT KZC (C.Program l)
-    lintCore p = lift $ do
+    lintCore prog = lift $ do
         whenDynFlag Lint $
-            C.withTc (C.checkProgram p)
-        return p
+            C.withTc (C.checkProgram prog)
+        return prog
 
     stopIf :: (Config -> Bool) -> a -> MaybeT KZC a
     stopIf f x = do

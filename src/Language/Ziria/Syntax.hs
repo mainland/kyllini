@@ -24,6 +24,8 @@ module Language.Ziria.Syntax (
 
     FP(..),
 
+    Program(..),
+    Import(..),
     Decl(..),
     Const(..),
     Exp(..),
@@ -120,6 +122,12 @@ ipIsIntegral U{} = True
 data FP = FP16
         | FP32
         | FP64
+  deriving (Eq, Ord, Read, Show)
+
+data Program = Program [Import] [Decl]
+  deriving (Eq, Ord, Read, Show)
+
+data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
 data Decl = LetD Var (Maybe Type) Exp !SrcLoc
@@ -383,6 +391,51 @@ instance Pretty FP where
     ppr FP32 = text "32"
     ppr FP64 = text "64"
 
+instance Pretty Program where
+    ppr (Program imports decls) =
+        ppr imports </>
+        ppr decls
+
+instance Pretty Import where
+    ppr (Import mod) = text "import" <+> ppr mod
+
+    pprList imports = semisep (map ppr imports)
+
+instance Pretty Decl where
+    ppr (LetD v tau e _) =
+        nest 2 $
+        text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
+
+    ppr (LetRefD v tau e _) =
+        nest 2 $
+        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
+
+    ppr (LetFunD f ps e _) =
+        nest 2 $
+        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+/> ppr e
+
+    ppr (LetFunExternalD f ps tau isPure _) =
+        nest 2 $
+        text "fun" <+> text "external" <+> pureDoc <+>
+        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+      where
+        pureDoc = if isPure then empty else text "impure"
+
+    ppr (LetStructD def _) =
+        ppr def
+
+    ppr (LetCompD v tau range e _) =
+        nest 2 $
+        text "let" <+> text "comp" <+> pprRange range <+>
+        pprSig v tau <+> text "=" <+/> ppr e
+
+    ppr (LetFunCompD f range ps e _) =
+        nest 2 $
+        text "fun" <+> text "comp" <+> pprRange range <+>
+        ppr f <> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
+
+    pprList cls = stack (map ppr cls)
+
 instance Pretty Const where
     pprPrec _ UnitC                 = text "()"
     pprPrec _ (BoolC False)         = text "false"
@@ -595,41 +648,6 @@ instance Pretty Binop where
     ppr Div  = text "/"
     ppr Rem  = text "%"
     ppr Pow  = text "**"
-
-instance Pretty Decl where
-    ppr (LetD v tau e _) =
-        nest 2 $
-        text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
-
-    ppr (LetRefD v tau e _) =
-        nest 2 $
-        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
-
-    ppr (LetFunD f ps e _) =
-        nest 2 $
-        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+/> ppr e
-
-    ppr (LetFunExternalD f ps tau isPure _) =
-        nest 2 $
-        text "fun" <+> text "external" <+> pureDoc <+>
-        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
-      where
-        pureDoc = if isPure then empty else text "impure"
-
-    ppr (LetStructD def _) =
-        ppr def
-
-    ppr (LetCompD v tau range e _) =
-        nest 2 $
-        text "let" <+> text "comp" <+> pprRange range <+>
-        pprSig v tau <+> text "=" <+/> ppr e
-
-    ppr (LetFunCompD f range ps e _) =
-        nest 2 $
-        text "fun" <+> text "comp" <+> pprRange range <+>
-        ppr f <> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
-
-    pprList cls = stack (map ppr cls)
 
 instance Pretty Stm where
     ppr (LetS l _) =

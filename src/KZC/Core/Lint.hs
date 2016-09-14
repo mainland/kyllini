@@ -148,7 +148,7 @@ extendWildVars wvs = extendVars [(bVar v, tau) | (TameV v, tau) <- wvs]
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m ()
-checkProgram (Program decls main) =
+checkProgram (Program _ decls main) =
     checkDecls decls $
     traverse_ checkMain main
 

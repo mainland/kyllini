@@ -30,8 +30,10 @@ module KZC.Expr.Syntax (
     FP(..),
     fpWidth,
 
-    Const(..),
+    Program(..),
+    Import(..),
     Decl(..),
+    Const(..),
     Exp(..),
     Stm(..),
 
@@ -214,6 +216,19 @@ fpWidth FP16 = 16
 fpWidth FP32 = 32
 fpWidth FP64 = 64
 
+data Program = Program [Import] [Decl]
+  deriving (Eq, Ord, Read, Show)
+
+data Import = Import ModuleName
+  deriving (Eq, Ord, Read, Show)
+
+data Decl = LetD Var Type Exp !SrcLoc
+          | LetRefD Var Type (Maybe Exp) !SrcLoc
+          | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
+          | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
+          | LetStructD Struct [(Field, Type)] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data Const = UnitC
            | BoolC !Bool
            | FixC !IP {-# UNPACK #-} !Int
@@ -223,13 +238,6 @@ data Const = UnitC
            | ReplicateC Int Const
            | EnumC Type
            | StructC Struct [(Field, Const)]
-  deriving (Eq, Ord, Read, Show)
-
-data Decl = LetD Var Type Exp !SrcLoc
-          | LetRefD Var Type (Maybe Exp) !SrcLoc
-          | LetFunD Var [IVar] [(Var, Type)] Type Exp !SrcLoc
-          | LetExtFunD Var [IVar] [(Var, Type)] Type !SrcLoc
-          | LetStructD Struct [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -644,37 +652,15 @@ instance Pretty FP where
     ppr FP32 = text "32"
     ppr FP64 = text "64"
 
-instance Pretty Const where
-    pprPrec _ UnitC            = text "()"
-    pprPrec _ (BoolC False)    = text "false"
-    pprPrec _ (BoolC True)     = text "true"
-    pprPrec _ (FixC (U 1) 0)   = text "'0"
-    pprPrec _ (FixC (U 1) 1)   = text "'1"
-    pprPrec _ (FixC I{} x)     = ppr x
-    pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
-    pprPrec _ (FloatC _ f)     = ppr f
-    pprPrec _ (StringC s)      = text (show s)
-    pprPrec _ (StructC s flds) = ppr s <+> pprStruct equals flds
-    pprPrec _ (ArrayC cs)
-        | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
-        | otherwise                         = text "arr" <+> embrace commasep (map ppr (V.toList cs))
-      where
-        isBit :: Const -> Bool
-        isBit (FixC (U 1) _) = True
-        isBit _              = False
+instance Pretty Program where
+    ppr (Program imports decls) =
+        ppr imports </>
+        ppr decls
 
-        bitDoc :: Const -> Doc
-        bitDoc (FixC (U 1) 0) = char '0'
-        bitDoc (FixC (U 1) 1) = char '1'
-        bitDoc _              = error "Not a bit"
+instance Pretty Import where
+    ppr (Import mod) = text "import" <+> ppr mod
 
-    pprPrec _ (ReplicateC n c) =
-        braces $
-        pprPrec appPrec1 c <+> text "x" <+> ppr n
-
-    pprPrec _ (EnumC tau) =
-        braces $
-        ppr tau <+> text "..."
+    pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
@@ -711,6 +697,38 @@ instance Pretty Decl where
         lhs = text "struct" <+> ppr s
 
     pprList decls = stack (map ppr decls)
+
+instance Pretty Const where
+    pprPrec _ UnitC            = text "()"
+    pprPrec _ (BoolC False)    = text "false"
+    pprPrec _ (BoolC True)     = text "true"
+    pprPrec _ (FixC (U 1) 0)   = text "'0"
+    pprPrec _ (FixC (U 1) 1)   = text "'1"
+    pprPrec _ (FixC I{} x)     = ppr x
+    pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)     = ppr f
+    pprPrec _ (StringC s)      = text (show s)
+    pprPrec _ (StructC s flds) = ppr s <+> pprStruct equals flds
+    pprPrec _ (ArrayC cs)
+        | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
+        | otherwise                         = text "arr" <+> embrace commasep (map ppr (V.toList cs))
+      where
+        isBit :: Const -> Bool
+        isBit (FixC (U 1) _) = True
+        isBit _              = False
+
+        bitDoc :: Const -> Doc
+        bitDoc (FixC (U 1) 0) = char '0'
+        bitDoc (FixC (U 1) 1) = char '1'
+        bitDoc _              = error "Not a bit"
+
+    pprPrec _ (ReplicateC n c) =
+        braces $
+        pprPrec appPrec1 c <+> text "x" <+> ppr n
+
+    pprPrec _ (EnumC tau) =
+        braces $
+        ppr tau <+> text "..."
 
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =

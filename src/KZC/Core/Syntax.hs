@@ -32,8 +32,9 @@ module KZC.Core.Syntax (
     fpWidth,
 
     Const(..),
-    Main(..),
     Program(..),
+    Import(..),
+    Main(..),
     Decl(..),
     View(..),
     LocalDecl(..),
@@ -221,10 +222,13 @@ data WildVar = WildV
              | TameV BoundVar
   deriving (Eq, Ord, Read, Show)
 
-data Main l = Main (Comp l) Type
+data Program l = Program [Import] [Decl l] (Maybe (Main l))
   deriving (Eq, Ord, Read, Show)
 
-data Program l = Program [Decl l] (Maybe (Main l))
+data Import = Import ModuleName
+  deriving (Eq, Ord, Read, Show)
+
+data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
 data Decl l = LetD LocalDecl !SrcLoc
@@ -716,11 +720,19 @@ instance IsLabel l => Pretty (Main l) where
     ppr (Main comp tau) = ppr (LetCompD "main" tau comp noLoc)
 
 instance IsLabel l => Pretty (Program l) where
-    ppr (Program decls Nothing) =
+    ppr (Program imports decls Nothing) =
+        ppr imports </>
         ppr decls
 
-    ppr (Program decls (Just main)) =
-        ppr decls </> ppr main
+    ppr (Program imports decls (Just main)) =
+        ppr imports </>
+        ppr decls </>
+        ppr main
+
+instance Pretty Import where
+    ppr (Import mod) = text "import" <+> ppr mod
+
+    pprList imports = semisep (map ppr imports)
 
 instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetD decl _) =

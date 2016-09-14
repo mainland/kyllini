@@ -10,7 +10,10 @@ module KZC.Name (
     NameSort(..),
     Named(..),
     mkName,
-    mkSymName
+    mkSymName,
+
+    ModuleName(..),
+    mkModuleName
   ) where
 
 import Data.Loc
@@ -92,3 +95,22 @@ mkName s l = Name Orig (intern s) (SrcLoc l)
 
 mkSymName :: Symbol -> Loc -> Name
 mkSymName s l = Name Orig s (SrcLoc l)
+
+data ModuleName = ModuleName
+    { modSyms :: ![Symbol]
+    , modLoc  :: !SrcLoc
+    }
+  deriving (Eq, Ord, Read, Show)
+
+instance Located ModuleName where
+    locOf (ModuleName _ loc) = locOf loc
+
+instance Pretty ModuleName where
+    ppr (ModuleName syms _) =
+        dotsep (map (text . unintern) syms)
+      where
+        dotsep :: [Doc] -> Doc
+        dotsep = folddoc (<>) . punctuate dot
+
+mkModuleName :: [Symbol] -> Loc -> ModuleName
+mkModuleName s l = ModuleName s (SrcLoc l)

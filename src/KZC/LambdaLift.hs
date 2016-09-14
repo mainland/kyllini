@@ -111,10 +111,11 @@ appendTopDecl decl =
 getTopDecls :: MonadTc m => LiftM m [Decl]
 getTopDecls = gets (toList . topdecls)
 
-liftProgram :: MonadTc m => [Decl] -> LiftM m [Decl]
-liftProgram decls = do
-    [] <- liftDecls decls $ return []
-    getTopDecls
+liftProgram :: MonadTc m => Program -> LiftM m Program
+liftProgram (Program imports decls) = do
+    []     <- liftDecls decls $ return []
+    decls' <- getTopDecls
+    return $ Program imports decls'
 
 liftDecls :: forall m . MonadTc m => [Decl] -> LiftM m [Decl] -> LiftM m [Decl]
 liftDecls [] k =

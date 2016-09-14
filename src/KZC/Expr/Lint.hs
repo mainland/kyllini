@@ -20,6 +20,8 @@ module KZC.Expr.Lint (
 
     extendWildVars,
 
+    checkProgram,
+
     checkDecls,
 
     inferConst,
@@ -152,6 +154,10 @@ withTc m = do
 
 extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
 extendWildVars wvs = extendVars [(v, tau) | (TameV v, tau) <- wvs]
+
+checkProgram :: MonadTc m => Program -> m ()
+checkProgram (Program _ decls) =
+    checkDecls decls
 
 checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())

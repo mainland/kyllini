@@ -63,7 +63,7 @@ peval = testDynFlag PartialEval
 evalProgram :: (IsLabel l, MonadTcRef m)
             => Program l
             -> m (Program l)
-evalProgram (Program decls maybe_main) =
+evalProgram (Program imports decls maybe_main) =
     evalEvalM $
     evalDecls decls $ \mkDecls -> do
     (h', main') <- case maybe_main of
@@ -72,7 +72,7 @@ evalProgram (Program decls maybe_main) =
                      Nothing   -> (,) <$> freezeHeap <*> pure Nothing
     (sdecls1, decls1) <- partition isStructD <$> mkDecls h'
     (sdecls2, decls2) <- partition isStructD <$> getTopDecls
-    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) main'
+    return $ Program imports (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) main'
 
 evalMain :: (IsLabel l, MonadTcRef m)
          => Main l
