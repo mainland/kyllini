@@ -59,34 +59,36 @@ import KZC.Util.Trace
 import KZC.Util.Uniq
 import KZC.Vars
 
-data Range = Range Iota Iota
+-- | A range of indices, consisting of a base, length, and (multiplicative)
+-- factor.
+data Range = Range Iota Iota Int
   deriving (Eq, Ord, Show)
 
 -- | Construct a literal range of length 1.
 unitR :: Integral a => a -> Range
-unitR x = Range (constI x) (constI (1::Int))
+unitR x = Range (constI x) (constI (1::Int)) 1
 
 fromUnitR :: Range -> Maybe Iota
-fromUnitR (Range i (ConstI 1 _)) = Just i
-fromUnitR _                      = Nothing
+fromUnitR (Range i (ConstI 1 _) 1) = Just i
+fromUnitR _                        = Nothing
 
 -- | Construct a symbolic range of length 1.
 iotaR :: Iota -> Range
-iotaR x = Range x (constI (1::Int))
+iotaR x = Range x (constI (1::Int)) 1
 
 -- | Construct a range with known, constant start and length.
 rangeR :: Integral a => a -> a -> Range
-rangeR i len = Range (constI i) (constI len)
+rangeR i len = Range (constI i) (constI len) 1
 
 -- | Union of two ranges only if it can be represented precisely.
 unionR :: Range -> Range -> Maybe Range
 unionR i j | i == j =
     Just i
 
-unionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
-    Just $ Range i (constI (min len len'))
+unionR (Range i (ConstI len _) 1) (Range j (ConstI len' _) 1) | i == j =
+    Just $ Range i (constI (min len len')) 1
 
-unionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+unionR (Range (ConstI i _) (ConstI len _) 1) (Range (ConstI i' _) (ConstI len' _) 1)
   | i  + len  == i' = Just $ rangeR i  (len+len')
   | i' + len' == i  = Just $ rangeR i' (len+len')
 
@@ -98,10 +100,10 @@ intersectionR :: Range -> Range -> Maybe Range
 intersectionR i j | i == j =
     Just i
 
-intersectionR (Range i (ConstI len _)) (Range j (ConstI len' _)) | i == j =
-    Just $ Range i (constI (max len len'))
+intersectionR (Range i (ConstI len _) 1) (Range j (ConstI len' _) 1) | i == j =
+    Just $ Range i (constI (max len len')) 1
 
-intersectionR (Range (ConstI i _) (ConstI len _)) (Range (ConstI i' _) (ConstI len' _))
+intersectionR (Range (ConstI i _) (ConstI len _) 1) (Range (ConstI i' _) (ConstI len' _) 1)
   | i  < i' && i + len  > i' = Just $ rangeR i' (i  + len  - i')
   | i' < i  && i'+ len' > i  = Just $ rangeR i  (i' + len' - i)
 
@@ -109,13 +111,14 @@ intersectionR _ _ =
     Nothing
 
 instance Pretty Range where
-    ppr (Range lo hi) = brackets $ commasep [ppr lo, ppr hi]
+    ppr (Range lo hi 1) = brackets $ commasep [ppr lo, ppr hi]
+    ppr (Range lo hi n) = brackets (commasep [ppr lo, ppr hi]) <> char '*' <> ppr n
 
 instance Poset Range where
-    Range i (ConstI len _) <= Range j (ConstI len' _) | i == j =
+    Range i (ConstI len _) m <= Range j (ConstI len' _) n | i == j && m == n =
         len <= len'
 
-    Range (ConstI i _) (ConstI len _) <= Range (ConstI i' _) (ConstI len' _) =
+    Range (ConstI i _) (ConstI len _) m <= Range (ConstI i' _) (ConstI len' _) n | m == n =
         i' <= i && i + len <= i' + len'
 
     i <= j = i == j
@@ -200,14 +203,21 @@ iotaV :: Iota -> Val
 iotaV = IntV . PR . Known . iotaR
 
 rangeV :: Iota -> Iota -> Val
-rangeV i len = IntV $ PR $ Known $ Range i len
+rangeV i len = IntV $ PR $ Known $ Range i len 1
+
+rangeFactorV :: Iota -> Iota -> Int -> Val
+rangeFactorV i len n = IntV $ PR $ Known $ Range i len n
+
+fromRangeV :: Val -> Maybe Range
+fromRangeV (IntV (PR (Known r))) = Just r
+fromRangeV _                     = Nothing
 
 fromUnitV :: Val -> Maybe Iota
 fromUnitV (IntV (PR (Known r))) = fromUnitR r
 fromUnitV _                     = Nothing
 
 wholeArrV :: Iota -> Val
-wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (constI (0::Int)) n)
+wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (constI (0::Int)) n 1)
 
 instance Pretty Val where
     ppr UnknownV       = text "unknown"
