@@ -659,7 +659,7 @@ coalesceComp comp = do
         cs = filter (byteSizePred dflags asz bsz) $
              filter (vectAnnPred dflags (vectAnn comp)) $
              cs1 ++ cs2
-    return cs
+    return (noVect : cs)
   where
     byteSizePred :: Config -> Int -> Int -> BC -> Bool
     byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
@@ -697,6 +697,14 @@ coalesceComp comp = do
 
     vectAnnPred _ _ =
         const True
+
+    -- | No vectorization
+    noVect :: BC
+    noVect = BC { inBlock   = Nothing
+                , outBlock  = Nothing
+                , batchFact = 1
+                , bcUtil    = BlockMetric 0 0 0
+                }
 
     -- | Implement the C rules.
     crules :: Int
