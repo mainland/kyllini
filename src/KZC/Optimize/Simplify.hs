@@ -1515,6 +1515,7 @@ simplE (ArrayE es s) =
     -- if we can.
     --
     go es' | all isConstE es' = do
+        rewrite
         cs <- V.mapM unConstE (V.fromList es)
         return $ ConstE (ArrayC cs) s
 
@@ -1524,7 +1525,8 @@ simplE (ArrayE es s) =
     -- arr { x[0], x[1], x[2] } -> x[0,3]
     --
     go (IdxE (VarE xs _) ei Nothing _ : es') | Just i  <- fromIntE ei
-                                             , Just e' <- coalesce xs i 1 es' =
+                                             , Just e' <- coalesce xs i 1 es' = do
+        rewrite
         return e'
       where
         coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
