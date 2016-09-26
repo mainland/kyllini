@@ -129,8 +129,11 @@ newtype PreciseRange = PR (Known Range)
 
 -- | Extend a precise range by a known length.
 extendPR :: PreciseRange -> Maybe Int -> PreciseRange
-extendPR (PR (Known (Range i (ConstI len _)))) (Just len') =
-    PR $ Known $ Range i (constI (len+len'-1))
+extendPR (PR (Known (Range i (ConstI len _) 1))) (Just len') =
+    PR $ Known $ Range i (constI (len+len'-1)) 1
+
+extendPR (PR (Known (Range i (ConstI len _) m))) (Just n) | m == n =
+    PR $ Known $ Range i (constI (len*m)) 1
 
 extendPR r _ =
      r
@@ -600,10 +603,28 @@ useExp e@(UnopE Len (VarE v _) _) = do
 useExp (UnopE op e s) =
     topA $ UnopE op <$> (fst <$> useExp e) <*> pure s
 
-useExp (BinopE op e1 e2 s) =
-    topA $ BinopE op <$> (fst <$> useExp e1)
-                     <*> (fst <$> useExp e2)
-                     <*> pure s
+useExp (BinopE op e1 e2 s) = do
+    (e1', val1) <- useExp e1
+    (e2', val2) <- useExp e2
+    go op val1 val2 e1' e2'
+  where
+    go :: Binop -> Val -> Val -> Exp -> Exp -> ND m (Exp, Val)
+    go Mul val1 val2 e1' e2' | Just (Range i len 1) <- fromRangeV val1,
+                               Just (ConstI j _) <- fromUnitV val2 =
+        return (e', rangeFactorV i len j)
+      where
+        e' :: Exp
+        e' = BinopE op e1' e2' s
+
+    go Mul val1 val2 e1' e2' | Just (ConstI j _) <- fromUnitV val1,
+                               Just (Range i len 1) <- fromRangeV val2 =
+        return (e', rangeFactorV i len j)
+      where
+        e' :: Exp
+        e' = BinopE op e1' e2' s
+
+    go _ _ _ e1' e2' =
+        return (BinopE op e1' e2' s, top)
 
 useExp (IfE e1 e2 e3 s) = do
     e1'        <- fst <$> useExp e1
