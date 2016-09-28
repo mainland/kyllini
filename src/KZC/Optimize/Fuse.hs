@@ -692,7 +692,7 @@ runRight lss rss = do
       , m > 0
       -- Loop must consume
       , n > 0
-      -- Repeat loop needs to produce at a greater rate
+      -- Repeat loop needs to produce at least as fast as for loop consumes
       , m >= n*len
       = runLeftUnroll lss rss
 
