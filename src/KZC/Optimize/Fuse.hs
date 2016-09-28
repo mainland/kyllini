@@ -70,7 +70,6 @@ import KZC.Optimize.Simplify (simplComp)
 import KZC.Util.Error
 import KZC.Util.Logic
 import KZC.Util.SetLike
-import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
 import KZC.Vars
@@ -207,11 +206,30 @@ joint :: (IsLabel l, MonadTc m)
       -> F l m (Joint l)
 joint lss rss = JointL <$> leftStepsLabel lss <*> rightStepsLabel rss
 
+-- | Given the right side of a computation, return a function that will compute
+-- a joint label when given a label for the left side of the computation.
+jointRight :: (IsLabel l, MonadTc m)
+           => [Step l]
+           -> F l m (l -> Joint l)
+jointRight rss = do
+    l_r <- rightStepsLabel rss
+    return (`JointL` l_r)
+
+-- | Given the left side of a computation, return a function that will compute a
+-- joint label when given a label for the right side of the computation.
+jointLeft :: (IsLabel l, MonadTc m)
+          => [Step l]
+          -> F l m (l -> Joint l)
+jointLeft lss = do
+    l_l <- leftStepsLabel lss
+    return (l_l `JointL`)
+
 jointStep :: (IsLabel l, MonadTc m)
           => Step (Joint l)
           -> F l m [Step l]
           -> F l m [Step l]
-jointStep step k = do
+jointStep step k =
+    extendStepVars step $ do
     l_repeat <- repeatLabel
     l_joint  <- stepLabel step
     whenVerbLevel 2 $ traceFusion $
@@ -227,6 +245,22 @@ jointStep step k = do
               recordLabel l_joint
               modify $ \s -> s { code = code s |> step }
               k
+
+extendStepVars :: MonadTc m
+               => Step l
+               -> F l' m a
+               -> F l' m a
+extendStepVars (LetC _ (LetLD v tau _ _) _) k =
+    extendVars [(bVar v, tau)] k
+
+extendStepVars (LetC _ (LetRefLD v tau _ _) _) k =
+    extendVars [(bVar v, refT tau)] k
+
+extendStepVars (BindC _ wv tau _) k =
+    extendWildVars [(wv, tau)] k
+
+extendStepVars _ k =
+    k
 
 collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
 collectSteps m = do
@@ -555,10 +589,9 @@ runRight lss rss = do
     lift or return on the left.
     -}
     run (ls1:ls2:lss) rss | isFree ls1 ls2 = do
-        l1' <- joint (ls1:ls2:lss) rss
-        l2' <- joint (ls2:lss) rss
-        relabelStep l1' ls1 $
-          relabelStep l2' ls2 $
+        relabel <- jointRight rss
+        jointStep (fmap relabel ls1) $
+          jointStep (fmap relabel ls2) $
           runRight lss rss
       where
         isFree :: Step l -> Step l -> Bool
@@ -569,8 +602,8 @@ runRight lss rss = do
     -- lss@(_:_) ensures we won't match a final lift/return. A final let is
     -- weird and useless anyway, so we don't worry about it :)
     run (ls:lss@(_:_)) rss | isFree ls = do
-        l' <- joint (ls:lss) rss
-        relabelStep l' ls $
+        relabel <- jointRight rss
+        jointStep (fmap relabel ls) $
           runRight lss rss
       where
         isFree :: Step l -> Bool
@@ -766,8 +799,8 @@ runRight lss rss = do
         faildoc $ text "Saw takes in consumer."
 
     run lss (rs:rss) = do
-        l' <- joint lss (rs:rss)
-        relabelStep l' rs $
+        relabel <- jointLeft lss
+        jointStep (fmap relabel rs) $
           runRight lss rss
 
 runLeftUnroll :: forall l m . (IsLabel l, MonadTc m)
@@ -863,8 +896,8 @@ runLeft lss rss = do
         nestedPar
 
     run (ls:lss) rss = do
-        l' <- joint (ls:lss) rss
-        relabelStep l' ls $
+        relabel <- jointRight rss
+        jointStep (fmap relabel ls) $
           runLeft lss rss
 
 trySplitFor :: forall l m . (IsLabel l, MonadTc m)
@@ -920,55 +953,6 @@ trySplitFor (ForC l _ann v tau ei elen c_for _) ss_loop fromP_for fromP_loop = d
 
 trySplitFor _ _ _ _ =
     mzero
-
--- | Add a step to the fused computation after re-labeling it with the given
--- label, and then execute the continuation ensuring that the step's binders
--- scope over it.
-relabelStep :: (IsLabel l, MonadTc m)
-            => Joint l
-            -> Step l
-            -> F l m [Step l]
-            -> F l m [Step l]
-relabelStep _ step@VarC{} _k =
-    withSummaryContext step $
-    faildoc $ text "Saw variable bound to a computation during fusion"
-
-relabelStep _ step@CallC{} _k =
-    withSummaryContext step $
-    faildoc $ text "Saw call to a computation function during fusion"
-
-relabelStep l (LetC _ decl@(LetLD v tau _ _) s) k =
-    extendVars [(bVar v, tau)] $
-    jointStep (LetC l decl s) k
-
-relabelStep l (LetC _ decl@(LetRefLD v tau _ _) s) k =
-    extendVars [(bVar v, refT tau)] $
-    jointStep (LetC l decl s) k
-
-relabelStep l (LiftC _ e s) k =
-    jointStep (LiftC l e s) k
-
-relabelStep l (ReturnC _ e s) k =
-    jointStep (ReturnC l e s) k
-
-relabelStep l (BindC _ wv tau s) k =
-    extendWildVars [(wv, tau)] $
-    jointStep (BindC l wv tau s) k
-
-relabelStep l (TakeC _ tau s) k =
-    jointStep (TakeC l tau s) k
-
-relabelStep l (TakesC _ i tau s) k =
-    jointStep (TakesC l i tau s) k
-
-relabelStep l (EmitC _ e s) k =
-    jointStep (EmitC l e s) k
-
-relabelStep l (EmitsC _ e s) k =
-    jointStep (EmitsC l e s) k
-
-relabelStep _ _ _k =
-    fail "relabelStep: can't happen"
 
 -- | Run the right side of a par when we've hit a emit/take combination.
 emitTake :: forall l m . (IsLabel l, MonadTc m)
