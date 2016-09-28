@@ -1065,7 +1065,7 @@ simplStep (ForC l ann v tau ei elen c s) = do
 
     unroll Unroll (ConstE (FixC ip i) _) elen' | Just len <- fromIntE elen' = do
         rewrite
-        unComp . mconcat <$> mapM body [i..len-1]
+        unComp . mconcat <$> mapM body [i..i+len-1]
       where
         -- We must ensure that each unrolling has a unique set of labels
         body :: Int -> SimplM l m (Comp l)
@@ -1488,7 +1488,7 @@ simplE (ForE ann v tau ei elen e3 s) = do
 
     unroll Unroll (ConstE (FixC ip i) _) elen' | Just len <- fromIntE elen' = do
         rewrite
-        es <- mapM body [i..len-1]
+        es <- mapM body [i..i+len-1]
         return $ foldr seqE (returnE unitE) es
       where
         body :: Int -> SimplM l m Exp
