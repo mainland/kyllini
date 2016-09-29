@@ -5,9 +5,11 @@ library(ggplot2)
 library(RColorBrewer)
 library(tikzDevice)
 
-#data <- read.csv("master-2f2e7096.csv")
-#data <- read.csv("perf-91ad328f.csv")
-data <- read.csv("perf-4544749e.csv")
+ziria   <- read.csv("data/ziria-2016-09-28-mainland-ghc710-b5f8a17c.csv")
+wifi    <- read.csv("data/wifi-2016-09-28-perf-a5734919.csv")
+wifiSid <- read.csv("data/wifi-sid-2016-09-28-perf-a5734919.csv")
+
+data <- rbind(ziria, wifi, wifiSid)
 
 txCols <- c("TX 6Mbps","TX 9Mbps","TX 12Mbps","TX 18Mbps","TX 24Mbps","TX 36Mbps","TX 48Mbps","TX 54Mbps")
 rxCols <- c("RX 6Mbps","RX 9Mbps","RX 12Mbps","RX 18Mbps","RX 24Mbps","RX 36Mbps","RX 48Mbps","RX 54Mbps")
@@ -45,35 +47,38 @@ summarizeRates <- function(data) {
                    sd=sd(rate, na.rm=TRUE),
                    n=sum(!is.na(rate)),
                    se=sd/sqrt(n))
-  
+
   return (summary)
 }
 
-rateRatios <- function(data) {
-  ratios <- ddply(data, ~test, summarize,
-                  ratio=meanRate[platform == 'kzc']/meanRate[platform == 'ziria'],
-                  ratioMax=(meanRate[platform == 'kzc']+sd[platform == 'kzc'])/
-                           (meanRate[platform == 'ziria']-sd[platform == 'ziria']),
-                  ratioMin=(meanRate[platform == 'kzc']-sd[platform == 'kzc'])/
-                           (meanRate[platform == 'ziria']+sd[platform == 'ziria']))
+rateRatios <- function(data, numeratorPlat, denominatorPlat) {
+  ratios <- ddply(data, ~test, here(summarize),
+                  ratio=meanRate[platform == numeratorPlat]/meanRate[platform == denominatorPlat],
+                  ratioMax=(meanRate[platform == numeratorPlat]+sd[platform == numeratorPlat])/
+                           (meanRate[platform == denominatorPlat]-sd[platform == denominatorPlat]),
+                  ratioMin=(meanRate[platform == numeratorPlat]-sd[platform == numeratorPlat])/
+                           (meanRate[platform == denominatorPlat]+sd[platform == denominatorPlat]))
   return(ratios)
 }
 
 ratePlot <- function(data, cols, ytitle, lpos) {
   data <- data[data$test %in% cols,]
   data$rate = data$nsamples/data$cpuTime/1e6
-  
+
   dataSummary <- summarizeRates(data)
   
+  limits <- aes(ymin=meanRate-sd, ymax=meanRate+sd)
+  dodge <- position_dodge(.9)
+
   plot <- ggplot(dataSummary, aes(x=factor(test, levels=cols), y=meanRate, fill=platform)) +
     geom_bar(position=position_dodge(), stat="identity") +
-    geom_errorbar(aes(ymin=meanRate-sd, ymax=meanRate+sd),
+    geom_errorbar(limits,
                   width=.2,
-                  position=position_dodge(.9)) +
+                  position=dodge) +
     scale_fill_brewer(type="qual", palette="Dark2",
                       name="Implementation",
-                      breaks=c("kzc", "ziria"),
-                      labels=c("kzc", "Ziria")) +
+                      breaks=c("ziria", "wifi", "wifi-sid"),
+                      labels=c("Ziria", "KZC", "KZC (new)")) +
     ylab(ytitle) +
     theme_bw() +
     theme(aspect.ratio=0.4) +
@@ -83,18 +88,18 @@ ratePlot <- function(data, cols, ytitle, lpos) {
     theme(axis.title.x=element_blank(),
           axis.title.y=element_text(size=16),
           axis.text.x=element_text(angle=45, hjust=1, size=16))
-  
+
   return(plot)
 }
 
 ratioPlot <- function (data, cols, ytitle, lpos) {
   data <- data[data$test %in% cols,]
   data$rate = data$nsamples/data$cpuTime/1e6
-  
+
   data <- summarizeRates(data)
-  data <- rateRatios(data)
+  data <- rateRatios(data, 'wifi', 'ziria')
   data$pos = data$ratio < 1
-  
+
   plot <- ggplot(data, aes(x=reorder(factor(test, levels=cols), ratio), y=ratio, fill=pos)) +
     geom_bar(position=position_dodge(), stat="identity") +
     geom_errorbar(aes(ymin=ratioMin, ymax=ratioMax),
@@ -108,25 +113,25 @@ ratioPlot <- function (data, cols, ytitle, lpos) {
     theme(axis.title.x=element_blank(),
           axis.title.y=element_text(size=16),
           axis.text.x=element_text(angle=45, hjust=1, size=14))
-  
+
   return(plot)
 }
 
 rateBoxPlot <- function (data, cols, ytitle, lpos) {
   d <- data[data$test %in% cols,]
   d$rate = d$nsamples/d$cpuTime/1e6
-  
+
   plot <- ggplot(d, aes(x=factor(test, levels=cols), y=rate, fill=platform)) +
     geom_boxplot() +
     scale_fill_grey(name="Implementation",
-                    breaks=c("kzc", "ziria"),
-                    labels=c("kzc", "Ziria")) +
+                    breaks=c("wifi", "ziria"),
+                    labels=c("KZC", "Ziria")) +
     ylab(ytitle) +
     theme_bw() +
     theme(aspect.ratio=0.5) +
     theme(legend.position=lpos) +
     theme(axis.title.x=element_blank(),axis.text.x=element_text(angle=45, hjust=1))
-  
+
   return(plot)
 }
 
@@ -144,4 +149,3 @@ blockPerfRatioPlot <- ratioPlot(data, perfRatioColums,
                                 "Performance ratio (kzc/wplc)",
                                 c(0.85, 0.85))
 blockPerfRatioPlot <- blockPerfRatioPlot + scale_y_log10() + annotation_logticks(sides="l")
-
