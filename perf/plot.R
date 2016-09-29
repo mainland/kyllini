@@ -8,6 +8,7 @@ library(tikzDevice)
 ziria   <- read.csv("data/ziria-2016-09-28-mainland-ghc710-b5f8a17c.csv")
 wifi    <- read.csv("data/wifi-2016-09-28-perf-a5734919.csv")
 wifiSid <- read.csv("data/wifi-sid-2016-09-28-perf-a5734919.csv")
+pepm    <- read.csv("data/pepm-component-2016-09-28-perf-20592cb4.csv")
 
 data <- rbind(ziria, wifi, wifiSid)
 
@@ -61,12 +62,12 @@ rateRatios <- function(data, numeratorPlat, denominatorPlat) {
   return(ratios)
 }
 
-ratePlot <- function(data, cols, ytitle, lpos) {
+ratePlot <- function(data, cols, ytitle, breaks, labels, lpos) {
   data <- data[data$test %in% cols,]
   data$rate = data$nsamples/data$cpuTime/1e6
 
   dataSummary <- summarizeRates(data)
-  
+
   limits <- aes(ymin=meanRate-sd, ymax=meanRate+sd)
   dodge <- position_dodge(.9)
 
@@ -77,8 +78,8 @@ ratePlot <- function(data, cols, ytitle, lpos) {
                   position=dodge) +
     scale_fill_brewer(type="qual", palette="Dark2",
                       name="Implementation",
-                      breaks=c("ziria", "wifi", "wifi-sid"),
-                      labels=c("Ziria", "KZC", "KZC (new)")) +
+                      breaks=breaks,
+                      labels=labels) +
     ylab(ytitle) +
     theme_bw() +
     theme(aspect.ratio=0.4) +
@@ -135,10 +136,13 @@ rateBoxPlot <- function (data, cols, ytitle, lpos) {
   return(plot)
 }
 
-rxPlot <- ratePlot(data, rxCols, "Data rate (Msamples/sec)", c(0.9, 0.87))
-txPlot <- ratePlot(data, txCols, "Data rate (Mbits/sec)", c(0.1, 0.87))
-rxBlocksPlot <- ratePlot(data, rxBlockCols, "Throughput (Msamples/sec)", c(0.1, 0.85))
-txBlocksPlot <- ratePlot(data, txBlockCols, "Throughput (Msamples/sec)", c(0.1, 0.85))
+breaks <- c("ziria", "wifi", "wifi-sid")
+labels <- c("Ziria", "KZC", "KZC (new)")
+
+rxPlot <- ratePlot(data, rxCols, "Data rate (Msamples/sec)", breaks, labels, c(0.9, 0.87))
+txPlot <- ratePlot(data, txCols, "Data rate (Mbits/sec)", breaks, labels, c(0.1, 0.87))
+rxBlocksPlot <- ratePlot(data, rxBlockCols, "Throughput (Msamples/sec)", breaks, labels, c(0.1, 0.85))
+txBlocksPlot <- ratePlot(data, txBlockCols, "Throughput (Msamples/sec)", breaks, labels, c(0.1, 0.85))
 
 perfRatioPlot <- ratioPlot(data, c(rxCols, txCols),
                            "Performance ratio (kzc/wplc)",
@@ -149,3 +153,14 @@ blockPerfRatioPlot <- ratioPlot(data, perfRatioColums,
                                 "Performance ratio (kzc/wplc)",
                                 c(0.85, 0.85))
 blockPerfRatioPlot <- blockPerfRatioPlot + scale_y_log10() + annotation_logticks(sides="l")
+
+pepmData <- rbind(wifi, pepm)
+
+pepmColumns <- c("IFFT", "FFT", "Viterbi")
+
+categories <- c("wifi", "base", "peval")
+labels <- c("Sora", "KZC (unoptimized)", "KZC (optimized)")
+
+pepmData <- pepmData[pepmData$platform %in% categories,]
+
+pepmBlocksPlot <- ratePlot(pepmData, pepmColumns, "Throughput (Msamples/sec)", categories, labels, c(0.85, 0.85))
