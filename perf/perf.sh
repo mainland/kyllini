@@ -22,6 +22,8 @@ run_perf_test() {
     TESTBIN=$3
     NSAMPLES=$4
     NRUNS=$5
+    KZCFLAGS=$6
+    CCFLAGS=$7
 
     if [ "$PLATFORM" = "ziria" ] ; then
         EXE=out
@@ -31,7 +33,7 @@ run_perf_test() {
         ARGS="--input-dev=dummy --output-dev=dummy --dummy-samples=$NSAMPLES"
     fi
     
-    (cd "$WIFIDIR/$SUBDIR" && make clean && COMPILER=gcc make -B "$TESTBIN.$EXE") >/dev/null 2>&1
+    (cd "$WIFIDIR/$SUBDIR" && make clean && KZCFLAGS="$KZCFLAGS" CFLAGS="$CFLAGS" COMPILER=gcc make -B "$TESTBIN.$EXE") >/dev/null 2>&1
 
     for i in `seq 1 $NRUNS`; do
         perf stat -x ' ' -e branch-instructions,branch-misses,cache-misses,cpu-cycles,instructions,context-switches,cpu-migrations,page-faults \
