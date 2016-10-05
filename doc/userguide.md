@@ -41,6 +41,21 @@ warn on an unused command bind.
 | `-Wfusion-failure`       | Warn on fusion failure|
 | `-Wbitarray-copy`        | Warn on an unoptimized bit array copy|
 
+## Optimizations flags
+
+Optimizations flags
+
+`-O0` disables `-fsimpl`, `-finline*`, `-fpeval`, `-fautolut`, `-flut`,
+`-ffuse`, `-fcoalesce`, and `-fcoalesce-top`.
+
+`-O`/`-O1` enables `-fsimpl` and `-finline`.
+
+`-O2` enables all flags enabled by `-O1` as well as `-ffuse`, `-fautolut`,
+`-flut`, and `-fcompute-luts`.
+
+`-O3` enables all flags enabled by `-O2` as well as `-fpeval`, `-fcoalesce`, and
+`-fcoalesce-top`.
+
 ## Feature flags
 
 The flags -finline-val`, `-finline-fun`, and `-finline-comp` imply `-fsimpl`
