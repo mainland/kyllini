@@ -18,6 +18,7 @@ import Control.Applicative ((<$>))
 #endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad ((>=>),
                       when)
+import Data.Maybe (fromMaybe)
 import System.Console.GetOpt
 import System.Environment (getProgName)
 
@@ -33,6 +34,7 @@ options =
     , Option ['P']      []          (NoArg (setDynFlagM StopAfterParse)) "Stop after parsing"
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
     , Option ['o']      ["output"]  (ReqArg outOpt "FILE")               "Output to FILE"
+    , Option ['O']      []          (OptArg setOptLevel "LEVEL")         "Set optimization level"
     , Option ['I']      []          (ReqArg includePathOpt "DIR")        "Add preprocessor include directory"
     , Option ['D']      []          (ReqArg defineOpt "VAR[=DEF]")       "Define preprocessor symbol"
     , Option ['w']      []          (NoArg inhibitWarnings)              "Inhibit all warning messages."
@@ -55,6 +57,73 @@ options =
         case reads s of
           [(n, "")]  -> return fs { verbLevel = n }
           _          -> fail "argument to --verbose must be an integer"
+
+    setOptLevel :: Maybe String -> Config -> m Config
+    setOptLevel maybe_opt =
+        go (fromMaybe "1" maybe_opt)
+      where
+        go :: String -> Config -> m Config
+        go s conf = do
+            n <- parseOptLevel s
+            setOptIntLevel n conf
+
+        parseOptLevel :: Monad m => String -> m Int
+        parseOptLevel s =
+            case reads s of
+              [(n, "")] | n >= 0 && n <= 3 -> return n
+              _ -> fail "argument to -O must be an integer between 0 and 3"
+
+        setOptIntLevel :: Int -> Config -> m Config
+        setOptIntLevel 0 conf =
+            return $ unsetDynFlags
+              [ Fuse
+              , Simplify
+              , MayInlineVal
+              , MayInlineFun
+              , MayInlineComp
+              , AlwaysInlineComp
+              , PartialEval
+              , AutoLUT
+              , LUT
+              , Pipeline
+              , PipelineAll
+              , Coalesce
+              , CoalesceTop
+              , FloatViews
+              ]
+              conf
+
+        setOptIntLevel 1 conf =
+            return $ setDynFlags
+              [ Simplify
+              , MayInlineVal
+              , MayInlineFun
+              , MayInlineComp
+              ]
+              conf
+
+        setOptIntLevel 2 conf = do
+            conf' <- setOptIntLevel 1 conf
+            return $ setDynFlags
+              [ Fuse
+              , AutoLUT
+              , LUT
+              , FloatViews
+              , ComputeLUTs
+              ]
+              conf'
+
+        setOptIntLevel 3 conf = do
+            conf' <- setOptIntLevel 2 conf
+            return $ setDynFlags
+              [ PartialEval
+              , Coalesce
+              , CoalesceTop
+              ]
+              conf'
+
+        setOptIntLevel _ conf =
+            return conf
 
     outOpt :: String -> Config -> m Config
     outOpt path fs = return fs { output = Just path }

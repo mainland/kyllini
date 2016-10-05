@@ -28,6 +28,7 @@ module KZC.Config (
     setDynFlag,
     setDynFlags,
     unsetDynFlag,
+    unsetDynFlags,
 
     testWarnFlag,
     setWarnFlag,
@@ -384,6 +385,9 @@ setDynFlags fs flags = foldl' (flip setDynFlag) flags fs
 
 unsetDynFlag :: DynFlag -> Config -> Config
 unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
+
+unsetDynFlags :: [DynFlag] -> Config -> Config
+unsetDynFlags fs flags = foldl' (flip unsetDynFlag) flags fs
 
 testWarnFlag :: WarnFlag -> Config -> Bool
 testWarnFlag f flags = warnFlags flags `testFlag` f
