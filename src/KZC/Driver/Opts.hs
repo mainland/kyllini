@@ -28,7 +28,7 @@ options :: forall m . Monad m => [OptDescr (Config -> m Config)]
 options =
     [ Option ['h', '?'] ["--help"]  (NoArg (setModeM Help))              "Show help"
     , Option ['q']      ["quiet"]   (NoArg (setDynFlagM Quiet))          "Be quiet"
-    , Option ['v']      ["verbose"] (OptArg maybeSetVerbLevel "LEVEL")   "Be verbose"
+    , Option ['v']      ["verbose"] (OptArg setVerbLevel "LEVEL")        "Be verbose"
     , Option ['c']      []          (NoArg (setModeM Compile))           "Compile"
     , Option ['P']      []          (NoArg (setDynFlagM StopAfterParse)) "Stop after parsing"
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
@@ -47,11 +47,11 @@ options =
     setDynFlagM :: DynFlag -> Config -> m Config
     setDynFlagM f fs = return $ setDynFlag f fs
 
-    maybeSetVerbLevel :: Maybe String -> Config -> m Config
-    maybeSetVerbLevel Nothing fs =
+    setVerbLevel :: Maybe String -> Config -> m Config
+    setVerbLevel Nothing fs =
         return fs { verbLevel = verbLevel fs + 1 }
 
-    maybeSetVerbLevel (Just s) fs =
+    setVerbLevel (Just s) fs =
         case reads s of
           [(n, "")]  -> return fs { verbLevel = n }
           _          -> fail "argument to --verbose must be an integer"
