@@ -64,7 +64,7 @@ instance HasVars x n => HasVars [x] n where
     allVars = foldMap allVars
 
 class FreshVars a where
-    freshVars :: (Functor m, MonadUnique m)
+    freshVars :: MonadUnique m
               => Int
               -> [a]
               -> m [a]

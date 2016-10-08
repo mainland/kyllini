@@ -81,8 +81,7 @@ prettyToException :: (Pretty a, Exception a)
                   => a -> SomeException
 prettyToException = toException . PrettyException
 
-prettyFromException :: (Pretty a, Exception a)
-                    => SomeException -> Maybe a
+prettyFromException :: Exception a => SomeException -> Maybe a
 prettyFromException x = do
     PrettyException a <- fromException x
     cast a
@@ -328,7 +327,7 @@ instance Pretty WarnException where
 instance Show WarnException where
     show = pretty 80 . ppr
 
-checkDuplicates :: forall m a . (Eq a, Ord a, Located a, Pretty a, MonadErr m)
+checkDuplicates :: forall m a . (Ord a, Located a, Pretty a, MonadErr m)
                 => Doc -> [a] -> m ()
 checkDuplicates desc vs =
     case filter  (\x -> length x /= 1)

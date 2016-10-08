@@ -67,7 +67,7 @@ options =
             n <- parseOptLevel s
             setOptIntLevel n conf
 
-        parseOptLevel :: Monad m => String -> m Int
+        parseOptLevel :: String -> m Int
         parseOptLevel s =
             case reads s of
               [(n, "")] | n >= 0 && n <= 3 -> return n
@@ -137,13 +137,13 @@ options =
     inhibitWarnings :: Config -> m Config
     inhibitWarnings fs = return fs { warnFlags = mempty }
 
-    parseFFlags :: Monad m => String -> Config -> m Config
+    parseFFlags :: String -> Config -> m Config
     parseFFlags = parseFlagOpts "-f" opts fOpts
       where
         opts :: [FlagOpt]
         opts = mkFlagOpts "" fFlags setDynFlag (Just unsetDynFlag)
 
-    parseDFlags :: Monad m => String -> Config -> m Config
+    parseDFlags :: String -> Config -> m Config
     parseDFlags = parseFlagOpts "-d" opts dOpts
       where
         opts :: [FlagOpt]
@@ -152,7 +152,7 @@ options =
             mkFlagOpts "dump-"  dDumpFlags  setDumpFlag  Nothing ++
             mkFlagOpts "trace-" dTraceFlags setTraceFlag Nothing
 
-    parseWFlags :: Monad m => String -> Config -> m Config
+    parseWFlags :: String -> Config -> m Config
     parseWFlags = parseFlagOpts "-W" opts wOpts
       where
         opts :: [FlagOpt]

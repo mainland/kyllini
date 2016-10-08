@@ -632,7 +632,7 @@ coright mode n tau c_left =
           xs <- takesC n tau
           emitsC xs
 
-coalesceComp :: forall l m . (IsLabel l, MonadTc m)
+coalesceComp :: forall l m . MonadTc m
              => Comp l
              -> Co m [BC]
 coalesceComp comp = do
@@ -824,7 +824,7 @@ divides x y = y `rem` x == 0
 
 -- | Factor a multiplicity into all possible blockings satisfying a given
 -- constraint on the blocking.
-fact :: (MonadPlus m, MonadTc m)
+fact :: MonadPlus m
      => Int         -- ^ Minimum multiplicity
      -> Int         -- ^ Maximum multiplicity
      -> (B -> Bool) -- ^ Predicate on blocking

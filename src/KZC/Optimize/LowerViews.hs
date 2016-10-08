@@ -58,7 +58,7 @@ newtype L l m a = L { unL :: ReaderT LEnv m a }
 instance MonadTrans (L l) where
     lift = L . lift
 
-runL :: MonadTc m => L l m a -> m a
+runL :: L l m a -> m a
 runL m = runReaderT (unL m) defaultLEnv
 
 lowerViews :: forall l m . (IsLabel l, MonadTc m) => Program l -> m (Program l)

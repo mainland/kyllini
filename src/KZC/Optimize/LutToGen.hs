@@ -432,7 +432,7 @@ newtype L m a = L { unL :: ReaderT LEnv m a }
 instance MonadTrans L where
     lift = L . lift
 
-runL :: MonadTc m => LEnv -> L m a -> m a
+runL :: LEnv -> L m a -> m a
 runL env m = runReaderT (unL m) env
 
 lookupLUTVar :: MonadTc m => Var -> L m (Maybe LUTVar)

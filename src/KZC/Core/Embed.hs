@@ -52,7 +52,7 @@ runK :: MonadTc m => K l m a -> m (Comp l)
 runK m = runKT (m >> return mempty)
 
 -- | Sequence a computation with the continuation's computation.
-seqC :: (IsLabel l, MonadTc m)
+seqC :: MonadTc m
      => Comp l
      -> K l m ()
 seqC c1 =
@@ -86,7 +86,7 @@ bindC c1 tau = do
 
 -- | Run a computation in the 'K' monad and obtain a representation of the
 -- underlying 'Comp l'.
-runComp :: (IsLabel l, MonadTc m)
+runComp :: MonadTc m
         => K l m a
         -> K l m (Comp l)
 runComp m = reset $ m >> return mempty
