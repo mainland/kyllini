@@ -180,12 +180,12 @@ runF m = do
   evalStateT (runSEFKT (evalStateT (runReaderT (unF m) env) defaultFState))
              mempty
 
-withLeftKont :: (IsLabel l, MonadTc m) => [Step l] -> F l m a -> F l m a
+withLeftKont :: MonadTc m => [Step l] -> F l m a -> F l m a
 withLeftKont steps m = do
     klabel <- leftStepsLabel steps
     local (\env -> env { leftKont = klabel }) m
 
-withRightKont :: (IsLabel l, MonadTc m) => [Step l] -> F l m a -> F l m a
+withRightKont :: MonadTc m => [Step l] -> F l m a -> F l m a
 withRightKont steps m = do
     klabel <- rightStepsLabel steps
     local (\env -> env { rightKont = klabel }) m
@@ -200,7 +200,7 @@ rightStepsLabel []                    = asks rightKont
 rightStepsLabel (RepeatC _ _ c _ : _) = rightStepsLabel (unComp c)
 rightStepsLabel (step : _)            = stepLabel step
 
-joint :: (IsLabel l, MonadTc m)
+joint :: MonadTc m
       => [Step l]
       -> [Step l]
       -> F l m (Joint l)
@@ -208,7 +208,7 @@ joint lss rss = JointL <$> leftStepsLabel lss <*> rightStepsLabel rss
 
 -- | Given the right side of a computation, return a function that will compute
 -- a joint label when given a label for the left side of the computation.
-jointRight :: (IsLabel l, MonadTc m)
+jointRight :: MonadTc m
            => [Step l]
            -> F l m (l -> Joint l)
 jointRight rss = do
@@ -217,7 +217,7 @@ jointRight rss = do
 
 -- | Given the left side of a computation, return a function that will compute a
 -- joint label when given a label for the right side of the computation.
-jointLeft :: (IsLabel l, MonadTc m)
+jointLeft :: MonadTc m
           => [Step l]
           -> F l m (l -> Joint l)
 jointLeft lss = do
@@ -308,14 +308,14 @@ repeatLabel = do
       (Just left, Just right) -> return $ Just $ JointL left right
       _                       -> return Nothing
 
-leftRepeat :: (IsLabel l, MonadTc m)
+leftRepeat :: MonadTc m
            => Comp l
            -> F l m ()
 leftRepeat c = do
     l <- leftStepsLabel (unComp c)
     modify $ \s -> s { leftLoopHead = Just l }
 
-rightRepeat :: (IsLabel l, MonadTc m)
+rightRepeat :: MonadTc m
             => Comp l
             -> F l m ()
 rightRepeat c = do
@@ -356,7 +356,7 @@ cacheCode l m =
         modify $ \s -> s { codeCache = Map.insert l c (codeCache s)}
         return c
 
-fuseProgram :: forall l m . (IsLabel l, MonadPlus m, MonadIO m, MonadTc m)
+fuseProgram :: forall l m . (IsLabel l, MonadIO m, MonadTc m)
             => Program l -> m (Program l)
 fuseProgram = runF . fuseProg
   where
@@ -370,7 +370,7 @@ fuseProgram = runF . fuseProg
                 text "Fusion statistics:" </> ppr stats
         return prog'
 
-instance (IsLabel l, MonadTc m) => TransformExp (F l m) where
+instance MonadTc m => TransformExp (F l m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
     programT (Program decls comp tau) = do
@@ -992,7 +992,7 @@ nestedPar = do
 -- | Indicate that we are unrolling a for loop with the given body during
 -- fusion. This will fail unless the appropriate flag has been specified or if
 -- the loop is one that we always unroll.
-unrollingFor :: (IsLabel l, MonadTc m) => UnrollAnn -> Comp l -> F l m ()
+unrollingFor :: MonadTc m => UnrollAnn -> Comp l -> F l m ()
 unrollingFor ann body = do
     doUnroll <- asksConfig (testDynFlag FuseUnroll)
     unless (ann == Unroll || alwaysUnroll body || (doUnroll && mayUnroll ann)) $ do
@@ -1239,7 +1239,7 @@ usual fusion mechanisms to handle takes and emits. After fusion, we convert
 loops of take/emit back into single takes/emits.
 -}
 
-unrollTakes :: (IsLabel l, MonadPlus m, MonadTc m)
+unrollTakes :: (IsLabel l, MonadTc m)
             => Comp l -> m (Comp l)
 unrollTakes = runUT . compT
 
@@ -1270,7 +1270,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (UT m) where
     stepsT steps =
         transSteps steps
 
-unrollEmits :: (IsLabel l, MonadPlus m, MonadTc m)
+unrollEmits :: (IsLabel l, MonadTc m)
             => Comp l -> m (Comp l)
 unrollEmits = runUE . compT
 

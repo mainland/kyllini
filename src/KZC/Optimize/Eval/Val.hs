@@ -226,7 +226,7 @@ isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
 isValue _                = False
 
 -- | Produce a default value of the given type.
-defaultValue :: forall l m m' . (MonadTc m, MonadTc m')
+defaultValue :: forall l m m' . MonadTc m'
              => Type
              -> m' (Val l m Exp)
 defaultValue = go
@@ -299,13 +299,13 @@ catV val1 val2 =
     ExpV $ catE (toExp val1) (toExp val2)
 
 -- | Extract a slice of an array
-idxV :: (IsLabel l, Applicative m, Monad m)
+idxV :: (IsLabel l, Monad m)
       => Val l m Exp -> Int -> EvalM l m (Val l m Exp)
 idxV (ArrayV vs) off = vs P.!? off
 idxV val off         = return $ ExpV $ idxE (toExp val) (fromIntegral off)
 
 -- | Extract a slice of an array
-sliceV :: (IsLabel l, MonadTc m)
+sliceV :: (IsLabel l, Monad m)
        => Val l m Exp
        -> Int
        -> Int

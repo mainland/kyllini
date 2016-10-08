@@ -53,7 +53,7 @@ instance PrimMonad m => PrimMonad (L m) where
 instance MonadTrans L where
     lift = L
 
-runL :: MonadTcRef m => L m a -> m a
+runL :: L m a -> m a
 runL = unL
 
 lowerGenerators :: MonadTcRef m => Program l -> m (Program l)

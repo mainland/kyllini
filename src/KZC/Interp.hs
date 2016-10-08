@@ -176,7 +176,7 @@ defaultRef (ArrT (ConstI n _) tau _) =
 defaultRef tau =
     ValR <$> (defaultVal tau >>= newRef)
 
-idxR :: (PrimMonad m, MonadRef IORef m)
+idxR :: PrimMonad m
      => Ref (PrimState m)
      -> Int
      -> Maybe Int
@@ -196,7 +196,7 @@ idxR (ArrayRefR mv) i (Just len) =
 idxR val _ _ =
     faildoc $ text "Cannot index into non-array:" <+> ppr val
 
-projR :: (PrimMonad m, MonadRef IORef m)
+projR :: PrimMonad m
       => Ref (PrimState m)
       -> Field
       -> m (Ref (PrimState m))
@@ -235,7 +235,7 @@ instance MonadTrans (I s) where
 
 instance MonadTcRef m => MonadTcRef (I s m) where
 
-evalI :: MonadTcRef m => I s m a -> m a
+evalI :: I s m a -> m a
 evalI m = runReaderT (unI m) defaultIEnv
 
 lookupVal :: (s ~ PrimState m, MonadTcRef m) => Var -> I s m Val

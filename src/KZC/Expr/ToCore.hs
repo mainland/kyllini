@@ -63,7 +63,7 @@ newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
 instance MonadTrans TC where
     lift m = TC $ lift m
 
-runTC :: MonadTc m => TC m a -> m a
+runTC :: TC m a -> m a
 runTC m = runReaderT (unTC m) defaultTCEnv
 
 isInScope :: MonadTc m => Var -> TC m Bool

@@ -270,8 +270,7 @@ relevantBindings =
     pprBinding :: Z.Var -> Type -> Doc
     pprBinding v tau = nest 2 $ ppr v <+> text ":" <+> ppr tau
 
-sanitizeTypes :: ( Pretty a, Compress a
-                 , Located a
+sanitizeTypes :: ( Compress a
                  , Fvs a TyVar
                  , HasVars a MetaTv
                  , Subst Type MetaTv a)
@@ -306,7 +305,7 @@ metaTvs x = do
  ------------------------------------------------------------------------------}
 
 class Compress a where
-    compress :: (Functor m, Applicative m, MonadRef IORef m) => a -> m a
+    compress :: MonadRef IORef m => a -> m a
 
 instance (Traversable f, Compress a) => Compress (f a) where
     compress = traverse compress

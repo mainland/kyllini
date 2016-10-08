@@ -29,7 +29,6 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
-import KZC.Label
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -46,15 +45,15 @@ newtype AutoM m a = AutoM { unAutoM :: m a }
 instance MonadTrans AutoM where
     lift = AutoM
 
-runAutoM :: MonadTc m => AutoM m a -> m a
+runAutoM :: AutoM m a -> m a
 runAutoM = unAutoM
 
-autolutProgram :: (IsLabel l, MonadTc m)
+autolutProgram :: MonadTc m
                => Program l
                -> m (Program l)
 autolutProgram = runAutoM . programT
 
-autolutComp :: (IsLabel l, MonadTc m)
+autolutComp :: MonadTc m
             => Comp l
             -> m (Comp l)
 autolutComp = runAutoM . compT

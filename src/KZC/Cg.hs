@@ -1273,7 +1273,7 @@ cgExp e k =
         ce <- compileAndRunGen e gs >>= cgConst
         cgConstExp e0 ce k
 
-cgConstExp :: IsLabel l => Exp -> CExp l -> Kont l a -> Cg l a
+cgConstExp :: Exp -> CExp l -> Kont l a -> Cg l a
 cgConstExp e (CInit cinit) k = do
     tau        <- inferExp e
     cv :: C.Id <- gensym "__const"

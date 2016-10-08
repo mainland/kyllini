@@ -185,15 +185,18 @@ defaultEvalState = do
                      }
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
-    deriving (Applicative, Functor, Monad, MonadIO,
+    deriving (Applicative, MonadIO,
               MonadReader (EvalEnv l m),
               MonadState (EvalState l m),
               MonadException,
-              MonadUnique,
               MonadErr,
               MonadConfig,
-              MonadTrace,
-              MonadTc)
+              MonadTrace)
+
+deriving instance Functor m => Functor (EvalM l m)
+deriving instance Monad m => Monad (EvalM l m)
+deriving instance MonadUnique m => MonadUnique (EvalM l m)
+deriving instance MonadTc m => MonadTc (EvalM l m)
 
 deriving instance MonadRef IORef m => MonadRef IORef (EvalM l m)
 
@@ -233,7 +236,7 @@ partialComp c = do
 askSubst :: MonadTc m => EvalM l m Theta
 askSubst = asks varSubst
 
-withSubst :: MonadTc m => Theta -> EvalM l m a -> EvalM l m a
+withSubst :: Theta -> EvalM l m a -> EvalM l m a
 withSubst _theta k = k
     --local (\env -> env { varSubst = theta }) k
 
