@@ -6,12 +6,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  KZC.Cg
+-- Module      :  KZC.Backend.C
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Cg (
+module KZC.Backend.C (
     evalCg,
 
     compileProgram
@@ -38,10 +38,10 @@ import qualified Language.C.Quote as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
 
-import KZC.Cg.CExp
-import KZC.Cg.Code
-import KZC.Cg.Monad
-import KZC.Cg.Util
+import KZC.Backend.C.CExp
+import KZC.Backend.C.Code
+import KZC.Backend.C.Monad
+import KZC.Backend.C.Util
 import KZC.Check.Path
 import KZC.Config
 import KZC.Core.Enum
@@ -59,6 +59,7 @@ import KZC.Util.Staged
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
+import KZC.Util.ZEncode
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a

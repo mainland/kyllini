@@ -55,7 +55,7 @@ import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
 import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
-import KZC.Cg
+import KZC.Backend.C
 import KZC.Check
 import KZC.Config
 import qualified KZC.Core.Label as C

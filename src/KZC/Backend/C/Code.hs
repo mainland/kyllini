@@ -1,12 +1,12 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 -- |
--- Module      :  KZC.Cg.Code
+-- Module      :  KZC.Backend.C.Code
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Cg.Code (
+module KZC.Backend.C.Code (
     CodeBlock(..),
     Code(..)
   ) where
@@ -23,7 +23,7 @@ import Language.C.Pretty ()
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Cg.Util
+import KZC.Backend.C.Util
 import KZC.Quote.C
 
 data CodeBlock = CodeBlock
