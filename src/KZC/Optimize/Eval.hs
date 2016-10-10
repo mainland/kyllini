@@ -679,6 +679,12 @@ evalExp e =
         binop Rem val1 val2 =
             maybePartialVal $ liftIntegral2 op rem val1 val2
 
+        binop Pow (ConstV (FixC ip x)) (ConstV (FixC _ y)) =
+            return $ ConstV (FixC ip (x ^ y))
+
+        binop Pow (ConstV (FloatC fp x)) (ConstV (FixC _ y)) =
+            return $ ConstV (FloatC fp (x ^ y))
+
         binop op val1 val2 =
             partialExp $ BinopE op (toExp val1) (toExp val2) s
 
