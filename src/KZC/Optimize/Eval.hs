@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -790,6 +791,9 @@ evalExp e =
 
                 isFree :: (Var, Type, Val l m Exp) -> Bool
                 isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
+
+        go _tau (ExpV (VarE (Var "sqrt") _)) [] [ConstV (FloatC fp x)] =
+            return $ ConstV $ FloatC fp (sqrt x)
 
         -- Note that the heap cannot change as the result of evaluating function
         -- arguments, so we can call 'partialCmd' here instead of saving the heap
