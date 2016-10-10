@@ -168,7 +168,8 @@ import KZC.Name
 %left '<' '<=' '>' '>='
 %left '<<' '>>'
 %left '+' '-'
-%left '*' '/' '%' '**'
+%left '*' '/' '%'
+%left '**'
 %left 'length'
 %left '~' 'not' NEG
 
