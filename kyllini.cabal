@@ -37,11 +37,11 @@ library
     KZC.Analysis.Rate
     KZC.Analysis.ReadWriteSet
     KZC.Analysis.RefFlow
-    KZC.Cg
-    KZC.Cg.CExp
-    KZC.Cg.Code
-    KZC.Cg.Monad
-    KZC.Cg.Util
+    KZC.Backend.C
+    KZC.Backend.C.CExp
+    KZC.Backend.C.Code
+    KZC.Backend.C.Monad
+    KZC.Backend.C.Util
     KZC.Check
     KZC.Check.Monad
     KZC.Check.Path
@@ -100,6 +100,7 @@ library
     KZC.Util.SysTools
     KZC.Util.Trace
     KZC.Util.Uniq
+    KZC.Util.ZEncode
     KZC.Vars
     Language.Ziria.Parser.Alex
     Language.Ziria.Parser.Exceptions

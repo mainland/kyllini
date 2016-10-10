@@ -24,11 +24,11 @@ import Data.Symbol
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Cg.Util
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Util.SetLike
 import KZC.Util.Uniq
+import KZC.Util.ZEncode
 import KZC.Vars
 
 -- | A code label

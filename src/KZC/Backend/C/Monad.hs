@@ -9,12 +9,12 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- |
--- Module      :  KZC.Cg.Monad
+-- Module      :  KZC.Backend.C.Monad
 -- Copyright   :  (c) 2014-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Cg.Monad (
+module KZC.Backend.C.Monad (
     Thread(..),
 
     GuardTakeK,
@@ -153,8 +153,8 @@ import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
 
-import KZC.Cg.CExp
-import KZC.Cg.Code
+import KZC.Backend.C.CExp
+import KZC.Backend.C.Code
 import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax

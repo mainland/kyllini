@@ -62,11 +62,11 @@ SOURCE = \
 	KZC/Analysis/Rate.hs \
 	KZC/Analysis/ReadWriteSet.hs \
 	KZC/Analysis/RefFlow.hs \
-	KZC/Cg.hs \
-	KZC/Cg/CExp.hs \
-	KZC/Cg/Code.hs \
-	KZC/Cg/Monad.hs \
-	KZC/Cg/Util.hs \
+	KZC/Backend/C.hs \
+	KZC/Backend/C/CExp.hs \
+	KZC/Backend/C/Code.hs \
+	KZC/Backend/C/Monad.hs \
+	KZC/Backend/C/Util.hs \
 	KZC/Check.hs \
 	KZC/Check/Monad.hs \
 	KZC/Check/Path.hs \
@@ -126,6 +126,7 @@ SOURCE = \
 	KZC/Util/SysTools.hs \
 	KZC/Util/Trace.hs \
 	KZC/Util/Uniq.hs \
+	KZC/Util/ZEncode.hs \
 	KZC/Vars.hs \
 	Language/Ziria/Parser/Alex.hs \
 	Language/Ziria/Parser/Exceptions.hs \

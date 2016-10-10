@@ -7,12 +7,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 -- |
--- Module      :  KZC.Cg.CExp
+-- Module      :  KZC.Backend.C.CExp
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Cg.CExp (
+module KZC.Backend.C.CExp (
     Kont(..),
 
     CompC,
@@ -37,8 +37,8 @@ import Data.Monoid
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 
-import {-# SOURCE #-} KZC.Cg.Monad
-import KZC.Cg.Util
+import {-# SOURCE #-} KZC.Backend.C.Monad
+import KZC.Backend.C.Util
 import KZC.Core.Lint (refPath)
 import KZC.Core.Smart
 import KZC.Core.Syntax

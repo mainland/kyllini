@@ -1,12 +1,12 @@
 {-# LANGUAGE RoleAnnotations #-}
 
 -- |
--- Module      :  KZC.Cg.Monad
+-- Module      :  KZC.Backend.C.Monad
 -- Copyright   :  (c) 2015-2016 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Cg.Monad (
+module KZC.Backend.C.Monad (
     Cg,
     CgEnv
   ) where
