@@ -55,7 +55,7 @@ import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
 import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
-import KZC.Backend.C
+import qualified KZC.Backend.C as CGen
 import KZC.Check
 import KZC.Config
 import qualified KZC.Core.Label as C
@@ -310,7 +310,7 @@ runPipeline filepath = do
 
     compilePhase :: C.LProgram -> MaybeT KZC ()
     compilePhase =
-        lift . evalCg . compileProgram >=>
+        lift . CGen.compileProgram >=>
         lift . writeOutput
 
     lintExpr :: [E.Decl] -> MaybeT KZC [E.Decl]

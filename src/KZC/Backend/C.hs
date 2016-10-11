@@ -12,8 +12,6 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Backend.C (
-    evalCg,
-
     compileProgram
   ) where
 
@@ -50,6 +48,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Interp (compileAndRunGen)
 import KZC.Label
+import KZC.Monad (KZC)
 import KZC.Name
 import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Platform
@@ -151,8 +150,11 @@ calign     = C.EscTypeQual "ALIGN" noLoc
 _crestrict = C.EscTypeQual "RESTRICT" noLoc
 cstatic    = C.EscTypeQual "STATIC" noLoc
 
-compileProgram :: forall l . IsLabel l => Program l -> Cg l ()
-compileProgram (Program decls comp tau) = do
+compileProgram :: IsLabel l => Program l -> KZC [C.Definition]
+compileProgram = evalCg . cgProgram
+
+cgProgram :: forall l . IsLabel l => Program l -> Cg l ()
+cgProgram (Program decls comp tau) = do
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]
