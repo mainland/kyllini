@@ -9,7 +9,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Eval.Monad
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -58,7 +58,6 @@ module KZC.Optimize.Eval.Val (
     isKnown,
     isUnknown,
 
-    ToComp(..),
     toConst
   ) where
 
@@ -86,7 +85,6 @@ import GHC.Float (double2Float,
                   float2Double)
 import Text.PrettyPrint.Mainland
 
-import KZC.Core.Comp
 import KZC.Core.Label
 import KZC.Core.Lint
 import KZC.Core.Smart
@@ -299,27 +297,27 @@ catV val1 val2 =
     ExpV $ catE (toExp val1) (toExp val2)
 
 -- | Extract a slice of an array
-idxV :: (IsLabel l, Monad m)
-      => Val l m Exp -> Int -> EvalM l m (Val l m Exp)
+idxV :: (IsLabel l, Monad m, Monad m')
+      => Val l m Exp -> Int -> m' (Val l m Exp)
 idxV (ArrayV vs) off = vs P.!? off
 idxV val off         = return $ ExpV $ idxE (toExp val) (fromIntegral off)
 
 -- | Extract a slice of an array
-sliceV :: (IsLabel l, Monad m)
+sliceV :: (IsLabel l, Monad m, Monad m')
        => Val l m Exp
        -> Int
        -> Int
-       -> EvalM l m (Val l m Exp)
+       -> m' (Val l m Exp)
 sliceV (ArrayV vs) off len = ArrayV <$> P.slice off len vs
 sliceV val off len         = return $ ExpV $ sliceE (toExp val) (fromIntegral off) len
 
-toBitsV :: forall l m . (IsLabel l, MonadTc m)
+toBitsV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
        => Val l m Exp
        -> Type
-       -> EvalM l m (Val l m Exp)
+       -> m' (Val l m Exp)
 toBitsV = go
   where
-    go :: Val l m Exp -> Type -> EvalM l m (Val l m Exp)
+    go :: Val l m Exp -> Type -> m' (Val l m Exp)
     go (ConstV UnitC) _ =
         return $ ArrayV $ P.replicateDefault 0 zeroBitV
 
@@ -353,16 +351,16 @@ toBitsV = go
         w <- typeSize tau
         return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
-    toBitArr :: Int -> Int -> EvalM l m (Val l m Exp)
+    toBitArr :: Int -> Int -> m' (Val l m Exp)
     toBitArr n w = ArrayV <$> (P.replicateDefault w zeroBitV P.// [(i,oneBitV) | i <- [0..w-1], n `testBit` i])
 
-packValues :: forall l m . (IsLabel l, MonadTc m)
+packValues :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
             => [(Val l m Exp, Type)]
-            -> EvalM l m (Val l m Exp)
+            -> m' (Val l m Exp)
 packValues vtaus =
     go emptyBitArr (reverse vtaus)
   where
-    go :: Val l m Exp -> [(Val l m Exp, Type)] -> EvalM l m (Val l m Exp)
+    go :: Val l m Exp -> [(Val l m Exp, Type)] -> m' (Val l m Exp)
     go bits [] =
         return bits
 
@@ -373,14 +371,14 @@ packValues vtaus =
     emptyBitArr :: Val l m Exp
     emptyBitArr = ArrayV $ P.fromList zeroBitV []
 
-fromBitsV :: forall l m . (IsLabel l, MonadTc m)
+fromBitsV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
           => Val l m Exp
           -> Type
-          -> EvalM l m (Val l m Exp)
+          -> m' (Val l m Exp)
 fromBitsV (ArrayV vs) tau =
     go vs tau
   where
-    go :: P.PArray (Val l m Exp) -> Type -> EvalM l m (Val l m Exp)
+    go :: P.PArray (Val l m Exp) -> Type -> m' (Val l m Exp)
     go _ UnitT{} =
         return $ ConstV UnitC
 
@@ -419,10 +417,10 @@ fromBitsV (ArrayV vs) tau =
     go vs _ =
         return $ ExpV $ bitcastE tau (toExp (ArrayV vs))
 
-    fromBitArr :: P.PArray (Val l m Exp) -> EvalM l m Int
+    fromBitArr :: P.PArray (Val l m Exp) -> m' Int
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
-        set :: Int -> Val l m Exp -> EvalM l m Int
+        set :: Int -> Val l m Exp -> m' Int
         set i (ConstV (FixC (U 1) 0)) = return $ i `shiftL` 1
         set i (ConstV (FixC (U 1) 1)) = return $ i `shiftL` 1 .|. 1
         set _ val                     = faildoc $ text "Not a bit:" <+> ppr val
@@ -431,13 +429,13 @@ fromBitsV val tau = do
     w <- typeSize tau
     return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
-unpackValues :: forall l m . (IsLabel l, MonadTc m)
+unpackValues :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
              => Val l m Exp
              -> [Type]
-             -> EvalM l m [Val l m Exp]
+             -> m' [Val l m Exp]
 unpackValues bits = go 0
   where
-    go :: Int -> [Type] -> EvalM l m [Val l m Exp]
+    go :: Int -> [Type] -> m' [Val l m Exp]
     go _ [] =
         return []
 
@@ -453,9 +451,9 @@ unpackValues bits = go 0
         return $ val : vals
 
 -- | Enumerate all values of a type /in bit order/.
-enumVals :: (IsLabel l, MonadTc m)
+enumVals :: (IsLabel l, Monad m, MonadTc m')
          => Type
-         -> EvalM l m [Val l m Exp]
+         -> m' [Val l m Exp]
 enumVals UnitT{} =
     return [ConstV UnitC]
 
@@ -504,9 +502,9 @@ enumVals (ArrT (ConstI n _) tau _) = do
 enumVals tau =
     faildoc $ text "Cannot enumerate values of type" <+> ppr tau
 
-enumValsList :: (IsLabel l, MonadTc m)
+enumValsList :: (IsLabel l, Monad m, MonadTc m')
              => [Type]
-             -> EvalM l m [[Val l m Exp]]
+             -> m' [[Val l m Exp]]
 enumValsList [] =
     return []
 
@@ -520,11 +518,11 @@ enumValsList (tau:taus) = do
     return [v:vs | vs <- valss, v <- vals]
 
 -- | Bitcast a value from one type to another
-bitcastV :: forall l m . (IsLabel l, MonadTc m)
+bitcastV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
          => Val l m Exp
          -> Type
          -> Type
-         -> EvalM l m (Val l m Exp)
+         -> m' (Val l m Exp)
 bitcastV val tau_from tau_to@(ArrT (ConstI n _) tau_elem _) | isBitT tau_elem = do
     n' <- typeSize tau_from
     if n' == n
@@ -743,25 +741,6 @@ instance IsLabel l => ToExp (Ref l m) where
 
     toExp (ProjR r f) =
         ProjE (toExp r) f noLoc
-
-class (IsLabel l, MonadTc m) => ToComp l m a where
-    toComp :: a -> EvalM l m (Comp l)
-    toComp x = mkComp <$> toSteps x
-
-    toSteps :: a -> EvalM l m [Step l]
-
-instance (IsLabel l, MonadTc m) => ToComp l m (Val l m (Comp l)) where
-    toSteps (CompReturnV val) =
-        unComp <$> returnC (toExp val)
-
-    toSteps (CompV _ steps) =
-        return steps
-
-    toSteps (CompVarV v) =
-        unComp <$> varC v
-
-    toSteps val =
-        faildoc $ text "toSteps: Cannot convert value to steps:" <+> ppr val
 
 instance Eq (EvalM l m (Val l m a)) where
     (==) = error "EvalM incomparable"

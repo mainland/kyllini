@@ -11,7 +11,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Eval
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -1304,3 +1304,19 @@ compValToExpVal (CompClosV theta _tau m) =
 
 compValToExpVal (FunCompClosV theta ivs vtaus tau m) =
     return $ FunClosV theta ivs vtaus tau $ m >>= compValToExpVal
+
+toComp :: (IsLabel l, MonadTc m) => Val l m (Comp l) -> EvalM l m (Comp l)
+toComp x = mkComp <$> toSteps x
+
+toSteps :: (IsLabel l, MonadTc m) => Val l m (Comp l) -> EvalM l m [Step l]
+toSteps (CompReturnV val) =
+    unComp <$> returnC (toExp val)
+
+toSteps (CompV _ steps) =
+    return steps
+
+toSteps (CompVarV v) =
+    unComp <$> varC v
+
+toSteps val =
+    faildoc $ text "toSteps: Cannot convert value to steps:" <+> ppr val
