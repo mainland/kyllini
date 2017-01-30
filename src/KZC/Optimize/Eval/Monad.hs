@@ -11,7 +11,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Eval.Monad
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -185,18 +185,15 @@ defaultEvalState = do
                      }
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
-    deriving (Applicative, MonadIO,
+    deriving (Functor, Applicative, Monad, MonadIO,
               MonadReader (EvalEnv l m),
               MonadState (EvalState l m),
               MonadException,
               MonadErr,
               MonadConfig,
-              MonadTrace)
-
-deriving instance Functor m => Functor (EvalM l m)
-deriving instance Monad m => Monad (EvalM l m)
-deriving instance MonadUnique m => MonadUnique (EvalM l m)
-deriving instance MonadTc m => MonadTc (EvalM l m)
+              MonadTrace,
+              MonadUnique,
+              MonadTc)
 
 deriving instance MonadRef IORef m => MonadRef IORef (EvalM l m)
 
