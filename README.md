@@ -1,8 +1,8 @@
 # Building `kzc`
 
-`kzc` is developed using GHC 7.10, although it should compile with minor changes
-under 7.8 and 8.0. It does require `autoconf`; when building under Windows,
-[msys2](https://msys2.github.io/) should be used.
+`kzc` is developed using GHC 8.0, although it should compile with at most minor
+changes under 7.8 and 7.10. It does require `autoconf`; when building under
+Windows, [msys2](https://msys2.github.io/) should be used.
 
 The compiler can be built as follows:
 
