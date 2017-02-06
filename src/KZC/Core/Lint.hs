@@ -17,7 +17,6 @@ module KZC.Core.Lint (
     Tc(..),
     runTc,
     liftTc,
-    withTc,
 
     extendWildVars,
 
@@ -95,7 +94,6 @@ import KZC.Core.Syntax
 import KZC.Expr.Lint (Tc(..),
                       runTc,
                       liftTc,
-                      withTc,
 
                       checkConst,
                       inferConst,

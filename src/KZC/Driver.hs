@@ -232,70 +232,70 @@ runPipeline filepath = do
 
     lambdaLiftPhase :: E.Program -> MaybeT KZC E.Program
     lambdaLiftPhase =
-        lift . C.withTc . runLift . liftProgram >=>
+        lift . C.liftTc . runLift . liftProgram >=>
         dumpPass DumpLift "expr" "ll"
 
     exprToCorePhase :: IsLabel l => E.Program -> MaybeT KZC (C.Program l)
     exprToCorePhase =
-        lift . C.withTc . E.runTC . E.exprToCore >=>
+        lift . C.liftTc . E.runTC . E.exprToCore >=>
         dumpPass DumpLift "core" "exprToCore"
 
     occPhase :: C.Program l -> MaybeT KZC (C.Program l)
     occPhase =
-        lift . C.withTc . occProgram
+        lift . C.liftTc . occProgram
 
     simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
     simplPhase =
-        lift . C.withTc . simplProgram
+        lift . C.liftTc . simplProgram
 
     hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     hashconsPhase =
-        lift . C.withTc . hashConsConsts >=>
+        lift . C.liftTc . hashConsConsts >=>
         dumpPass DumpHashCons "core" "hashcons"
 
     ratePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     ratePhase =
-        lift . C.withTc . rateProgram >=>
+        lift . C.liftTc . rateProgram >=>
         dumpPass DumpRate "core" "rate"
 
     coalescePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     coalescePhase =
-        lift . C.withTc . coalesceProgram >=>
+        lift . C.liftTc . coalesceProgram >=>
         dumpPass DumpCoalesce "core" "coalesce"
 
     fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     fusionPhase =
-        lift . C.withTc . SEFKT.runSEFKT . fuseProgram >=>
+        lift . C.liftTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "core" "fusion"
 
     floatViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     floatViewsPhase =
-        lift . C.withTc . floatViews >=>
+        lift . C.liftTc . floatViews >=>
         dumpPass DumpViews "core" "float-views"
 
     lowerViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     lowerViewsPhase =
-        lift . C.withTc . lowerViews >=>
+        lift . C.liftTc . lowerViews >=>
         dumpPass DumpViews "core" "lower-views"
 
     autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     autolutPhase =
-        lift . C.withTc . autolutProgram >=>
+        lift . C.liftTc . autolutProgram >=>
         dumpPass DumpAutoLUT "core" "autolut"
 
     lutToGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     lutToGenPhase =
-        lift . C.withTc . lutToGen >=>
+        lift . C.liftTc . lutToGen >=>
         dumpPass DumpLUT "core" "lutToGen"
 
     lowerGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     lowerGenPhase =
-        lift . C.withTc . lowerGenerators >=>
+        lift . C.liftTc . lowerGenerators >=>
         dumpPass DumpLUT "core" "lowerGen"
 
     evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
     evalPhase =
-        lift . C.withTc . evalProgram >=>
+        lift . C.liftTc . evalProgram >=>
         dumpPass DumpEval "core" "peval"
 
     refFlowPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
@@ -316,7 +316,7 @@ runPipeline filepath = do
     lintExpr :: E.Program -> MaybeT KZC E.Program
     lintExpr prog = lift $ do
         whenDynFlag Lint $
-            E.withTc (E.checkProgram prog)
+            E.liftTc (E.checkProgram prog)
         return prog
 
     lintCore :: IsLabel l
@@ -324,7 +324,7 @@ runPipeline filepath = do
              -> MaybeT KZC (C.Program l)
     lintCore prog = lift $ do
         whenDynFlag Lint $
-            C.withTc (C.checkProgram prog)
+            C.liftTc (C.checkProgram prog)
         return prog
 
     stopIf :: (Config -> Bool) -> a -> MaybeT KZC a
