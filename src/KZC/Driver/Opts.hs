@@ -35,6 +35,7 @@ options =
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
     , Option ['o']      ["output"]  (ReqArg outOpt "FILE")               "Output to FILE"
     , Option ['O']      []          (OptArg setOptLevel "LEVEL")         "Set optimization level"
+    , Option ['i']      []          (ReqArg importPathOpt "DIR")        "Add import directory"
     , Option ['I']      []          (ReqArg includePathOpt "DIR")        "Add preprocessor include directory"
     , Option ['D']      []          (ReqArg defineOpt "VAR[=DEF]")       "Define preprocessor symbol"
     , Option ['w']      []          (NoArg inhibitWarnings)              "Inhibit all warning messages."
@@ -127,6 +128,9 @@ options =
 
     outOpt :: String -> Config -> m Config
     outOpt path fs = return fs { output = Just path }
+
+    importPathOpt :: String -> Config -> m Config
+    importPathOpt path fs = return fs { importPaths = importPaths fs ++ [path] }
 
     includePathOpt :: String -> Config -> m Config
     includePathOpt path fs = return fs { includePaths = includePaths fs ++ [path] }

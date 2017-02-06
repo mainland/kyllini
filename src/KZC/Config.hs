@@ -201,6 +201,7 @@ data Config = Config
     , dumpFlags   :: !(FlagSet DumpFlag)
     , traceFlags  :: !(FlagSet TraceFlag)
 
+    , importPaths  :: ![FilePath]
     , includePaths :: ![FilePath]
     , defines      :: ![(String, String)]
 
@@ -238,6 +239,7 @@ instance Monoid Config where
         , dumpFlags   = mempty
         , traceFlags  = mempty
 
+        , importPaths  = []
         , includePaths = []
         , defines      = []
 
@@ -266,6 +268,7 @@ instance Monoid Config where
         , dumpFlags   = dumpFlags f1   <> dumpFlags f2
         , traceFlags  = traceFlags f1  <> traceFlags f2
 
+        , importPaths  = importPaths f1 <> importPaths f2
         , includePaths = includePaths f1 <> includePaths f2
         , defines      = defines f1 <> defines f2
 
