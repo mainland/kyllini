@@ -227,7 +227,7 @@ runPipeline filepath = do
 
     checkPhase :: Z.Program -> MaybeT KZC E.Program
     checkPhase =
-        lift . withTi . checkProgram >=>
+        lift . liftTi . checkProgram >=>
         dumpPass DumpCore "expr" "tc"
 
     lambdaLiftPhase :: E.Program -> MaybeT KZC E.Program

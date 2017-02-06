@@ -15,7 +15,6 @@ module KZC.Check.Monad (
     Ti(..),
     runTi,
     liftTi,
-    withTi,
 
     localExp,
     askCurrentExp,
@@ -104,7 +103,7 @@ runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)
 runTi m r = runStateT (runReaderT (unTi m) r)
 
 -- | Run a @Ti@ computation in the @KZC@ monad and update the @Ti@ environment.
-liftTi :: forall a . Ti a -> KZC a
+liftTi :: forall a . ((a -> Ti a) -> Ti a) -> KZC a
 liftTi m = do
     eref   <- asks tienvref
     sref   <- asks tistateref
@@ -114,26 +113,9 @@ liftTi m = do
     return a
   where
     m' :: IORef TiEnv -> IORef TiState -> Ti a
-    m' eref sref = do
-        x <- m
+    m' eref sref =
+        m $ \x -> do
         ask >>= writeRef eref
-        get >>= writeRef sref
-        return x
-
--- | Run a @Ti@ computation in the @KZC@ monad without updating the
--- @Ti@ environment.
-withTi :: forall a . Ti a -> KZC a
-withTi m = do
-    eref   <- asks tienvref
-    sref   <- asks tistateref
-    env    <- readRef eref
-    state  <- readRef sref
-    (a, _) <- runTi (m' sref) env state
-    return a
-  where
-    m' :: IORef TiState -> Ti a
-    m' sref = do
-        x <- m
         get >>= writeRef sref
         return x
 
