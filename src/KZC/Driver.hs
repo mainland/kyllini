@@ -222,7 +222,7 @@ runPipeline filepath = do
 
     renamePhase :: Z.Program -> MaybeT KZC Z.Program
     renamePhase =
-        lift . runRn . renameProgram >=>
+        lift . liftRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
     checkPhase :: Z.Program -> MaybeT KZC E.Program

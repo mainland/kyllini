@@ -42,6 +42,8 @@ import KZC.Check.State (TiEnv,
 import KZC.Config
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
+import KZC.Rename.State (RnEnv,
+                         defaultRnEnv)
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -52,6 +54,7 @@ data KZCEnv = KZCEnv
     , pass       :: !(IORef Int)
     , errctx     :: ![ErrorContext]
     , flags      :: !Config
+    , rnenvref   :: !(IORef RnEnv)
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
@@ -63,6 +66,7 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
     p      <- newRef 0
+    rneref <- newRef defaultRnEnv
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
@@ -71,6 +75,7 @@ defaultKZCEnv fs = do
                   , pass       = p
                   , errctx     = []
                   , flags      = fs
+                  , rnenvref   = rneref
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref

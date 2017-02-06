@@ -90,6 +90,7 @@ library
     KZC.Quote.C
     KZC.Rename
     KZC.Rename.Monad
+    KZC.Rename.State
     KZC.Util.Derive
     KZC.Util.Error
     KZC.Util.Logic

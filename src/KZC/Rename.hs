@@ -8,7 +8,7 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Rename (
-    runRn,
+    liftRn,
 
     renameProgram
   ) where
@@ -31,9 +31,17 @@ import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Uniq
 
-renameProgram :: Program -> Rn Program
-renameProgram (Program imports decls) =
-    Program imports <$> rnDecls decls
+renameProgram :: Program -> (Program -> Rn a) -> Rn a
+renameProgram prog k =
+    rnModule prog $ \imports decls ->
+    k $ Program imports decls
+
+rnModule :: Program
+         -> ([Import] -> [Decl] -> Rn a)
+         -> Rn a
+rnModule (Program imports decls) k =
+    rnDecls decls $ \decls' ->
+    k imports decls'
 
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
@@ -248,14 +256,16 @@ rnDecl decl@(LetFunCompD f range vbs e l) k =
                  pure range <*> rn vbs <*> rn e <*> pure l
     k decl'
 
-rnDecls :: [Decl] -> Rn [Decl]
-rnDecls [] =
-    return []
+rnDecls :: [Decl]
+        -> ([Decl] -> Rn a)
+        -> Rn a
+rnDecls [] k =
+    k []
 
-rnDecls (decl:decls) =
-    rnDecl decl $ \decl' -> do
-    decls' <- rnDecls decls
-    return (decl':decls')
+rnDecls (decl:decls) k =
+    rnDecl  decl  $ \decl'  ->
+    rnDecls decls $ \decls' ->
+    k (decl':decls')
 
 rnStm :: Stm -> (Stm -> Rn a) -> Rn a
 rnStm (LetS cl l) k =

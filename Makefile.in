@@ -116,6 +116,7 @@ SOURCE = \
 	KZC/Quote/C.hs \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \
+	KZC/Rename/State.hs \
 	KZC/Util/Derive.hs \
 	KZC/Util/Error.hs \
 	KZC/Util/Logic.hs \
