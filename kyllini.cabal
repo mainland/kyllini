@@ -49,6 +49,7 @@ library
     KZC.Check.State
     KZC.Check.Types
     KZC.Config
+    KZC.Compiler
     KZC.Core.Comp
     KZC.Core.Embed
     KZC.Core.Enum

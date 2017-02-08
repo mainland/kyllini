@@ -73,6 +73,7 @@ SOURCE = \
 	KZC/Check/Smart.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
+	KZC/Compiler.hs \
 	KZC/Config.hs \
 	KZC/Core/Comp.hs \
 	KZC/Core/Embed.hs \
