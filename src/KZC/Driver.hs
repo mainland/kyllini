@@ -43,7 +43,7 @@ defaultMain = do
 
 defaultMainWith :: Config -> [FilePath] -> IO ()
 defaultMainWith conf files =
-    evalKZC conf (mapM_ runPipeline files) `catch` printFailure
+    evalKZC conf (compileFiles files) `catch` printFailure
   where
     printFailure :: SomeException -> IO ()
     printFailure e = hPrint stderr e >> exitFailure

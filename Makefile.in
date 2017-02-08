@@ -53,6 +53,7 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	Data/Digraph.hs \
 	KZC/Analysis/Interval.hs \
 	KZC/Analysis/Lattice.hs \
 	KZC/Analysis/Lattice/Properties.hs \
@@ -74,6 +75,8 @@ SOURCE = \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
 	KZC/Compiler.hs \
+	KZC/Compiler/Module.hs \
+	KZC/Compiler/Types.hs \
 	KZC/Config.hs \
 	KZC/Core/Comp.hs \
 	KZC/Core/Embed.hs \

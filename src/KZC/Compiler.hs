@@ -12,7 +12,7 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Compiler (
-    runPipeline
+    compileFiles
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -24,19 +24,21 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
+import Data.Foldable (toList)
 import Data.IORef
-import Data.Loc
 import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
 import Data.Monoid
 #endif /* !MIN_VERSION_base(4,8,0) */
-import qualified Data.Text.Lazy as T
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import qualified Data.Set as Set
+import Data.Symbol
 import qualified Data.Text.Lazy.Encoding as E
 import System.CPUTime (getCPUTime)
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath (replaceExtension,
-                        takeDirectory,
-                        takeExtension)
+                        takeDirectory)
 import System.IO (IOMode(..),
                   hClose,
                   hPutStr,
@@ -55,6 +57,8 @@ import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
 import qualified KZC.Backend.C as CGen
 import KZC.Check
+import KZC.Compiler.Module
+import KZC.Compiler.Types
 import KZC.Config
 import qualified KZC.Core.Label as C
 import qualified KZC.Core.Lint as C
@@ -66,6 +70,7 @@ import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Name
 import KZC.Optimize.Autolut
 import KZC.Optimize.Coalesce
 import KZC.Optimize.Eval
@@ -78,11 +83,11 @@ import KZC.Optimize.LutToGen
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.Util.Error
-import KZC.Util.SysTools
 
 data CEnv = CEnv
     { cStart :: Integer
     , cPass  :: !(IORef Int)
+    , cDecls :: Seq E.Decl
     }
   deriving (Show)
 
@@ -92,6 +97,7 @@ defaultCEnv = do
     p <- newRef 0
     return CEnv { cStart = t
                 , cPass  = p
+                , cDecls = mempty
                 }
 
 newtype C m a = C { unC :: ReaderT CEnv m a }
@@ -118,25 +124,100 @@ incPass = do
     ref <- asks cPass
     atomicModifyRef' ref (\i -> (i + 1, i))
 
-runPipeline :: FilePath -> KZC ()
-runPipeline filepath =
-    void $ runC $ runMaybeT $ pipeline filepath
+askDecls :: Monad m => C m [E.Decl]
+askDecls = asks (toList . cDecls)
+
+appendDecls :: Monad m => [E.Decl] -> C m a -> C m a
+appendDecls decls =
+    local $ \env -> env { cDecls = cDecls env <> Seq.fromList decls }
+
+compileFiles :: [FilePath] -> KZC ()
+compileFiles srcfiles = do
+    summaries <- mapM summarizeSourceFile srcfiles
+    sccs      <- modulesDepSCCs summaries
+    runC $ compileRecursive (map Set.toList sccs)
+
+compileRecursive :: [[ModuleInfo]] -> C KZC ()
+compileRecursive [] =
+    return ()
+
+compileRecursive ([] : _) =
+    fail "Empty module dependency group"
+
+compileRecursive (mods@(_:_:_) : _) =
+    faildoc $ nest 4 $
+    text "Recursive module dependencies:" </>
+    commasep (map (ppr . modSourcePath) mods)
+
+compileRecursive [[modinfo]] = do
+    liftIO $ putDocLn $ text "Compiling:" <+> dquotes (ppr (modSourcePath modinfo))
+    loadDependencies (modSourcePath modinfo) $ do
+      decls <- askDecls
+      compileExprProgram (modSourcePath modinfo) (E.Program [] decls)
+
+compileRecursive ([modinfo] : sccs) = do
+    liftIO $ putDocLn $ text "Loading:" <+> dquotes (ppr (modSourcePath modinfo))
+    loadDependencies (modSourcePath modinfo) $
+        compileRecursive sccs
+
+getStructIds :: C KZC [Symbol]
+getStructIds = do
+    decls <- askDecls
+    return [nameSym n | E.LetStructD (E.Struct n) _ _ <- decls]
+
+loadDependencies :: FilePath -> C KZC a -> C KZC a
+loadDependencies filepath k = do
+    maybe_prog <- runMaybeT $ pipeline filepath
+    case maybe_prog of
+      Nothing                  -> k
+      Just (E.Program _ decls) -> appendDecls decls k
   where
-    ext :: String
-    ext = drop 1 (takeExtension filepath)
-
-    start :: Pos
-    start = startPos filepath
-
-    pipeline :: FilePath -> MaybeT (C KZC) ()
+    pipeline :: FilePath -> MaybeT (C KZC) E.Program
     pipeline =
-        inputPhase >=>
-        cppPhase >=>
         parsePhase >=>
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         tracePhase "rename" renamePhase >=>
-        traceExprPhase "typecheck" checkPhase >=>
+        tracePhase "typecheck" checkPhase
+
+    parsePhase :: FilePath -> MaybeT (C KZC) Z.Program
+    parsePhase filepath = do
+        structIds <- lift getStructIds
+        lift $ lift $ parseProgramFromFile (Set.fromList structIds) filepath
+
+    pprPhase :: Z.Program -> MaybeT (C KZC) Z.Program
+    pprPhase decls = do
+        whenDynFlag PrettyPrint $
+            liftIO $ putDocLn $ ppr decls
+        return decls
+
+    renamePhase :: Z.Program -> MaybeT (C KZC) Z.Program
+    renamePhase =
+        lift . lift . liftRn . renameProgram >=>
+        dumpPass DumpRename "zr" "rn"
+
+    checkPhase :: Z.Program -> MaybeT (C KZC) E.Program
+    checkPhase =
+        lift . lift . liftTi . checkProgram >=>
+        dumpPass DumpCore "expr" "tc"
+
+    dumpPass :: Pretty a
+             => DumpFlag
+             -> String
+             -> String
+             -> a
+             -> MaybeT (C KZC) a
+    dumpPass f ext suffix x = do
+        pass <- lift incPass
+        lift $ lift $ dump f filepath ext (printf "%02d-%s" pass suffix) (ppr x)
+        return x
+
+compileExprProgram :: FilePath -> E.Program -> C KZC ()
+compileExprProgram filepath prog =
+    void $ runMaybeT $ pipeline prog
+  where
+    pipeline :: E.Program -> MaybeT (C KZC) ()
+    pipeline =
         stopIf (testDynFlag StopAfterCheck) >=>
         traceExprPhase "lambdaLift" lambdaLiftPhase >=>
         traceCorePhase "exprToCore" exprToCorePhase >=>
@@ -169,42 +250,6 @@ runPipeline filepath =
         dumpFinal >=>
         tracePhase "compile" compilePhase
       where
-        traceExprPhase :: String
-                       -> (a -> MaybeT (C KZC) E.Program)
-                       -> a
-                       -> MaybeT (C KZC) E.Program
-        traceExprPhase phase act =
-            tracePhase phase act >=> tracePhase "lint" lintExpr
-
-        traceCorePhase :: IsLabel l
-                       => String
-                       -> (a -> MaybeT (C KZC) (C.Program l))
-                       -> a
-                       -> MaybeT (C KZC) (C.Program l)
-        traceCorePhase phase act =
-            tracePhase phase act >=> tracePhase "lint" lintCore
-
-        tracePhase :: String
-                   -> (a -> MaybeT (C KZC) b)
-                   -> a
-                   -> MaybeT (C KZC) b
-        tracePhase phase act x = do
-            doTrace <- asksConfig (testTraceFlag TracePhase)
-            if doTrace
-              then do pass       <- lift getPass
-                      start      <- lift askStartTime
-                      phaseStart <- liftIO getCPUTime
-                      let t1 :: Double
-                          t1 = fromIntegral (phaseStart - start) / 1e12
-                      return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f)\n" phase pass t1)
-                      y        <- act x
-                      phaseEnd <- liftIO getCPUTime
-                      let t2 :: Double
-                          t2 = fromIntegral (phaseEnd - phaseStart) / 1e12
-                      return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f elapsed)\n" phase pass t2)
-                      return y
-              else act x
-
         iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT (C KZC) (C.Program l)
         iterateSimplPhase desc prog0 = do
             n <- asksConfig maxSimpl
@@ -224,31 +269,6 @@ runPipeline filepath =
                           void $ lintCore prog''
                           go (i+1) n prog''
                   else return prog
-
-    inputPhase :: FilePath -> MaybeT (C KZC) T.Text
-    inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
-
-    cppPhase :: T.Text -> MaybeT (C KZC) T.Text
-    cppPhase = lift . lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
-
-    parsePhase :: T.Text -> MaybeT (C KZC) Z.Program
-    parsePhase text = lift $ liftIO $ parseProgram text start
-
-    pprPhase :: Z.Program -> MaybeT (C KZC) Z.Program
-    pprPhase decls = do
-        whenDynFlag PrettyPrint $
-            liftIO $ putDocLn $ ppr decls
-        return decls
-
-    renamePhase :: Z.Program -> MaybeT (C KZC) Z.Program
-    renamePhase =
-        lift . lift . liftRn . renameProgram >=>
-        dumpPass DumpRename "zr" "rn"
-
-    checkPhase :: Z.Program -> MaybeT (C KZC) E.Program
-    checkPhase =
-        lift . lift . liftTi . checkProgram >=>
-        dumpPass DumpCore "expr" "tc"
 
     lambdaLiftPhase :: E.Program -> MaybeT (C KZC) E.Program
     lambdaLiftPhase =
@@ -333,30 +353,6 @@ runPipeline filepath =
         lift . lift . CGen.compileProgram >=>
         lift . lift . writeOutput
 
-    lintExpr :: E.Program -> MaybeT (C KZC) E.Program
-    lintExpr prog = lift $ lift $ do
-        whenDynFlag Lint $
-            E.liftTc (E.checkProgram prog)
-        return prog
-
-    lintCore :: IsLabel l
-             => C.Program l
-             -> MaybeT (C KZC) (C.Program l)
-    lintCore prog = lift $ lift $ do
-        whenDynFlag Lint $
-            C.liftTc (C.checkProgram prog)
-        return prog
-
-    stopIf :: (Config -> Bool) -> a -> MaybeT (C KZC) a
-    stopIf f x = do
-        stop <- asksConfig f
-        if stop then MaybeT (return Nothing) else return x
-
-    runIf :: (Config -> Bool) -> (a -> MaybeT (C KZC) a) -> a -> MaybeT (C KZC) a
-    runIf f g x = do
-        run <- asksConfig f
-        if run then g x else return x
-
     writeOutput :: Pretty a
                 => a
                 -> KZC ()
@@ -384,19 +380,79 @@ runPipeline filepath =
         lift $ lift $ dump f filepath ext (printf "%02d-%s" pass suffix) (ppr x)
         return x
 
-    dump :: DumpFlag
-         -> FilePath
-         -> String
-         -> String
-         -> Doc
-         -> KZC ()
-    dump f sourcePath ext suffix doc = whenDumpFlag f $ do
-        let destpath = replaceExtension sourcePath ext'
-        liftIO $ createDirectoryIfMissing True (takeDirectory destpath)
-        h <- liftIO $ openFile destpath WriteMode
-        liftIO $ B.hPut h $ E.encodeUtf8 (prettyLazyText 80 doc)
-        liftIO $ hClose h
-      where
-        ext' :: String
-        ext' | null suffix = "dump" ++ "." ++ ext
-             | otherwise   = "dump"  ++ "-" ++ suffix ++ "." ++ ext
+traceExprPhase :: String
+               -> (a -> MaybeT (C KZC) E.Program)
+               -> a
+               -> MaybeT (C KZC) E.Program
+traceExprPhase phase act =
+    tracePhase phase act >=> tracePhase "lint" lintExpr
+
+traceCorePhase :: IsLabel l
+               => String
+               -> (a -> MaybeT (C KZC) (C.Program l))
+               -> a
+               -> MaybeT (C KZC) (C.Program l)
+traceCorePhase phase act =
+    tracePhase phase act >=> tracePhase "lint" lintCore
+
+tracePhase :: String
+           -> (a -> MaybeT (C KZC) b)
+           -> a
+           -> MaybeT (C KZC) b
+tracePhase phase act x = do
+    doTrace <- asksConfig (testTraceFlag TracePhase)
+    if doTrace
+      then do pass       <- lift getPass
+              start      <- lift askStartTime
+              phaseStart <- liftIO getCPUTime
+              let t1 :: Double
+                  t1 = fromIntegral (phaseStart - start) / 1e12
+              return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f)\n" phase pass t1)
+              y        <- act x
+              phaseEnd <- liftIO getCPUTime
+              let t2 :: Double
+                  t2 = fromIntegral (phaseEnd - phaseStart) / 1e12
+              return $! unsafePerformIO $ hPutStr stderr (printf "Phase: %s.%02d (%f elapsed)\n" phase pass t2)
+              return y
+      else act x
+
+lintExpr :: E.Program -> MaybeT (C KZC) E.Program
+lintExpr prog = lift $ lift $ do
+    whenDynFlag Lint $
+        E.liftTc (E.checkProgram prog)
+    return prog
+
+lintCore :: IsLabel l
+         => C.Program l
+         -> MaybeT (C KZC) (C.Program l)
+lintCore prog = lift $ lift $ do
+    whenDynFlag Lint $
+        C.liftTc (C.checkProgram prog)
+    return prog
+
+stopIf :: (Config -> Bool) -> a -> MaybeT (C KZC) a
+stopIf f x = do
+    stop <- asksConfig f
+    if stop then MaybeT (return Nothing) else return x
+
+runIf :: (Config -> Bool) -> (a -> MaybeT (C KZC) a) -> a -> MaybeT (C KZC) a
+runIf f g x = do
+    run <- asksConfig f
+    if run then g x else return x
+
+dump :: DumpFlag
+     -> FilePath
+     -> String
+     -> String
+     -> Doc
+     -> KZC ()
+dump f sourcePath ext suffix doc = whenDumpFlag f $ do
+    let destpath = replaceExtension sourcePath ext'
+    liftIO $ createDirectoryIfMissing True (takeDirectory destpath)
+    h <- liftIO $ openFile destpath WriteMode
+    liftIO $ B.hPut h $ E.encodeUtf8 (prettyLazyText 80 doc)
+    liftIO $ hClose h
+  where
+    ext' :: String
+    ext' | null suffix = "dump" ++ "." ++ ext
+         | otherwise   = "dump"  ++ "-" ++ suffix ++ "." ++ ext

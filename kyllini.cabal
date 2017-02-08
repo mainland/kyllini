@@ -28,6 +28,7 @@ library
   default-language: Haskell2010
 
   exposed-modules:
+    Data.Digraph
     KZC.Analysis.Interval
     KZC.Analysis.Lattice
     KZC.Analysis.Lattice.Properties
@@ -50,6 +51,8 @@ library
     KZC.Check.Types
     KZC.Config
     KZC.Compiler
+    KZC.Compiler.Module
+    KZC.Compiler.Types
     KZC.Core.Comp
     KZC.Core.Embed
     KZC.Core.Enum

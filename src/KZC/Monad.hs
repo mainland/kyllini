@@ -29,6 +29,7 @@ import Control.Monad.Primitive (PrimMonad(..),
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
+import Data.Map (Map)
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
@@ -36,9 +37,11 @@ import KZC.Check.State (TiEnv,
                         TiState,
                         defaultTiEnv,
                         defaultTiState)
+import KZC.Compiler.Types
 import KZC.Config
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
+import KZC.Name
 import KZC.Rename.State (RnEnv,
                          defaultRnEnv)
 import KZC.Util.Error
@@ -54,6 +57,7 @@ data KZCEnv = KZCEnv
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
+    , modref     :: !(IORef (Map ModuleName ModuleInfo))
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
@@ -65,6 +69,7 @@ defaultKZCEnv fs = do
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
+    mref   <- newRef mempty
     return KZCEnv { uniq       = u
                   , tracedepth = 0
                   , errctx     = []
@@ -73,6 +78,7 @@ defaultKZCEnv fs = do
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
+                  , modref     = mref
                   }
 
 newtype KZC a = KZC { unKZC :: ReaderT KZCEnv IO a }

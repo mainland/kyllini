@@ -10,15 +10,22 @@
 
 module Language.Ziria.Parser (
     parseProgram,
-    parseProgramFromFile
+    parseImports,
+    parseProgramFromFile,
+    parseImportsFromFile
   ) where
 
 import Control.Monad.Exception
 import Control.Monad.Trans
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
+import Data.Set (Set)
+import Data.Symbol
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
+
+import KZC.Monad
+import KZC.Util.SysTools
 
 import qualified Language.Ziria.Parser.Parser as P
 import Language.Ziria.Parser.Monad
@@ -33,18 +40,30 @@ parse p buf pos =
 
 parseFromFile :: P a
               -> FilePath
-              -> IO a
-parseFromFile p path = do
-    text <- liftIO $ B.readFile path
-    liftException (parse p (E.decodeUtf8 text) start)
+              -> KZC a
+parseFromFile p filepath = do
+    text  <- liftIO $ E.decodeUtf8 <$> B.readFile filepath
+    text' <- runCpp filepath text
+    liftException (parse p text' start)
   where
     start :: Pos
-    start = startPos path
+    start = startPos filepath
 
 parseProgram :: T.Text
              -> Pos
              -> IO Program
 parseProgram buf pos = liftException $ parse P.parseProgram buf pos
 
-parseProgramFromFile :: FilePath -> IO Program
-parseProgramFromFile = parseFromFile P.parseProgram
+parseImports :: T.Text
+             -> Pos
+             -> IO [Import]
+parseImports buf pos = liftException $ parse P.parseImports buf pos
+
+parseProgramFromFile :: Set Symbol -> FilePath -> KZC Program
+parseProgramFromFile structIds =
+    parseFromFile $ do
+        addStructIdentifiers structIds
+        P.parseProgram
+
+parseImportsFromFile :: FilePath -> KZC [Import]
+parseImportsFromFile = parseFromFile P.parseImports

@@ -11,7 +11,8 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Parser.Parser (
-    parseProgram
+    parseProgram,
+    parseImports
   ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -189,6 +190,7 @@ import KZC.Name
 %error { happyError }
 
 %name parseProgram program
+%partial parseImports imports
 
 %%
 {------------------------------------------------------------------------------
