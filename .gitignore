@@ -15,7 +15,7 @@
 /libkz/src/*.o
 /libkz/src/sora/*.o
 /obj/
+/src/Language/Ziria/Parser/Classic.hs
+/src/Language/Ziria/Parser/Classic.info
 /src/Language/Ziria/Parser/Lexer.hs
 /src/Language/Ziria/Parser/Lexer.info
-/src/Language/Ziria/Parser/Parser.hs
-/src/Language/Ziria/Parser/Parser.info

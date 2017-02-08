@@ -4,13 +4,13 @@
 {-# OPTIONS -w #-}
 
 -- |
--- Module      : Language.Ziria.Parser.Parser
+-- Module      : Language.Ziria.Parser.Classic
 -- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
-module Language.Ziria.Parser.Parser (
+module Language.Ziria.Parser.Classic (
     parseProgram,
     parseImports
   ) where

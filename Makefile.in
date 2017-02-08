@@ -146,8 +146,8 @@ GENERATED = \
 	KZC/Core/Syntax-instances.hs \
 	KZC/Check/Types-instances.hs \
 	KZC/Expr/Syntax-instances.hs \
+	Language/Ziria/Parser/Classic.hs \
 	Language/Ziria/Parser/Lexer.hs \
-	Language/Ziria/Parser/Parser.hs \
 	Language/Ziria/Syntax-instances.hs
 
 SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))

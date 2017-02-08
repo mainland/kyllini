@@ -9,6 +9,9 @@
 --------------------------------------------------------------------------------
 
 module Language.Ziria.Parser (
+    Dialect(..),
+    dialectExts,
+
     parseProgram,
     parseImports,
     parseProgramFromFile,
@@ -27,9 +30,17 @@ import qualified Data.Text.Lazy.Encoding as E
 import KZC.Monad
 import KZC.Util.SysTools
 
-import qualified Language.Ziria.Parser.Parser as P
+import qualified Language.Ziria.Parser.Classic as Classic
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax
+
+data Dialect = Classic
+  deriving (Eq, Ord, Read, Show, Enum, Bounded)
+
+dialectExts :: [(String, Dialect)]
+dialectExts = [ (".wpl", Classic)
+              , (".blk", Classic)
+              ]
 
 parse :: P a
       -> T.Text
@@ -52,18 +63,18 @@ parseFromFile p filepath = do
 parseProgram :: T.Text
              -> Pos
              -> IO Program
-parseProgram buf pos = liftException $ parse P.parseProgram buf pos
+parseProgram buf pos = liftException $ parse Classic.parseProgram buf pos
 
 parseImports :: T.Text
              -> Pos
              -> IO [Import]
-parseImports buf pos = liftException $ parse P.parseImports buf pos
+parseImports buf pos = liftException $ parse Classic.parseImports buf pos
 
 parseProgramFromFile :: Set Symbol -> FilePath -> KZC Program
 parseProgramFromFile structIds =
     parseFromFile $ do
         addStructIdentifiers structIds
-        P.parseProgram
+        Classic.parseProgram
 
 parseImportsFromFile :: FilePath -> KZC [Import]
-parseImportsFromFile = parseFromFile P.parseImports
+parseImportsFromFile = parseFromFile Classic.parseImports

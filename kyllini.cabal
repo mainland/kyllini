@@ -21,8 +21,8 @@ extra-source-files:
   Makefile.in
   configure
   include/KzcSysTools.h.in
+  src/Language/Ziria/Parser/Classic.hs
   src/Language/Ziria/Parser/Lexer.hs
-  src/Language/Ziria/Parser/Parser.hs
 
 library
   default-language: Haskell2010
@@ -108,10 +108,10 @@ library
     KZC.Util.ZEncode
     KZC.Vars
     Language.Ziria.Parser.Alex
+    Language.Ziria.Parser.Classic
     Language.Ziria.Parser.Exceptions
     Language.Ziria.Parser.Lexer
     Language.Ziria.Parser.Monad
-    Language.Ziria.Parser.Parser
     Language.Ziria.Parser.Tokens
     Language.Ziria.Parser
     Language.Ziria.Smart

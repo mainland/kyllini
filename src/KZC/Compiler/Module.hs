@@ -56,12 +56,12 @@ locateModuleSource mod = do
         return Nothing
 
     searchPaths (path:paths) = do
-        maybe_file <- searchExts path dialectExts
+        maybe_file <- searchExts path P.dialectExts
         case maybe_file of
           Nothing   -> searchPaths paths
           Just file -> return $ Just file
 
-    searchExts :: FilePath -> [(String, Dialect)] -> m (Maybe FilePath)
+    searchExts :: FilePath -> [(String, P.Dialect)] -> m (Maybe FilePath)
     searchExts _path [] =
         return Nothing
 
