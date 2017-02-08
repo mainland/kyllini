@@ -1,4 +1,8 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- |
 -- Module      : KZC.Compiler
@@ -14,10 +18,13 @@ module KZC.Compiler (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
 #endif /* !MIN_VERSION_base(4,8,0) */
+import Control.Monad.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Monad.Ref
 import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy as B
+import Data.IORef
 import Data.Loc
 import Data.Maybe (fromMaybe)
 #if !MIN_VERSION_base(4,8,0)
@@ -73,10 +80,47 @@ import KZC.Rename
 import KZC.Util.Error
 import KZC.Util.SysTools
 
+data CEnv = CEnv
+    { cStart :: Integer
+    , cPass  :: !(IORef Int)
+    }
+  deriving (Show)
+
+defaultCEnv :: (MonadIO m, MonadRef IORef m) => m CEnv
+defaultCEnv = do
+    t <- liftIO getCPUTime
+    p <- newRef 0
+    return CEnv { cStart = t
+                , cPass  = p
+                }
+
+newtype C m a = C { unC :: ReaderT CEnv m a }
+    deriving (Functor, Applicative, Monad, MonadTrans, MonadIO,
+              MonadReader CEnv,
+              MonadException,
+              MonadErr,
+              MonadConfig)
+
+deriving instance MonadRef IORef m => MonadRef IORef (C m)
+deriving instance MonadAtomicRef IORef m => MonadAtomicRef IORef (C m)
+
+runC :: (MonadIO m, MonadRef IORef m) => C m a -> m a
+runC m = defaultCEnv >>= runReaderT (unC m)
+
+askStartTime :: Monad m => C m Integer
+askStartTime = asks cStart
+
+getPass :: MonadRef IORef m => C m Int
+getPass = asks cPass >>= readRef
+
+incPass :: MonadAtomicRef IORef m => C m Int
+incPass = do
+    ref <- asks cPass
+    atomicModifyRef' ref (\i -> (i + 1, i))
+
 runPipeline :: FilePath -> KZC ()
-runPipeline filepath = do
-    start <- liftIO getCPUTime
-    void $ runMaybeT $ pipeline start filepath
+runPipeline filepath =
+    void $ runC $ runMaybeT $ pipeline filepath
   where
     ext :: String
     ext = drop 1 (takeExtension filepath)
@@ -84,8 +128,8 @@ runPipeline filepath = do
     start :: Pos
     start = startPos filepath
 
-    pipeline :: Integer -> FilePath -> MaybeT KZC ()
-    pipeline start =
+    pipeline :: FilePath -> MaybeT (C KZC) ()
+    pipeline =
         inputPhase >=>
         cppPhase >=>
         parsePhase >=>
@@ -126,28 +170,29 @@ runPipeline filepath = do
         tracePhase "compile" compilePhase
       where
         traceExprPhase :: String
-                       -> (a -> MaybeT KZC E.Program)
+                       -> (a -> MaybeT (C KZC) E.Program)
                        -> a
-                       -> MaybeT KZC E.Program
+                       -> MaybeT (C KZC) E.Program
         traceExprPhase phase act =
             tracePhase phase act >=> tracePhase "lint" lintExpr
 
         traceCorePhase :: IsLabel l
                        => String
-                       -> (a -> MaybeT KZC (C.Program l))
+                       -> (a -> MaybeT (C KZC) (C.Program l))
                        -> a
-                       -> MaybeT KZC (C.Program l)
+                       -> MaybeT (C KZC) (C.Program l)
         traceCorePhase phase act =
             tracePhase phase act >=> tracePhase "lint" lintCore
 
         tracePhase :: String
-                   -> (a -> MaybeT KZC b)
+                   -> (a -> MaybeT (C KZC) b)
                    -> a
-                   -> MaybeT KZC b
+                   -> MaybeT (C KZC) b
         tracePhase phase act x = do
             doTrace <- asksConfig (testTraceFlag TracePhase)
             if doTrace
               then do pass       <- lift getPass
+                      start      <- lift askStartTime
                       phaseStart <- liftIO getCPUTime
                       let t1 :: Double
                           t1 = fromIntegral (phaseStart - start) / 1e12
@@ -160,12 +205,12 @@ runPipeline filepath = do
                       return y
               else act x
 
-        iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT KZC (C.Program l)
+        iterateSimplPhase :: IsLabel l => String -> C.Program l -> MaybeT (C KZC) (C.Program l)
         iterateSimplPhase desc prog0 = do
             n <- asksConfig maxSimpl
             go 0 n prog0
           where
-            go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT KZC (C.Program l)
+            go :: IsLabel l => Int -> Int -> C.Program l -> MaybeT (C KZC) (C.Program l)
             go i n prog | i >= n = do
                 warndocWhen WarnSimplifierBailout $ text "Simplifier bailing out after" <+> ppr n <+> text "iterations"
                 return prog
@@ -180,134 +225,134 @@ runPipeline filepath = do
                           go (i+1) n prog''
                   else return prog
 
-    inputPhase :: FilePath -> MaybeT KZC T.Text
+    inputPhase :: FilePath -> MaybeT (C KZC) T.Text
     inputPhase filepath = liftIO $ E.decodeUtf8 <$> B.readFile filepath
 
-    cppPhase :: T.Text -> MaybeT KZC T.Text
-    cppPhase = lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
+    cppPhase :: T.Text -> MaybeT (C KZC) T.Text
+    cppPhase = lift . lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
 
-    parsePhase :: T.Text -> MaybeT KZC Z.Program
+    parsePhase :: T.Text -> MaybeT (C KZC) Z.Program
     parsePhase text = lift $ liftIO $ parseProgram text start
 
-    pprPhase :: Z.Program -> MaybeT KZC Z.Program
+    pprPhase :: Z.Program -> MaybeT (C KZC) Z.Program
     pprPhase decls = do
         whenDynFlag PrettyPrint $
             liftIO $ putDocLn $ ppr decls
         return decls
 
-    renamePhase :: Z.Program -> MaybeT KZC Z.Program
+    renamePhase :: Z.Program -> MaybeT (C KZC) Z.Program
     renamePhase =
-        lift . liftRn . renameProgram >=>
+        lift . lift . liftRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
-    checkPhase :: Z.Program -> MaybeT KZC E.Program
+    checkPhase :: Z.Program -> MaybeT (C KZC) E.Program
     checkPhase =
-        lift . liftTi . checkProgram >=>
+        lift . lift . liftTi . checkProgram >=>
         dumpPass DumpCore "expr" "tc"
 
-    lambdaLiftPhase :: E.Program -> MaybeT KZC E.Program
+    lambdaLiftPhase :: E.Program -> MaybeT (C KZC) E.Program
     lambdaLiftPhase =
-        lift . C.liftTc . runLift . liftProgram >=>
+        lift . lift . C.liftTc . runLift . liftProgram >=>
         dumpPass DumpLift "expr" "ll"
 
-    exprToCorePhase :: IsLabel l => E.Program -> MaybeT KZC (C.Program l)
+    exprToCorePhase :: IsLabel l => E.Program -> MaybeT (C KZC) (C.Program l)
     exprToCorePhase =
-        lift . C.liftTc . E.runTC . E.exprToCore >=>
+        lift . lift . C.liftTc . E.runTC . E.exprToCore >=>
         dumpPass DumpLift "core" "exprToCore"
 
-    occPhase :: C.Program l -> MaybeT KZC (C.Program l)
+    occPhase :: C.Program l -> MaybeT (C KZC) (C.Program l)
     occPhase =
-        lift . C.liftTc . occProgram
+        lift . lift . C.liftTc . occProgram
 
-    simplPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l, SimplStats)
+    simplPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l, SimplStats)
     simplPhase =
-        lift . C.liftTc . simplProgram
+        lift . lift . C.liftTc . simplProgram
 
-    hashconsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    hashconsPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     hashconsPhase =
-        lift . C.liftTc . hashConsConsts >=>
+        lift . lift . C.liftTc . hashConsConsts >=>
         dumpPass DumpHashCons "core" "hashcons"
 
-    ratePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    ratePhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     ratePhase =
-        lift . C.liftTc . rateProgram >=>
+        lift . lift . C.liftTc . rateProgram >=>
         dumpPass DumpRate "core" "rate"
 
-    coalescePhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    coalescePhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     coalescePhase =
-        lift . C.liftTc . coalesceProgram >=>
+        lift . lift . C.liftTc . coalesceProgram >=>
         dumpPass DumpCoalesce "core" "coalesce"
 
-    fusionPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    fusionPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     fusionPhase =
-        lift . C.liftTc . SEFKT.runSEFKT . fuseProgram >=>
+        lift . lift . C.liftTc . SEFKT.runSEFKT . fuseProgram >=>
         dumpPass DumpFusion "core" "fusion"
 
-    floatViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    floatViewsPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     floatViewsPhase =
-        lift . C.liftTc . floatViews >=>
+        lift . lift . C.liftTc . floatViews >=>
         dumpPass DumpViews "core" "float-views"
 
-    lowerViewsPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lowerViewsPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     lowerViewsPhase =
-        lift . C.liftTc . lowerViews >=>
+        lift . lift . C.liftTc . lowerViews >=>
         dumpPass DumpViews "core" "lower-views"
 
-    autolutPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    autolutPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     autolutPhase =
-        lift . C.liftTc . autolutProgram >=>
+        lift . lift . C.liftTc . autolutProgram >=>
         dumpPass DumpAutoLUT "core" "autolut"
 
-    lutToGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lutToGenPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     lutToGenPhase =
-        lift . C.liftTc . lutToGen >=>
+        lift . lift . C.liftTc . lutToGen >=>
         dumpPass DumpLUT "core" "lutToGen"
 
-    lowerGenPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    lowerGenPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     lowerGenPhase =
-        lift . C.liftTc . lowerGenerators >=>
+        lift . lift . C.liftTc . lowerGenerators >=>
         dumpPass DumpLUT "core" "lowerGen"
 
-    evalPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    evalPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     evalPhase =
-        lift . C.liftTc . evalProgram >=>
+        lift . lift . C.liftTc . evalProgram >=>
         dumpPass DumpEval "core" "peval"
 
-    refFlowPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    refFlowPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     refFlowPhase =
-        lift . C.liftTc . rfProgram >=>
+        lift . lift . C.liftTc . rfProgram >=>
         dumpPass DumpEval "core" "rflow"
 
-    needDefaultPhase :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    needDefaultPhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     needDefaultPhase =
-        lift . C.liftTc . needDefaultProgram >=>
+        lift . lift . C.liftTc . needDefaultProgram >=>
         dumpPass DumpEval "core" "needdefault"
 
-    compilePhase :: C.LProgram -> MaybeT KZC ()
+    compilePhase :: C.LProgram -> MaybeT (C KZC) ()
     compilePhase =
-        lift . CGen.compileProgram >=>
-        lift . writeOutput
+        lift . lift . CGen.compileProgram >=>
+        lift . lift . writeOutput
 
-    lintExpr :: E.Program -> MaybeT KZC E.Program
-    lintExpr prog = lift $ do
+    lintExpr :: E.Program -> MaybeT (C KZC) E.Program
+    lintExpr prog = lift $ lift $ do
         whenDynFlag Lint $
             E.liftTc (E.checkProgram prog)
         return prog
 
     lintCore :: IsLabel l
              => C.Program l
-             -> MaybeT KZC (C.Program l)
-    lintCore prog = lift $ do
+             -> MaybeT (C KZC) (C.Program l)
+    lintCore prog = lift $ lift $ do
         whenDynFlag Lint $
             C.liftTc (C.checkProgram prog)
         return prog
 
-    stopIf :: (Config -> Bool) -> a -> MaybeT KZC a
+    stopIf :: (Config -> Bool) -> a -> MaybeT (C KZC) a
     stopIf f x = do
         stop <- asksConfig f
         if stop then MaybeT (return Nothing) else return x
 
-    runIf :: (Config -> Bool) -> (a -> MaybeT KZC a) -> a -> MaybeT KZC a
+    runIf :: (Config -> Bool) -> (a -> MaybeT (C KZC) a) -> a -> MaybeT (C KZC) a
     runIf f g x = do
         run <- asksConfig f
         if run then g x else return x
@@ -325,7 +370,7 @@ runPipeline filepath = do
         liftIO $ B.hPut h $ E.encodeUtf8 (pprint x)
         liftIO $ hClose h
 
-    dumpFinal :: IsLabel l => C.Program l -> MaybeT KZC (C.Program l)
+    dumpFinal :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
     dumpFinal = dumpPass DumpCore "core" "final"
 
     dumpPass :: Pretty a
@@ -333,10 +378,10 @@ runPipeline filepath = do
              -> String
              -> String
              -> a
-             -> MaybeT KZC a
-    dumpPass f ext suffix x = lift $ do
-        pass <- incPass
-        dump f filepath ext (printf "%02d-%s" pass suffix) (ppr x)
+             -> MaybeT (C KZC) a
+    dumpPass f ext suffix x = do
+        pass <- lift incPass
+        lift $ lift $ dump f filepath ext (printf "%02d-%s" pass suffix) (ppr x)
         return x
 
     dump :: DumpFlag
