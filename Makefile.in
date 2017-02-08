@@ -147,6 +147,7 @@ GENERATED = \
 	KZC/Check/Types-instances.hs \
 	KZC/Expr/Syntax-instances.hs \
 	Language/Ziria/Parser/Classic.hs \
+	Language/Ziria/Parser/Kyllini.hs \
 	Language/Ziria/Parser/LenientClassic.hs \
 	Language/Ziria/Parser/Lexer.hs \
 	Language/Ziria/Syntax-instances.hs

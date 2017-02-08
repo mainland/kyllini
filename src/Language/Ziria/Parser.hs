@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 --------------------------------------------------------------------------------
 -- |
 -- Module      : Language.Ziria.Parser
@@ -11,6 +13,7 @@
 module Language.Ziria.Parser (
     Dialect(..),
     dialectExts,
+    moduleDialect,
 
     parseProgram,
     parseImports,
@@ -26,23 +29,42 @@ import Data.Set (Set)
 import Data.Symbol
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
+import System.FilePath
+import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Monad
 import KZC.Util.SysTools
 
 import qualified Language.Ziria.Parser.Classic as Classic
+import qualified Language.Ziria.Parser.Kyllini as Kyllini
 import qualified Language.Ziria.Parser.LenientClassic as LenientClassic
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax
 
 data Dialect = Classic
+             | Kyllini
   deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 dialectExts :: [(String, Dialect)]
 dialectExts = [ (".wpl", Classic)
               , (".blk", Classic)
+              , (".kz",  Kyllini)
               ]
+
+moduleDialect :: forall m . Monad m => FilePath -> m Dialect
+moduleDialect filepath =
+    go dialectExts
+  where
+    ext :: String
+    ext = takeExtension filepath
+
+    go :: [(String, Dialect)] -> m Dialect
+    go [] = faildoc $ text "Unknown dialect" <+> squotes (text ext)
+
+    go ((ext', dialect):dialects)
+      | ext' == ext = return dialect
+      | otherwise   = go dialects
 
 parse :: P a
       -> T.Text
@@ -62,27 +84,46 @@ parseFromFile p filepath = do
     start :: Pos
     start = startPos filepath
 
-parseProgram :: T.Text
+parseProgram :: Dialect
+             -> T.Text
              -> Pos
              -> IO Program
-parseProgram buf pos
-  | strictClassic = liftException $ parse Classic.parseProgram buf pos
-  | otherwise     = liftException $ parse LenientClassic.parseProgram buf pos
+parseProgram dialect buf pos =
+    liftException $ parse (chooseParser dialect) buf pos
+  where
+    chooseParser :: Dialect -> P Program
+    chooseParser Classic | strictClassic = Classic.parseProgram
+                         | otherwise     = LenientClassic.parseProgram
+    chooseParser Kyllini                 = Kyllini.parseProgram
 
-parseImports :: T.Text
+parseImports :: Dialect
+             -> T.Text
              -> Pos
              -> IO [Import]
-parseImports buf pos
-  | strictClassic = liftException $ parse Classic.parseImports buf pos
-  | otherwise     = liftException $ parse LenientClassic.parseImports buf pos
+parseImports dialect buf pos =
+    liftException $ parse (chooseParser dialect) buf pos
+  where
+    chooseParser :: Dialect -> P [Import]
+    chooseParser Classic | strictClassic = Classic.parseImports
+                         | otherwise     = LenientClassic.parseImports
+    chooseParser Kyllini                 = Kyllini.parseImports
 
 parseProgramFromFile :: Set Symbol -> FilePath -> KZC Program
-parseProgramFromFile structIds =
-    parseFromFile $ do
-        addStructIdentifiers structIds
-        if strictClassic
-          then Classic.parseProgram
-          else LenientClassic.parseProgram
+parseProgramFromFile structIds filepath = do
+    dialect <- moduleDialect filepath
+    parseFromFile (addStructIdentifiers structIds >> chooseParser dialect) filepath
+  where
+    chooseParser :: Dialect -> P Program
+    chooseParser Classic | strictClassic = Classic.parseProgram
+                         | otherwise     = LenientClassic.parseProgram
+    chooseParser Kyllini                 = Kyllini.parseProgram
 
 parseImportsFromFile :: FilePath -> KZC [Import]
-parseImportsFromFile = parseFromFile Classic.parseImports
+parseImportsFromFile filepath = do
+    dialect <- moduleDialect filepath
+    parseFromFile (chooseParser dialect) filepath
+  where
+    chooseParser :: Dialect -> P [Import]
+    chooseParser Classic | strictClassic = Classic.parseImports
+                         | otherwise     = LenientClassic.parseImports
+    chooseParser Kyllini                 = Kyllini.parseImports

@@ -22,6 +22,7 @@ extra-source-files:
   configure
   include/KzcSysTools.h.in
   src/Language/Ziria/Parser/Classic.hs
+  src/Language/Ziria/Parser/Kyllini.hs
   src/Language/Ziria/Parser/LenientClassic.hs
   src/Language/Ziria/Parser/Lexer.hs
 
@@ -111,6 +112,7 @@ library
     Language.Ziria.Parser.Alex
     Language.Ziria.Parser.Classic
     Language.Ziria.Parser.Exceptions
+    Language.Ziria.Parser.Kyllini
     Language.Ziria.Parser.LenientClassic
     Language.Ziria.Parser.Lexer
     Language.Ziria.Parser.Monad
