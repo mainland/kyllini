@@ -251,7 +251,8 @@ mkFlagOpts pfx opts set unset =
 
 fFlags :: [(DynFlag, String, String)]
 fFlags =
-    [ (PrettyPrint,   "pprint",       "pretty-print file")
+    [ (StrictParser,  "strict-parse", "parse classic language strictly")
+    , (PrettyPrint,   "pprint",       "pretty-print file")
     , (LinePragmas,   "line-pragmas", "print line pragmas in generated C")
     , (NoGensym,      "no-gensym",    "don't gensym (for debugging)")
     , (MayInlineVal,  "inline-val",   "inline values when simplifying")
@@ -435,6 +436,8 @@ parseKzcOpts argv =
     case getOpt Permute options argv of
       (fs,n,[])  -> do fs' <- flagImplications <$> foldl (>=>) return fs defaultConfig
                        setMaxErrContext (maxErrCtx fs')
+                       when (testDynFlag StrictParser fs') $
+                           setStrictClassic True
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
                        when (testDynFlag ExpertTypes fs') $

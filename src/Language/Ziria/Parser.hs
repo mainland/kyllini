@@ -27,10 +27,12 @@ import Data.Symbol
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 
+import KZC.Globals
 import KZC.Monad
 import KZC.Util.SysTools
 
 import qualified Language.Ziria.Parser.Classic as Classic
+import qualified Language.Ziria.Parser.LenientClassic as LenientClassic
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax
 
@@ -63,18 +65,24 @@ parseFromFile p filepath = do
 parseProgram :: T.Text
              -> Pos
              -> IO Program
-parseProgram buf pos = liftException $ parse Classic.parseProgram buf pos
+parseProgram buf pos
+  | strictClassic = liftException $ parse Classic.parseProgram buf pos
+  | otherwise     = liftException $ parse LenientClassic.parseProgram buf pos
 
 parseImports :: T.Text
              -> Pos
              -> IO [Import]
-parseImports buf pos = liftException $ parse Classic.parseImports buf pos
+parseImports buf pos
+  | strictClassic = liftException $ parse Classic.parseImports buf pos
+  | otherwise     = liftException $ parse LenientClassic.parseImports buf pos
 
 parseProgramFromFile :: Set Symbol -> FilePath -> KZC Program
 parseProgramFromFile structIds =
     parseFromFile $ do
         addStructIdentifiers structIds
-        Classic.parseProgram
+        if strictClassic
+          then Classic.parseProgram
+          else LenientClassic.parseProgram
 
 parseImportsFromFile :: FilePath -> KZC [Import]
 parseImportsFromFile = parseFromFile Classic.parseImports

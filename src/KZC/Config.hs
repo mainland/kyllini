@@ -81,6 +81,7 @@ data ModeFlag = Help
   deriving (Eq, Ord, Enum, Show)
 
 data DynFlag = Quiet
+             | StrictParser
              | StopAfterParse
              | StopAfterCheck
              | PrettyPrint

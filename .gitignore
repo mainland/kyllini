@@ -17,5 +17,7 @@
 /obj/
 /src/Language/Ziria/Parser/Classic.hs
 /src/Language/Ziria/Parser/Classic.info
+/src/Language/Ziria/Parser/LenientClassic.hs
+/src/Language/Ziria/Parser/LenientClassic.info
 /src/Language/Ziria/Parser/Lexer.hs
 /src/Language/Ziria/Parser/Lexer.info
