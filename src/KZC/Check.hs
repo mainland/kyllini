@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -1248,23 +1249,8 @@ instKind :: Type -> Kind -> Expected Kind -> Ti ()
 instKind _ kappa (Infer ref) =
     writeRef ref kappa
 
-instKind _ kappa1 (Check kappa2) | kappa1 == kappa2 =
-    return ()
-
-instKind tau kappa1 (Check kappa2) = do
-    [tau'] <- sanitizeTypes [tau]
-    faildoc $
-      text "Expected:" <+> friendly kappa2 </>
-      text "but got: " <+> ppr tau' </>
-      text "which is a" <+> friendly kappa1
-  where
-    friendly :: Kind -> Doc
-    friendly TauK   = text "base type"
-    friendly OmegaK = text "'C tau' or 'T'"
-    friendly MuK    = text "type of the form 'ST omega tau tau'"
-    friendly RhoK   = text "mutable type"
-    friendly PhiK   = text "function type"
-    friendly IotaK  = text "array index type"
+instKind tau1 kappa1 (Check kappa2) =
+    unifyKinds tau1 kappa1 kappa2
 
 checkKind :: Type -> Kind -> Ti ()
 checkKind tau kappa = kcType tau (Check kappa)
@@ -1920,17 +1906,62 @@ expectedTypeErr tau1 tau2 = do
       text "but got:      " <+> ppr tau1' <>
       msg
 
-data UnificationException = UnificationException Type Type Doc
-  deriving (Typeable)
+-- | Generic unification exception
+data UnificationException = forall a . Exception a => UnificationException a
+  deriving Typeable
 
 instance Show UnificationException where
-    show (UnificationException tau1 tau2 msg) =
+    show (UnificationException e) = show e
+
+instance Exception UnificationException
+
+unificationToException :: Exception a => a -> SomeException
+unificationToException = toException . UnificationException
+
+unificationFromException :: Exception a => SomeException -> Maybe a
+unificationFromException x = do
+    UnificationException a <- fromException x
+    cast a
+
+-- | Type unification exception
+data TypeUnificationException = TypeUnificationException Type Type Doc
+  deriving (Typeable)
+
+instance Show TypeUnificationException where
+    show (TypeUnificationException tau1 tau2 msg) =
         pretty 80 $
         text "Expected type:" <+> ppr tau2 </>
         text "but got:      " <+> ppr tau1 <>
         msg
 
-instance Exception UnificationException
+instance Exception TypeUnificationException where
+    toException   = unificationToException
+    fromException = unificationFromException
+
+-- | Kind unification exception
+data KindUnificationException = KindUnificationException Type Kind Kind Doc
+  deriving (Typeable)
+
+instance Show KindUnificationException where
+    show (KindUnificationException tau1 kappa1 kappa2 msg) =
+        pretty 80 $
+        text "Expected:" <+> friendly kappa2 </>
+        text "but got: " <+> ppr tau1 </>
+        text "which is a" <+> friendly kappa1 <>
+        msg
+      where
+        friendly :: Kind -> Doc
+        friendly TauK    = text "base type"
+        friendly OmegaK  = text "'C tau' or 'T'"
+        friendly MuK     = text "type of the form 'ST omega tau tau'"
+        friendly RhoK    = text "mutable type"
+        friendly PhiK    = text "function type"
+        friendly IotaK   = text "array index type"
+        friendly MetaK{} = error "internal error: failed to unify kind meta-variable"
+
+instance Exception KindUnificationException where
+    toException   = unificationToException
+    fromException = unificationFromException
 
 -- | Unify two types. The first argument is what we got, and the second is what
 -- we expect.
@@ -2020,7 +2051,7 @@ unifyTypes tau1 tau2 = do
     go _ _ _ _ = do
         msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
-        throw $ UnificationException tau1' tau2' msg
+        throw $ TypeUnificationException tau1' tau2' msg
 
     updateMetaTv :: MetaTv -> Type -> Type -> Ti ()
     updateMetaTv mtv tau1 tau2 = do
@@ -2031,6 +2062,40 @@ unifyTypes tau1 tau2 = do
               text "Cannot construct the infinite type:" <+/>
               ppr tau1' <+> text "=" <+> ppr tau2'
         kcWriteTv mtv tau2
+
+-- | Unify two types. The first argument is what we got, and the second is what
+-- we expect.
+unifyKinds :: Type -> Kind -> Kind -> Ti ()
+unifyKinds tau1 kappa1 kappa2 = do
+    kappa1' <- compress kappa1
+    kappa2' <- compress kappa2
+    go kappa1' kappa2'
+  where
+    go :: Kind -> Kind -> Ti ()
+    go (MetaK mkv1) (MetaK mkv2) | mkv1 == mkv2 =
+        return ()
+
+    go kappa1@(MetaK mkv) kappa2 =
+        updateMetaKv mkv kappa1 kappa2
+
+    go kappa1 kappa2@(MetaK mkv) =
+        updateMetaKv mkv kappa2 kappa1
+
+    go TauK{}   TauK{}   = return ()
+    go OmegaK{} OmegaK{} = return ()
+    go MuK{}    MuK{}    = return ()
+    go RhoK{}   RhoK{}   = return ()
+    go PhiK{}   PhiK{}   = return ()
+    go IotaK{}  IotaK{}  = return ()
+
+    go kappa1 kappa2 = do
+        msg <- relevantBindings
+        [tau1'] <- sanitizeTypes [tau1]
+        throw $ KindUnificationException tau1' kappa1 kappa2 msg
+
+    updateMetaKv :: MetaKv -> Kind -> Kind -> Ti ()
+    updateMetaKv mkv _kappa1 kappa2 =
+        writeKv mkv kappa2
 
 -- | Type check two expressions, treating them as values, and attempt to unify their types. This may
 -- requires adding casts.

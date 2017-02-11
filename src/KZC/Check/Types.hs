@@ -22,7 +22,8 @@ module KZC.Check.Types (
     StructDef(..),
     Type(..),
     Kind(..),
-    MetaTv(..)
+    MetaTv(..),
+    MetaKv(..)
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -105,6 +106,7 @@ data Kind = TauK   -- ^ Base types, including arrays of base types
           | RhoK   -- ^ Reference types
           | PhiK   -- ^ Function types
           | IotaK  -- ^ Array index types
+          | MetaK MetaKv
   deriving (Eq, Ord, Show)
 
 data MetaTv = MetaTv Uniq Kind TyRef
@@ -117,6 +119,17 @@ instance Ord MetaTv where
     compare (MetaTv u1 _ _) (MetaTv u2 _ _) = compare u1 u2
 
 type TyRef = IORef (Maybe Type)
+
+data MetaKv = MetaKv Uniq KindRef
+  deriving (Show)
+
+instance Eq MetaKv where
+    (MetaKv u1 _) == (MetaKv u2 _) = u1 == u2
+
+instance Ord MetaKv where
+    compare (MetaKv u1 _) (MetaKv u2 _) = compare u1 u2
+
+type KindRef = IORef (Maybe Kind)
 
 instance Show a => Show (IORef a) where
     showsPrec d ref =
@@ -291,12 +304,13 @@ instance Pretty Type where
         ppr tv
 
 instance Pretty Kind where
-    ppr TauK   = text "tau"
-    ppr OmegaK = text "omega"
-    ppr MuK    = text "mu"
-    ppr RhoK   = text "rho"
-    ppr PhiK   = text "phi"
-    ppr IotaK  = text "iota"
+    pprPrec _ TauK        = text "tau"
+    pprPrec _ OmegaK      = text "omega"
+    pprPrec _ MuK         = text "mu"
+    pprPrec _ RhoK        = text "rho"
+    pprPrec _ PhiK        = text "phi"
+    pprPrec _ IotaK       = text "iota"
+    pprPrec p (MetaK mkv) = text (showsPrec p mkv "")
 
 {------------------------------------------------------------------------------
  -

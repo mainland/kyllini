@@ -46,6 +46,11 @@ module KZC.Check.Monad (
     newMetaTv,
     newMetaTvT,
 
+    readKv,
+    writeKv,
+    newMetaKv,
+    newMetaKvK,
+
     relevantBindings,
     sanitizeTypes,
 
@@ -230,6 +235,21 @@ newMetaTv k = do
 newMetaTvT :: Located a => Kind -> a -> Ti Type
 newMetaTvT k x = MetaT <$> newMetaTv k <*> pure (srclocOf x)
 
+readKv :: MonadRef IORef m => MetaKv -> m (Maybe Kind)
+readKv (MetaKv _ ref) = readRef ref
+
+writeKv :: MonadRef IORef m => MetaKv -> Kind -> m ()
+writeKv (MetaKv _ ref) kappa = writeRef ref (Just kappa)
+
+newMetaKv :: Ti MetaKv
+newMetaKv = do
+    u     <- newUnique
+    kref  <- newRef Nothing
+    return $ MetaKv u kref
+
+newMetaKvK :: Located a => a -> Ti Kind
+newMetaKvK _x = MetaK <$> newMetaKv
+
 {------------------------------------------------------------------------------
  -
  - Error handling
@@ -350,3 +370,19 @@ instance Compress Type where
           Just tau'  ->  do  tau'' <- compress tau'
                              writeTv mtv tau''
                              return tau''
+
+instance Compress Kind where
+    compress kappa@TauK   = return kappa
+    compress kappa@OmegaK = return kappa
+    compress kappa@MuK    = return kappa
+    compress kappa@RhoK   = return kappa
+    compress kappa@PhiK   = return kappa
+    compress kappa@IotaK  = return kappa
+    
+    compress kappa@(MetaK mkv) = do
+        maybe_kappa' <- readKv mkv
+        case maybe_kappa' of
+          Nothing     ->  return kappa
+          Just kappa' ->  do  kappa'' <- compress kappa'
+                              writeKv mkv kappa''
+                              return kappa''

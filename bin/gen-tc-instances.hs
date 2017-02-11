@@ -30,6 +30,7 @@ DERIVE(FP)
 DERIVE(Type)
 DERIVE(Kind)
 DERIVE(MetaTv)
+DERIVE(MetaKv)
 DERIVE(StructDef)
 
 main :: IO ()
