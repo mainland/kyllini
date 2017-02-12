@@ -17,10 +17,7 @@ module KZC.Monad (
     defaultKZCEnv,
 
     KZC(..),
-    evalKZC,
-
-    getPass,
-    incPass
+    evalKZC
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -32,6 +29,7 @@ import Control.Monad.Primitive (PrimMonad(..),
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
+import Data.Map (Map)
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
 
@@ -39,9 +37,13 @@ import KZC.Check.State (TiEnv,
                         TiState,
                         defaultTiEnv,
                         defaultTiState)
+import KZC.Compiler.Types
 import KZC.Config
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
+import KZC.Name
+import KZC.Rename.State (RnEnv,
+                         defaultRnEnv)
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -49,12 +51,13 @@ import KZC.Util.Uniq
 data KZCEnv = KZCEnv
     { uniq       :: !(IORef Uniq)
     , tracedepth :: !Int
-    , pass       :: !(IORef Int)
     , errctx     :: ![ErrorContext]
     , flags      :: !Config
+    , rnenvref   :: !(IORef RnEnv)
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
     , tcenvref   :: !(IORef TcEnv)
+    , modref     :: !(IORef (Map ModuleName ModuleInfo))
     }
 
 defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
@@ -62,18 +65,20 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
               -> m KZCEnv
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
-    p      <- newRef 0
+    rneref <- newRef defaultRnEnv
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
     tceref <- newRef defaultTcEnv
+    mref   <- newRef mempty
     return KZCEnv { uniq       = u
                   , tracedepth = 0
-                  , pass       = p
                   , errctx     = []
                   , flags      = fs
+                  , rnenvref   = rneref
                   , tienvref   = tieref
                   , tistateref = tisref
                   , tcenvref   = tceref
+                  , modref     = mref
                   }
 
 newtype KZC a = KZC { unKZC :: ReaderT KZCEnv IO a }
@@ -132,11 +137,3 @@ instance MonadConfig KZC where
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth
     localTraceDepth f = local $ \env -> env { tracedepth = f (tracedepth env) }
-
-getPass :: KZC Int
-getPass = asks pass >>= readRef
-
-incPass :: KZC Int
-incPass = do
-    ref <- asks pass
-    atomicModifyRef' ref (\i -> (i + 1, i))

@@ -154,7 +154,7 @@ compileProgram :: IsLabel l => Program l -> KZC [C.Definition]
 compileProgram = evalCg . cgProgram
 
 cgProgram :: forall l . IsLabel l => Program l -> Cg l ()
-cgProgram (Program decls maybe_main) = do
+cgProgram (Program _imports decls maybe_main) = do
     Main comp tau <- maybe (fail "No main computation!")
                            return
                            maybe_main

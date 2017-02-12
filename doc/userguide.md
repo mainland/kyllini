@@ -66,6 +66,7 @@ far fewer expressions are LUTted.
 
 | Flag             | Description |
 | ---              | --- |
+| `-fstrict-parse` | Parse classic Ziria strictly |
 | `-fpprint`       | Pretty-print file (for debugging) |
 | `-fno-gensym`    | Don't gensym (for debugging) |
 | `-fline-pragmas` | Print line pragmas in generated C |

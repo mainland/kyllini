@@ -81,11 +81,13 @@ ensureUnique v k = do
        else k v
 
 exprToCore :: forall l m . (IsLabel l, MonadTc m)
-           => [E.Decl]
+           => E.Program
            -> TC m (Program l)
-exprToCore cdecls =
-    transDecls cdecls $ \decls ->
-    Program (filter (not . isMain) decls) <$> findMain decls
+exprToCore (E.Program eimports edecls) =
+    transDecls edecls $ \decls -> do
+    let topdecls = filter (not . isMain) decls
+    let imports  = [Import mod | E.Import mod <- eimports]
+    Program imports topdecls <$> findMain decls
   where
     findMain :: [Decl l] -> TC m (Maybe (Main l))
     findMain decls =

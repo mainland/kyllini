@@ -13,7 +13,10 @@ module KZC.Globals (
     printUniques,
 
     setExpertTypes,
-    expertTypes
+    expertTypes,
+
+    setStrictClassic,
+    strictClassic
   ) where
 
 import Control.Monad.Trans (MonadIO(..))
@@ -52,3 +55,14 @@ setExpertTypes flag = liftIO $ writeIORef gExpertTypes flag
 expertTypes :: Bool
 {-# NOINLINE expertTypes #-}
 expertTypes = unsafePerformIO $ readIORef gExpertTypes
+
+gStrictClassic :: IORef Bool
+{-# NOINLINE gStrictClassic #-}
+gStrictClassic = unsafePerformIO $ newIORef False
+
+setStrictClassic :: MonadIO m => Bool -> m ()
+setStrictClassic flag = liftIO $ writeIORef gStrictClassic flag
+
+strictClassic :: Bool
+{-# NOINLINE strictClassic #-}
+strictClassic = unsafePerformIO $ readIORef gStrictClassic

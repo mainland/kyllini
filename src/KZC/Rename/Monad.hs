@@ -12,6 +12,7 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Rename.Monad (
+    liftRn,
     RnEnv(..),
 
     Rn(..),
@@ -28,29 +29,26 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
-import Data.Map (Map)
-import qualified Data.Map as Map
-
-import Language.Ziria.Syntax
 
 import KZC.Config
 import KZC.Monad
+import KZC.Rename.State
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
 
-data RnEnv = RnEnv
-    { vars      :: Map Var Var
-    , compVars  :: Map Var Var
-    , compScope :: Bool
-    }
-
-defaultRnEnv :: RnEnv
-defaultRnEnv = RnEnv
-    { vars       = Map.empty
-    , compVars   = Map.empty
-    , compScope  = False
-    }
+-- | Run a @Rn@ computation in the @KZC@ monad and update the @Rn@ environment.
+liftRn :: forall a . ((a -> Rn a) -> Rn a) -> KZC a
+liftRn m = do
+    eref <- asks rnenvref
+    env  <- readRef eref
+    runRn (m' eref) env
+  where
+    m' :: IORef RnEnv -> Rn a
+    m' eref =
+        m $ \x -> do
+        ask >>= writeRef eref
+        return x
 
 newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
     deriving (Functor, Applicative, Monad, MonadIO,
@@ -62,8 +60,8 @@ newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
               MonadConfig,
               MonadTrace)
 
-runRn :: Rn a -> KZC a
-runRn m = runReaderT (unRn m) defaultRnEnv
+runRn :: Rn a -> RnEnv -> KZC a
+runRn m = runReaderT (unRn m)
 
 inCompScope :: Rn a -> Rn a
 inCompScope = local $ \env -> env { compScope = True }

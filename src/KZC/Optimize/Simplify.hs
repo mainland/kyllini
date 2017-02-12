@@ -319,10 +319,10 @@ withInstantiatedTyVars _tau k =
 simplProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m (Program l, SimplStats)
-simplProgram (Program decls main) = runSimplM $ do
+simplProgram (Program imports decls main) = runSimplM $ do
     (decls', main') <- simplDecls decls $
                        traverse simplMain main
-    return $ Program decls' main'
+    return $ Program imports decls' main'
 
 simplMain :: (IsLabel l, MonadTc m)
           => Main l

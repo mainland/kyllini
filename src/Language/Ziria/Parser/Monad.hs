@@ -19,6 +19,7 @@ module Language.Ziria.Parser.Monad (
     emptyPState,
 
     addStructIdentifier,
+    addStructIdentifiers,
     isStructIdentifier,
 
     getInput,
@@ -129,6 +130,10 @@ evalP comp st =
 addStructIdentifier :: Symbol -> P ()
 addStructIdentifier ident =
     modify $ \s -> s { structIdentifiers = Set.insert ident (structIdentifiers s) }
+
+addStructIdentifiers :: Set Symbol -> P ()
+addStructIdentifiers idents =
+  modify $ \s -> s { structIdentifiers = idents <> structIdentifiers s }
 
 isStructIdentifier :: Symbol -> P Bool
 isStructIdentifier ident =

@@ -16,9 +16,10 @@ module KZC.Expr.Lint (
     Tc(..),
     runTc,
     liftTc,
-    withTc,
 
     extendWildVars,
+
+    checkProgram,
 
     checkDecls,
 
@@ -131,27 +132,18 @@ instance MonadTcRef Tc where
 runTc :: Tc a -> TcEnv -> KZC a
 runTc = runReaderT . unTc
 
--- | Run a 'Tc' computation in the 'KZC' monad and update the 'TcEnv'.
+-- | Run a 'Tc' computation in the 'KZC' monad with the current 'TcEnv'.
 liftTc :: forall a . Tc a -> KZC a
 liftTc m = do
-    eref <- asks tcenvref
-    env  <- readRef eref
-    runTc (m' eref) env
-  where
-    m' :: IORef TcEnv -> Tc a
-    m' eref = do
-        x <- m
-        askTc >>= writeRef eref
-        return x
-
--- | Run a 'Tc' computation in the 'KZC' monad but /do not/ update the 'TcEnv'.
-withTc :: forall a . Tc a -> KZC a
-withTc m = do
     env <- asks tcenvref >>= readRef
     runTc m env
 
 extendWildVars :: MonadTc m => [(WildVar, Type)] -> m a -> m a
 extendWildVars wvs = extendVars [(v, tau) | (TameV v, tau) <- wvs]
+
+checkProgram :: MonadTc m => Program -> m ()
+checkProgram (Program _ decls) =
+    checkDecls decls
 
 checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())

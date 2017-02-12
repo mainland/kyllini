@@ -14,7 +14,7 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Check (
-    withTi,
+    liftTi,
 
     Expected,
     readExpected,
@@ -79,8 +79,12 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.Decl] -> Ti [E.Decl]
-checkProgram cls = checkDecls cls sequence
+checkProgram :: Z.Program -> (E.Program -> Ti a) -> Ti a
+checkProgram (Z.Program zimports zdecls) k =
+    checkDecls zdecls $ \mdecls -> do
+    decls       <- sequence mdecls
+    let imports =  [E.Import m | Z.Import m <- zimports]
+    k $ E.Program imports decls
 
 {- Note [Value Contexts]
 

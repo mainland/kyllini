@@ -4,14 +4,15 @@
 {-# OPTIONS -w #-}
 
 -- |
--- Module      : Language.Ziria.Parser.Parser
--- Copyright   : (c) 2014-2015 Drexel University
+-- Module      : Language.Ziria.Parser.Kyllini
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
-module Language.Ziria.Parser.Parser (
-    parseProgram
+module Language.Ziria.Parser.Kyllini (
+    parseProgram,
+    parseImports
   ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -66,6 +67,7 @@ import KZC.Name
   'forceinline' { L _ T.Tforceinline }
   'fun'         { L _ T.Tfun }
   'if'          { L _ T.Tif }
+  'import'      { L _ T.Timport }
   'impure'      { L _ T.Timpure }
   'in'          { L _ T.Tin }
   'int'         { L _ T.Tint }
@@ -188,8 +190,28 @@ import KZC.Name
 %error { happyError }
 
 %name parseProgram program
+%partial parseImports imports
 
 %%
+{------------------------------------------------------------------------------
+ -
+ - modules
+ -
+ ------------------------------------------------------------------------------}
+
+module :: { ModuleName }
+module : modids { mkModuleName (map unLoc (rev $1)) (locOf (rev $1)) }
+
+modids :: { RevList (L Symbol) }
+modids :
+    modid            { rsingleton $1 }
+  | modids '.' modid { rcons $3 $1 }
+
+modid :: { L Symbol }
+modid :
+    ID       { L (locOf $1) (getID $1) }
+  | STRUCTID { L (locOf $1) (getSTRUCTID $1) }
+
 {------------------------------------------------------------------------------
  -
  - Identifiers
@@ -395,6 +417,8 @@ bexp :
       {% expected ["expression"] Nothing }
   | 'if' bexp error
       {% expected ["then clause"] Nothing }
+  | 'if' error
+      {% expected ["expression"] Nothing }
 
   | 'let' var_bind '=' exp 'in' bexp_or_stms
       { let { (v, tau) = $2 }
@@ -547,10 +571,19 @@ index_type :
  -
  ------------------------------------------------------------------------------}
 
-stm_block :: { [Stm] }
-stm_block :
-    '{' stms '}' { $2 }
-  | stm_exp      { [ExpS $1 (srclocOf $1)] }
+stm :: { Stm }
+stm :
+    decl
+      { LetS $1 (srclocOf $1) }
+  | var_bind '<-' stm_exp
+      { let { (v, tau) = $1
+            ; body     = $3
+            }
+        in
+          BindS v tau body (v `srcspan` $3)
+      }
+  | stm_exp
+      { ExpS $1 (srclocOf $1) }
 
 stms :: { [Stm] }
 stms :
@@ -561,40 +594,17 @@ stm_rlist :
     stm                    { rsingleton $1 }
   | stm_rlist opt_semi stm { rcons $3 $1 }
 
-stm :: { Stm }
-stm :
-    'let' var_bind '=' exp
-      { let { (v, tau) = $2 }
-        in
-          letS $ LetD v tau $4 ($1 `srcspan` $4)
-      }
-  | 'var' ID ':' base_type maybe_initializer
-      { letS $ LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
-  | stm_exp { ExpS $1 (srclocOf $1) }
-
 stm_exp :: { Exp }
 stm_exp :
-    unroll_info 'for' var_bind 'in' gen_interval stm_block
-      { let { uann        = unLoc $1
-            ; (v, tau)    = $3
-            ; (from, len) = unLoc $5
-            ; body        = $6
-            }
-        in
-          ForE uann v tau from len (stmsE body) ($1 `srcspan` $6)
-      }
-  | 'while' '(' exp ')' stm_block
-      { WhileE $3 (stmsE $5) ($1 `srcspan` $5) }
+    ID
+      { varE (mkVar (varid $1)) }
 
-  | 'return' exp
-      { ReturnE AutoInline $2 ($1 `srcspan` $2) }
-
-  | 'print' exp_list1
-      { PrintE False $2 ($1 `srcspan` $2) }
-  | 'println' exp_list1
-      { PrintE True $2 ($1 `srcspan` $2) }
-  | 'error' STRING
-      { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
+  | decl 'in' stm_exp
+      { LetDeclE $1 $3 ($1 `srcspan` $3) }
+  | decl 'in' error
+      {% expected ["statement"] Nothing }
+  | decl error
+      {% expected ["'in'"] Nothing }
 
   | ID '(' exp_list ')'
       { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
@@ -604,25 +614,86 @@ stm_exp :
   | pexp ':=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }
 
-  | 'if' exp 'then' stm_block 'else' stm_block
-      { IfE $2 (stmsE $4) (Just (stmsE $6)) ($1 `srcspan` $6) }
-  | 'if' exp 'then' stm_block 'else' error
+  | 'if' exp 'then' stm_exp 'else' stm_exp
+      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
+  | 'if' exp 'then' stm_exp 'else' error
       {% expected ["statement block"] Nothing }
-  | 'if' exp 'then' stm_block %prec IF
-      { let { loc = ($1 `srcspan` $4) }
-        in
-          IfE $2 (stmsE $4) Nothing loc
-      }
+  | 'if' exp 'then' stm_exp %prec IF
+      { IfE $2 $4 Nothing ($1 `srcspan` $4) }
+  | 'if' exp 'then' error
+      {% expected ["statement"] Nothing }
   | 'if' exp error
       {% expected ["then clause"] Nothing }
+  | 'if' error
+      {% expected ["expression"] Nothing }
 
-  | 'let' var_bind '=' exp 'in' stm_block
+  | 'standalone' stm_exp %prec STANDALONE
+      { StandaloneE $2 ($1 `srcspan` $2) }
+  | 'repeat' vect_ann stm_exp %prec STANDALONE
+      { RepeatE $2 $3 ($1 `srcspan` $3) }
+  | 'until' exp stm_exp %prec STANDALONE
+      { UntilE $2 $3 ($1 `srcspan` $3) }
+  | 'while' exp stm_exp %prec STANDALONE
+      { WhileE $2 $3 ($1 `srcspan` $3) }
+  | unroll_info 'times' exp stm_exp %prec STANDALONE
+      { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
+  | unroll_info 'for' var_bind 'in' gen_interval stm_exp %prec STANDALONE
+      { let { (v, tau)     = $3
+            ; (start, len) = unLoc $5
+            }
+        in
+          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
+      }
+
+  | inline_ann 'return' exp
+     { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
+
+  | 'print' exp_list1
+      { PrintE False $2 ($1 `srcspan` $2) }
+  | 'println' exp_list1
+      { PrintE True $2 ($1 `srcspan` $2) }
+  | 'error' STRING
+      { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
+
+  | 'emit' exp
+      { EmitE $2 ($1 `srcspan` $2) }
+  | 'emits' exp
+      { EmitsE $2 ($1 `srcspan` $2) }
+  | 'take'
+      { TakeE (srclocOf $1) }
+  | 'takes' const_int_exp
+      { TakesE (unLoc $2) ($1 `srcspan` $2) }
+
+  | 'read' type_ann
+      { ReadE (unLoc $2) ($1 `srcspan` $2) }
+  | 'write' type_ann
+      { WriteE (unLoc $2) ($1 `srcspan` $2) }
+
+  | 'filter' var_bind
       { let { (v, tau) = $2 }
         in
-          LetE v tau $4 (stmsE $6) ($1 `srcspan` $6)
+          FilterE v tau ($1 `srcspan` tau)
       }
-  | 'var' ID ':' base_type maybe_initializer 'in' stm_block
-      { LetRefE (mkVar (varid $2)) $4 $5 (stmsE $7) ($1 `srcspan` $7) }
+  | 'map' vect_ann var_bind
+      { let { (v, tau) = $3 }
+        in
+          MapE $2 v tau ($1 `srcspan` tau)
+      }
+
+  | 'do' '{' stms '}'
+      { stmsE $3 }
+  | 'seq' '{' stms '}'
+      { stmsE $3 }
+  | '{' stms '}'
+      { stmsE $2 }
+
+  | stm_exp '>>>' stm_exp
+      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
+  | stm_exp '|>>>|' stm_exp
+      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
+
+  | '(' stm_exp ')'
+      { $2 }
 
 unroll_info :: { L UnrollAnn }
 unroll_info :
@@ -632,25 +703,9 @@ unroll_info :
 
 {------------------------------------------------------------------------------
  -
- - Computation Expressions
+ - Declarations
  -
  ------------------------------------------------------------------------------}
-
-commands :: { [Stm] }
-commands :
-    {- empty -}
-      { [] }
-  | decl opt_semi commands
-      { LetS $1 (srclocOf $1) : $3 }
-  | var_bind '<-' comp opt_semi commands
-      { let { (v, tau) = $1
-            ; body     = $3
-            }
-        in
-          BindS v tau body (v `srcspan` $3) : $5
-      }
-  | comp opt_semi commands
-      { ExpS $1 (srclocOf $1) : $3 }
 
 decl :: { Decl }
 decl :
@@ -669,101 +724,15 @@ decl :
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' 'comp' maybe_comp_range identifier comp_params '{' commands '}'
+  | 'fun' 'comp' maybe_comp_range identifier comp_params '{' stms '}'
       { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
-  | 'fun' identifier params stm_block
-      { LetFunD $2 $3 (stmsE $4) ($1 `srcspan` $4) }
-  | 'let' 'comp' maybe_comp_range comp_var_bind '=' comp
+  | 'fun' identifier params '{' stms '}'
+      { LetFunD $2 $3 (stmsE $5) ($1 `srcspan` $6) }
+  | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp
       { let { (v, tau) = $4 }
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
-
-acomp :: { Exp }
-acomp :
-    inline_ann 'return' exp
-      { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
-  | 'emit' exp
-      { EmitE $2 ($1 `srcspan` $2) }
-  | 'emits' exp
-      { EmitsE $2 ($1 `srcspan` $2) }
-  | 'take'
-      { TakeE (srclocOf $1) }
-  | 'takes' const_int_exp
-      { TakesE (unLoc $2) ($1 `srcspan` $2) }
-  | 'filter' var_bind
-      { let { (v, tau) = $2 }
-        in
-          FilterE v tau ($1 `srcspan` tau)
-      }
-  | 'read' type_ann
-      { ReadE (unLoc $2) ($1 `srcspan` $2) }
-  | 'write' type_ann
-      { WriteE (unLoc $2) ($1 `srcspan` $2) }
-  | 'map' vect_ann var_bind
-      { let { (v, tau) = $3 }
-        in
-          MapE $2 v tau ($1 `srcspan` tau)
-      }
-
-  | 'if' exp 'then' comp %prec IF
-      { IfE $2 $4 Nothing ($1 `srcspan` $4) }
-  | 'if' exp 'then' comp 'else' comp
-      { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
-  | 'if' exp 'then' error
-      {% expected ["command"] Nothing }
-  | 'if' exp error
-      {% expected ["then clause"] Nothing }
-
-  | decl 'in' comp
-      { LetDeclE $1 $3 ($1 `srcspan` $3) }
-  | decl error
-      {% expected ["'in'"] Nothing }
-
-  | 'do' stm_block
-      { stmsE $2 }
-  | 'seq' '{' commands '}'
-      { stmsE $3 }
-  | '{' commands '}'
-      { stmsE $2 }
-
-  | ID
-      { varE (mkVar (varid $1)) }
-  | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
-  | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
-
-  | '(' comp ')'
-      { $2 }
-
-comp :: { Exp }
-comp :
-    acomp
-      { $1 }
-
-  | 'standalone' comp %prec STANDALONE
-      { StandaloneE $2 ($1 `srcspan` $2) }
-  | 'repeat' vect_ann comp %prec STANDALONE
-      { RepeatE $2 $3 ($1 `srcspan` $3) }
-  | 'until' exp comp %prec STANDALONE
-      { UntilE $2 $3 ($1 `srcspan` $3) }
-  | 'while' exp comp %prec STANDALONE
-      { WhileE $2 $3 ($1 `srcspan` $3) }
-  | unroll_info 'times' exp comp %prec STANDALONE
-      { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
-  | unroll_info 'for' var_bind 'in' gen_interval comp %prec STANDALONE
-      { let { (v, tau)     = $3
-            ; (start, len) = unLoc $5
-            }
-        in
-          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
-      }
-
-  | comp '>>>' comp
-      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
-  | comp '|>>>|' comp
-      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
 
 inline_ann :: { L InlineAnn }
 inline_ann :
@@ -893,9 +862,19 @@ comp_param :
  -
  ------------------------------------------------------------------------------}
 
-program :: { [Decl] }
+program :: { Program }
 program :
-    decl_rlist opt_semi { rev $1 }
+    imports decl_rlist opt_semi { Program $1 (rev $2) }
+
+import :: { Import }
+import :
+    'import' module { Import $2 }
+  | 'import' error  {% expected ["module"] Nothing }
+
+imports :: { [Import] }
+imports :
+    {- empty -}             { [] }
+  | import opt_semi imports { $1 : $3 }
 
 decl_rlist :: { RevList Decl }
 decl_rlist :

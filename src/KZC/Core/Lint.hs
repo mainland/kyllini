@@ -17,7 +17,6 @@ module KZC.Core.Lint (
     Tc(..),
     runTc,
     liftTc,
-    withTc,
 
     extendWildVars,
 
@@ -95,7 +94,6 @@ import KZC.Core.Syntax
 import KZC.Expr.Lint (Tc(..),
                       runTc,
                       liftTc,
-                      withTc,
 
                       checkConst,
                       inferConst,
@@ -148,7 +146,7 @@ extendWildVars wvs = extendVars [(bVar v, tau) | (TameV v, tau) <- wvs]
 checkProgram :: (IsLabel l, MonadTc m)
              => Program l
              -> m ()
-checkProgram (Program decls main) =
+checkProgram (Program _ decls main) =
     checkDecls decls $
     traverse_ checkMain main
 

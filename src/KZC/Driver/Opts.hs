@@ -35,6 +35,7 @@ options =
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
     , Option ['o']      ["output"]  (ReqArg outOpt "FILE")               "Output to FILE"
     , Option ['O']      []          (OptArg setOptLevel "LEVEL")         "Set optimization level"
+    , Option ['i']      []          (ReqArg importPathOpt "DIR")        "Add import directory"
     , Option ['I']      []          (ReqArg includePathOpt "DIR")        "Add preprocessor include directory"
     , Option ['D']      []          (ReqArg defineOpt "VAR[=DEF]")       "Define preprocessor symbol"
     , Option ['w']      []          (NoArg inhibitWarnings)              "Inhibit all warning messages."
@@ -127,6 +128,9 @@ options =
 
     outOpt :: String -> Config -> m Config
     outOpt path fs = return fs { output = Just path }
+
+    importPathOpt :: String -> Config -> m Config
+    importPathOpt path fs = return fs { importPaths = importPaths fs ++ [path] }
 
     includePathOpt :: String -> Config -> m Config
     includePathOpt path fs = return fs { includePaths = includePaths fs ++ [path] }
@@ -247,7 +251,8 @@ mkFlagOpts pfx opts set unset =
 
 fFlags :: [(DynFlag, String, String)]
 fFlags =
-    [ (PrettyPrint,   "pprint",       "pretty-print file")
+    [ (StrictParser,  "strict-parse", "parse classic language strictly")
+    , (PrettyPrint,   "pprint",       "pretty-print file")
     , (LinePragmas,   "line-pragmas", "print line pragmas in generated C")
     , (NoGensym,      "no-gensym",    "don't gensym (for debugging)")
     , (MayInlineVal,  "inline-val",   "inline values when simplifying")
@@ -431,6 +436,8 @@ parseKzcOpts argv =
     case getOpt Permute options argv of
       (fs,n,[])  -> do fs' <- flagImplications <$> foldl (>=>) return fs defaultConfig
                        setMaxErrContext (maxErrCtx fs')
+                       when (testDynFlag StrictParser fs') $
+                           setStrictClassic True
                        when (testDynFlag PrintUniques fs') $
                            setPrintUniques True
                        when (testDynFlag ExpertTypes fs') $

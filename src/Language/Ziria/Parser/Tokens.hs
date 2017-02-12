@@ -49,6 +49,7 @@ data Token = Teof
            | Tforceinline
            | Tfun
            | Tif
+           | Timport
            | Timpure
            | Tin
            | Tint
@@ -164,6 +165,7 @@ instance Pretty Token where
     ppr Tforceinline = text "Tforceinline"
     ppr Tfun         = text "fun"
     ppr Tif          = text "if"
+    ppr Timport      = text "import"
     ppr Timpure      = text "impure"
     ppr Tin          = text "in"
     ppr Tint         = text "int"

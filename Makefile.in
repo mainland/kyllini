@@ -53,6 +53,7 @@ RUNGHCFLAGS+=-i$(SRCDIR) -I$(SRCDIR)
 GHCFLAGS+=-Iinclude
 
 SOURCE = \
+	Data/Digraph.hs \
 	KZC/Analysis/Interval.hs \
 	KZC/Analysis/Lattice.hs \
 	KZC/Analysis/Lattice/Properties.hs \
@@ -73,6 +74,9 @@ SOURCE = \
 	KZC/Check/Smart.hs \
 	KZC/Check/State.hs \
 	KZC/Check/Types.hs \
+	KZC/Compiler.hs \
+	KZC/Compiler/Module.hs \
+	KZC/Compiler/Types.hs \
 	KZC/Config.hs \
 	KZC/Core/Comp.hs \
 	KZC/Core/Embed.hs \
@@ -116,6 +120,7 @@ SOURCE = \
 	KZC/Quote/C.hs \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \
+	KZC/Rename/State.hs \
 	KZC/Util/Derive.hs \
 	KZC/Util/Error.hs \
 	KZC/Util/Logic.hs \
@@ -141,8 +146,10 @@ GENERATED = \
 	KZC/Core/Syntax-instances.hs \
 	KZC/Check/Types-instances.hs \
 	KZC/Expr/Syntax-instances.hs \
+	Language/Ziria/Parser/Classic.hs \
+	Language/Ziria/Parser/Kyllini.hs \
+	Language/Ziria/Parser/LenientClassic.hs \
 	Language/Ziria/Parser/Lexer.hs \
-	Language/Ziria/Parser/Parser.hs \
 	Language/Ziria/Syntax-instances.hs
 
 SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
