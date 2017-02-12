@@ -214,11 +214,11 @@ rnDecl decl@(LetRefD v tau e l) k =
              LetRefD <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
     k decl'
 
-rnDecl decl@(LetFunD v tau vbs e l) k =
+rnDecl decl@(LetFunD v vbs e l) k =
     extendVars (text "function") [v] $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-             LetFunD <$> rn v <*> pure tau <*> rn vbs <*> rn e <*> pure l
+             LetFunD <$> rn v <*> rn vbs <*> rn e <*> pure l
     k decl'
 
 rnDecl decl@(LetFunExternalD v vbs tau isPure l) k =
@@ -239,12 +239,12 @@ rnDecl decl@(LetCompD v tau range e l) k =
              LetCompD <$> rn v <*> pure tau <*> pure range <*> inCompScope (rn e) <*> pure l
     k decl'
 
-rnDecl decl@(LetFunCompD f tau range vbs e l) k =
+rnDecl decl@(LetFunCompD f range vbs e l) k =
     extendCompVars (text "computation function") [f] $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunCompD <$> inCompScope (lookupMaybeCompVar f) <*>
-                 pure tau <*> pure range <*> rn vbs <*> rn e <*> pure l
+                 pure range <*> rn vbs <*> rn e <*> pure l
     k decl'
 
 rnDecls :: [Decl] -> Rn [Decl]

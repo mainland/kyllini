@@ -214,10 +214,9 @@ checkLetBody e exp_ty mcdecl l = do
     go _tau mce =
         return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
-checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
-            -> Ti (Type, Ti E.Decl)
-checkLetFun f ztau ps e l = do
-    tau   <- fromZ (ztau, PhiK)
+checkLetFun :: Z.Var -> [Z.VarBind] -> Z.Exp -> SrcLoc -> Ti (Type, Ti E.Decl)
+checkLetFun f ps e l = do
+    tau   <- newMetaTvT PhiK f
     ptaus <- fromZ ps
     (tau_ret, mce) <-
         extendVars ((f,tau) : ptaus) $ do
@@ -293,9 +292,9 @@ checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
-checkDecl decl@(Z.LetFunD f ztau ps e l) k = do
+checkDecl decl@(Z.LetFunD f ps e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ztau ps e l
+                       checkLetFun f ps e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
@@ -335,9 +334,9 @@ checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
                      checkLet v ztau MuK e l
     extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkDecl decl@(Z.LetFunCompD f ztau _ ps e l) k = do
+checkDecl decl@(Z.LetFunCompD f _ ps e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ztau ps e l
+                       checkLetFun f ps e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 

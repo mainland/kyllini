@@ -4,6 +4,14 @@ instance Located Struct where
   locOf (Struct l) = locOf l
 instance Located Field where
   locOf (Field l) = locOf l
+instance Located Decl where
+  locOf (LetD _ _ _ l) = locOf l
+  locOf (LetRefD _ _ _ l) = locOf l
+  locOf (LetFunD _ _ _ l) = locOf l
+  locOf (LetFunExternalD _ _ _ _ l) = locOf l
+  locOf (LetStructD _ l) = locOf l
+  locOf (LetCompD _ _ _ _ l) = locOf l
+  locOf (LetFunCompD _ _ _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l
@@ -40,14 +48,6 @@ instance Located Exp where
   locOf (StmE _ l) = locOf l
 instance Located VarBind where
   locOf (VarBind _ _ _) = NoLoc
-instance Located Decl where
-  locOf (LetD _ _ _ l) = locOf l
-  locOf (LetRefD _ _ _ l) = locOf l
-  locOf (LetFunD _ _ _ _ l) = locOf l
-  locOf (LetFunExternalD _ _ _ _ l) = locOf l
-  locOf (LetStructD _ l) = locOf l
-  locOf (LetCompD _ _ _ _ l) = locOf l
-  locOf (LetFunCompD _ _ _ _ _ l) = locOf l
 instance Located Stm where
   locOf (LetS _ l) = locOf l
   locOf (BindS _ _ _ l) = locOf l

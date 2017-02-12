@@ -669,16 +669,10 @@ decl :
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' 'comp' maybe_comp_range comp_var_bind comp_params '{' commands '}'
-      { let { (v, tau) = $4 }
-        in
-          LetFunCompD v tau $3 $5 (stmsE $7) ($1 `srcspan` $8)
-      }
-  | 'fun' var_bind params stm_block
-      { let { (v, tau) = $2 }
-        in
-          LetFunD v tau $3 (stmsE $4) ($1 `srcspan` $4)
-      }
+  | 'fun' 'comp' maybe_comp_range identifier comp_params '{' commands '}'
+      { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
+  | 'fun' identifier params stm_block
+      { LetFunD $2 $3 (stmsE $4) ($1 `srcspan` $4) }
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' comp
       { let { (v, tau) = $4 }
         in
