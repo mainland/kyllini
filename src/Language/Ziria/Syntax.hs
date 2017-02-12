@@ -24,8 +24,11 @@ module Language.Ziria.Syntax (
 
     FP(..),
 
+    Decl(..),
     Const(..),
     Exp(..),
+    Stm(..),
+
     VarBind(..),
 
     UnrollAnn(..),
@@ -35,10 +38,6 @@ module Language.Ziria.Syntax (
 
     Unop(..),
     Binop(..),
-
-    CompLet(..),
-    Stm(..),
-    Cmd(..),
 
     StructDef(..),
     Type(..),
@@ -123,6 +122,15 @@ data FP = FP16
         | FP64
   deriving (Eq, Ord, Read, Show)
 
+data Decl = LetD Var (Maybe Type) Exp !SrcLoc
+          | LetRefD Var Type (Maybe Exp) !SrcLoc
+          | LetFunD Var [VarBind] Exp !SrcLoc
+          | LetFunExternalD Var [VarBind] Type  Bool !SrcLoc
+          | LetStructD StructDef !SrcLoc
+          | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
+          | LetFunCompD Var (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data Const = UnitC
            | BoolC Bool
            | FixC IP Int
@@ -136,10 +144,11 @@ data Exp = ConstE Const !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
+         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
+         | LetDeclE Decl Exp !SrcLoc
          -- Functions
          | CallE Var [Exp] !SrcLoc
          -- References
-         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
@@ -169,9 +178,12 @@ data Exp = ConstE Const !SrcLoc
          | StandaloneE Exp !SrcLoc
          | MapE VectAnn Var (Maybe Type) !SrcLoc
          | FilterE Var (Maybe Type) !SrcLoc
-         | CompLetE CompLet Exp !SrcLoc
          | StmE [Stm] !SrcLoc
-         | CmdE [Cmd] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data Stm = LetS Decl !SrcLoc
+         | BindS Var (Maybe Type) Exp !SrcLoc
+         | ExpS Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
@@ -229,25 +241,6 @@ data Binop = Lt   -- ^ Less-than
            | Pow  -- ^ Power
   deriving (Eq, Ord, Read, Show)
 
-data CompLet = LetCL Var (Maybe Type) Exp !SrcLoc
-             | LetRefCL Var Type (Maybe Exp) !SrcLoc
-             | LetFunCL Var (Maybe Type) [VarBind] Exp !SrcLoc
-             | LetFunExternalCL Var [VarBind] Type  Bool !SrcLoc
-             | LetStructCL StructDef !SrcLoc
-             | LetCompCL Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-             | LetFunCompCL Var (Maybe Type) (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-data Stm = LetS Var (Maybe Type) Exp !SrcLoc
-         | LetRefS Var Type (Maybe Exp) !SrcLoc
-         | ExpS Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
-data Cmd = LetC CompLet !SrcLoc
-         | BindC Var (Maybe Type) Exp !SrcLoc
-         | ExpC Exp !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
 data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -282,6 +275,15 @@ isComplexStruct _           = False
  -
  ------------------------------------------------------------------------------}
 
+instance Fvs Decl Var where
+    fvs d@(LetD _ _ e _)           = fvs e <\\> binders d
+    fvs d@(LetRefD _ _ e _)        = fvs e <\\> binders d
+    fvs d@(LetFunD _ _ e _)        = fvs e <\\> binders d
+    fvs LetFunExternalD{}          = mempty
+    fvs LetStructD{}               = mempty
+    fvs d@(LetCompD _ _ _ e _)     = fvs e <\\> binders d
+    fvs d@(LetFunCompD  _ _ _ e _) = fvs e <\\> binders d
+
 instance Fvs Exp Var where
     fvs ConstE{}                = mempty
     fvs (VarE v _)              = singleton v
@@ -289,8 +291,9 @@ instance Fvs Exp Var where
     fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
     fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
     fvs (LetE v _ e1 e2 _)      = delete v (fvs e1 <> fvs e2)
-    fvs (CallE v es _)          = singleton v <> fvs es
     fvs (LetRefE v _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
+    fvs (LetDeclE decl e _)     = fvs decl <> (fvs e <\\> binders decl)
+    fvs (CallE v es _)          = singleton v <> fvs es
     fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
     fvs (UntilE e1 e2 _)        = fvs e1 <> fvs e2
@@ -314,42 +317,25 @@ instance Fvs Exp Var where
     fvs (StandaloneE e _)       = fvs e
     fvs (MapE _ v _ _)          = singleton v
     fvs (FilterE v _ _)         = singleton v
-    fvs (CompLetE cl e _)       = fvs cl <> (fvs e <\\> binders cl)
     fvs (StmE stms _)           = fvs stms
-    fvs (CmdE cmds _)           = fvs cmds
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
 
 instance Fvs [Stm] Var where
-    fvs []                       = mempty
-    fvs (LetS v _ e _    : stms) = delete v (fvs e <> fvs stms)
-    fvs (LetRefS v _ e _ : stms) = delete v (fvs e <> fvs stms)
-    fvs (ExpS e _        : stms) = fvs e <> fvs stms
-
-instance Fvs [Cmd] Var where
     fvs []                     = mempty
-    fvs (LetC cl _     : cmds) = fvs cl <> (fvs cmds <\\> binders cl)
-    fvs (BindC v _ e _ : cmds) = delete v (fvs e <> fvs cmds)
-    fvs (ExpC e _      : cmds) = fvs e <> fvs cmds
+    fvs (LetS d _     : cmds)  = fvs d <> (fvs cmds <\\> binders d)
+    fvs (BindS v _ e _ : cmds) = delete v (fvs e <> fvs cmds)
+    fvs (ExpS e _      : cmds) = fvs e <> fvs cmds
 
-instance Fvs CompLet Var where
-    fvs cl@(LetCL _ _ e _)            = fvs e <\\> binders cl
-    fvs cl@(LetRefCL _ _ e _)         = fvs e <\\> binders cl
-    fvs cl@(LetFunCL _ _ _ e _)       = fvs e <\\> binders cl
-    fvs LetFunExternalCL{}            = mempty
-    fvs LetStructCL{}                 = mempty
-    fvs cl@(LetCompCL _ _ _ e _)      = fvs e <\\> binders cl
-    fvs cl@(LetFunCompCL _ _ _ _ e _) = fvs e <\\> binders cl
-
-instance Binders CompLet Var where
-    binders (LetCL v _ _ _)               = singleton v
-    binders (LetRefCL v _ _ _)            = singleton v
-    binders (LetFunCL v _ ps _ _)         = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetFunExternalCL v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders LetStructCL{}                 = mempty
-    binders (LetCompCL v _ _ _ _)         = singleton v
-    binders (LetFunCompCL v _ _ ps _ _)   = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+instance Binders Decl Var where
+    binders (LetD v _ _ _)               = singleton v
+    binders (LetRefD v _ _ _)            = singleton v
+    binders (LetFunD v ps _ _)           = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunExternalD v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders LetStructD{}                 = mempty
+    binders (LetCompD v _ _ _ _)         = singleton v
+    binders (LetFunCompD v _ ps _ _ )    = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -357,30 +343,25 @@ instance Binders CompLet Var where
  -
  ------------------------------------------------------------------------------}
 
+instance Summary Decl where
+    summary (LetD v _ _ _)              = text "definition of" <+> ppr v
+    summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
+    summary (LetStructD s _)            = text "definition of" <+> summary s
+    summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
+    summary (LetFunCompD v _ _ _ _)     = text "definition of" <+> ppr v
+
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
+instance Summary Stm where
+    summary (LetS d _)      = summary d
+    summary (BindS v _ _ _) = text "definition of" <+> ppr v
+    summary (ExpS e _)      = summary e
+
 instance Summary StructDef where
     summary (StructDef s _ _) = text "struct" <+> ppr s
-
-instance Summary CompLet where
-    summary (LetCL v _ _ _)              = text "definition of" <+> ppr v
-    summary (LetRefCL v _ _ _)           = text "definition of" <+> ppr v
-    summary (LetFunCL v _ _ _ _)         = text "definition of" <+> ppr v
-    summary (LetFunExternalCL v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructCL s _)            = text "definition of" <+> summary s
-    summary (LetCompCL v _ _ _ _)        = text "definition of" <+> ppr v
-    summary (LetFunCompCL v _ _ _ _ _)   = text "definition of" <+> ppr v
-
-instance Summary Stm where
-    summary (LetS v _ _ _)    = text "definition of" <+> ppr v
-    summary (LetRefS v _ _ _) = text "definition of" <+> ppr v
-    summary (ExpS e _)        = summary e
-
-instance Summary Cmd where
-    summary (LetC cl _)     = summary cl
-    summary (BindC v _ _ _) = text "definition of" <+> ppr v
-    summary (ExpC e _)      = summary e
 
 {------------------------------------------------------------------------------
  -
@@ -446,15 +427,19 @@ instance Pretty Exp where
         text "="   <+>
         ppr e1 <+/> text "in" <+> ppr e2
 
-    pprPrec _ (CallE f vs _) =
-        ppr f <> parens (commasep (map ppr vs))
-
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
         nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+>
         pprInitializer e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
+
+    pprPrec p (LetDeclE decl e _) =
+        parensIf (p >= appPrec) $
+        nest 2 $ ppr decl <+/> text "in" <+/> ppr e
+
+    pprPrec _ (CallE f vs _) =
+        ppr f <> parens (commasep (map ppr vs))
 
     pprPrec _ (AssignE v e _) =
         ppr v <+> text ":=" <+> ppr e
@@ -554,14 +539,8 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         text "filter" <+> pprSig v tau
 
-    pprPrec _ (CompLetE cl e _) =
-        nest 2 $ ppr cl <+/> text "in" <+/> ppr e
-
     pprPrec _ (StmE stms _) =
-        text "do" <+> ppr stms
-
-    pprPrec _ (CmdE cmds _) =
-        ppr cmds
+        ppr stms
 
 instance Pretty VarBind where
     pprPrec p (VarBind v True tau) =
@@ -617,64 +596,49 @@ instance Pretty Binop where
     ppr Rem  = text "%"
     ppr Pow  = text "**"
 
-instance Pretty CompLet where
-    ppr (LetCL v tau e _) =
+instance Pretty Decl where
+    ppr (LetD v tau e _) =
         nest 2 $
         text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
 
-    ppr (LetRefCL v tau e _) =
+    ppr (LetRefD v tau e _) =
         nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
-    ppr (LetFunCL f tau ps e _) =
+    ppr (LetFunD f ps e _) =
         nest 2 $
-        text "fun" <+> pprSig f tau <+> parens (commasep (map ppr ps)) <+/> ppr e
+        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+/> ppr e
 
-    ppr (LetFunExternalCL f ps tau isPure _) =
+    ppr (LetFunExternalD f ps tau isPure _) =
         nest 2 $
         text "fun" <+> text "external" <+> pureDoc <+>
         ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
       where
         pureDoc = if isPure then empty else text "impure"
 
-    ppr (LetStructCL def _) =
+    ppr (LetStructD def _) =
         ppr def
 
-    ppr (LetCompCL v tau range e _) =
+    ppr (LetCompD v tau range e _) =
         nest 2 $
         text "let" <+> text "comp" <+> pprRange range <+>
         pprSig v tau <+> text "=" <+/> ppr e
 
-    ppr (LetFunCompCL f tau range ps e _) =
+    ppr (LetFunCompD f range ps e _) =
         nest 2 $
         text "fun" <+> text "comp" <+> pprRange range <+>
-        pprSig f tau <+> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
+        ppr f <> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
 
     pprList cls = stack (map ppr cls)
 
 instance Pretty Stm where
-    ppr (LetS v tau e _) =
-        nest 2 $
-        text "let" <+> pprSig v tau <+> text "=" <+> ppr e
-
-    ppr (LetRefS v tau e _) =
-        nest 2 $
-        text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
-
-    ppr (ExpS e _) =
-        ppr e
-
-    pprList stms =
-        semiEmbrace (map ppr stms)
-
-instance Pretty Cmd where
-    ppr (LetC l _) =
+    ppr (LetS l _) =
         ppr l
 
-    ppr (BindC v tau e _) =
+    ppr (BindS v tau e _) =
         pprSig v tau <+> text "<-" <+> ppr e
 
-    ppr (ExpC e _) =
+    ppr (ExpS e _) =
         ppr e
 
     pprList cmds =

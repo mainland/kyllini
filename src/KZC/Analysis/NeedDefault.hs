@@ -392,14 +392,18 @@ defaultsUsedExp e =
     vs = fvs e
 
 needDefaultProgram :: MonadTc m => Program l -> m (Program l)
-needDefaultProgram (Program decls comp tau) = runND $ do
-  (decls', comp') <-
-      useDecls decls $
-      inSTScope tau $
-      inLocalScope $
-      withLocContext comp (text "In definition of main") $
-      useComp comp
-  return $ Program decls' comp' tau
+needDefaultProgram (Program decls main) = runND $ do
+  (decls', main') <- useDecls decls $
+                     traverse needDefaultMain main
+  return $ Program decls' main'
+
+needDefaultMain :: MonadTc m => Main l -> ND m (Main l)
+needDefaultMain (Main comp tau) = do
+    comp' <- inSTScope tau $
+             inLocalScope $
+             withLocContext comp (text "In definition of main") $
+             useComp comp
+    return $ Main comp' tau
 
 useDecls :: MonadTc m
          => [Decl l]

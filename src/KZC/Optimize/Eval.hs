@@ -63,9 +63,21 @@ peval = testDynFlag PartialEval
 evalProgram :: (IsLabel l, MonadTcRef m)
             => Program l
             -> m (Program l)
-evalProgram (Program decls comp tau) =
+evalProgram (Program decls maybe_main) =
     evalEvalM $
-    evalDecls decls $ \mkDecls ->
+    evalDecls decls $ \mkDecls -> do
+    (h', main') <- case maybe_main of
+                     Just main -> do (h', main') <- evalMain main
+                                     return (h', Just main')
+                     Nothing   -> (,) <$> freezeHeap <*> pure Nothing
+    (sdecls1, decls1) <- partition isStructD <$> mkDecls h'
+    (sdecls2, decls2) <- partition isStructD <$> getTopDecls
+    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) main'
+
+evalMain :: (IsLabel l, MonadTcRef m)
+         => Main l
+         -> EvalM l m (FrozenHeap l m, Main l)
+evalMain (Main comp tau) =
     inSTScope tau $
     inLocalScope $
     withLocContext comp (text "In definition of main") $ do
@@ -78,9 +90,7 @@ evalProgram (Program decls comp tau) =
                      _               -> faildoc $ nest 2 $
                                         text "Computation did not return CompReturnV or CompV:" </>
                                         ppr val
-    (sdecls1, decls1) <- partition isStructD <$> mkDecls h'
-    (sdecls2, decls2) <- partition isStructD <$> getTopDecls
-    return $ Program (sdecls1 ++ sdecls2 ++ decls1 ++ decls2) comp' tau
+    return (h', Main comp' tau)
 
 evalDecls :: (IsLabel l, MonadTcRef m)
           => [Decl l]

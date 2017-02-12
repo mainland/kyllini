@@ -79,8 +79,8 @@ readExpected :: MonadRef IORef m => Expected a -> m a
 readExpected (Infer r)   = readRef r
 readExpected (Check tau) = return tau
 
-checkProgram :: [Z.CompLet] -> Ti [E.Decl]
-checkProgram cls = checkCompLets cls sequence
+checkProgram :: [Z.Decl] -> Ti [E.Decl]
+checkProgram cls = checkDecls cls sequence
 
 {- Note [Value Contexts]
 
@@ -130,9 +130,12 @@ collectInferValCtx k = do
       else do unifyTypes tau tau''
               return (tau'', mce)
 
-checkLet :: Z.Var -> Maybe Z.Type -> Kind -> Z.Exp -> SrcLoc
-         -> Ti (Type, Ti E.Decl)
-checkLet v ztau TauK e l =
+checkPureLet :: Z.Var
+             -> Maybe Z.Type
+             -> Z.Exp
+             -> SrcLoc
+             -> Ti (Type, Ti E.Decl)
+checkPureLet v ztau e l =
     withExpContext e $ do
     tau <- fromZ (ztau, TauK)
     extendVars [(v, tau)] $ do
@@ -144,7 +147,12 @@ checkLet v ztau TauK e l =
                       return $ E.LetD cv ctau ce l
       return (tau, mcdecl)
 
-checkLet f ztau MuK e l =
+checkCompLet :: Z.Var
+             -> Maybe Z.Type
+             -> Z.Exp
+             -> SrcLoc
+             -> Ti (Type, Ti E.Decl)
+checkCompLet f ztau e l =
     withExpContext e $ do
     tau <- fromZ (ztau, MuK)
     mce <- extendVars [(f, tau)] $
@@ -157,10 +165,6 @@ checkLet f ztau MuK e l =
                          ce   <- mce
                          return $ E.LetD cf ctau ce l
     return (tau_gen, mcdecl)
-
-checkLet _ _ kappa _ _ =
-    panicdoc $
-    text "checkLet: expected kind tau or mu, but got:" <+> ppr kappa
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp -> SrcLoc
             -> Ti (Type, Ti E.Decl)
@@ -214,10 +218,9 @@ checkLetBody e exp_ty mcdecl l = do
     go _tau mce =
         return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
-checkLetFun :: Z.Var -> Maybe Z.Type -> [Z.VarBind] -> Z.Exp -> SrcLoc
-            -> Ti (Type, Ti E.Decl)
-checkLetFun f ztau ps e l = do
-    tau   <- fromZ (ztau, PhiK)
+checkLetFun :: Z.Var -> [Z.VarBind] -> Z.Exp -> SrcLoc -> Ti (Type, Ti E.Decl)
+checkLetFun f ps e l = do
+    tau   <- newMetaTvT PhiK f
     ptaus <- fromZ ps
     (tau_ret, mce) <-
         extendVars ((f,tau) : ptaus) $ do
@@ -280,34 +283,34 @@ checkLetExtFun f ps ztau_ret isPure l = do
     checkRetType ztau =
         fromZ ztau
 
-checkCompLet :: Z.CompLet
-             -> (Ti E.Decl -> Ti a)
-             -> Ti a
-checkCompLet cl@(Z.LetCL v ztau e l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
-                     checkLet v ztau TauK e l
-    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
+checkDecl :: Z.Decl
+          -> (Ti E.Decl -> Ti a)
+          -> Ti a
+checkDecl decl@(Z.LetD v ztau e l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
+                     checkPureLet v ztau e l
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkCompLet cl@(Z.LetRefCL v ztau e_init l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetFunCL f ztau ps e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
-                       checkLetFun f ztau ps e l
-    let mcdecl = alwaysWithSummaryContext cl mkLetFun
+checkDecl decl@(Z.LetFunD f ps e l) k = do
+    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
+                       checkLetFun f ps e l
+    let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetFunExternalCL f ps ztau_ret isPure l) k = do
-    (tau, mkLetExtFun) <- alwaysWithSummaryContext cl $
+checkDecl decl@(Z.LetFunExternalD f ps ztau_ret isPure l) k = do
+    (tau, mkLetExtFun) <- alwaysWithSummaryContext decl $
                           checkLetExtFun f ps ztau_ret isPure l
-    let mcdecl = alwaysWithSummaryContext cl mkLetExtFun
+    let mcdecl = alwaysWithSummaryContext decl mkLetExtFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
+checkDecl decl@(Z.LetStructD (Z.StructDef zs zflds l) _) k = do
     (taus, mkLetStruct) <-
-        alwaysWithSummaryContext cl $ do
+        alwaysWithSummaryContext decl $ do
         checkStructNotRedefined zs
         checkDuplicates "field names" zfnames
         taus <- mapM fromZ ztaus
@@ -317,7 +320,7 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
                              ctaus   <- mapM trans taus
                              return $ E.LetStructD cs (cfnames `zip` ctaus) l
         return (taus, mkLetStruct)
-    let mcdecl = alwaysWithSummaryContext cl mkLetStruct
+    let mcdecl = alwaysWithSummaryContext decl mkLetStruct
     extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
   where
     (zfnames, ztaus) = unzip zflds
@@ -330,26 +333,26 @@ checkCompLet cl@(Z.LetStructCL (Z.StructDef zs zflds l) _) k = do
         Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
                      parens (text "original definition at" <+> ppr (locOf sdef))
 
-checkCompLet cl@(Z.LetCompCL v ztau _ e l) k = do
-    (tau, mcdecl) <- alwaysWithSummaryContext cl $
-                     checkLet v ztau MuK e l
-    extendVars [(v, tau)] $ k (alwaysWithSummaryContext cl mcdecl)
+checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
+                     checkCompLet v ztau e l
+    extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkCompLet cl@(Z.LetFunCompCL f ztau _ ps e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext cl $
-                       checkLetFun f ztau ps e l
-    let mcdecl = alwaysWithSummaryContext cl mkLetFun
+checkDecl decl@(Z.LetFunCompD f _ ps e l) k = do
+    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
+                       checkLetFun f ps e l
+    let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
-checkCompLets :: [Z.CompLet]
-              -> ([Ti E.Decl] -> Ti a)
-              -> Ti a
-checkCompLets [] k =
+checkDecls :: [Z.Decl]
+           -> ([Ti E.Decl] -> Ti a)
+           -> Ti a
+checkDecls [] k =
     k []
 
-checkCompLets (cl:cls) k =
-    checkCompLet  cl  $ \mcdecl  ->
-    checkCompLets cls $ \mcdecls ->
+checkDecls (decl:decls) k =
+    checkDecl  decl  $ \mcdecl  ->
+    checkDecls decls $ \mcdecls ->
     k (mcdecl:mcdecls)
 
 mkSigned :: Type -> Type
@@ -525,10 +528,23 @@ tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
                 return $ E.IfE ce1 ce2 ce3 l
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
-    (tau, mcdecl) <- checkLet v ztau TauK e1 l
+    (tau, mcdecl) <- checkPureLet v ztau e1 l
     withExpContext e2 $
       extendVars [(v, tau)] $
       checkLetBody e2 exp_ty mcdecl l
+
+tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
+    (tau, mcdecl) <- checkLetRef v ztau e1 l
+    withExpContext e2 $
+      extendVars [(v, refT tau)] $
+      checkLetBody e2 exp_ty mcdecl l
+
+tcExp (Z.LetDeclE decl e l) exp_ty =
+    checkDecl decl $ \mcdecl -> do
+    tau <- newMetaTvT MuK l
+    instType tau exp_ty
+    mce <- collectCheckValCtx tau $ checkExp e tau
+    return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
 tcExp e@(Z.CallE f es l) exp_ty =
     withCallContext f e $ do
@@ -583,12 +599,6 @@ tcExp e@(Z.CallE f es l) exp_ty =
         alwaysWithLocContext e doc
       where
         doc = text "In argument:" <+> ppr e
-
-tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
-    (tau, mcdecl) <- checkLetRef v ztau e1 l
-    withExpContext e2 $
-      extendVars [(v, refT tau)] $
-      checkLetBody e2 exp_ty mcdecl l
 
 tcExp (Z.AssignE e1 e2 l) exp_ty = do
     (gamma, mce1) <-
@@ -964,18 +974,8 @@ tcExp (Z.MapE ann f ztau l) exp_ty = do
                          E.bindE cy cb ccalle $
                          E.emitE (E.varE cy)
 
-tcExp (Z.CompLetE cl e l) exp_ty =
-    checkCompLet cl $ \mcdecl -> do
-    tau <- newMetaTvT MuK l
-    instType tau exp_ty
-    mce <- collectCheckValCtx tau $ checkExp e tau
-    return $ E.LetE <$> mcdecl <*> mce <*> pure l
-
 tcExp (Z.StmE stms _) exp_ty =
     tcStms stms exp_ty
-
-tcExp (Z.CmdE cmds _) exp_ty =
-    tcCmds cmds exp_ty
 
 tcExp e _ = faildoc $ text "tcExp: can't type check:" <+> ppr e
 
@@ -1029,34 +1029,50 @@ refPath e =
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti E.Exp)
 tcStms [stm@Z.LetS{}] _ =
     withSummaryContext stm $
-    faildoc $ text "Last statement in statement sequence must be an expression"
+    faildoc $ text "Last command in command sequence must be an expression"
 
-tcStms (stm@(Z.LetS v ztau e l) : stms) exp_ty = do
+tcStms (Z.LetS decl l : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
-    collectCheckValCtx tau $ do
-      (tau1, mcdecl) <- withSummaryContext stm $
-                        checkLet v ztau TauK e l
-      mce2           <- extendVars [(v, tau1)] $
-                        checkStms stms tau
-      return $ E.LetE <$> mcdecl <*> mce2 <*> pure l
-
-tcStms [stm@Z.LetRefS{}] _ =
-    withSummaryContext stm $
-    faildoc $ text "Last statement in statement sequence must be an expression"
-
-tcStms (stm@(Z.LetRefS v ztau e_init l) : stms) exp_ty = do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $ do
-      (tau1, mcdecl) <- withSummaryContext stm $
-                        checkLetRef v ztau e_init l
-      mce2           <- extendVars [(v, refT tau1)] $
-                        checkStms stms tau
+    collectCheckValCtx tau $
+      checkDecl decl $ \mcdecl -> do
+      mce <- checkStms stms tau
       return $ do
-        cdecl <- mcdecl
-        ce2   <- mce2
-        return $ E.LetE cdecl ce2 l
+          cdecl <- mcdecl
+          ce    <- mce
+          return $ E.LetE cdecl ce l
+
+tcStms [stm@Z.BindS{}] _ =
+    withSummaryContext stm $
+    faildoc $ text "Last command in command sequence must be an expression"
+
+tcStms (stm@(Z.BindS v ztau e l) : stms) exp_ty = do
+    nu                     <- fromZ (ztau, TauK)
+    tau1@(ST [] _ s a b _) <- mkSTC nu
+    omega2                 <- newMetaTvT OmegaK l
+    let tau2               =  ST [] omega2 s a b l
+    instType tau2 exp_ty
+    mce1 <- withSummaryContext stm $
+            collectCheckValCtx tau1 $
+            checkExp e tau1
+    mce2 <- extendVars [(v, nu)] $
+            checkStms stms tau2
+    withSummaryContext e checkForUnusedReturn
+    return $ do checkUnresolvedMtvs v nu
+                cv  <- trans v
+                ce1 <- withSummaryContext stm mce1
+                cnu <- trans nu
+                ce2 <- mce2
+                return $ E.BindE (E.TameV cv) cnu ce1 ce2 l
+  where
+    checkForUnusedReturn :: Ti ()
+    checkForUnusedReturn =
+        when (isReturn e && Set.notMember v (fvs stms)) $
+        faildoc "Result of return is not used"
+
+    isReturn :: Z.Exp -> Bool
+    isReturn Z.ReturnE{} = True
+    isReturn _              = False
 
 tcStms [stm@(Z.ExpS e _)] exp_ty =
     withSummaryContext stm $ do
@@ -1071,101 +1087,25 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
     omega2                 <- newMetaTvT OmegaK l
     let tau2               =  ST [] omega2 s a b l
     instType tau2 exp_ty
-    mce1  <- withSummaryContext stm $
-             collectCheckValCtx tau1 $
-             checkExp e tau1
-    mce2  <- checkStms stms tau2
+    mce1 <- withSummaryContext stm $
+            collectCheckValCtx tau1 $
+            checkExp e tau1
+    nu' <- compress nu
+    unless (isUnitT nu') $
+        withSummaryContext stm $
+        warndocWhen WarnUnusedCommandBind $
+        text "Command discarded a result of type" <+> ppr nu'
+    mce2 <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm mce1
                 cnu <- trans nu
                 ce2 <- mce2
                 return $ E.seqE cnu ce1 ce2
 
 tcStms [] _ =
-    panicdoc $ text "Empty statement sequence!"
+    panicdoc $ text "Empty command sequence!"
 
 checkStms :: [Z.Stm] -> Type -> Ti (Ti E.Exp)
 checkStms stms tau = tcStms stms (Check tau)
-
-tcCmds :: [Z.Cmd] -> Expected Type -> Ti (Ti E.Exp)
-tcCmds [cmd@Z.LetC{}] _ =
-    withSummaryContext cmd $
-    faildoc $ text "Last command in command sequence must be an expression"
-
-tcCmds (Z.LetC cl l : cmds) exp_ty = do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $
-      checkCompLet cl $ \mcdecl -> do
-      mce <- checkCmds cmds tau
-      return $ do
-          cdecl <- mcdecl
-          ce    <- mce
-          return $ E.LetE cdecl ce l
-
-tcCmds [cmd@Z.BindC{}] _ =
-    withSummaryContext cmd $
-    faildoc $ text "Last command in command sequence must be an expression"
-
-tcCmds (cmd@(Z.BindC v ztau e l) : cmds) exp_ty = do
-    nu                     <- fromZ (ztau, TauK)
-    tau1@(ST [] _ s a b _) <- mkSTC nu
-    omega2                 <- newMetaTvT OmegaK l
-    let tau2               =  ST [] omega2 s a b l
-    instType tau2 exp_ty
-    mce1 <- withSummaryContext cmd $
-            collectCheckValCtx tau1 $
-            checkExp e tau1
-    mce2 <- extendVars [(v, nu)] $
-            checkCmds cmds tau2
-    withSummaryContext e checkForUnusedReturn
-    return $ do checkUnresolvedMtvs v nu
-                cv  <- trans v
-                ce1 <- withSummaryContext cmd mce1
-                cnu <- trans nu
-                ce2 <- mce2
-                return $ E.BindE (E.TameV cv) cnu ce1 ce2 l
-  where
-    checkForUnusedReturn :: Ti ()
-    checkForUnusedReturn =
-        when (isReturn e && Set.notMember v (fvs cmds)) $
-        faildoc "Result of return is not used"
-
-    isReturn :: Z.Exp -> Bool
-    isReturn Z.ReturnE{} = True
-    isReturn _              = False
-
-tcCmds [cmd@(Z.ExpC e _)] exp_ty =
-    withSummaryContext cmd $ do
-    tau <- mkSTOmega
-    instType tau exp_ty
-    collectCheckValCtx tau $
-      checkExp e tau
-
-tcCmds (cmd@(Z.ExpC e l) : cmds) exp_ty = do
-    nu                     <- newMetaTvT TauK l
-    tau1@(ST [] _ s a b _) <- mkSTC nu
-    omega2                 <- newMetaTvT OmegaK l
-    let tau2               =  ST [] omega2 s a b l
-    instType tau2 exp_ty
-    mce1 <- withSummaryContext cmd $
-            collectCheckValCtx tau1 $
-            checkExp e tau1
-    nu' <- compress nu
-    unless (isUnitT nu') $
-        withSummaryContext cmd $
-        warndocWhen WarnUnusedCommandBind $
-        text "Command discarded a result of type" <+> ppr nu'
-    mce2 <- checkCmds cmds tau2
-    return $ do ce1 <- withSummaryContext cmd mce1
-                cnu <- trans nu
-                ce2 <- mce2
-                return $ E.seqE cnu ce1 ce2
-
-tcCmds [] _ =
-    panicdoc $ text "Empty command sequence!"
-
-checkCmds :: [Z.Cmd] -> Type -> Ti (Ti E.Exp)
-checkCmds cmds tau = tcCmds cmds (Check tau)
 
 -- | Type check an expression in a context where a value is needed. This will
 -- generate extra code to dereference any references and run any actions of type

@@ -337,44 +337,43 @@ instance Pretty BC where
 instance MonadTc m => TransformExp (Co m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
-    programT (Program decls comp tau) = do
-        (decls', comp') <-
-          declsT decls $
-          inSTScope tau $
-          inLocalScope $
-          withLocContext comp (text "In definition of main") $ do
-          traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
-          (_s, a, b) <- askSTIndTypes
-          comp'      <- compT comp
-          flags      <- askConfig
-          if testDynFlag CoalesceTop flags
-            then do
-              bcs <- coalesceComp comp'
-              whenVerb $ traceCoalesce $ nest 2 $
-                text "Top-level candidates:" </> stack (map ppr (sort bcs))
-              asz <- typeSize a
-              bsz <- typeSize b
-              applyBestBlocking (sortAscendingBy (topMetric asz bsz) bcs)
-                                a b comp'
-            else return comp'
-        return $ Program decls' comp' tau
-      where
-        applyBestBlocking :: [BC]
-                          -> Type
-                          -> Type
-                          -> Comp l
-                          -> Co m (Comp l)
-        applyBestBlocking [] _ _ comp =
-            return comp
-
-        applyBestBlocking (bc:_) a b comp = do
-            traceCoalesce $
-             text "      Chose vectorization:" <+> ppr bc </>
-             text "For top-level computation:" <+> ppr (compRate comp)
-            comp' <- runK $ coalesce Top bc a b comp
+    mainT (Main comp tau) =
+        inSTScope tau $
+        inLocalScope $
+        withLocContext comp (text "In definition of main") $ do
+        traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
+        (_s, a, b) <- askSTIndTypes
+        comp'      <- compT comp
+        flags      <- askConfig
+        if testDynFlag CoalesceTop flags
+          then do
+            bcs <- coalesceComp comp'
             whenVerb $ traceCoalesce $ nest 2 $
-              text "Coalesced top-level:" </> ppr comp'
-            rateComp comp'
+              text "Top-level candidates:" </> stack (map ppr (sort bcs))
+            asz    <- typeSize a
+            bsz    <- typeSize b
+            comp'' <- applyBestBlocking
+                        (sortAscendingBy (topMetric asz bsz) bcs)
+                        a b comp'
+            return $ Main comp'' tau
+          else return $ Main comp' tau
+        where
+          applyBestBlocking :: [BC]
+                            -> Type
+                            -> Type
+                            -> Comp l
+                            -> Co m (Comp l)
+          applyBestBlocking [] _ _ comp =
+              return comp
+
+          applyBestBlocking (bc:_) a b comp = do
+              traceCoalesce $
+               text "      Chose vectorization:" <+> ppr bc </>
+               text "For top-level computation:" <+> ppr (compRate comp)
+              comp' <- runK $ coalesce Top bc a b comp
+              whenVerb $ traceCoalesce $ nest 2 $
+                text "Coalesced top-level:" </> ppr comp'
+              rateComp comp'
 
     compT c = transComp c >>= rateComp
 

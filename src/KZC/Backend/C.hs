@@ -154,7 +154,10 @@ compileProgram :: IsLabel l => Program l -> KZC [C.Definition]
 compileProgram = evalCg . cgProgram
 
 cgProgram :: forall l . IsLabel l => Program l -> Cg l ()
-cgProgram (Program decls comp tau) = do
+cgProgram (Program decls maybe_main) = do
+    Main comp tau <- maybe (fail "No main computation!")
+                           return
+                           maybe_main
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]

@@ -211,21 +211,21 @@ runPipeline filepath = do
     cppPhase :: T.Text -> MaybeT KZC T.Text
     cppPhase = lift . runCpp filepath >=> dumpPass DumpCPP ext "pp"
 
-    parsePhase :: T.Text -> MaybeT KZC [Z.CompLet]
+    parsePhase :: T.Text -> MaybeT KZC [Z.Decl]
     parsePhase text = lift $ liftIO $ parseProgram text start
 
-    pprPhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
+    pprPhase :: [Z.Decl] -> MaybeT KZC [Z.Decl]
     pprPhase decls = do
         whenDynFlag PrettyPrint $
             liftIO $ putDocLn $ ppr decls
         return decls
 
-    renamePhase :: [Z.CompLet] -> MaybeT KZC [Z.CompLet]
+    renamePhase :: [Z.Decl] -> MaybeT KZC [Z.Decl]
     renamePhase =
         lift . runRn . renameProgram >=>
         dumpPass DumpRename "zr" "rn"
 
-    checkPhase :: [Z.CompLet] -> MaybeT KZC [E.Decl]
+    checkPhase :: [Z.Decl] -> MaybeT KZC [E.Decl]
     checkPhase =
         lift . withTi . checkProgram >=>
         dumpPass DumpCore "expr" "tc"

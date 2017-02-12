@@ -43,6 +43,9 @@ class TransformExp m => TransformComp l m where
     programT :: Program l -> m (Program l)
     programT = transProgram
 
+    mainT :: Main l -> m (Main l)
+    mainT = transMain
+
     declsT :: [Decl l] -> m a -> m ([Decl l], a)
     declsT = transDecls
 
@@ -62,14 +65,18 @@ class TransformExp m => TransformComp l m where
     argT = transArg
 
 transProgram :: TransformComp l m => Program l -> m (Program l)
-transProgram (Program decls comp tau) = do
-  (decls', comp') <-
-      declsT decls $
-      inSTScope tau $
-      inLocalScope $
-      withLocContext comp (text "In definition of main") $
-      compT comp
-  return $ Program decls' comp' tau
+transProgram (Program decls main) = do
+    (decls', main') <- declsT decls $
+                       traverse mainT main
+    return $ Program decls' main'
+
+transMain :: TransformComp l m => Main l -> m (Main l)
+transMain (Main comp tau) = do
+    comp' <- inSTScope tau $
+             inLocalScope $
+             withLocContext comp (text "In definition of main") $
+             compT comp
+    return $ Main comp' tau
 
 transDecls :: TransformComp l m => [Decl l] -> m a -> m ([Decl l], a)
 transDecls [] m = do

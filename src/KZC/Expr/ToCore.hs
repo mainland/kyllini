@@ -84,15 +84,14 @@ exprToCore :: forall l m . (IsLabel l, MonadTc m)
            => [E.Decl]
            -> TC m (Program l)
 exprToCore cdecls =
-    transDecls cdecls $ \decls -> do
-    (comp, tau) <- findMain decls
-    return $ Program (filter (not . isMain) decls) comp tau
+    transDecls cdecls $ \decls ->
+    Program (filter (not . isMain) decls) <$> findMain decls
   where
-    findMain :: [Decl l] -> TC m (Comp l, Type)
+    findMain :: [Decl l] -> TC m (Maybe (Main l))
     findMain decls =
         case filter isMain decls of
-          [] -> faildoc $ text "Cannot find main computation."
-          [LetCompD _ tau comp _] -> return (comp, tau)
+          [] -> return Nothing
+          [LetCompD _ tau comp _] -> return $ Just $ Main comp tau
           _ -> faildoc $ text "More than one main computation!"
 
     isMain :: Decl l -> Bool
