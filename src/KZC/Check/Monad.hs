@@ -297,22 +297,22 @@ instance Compress a => Compress (L a) where
         L loc <$> compress a
 
 instance Compress Type where
-    compress tau@UnitT{}    =
+    compress tau@UnitT{} =
         pure tau
 
-    compress tau@BoolT{}    =
+    compress tau@BoolT{} =
         pure tau
 
-    compress tau@FixT{}    =
+    compress tau@FixT{} =
         pure tau
 
-    compress tau@FloatT{}    =
+    compress tau@FloatT{} =
         pure tau
 
-    compress tau@StringT{}    =
+    compress tau@StringT{} =
         pure tau
 
-    compress tau@StructT{}    =
+    compress tau@StructT{} =
         pure tau
 
     compress (ArrT tau1 tau2 l) =
@@ -321,7 +321,7 @@ instance Compress Type where
     compress (C tau l) =
         C <$> compress tau <*> pure l
 
-    compress tau@T{}    =
+    compress tau@T{} =
         pure tau
 
     compress (ST alphas omega tau1 tau2 tau3 l) =
@@ -334,13 +334,13 @@ instance Compress Type where
     compress (FunT iotas taus tau l) =
         FunT <$> pure iotas <*> compress taus <*> compress tau <*> pure l
 
-    compress tau@ConstI{}    =
+    compress tau@ConstI{} =
         pure tau
 
-    compress tau@VarI{}    =
+    compress tau@VarI{} =
         pure tau
 
-    compress tau@TyVarT{}    =
+    compress tau@TyVarT{} =
         pure tau
 
     compress tau@(MetaT mtv _) = do

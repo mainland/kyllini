@@ -1107,27 +1107,27 @@ instance Binders LocalDecl Var where
     binders (LetViewLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
-    fvs ConstE{}                    = mempty
-    fvs (VarE v _)                  = singleton v
-    fvs (UnopE _ e _)               = fvs e
-    fvs (BinopE _ e1 e2 _)          = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)            = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE decl body _)          = fvs decl <> (fvs body <\\> binders decl)
-    fvs (CallE f _ es _)            = singleton f <> fvs es
-    fvs (DerefE e _)                = fvs e
-    fvs (AssignE e1 e2 _)           = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)            = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _)     = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)               = fvs es
-    fvs (IdxE e1 e2 _ _)            = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)          = fvs (map snd flds)
-    fvs (ProjE e _ _)               = fvs e
-    fvs (PrintE _ es _)             = fvs es
-    fvs ErrorE{}                    = mempty
-    fvs (ReturnE _ e _)             = fvs e
-    fvs (BindE wv _ e1 e2 _)        = fvs e1 <> (fvs e2 <\\> binders wv)
-    fvs (LutE _ e)                  = fvs e
-    fvs (GenE e gs _)               = fvs e <\\> binders gs
+    fvs ConstE{}                = mempty
+    fvs (VarE v _)              = singleton v
+    fvs (UnopE _ e _)           = fvs e
+    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE decl body _)      = fvs decl <> (fvs body <\\> binders decl)
+    fvs (CallE f _ es _)        = singleton f <> fvs es
+    fvs (DerefE e _)            = fvs e
+    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
+    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
+    fvs (ArrayE es _)           = fvs es
+    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
+    fvs (StructE _ flds _)      = fvs (map snd flds)
+    fvs (ProjE e _ _)           = fvs e
+    fvs (PrintE _ es _)         = fvs es
+    fvs ErrorE{}                = mempty
+    fvs (ReturnE _ e _)         = fvs e
+    fvs (BindE wv _ e1 e2 _)    = fvs e1 <> (fvs e2 <\\> binders wv)
+    fvs (LutE _ e)              = fvs e
+    fvs (GenE e gs _)           = fvs e <\\> binders gs
 
 instance Binders Gen Var where
     binders (GenG    v _ _ _) = singleton v
@@ -1163,10 +1163,10 @@ instance Fvs (Comp l) Var where
     fvs comp = go (unComp comp)
       where
         go :: SetLike m Var => [Step l] -> m Var
-        go []                          = mempty
-        go (BindC _ wv _ _ : k)        = go k <\\> binders wv
-        go (LetC _ decl _ : k)         = fvs decl <> (go k <\\> binders decl)
-        go (step : k)                  = fvs step <> go k
+        go []                   = mempty
+        go (BindC _ wv _ _ : k) = go k <\\> binders wv
+        go (LetC _ decl _ : k)  = fvs decl <> (go k <\\> binders decl)
+        go (step : k)           = fvs step <> go k
 
 instance Binders (Comp l) Var where
     binders comp = mconcat (map binders (unComp comp))
@@ -1207,27 +1207,27 @@ instance HasVars LocalDecl Var where
     allVars (LetViewLD v _ vw _) = singleton (bVar v) <> allVars vw
 
 instance HasVars Exp Var where
-    allVars ConstE{}                    = mempty
-    allVars (VarE v _)                  = singleton v
-    allVars (UnopE _ e _)               = allVars e
-    allVars (BinopE _ e1 e2 _)          = allVars e1 <> allVars e2
-    allVars (IfE e1 e2 e3 _)            = allVars e1 <> allVars e2 <> allVars e3
-    allVars (LetE decl body _)          = allVars decl <> allVars decl <> allVars body
-    allVars (CallE f _ es _)            = singleton f <> allVars es
-    allVars (DerefE e _)                = allVars e
-    allVars (AssignE e1 e2 _)           = allVars e1 <> allVars e2
-    allVars (WhileE e1 e2 _)            = allVars e1 <> allVars e2
-    allVars (ForE _ v _ e1 e2 e3 _)     = singleton v <> allVars e1 <> allVars e2 <> allVars e3
-    allVars (ArrayE es _)               = allVars es
-    allVars (IdxE e1 e2 _ _)            = allVars e1 <> allVars e2
-    allVars (StructE _ flds _)          = allVars (map snd flds)
-    allVars (ProjE e _ _)               = allVars e
-    allVars (PrintE _ es _)             = allVars es
-    allVars ErrorE{}                    = mempty
-    allVars (ReturnE _ e _)             = allVars e
-    allVars (BindE wv _ e1 e2 _)        = allVars wv <> allVars e1 <> allVars e2
-    allVars (LutE _ e)                  = allVars e
-    allVars (GenE e gs _)               = allVars e <> allVars gs
+    allVars ConstE{}                = mempty
+    allVars (VarE v _)              = singleton v
+    allVars (UnopE _ e _)           = allVars e
+    allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)        = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)      = allVars decl <> allVars decl <> allVars body
+    allVars (CallE f _ es _)        = singleton f <> allVars es
+    allVars (DerefE e _)            = allVars e
+    allVars (AssignE e1 e2 _)       = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)        = allVars e1 <> allVars e2
+    allVars (ForE _ v _ e1 e2 e3 _) = singleton v <> allVars e1 <> allVars e2 <> allVars e3
+    allVars (ArrayE es _)           = allVars es
+    allVars (IdxE e1 e2 _ _)        = allVars e1 <> allVars e2
+    allVars (StructE _ flds _)      = allVars (map snd flds)
+    allVars (ProjE e _ _)           = allVars e
+    allVars (PrintE _ es _)         = allVars es
+    allVars ErrorE{}                = mempty
+    allVars (ReturnE _ e _)         = allVars e
+    allVars (BindE wv _ e1 e2 _)    = allVars wv <> allVars e1 <> allVars e2
+    allVars (LutE _ e)              = allVars e
+    allVars (GenE e gs _)           = allVars e <> allVars gs
 
 instance HasVars Gen Var where
     allVars (GenG    v _ _ _) = singleton v
@@ -1552,8 +1552,8 @@ instance Subst Type TyVar Exp where
         GenE <$> substM e <*> substM gs <*> pure l
 
 instance Subst Type TyVar Gen where
-    substM (GenG    v tau c l)  = GenG v    <$> substM tau <*> pure c <*> pure l
-    substM (GenRefG v tau c l)  = GenRefG v <$> substM tau <*> pure c <*> pure l
+    substM (GenG    v tau c l) = GenG v    <$> substM tau <*> pure c <*> pure l
+    substM (GenRefG v tau c l) = GenRefG v <$> substM tau <*> pure c <*> pure l
 
 instance Subst Type TyVar (Arg l) where
     substM (ExpA e)  = ExpA <$> substM e

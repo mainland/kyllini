@@ -1286,22 +1286,22 @@ instance Subst a b Type => Subst a b (Var, Type) where
  ------------------------------------------------------------------------------}
 
 instance Subst Iota IVar Type where
-    substM tau@UnitT{}    =
+    substM tau@UnitT{} =
         pure tau
 
-    substM tau@BoolT{}    =
+    substM tau@BoolT{} =
         pure tau
 
-    substM tau@FixT{}    =
+    substM tau@FixT{} =
         pure tau
 
-    substM tau@FloatT{}    =
+    substM tau@FloatT{} =
         pure tau
 
-    substM tau@StringT{}    =
+    substM tau@StringT{} =
         pure tau
 
-    substM tau@StructT{}    =
+    substM tau@StructT{} =
         pure tau
 
     substM (ArrT iota tau l) =
@@ -1325,7 +1325,7 @@ instance Subst Iota IVar Omega where
     substM T       = pure T
 
 instance Subst Iota IVar Iota where
-    substM iota@ConstI{}    =
+    substM iota@ConstI{} =
         pure iota
 
     substM iota@(VarI iv _) = do
@@ -1333,10 +1333,10 @@ instance Subst Iota IVar Iota where
         return $ fromMaybe iota (Map.lookup iv theta)
 
 instance Subst Iota IVar Exp where
-    substM e@ConstE{}    =
+    substM e@ConstE{} =
         return e
 
-    substM e@VarE{}    =
+    substM e@VarE{} =
         return e
 
     substM (UnopE op e l) =
@@ -1416,22 +1416,22 @@ instance Subst Iota IVar Exp where
  ------------------------------------------------------------------------------}
 
 instance Subst Type TyVar Type where
-    substM tau@UnitT{}    =
+    substM tau@UnitT{} =
         pure tau
 
-    substM tau@BoolT{}    =
+    substM tau@BoolT{} =
         pure tau
 
-    substM tau@FixT{}    =
+    substM tau@FixT{} =
         pure tau
 
-    substM tau@FloatT{}    =
+    substM tau@FloatT{} =
         pure tau
 
-    substM tau@StringT{}    =
+    substM tau@StringT{} =
         pure tau
 
-    substM tau@StructT{}    =
+    substM tau@StructT{} =
         pure tau
 
     substM (ArrT iota tau l) =
@@ -1554,7 +1554,7 @@ instance Subst Type TyVar Exp where
  ------------------------------------------------------------------------------}
 
 instance Subst Exp Var Exp where
-    substM e@ConstE{}    =
+    substM e@ConstE{} =
         return e
 
     substM e@(VarE v _) = do
