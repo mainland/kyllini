@@ -54,10 +54,6 @@ module KZC.Backend.C.Monad (
     extendTyVarCExps,
     lookupTyVarCExp,
 
-    extendTyVarTypes,
-    lookupTyVarType,
-    askTyVarTypeSubst,
-
     addThread,
     getThreads,
 
@@ -218,7 +214,6 @@ data CgEnv l = CgEnv
 
     , varCExps   :: !(Map Var (CExp l))
     , tyvarCExps :: !(Map TyVar (CExp l))
-    , tyvarTypes :: !(Map TyVar Type)
     }
 
 instance Show (CgEnv l) where
@@ -237,7 +232,6 @@ defaultCgEnv = CgEnv
 
     , varCExps   = mempty
     , tyvarCExps = mempty
-    , tyvarTypes = mempty
     }
 
 data CgStats = CgStats
@@ -417,22 +411,6 @@ lookupTyVarCExp v =
     onerr = faildoc $
             text "Compiled array size variable" <+> ppr v <+>
             text "not in scope"
-
-extendTyVarTypes :: [(TyVar, Type)] -> Cg l a -> Cg l a
-extendTyVarTypes = extendEnv tyvarTypes (\env x -> env { tyvarTypes = x })
-
-lookupTyVarType :: TyVar -> Cg l Type
-lookupTyVarType alpha =
-    lookupEnv tyvarTypes onerr alpha
-  where
-    onerr = faildoc $
-            text "Instantiated type variable" <+> ppr alpha <+>
-            text "not in scope"
-
--- | Return a function that substitutes type variables for their current
--- instantiation.
-askTyVarTypeSubst :: Cg l (Map TyVar Type)
-askTyVarTypeSubst = asks tyvarTypes
 
 addThread :: Thread l -> Cg l ()
 addThread t = modify $ \s -> s { threads = t : threads s }

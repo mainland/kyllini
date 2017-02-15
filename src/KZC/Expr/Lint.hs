@@ -58,6 +58,7 @@ module KZC.Expr.Lint (
     checkRefT,
     checkFunT,
 
+    withInstantiatedTyVars,
     absSTScope,
     appSTScope,
     checkST,
@@ -1147,6 +1148,16 @@ we /do not/ instantiate ST types immediately in the expression language.
 Instead, we must instantiate any ST types when they become part of a
 computation.
 -}
+
+-- | Figure out the type substitution necessary for transforming the given type
+-- to the ST type of the current computational context.
+withInstantiatedTyVars :: MonadTc m => Type -> m a -> m a
+withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
+    ST _ _ s' a' b' _ <- appSTScope tau
+    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
+
+withInstantiatedTyVars _tau k =
+    k
 
 absSTScope :: MonadTc m => Type -> m Type
 absSTScope (ST [] omega s a b l) = do

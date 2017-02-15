@@ -89,8 +89,6 @@ data Definition l = Unknown
 data Level = Top | Nested
   deriving (Eq, Ord, Read, Show)
 
-type Phi = Map TyVar Type
-
 data SimplStats = SimplStats
     { simplDrop     :: {-# UNPACK #-} !Int
     , simplInline   :: {-# UNPACK #-} !Int
@@ -115,7 +113,6 @@ data SimplEnv l = SimplEnv
     { simplOccInfo :: !(Map Var OccInfo)
     , simplTheta   :: !(Theta l)
     , simplVarDefs :: !(VarDefs l)
-    , simplPhi     :: !Phi
     , simplRefDrop :: !(Set Var)
     }
 
@@ -124,7 +121,6 @@ defaultSimplEnv = SimplEnv
     { simplOccInfo = mempty
     , simplTheta   = mempty
     , simplVarDefs = mempty
-    , simplPhi     = mempty
     , simplRefDrop = mempty
     }
 
@@ -271,19 +267,6 @@ withUniqBoundVar v k = do
               extendSubst (bVar v) ((DoneExp . varE . bVar) v') $ k v'
       else killVars [bVar v] $ k v
 
-askTyVarSubst :: MonadTc m => SimplM l m Phi
-askTyVarSubst = asks simplPhi
-
-extendTyVarSubst :: MonadTc m
-                 => [(TyVar, Type)]
-                 -> SimplM l m a
-                 -> SimplM l m a
-extendTyVarSubst tvs =
-    local $ \env -> env { simplPhi = foldl' insert (simplPhi env) tvs }
-  where
-    insert :: Ord k => Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
 dropRef :: MonadTc m => Var -> SimplM l m a -> SimplM l m a
 dropRef v =
     local $ \env -> env { simplRefDrop = Set.insert v (simplRefDrop env) }
@@ -294,20 +277,6 @@ keepRef v =
 
 isDroppedRef :: MonadTc m => Var -> SimplM l m Bool
 isDroppedRef v = asks (Set.member v . simplRefDrop)
-
--- | Figure out the type substitution necessary for transforming the given type
--- to the ST type of the current computational context.
-withInstantiatedTyVars :: MonadTc m
-                       => Type
-                       -> SimplM l m a
-                       -> SimplM l m a
-withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
-    ST _ _ s' a' b' _ <- appSTScope tau
-    extendTyVarSubst [(alpha, tau) | (TyVarT alpha _, tau) <-
-                                       [s,a,b] `zip` [s',a',b']] k
-
-withInstantiatedTyVars _tau k =
-    k
 
 simplProgram :: (IsLabel l, MonadTc m)
              => Program l
@@ -346,7 +315,7 @@ simplComp c = do
 
 simplType :: MonadTc m => Type -> SimplM l m Type
 simplType tau = do
-    phi <- askTyVarSubst
+    phi <- askTyVarTypeSubst
     return $ subst phi mempty tau
 
 simplDecls :: (IsLabel l, MonadTc m)
@@ -962,7 +931,7 @@ simplStep (CallC l f0 taus0 args0 s) = do
 
     go _ taus args (Just (SuspFunComp theta ns vbs tau_ret comp)) =
         withSubst theta $
-        extendTyVarSubst (ns `zip` taus) $
+        extendTyVarTypes (ns `zip` taus) $
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
@@ -1002,7 +971,7 @@ simplStep (CallC l f0 taus0 args0 s) = do
                      -> SimplM l m [Step l]
     inlineFunCompRhs taus args ns vbs tau_ret comp =
         withSubst mempty $
-        extendTyVarSubst (ns `zip` taus) $
+        extendTyVarTypes (ns `zip` taus) $
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
@@ -1345,7 +1314,7 @@ simplE (CallE f0 taus0 es0 s) = do
 
     go _ taus args (Just (SuspFun theta ns vbs _tau_ret e)) =
         withSubst theta $
-        extendTyVarSubst (ns `zip` taus) $
+        extendTyVarTypes (ns `zip` taus) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
         simplE e
@@ -1384,7 +1353,7 @@ simplE (CallE f0 taus0 es0 s) = do
                  -> SimplM l m Exp
     inlineFunRhs taus args ns vbs _tau_ret e =
         withSubst mempty $
-        extendTyVarSubst (ns `zip` taus) $
+        extendTyVarTypes (ns `zip` taus) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
         simplE e

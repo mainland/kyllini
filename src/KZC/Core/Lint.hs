@@ -61,6 +61,7 @@ module KZC.Core.Lint (
     checkRefT,
     checkFunT,
 
+    withInstantiatedTyVars,
     absSTScope,
     appSTScope,
     checkST,
@@ -124,6 +125,7 @@ import KZC.Expr.Lint (Tc(..),
                       checkRefT,
                       checkFunT,
 
+                      withInstantiatedTyVars,
                       absSTScope,
                       appSTScope,
                       checkST,

@@ -374,7 +374,7 @@ evalStep step@(CallC _ f taus args _) =
     go (FunCompClosV theta ns vbs _tau_ret k) taus' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' ->
-        extendTyVarSubst (ns `zip` taus') $
+        extendTyVarTypes (ns `zip` taus') $
         extendArgBinds  (vs' `zip` v_args) $ do
         taus' <- mapM simplType taus
         k >>= wrapLetArgs vs' taus'
@@ -617,7 +617,7 @@ evalExp e =
 
         unop Len val = do
             (n, _) <- inferExp e >>= checkArrOrRefArrT
-            phi    <- askTyVarSubst
+            phi    <- askTyVarTypeSubst
             case subst phi mempty n of
               NatT n _ -> evalConst $ intC n
               _ -> partialExp $ UnopE op (toExp val) s
@@ -774,7 +774,7 @@ evalExp e =
         go _tau (FunClosV theta ns vbs _tau_ret k) tau' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
-            extendTyVarSubst (ns `zip` tau') $
+            extendTyVarTypes (ns `zip` tau') $
             extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
             k >>= wrapLetArgs vs' taus'

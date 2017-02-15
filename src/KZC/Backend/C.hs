@@ -566,17 +566,6 @@ cgDecl (LetFunCompD f nats vbs tau_ret comp l) k =
             compc :: forall a . CompC l a
             compc = cgComp comp
 
--- | Figure out the type substitution necessary for transforming the given type
--- to the ST type of the current computational context. We need to do this when
--- compiling a computation of computation function.
-withInstantiatedTyVars :: Type -> Cg l a -> Cg l a
-withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
-    ST _ _ s' a' b' _ <- appSTScope tau
-    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
-
-withInstantiatedTyVars _tau k =
-    k
-
 cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
     withSummaryContext decl $ do

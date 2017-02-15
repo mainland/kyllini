@@ -44,6 +44,11 @@ module KZC.Expr.Lint.Monad (
     extendTyVars,
     lookupTyVar,
 
+    extendTyVarTypes,
+    maybeLookupTyVarType,
+    lookupTyVarType,
+    askTyVarTypeSubst,
+
     localSTIndTypes,
     askSTIndTypes,
     inSTScope,
@@ -111,6 +116,7 @@ data TcEnv = TcEnv
     , extFuns    :: !(Set Var)
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
+    , tyVarTypes :: !(Map TyVar Type)
     , stIndTys   :: !(Maybe (Type, Type, Type))
     }
   deriving (Eq, Ord, Show)
@@ -124,6 +130,7 @@ defaultTcEnv = TcEnv
     , extFuns    = mempty
     , varTypes   = mempty
     , tyVars     = mempty
+    , tyVarTypes = mempty
     , stIndTys   = Nothing
     }
   where
@@ -329,6 +336,24 @@ lookupTyVar tv =
     lookupTcEnv tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
+
+extendTyVarTypes :: MonadTc m => [(TyVar, Type)] -> m a -> m a
+extendTyVarTypes = extendTcEnv tyVarTypes (\env x -> env { tyVarTypes = x })
+
+maybeLookupTyVarType :: MonadTc m => TyVar -> m (Maybe Type)
+maybeLookupTyVarType alpha = asksTc (Map.lookup alpha . tyVarTypes)
+
+lookupTyVarType :: MonadTc m => TyVar -> m Type
+lookupTyVarType alpha =
+    lookupTcEnv tyVarTypes onerr alpha
+  where
+    onerr = faildoc $
+            text "Instantiated type variable" <+> ppr alpha <+>
+            text "not in scope"
+
+-- | Return the current substitution from type variables to types.
+askTyVarTypeSubst :: MonadTc m => m (Map TyVar Type)
+askTyVarTypeSubst = asksTc tyVarTypes
 
 localSTIndTypes :: MonadTc m => Maybe (Type, Type, Type) -> m a -> m a
 localSTIndTypes taus m =
