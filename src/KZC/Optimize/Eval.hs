@@ -118,38 +118,40 @@ evalDecl (LetD decl s) k =
     go (HeapDeclVal mkDecl) =
         k $ \h -> LetD <$> mkDecl h <*> pure s
 
-evalDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
+evalDecl decl@(LetFunD f ns vbs tau_ret e l) k =
     withSummaryContext decl $
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' ->
       withUniqVars vs $ \vs' -> do
       e' <- killHeap $
-            extendLetFun f' ivs vbs tau_ret $
+            extendLetFun f' ns vbs tau_ret $
             extendUnknownVarBinds vbs $
             withSummaryContext e $
             toExp <$> evalExp e
-      extendVarBinds [(bVar f', FunClosV theta ivs (vs' `zip` taus) tau_ret eval)] $
-        k $ const . return $ LetFunD f' ivs (vs' `zip` taus) tau_ret e' l
+      extendVarBinds [(bVar f', FunClosV theta ns (vs' `zip` taus) tau_ret eval)] $
+        k $ const . return $ LetFunD f' ns (vs' `zip` taus) tau_ret e' l
   where
     (vs, taus) = unzip vbs
-    tau       = FunT ivs taus tau_ret l
+    tau       = forallT (ns `zip` repeat NatK) $
+                FunT taus tau_ret l
 
     eval :: EvalM l m (Val l m Exp)
     eval =
-        extendIVars (ivs `zip` repeat IotaK) $
+        extendTyVars (ns `zip` repeat NatK) $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         withSummaryContext e $
         evalExp e
 
-evalDecl (LetExtFunD f iotas vbs tau_ret l) k =
+evalDecl (LetExtFunD f ns vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
     extendVarBinds [(bVar f, UnknownV)] $
-    k $ const . return $ LetExtFunD f iotas vbs tau_ret l
+    k $ const . return $ LetExtFunD f ns vbs tau_ret l
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = forallT (ns `zip` repeat NatK) $
+          FunT (map snd vbs) tau_ret l
 
 evalDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
@@ -172,26 +174,27 @@ evalDecl decl@(LetCompD v tau comp s) k =
         withSummaryContext comp $
         traverse uniquify comp >>= evalComp
 
-evalDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
+evalDecl decl@(LetFunCompD f ns vbs tau_ret comp l) k =
     withSummaryContext decl $
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' ->
       withUniqVars vs $ \vs' -> do
       comp' <- killHeap $
-               extendLetFun f ivs vbs tau_ret $
+               extendLetFun f ns vbs tau_ret $
                extendUnknownVarBinds vbs $
                evalComp comp >>= toComp
-      extendCVarBinds [(bVar f', FunCompClosV theta ivs (vs' `zip` taus) tau_ret eval)] $
-        k $ const . return $ LetFunCompD f' ivs (vs' `zip` taus) tau_ret comp' l
+      extendCVarBinds [(bVar f', FunCompClosV theta ns (vs' `zip` taus) tau_ret eval)] $
+        k $ const . return $ LetFunCompD f' ns (vs' `zip` taus) tau_ret comp' l
   where
     (vs, taus) = unzip vbs
-    tau        = FunT ivs taus tau_ret l
+    tau        = forallT (ns `zip` repeat NatK) $
+                 FunT taus tau_ret l
 
     eval :: EvalM l m (Val l m (Comp l))
     eval =
         withSummaryContext comp $
-        extendIVars (ivs `zip` repeat IotaK) $
+        extendTyVars (ns `zip` repeat NatK) $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         traverse uniquify comp >>= evalComp
@@ -357,21 +360,21 @@ evalStep (VarC _ v _) =
         text "Variable" <+> ppr v <+>
         text "is not a computation, but we are trying to call it!"
 
-evalStep step@(CallC _ f iotas args _) =
+evalStep step@(CallC _ f taus args _) =
     withSummaryContext step $ do
     maybe_f' <- lookupSubst f
     v_f      <- case maybe_f' of
                   Nothing -> lookupCVarBind f
                   Just f' -> lookupCVarBind f'
-    iotas'  <- mapM simplIota iotas
+    taus'   <- mapM simplType taus
     v_args  <- mapM evalArg args
-    go v_f iotas' v_args
+    go v_f taus' v_args
   where
-    go :: Val l m a -> [Iota] -> [ArgVal l m] -> EvalM l m (Val l m (Comp l))
-    go (FunCompClosV theta ivs vbs _tau_ret k) iotas' v_args =
+    go :: Val l m a -> [Type] -> [ArgVal l m] -> EvalM l m (Val l m (Comp l))
+    go (FunCompClosV theta ns vbs _tau_ret k) taus' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' ->
-        extendIVarSubst (ivs `zip` iotas') $
+        extendTyVarSubst (ns `zip` taus') $
         extendArgBinds  (vs' `zip` v_args) $ do
         taus' <- mapM simplType taus
         k >>= wrapLetArgs vs' taus'
@@ -404,7 +407,7 @@ evalStep step@(CallC _ f iotas args _) =
                 comp <- toComp val
                 return $ v `member` (fvs comp :: Set Var)
 
-    go _val _iotas' _v_es =
+    go _val _taus' _v_es =
       faildoc $ text "Cannot call computation function" <+> ppr f
 
     evalArg :: Arg l -> EvalM l m (ArgVal l m)
@@ -613,10 +616,10 @@ evalExp e =
             maybePartialVal $ liftCast tau val
 
         unop Len val = do
-            (iota, _) <- inferExp e >>= checkArrOrRefArrT
-            psi       <- askIVarSubst
-            case subst psi mempty iota of
-              ConstI n _ -> evalConst $ intC n
+            (n, _) <- inferExp e >>= checkArrOrRefArrT
+            phi    <- askTyVarSubst
+            case subst phi mempty n of
+              NatT n _ -> evalConst $ intC n
               _ -> partialExp $ UnopE op (toExp val) s
 
         unop op val =
@@ -757,22 +760,22 @@ evalExp e =
             v :: Var
             [v] = Set.toList (binders decl)
 
-    eval flags e@(CallE f iotas es s) | peval flags = do
+    eval flags e@(CallE f taus es s) | peval flags = do
         maybe_f' <- lookupSubst f
         v_f      <- case maybe_f' of
                       Nothing -> lookupVarBind f
                       Just f' -> lookupVarBind f'
-        iotas'  <- mapM simplIota iotas
+        taus'   <- mapM simplType taus
         v_es    <- mapM (eval flags) es
         tau     <- inferExp e
-        go tau v_f iotas' v_es
+        go tau v_f taus' v_es
       where
-        go :: Type -> Val l m Exp -> [Iota] -> [Val l m Exp] -> EvalM l m (Val l m Exp)
-        go _tau (FunClosV theta ivs vbs _tau_ret k) iotas' v_es =
+        go :: Type -> Val l m Exp -> [Type] -> [Val l m Exp] -> EvalM l m (Val l m Exp)
+        go _tau (FunClosV theta ns vbs _tau_ret k) tau' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
-            extendIVarSubst (ivs `zip` iotas') $
-            extendVarBinds  (vs' `zip` v_es) $ do
+            extendTyVarSubst (ns `zip` tau') $
+            extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
             k >>= wrapLetArgs vs' taus'
           where
@@ -808,21 +811,21 @@ evalExp e =
         -- Note that the heap cannot change as the result of evaluating function
         -- arguments, so we can call 'partialCmd' here instead of saving the heap
         -- above and constructing a 'CmdV' from it manually.
-        go tau (ExpV (VarE f' _)) iotas' v_es
+        go tau (ExpV (VarE f' _)) taus' v_es
            | isPureT tau = do killVars e
-                              partialExp $ CallE f' iotas' (map toExp v_es) s
+                              partialExp $ CallE f' taus' (map toExp v_es) s
            | otherwise   = do killVars e
-                              partialCmd $ CallE f' iotas' (map toExp v_es) s
+                              partialCmd $ CallE f' taus' (map toExp v_es) s
 
-        go _tau val _iotas' _v_es =
+        go _tau val _taus' _v_es =
           faildoc $ text "Cannot call function" <+> ppr val
 
-    eval flags e@(CallE f iotas es s) = do
+    eval flags e@(CallE f taus es s) = do
         tau  <- inferExp e
         v_es <- mapM (eval flags) es
         if isPureT tau
-          then partialExp $ CallE f iotas (map toExp v_es) s
-          else partialCmd $ CallE f iotas (map toExp v_es) s
+          then partialExp $ CallE f taus (map toExp v_es) s
+          else partialCmd $ CallE f taus (map toExp v_es) s
 
     eval flags (DerefE e s) =
         eval flags e >>= go

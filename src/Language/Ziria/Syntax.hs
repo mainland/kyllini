@@ -263,7 +263,7 @@ data Type = UnitT !SrcLoc
           | ST Type Type Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Int !SrcLoc
+data Ind = NatT Int !SrcLoc
          | ArrI Var !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -715,7 +715,7 @@ instance Pretty Type where
         text "ST" <+> ppr w <+> ppr tau1 <+> ppr tau2
 
 instance Pretty Ind where
-    ppr (ConstI i _) = ppr i
+    ppr (NatT i _) = ppr i
     ppr (ArrI v _)   = ppr v
     ppr (NoneI _)    = empty
 

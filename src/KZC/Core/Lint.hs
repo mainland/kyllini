@@ -170,11 +170,11 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
 checkDecl (LetD decl _) k =
     checkLocalDecl decl k
 
-checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
+checkDecl decl@(LetFunD f ns vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
     alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
-        tau_ret' <- extendLetFun f ivs vbs tau_ret $
+        tau_ret' <- extendLetFun f ns vbs tau_ret $
                     withFvContext e $
                     inferExp e >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
@@ -183,14 +183,14 @@ checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
     k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
-checkDecl decl@(LetExtFunD f ivs vbs tau_ret l) k = do
+checkDecl decl@(LetExtFunD f ns vbs tau_ret l) k = do
     alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendExtFuns [(bVar f, tau)] k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
@@ -218,11 +218,11 @@ checkDecl decl@(LetCompD v tau comp _) k = do
         checkTypeEquality tau' tau
     extendVars [(bVar v, tau)] k
 
-checkDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
+checkDecl decl@(LetFunCompD f ns vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $ do
     alwaysWithSummaryContext decl $ do
         checkKind tau PhiK
-        tau_ret' <- extendLetFun f ivs vbs tau_ret $
+        tau_ret' <- extendLetFun f ns vbs tau_ret $
                     withFvContext comp $
                     inferComp comp >>= absSTScope
         checkTypeEquality tau_ret' tau_ret
@@ -231,7 +231,7 @@ checkDecl decl@(LetFunCompD f ivs vbs tau_ret comp l) k =
     k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 inferView :: forall m . MonadTc m => View -> m Type
 inferView (IdxVW v e len l) = do
@@ -252,7 +252,7 @@ inferView (IdxVW v e len l) = do
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 checkView :: MonadTc m => View -> Type -> m ()
 checkView vw tau = do
@@ -394,7 +394,7 @@ inferExp (BinopE op e1 e2 _) = do
         (iota2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
         case (iota1, iota2) of
-          (ConstI n _, ConstI m _) -> return $ ArrT (ConstI (n+m) s) tau1_elem s
+          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
           _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
       where
         s :: SrcLoc
@@ -514,7 +514,7 @@ inferExp (ArrayE es l) = do
     case taus of
       [] -> faildoc $ text "Empty array expression"
       tau:taus -> do mapM_ (checkTypeEquality tau) taus
-                     return $ ArrT (ConstI (length es) l) tau l
+                     return $ ArrT (NatT (length es) l) tau l
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
@@ -543,7 +543,7 @@ inferExp (IdxE e1 e2 len l) = do
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
@@ -667,30 +667,22 @@ checkGenerators gs k =
           go (n*m) gs
 
 inferCall :: forall m e . MonadTc m
-          => Var -> [Iota] -> [e] -> m ([Type], Type)
-inferCall f ies args = do
-    (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
-    checkNumIotas (length ies)  (length ivs)
-    checkNumArgs  (length args) (length taus)
-    extendIVars (ivs `zip` repeat IotaK) $ do
-      mapM_ checkIotaArg ies
-      let theta = Map.fromList (ivs `zip` ies)
-      let phi   = fvs taus
-      return (subst theta phi taus, subst theta phi tau_ret)
+          => Var -> [Type] -> [e] -> m ([Type], Type)
+inferCall f taus args = do
+    (tvks, taus_args, tau_ret) <- lookupVar f >>= checkFunT
+    checkNumTypeArgs (length taus) (length tvks)
+    checkNumArgs     (length args) (length taus_args)
+    extendTyVars tvks $ do
+      let theta = Map.fromList (map fst tvks `zip` taus)
+      let phi   = fvs taus_args <> fvs tau_ret
+      return (subst theta phi taus_args, subst theta phi tau_ret)
   where
-    checkIotaArg :: Iota -> m ()
-    checkIotaArg ConstI{} =
-        return ()
-
-    checkIotaArg (VarI iv _) =
-        void $ lookupIVar iv
-
-    checkNumIotas :: Int -> Int -> m ()
-    checkNumIotas n nexp =
-        when (n /= nexp) $
+    checkNumTypeArgs :: Int -> Int -> m ()
+    checkNumTypeArgs n ntaus =
+        when (n /= ntaus) $
              faildoc $
-             text "Expected" <+> ppr nexp <+>
-             text "index expression arguments but got" <+> ppr n
+             text "Expected" <+> ppr ntaus <+>
+             text "type arguments but got" <+> ppr n
 
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =

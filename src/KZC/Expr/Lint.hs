@@ -169,26 +169,26 @@ checkDecl decl@(LetRefD v tau (Just e) _) k = do
         checkExp e tau
     extendVars [(v, refT tau)] k
 
-checkDecl decl@(LetFunD f ivs vbs tau_ret e l) k = do
+checkDecl decl@(LetFunD f alphas vbs tau_ret e l) k = do
     alwaysWithSummaryContext decl $
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
       alwaysWithSummaryContext decl $ do
-          tau_ret' <- extendLetFun f ivs vbs tau_ret $
+          tau_ret' <- extendLetFun f alphas vbs tau_ret $
                       withFvContext e $
                       inferExp e >>= absSTScope
           checkTypeEquality tau_ret' tau_ret
       k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT alphas (map snd vbs) tau_ret l
 
-checkDecl decl@(LetExtFunD f ivs vbs tau_ret l) k = do
+checkDecl decl@(LetExtFunD f alphas vbs tau_ret l) k = do
     alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendExtFuns [(f, tau)] k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT alphas (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
@@ -221,7 +221,7 @@ inferConst l (ArrayC cs) = do
     let tau = V.head taus
     unless (V.all (== tau) (V.drop 1 taus)) $
       faildoc $ text "Constant array elements do not all have the same type"
-    return $ ArrT (ConstI (length cs) l) tau l
+    return $ ArrT (NatT (length cs) l) tau l
 
 inferConst l (ReplicateC n c) = do
     tau <- inferConst l c
@@ -360,7 +360,7 @@ inferExp (BinopE op e1 e2 _) = do
         (iota2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
         case (iota1, iota2) of
-          (ConstI n _, ConstI m _) -> return $ ArrT (ConstI (n+m) s) tau1_elem s
+          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
           _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
       where
         s :: SrcLoc
@@ -435,26 +435,21 @@ inferExp (LetE decl body _) =
     checkLetKind kappa =
       faildoc $ text "Body of let has kind" <+> ppr kappa
 
-inferExp (CallE f ies es _) = do
-    (ivs, taus, tau_ret) <- lookupVar f >>= checkFunT
-    checkNumIotas (length ies) (length ivs)
-    checkNumArgs  (length es)  (length taus)
-    extendIVars (ivs `zip` repeat IotaK) $ do
-      mapM_ checkIotaArg ies
-      let theta = Map.fromList (ivs `zip` ies)
-      let phi   = fvs taus
-      zipWithM_ checkArg es (subst theta phi taus)
-      unless (isPureishT tau_ret) $
-          checkNoAliasing (es `zip` taus)
-      return $ subst theta phi tau_ret
+inferExp (CallE f taus es _) = do
+    (tvks, taus_args, tau_ret) <- lookupVar f >>= checkFunT
+    checkNumTypeArgs (length taus) (length tvks)
+    checkNumArgs     (length es)   (length taus_args)
+    extendTyVars tvks $ do
+      zipWithM_ checkKind taus (map snd tvks)
+      let theta      = Map.fromList (map fst tvks `zip` taus)
+      let phi        = fvs taus_args <> fvs tau_ret
+      let taus_args' = subst theta phi taus_args
+      let tau_ret'   = subst theta phi tau_ret
+      zipWithM_ checkArg es taus_args'
+      unless (isPureishT tau_ret') $
+          checkNoAliasing (es `zip` taus_args')
+      return tau_ret'
   where
-    checkIotaArg :: Iota -> m ()
-    checkIotaArg ConstI{} =
-        return ()
-
-    checkIotaArg (VarI iv _) =
-        void $ lookupIVar iv
-
     -- The argument may not have a fully instantiated ST type even though the
     -- parameter is a fully instantiated ST type.
     checkArg :: Exp -> Type -> m ()
@@ -464,12 +459,12 @@ inferExp (CallE f ies es _) = do
                            tau' <- inferExp e >>= appSTScope
                            checkTypeEquality tau tau'
 
-    checkNumIotas :: Int -> Int -> m ()
-    checkNumIotas n nexp =
-        when (n /= nexp) $
+    checkNumTypeArgs :: Int -> Int -> m ()
+    checkNumTypeArgs n ntaus =
+        when (n /= ntaus) $
              faildoc $
-             text "Expected" <+> ppr nexp <+>
-             text "index expression arguments but got" <+> ppr n
+             text "Expected" <+> ppr ntaus <+>
+             text "type arguments but got" <+> ppr n
 
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
@@ -522,7 +517,7 @@ inferExp (ArrayE es l) = do
     case taus of
       [] -> faildoc $ text "Empty array expression"
       tau:taus -> do mapM_ (checkTypeEquality tau) taus
-                     return $ ArrT (ConstI (length es) l) tau l
+                     return $ ArrT (NatT (length es) l) tau l
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
@@ -551,7 +546,7 @@ inferExp (IdxE e1 e2 len l) = do
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
@@ -793,87 +788,79 @@ checkBitcast tau1 tau2 = do
 -- | Check that @tau1@ is equal to @tau2@.
 checkTypeEquality :: forall m . MonadTc m => Type -> Type -> m ()
 checkTypeEquality tau1 tau2 =
-    checkT Map.empty Map.empty tau1 tau2
+    checkT Map.empty tau1 tau2
   where
     checkT :: Map TyVar TyVar
-           -> Map IVar IVar
            -> Type
            -> Type
            -> m ()
-    checkT _ _ UnitT{} UnitT{} = return ()
-    checkT _ _ BoolT{} BoolT{} = return ()
+    checkT _ UnitT{} UnitT{} = return ()
+    checkT _ BoolT{} BoolT{} = return ()
 
-    checkT _ _ (FixT ip _) (FixT ip' _) | ip' == ip =
+    checkT _ (FixT ip _) (FixT ip' _) | ip' == ip =
         return ()
 
-    checkT _ _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
+    checkT _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
         return ()
 
-    checkT _ _ StringT{} StringT{} = return ()
+    checkT _ StringT{} StringT{} = return ()
 
-    checkT theta phi (ArrT iota1 tau1 _) (ArrT iota2 tau2 _) = do
-        checkI phi iota1 iota2
-        checkT theta phi tau1 tau2
+    checkT theta (ArrT nat1 tau1 _) (ArrT nat2 tau2 _) = do
+        checkT theta nat1 nat2
+        checkT theta tau1 tau2
 
-    checkT _ _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
+    checkT _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
         return ()
 
-    checkT theta phi (ST alphas_a omega_a tau1_a tau2_a tau3_a _)
-                     (ST alphas_b omega_b tau1_b tau2_b tau3_b _)
+    checkT theta (ST alphas_a omega_a tau1_a tau2_a tau3_a _)
+                 (ST alphas_b omega_b tau1_b tau2_b tau3_b _)
         | length alphas_a == length alphas_b = do
-          checkO theta  phi omega_a omega_b
-          checkT theta' phi tau1_a tau1_b
-          checkT theta' phi tau2_a tau2_b
-          checkT theta' phi tau3_a tau3_b
+          checkO theta  omega_a omega_b
+          checkT theta' tau1_a tau1_b
+          checkT theta' tau2_a tau2_b
+          checkT theta' tau3_a tau3_b
       where
         theta' :: Map TyVar TyVar
         theta' = Map.fromList (alphas_a `zip` alphas_b) `Map.union` theta
 
-    checkT theta phi (FunT iotas_a taus_a tau_a _)
-                     (FunT iotas_b taus_b tau_b _)
-        | length iotas_a == length iotas_b && length taus_a == length taus_b = do
-          zipWithM_ (checkT theta phi') taus_a taus_b
-          checkT theta phi' tau_a tau_b
-      where
-        phi' :: Map IVar IVar
-        phi' = Map.fromList (iotas_a `zip` iotas_b) `Map.union` phi
+    checkT theta (FunT taus_a tau_a _)
+                 (FunT taus_b tau_b _)
+        | length taus_a == length taus_b = do
+          zipWithM_ (checkT theta) taus_a taus_b
+          checkT theta tau_a tau_b
 
-    checkT theta phi (RefT tau1 _) (RefT tau2 _) =
-        checkT theta phi tau1 tau2
+    checkT theta (RefT tau1 _) (RefT tau2 _) =
+        checkT theta tau1 tau2
 
-    checkT theta _ (TyVarT alpha _) (TyVarT beta _)
+    checkT theta (TyVarT alpha _) (TyVarT beta _)
         | fromMaybe alpha (Map.lookup alpha theta) == beta =
         return ()
 
-    checkT _ _ _ _ =
+    checkT _ (NatT n1 _) (NatT n2 _) | n2 == n1 =
+        return ()
+
+    checkT theta (ForallT tvks1 tau1 _) (ForallT tvks2 tau2 _)
+        | length tvks1 == length tvks2 = do
+          zipWithM_ checkKindEquality (map snd tvks1) (map snd tvks2)
+          checkT theta' tau1 tau2
+      where
+        theta' :: Map TyVar TyVar
+        theta' = Map.fromList (map fst tvks1 `zip` map fst tvks2) `Map.union` theta
+
+    checkT _ _ _ =
         err
 
     checkO :: Map TyVar TyVar
-           -> Map IVar IVar
            -> Omega
            -> Omega
            -> m ()
-    checkO theta phi (C tau1) (C tau2) =
-        checkT theta phi tau1 tau2
+    checkO theta (C tau1) (C tau2) =
+        checkT theta tau1 tau2
 
-    checkO _ _ T{} T{} =
+    checkO _ T{} T{} =
         return ()
 
-    checkO _ _ _ _ =
-        err
-
-    checkI :: Map IVar IVar
-           -> Iota
-           -> Iota
-           -> m ()
-    checkI _ (ConstI i1 _) (ConstI i2 _) | i1 == i2 =
-        return ()
-
-    checkI phi (VarI iv1 _) (VarI iv2 _)
-        | fromMaybe iv1 (Map.lookup iv1 phi) == iv2 =
-        return ()
-
-    checkI _ _ _ =
+    checkO _ _ _ =
         err
 
     err :: m ()
@@ -900,8 +887,8 @@ inferKind = inferType
     inferType StringT{} = return TauK
     inferType StructT{} = return TauK
 
-    inferType (ArrT iota tau _) = do
-        void $ inferIota iota
+    inferType (ArrT n tau _) = do
+        checkKind n NatK
         kappa <- inferType tau
         checkKindEquality kappa TauK
         return TauK
@@ -918,8 +905,7 @@ inferKind = inferType
         checkKind tau TauK
         return RhoK
 
-    inferType (FunT ivs taus tau_ret _) =
-        extendIVars (ivs `zip` repeat IotaK) $ do
+    inferType (FunT taus tau_ret _) = do
         mapM_ (checkArgKind (isPureishT tau_ret)) taus
         checkRetKind tau_ret
         return PhiK
@@ -946,12 +932,15 @@ inferKind = inferType
               MuK  -> return ()
               _    -> checkKindEquality kappa TauK
 
+    inferType NatT{} =
+        return NatK
+
+    inferType (ForallT tvks tau _) =
+        extendTyVars tvks $
+        inferType tau
+
     inferType (TyVarT alpha _) =
         lookupTyVar alpha
-
-    inferIota :: Iota -> m Kind
-    inferIota ConstI{}    = return IotaK
-    inferIota (VarI iv _) = lookupIVar iv
 
     inferOmega :: Omega -> m Kind
     inferOmega (C tau) = do
@@ -1041,9 +1030,10 @@ checkNumT tau =
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
-checkArrT :: MonadTc m => Type -> m (Iota, Type)
-checkArrT (ArrT iota alpha _) =
-    return (iota, alpha)
+checkArrT :: MonadTc m => Type -> m (Type, Type)
+checkArrT (ArrT nat alpha _) = do
+    checkKind nat NatK
+    return (nat, alpha)
 
 checkArrT tau =
     faildoc $ nest 2 $ group $
@@ -1055,8 +1045,8 @@ checkKnownArrT :: forall m . MonadTc m => Type -> m (Int, Type)
 checkKnownArrT tau =
     checkArrT tau >>= go
   where
-    go :: (Iota, Type) -> m (Int, Type)
-    go (ConstI n _, tau) =
+    go :: (Type, Type) -> m (Int, Type)
+    go (NatT n _, tau) =
         return (n, tau)
 
     go _ =
@@ -1065,9 +1055,13 @@ checkKnownArrT tau =
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
-checkArrOrRefArrT :: Monad m => Type -> m (Iota, Type)
-checkArrOrRefArrT (ArrT iota tau _)          = return (iota, tau)
-checkArrOrRefArrT (RefT (ArrT iota tau _) _) = return (iota, tau)
+checkArrOrRefArrT :: Monad m => Type -> m (Type, Type)
+checkArrOrRefArrT (ArrT n tau _) =
+    return (n, tau)
+
+checkArrOrRefArrT (RefT (ArrT n tau _) _) =
+    return (n, tau)
+
 checkArrOrRefArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
@@ -1107,9 +1101,12 @@ checkRefT tau =
     faildoc $ nest 2 $ group $
     text "Expected ref type but got:" <+/> ppr tau
 
-checkFunT :: MonadTc m => Type -> m ([IVar], [Type], Type)
-checkFunT (FunT iotas taus tau_ret _) =
-    return (iotas, taus, tau_ret)
+checkFunT :: MonadTc m => Type -> m ([(TyVar, Kind)], [Type], Type)
+checkFunT (ForallT tvks (FunT taus tau_ret _) _) =
+    return (tvks, taus, tau_ret)
+
+checkFunT (FunT taus tau_ret _) =
+    return ([], taus, tau_ret)
 
 checkFunT tau =
     faildoc $ nest 2 $ group $

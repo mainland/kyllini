@@ -256,9 +256,9 @@ void kz_main(const typename kz_params_t* $id:params)
         k
 
     emitsk :: EmitsK l
-    emitsk iota tau ce _klbl k = do
-        ceAddr <- cgAddrOf (arrT iota tau) ce
-        cgOutput (arrT iota tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
+    emitsk n tau ce _klbl k = do
+        ceAddr <- cgAddrOf (arrT n tau) ce
+        cgOutput (arrT n tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
         k
 
     cgInitInput :: Type -> CExp l -> CExp l -> Cg l ()
@@ -308,7 +308,7 @@ void kz_main(const typename kz_params_t* $id:params)
     cgInput tau cbuf cn = go tau
       where
         go :: Type -> Cg l (CExp l)
-        go (ArrT iota tau _)       = do ci <- cgIota iota
+        go (ArrT n tau _)          = do ci <- cgNatType n
                                         cgInput tau cbuf (cn*ci)
         go tau | isBitT tau        = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
         go (FixT (I 8)  _)         = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
@@ -332,7 +332,7 @@ void kz_main(const typename kz_params_t* $id:params)
     cgOutput tau cbuf cn cval = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT iota tau _)       = do ci <- cgIota iota
+        go (ArrT n tau _)          = do ci <- cgNatType n
                                         cgOutput tau cbuf (cn*ci) cval
         go tau | isBitT tau        = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
         go (FixT (I 8)  _)         = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
@@ -451,18 +451,18 @@ cgDecl (LetD decl _) k = do
     flags <- askConfig
     cgLocalDecl flags decl k
 
-cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
+cgDecl decl@(LetFunD f nats vbs tau_ret e l) k = do
     cf <- cvar f
     extendVars [(bVar f, tau)] $ do
       extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
         appendTopComment (ppr f <+> colon <+> align (ppr tau))
         withSummaryContext decl $
-            extendLetFun f iotas vbs tau_ret $ do
-            (ciotas, cparams1) <- unzip <$> mapM cgIVar iotas
-            (cvbs,   cparams2) <- unzip <$> mapM cgVarBind vbs
-            cres_ident         <- gensym "let_res"
+            extendLetFun f nats vbs tau_ret $ do
+            (cnats, cparams1) <- unzip <$> mapM cgTyVar nats
+            (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
+            cres_ident        <- gensym "let_res"
             cblock <- inNewCodeBlock_ $
-                      extendIVarCExps (iotas `zip` ciotas) $
+                      extendTyVarCExps (nats `zip` cnats) $
                       extendVarCExps  (map fst vbs `zip` cvbs) $ do
                       cres <- if isReturnedByRef tau_res
                               then return $ CExp [cexp|$id:cres_ident|]
@@ -481,14 +481,14 @@ cgDecl decl@(LetFunD f iotas vbs tau_ret e l) k = do
     tau_res = resultType tau_ret
 
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT nats (map snd vbs) tau_ret l
 
-cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
+cgDecl decl@(LetExtFunD f nats vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
     extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do
-        (_, cparams1) <- unzip <$> mapM cgIVar iotas
+        (_, cparams1) <- unzip <$> mapM cgTyVar nats
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
           then do cretparam <- cgRetParam tau_res Nothing
@@ -498,7 +498,7 @@ cgDecl decl@(LetExtFunD f iotas vbs tau_ret l) k =
     k
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT nats (map snd vbs) tau_ret l
 
     tau_res :: Type
     tau_res = resultType tau_ret
@@ -531,27 +531,27 @@ cgDecl (LetCompD v tau comp _) k =
         useLabels (compUsedLabels comp')
         cgComp comp' klbl k
 
-cgDecl (LetFunCompD f ivs vbs tau_ret comp l) k =
+cgDecl (LetFunCompD f nats vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
     extendVarCExps [(bVar f, CFunComp funcompc)] k
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT nats (map snd vbs) tau_ret l
 
     -- Compile a bound computation function given its arguments. This will be
     -- called in some future context. It may be called multiple times, so we
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
     funcompc :: forall a . FunCompC l a
-    funcompc iotas es klbl k =
+    funcompc _taus es klbl k =
         withInstantiatedTyVars tau_ret $ do
-        comp'  <- traverse uniquify comp
-        ciotas <- mapM cgIota iotas
-        ces    <- mapM cgArg es
-        extendIVars (ivs `zip` repeat IotaK) $
+        comp' <- traverse uniquify comp
+        cnats <- mapM cgNatType (map tyVarT nats)
+        ces   <- mapM cgArg es
+        extendTyVars (nats `zip` repeat NatK) $
           extendVars  vbs $
-          extendIVarCExps (ivs `zip` ciotas) $
-          extendVarCExps  (map fst vbs `zip` ces) $ do
+          extendTyVarCExps (nats `zip` cnats) $
+          extendVarCExps   (map fst vbs `zip` ces) $ do
           useLabels (compUsedLabels comp')
           cgComp comp' klbl k
       where
@@ -619,7 +619,7 @@ cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
     ces      <- V.toList <$> V.mapM cgConst cs
-    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
+    return $ CInit [cinit|{ $inits:(cgArrayNatTnits tau ces) }|]
 
 cgConst (ReplicateC n c) = do
     tau    <- inferConst noLoc c
@@ -628,7 +628,7 @@ cgConst (ReplicateC n c) = do
     return $
       if c == c_dflt
       then CInit [cinit|{ $init:(toInitializer ce) }|]
-      else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
+      else CInit [cinit|{ $inits:(cgArrayNatTnits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
     cgConst =<< ArrayC <$> enumType tau
@@ -649,8 +649,8 @@ cgConst (StructC s flds) = do
                 Just c -> cgConst c
         return $ toInitializer ce
 
-cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
-cgArrayConstInits tau ces | isBitT tau =
+cgArrayNatTnits :: forall l . Type -> [CExp l] -> [C.Initializer]
+cgArrayNatTnits tau ces | isBitT tau =
     finalizeBits $ foldl mkBits (0,0,[]) ces
   where
     mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
@@ -669,7 +669,7 @@ cgArrayConstInits tau ces | isBitT tau =
     const (CInt i) = [cinit|$(chexconst i)|]
     const ce       = toInitializer ce
 
-cgArrayConstInits _tau ces =
+cgArrayNatTnits _tau ces =
     map toInitializer ces
 
 {- Note [Bit Arrays]
@@ -902,11 +902,11 @@ cgExp e k =
         cgUnop tau_from ce (Bitcast tau_to) =
             cgBitcast ce tau_from tau_to
 
-        cgUnop (RefT (ArrT iota _ _) _) _ Len =
-            cgIota iota
+        cgUnop (RefT (ArrT n _ _) _) _ Len =
+            cgNatType n
 
-        cgUnop (ArrT iota _ _) _ Len =
-            cgIota iota
+        cgUnop (ArrT n _ _) _ Len =
+            cgNatType n
 
         cgUnop _ _ Len =
             panicdoc $
@@ -1054,8 +1054,8 @@ cgExp e k =
                 (++) <$> unfoldCat e1 <*> unfoldCat e2
 
             unfoldCat e = do
-                (iota, _) <- inferExp e >>= checkArrT
-                n         <- cgConstIota iota
+                (n, _) <- inferExp e >>= checkArrT
+                n      <- cgConstNatType n
                 return [(e, fromIntegral n)]
 
             -- XXX: Need to allocate a single array and fill it using cgSlice
@@ -1093,18 +1093,18 @@ cgExp e k =
         cgLocalDecl flags decl $
           cgExp e k
 
-    go (CallE f iotas es l) k = do
-        FunT ivs _ tau_ret _ <- lookupVar f
-        let tau_res          =  resultType tau_ret
-        cf                   <- lookupVarCExp f
-        ciotas               <- mapM cgIota iotas
-        ces                  <- mapM cgArg es
+    go (CallE f alphas es l) k = do
+        (nats, _, tau_ret) <- lookupVar f >>= unFunT
+        let tau_res        =  resultType tau_ret
+        cf                 <- lookupVarCExp f
+        cns                <- mapM cgNatType alphas
+        ces                <- mapM cgArg es
         if isReturnedByRef tau_res
-          then extendIVarCExps (ivs `zip` ciotas) $ do
+          then extendTyVarCExps (nats `zip` cns) $ do
                (cres, k') <- splitMultishotBind "call_res" tau_res True k
-               appendStm $ rl l [cstm|$cf($args:ciotas, $args:(ces ++ [cres]));|]
+               appendStm $ rl l [cstm|$cf($args:cns, $args:(ces ++ [cres]));|]
                k'
-          else runKont k $ CExp [cexp|$cf($args:ciotas, $args:ces)|]
+          else runKont k $ CExp [cexp|$cf($args:cns, $args:ces)|]
       where
         cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
@@ -1184,10 +1184,10 @@ cgExp e k =
             runKont k $ CExp [cexp|$id:cv|]
 
     go (IdxE e1 e2 maybe_len _) k = do
-        (iota, tau) <- inferExp e1 >>= checkArrOrRefArrT
-        cn          <- cgIota iota
-        ce1         <- cgExpOneshot e1
-        ce2         <- cgExpOneshot e2
+        (n, tau) <- inferExp e1 >>= checkArrOrRefArrT
+        cn       <- cgNatType n
+        ce1      <- cgExpOneshot e1
+        ce2      <- cgExpOneshot e2
         case maybe_len of
           Nothing  -> calias e <$> cgIdx tau ce1 cn ce2 >>= runKont k
           Just len -> calias e <$> cgSlice tau ce1 cn ce2 len >>= runKont k
@@ -1231,7 +1231,7 @@ cgExp e k =
           | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (long long) $ce);|]
         cgPrintScalar FloatT{}          ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-        cgPrintScalar (ArrT iota tau _) ce = cgPrintArray iota tau ce
+        cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
 
         cgPrintScalar (StructT s _) ce | isComplexStruct s =
             appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
@@ -1239,15 +1239,15 @@ cgExp e k =
         cgPrintScalar tau _ =
             faildoc $ text "Cannot print type:" <+> ppr tau
 
-        cgPrintArray :: Iota -> Type -> CExp l -> Cg l ()
-        cgPrintArray iota tau ce | isBitT tau = do
-            cn    <- cgIota iota
-            caddr <- cgAddrOf (ArrT iota tau noLoc) ce
+        cgPrintArray :: Type -> Type -> CExp l -> Cg l ()
+        cgPrintArray nat tau ce | isBitT tau = do
+            cn    <- cgNatType nat
+            caddr <- cgAddrOf (ArrT nat tau noLoc) ce
             appendStm $ rl l [cstm|kz_bitarray_print($caddr, $cn);|]
 
-        cgPrintArray iota tau ce = do
-            cn    <- cgIota iota
-            caddr <- cgAddrOf (ArrT iota tau noLoc) ce
+        cgPrintArray nat tau ce = do
+            cn    <- cgNatType nat
+            caddr <- cgAddrOf (ArrT nat tau noLoc) ce
             cgFor 0 cn $ \ci -> do
                 cgPrintScalar tau (CExp [cexp|$caddr[$ci]|])
                 if cn .==. ci
@@ -1302,10 +1302,10 @@ cgLoop (Just l) m = cgWithLabel l $ do
     cids <- collectUsed_ m
     useCIds cids
 
-cgIVar :: IVar -> Cg l (CExp l, C.Param)
-cgIVar iv = do
-    civ <- cvar iv
-    return (CExp [cexp|$id:civ|], [cparam|int $id:civ|])
+cgTyVar :: TyVar -> Cg l (CExp l, C.Param)
+cgTyVar alpha = do
+    calpha <- cvar alpha
+    return (CExp [cexp|$id:calpha|], [cparam|int $id:calpha|])
 
 -- | Compile a function variable binding. When the variable is a ref type, it is
 -- represented as a pointer, so we use the 'CPtr' constructor to ensure that
@@ -1325,16 +1325,23 @@ cgVarBind (v, tau) = do
     l :: Loc
     l = locOf v <--> locOf tau
 
-cgIota :: Iota -> Cg l (CExp l)
-cgIota (ConstI i _) = return $ CInt (fromIntegral i)
-cgIota (VarI iv _)  = lookupIVarCExp iv
+-- | Compile a type-level Nat to a C expression.
+cgNatType :: Type -> Cg l (CExp l)
+cgNatType (NatT i _) =
+    return $ CInt (fromIntegral i)
 
--- | Compile an 'Iota' to an 'Integer' constant. If the argument cannot be
--- resolved to a constant, raise an exception.
-cgConstIota :: Iota -> Cg l Integer
-cgConstIota iota = do
-    ciota <- cgIota iota
-    case ciota of
+cgNatType (TyVarT alpha _) =
+    lookupTyVarCExp alpha
+
+cgNatType tau =
+    faildoc $ text "Cannot compile non-Nat kinded type:" <+> ppr tau
+
+-- | Compile a type-level Nat to an 'Integer' constant. If the argument cannot
+-- be resolved to a constant, raise an exception.
+cgConstNatType :: Type -> Cg l Integer
+cgConstNatType tau = do
+    ce <- cgNatType tau
+    case ce of
       CInt n -> return n
       _      -> faildoc $ text "Non-polymorphic array required"
 
@@ -1374,10 +1381,10 @@ cgBits _ (CBits ce) =
 --- XXX: If ce happens to be a slice that starts at an index that is not a
 --- multiple of 'bIT_ARRAY_ELEM_BITS', then it will end up being copied into a
 --- temporary by 'cgAddrOf'. We should instead do our own shift and mask.
-cgBits tau@(ArrT iota _ _) ce | isBitArrT tau = do
+cgBits tau@(ArrT n _ _) ce | isBitArrT tau = do
     ctau  <- cgBitcastType tau
     caddr <- cgAddrOf tau ce
-    w     <- cgConstIota iota
+    w     <- cgConstNatType n
     if cgWidthMatchesBitcastTypeWidth w || not (needsBitMask ce)
       then return [cexp|*(($ty:ctau*) $caddr)|]
       else return [cexp|*(($ty:ctau*) $caddr) & $(chexconst (2^w - 1))|]
@@ -1452,14 +1459,14 @@ cgType StringT{} =
 cgType (StructT s l) =
     return [cty|typename $id:(cstruct s l)|]
 
-cgType (ArrT (ConstI n _) tau _) | isBitT tau =
+cgType (ArrT (NatT n _) tau _) | isBitT tau =
     return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
-cgType (ArrT (ConstI n _) tau _) = do
+cgType (ArrT (NatT n _) tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau[$int:n]|]
 
-cgType tau@(ArrT VarI{} _ _) =
+cgType tau@(ArrT _ _ _) =
     panicdoc $ text "cgType: cannot translate array of unknown size:" <+> ppr tau
 
 cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
@@ -1468,10 +1475,10 @@ cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
 cgType tau@ST{} =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
-cgType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau =
+cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
     return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
 
-cgType (RefT (ArrT (ConstI n _) tau _) _) = do
+cgType (RefT (ArrT (NatT n _) tau _) _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau[$int:n]|]
 
@@ -1483,17 +1490,30 @@ cgType (RefT tau _) = do
     ctau <- cgType tau
     return [cty|$ty:ctau*|]
 
-cgType (FunT ivs args ret _) = do
-    let ivTys =  replicate (length ivs) [cparam|int|]
-    argTys    <- mapM (`cgParam` Nothing) args
-    if isReturnedByRef ret
-      then do retTy <- cgParam ret Nothing
-              return [cty|void (*)($params:(ivTys ++ argTys ++ [retTy]))|]
-      else do retTy <- cgType ret
-              return [cty|$ty:retTy (*)($params:(ivTys ++ argTys))|]
+cgType (ForallT alphas (FunT args ret _) _) =
+    cgFunType (map fst alphas) args ret
+
+cgType (FunT args ret _) =
+    cgFunType [] args ret
+
+cgType NatT{} =
+    return [cty|int|]
+
+cgType tau@ForallT{} =
+    faildoc $ text "cgType: cannot translate polymorphic type:" <+> ppr tau
 
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
+
+cgFunType :: [TyVar] -> [Type] -> Type -> Cg l C.Type
+cgFunType nats args ret = do
+    let natTys =  replicate (length nats) [cparam|int|]
+    argTys     <- mapM (`cgParam` Nothing) args
+    if isReturnedByRef ret
+      then do retTy <- cgParam ret Nothing
+              return [cty|void (*)($params:(natTys ++ argTys ++ [retTy]))|]
+      else do retTy <- cgType ret
+              return [cty|$ty:retTy (*)($params:(natTys ++ argTys))|]
 
 {- Note [Type Qualifiers for Array Arguments]
 
@@ -1514,10 +1534,10 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg l C.Type
-    cgParamType (ArrT (ConstI n _) tau _) | isBitT tau =
+    cgParamType (ArrT (NatT n _) tau _) | isBitT tau =
         return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgParamType (ArrT (ConstI n _) tau _) = do
+    cgParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
         return [cty|const $ty:ctau[$int:n]|]
 
@@ -1525,10 +1545,10 @@ cgParam tau maybe_cv = do
         ctau <- cgType tau
         return [cty|const $ty:ctau*|]
 
-    cgParamType (RefT (ArrT (ConstI n _) tau _) _) | isBitT tau =
+    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
         return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgParamType (RefT (ArrT (ConstI n _) tau _) _) = do
+    cgParamType (RefT (ArrT (NatT n _) tau _) _) = do
         ctau <- cgType tau
         return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
 
@@ -1551,10 +1571,10 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg l C.Type
-    cgRetParamType (ArrT (ConstI n _) tau _) | isBitT tau =
+    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau =
         return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgRetParamType (ArrT (ConstI n _) tau _) = do
+    cgRetParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
         return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
 
@@ -1699,8 +1719,8 @@ cgBinder v tau init = do
 
 -- | Perform mandatory initialization of an l-value.
 cgInitAlways :: CExp l -> Type -> Cg l ()
-cgInitAlways cv (ArrT iota tau _) | isBitT tau = do
-    cn <- cgIota iota
+cgInitAlways cv (ArrT n tau _) | isBitT tau = do
+    cn <- cgNatType n
     case cn of
       CInt n | bitArrayOff n == 0 -> return ()
       _ -> appendStm [cstm|$cv[$(bitArrayLen cn-1)] = 0;|]
@@ -1732,8 +1752,8 @@ cgStorage _ UnitT{} _ =
 -- Note that we use 'appendStm' for initialization code for arrays allocated
 -- with @alloca@. This is OK since the only time we don't statically know an
 -- array's size is when we are in a function body.
-cgStorage cv (ArrT iota tau _) init | isBitT tau =
-    cgIota iota >>= go
+cgStorage cv (ArrT n tau _) init | isBitT tau =
+    cgNatType n >>= go
   where
     go :: CExp l -> Cg l (C.InitGroup, CExp l)
     go (CInt n) | init = do
@@ -1755,9 +1775,9 @@ cgStorage cv (ArrT iota tau _) init | isBitT tau =
     ce :: CExp l
     ce = CExp $ rl cv [cexp|$id:cv|]
 
-cgStorage cv (ArrT iota tau _) init = do
+cgStorage cv (ArrT n tau _) init = do
     ctau <- cgType tau
-    cgIota iota >>= go ctau
+    cgNatType n >>= go ctau
   where
     go :: C.Type -> CExp l -> Cg l (C.InitGroup, CExp l)
     go ctau (CInt n) | init = do
@@ -1963,10 +1983,10 @@ cgComp comp klbl = cgSteps (unComp comp)
         compc <- lookupVarCExp v >>= unCComp
         compc klbl k
 
-    cgStep (CallC l f iotas args _) klbl k =
+    cgStep (CallC l f alphas args _) klbl k =
         cgWithLabel l $ do
         funcompc <- lookupVarCExp f >>= unCFunComp
-        funcompc iotas args klbl k
+        funcompc alphas args klbl k
 
     cgStep (IfC l e thenk elsek _) klbl k =
         cgWithLabel l $ do
@@ -2034,9 +2054,9 @@ cgComp comp klbl = cgSteps (unComp comp)
 
     cgStep (EmitsC l e _) klbl k =
         cgWithLabel l $ do
-        (iota, tau) <- inferExp e >>= checkArrT
-        ce          <- cgExpOneshot e
-        cgEmits iota tau ce klbl $ runKont k CVoid
+        (n, tau) <- inferExp e >>= checkArrT
+        ce       <- cgExpOneshot e
+        cgEmits n tau ce klbl $ runKont k CVoid
 
     cgStep (RepeatC l _ c_body sloc) _ k = do
         cgLoop Nothing $ do
@@ -2182,12 +2202,12 @@ cgParSingleThreaded _tau_res b left right klbl k = do
         k
 
     emitsk :: CExp l -> CExp l -> CExp l -> CExp l -> EmitsK l
-    emitsk cleftk crightk cbuf cbufp (ConstI 1 _) tau ce klbl k = do
+    emitsk cleftk crightk cbuf cbufp (NatT 1 _) tau ce klbl k = do
         ce' <- cgIdx tau ce 1 0
         emitk cleftk crightk cbuf cbufp tau ce' klbl k
 
-    emitsk cleftk crightk cbuf cbufp iota tau ce _klbl k = do
-        cn    <- cgIota iota
+    emitsk cleftk crightk cbuf cbufp n tau ce _klbl k = do
+        cn    <- cgNatType n
         loopl <- gensym "emitsk_next"
         useLabel loopl
         appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
@@ -2380,8 +2400,8 @@ static void* $id:cf(void* dummy)
         emitsk :: EmitsK l
         -- Right now we just loop and write the elements one by one---it would
         -- be better to write them all at once.
-        emitsk iota tau ce _klbl k = do
-            cn <- cgIota iota
+        emitsk n tau ce _klbl k = do
+            cn <- cgNatType n
             cgFor 0 cn $ \ci -> do
                 celem <- cgIdx tau ce cn ci
                 cgProduce ctinfo cbuf tau celem
@@ -2601,8 +2621,8 @@ cgAssign tau ce1 ce2 = do
         -- [cexp|!!$ce2|] here.
         cbit = ce2 `shiftL'` cbitOff
 
-    assign mayAlias tau0 ce1 ce2 | Just (iota, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
-        clen <- cgIota iota
+    assign mayAlias tau0 ce1 ce2 | Just (n, tau) <- checkArrOrRefArrT tau0, isBitT tau = do
+        clen <- cgNatType n
         cgAssignBitArray ce1 ce2 clen
       where
         cgAssignBitArray :: CExp l -> CExp l -> CExp l -> Cg l ()
@@ -2746,15 +2766,15 @@ cgAssign tau ce1 ce2 = do
                   text "Bit array copy:" </> ppr ce1 <+> text ":=" <+> ppr ce2
                 appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
 
-    assign mayAlias tau0 ce1 ce2 | Just (iota, tau_elem) <- checkArrOrRefArrT tau0 =
-        case iota of
-          ConstI n _ | not (isArrT tau_elem) -> do
+    assign mayAlias tau0 ce1 ce2 | Just (nat, tau_elem) <- checkArrOrRefArrT tau0 =
+        case nat of
+          NatT n _ | not (isArrT tau_elem) -> do
               bytes    <- typeSizeInBytes tau0
               minBytes <- asksConfig minMemcpyBytes
               if bytes >= minBytes
-                then cgMemcpyArray iota tau_elem
+                then cgMemcpyArray nat tau_elem
                 else cgAssignArray n tau_elem
-          _ -> cgMemcpyArray iota tau_elem
+          _ -> cgMemcpyArray nat tau_elem
       where
         cgAssignArray :: Int -> Type -> Cg l ()
         cgAssignArray n tau_elem =
@@ -2770,12 +2790,12 @@ cgAssign tau ce1 ce2 = do
             csrc, csrcIdx :: CExp l
             (csrc, csrcIdx) = unCSlice ce2
 
-        cgMemcpyArray :: Iota -> Type -> Cg l ()
-        cgMemcpyArray iota tau_elem = do
+        cgMemcpyArray :: Type -> Type -> Cg l ()
+        cgMemcpyArray n tau_elem = do
             ctau <- cgType tau_elem
             ce1' <- cgArrayAddr ce1
             ce2' <- cgArrayAddr ce2
-            clen <- cgIota iota
+            clen <- cgNatType n
             incMemCopies
             if mayAlias
               then appendStm [cstm|memmove($ce1', $ce2', $clen*sizeof($ty:ctau));|]

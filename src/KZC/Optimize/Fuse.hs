@@ -1028,7 +1028,7 @@ knownArraySize :: MonadTc m => Type -> m (Int, Type)
 knownArraySize tau = do
     (iota, tau_elem) <- checkArrT tau
     case iota of
-      ConstI n _ -> return (n, tau_elem)
+      NatT n _ -> return (n, tau_elem)
       _          -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.

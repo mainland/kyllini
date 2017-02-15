@@ -61,34 +61,34 @@ import KZC.Vars
 
 -- | A range of indices, consisting of a base, length, and (multiplicative)
 -- factor.
-data Range = Range Iota Iota Int
+data Range = Range Type Type Int
   deriving (Eq, Ord, Show)
 
 -- | Construct a literal range of length 1.
 unitR :: Integral a => a -> Range
-unitR x = Range (constI x) (constI (1::Int)) 1
+unitR x = Range (natT x) (natT (1::Int)) 1
 
-fromUnitR :: Range -> Maybe Iota
-fromUnitR (Range i (ConstI 1 _) 1) = Just i
+fromUnitR :: Range -> Maybe Type
+fromUnitR (Range i (NatT 1 _) 1) = Just i
 fromUnitR _                        = Nothing
 
 -- | Construct a symbolic range of length 1.
-iotaR :: Iota -> Range
-iotaR x = Range x (constI (1::Int)) 1
+iotaR :: Type -> Range
+iotaR x = Range x (natT (1::Int)) 1
 
 -- | Construct a range with known, constant start and length.
 rangeR :: Integral a => a -> a -> Range
-rangeR i len = Range (constI i) (constI len) 1
+rangeR i len = Range (natT i) (natT len) 1
 
 -- | Union of two ranges only if it can be represented precisely.
 unionR :: Range -> Range -> Maybe Range
 unionR i j | i == j =
     Just i
 
-unionR (Range i (ConstI len _) 1) (Range j (ConstI len' _) 1) | i == j =
-    Just $ Range i (constI (min len len')) 1
+unionR (Range i (NatT len _) 1) (Range j (NatT len' _) 1) | i == j =
+    Just $ Range i (natT (min len len')) 1
 
-unionR (Range (ConstI i _) (ConstI len _) 1) (Range (ConstI i' _) (ConstI len' _) 1)
+unionR (Range (NatT i _) (NatT len _) 1) (Range (NatT i' _) (NatT len' _) 1)
   | i  + len  == i' = Just $ rangeR i  (len+len')
   | i' + len' == i  = Just $ rangeR i' (len+len')
 
@@ -100,10 +100,10 @@ intersectionR :: Range -> Range -> Maybe Range
 intersectionR i j | i == j =
     Just i
 
-intersectionR (Range i (ConstI len _) 1) (Range j (ConstI len' _) 1) | i == j =
-    Just $ Range i (constI (max len len')) 1
+intersectionR (Range i (NatT len _) 1) (Range j (NatT len' _) 1) | i == j =
+    Just $ Range i (natT (max len len')) 1
 
-intersectionR (Range (ConstI i _) (ConstI len _) 1) (Range (ConstI i' _) (ConstI len' _) 1)
+intersectionR (Range (NatT i _) (NatT len _) 1) (Range (NatT i' _) (NatT len' _) 1)
   | i  < i' && i + len  > i' = Just $ rangeR i' (i  + len  - i')
   | i' < i  && i'+ len' > i  = Just $ rangeR i  (i' + len' - i)
 
@@ -115,10 +115,10 @@ instance Pretty Range where
     ppr (Range lo hi n) = brackets (commasep [ppr lo, ppr hi]) <> char '*' <> ppr n
 
 instance Poset Range where
-    Range i (ConstI len _) m <= Range j (ConstI len' _) n | i == j && m == n =
+    Range i (NatT len _) m <= Range j (NatT len' _) n | i == j && m == n =
         len <= len'
 
-    Range (ConstI i _) (ConstI len _) m <= Range (ConstI i' _) (ConstI len' _) n | m == n =
+    Range (NatT i _) (NatT len _) m <= Range (NatT i' _) (NatT len' _) n | m == n =
         i' <= i && i + len <= i' + len'
 
     i <= j = i == j
@@ -129,11 +129,11 @@ newtype PreciseRange = PR (Known Range)
 
 -- | Extend a precise range by a known length.
 extendPR :: PreciseRange -> Maybe Int -> PreciseRange
-extendPR (PR (Known (Range i (ConstI len _) 1))) (Just len') =
-    PR $ Known $ Range i (constI (len+len'-1)) 1
+extendPR (PR (Known (Range i (NatT len _) 1))) (Just len') =
+    PR $ Known $ Range i (natT (len+len'-1)) 1
 
-extendPR (PR (Known (Range i (ConstI len _) m))) (Just n) | m == n =
-    PR $ Known $ Range i (constI (len*m)) 1
+extendPR (PR (Known (Range i (NatT len _) m))) (Just n) | m == n =
+    PR $ Known $ Range i (natT (len*m)) 1
 
 extendPR r _ =
      r
@@ -167,7 +167,7 @@ instance TopLattice PreciseRange where
 instance BoundedLattice PreciseRange where
 
 -- | An array value specifying which elements are certainly known.
-data Array = Arr Iota PreciseRange
+data Array = Arr Type PreciseRange
   deriving (Eq, Ord, Show)
 
 instance Pretty Array where
@@ -202,25 +202,25 @@ data Val -- | Unknown (not yet defined)
 intV :: Integral a => a -> Val
 intV = IntV . PR . Known . unitR
 
-iotaV :: Iota -> Val
+iotaV :: Type -> Val
 iotaV = IntV . PR . Known . iotaR
 
-rangeV :: Iota -> Iota -> Val
+rangeV :: Type -> Type -> Val
 rangeV i len = IntV $ PR $ Known $ Range i len 1
 
-rangeFactorV :: Iota -> Iota -> Int -> Val
+rangeFactorV :: Type -> Type -> Int -> Val
 rangeFactorV i len n = IntV $ PR $ Known $ Range i len n
 
 fromRangeV :: Val -> Maybe Range
 fromRangeV (IntV (PR (Known r))) = Just r
 fromRangeV _                     = Nothing
 
-fromUnitV :: Val -> Maybe Iota
+fromUnitV :: Val -> Maybe Type
 fromUnitV (IntV (PR (Known r))) = fromUnitR r
 fromUnitV _                     = Nothing
 
-wholeArrV :: Iota -> Val
-wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (constI (0::Int)) n 1)
+wholeArrV :: Type -> Val
+wholeArrV n = ArrV $ Arr n (PR $ Known $ Range (natT (0::Int)) n 1)
 
 instance Pretty Val where
     ppr UnknownV       = text "unknown"
@@ -425,23 +425,23 @@ useDecl (LetD decl s) m = do
     (decl', x) <- useLocalDecl decl m
     return (LetD decl' s, x)
 
-useDecl (LetFunD f iotas vbs tau_ret e l) m =
+useDecl (LetFunD f ns vbs tau_ret e l) m =
     extendVars [(bVar f, tau)] $ do
-    e' <- extendLetFun f iotas vbs tau_ret $
+    e' <- extendLetFun f ns vbs tau_ret $
           extendVals (map fst vbs `zip` repeat bot) $
           fst <$> useExp e
     x  <- m
-    return (LetFunD f iotas vbs tau_ret e' l, x)
+    return (LetFunD f ns vbs tau_ret e' l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
-useDecl (LetExtFunD f iotas vbs tau_ret l) m = do
+useDecl (LetExtFunD f ns vbs tau_ret l) m = do
     x <- extendExtFuns [(bVar f, tau)] m
-    return (LetExtFunD f iotas vbs tau_ret l, x)
+    return (LetExtFunD f ns vbs tau_ret l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 useDecl (LetStructD s flds l) m = do
     x <- extendStructs [StructDef s flds l] m
@@ -453,16 +453,16 @@ useDecl (LetCompD v tau comp l) m = do
     x     <- extendVars [(bVar v, tau)] m
     return (LetCompD v tau comp' l, x)
 
-useDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
+useDecl (LetFunCompD f ns vbs tau_ret comp l) m =
     extendVars [(bVar f, tau)] $ do
-    comp' <- extendLetFun f iotas vbs tau_ret $
+    comp' <- extendLetFun f ns vbs tau_ret $
              extendVals (map fst vbs `zip` repeat bot) $
              useComp comp
     x     <- m
-    return (LetFunCompD f iotas vbs tau_ret comp' l, x)
+    return (LetFunCompD f ns vbs tau_ret comp' l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 useLocalDecl :: MonadTc m
              => LocalDecl
@@ -589,8 +589,8 @@ useExp e@(ConstE (FixC U{} x) _) =
 useExp e@(ConstE (ArrayC cs) _) =
     return (e, wholeArrV n)
   where
-    n :: Iota
-    n = constI (length cs)
+    n :: Type
+    n = natT (length cs)
 
 useExp e@ConstE{} =
     return (e, top)
@@ -614,13 +614,13 @@ useExp (BinopE op e1 e2 s) = do
   where
     go :: Binop -> Val -> Val -> Exp -> Exp -> ND m (Exp, Val)
     go Mul val1 val2 e1' e2' | Just (Range i len 1) <- fromRangeV val1,
-                               Just (ConstI j _) <- fromUnitV val2 =
+                               Just (NatT j _) <- fromUnitV val2 =
         return (e', rangeFactorV i len j)
       where
         e' :: Exp
         e' = BinopE op e1' e2' s
 
-    go Mul val1 val2 e1' e2' | Just (ConstI j _) <- fromUnitV val1,
+    go Mul val1 val2 e1' e2' | Just (NatT j _) <- fromUnitV val1,
                                Just (Range i len 1) <- fromRangeV val2 =
         return (e', rangeFactorV i len j)
       where
@@ -680,7 +680,7 @@ useExp (AssignE e1 e2 s) = do
         update n val_i
         topA $ return $ AssignE e1' e2' s
       where
-        update :: Iota -> Val -> ND m ()
+        update :: Type -> Val -> ND m ()
         update n (IntV i) =
             updateArray v (Arr n (extendPR i len))
 
@@ -725,8 +725,8 @@ useExp (ArrayE es s) = do
     es' <- map fst <$> mapM useExp es
     return (ArrayE es' s, wholeArrV n)
   where
-    n :: Iota
-    n = constI (length es)
+    n :: Type
+    n = natT (length es)
 
 useExp (IdxE e1@(VarE v _) e2 len s) = do
     let e1'     =  e1

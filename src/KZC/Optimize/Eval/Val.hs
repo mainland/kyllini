@@ -123,7 +123,7 @@ data Val l m a where
     CmdV :: FrozenHeap l m -> Exp -> Val l m Exp
 
     -- A function closure
-    FunClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m Exp)) -> Val l m Exp
+    FunClosV :: !Theta -> ![TyVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m Exp)) -> Val l m Exp
 
     -- A value returned from a computation.
     CompReturnV :: Val l m Exp -> Val l m (Comp l)
@@ -139,7 +139,7 @@ data Val l m a where
     CompClosV :: !Theta -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
 
     -- A computation function closure.
-    FunCompClosV :: !Theta -> ![IVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
+    FunCompClosV :: !Theta -> ![TyVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
 
 deriving instance Eq l => Eq (Val l m a)
 deriving instance Ord l => Ord (Val l m a)
@@ -242,7 +242,7 @@ defaultValue = go
         vals               <- mapM go taus
         return $ StructV s (Map.fromList (fs `zip` vals))
 
-    go (ArrT (ConstI n _) tau _) = do
+    go (ArrT (NatT n _) tau _) = do
         val <- go tau
         return $ ArrayV (P.replicateDefault n val)
 
@@ -409,7 +409,7 @@ fromBitsV (ArrayV vs) tau =
         vals <- unpackValues (ArrayV vs) (map snd flds)
         return $ StructV sname (Map.fromList (map fst flds `zip` vals))
 
-    go vs (ArrT (ConstI n _) tau _) = do
+    go vs (ArrT (NatT n _) tau _) = do
         vals <- unpackValues (ArrayV vs) (replicate n tau)
         dflt <- defaultValue tau
         return $ ArrayV $ P.fromList dflt vals
@@ -494,7 +494,7 @@ enumVals (StructT sname _) = do
     valss <- enumValsList taus
     return [StructV sname (Map.fromList (fs `zip` vs)) | vs <- valss]
 
-enumVals (ArrT (ConstI n _) tau _) = do
+enumVals (ArrT (NatT n _) tau _) = do
     valss <- enumValsList (replicate n tau)
     dflt  <- defaultValue tau
     return [ArrayV (P.fromList dflt vs) | vs <- valss]
@@ -523,13 +523,13 @@ bitcastV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
          -> Type
          -> Type
          -> m' (Val l m Exp)
-bitcastV val tau_from tau_to@(ArrT (ConstI n _) tau_elem _) | isBitT tau_elem = do
+bitcastV val tau_from tau_to@(ArrT (NatT n _) tau_elem _) | isBitT tau_elem = do
     n' <- typeSize tau_from
     if n' == n
       then toBitsV val tau_from
       else return $ ExpV $ bitcastE tau_to (toExp val)
 
-bitcastV val (ArrT (ConstI n _) tau_elem _) tau_to | isBitT tau_elem = do
+bitcastV val (ArrT (NatT n _) tau_elem _) tau_to | isBitT tau_elem = do
     n' <- typeSize tau_to
     if n' == n
       then fromBitsV val tau_to

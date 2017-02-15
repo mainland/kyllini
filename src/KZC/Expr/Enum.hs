@@ -131,7 +131,7 @@ streamTypeValues (StructT sname _) = do
     ss0 <- V.fromList <$> mapM streamTypeValues taus
     return $ Stream.map mkStruct $ streamProduct ss0
 
-streamTypeValues (ArrT (ConstI n _) tau _) = do
+streamTypeValues (ArrT (NatT n _) tau _) = do
     stream <- streamTypeValues tau
     return $ Stream.map ArrayC $ streamProduct (V.replicate n stream)
 

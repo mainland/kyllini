@@ -166,11 +166,11 @@ defaultRef (StructT struct _) = do
     refs               <- mapM defaultRef taus
     return $ StructR struct (fs `zip` refs)
 
-defaultRef (ArrT (ConstI n _) tau _) | isBaseT tau = do
+defaultRef (ArrT (NatT n _) tau _) | isBaseT tau = do
     val <- defaultVal tau
     ArrayR <$> MV.replicate n val
 
-defaultRef (ArrT (ConstI n _) tau _) =
+defaultRef (ArrT (NatT n _) tau _) =
     ArrayRefR <$> (V.replicateM n (defaultRef tau) >>= V.thaw)
 
 defaultRef tau =

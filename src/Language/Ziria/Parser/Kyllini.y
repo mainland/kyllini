@@ -548,7 +548,7 @@ arr_length :
     '[' 'length' '(' ID ')' ']' base_type
       { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
-      { (ConstI (unLoc $2) (srclocOf $2), $4) }
+      { (NatT (unLoc $2) (srclocOf $2), $4) }
   | base_type
       { (NoneI (srclocOf $1), $1) }
 

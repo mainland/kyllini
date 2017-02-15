@@ -6,8 +6,6 @@ instance Located Struct where
   locOf (Struct l) = locOf l
 instance Located TyVar where
   locOf (TyVar l) = locOf l
-instance Located IVar where
-  locOf (IVar l) = locOf l
 instance Located Decl where
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
@@ -52,11 +50,10 @@ instance Located Type where
   locOf (ArrT _ _ l) = locOf l
   locOf (ST _ _ _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
-  locOf (FunT _ _ _ l) = locOf l
+  locOf (FunT _ _ l) = locOf l
+  locOf (NatT _ l) = locOf l
+  locOf (ForallT _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
 instance Located Omega where
   locOf (C _) = NoLoc
   locOf T = NoLoc
-instance Located Iota where
-  locOf (ConstI _ l) = locOf l
-  locOf (VarI _ l) = locOf l

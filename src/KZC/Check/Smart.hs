@@ -30,6 +30,7 @@ module KZC.Check.Smart (
     stT,
     cT,
     funT,
+    forallT,
 
     structName,
 
@@ -105,8 +106,13 @@ stT omega sigma alpha beta =
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
 
-funT :: [Type] -> Type -> Type
-funT taus tau = FunT [] taus tau (taus `srcspan` tau)
+funT :: [TyVar] -> [Type] -> Type -> SrcLoc -> Type
+funT [] taus tau l = FunT taus tau l
+funT ns taus tau l = ForallT (ns `zip` repeat NatK) (FunT taus tau l) l
+
+forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT []   tau = tau
+forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
 
 structName :: StructDef -> Z.Struct
 structName (StructDef s _ _) = s

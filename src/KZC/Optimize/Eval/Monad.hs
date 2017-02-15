@@ -37,9 +37,6 @@ module KZC.Optimize.Eval.Monad (
     withUniqBoundVar,
     withUniqWildVar,
 
-    askIVarSubst,
-    extendIVarSubst,
-
     askTyVarSubst,
     extendTyVarSubst,
 
@@ -79,8 +76,7 @@ module KZC.Optimize.Eval.Monad (
     diffHeapComp,
     diffHeapExps,
 
-    simplType,
-    simplIota,
+    simplType,    
 
     ModifiedVars(..)
   ) where
@@ -147,14 +143,11 @@ deriving instance Show l => Show (ArgVal l m)
 
 type Theta = Map Var Var
 
-type Phi = Map IVar Iota
-
-type Psi = Map TyVar Type
+type Phi = Map TyVar Type
 
 data EvalEnv l m = EvalEnv
     { varSubst   :: Theta
-    , ivarSubst  :: Phi
-    , tyVarSubst :: Psi
+    , tyVarSubst :: Phi
     , varBinds   :: Map Var (Val l m Exp)
     , cvarBinds  :: Map Var (Val l m (Comp l))
     }
@@ -166,7 +159,6 @@ deriving instance Show l => Show (EvalEnv l m)
 defaultEvalEnv :: EvalEnv l m
 defaultEvalEnv = EvalEnv
     { varSubst   = mempty
-    , ivarSubst  = mempty
     , tyVarSubst = mempty
     , varBinds   = mempty
     , cvarBinds  = mempty
@@ -289,16 +281,7 @@ withUniqWildVar :: MonadTc m
 withUniqWildVar WildV     k = k WildV
 withUniqWildVar (TameV v) k = withUniqBoundVar v $ \v' -> k (TameV v')
 
-askIVarSubst :: MonadTc m => EvalM l m Phi
-askIVarSubst = asks ivarSubst
-
-extendIVarSubst :: MonadTc m
-                => [(IVar, Iota)]
-                -> EvalM l m a
-                -> EvalM l m a
-extendIVarSubst = extendEnv ivarSubst (\env x -> env { ivarSubst = x })
-
-askTyVarSubst :: MonadTc m => EvalM l m Psi
+askTyVarSubst :: MonadTc m => EvalM l m Phi
 askTyVarSubst = asks tyVarSubst
 
 extendTyVarSubst :: MonadTc m
@@ -555,13 +538,7 @@ killHeap m =
 simplType :: MonadTc m => Type -> EvalM l m Type
 simplType tau = do
     phi <- askTyVarSubst
-    psi <- askIVarSubst
-    return $ subst psi mempty (subst phi mempty tau)
-
-simplIota :: MonadTc m => Iota -> EvalM l m Iota
-simplIota iota = do
-    psi <- askIVarSubst
-    return $ subst psi mempty iota
+    return $ subst phi mempty tau
 
 class Ord n => ModifiedVars x n where
     mvs :: SetLike m n => x -> m n

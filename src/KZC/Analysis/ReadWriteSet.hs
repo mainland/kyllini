@@ -480,12 +480,12 @@ readRef (Ref v path) = do
     go ref@(ArrayRW _rs ws) [] = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         case iota of
-          ConstI n _ -> do let rs :: BoundedInterval
-                               rs = extend (unit (0::Integer)) n
-                           if rs `inPrecise` ws
-                             then return ref
-                             else return $ ArrayRW rs ws
-          _          -> return $ ArrayRW top ws
+          NatT n _ -> do let rs :: BoundedInterval
+                             rs = extend (unit (0::Integer)) n
+                         if rs `inPrecise` ws
+                           then return ref
+                           else return $ ArrayRW rs ws
+          _        -> return $ ArrayRW top ws
 
     go ref@(ArrayRW rs ws) (IdxP (IntV (IV bi _pi)) len:_)
       | new `inPrecise` ws = return ref
@@ -537,10 +537,10 @@ writeRef (Ref v path) = do
     go (ArrayRW rs _ws) [] = do
         (iota, _) <- lookupVar v >>= checkArrOrRefArrT
         case iota of
-          ConstI n _ -> do let ws :: PreciseInterval
-                               ws = extend (unit (0::Integer)) n
-                           return $ ArrayRW rs ws
-          _          -> return $ ArrayRW rs top
+          NatT n _ -> do let ws :: PreciseInterval
+                             ws = extend (unit (0::Integer)) n
+                         return $ ArrayRW rs ws
+          _        -> return $ ArrayRW rs top
 
     go (ArrayRW rs ws) [IdxP (IntV (IV _bi pi)) len] =
         return $ ArrayRW rs (ws `lub` ws')

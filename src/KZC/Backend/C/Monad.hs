@@ -51,8 +51,8 @@ module KZC.Backend.C.Monad (
     extendVarCExps,
     lookupVarCExp,
 
-    extendIVarCExps,
-    lookupIVarCExp,
+    extendTyVarCExps,
+    lookupTyVarCExp,
 
     extendTyVarTypes,
     lookupTyVarType,
@@ -198,7 +198,7 @@ type TakesK l = forall a . Int -> Type -> l -> (CExp l -> Cg l a) -> Cg l a
 type EmitK l = forall a . Type -> CExp l -> l -> Cg l a -> Cg l a
 
 -- | Generate code to emit multiple values.
-type EmitsK l = forall a . Iota -> Type -> CExp l -> l -> Cg l a -> Cg l a
+type EmitsK l = forall a . Type -> Type -> CExp l -> l -> Cg l a -> Cg l a
 
 -- | Generate code to exit a computation. A computation is exited either when it
 -- has no more input, or when it computes a result.
@@ -217,7 +217,7 @@ data CgEnv l = CgEnv
     , freeRunning :: !Bool
 
     , varCExps   :: !(Map Var (CExp l))
-    , ivarCExps  :: !(Map IVar (CExp l))
+    , tyvarCExps :: !(Map TyVar (CExp l))
     , tyvarTypes :: !(Map TyVar Type)
     }
 
@@ -236,7 +236,7 @@ defaultCgEnv = CgEnv
     , freeRunning = True
 
     , varCExps   = mempty
-    , ivarCExps  = mempty
+    , tyvarCExps = mempty
     , tyvarTypes = mempty
     }
 
@@ -407,12 +407,12 @@ lookupVarCExp v = do
     onerr = faildoc $
             text "Compiled variable" <+> ppr v <+> text "not in scope"
 
-extendIVarCExps :: [(IVar, CExp l)] -> Cg l a -> Cg l a
-extendIVarCExps = extendEnv ivarCExps (\env x -> env { ivarCExps = x })
+extendTyVarCExps :: [(TyVar, CExp l)] -> Cg l a -> Cg l a
+extendTyVarCExps = extendEnv tyvarCExps (\env x -> env { tyvarCExps = x })
 
-lookupIVarCExp :: IVar -> Cg l (CExp l)
-lookupIVarCExp v =
-    lookupEnv ivarCExps onerr v
+lookupTyVarCExp :: TyVar -> Cg l (CExp l)
+lookupTyVarCExp v =
+    lookupEnv tyvarCExps onerr v
   where
     onerr = faildoc $
             text "Compiled array size variable" <+> ppr v <+>

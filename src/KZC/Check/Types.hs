@@ -13,7 +13,6 @@
 
 module KZC.Check.Types (
     TyVar(..),
-    IVar(..),
     IP(..),
     ipWidth,
     ipIsSigned,
@@ -63,9 +62,6 @@ import KZC.Vars
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Show)
 
-newtype IVar = IVar Name
-  deriving (Eq, Ord, Show)
-
 data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
   deriving (Eq, Ord, Show)
 
@@ -89,11 +85,13 @@ data Type -- Base Types
           | RefT Type !SrcLoc
 
           -- phi types
-          | FunT [IVar] [Type] Type !SrcLoc
+          | FunT [Type] Type !SrcLoc
 
-          -- iota types
-          | ConstI Int !SrcLoc
-          | VarI IVar !SrcLoc
+          -- Natural number types
+          | NatT Int !SrcLoc
+
+          -- forall type
+          | ForallT [(TyVar, Kind)] Type !SrcLoc
 
           -- Type variables
           | TyVarT TyVar !SrcLoc
@@ -105,7 +103,7 @@ data Kind = TauK   -- ^ Base types, including arrays of base types
           | MuK    -- ^ @ST omega tau tau@ types
           | RhoK   -- ^ Reference types
           | PhiK   -- ^ Function types
-          | IotaK  -- ^ Array index types
+          | NatK   -- ^ Type-level natural number
           | MetaK MetaKv
   deriving (Eq, Ord, Show)
 
@@ -143,9 +141,6 @@ instance Show a => Show (IORef a) where
  -
  ------------------------------------------------------------------------------}
 
-instance IsString IVar where
-    fromString s = IVar $ fromString s
-
 instance IsString TyVar where
     fromString s = TyVar $ fromString s
 
@@ -153,11 +148,6 @@ instance Named TyVar where
     namedSymbol (TyVar n) = namedSymbol n
 
     mapName f (TyVar n) = TyVar (f n)
-
-instance Named IVar where
-    namedSymbol (IVar n) = namedSymbol n
-
-    mapName f (IVar n) = IVar (f n)
 
 {------------------------------------------------------------------------------
  -
@@ -180,9 +170,6 @@ arrowPrec1 = arrowPrec + 1
 
 instance Pretty TyVar where
     ppr (TyVar n) = ppr n
-
-instance Pretty IVar where
-    ppr (IVar n) = ppr n
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
@@ -233,16 +220,12 @@ instance Pretty Type where
 
     pprPrec p (ST alphas omega tau1 tau2 tau3 _) | expertTypes =
         parensIf (p > appPrec) $
-        pprForall alphas <+>
+        pprForall (alphas `zip` repeat TauK) <+>
         text "ST" <+>
         align (sep [pprPrec appPrec1 omega
                    ,pprPrec appPrec1 tau1
                    ,pprPrec appPrec1 tau2
                    ,pprPrec appPrec1 tau3])
-      where
-        pprForall :: [TyVar] -> Doc
-        pprForall []     = empty
-        pprForall alphas = text "forall" <+> commasep (map ppr alphas) <+> dot
 
     pprPrec p (ST [_,_,_] (C tau _) _ _ _ _) =
         pprPrec p tau
@@ -262,23 +245,7 @@ instance Pretty Type where
         parensIf (p > appPrec) $
         text "var" <+> ppr tau
 
-    pprPrec p (FunT iotas taus tau _) | expertTypes =
-        parensIf (p > arrowPrec) $
-        pprArgs iotas taus <+>
-        text "->" <+>
-        pprPrec arrowPrec1 tau
-      where
-        pprArgs :: [IVar] -> [Type] -> Doc
-        pprArgs [] [tau1] =
-            ppr tau1
-
-        pprArgs [] taus =
-            parens (commasep (map ppr taus))
-
-        pprArgs iotas taus =
-            parens (commasep (map ppr iotas) <> text ";" <+> commasep (map ppr taus))
-
-    pprPrec p (FunT _ taus tau _) =
+    pprPrec p (FunT taus tau _) =
         parensIf (p > arrowPrec) $
         pprArgs taus <+>
         text "->" <+>
@@ -291,11 +258,11 @@ instance Pretty Type where
         pprArgs taus =
             parens (commasep (map ppr taus))
 
-    pprPrec _ (ConstI i _) =
+    pprPrec _ (NatT i _) =
         ppr i
 
-    pprPrec _ (VarI v _) =
-        ppr v
+    pprPrec _ (ForallT tvks tau _) =
+        pprForall tvks <+> ppr tau
 
     pprPrec p (MetaT mtv _) =
         text (showsPrec p mtv "")
@@ -303,13 +270,21 @@ instance Pretty Type where
     pprPrec _ (TyVarT tv _) =
         ppr tv
 
+pprForall :: [(TyVar, Kind)] -> Doc
+pprForall []   = empty
+pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
+
+pprKindSig :: Pretty a => (a, Kind) -> Doc
+pprKindSig (tau, TauK)  = ppr tau
+pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)
+
 instance Pretty Kind where
     pprPrec _ TauK        = text "tau"
     pprPrec _ OmegaK      = text "omega"
     pprPrec _ MuK         = text "mu"
     pprPrec _ RhoK        = text "rho"
     pprPrec _ PhiK        = text "phi"
-    pprPrec _ IotaK       = text "iota"
+    pprPrec _ NatK        = text "N"
     pprPrec p (MetaK mkv) = text (showsPrec p mkv "")
 
 {------------------------------------------------------------------------------
@@ -332,31 +307,11 @@ instance Fvs Type TyVar where
                                              (fvs tau1 <> fvs tau2 <> fvs tau3)
                                              <\\> fromList alphas
     fvs (RefT tau _)                       = fvs tau
-    fvs (FunT _ taus tau _)                = fvs taus <> fvs tau
-    fvs (ConstI _ _)                       = mempty
-    fvs (VarI _ _)                         = mempty
+    fvs (FunT taus tau _)                  = fvs taus <> fvs tau
+    fvs (NatT _ _)                         = mempty
+    fvs (ForallT tvks tau _)               = fvs tau <\\> fromList (map fst tvks)
     fvs (TyVarT tv _)                      = singleton tv
     fvs (MetaT _ _)                        = mempty
-
-instance Fvs Type IVar where
-    fvs UnitT{}                       = mempty
-    fvs BoolT{}                       = mempty
-    fvs FixT{}                        = mempty
-    fvs FloatT{}                      = mempty
-    fvs StringT{}                     = mempty
-    fvs (StructT _ _)                 = mempty
-    fvs (ArrT tau1 tau2 _)            = fvs tau1 <> fvs tau2
-    fvs (C tau _)                     = fvs tau
-    fvs (T _)                         = mempty
-    fvs (ST _ omega tau1 tau2 tau3 _) = fvs omega <>
-                                        fvs tau1 <> fvs tau2 <> fvs tau3
-    fvs (RefT tau _)                  = fvs tau
-    fvs (FunT iotas taus tau _)       = (fvs taus <> fvs tau) <\\>
-                                        fromList iotas
-    fvs (ConstI _ _)                  = mempty
-    fvs (VarI iv _)                   = singleton iv
-    fvs (TyVarT _ _)                  = mempty
-    fvs (MetaT _ _)                   = mempty
 
 instance Fvs Type MetaTv where
     fvs UnitT{}                       = mempty
@@ -371,9 +326,9 @@ instance Fvs Type MetaTv where
     fvs (ST _ omega tau1 tau2 tau3 _) = fvs omega <>
                                         fvs tau1 <> fvs tau2 <> fvs tau3
     fvs (RefT tau _)                  = fvs tau
-    fvs (FunT _ taus tau _)           = fvs taus <> fvs tau
-    fvs (ConstI _ _)                  = mempty
-    fvs (VarI _ _)                    = mempty
+    fvs (FunT taus tau _)             = fvs taus <> fvs tau
+    fvs (NatT _ _)                    = mempty
+    fvs (ForallT _ tau _)             = fvs tau
     fvs (TyVarT _ _)                  = mempty
     fvs (MetaT mtv _)                 = singleton mtv
 
@@ -396,31 +351,11 @@ instance HasVars Type TyVar where
                                                  allVars tau2 <>
                                                  allVars tau3
     allVars (RefT tau _)                       = allVars tau
-    allVars (FunT _ taus tau _)                = allVars taus <> allVars tau
-    allVars (ConstI _ _)                       = mempty
-    allVars (VarI _ _)                         = mempty
+    allVars (FunT taus tau _)                  = allVars taus <> allVars tau
+    allVars (NatT _ _)                         = mempty
+    allVars (ForallT tvks tau _)               = fvs tau <> fromList (map fst tvks)
     allVars (TyVarT tv _)                      = singleton tv
     allVars (MetaT _ _)                        = mempty
-
-instance HasVars Type IVar where
-    allVars UnitT{}                       = mempty
-    allVars BoolT{}                       = mempty
-    allVars FixT{}                        = mempty
-    allVars FloatT{}                      = mempty
-    allVars StringT{}                     = mempty
-    allVars (StructT _ _)                 = mempty
-    allVars (ArrT tau1 tau2 _)            = allVars tau1 <> allVars tau2
-    allVars (C tau _)                     = allVars tau
-    allVars (T _)                         = mempty
-    allVars (ST _ omega tau1 tau2 tau3 _) = allVars omega <> allVars tau1 <>
-                                            allVars tau2 <> allVars tau3
-    allVars (RefT tau _)                  = allVars tau
-    allVars (FunT iotas taus tau _)       = fromList iotas <>
-                                            allVars taus <> allVars tau
-    allVars (ConstI _ _)                  = mempty
-    allVars (VarI iv _)                   = singleton iv
-    allVars (TyVarT _ _)                  = mempty
-    allVars (MetaT _ _)                   = mempty
 
 instance HasVars Type MetaTv where
     allVars UnitT{}                       = mempty
@@ -436,9 +371,9 @@ instance HasVars Type MetaTv where
                                             allVars tau1 <>
                                             allVars tau2 <> allVars tau3
     allVars (RefT tau _)                  = allVars tau
-    allVars (FunT _ taus tau _)           = allVars taus <> allVars tau
-    allVars (ConstI _ _)                  = mempty
-    allVars (VarI _ _)                    = mempty
+    allVars (FunT taus tau _)             = allVars taus <> allVars tau
+    allVars (NatT _ _)                    = mempty
+    allVars (ForallT _ tau _)             = allVars tau
     allVars (TyVarT _ _)                  = mempty
     allVars (MetaT mtv _)                 = singleton mtv
 
@@ -476,72 +411,21 @@ instance Subst Type MetaTv Type where
     substM (RefT tau l) =
         RefT <$> substM tau <*> pure l
 
-    substM (FunT iotas taus tau l) =
-        FunT iotas <$> substM taus <*> substM tau <*> pure l
+    substM (FunT taus tau l) =
+        FunT <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@ConstI{} =
-        pure tau
-
-    substM tau@VarI{} =
+    substM tau@NatT{} =
         pure tau
 
     substM tau@TyVarT{} =
         pure tau
+
+    substM (ForallT tvks tau l) =
+        ForallT tvks <$> substM tau <*> pure l
 
     substM tau@(MetaT mtv _) = do
         (theta, _) <- ask
         return $ fromMaybe tau (Map.lookup mtv theta)
-
-instance Subst Type IVar Type where
-    substM tau@UnitT{} =
-        pure tau
-
-    substM tau@BoolT{} =
-        pure tau
-
-    substM tau@FixT{} =
-        pure tau
-
-    substM tau@FloatT{} =
-        pure tau
-
-    substM tau@StringT{} =
-        pure tau
-
-    substM tau@StructT{} =
-        pure tau
-
-    substM (ArrT tau1 tau2 l) =
-        ArrT <$> substM tau1 <*> substM tau2 <*> pure l
-
-    substM (C tau l) =
-        C <$> substM tau <*> pure l
-
-    substM tau@T{} =
-        pure tau
-
-    substM (ST alphas omega tau1 tau2 tau3 l) =
-        ST alphas <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
-
-    substM (RefT tau l) =
-        RefT <$> substM tau <*> pure l
-
-    substM (FunT iotas taus tau l) =
-        freshen iotas $ \iotas' ->
-        FunT iotas' <$> substM taus <*> substM tau <*> pure l
-
-    substM tau@ConstI{} =
-        pure tau
-
-    substM tau@(VarI v _) = do
-        (theta, _) <- ask
-        return $ fromMaybe tau (Map.lookup v theta)
-
-    substM tau@TyVarT{} =
-        pure tau
-
-    substM tau@MetaT{} =
-        pure tau
 
 instance Subst Type TyVar Type where
     substM tau@UnitT{} =
@@ -578,14 +462,15 @@ instance Subst Type TyVar Type where
     substM (RefT tau l) =
         RefT <$> substM tau <*> pure l
 
-    substM (FunT iotas taus tau l) =
-        FunT iotas <$> substM taus <*> substM tau <*> pure l
+    substM (FunT taus tau l) =
+        FunT <$> substM taus <*> substM tau <*> pure l
 
-    substM tau@ConstI{} =
+    substM tau@NatT{} =
         pure tau
 
-    substM tau@VarI{} =
-        pure tau
+    substM (ForallT tvks tau l) =
+        freshen tvks $ \tvks' ->
+        ForallT tvks' <$> substM tau <*> pure l
 
     substM tau@(TyVarT alpha _) = do
         (theta, _) <- ask
@@ -609,21 +494,6 @@ instance FreshVars TyVar where
         simpleTvs :: [Char]
         simpleTvs = ['a'..'z']
 
-instance FreshVars IVar where
-    freshVars n used =
-        return $ map (\a -> IVar (mkName a noLoc)) freshTvs
-      where
-        freshTvs :: [String]
-        freshTvs = take n (allTvs \\ map namedString used)
-
-        allTvs :: [String]
-        allTvs =  [[x] | x <- simpleTvs] ++
-                  [x : show i |  i <- [1 :: Integer ..],
-                                 x <- simpleTvs]
-
-        simpleTvs :: [Char]
-        simpleTvs = reverse ['l'..'n']
-
 instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) =
         freshenV (namedString n) mkV mkE alpha
@@ -634,15 +504,9 @@ instance Freshen TyVar Type TyVar where
         mkE :: TyVar -> Type
         mkE alpha = TyVarT alpha (srclocOf alpha)
 
-instance Freshen IVar Type IVar where
-    freshen alpha@(IVar n) =
-        freshenV (namedString n) mkV mkE alpha
-      where
-        mkV :: String -> IVar
-        mkV s = IVar n { nameSym = intern s }
-
-        mkE :: IVar -> Type
-        mkE alpha = VarI alpha (srclocOf alpha)
+instance Freshen (TyVar, Kind) Type TyVar where
+    freshen (alpha, kappa) k =
+        freshen alpha $ \alpha' -> k (alpha', kappa)
 
 #include "KZC/Check/Types-instances.hs"
 

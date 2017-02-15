@@ -202,8 +202,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         return step
 
     stepT step@(EmitsC _ e _) = do
-        (iota, _) <- inferExp e >>= checkArrT
-        plusRate $ CompR (N 0) (iotaM iota)
+        (n, _) <- inferExp e >>= checkArrT
+        plusRate $ CompR (N 0) (natM n)
         return step
 
     stepT (RepeatC l ann c s) = do
@@ -354,10 +354,10 @@ expM :: Exp -> Rate M -> Rate M
 expM (ConstE (FixC _ i) _) = rtimes i
 expM _                     = rstar
 
--- | Convert an 'Iota' to a multiplicity.
-iotaM :: Iota -> M
-iotaM (ConstI n _) = N n
-iotaM _            = Z 1
+-- | Convert a type-level natural number to a multiplicity.
+natM :: Type -> M
+natM (NatT n _) = N n
+natM _          = Z 1
 
 unknownRate :: (IsLabel l, MonadTc m) => Step l -> RM m ()
 unknownRate step = do

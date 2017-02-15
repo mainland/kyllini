@@ -32,6 +32,9 @@ module KZC.Expr.Smart (
     structT,
     stT,
     unSTC,
+    funT,
+    unFunT,
+    forallT,
 
     isBaseT,
     isUnitT,
@@ -51,7 +54,7 @@ module KZC.Expr.Smart (
 
     splitArrT,
 
-    constI,
+    natT,
 
     bitC,
     intC,
@@ -148,14 +151,14 @@ unRefT :: Type -> Type
 unRefT (RefT tau _) = tau
 unRefT tau          = tau
 
-arrT :: Iota -> Type -> Type
-arrT iota tau = ArrT iota tau l
+arrT :: Type -> Type -> Type
+arrT nat tau = ArrT nat tau l
   where
     l :: SrcLoc
-    l = iota `srcspan` tau
+    l = nat `srcspan` tau
 
 arrKnownT :: Int -> Type -> Type
-arrKnownT i tau = ArrT (ConstI i l) tau l
+arrKnownT i tau = ArrT (NatT i l) tau l
   where
     l :: SrcLoc
     l = srclocOf tau
@@ -169,6 +172,19 @@ stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
 unSTC :: Type -> Type
 unSTC (ST _ (C tau) _ _ _ _) = tau
 unSTC tau                    = tau
+
+funT :: [TyVar] -> [Type] -> Type -> SrcLoc -> Type
+funT [] taus tau l = FunT taus tau l
+funT ns taus tau l = ForallT (ns `zip` repeat NatK) (FunT taus tau l) l
+
+unFunT :: Monad m => Type -> m ([TyVar], [Type], Type)
+unFunT (ForallT tvks (FunT taus tau _) _) = return (map fst tvks, taus, tau)
+unFunT (FunT taus tau _)                  = return ([], taus, tau)
+unFunT _                                  = fail "unFunT: not a function"
+
+forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT []   tau = tau
+forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
 
 -- | Return 'True' if a type is a base type.
 isBaseT :: Type -> Bool
@@ -241,15 +257,15 @@ isPureishT _ =
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s
 
-splitArrT :: Monad m => Type -> m (Iota, Type)
-splitArrT (ArrT iota tau _) =
-    return (iota, tau)
+splitArrT :: Monad m => Type -> m (Type, Type)
+splitArrT (ArrT nat tau _) =
+    return (nat, tau)
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
 
-constI :: Integral a => a -> Iota
-constI x = ConstI (fromIntegral x) noLoc
+natT :: Integral a => a -> Type
+natT x = NatT (fromIntegral x) noLoc
 
 bitC :: Bool -> Const
 bitC b = FixC (U 1) (if b then 1 else 0)

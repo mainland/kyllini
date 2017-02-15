@@ -255,9 +255,9 @@ lutVars refs = do
         return Nothing
 
     -- | Convert a variable range into a 'LUTVar'
-    rangeLUTVar:: Var -> Integer -> Integer -> Iota -> LUTVar
+    rangeLUTVar:: Var -> Integer -> Integer -> Type -> LUTVar
     -- We need the whole array
-    rangeLUTVar v lo hi (ConstI n _)
+    rangeLUTVar v lo hi (NatT n _)
       | lo == 0 && hi == fromIntegral n-1 = VarL v
 
     -- We need either one element or a slice

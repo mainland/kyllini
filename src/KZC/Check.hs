@@ -233,7 +233,7 @@ checkLetFun f ps e l = do
         mce               <- collectCheckValCtx tau_ret $
                              checkExp e tau_ret
         (tau_ret_gen, _)  <- generalize tau_ret
-        unifyTypes (funT (map snd ptaus) tau_ret_gen) tau
+        unifyTypes (funT [] (map snd ptaus) tau_ret_gen l) tau
         return (tau_ret_gen, mce)
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
@@ -262,7 +262,7 @@ checkLetExtFun f ps ztau_ret isPure l = do
     -- lengths
     tau_ret       <- extendVars ptaus $
                      checkRetType ztau_ret
-    let tau       =  funT (map snd ptaus) tau_ret
+    let tau       =  funT [] (map snd ptaus) tau_ret l
     (tau_gen, co) <- generalize tau
     traceVar f tau_gen
     let mkLetExtFun = co $ do cf       <- trans f
@@ -682,7 +682,7 @@ tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT TauK l
-    instType (ArrT (ConstI (length es) l) tau l) exp_ty
+    instType (ArrT (NatT (length es) l) tau l) exp_ty
     mces <- mapM (`checkExp` tau) es
     return $ do ces <- sequence mces
                 return $ E.ArrayE ces l
@@ -731,14 +731,14 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
 
         -- Otherwise we assert that the type of @e1@ should be an array type.
         go tau = do
-            i     <- newMetaTvT IotaK l
+            i     <- newMetaTvT NatK l
             alpha <- newMetaTvT TauK l
             unifyTypes tau (ArrT i alpha l)
             compress tau >>= go
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (ConstI i l) tau l
+    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 tcExp e0@(Z.StructE s flds l) exp_ty =
     withSummaryContext e0 $ do
@@ -854,7 +854,7 @@ tcExp (Z.TakeE l) exp_ty = do
 tcExp (Z.TakesE i l) exp_ty = do
     a <- newMetaTvT TauK l
     b <- newMetaTvT TauK l
-    instType (stT (C (ArrT (ConstI i l) a l) l) a a b) exp_ty
+    instType (stT (C (ArrT (NatT i l) a l) l) a a b) exp_ty
     return $ do ca <- trans a
                 return $ E.takesE (fromIntegral i) ca
 
@@ -868,13 +868,13 @@ tcExp (Z.EmitE e l) exp_ty = do
     return $ E.EmitE <$> mce <*> pure l
 
 tcExp (Z.EmitsE e l) exp_ty = do
-    iota    <- newMetaTvT IotaK l
+    n       <- newMetaTvT NatK l
     s       <- newMetaTvT TauK l
     a       <- newMetaTvT TauK l
     b       <- newMetaTvT TauK l
     let tau =  stT (C (UnitT l) l) s a b
     instType tau exp_ty
-    mce <- checkVal e (arrT iota b)
+    mce <- checkVal e (arrT n b)
     return $ E.EmitsE <$> mce <*> pure l
 
 tcExp (Z.RepeatE ann e l) exp_ty = do
@@ -1187,7 +1187,11 @@ kcType tau@FixT{}     kappa_exp = instKind tau TauK kappa_exp
 kcType tau@FloatT{}   kappa_exp = instKind tau TauK kappa_exp
 kcType tau@StringT{}  kappa_exp = instKind tau TauK kappa_exp
 kcType tau@StructT{}  kappa_exp = instKind tau TauK kappa_exp
-kcType tau@ArrT{}     kappa_exp = instKind tau TauK kappa_exp
+
+kcType (ArrT n tau _) kappa_exp = do
+    checkKind n NatK
+    checkKind tau TauK
+    instKind tau TauK kappa_exp
 
 kcType tau0@(C tau _) kappa_exp = do
     checkKind tau TauK
@@ -1208,8 +1212,7 @@ kcType tau0@(RefT tau _) kappa_exp = do
     checkKind tau TauK
     instKind tau0 RhoK kappa_exp
 
-kcType tau0@(FunT ivs taus tau_ret _) kappa_exp =
-    extendIVars  (ivs `zip` repeat IotaK) $ do
+kcType tau0@(FunT taus tau_ret _) kappa_exp = do
     mapM_ checkArgKind taus
     checkRetKind tau_ret
     instKind tau0 PhiK kappa_exp
@@ -1231,12 +1234,12 @@ kcType tau0@(FunT ivs taus tau_ret _) kappa_exp =
           MuK  -> return ()
           _    -> checkKind tau MuK
 
-kcType tau0@ConstI{} kappa_exp =
-    instKind tau0 IotaK kappa_exp
+kcType tau0@NatT{} kappa_exp =
+    instKind tau0 NatK kappa_exp
 
-kcType tau0@(VarI iv _) kappa_exp = do
-    kappa <- lookupIVar iv
-    instKind tau0 kappa kappa_exp
+kcType (ForallT tvks tau _) kappa_exp =
+    extendTyVars tvks $
+    kcType tau kappa_exp
 
 kcType tau0@(TyVarT tv _) kappa_exp = do
     kappa <- lookupTyVar tv
@@ -1279,30 +1282,30 @@ generalize tau0 =
     go tau@ST{} =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
 
-    go tau@(FunT [] taus tau_ret l) = do
-        mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
-        let iotaMtvs  =  filter (isKind IotaK) mtvs
-        iotas         <- freshVars (length iotaMtvs) ((Set.toList . fvs) tau)
-        extendIVars (iotas `zip` repeat IotaK) $
-            zipWithM_ kcWriteTv iotaMtvs [VarI iota noLoc | iota <- iotas]
-        tau <- compress $ FunT iotas taus tau_ret l
-        let co mcdecl = extendIVars (iotas `zip` repeat IotaK) $ do
-                        ciotas <- mapM trans iotas
-                        mcdecl >>= checkLetFunE ciotas
+    go tau@(FunT taus tau_ret l) = do
+        mtvs         <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
+        let natMtvs  =  filter (isKind NatK) mtvs
+        ns           <- freshVars (length natMtvs) ((Set.toList . allVars) tau)
+        extendTyVars (ns `zip` repeat NatK) $
+            zipWithM_ kcWriteTv natMtvs (map tyVarT ns)
+        tau <- compress $ funT ns taus tau_ret l
+        let co mcdecl = extendTyVars (ns `zip` repeat NatK) $ do
+                        cns <- mapM trans ns
+                        mcdecl >>= checkLetFunE cns
         return (tau, co)
       where
-        checkLetFunE :: [E.IVar] -> E.Decl -> Ti E.Decl
-        checkLetFunE ciotas (E.LetFunD cf [] cvtaus ctau ce l) =
-            return $ E.LetFunD cf ciotas cvtaus ctau ce l
+        checkLetFunE :: [E.TyVar] -> E.Decl -> Ti E.Decl
+        checkLetFunE cns (E.LetFunD cf [] cvtaus ctau ce l) =
+            return $ E.LetFunD cf cns cvtaus ctau ce l
 
-        checkLetFunE ciotas (E.LetExtFunD cf [] cvtaus ctau l) =
-            return $ E.LetExtFunD cf ciotas cvtaus ctau l
+        checkLetFunE cns (E.LetExtFunD cf [] cvtaus ctau l) =
+            return $ E.LetExtFunD cf cns cvtaus ctau l
 
         checkLetFunE _ ce =
             panicdoc $
             text "generalize: expected to coerce a letfun, but got:" <+> ppr ce
 
-    go tau@FunT{} =
+    go tau@ForallT{} =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
 
     go tau =
@@ -1322,13 +1325,32 @@ instantiate tau0 =
                      (subst theta phi tau1) (subst theta phi tau2) l
         return (tau, id)
 
-    go (FunT iotas taus tau_ret l) = do
-        (mtvs, theta, phi) <- instVars iotas IotaK
-        let tau  = FunT [] (subst theta phi taus) (subst theta phi tau_ret) l
+    go (ForallT tvks (FunT taus tau_ret l) _) = do
+        extendTyVars tvks $
+          mapM_ (`checkKind` NatK) (map tyVarT alphas)
+        instFunT alphas taus tau_ret l
+      where
+        alphas :: [TyVar]
+        alphas = map fst tvks
+
+    go (FunT taus tau_ret l) =
+        instFunT [] taus tau_ret l
+
+    go tau =
+        return (tau, id)
+
+    instFunT :: [TyVar]
+             -> [Type]
+             -> Type
+             -> SrcLoc
+             -> Ti (Type, Co)
+    instFunT ns taus tau_ret l =do
+        (mtvs, theta, phi) <- instVars ns NatK
+        let tau  = FunT (subst theta phi taus) (subst theta phi tau_ret) l
         let co mce = do
                 (cf, ces, l) <- mce >>= checkFunE
-                ciotas       <- compress mtvs >>= mapM trans
-                return $ E.CallE cf ciotas ces l
+                cns          <- compress mtvs >>= mapM trans
+                return $ E.CallE cf cns ces l
         return (tau, co)
       where
         checkFunE :: E.Exp -> Ti (E.Var, [E.Exp], SrcLoc)
@@ -1338,9 +1360,6 @@ instantiate tau0 =
         checkFunE ce =
             panicdoc $
             text "instantiate: expected to coerce a call, but got:" <+> ppr ce
-
-    go tau =
-        return (tau, id)
 
     instVars :: (Located tv, Subst Type tv Type)
              => [tv] -> Kind -> Ti ([Type], Map tv Type, Set tv)
@@ -1478,10 +1497,10 @@ checkArrT tau =
         return (iota, alpha)
 
     go tau = do
-        iota  <- newMetaTvT IotaK tau
+        nat   <- newMetaTvT NatK tau
         alpha <- newMetaTvT TauK tau
-        unifyTypes tau (arrT iota alpha)
-        return (iota, alpha)
+        unifyTypes tau (arrT nat alpha)
+        return (nat, alpha)
 
 -- | Check that a type is a struct type, returning the name of the struct.
 checkStructT :: Type -> Ti Z.Struct
@@ -1524,17 +1543,17 @@ checkSTCUnit tau =
 
 checkFunT :: Z.Var -> Int -> Type
           -> Ti ([Type], Type, Co)
-checkFunT _ nargs tau =
+checkFunT f nargs tau =
     instantiate tau >>= go
   where
     go :: (Type, Co) -> Ti ([Type], Type, Co)
-    go (FunT [] taus tau_ret _, co) =
+    go (FunT taus tau_ret _, co) =
         return (taus, tau_ret, co)
 
     go (tau_f, co) = do
         taus    <- replicateM nargs (newMetaTvT TauK tau)
         tau_ret <- newMetaTvT TauK tau
-        unifyTypes tau_f (funT taus tau_ret)
+        unifyTypes tau_f (funT [] taus tau_ret (srclocOf f))
         return (taus, tau_ret, co)
 
 -- | Check that a function type is appropriate for a @map@. The function result
@@ -1549,7 +1568,7 @@ checkMapFunT f tau = do
     (tau_f, co1) <- instantiate tau
     (c, tau_ret) <-
         case tau_f of
-          FunT [] [c] tau_ret@ST{} _ -> return (c, tau_ret)
+          FunT [c] tau_ret@ST{} _ -> return (c, tau_ret)
           _ -> err
     -- Check that the return type of the function we are mapping is
     -- @forall s a b . ST tau s a b@.
@@ -1590,8 +1609,7 @@ checkMapFunT f tau = do
 
         tau2 :: Type
         tau2 =
-            FunT []
-                 [tyVarT gamma]
+            FunT [tyVarT gamma]
                  (ST [sigma, alpha, beta]
                      (C (tyVarT delta) l)
                      (tyVarT sigma)
@@ -1609,12 +1627,12 @@ checkUnresolvedMtvs v tau = do
     tau' <- compress tau
     let mtvs :: [MetaTv]
         mtvs = Set.toList $ fvs tau'
-    check "Ambiguous array length" (filter isIotaMetaTv mtvs)
-    check "Ambiguous type" (filter (not . isIotaMetaTv) mtvs)
+    check "Ambiguous array length" (filter isNatMetaTv mtvs)
+    check "Ambiguous type" (filter (not . isNatMetaTv) mtvs)
   where
-      isIotaMetaTv :: MetaTv -> Bool
-      isIotaMetaTv (MetaTv _ IotaK _) = True
-      isIotaMetaTv _                  = False
+      isNatMetaTv :: MetaTv -> Bool
+      isNatMetaTv (MetaTv _ NatK _) = True
+      isNatMetaTv _                 = False
 
       check :: String -> [MetaTv] -> Ti ()
       check _ [] =
@@ -1956,7 +1974,7 @@ instance Show KindUnificationException where
         friendly MuK     = text "type of the form 'ST omega tau tau'"
         friendly RhoK    = text "mutable type"
         friendly PhiK    = text "function type"
-        friendly IotaK   = text "array index type"
+        friendly NatK    = text "type level natural"
         friendly MetaK{} = error "internal error: failed to unify kind meta-variable"
 
 instance Exception KindUnificationException where
@@ -1969,86 +1987,77 @@ unifyTypes :: Type -> Type -> Ti ()
 unifyTypes tau1 tau2 = do
     tau1' <- compress tau1
     tau2' <- compress tau2
-    unify Map.empty Map.empty tau1' tau2'
+    unify Map.empty tau1' tau2'
   where
     unify :: Map TyVar TyVar
-          -> Map IVar IVar
           -> Type
           -> Type
           -> Ti ()
-    unify theta phi tau1 tau2 = do
+    unify theta tau1 tau2 = do
         tau1' <- compress tau1
         tau2' <- compress tau2
-        go theta phi tau1' tau2'
+        go theta tau1' tau2'
 
     go :: Map TyVar TyVar
-       -> Map IVar IVar
        -> Type
        -> Type
        -> Ti ()
-    go _ _ (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
+    go _ (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
         return ()
 
-    go _ _ tau1@(MetaT mtv _) tau2 =
+    go _ tau1@(MetaT mtv _) tau2 =
         updateMetaTv mtv tau1 tau2
 
-    go _ _ tau1 tau2@(MetaT mtv _) =
+    go _ tau1 tau2@(MetaT mtv _) =
         updateMetaTv mtv tau2 tau1
 
-    go _ _ UnitT{} UnitT{} = return ()
-    go _ _ BoolT{} BoolT{} = return ()
+    go _ UnitT{} UnitT{} = return ()
+    go _ BoolT{} BoolT{} = return ()
 
-    go _ _ (FixT ip _)    (FixT ip' _)   | ip' == ip = return ()
-    go _ _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
-    go _ _ StringT{}      StringT{}                  = return ()
-    go _ _ (StructT s1 _) (StructT s2 _) | s1 == s2  = return ()
+    go _ (FixT ip _)    (FixT ip' _)   | ip' == ip = return ()
+    go _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
+    go _ StringT{}      StringT{}                  = return ()
+    go _ (StructT s1 _) (StructT s2 _) | s1 == s2  = return ()
 
-    go theta phi (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
-        unify theta phi tau1a tau1b
-        unify theta phi tau2a tau2b
+    go theta (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
+        unify theta tau1a tau1b
+        unify theta tau2a tau2b
 
-    go theta phi (C tau1 _) (C tau2 _) =
-        unify theta phi tau1 tau2
+    go theta (C tau1 _) (C tau2 _) =
+        unify theta tau1 tau2
 
-    go _ _ T{} T{} =
+    go _ T{} T{} =
         return ()
 
-    go theta phi (ST alphas_a omega_a tau_1a tau_2a tau_3a _)
-                 (ST alphas_b omega_b tau_1b tau_2b tau_3b _)
+    go theta (ST alphas_a omega_a tau_1a tau_2a tau_3a _)
+             (ST alphas_b omega_b tau_1b tau_2b tau_3b _)
         | length alphas_a == length alphas_b =
           extendTyVars (alphas_b `zip` repeat TauK) $ do
-          unify theta' phi omega_a omega_b
-          unify theta' phi tau_1a tau_1b
-          unify theta' phi tau_2a tau_2b
-          unify theta' phi tau_3a tau_3b
+          unify theta' omega_a omega_b
+          unify theta' tau_1a tau_1b
+          unify theta' tau_2a tau_2b
+          unify theta' tau_3a tau_3b
       where
         theta' :: Map TyVar TyVar
         theta' = Map.fromList (alphas_a `zip` alphas_b) `Map.union` theta
 
-    go theta phi (RefT tau1 _) (RefT tau2 _) =
-        unify theta phi tau1 tau2
+    go theta (RefT tau1 _) (RefT tau2 _) =
+        unify theta tau1 tau2
 
-    go theta phi (FunT iotas_a taus_a tau_a _)
-                 (FunT iotas_b taus_b tau_b _)
-        | length iotas_a == length iotas_b && length taus_a == length taus_b =
-          extendIVars (iotas_b `zip` repeat IotaK) $ do
-          zipWithM_ (unify theta phi') taus_a taus_b
-          unify theta phi' tau_a tau_b
-      where
-        phi' :: Map IVar IVar
-        phi' = Map.fromList (iotas_a `zip` iotas_b) `Map.union` phi
+    go theta (FunT taus_a tau_a _)
+             (FunT taus_b tau_b _)
+        | length taus_a == length taus_b = do
+          zipWithM_ (unify theta) taus_a taus_b
+          unify theta tau_a tau_b
 
-    go _ _ (ConstI i1 _) (ConstI i2 _)  | i1 == i2 =
+    go _ (NatT i1 _) (NatT i2 _)  | i1 == i2 =
         return ()
 
-    go _ _ (VarI v1 _) (VarI v2 _)  | v1 == v2 =
+    go theta (TyVarT tv1 _) (TyVarT tv2 _) | Just tv2' <- Map.lookup tv2 theta
+                                           , tv1 == tv2' =
         return ()
 
-    go theta _ (TyVarT tv1 _) (TyVarT tv2 _) | Just tv2' <- Map.lookup tv2 theta
-                                             , tv1 == tv2' =
-        return ()
-
-    go _ _ _ _ = do
+    go _ _ _ = do
         msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ TypeUnificationException tau1' tau2' msg
@@ -2086,7 +2095,7 @@ unifyKinds tau1 kappa1 kappa2 = do
     go MuK{}    MuK{}    = return ()
     go RhoK{}   RhoK{}   = return ()
     go PhiK{}   PhiK{}   = return ()
-    go IotaK{}  IotaK{}  = return ()
+    go NatK{}   NatK{}   = return ()
 
     go kappa1 kappa2 = do
         msg <- relevantBindings
@@ -2240,15 +2249,15 @@ instance FromZ (Maybe Z.Type, Kind) Type where
     fromZ (Nothing, kappa) = newMetaTvT kappa NoLoc
 
 instance FromZ Z.Ind Type where
-    fromZ (Z.ConstI i l) =
-        pure $ ConstI i l
+    fromZ (Z.NatT i l) =
+        pure $ NatT i l
 
     fromZ (Z.ArrI v _) = do
-        (ind, _) <- lookupVar v >>= checkArrT
-        return ind
+        (n, _) <- lookupVar v >>= checkArrT
+        return n
 
     fromZ (Z.NoneI l) =
-        newMetaTvT IotaK l
+        newMetaTvT NatK l
 
 instance FromZ Z.VarBind (Z.Var, Type) where
     fromZ (Z.VarBind v False ztau) = do
@@ -2290,9 +2299,6 @@ instance Trans Z.Struct E.Struct where
 instance Trans TyVar E.TyVar where
     trans (TyVar n) = pure $ E.TyVar n
 
-instance Trans IVar E.IVar where
-    trans (IVar n) = pure $ E.IVar n
-
 instance Trans IP E.IP where
     trans = pure
 
@@ -2317,8 +2323,14 @@ instance Trans Type E.Type where
             E.ST <$> mapM trans alphas <*>  trans omega <*>
              go tau1 <*> go tau2 <*> go tau3 <*> pure l
 
-        go (FunT iotas taus tau l) =
-            E.FunT <$> mapM trans iotas <*> mapM go taus <*> go tau <*> pure l
+        go (FunT taus tau l) =
+            E.FunT <$> mapM go taus <*> go tau <*> pure l
+
+        go (NatT i l) =
+            pure $ E.NatT i l
+
+        go (ForallT tvks tau l) =
+            E.ForallT <$> mapM trans tvks <*> trans tau <*> pure l
 
         go (TyVarT alpha l) =
             E.TyVarT <$> trans alpha <*> pure l
@@ -2331,10 +2343,19 @@ instance Trans Type E.Omega where
     trans (T _)       = pure E.T
     trans tau         = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core omega"
 
-instance Trans Type E.Iota where
-    trans (ConstI i l)      = pure $ E.ConstI i l
-    trans (VarI (IVar n) l) = pure $ E.VarI (E.IVar n) l
-    trans tau               = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core iota"
+instance Trans Kind E.Kind where
+    trans TauK   = pure E.TauK
+    trans OmegaK = pure E.OmegaK
+    trans MuK    = pure E.MuK
+    trans RhoK   = pure E.RhoK
+    trans PhiK   = pure E.PhiK
+    trans NatK   = pure E.NatK
+
+    trans kappa =
+        faildoc $ text "Cannot translate" <+> ppr kappa <+> text "to Core kind"
+
+instance Trans (TyVar, Kind) (E.TyVar, E.Kind) where
+    trans (alpha, kappa) = (,) <$> trans alpha <*> trans kappa
 
 instance Trans (Z.Var, Type) (E.Var, E.Type) where
     trans (v, tau) = (,) <$> trans v <*> trans tau

@@ -36,9 +36,6 @@ module KZC.Check.Monad (
     extendTyVars,
     lookupTyVar,
 
-    extendIVars,
-    lookupIVar,
-
     withExpContext,
 
     readTv,
@@ -206,15 +203,6 @@ lookupTyVar tv =
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendIVars :: [(IVar, Kind)] -> Ti a -> Ti a
-extendIVars = extendEnv iVars (\env x -> env { iVars = x })
-
-lookupIVar :: IVar -> Ti Kind
-lookupIVar iv =
-    lookupEnv iVars onerr iv
-  where
-    onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
-
 withExpContext :: Z.Exp -> Ti a -> Ti a
 withExpContext e m =
     localExp e $
@@ -351,14 +339,14 @@ instance Compress Type where
     compress (RefT tau l) =
         RefT <$> compress tau <*> pure l
 
-    compress (FunT iotas taus tau l) =
-        FunT <$> pure iotas <*> compress taus <*> compress tau <*> pure l
+    compress (FunT taus tau l) =
+        FunT <$> compress taus <*> compress tau <*> pure l
 
-    compress tau@ConstI{} =
+    compress tau@NatT{} =
         pure tau
 
-    compress tau@VarI{} =
-        pure tau
+    compress (ForallT tvks tau l) =
+        ForallT tvks <$> compress tau <*> pure l
 
     compress tau@TyVarT{} =
         pure tau
@@ -377,8 +365,8 @@ instance Compress Kind where
     compress kappa@MuK    = return kappa
     compress kappa@RhoK   = return kappa
     compress kappa@PhiK   = return kappa
-    compress kappa@IotaK  = return kappa
-    
+    compress kappa@NatK   = return kappa
+
     compress kappa@(MetaK mkv) = do
         maybe_kappa' <- readKv mkv
         case maybe_kappa' of

@@ -133,33 +133,33 @@ transDecl decl@(E.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
 
-transDecl decl@(E.LetFunD f ivs vbs tau_ret e l) k
+transDecl decl@(E.LetFunD f ns vbs tau_ret e l) k
   | isPureishT tau_ret =
     ensureUnique f $ \f' ->
     extendVars [(f, tau)] $ do
     e' <- withSummaryContext decl $
           withFvContext e $
-          extendLetFun f ivs vbs tau_ret $
+          extendLetFun f ns vbs tau_ret $
           transExp e
-    k $ LetFunD (mkBoundVar f') ivs vbs tau_ret e' l
+    k $ LetFunD (mkBoundVar f') ns vbs tau_ret e' l
   | otherwise =
     ensureUnique f $ \f' ->
     extendVars [(f, tau)] $ do
     c <- withSummaryContext decl $
          withFvContext e $
-         extendLetFun f ivs vbs tau_ret $
+         extendLetFun f ns vbs tau_ret $
          transComp e
-    k $ LetFunCompD (mkBoundVar f') ivs vbs tau_ret c l
+    k $ LetFunCompD (mkBoundVar f') ns vbs tau_ret c l
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
-transDecl (E.LetExtFunD f ivs vbs tau_ret l) k =
+transDecl (E.LetExtFunD f ns vbs tau_ret l) k =
     extendExtFuns [(f, tau)] $
-    k $ LetExtFunD (mkBoundVar f) ivs vbs tau_ret l
+    k $ LetExtFunD (mkBoundVar f) ns vbs tau_ret l
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 transDecl (E.LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $

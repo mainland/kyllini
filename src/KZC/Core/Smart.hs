@@ -95,6 +95,9 @@ import KZC.Expr.Smart (tyVarT,
                        structT,
                        stT,
                        unSTC,
+                       funT,
+                       unFunT,
+                       forallT,
 
                        isBaseT,
                        isUnitT,
@@ -114,7 +117,7 @@ import KZC.Expr.Smart (tyVarT,
 
                        splitArrT,
 
-                       constI,
+                       natT,
 
                        bitC,
                        intC,
