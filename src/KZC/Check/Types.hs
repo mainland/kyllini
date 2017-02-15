@@ -270,10 +270,12 @@ instance Pretty Type where
     pprPrec _ (TyVarT tv _) =
         ppr tv
 
+-- | Pretty-print a forall quantifier
 pprForall :: [(TyVar, Kind)] -> Doc
 pprForall []   = empty
 pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
 
+-- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
 pprKindSig (tau, TauK)  = ppr tau
 pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)

@@ -106,9 +106,9 @@ stT omega sigma alpha beta =
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
 
-funT :: [TyVar] -> [Type] -> Type -> SrcLoc -> Type
-funT [] taus tau l = FunT taus tau l
-funT ns taus tau l = ForallT (ns `zip` repeat NatK) (FunT taus tau l) l
+funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT []   taus tau l = FunT taus tau l
+funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
 forallT :: [(TyVar, Kind)] -> Type -> Type
 forallT []   tau = tau

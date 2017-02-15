@@ -451,14 +451,15 @@ cgDecl (LetD decl _) k = do
     flags <- askConfig
     cgLocalDecl flags decl k
 
-cgDecl decl@(LetFunD f nats vbs tau_ret e l) k = do
+cgDecl decl@(LetFunD f tvks vbs tau_ret e l) k = do
     cf <- cvar f
     extendVars [(bVar f, tau)] $ do
       extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
         appendTopComment (ppr f <+> colon <+> align (ppr tau))
         withSummaryContext decl $
-            extendLetFun f nats vbs tau_ret $ do
-            (cnats, cparams1) <- unzip <$> mapM cgTyVar nats
+            extendLetFun f tvks vbs tau_ret $ do
+            nats              <- checkNatPoly tvks
+            (cnats, cparams1) <- unzip <$> mapM cgNatTyVar nats
             (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
             cres_ident        <- gensym "let_res"
             cblock <- inNewCodeBlock_ $
@@ -481,14 +482,15 @@ cgDecl decl@(LetFunD f nats vbs tau_ret e l) k = do
     tau_res = resultType tau_ret
 
     tau :: Type
-    tau = funT nats (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
-cgDecl decl@(LetExtFunD f nats vbs tau_ret l) k =
+cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
     extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do
-        (_, cparams1) <- unzip <$> mapM cgTyVar nats
+        nats          <- checkNatPoly tvks
+        (_, cparams1) <- unzip <$> mapM cgNatTyVar nats
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
           then do cretparam <- cgRetParam tau_res Nothing
@@ -498,7 +500,7 @@ cgDecl decl@(LetExtFunD f nats vbs tau_ret l) k =
     k
   where
     tau :: Type
-    tau = funT nats (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
     tau_res :: Type
     tau_res = resultType tau_ret
@@ -531,12 +533,12 @@ cgDecl (LetCompD v tau comp _) k =
         useLabels (compUsedLabels comp')
         cgComp comp' klbl k
 
-cgDecl (LetFunCompD f nats vbs tau_ret comp l) k =
+cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
     extendVars [(bVar f, tau)] $
     extendVarCExps [(bVar f, CFunComp funcompc)] k
   where
     tau :: Type
-    tau = funT nats (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
     -- Compile a bound computation function given its arguments. This will be
     -- called in some future context. It may be called multiple times, so we
@@ -545,10 +547,11 @@ cgDecl (LetFunCompD f nats vbs tau_ret comp l) k =
     funcompc :: forall a . FunCompC l a
     funcompc _taus es klbl k =
         withInstantiatedTyVars tau_ret $ do
+        nats  <- checkNatPoly tvks
         comp' <- traverse uniquify comp
-        cnats <- mapM cgNatType (map tyVarT nats)
+        cnats <- mapM (cgNatType . tyVarT) nats
         ces   <- mapM cgArg es
-        extendTyVars (nats `zip` repeat NatK) $
+        extendTyVars tvks $
           extendVars  vbs $
           extendTyVarCExps (nats `zip` cnats) $
           extendVarCExps   (map fst vbs `zip` ces) $ do
@@ -565,6 +568,17 @@ cgDecl (LetFunCompD f nats vbs tau_ret comp l) k =
           where
             compc :: forall a . CompC l a
             compc = cgComp comp
+
+-- | Check that we quantify only over type variables of kind Nat.
+checkNatPoly :: Monad m => [(TyVar, Kind)] -> m [TyVar]
+checkNatPoly [] =
+    return []
+
+checkNatPoly ((alpha, NatK) : tvks) =
+    (alpha :) <$> checkNatPoly tvks
+
+checkNatPoly _ =
+    faildoc $ text "Cannot compile functions that are polymorphic over kinds other than Nat"
 
 cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
@@ -1082,18 +1096,19 @@ cgExp e k =
         cgLocalDecl flags decl $
           cgExp e k
 
-    go (CallE f alphas es l) k = do
-        (nats, _, tau_ret) <- lookupVar f >>= unFunT
+    go (CallE f taus es l) k = do
+        (tvks, _, tau_ret) <- lookupVar f >>= unFunT
         let tau_res        =  resultType tau_ret
+        nats               <- checkNatPoly tvks
         cf                 <- lookupVarCExp f
-        cns                <- mapM cgNatType alphas
+        cnats              <- mapM cgNatType taus
         ces                <- mapM cgArg es
         if isReturnedByRef tau_res
-          then extendTyVarCExps (nats `zip` cns) $ do
+          then extendTyVarCExps (nats `zip` cnats) $ do
                (cres, k') <- splitMultishotBind "call_res" tau_res True k
-               appendStm $ rl l [cstm|$cf($args:cns, $args:(ces ++ [cres]));|]
+               appendStm $ rl l [cstm|$cf($args:cnats, $args:(ces ++ [cres]));|]
                k'
-          else runKont k $ CExp [cexp|$cf($args:cns, $args:ces)|]
+          else runKont k $ CExp [cexp|$cf($args:cnats, $args:ces)|]
       where
         cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
@@ -1291,11 +1306,6 @@ cgLoop (Just l) m = cgWithLabel l $ do
     cids <- collectUsed_ m
     useCIds cids
 
-cgTyVar :: TyVar -> Cg l (CExp l, C.Param)
-cgTyVar alpha = do
-    calpha <- cvar alpha
-    return (CExp [cexp|$id:calpha|], [cparam|int $id:calpha|])
-
 -- | Compile a function variable binding. When the variable is a ref type, it is
 -- represented as a pointer, so we use the 'CPtr' constructor to ensure that
 -- dereferencing occurs.
@@ -1313,6 +1323,12 @@ cgVarBind (v, tau) = do
 
     l :: Loc
     l = locOf v <--> locOf tau
+
+-- | Compile a Nat type variable binding.
+cgNatTyVar :: TyVar -> Cg l (CExp l, C.Param)
+cgNatTyVar alpha = do
+    calpha <- cvar alpha
+    return (CExp [cexp|$id:calpha|], [cparam|int $id:calpha|])
 
 -- | Compile a type-level Nat to a C expression.
 cgNatType :: Type -> Cg l (CExp l)
@@ -1972,10 +1988,10 @@ cgComp comp klbl = cgSteps (unComp comp)
         compc <- lookupVarCExp v >>= unCComp
         compc klbl k
 
-    cgStep (CallC l f alphas args _) klbl k =
+    cgStep (CallC l f taus args _) klbl k =
         cgWithLabel l $ do
         funcompc <- lookupVarCExp f >>= unCFunComp
-        funcompc alphas args klbl k
+        funcompc taus args klbl k
 
     cgStep (IfC l e thenk elsek _) klbl k =
         cgWithLabel l $ do

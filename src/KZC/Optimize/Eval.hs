@@ -118,40 +118,38 @@ evalDecl (LetD decl s) k =
     go (HeapDeclVal mkDecl) =
         k $ \h -> LetD <$> mkDecl h <*> pure s
 
-evalDecl decl@(LetFunD f ns vbs tau_ret e l) k =
+evalDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
     withSummaryContext decl $
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' ->
       withUniqVars vs $ \vs' -> do
       e' <- killHeap $
-            extendLetFun f' ns vbs tau_ret $
+            extendLetFun f' tvks vbs tau_ret $
             extendUnknownVarBinds vbs $
             withSummaryContext e $
             toExp <$> evalExp e
-      extendVarBinds [(bVar f', FunClosV theta ns (vs' `zip` taus) tau_ret eval)] $
-        k $ const . return $ LetFunD f' ns (vs' `zip` taus) tau_ret e' l
+      extendVarBinds [(bVar f', FunClosV theta tvks (vs' `zip` taus) tau_ret eval)] $
+        k $ const . return $ LetFunD f' tvks (vs' `zip` taus) tau_ret e' l
   where
     (vs, taus) = unzip vbs
-    tau       = forallT (ns `zip` repeat NatK) $
-                FunT taus tau_ret l
+    tau        = funT tvks taus tau_ret l
 
     eval :: EvalM l m (Val l m Exp)
     eval =
-        extendTyVars (ns `zip` repeat NatK) $
+        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         withSummaryContext e $
         evalExp e
 
-evalDecl (LetExtFunD f ns vbs tau_ret l) k =
+evalDecl (LetExtFunD f tvks vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
     extendVarBinds [(bVar f, UnknownV)] $
-    k $ const . return $ LetExtFunD f ns vbs tau_ret l
+    k $ const . return $ LetExtFunD f tvks vbs tau_ret l
   where
     tau :: Type
-    tau = forallT (ns `zip` repeat NatK) $
-          FunT (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
 evalDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $
@@ -174,27 +172,26 @@ evalDecl decl@(LetCompD v tau comp s) k =
         withSummaryContext comp $
         traverse uniquify comp >>= evalComp
 
-evalDecl decl@(LetFunCompD f ns vbs tau_ret comp l) k =
+evalDecl decl@(LetFunCompD f tvks vbs tau_ret comp l) k =
     withSummaryContext decl $
     extendVars [(bVar f, tau)] $ do
     theta <- askSubst
     withUniqBoundVar f $ \f' ->
       withUniqVars vs $ \vs' -> do
       comp' <- killHeap $
-               extendLetFun f ns vbs tau_ret $
+               extendLetFun f tvks vbs tau_ret $
                extendUnknownVarBinds vbs $
                evalComp comp >>= toComp
-      extendCVarBinds [(bVar f', FunCompClosV theta ns (vs' `zip` taus) tau_ret eval)] $
-        k $ const . return $ LetFunCompD f' ns (vs' `zip` taus) tau_ret comp' l
+      extendCVarBinds [(bVar f', FunCompClosV theta tvks (vs' `zip` taus) tau_ret eval)] $
+        k $ const . return $ LetFunCompD f' tvks (vs' `zip` taus) tau_ret comp' l
   where
     (vs, taus) = unzip vbs
-    tau        = forallT (ns `zip` repeat NatK) $
-                 FunT taus tau_ret l
+    tau        = funT tvks taus tau_ret l
 
     eval :: EvalM l m (Val l m (Comp l))
     eval =
         withSummaryContext comp $
-        extendTyVars (ns `zip` repeat NatK) $
+        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         traverse uniquify comp >>= evalComp
@@ -371,10 +368,10 @@ evalStep step@(CallC _ f taus args _) =
     go v_f taus' v_args
   where
     go :: Val l m a -> [Type] -> [ArgVal l m] -> EvalM l m (Val l m (Comp l))
-    go (FunCompClosV theta ns vbs _tau_ret k) taus' v_args =
+    go (FunCompClosV theta tvks vbs _tau_ret k) taus' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' ->
-        extendTyVarTypes (ns `zip` taus') $
+        extendTyVarTypes (map fst tvks `zip` taus') $
         extendArgBinds  (vs' `zip` v_args) $ do
         taus' <- mapM simplType taus
         k >>= wrapLetArgs vs' taus'
@@ -771,10 +768,10 @@ evalExp e =
         go tau v_f taus' v_es
       where
         go :: Type -> Val l m Exp -> [Type] -> [Val l m Exp] -> EvalM l m (Val l m Exp)
-        go _tau (FunClosV theta ns vbs _tau_ret k) tau' v_es =
+        go _tau (FunClosV theta tvks vbs _tau_ret k) tau' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
-            extendTyVarTypes (ns `zip` tau') $
+            extendTyVarTypes (map fst tvks `zip` tau') $
             extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
             k >>= wrapLetArgs vs' taus'

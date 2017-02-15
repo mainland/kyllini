@@ -1283,23 +1283,24 @@ generalize tau0 =
         panicdoc $ text "Asked to generalize quantified type:" <+> ppr tau
 
     go tau@(FunT taus tau_ret l) = do
-        mtvs         <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
-        let natMtvs  =  filter (isKind NatK) mtvs
-        ns           <- freshVars (length natMtvs) ((Set.toList . allVars) tau)
-        extendTyVars (ns `zip` repeat NatK) $
-            zipWithM_ kcWriteTv natMtvs (map tyVarT ns)
-        tau <- compress $ funT ns taus tau_ret l
-        let co mcdecl = extendTyVars (ns `zip` repeat NatK) $ do
-                        cns <- mapM trans ns
-                        mcdecl >>= checkLetFunE cns
+        mtvs     <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
+        alphas   <- freshVars (length mtvs) ((Set.toList . allVars) tau)
+        kappas   <- mapM inferKind (map metaT mtvs)
+        let tvks =  alphas `zip` kappas
+        extendTyVars tvks $
+            zipWithM_ kcWriteTv mtvs (map tyVarT alphas)
+        tau <- compress $ funT tvks taus tau_ret l
+        let co mcdecl = extendTyVars tvks $ do
+                        ctvks <- mapM trans tvks
+                        mcdecl >>= checkLetFunE ctvks
         return (tau, co)
       where
-        checkLetFunE :: [E.TyVar] -> E.Decl -> Ti E.Decl
-        checkLetFunE cns (E.LetFunD cf [] cvtaus ctau ce l) =
-            return $ E.LetFunD cf cns cvtaus ctau ce l
+        checkLetFunE :: [(E.TyVar, E.Kind)] -> E.Decl -> Ti E.Decl
+        checkLetFunE ctvks (E.LetFunD cf [] cvtaus ctau ce l) =
+            return $ E.LetFunD cf ctvks cvtaus ctau ce l
 
-        checkLetFunE cns (E.LetExtFunD cf [] cvtaus ctau l) =
-            return $ E.LetExtFunD cf cns cvtaus ctau l
+        checkLetFunE ctvks (E.LetExtFunD cf [] cvtaus ctau l) =
+            return $ E.LetExtFunD cf ctvks cvtaus ctau l
 
         checkLetFunE _ ce =
             panicdoc $
@@ -1320,18 +1321,13 @@ instantiate tau0 =
   where
     go :: Type -> Ti (Type, Co)
     go (ST alphas omega sigma tau1 tau2 l) = do
-        (_, theta, phi) <- instVars alphas TauK
+        (_, theta, phi) <- instVars (alphas `zip` repeat TauK)
         let tau = ST [] (subst theta phi omega) (subst theta phi sigma)
                      (subst theta phi tau1) (subst theta phi tau2) l
         return (tau, id)
 
-    go (ForallT tvks (FunT taus tau_ret l) _) = do
-        extendTyVars tvks $
-          mapM_ (`checkKind` NatK) (map tyVarT alphas)
-        instFunT alphas taus tau_ret l
-      where
-        alphas :: [TyVar]
-        alphas = map fst tvks
+    go (ForallT tvks (FunT taus tau_ret l) _) =
+        instFunT tvks taus tau_ret l
 
     go (FunT taus tau_ret l) =
         instFunT [] taus tau_ret l
@@ -1339,14 +1335,14 @@ instantiate tau0 =
     go tau =
         return (tau, id)
 
-    instFunT :: [TyVar]
+    instFunT :: [(TyVar, Kind)]
              -> [Type]
              -> Type
              -> SrcLoc
              -> Ti (Type, Co)
-    instFunT ns taus tau_ret l =do
-        (mtvs, theta, phi) <- instVars ns NatK
-        let tau  = FunT (subst theta phi taus) (subst theta phi tau_ret) l
+    instFunT tvks taus tau_ret l =do
+        (mtvs, theta, phi) <- instVars tvks
+        let tau    = FunT (subst theta phi taus) (subst theta phi tau_ret) l
         let co mce = do
                 (cf, ces, l) <- mce >>= checkFunE
                 cns          <- compress mtvs >>= mapM trans
@@ -1361,13 +1357,15 @@ instantiate tau0 =
             panicdoc $
             text "instantiate: expected to coerce a call, but got:" <+> ppr ce
 
-    instVars :: (Located tv, Subst Type tv Type)
-             => [tv] -> Kind -> Ti ([Type], Map tv Type, Set tv)
-    instVars tvs kappa = do
-        mtvs      <- mapM (newMetaTvT kappa) tvs
-        let theta =  Map.fromList (tvs `zip` mtvs)
-        let phi   =  fvs tau0 <\\> fromList tvs
+    instVars :: [(TyVar, Kind)] -> Ti ([Type], Map TyVar Type, Set TyVar)
+    instVars tvks = do
+        mtvs      <- mapM (\(alpha, kappa) -> newMetaTvT kappa alpha) tvks
+        let theta =  Map.fromList (alphas `zip` mtvs)
+        let phi   =  fvs tau0 <\\> fromList alphas
         return (mtvs, theta, phi)
+      where
+        alphas :: [TyVar]
+        alphas = map fst tvks
 
 -- | Update a type meta-variable with a type while checking that the type's kind
 -- matches the meta-variable's kind.

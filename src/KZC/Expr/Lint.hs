@@ -170,26 +170,26 @@ checkDecl decl@(LetRefD v tau (Just e) _) k = do
         checkExp e tau
     extendVars [(v, refT tau)] k
 
-checkDecl decl@(LetFunD f alphas vbs tau_ret e l) k = do
+checkDecl decl@(LetFunD f tvks vbs tau_ret e l) k = do
     alwaysWithSummaryContext decl $
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
       alwaysWithSummaryContext decl $ do
-          tau_ret' <- extendLetFun f alphas vbs tau_ret $
+          tau_ret' <- extendLetFun f tvks vbs tau_ret $
                       withFvContext e $
                       inferExp e >>= absSTScope
           checkTypeEquality tau_ret' tau_ret
       k
   where
     tau :: Type
-    tau = funT alphas (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
-checkDecl decl@(LetExtFunD f alphas vbs tau_ret l) k = do
+checkDecl decl@(LetExtFunD f tvks vbs tau_ret l) k = do
     alwaysWithSummaryContext decl $ checkKind tau PhiK
     extendExtFuns [(f, tau)] k
   where
     tau :: Type
-    tau = funT alphas (map snd vbs) tau_ret l
+    tau = funT tvks (map snd vbs) tau_ret l
 
 checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do

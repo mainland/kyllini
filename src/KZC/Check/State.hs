@@ -35,6 +35,7 @@ data TiEnv = TiEnv
     , structs    :: !(Map Z.Struct StructDef)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
+    , tyVarTypes :: !(Map TyVar Type)
     , envMtvs    :: !(Set MetaTv)
     , valCtxType :: Type
     }
@@ -45,6 +46,7 @@ defaultTiEnv = TiEnv
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
     , varTypes   = Map.empty
     , tyVars     = Map.empty
+    , tyVarTypes = Map.empty
     , envMtvs    = Set.empty
     , valCtxType = error "valCtxType: not yet defined"
     }

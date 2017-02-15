@@ -71,7 +71,12 @@ module KZC.Expr.Syntax (
     arrowPrec,
     arrowPrec1,
     tyappPrec,
-    tyappPrec1
+    tyappPrec1,
+
+    pprForall,
+    pprTypeSig,
+    pprKindSig,
+    pprFunParams
 #endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
@@ -206,8 +211,8 @@ data Import = Import ModuleName
 
 data Decl = LetD Var Type Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
-          | LetFunD Var [TyVar] [(Var, Type)] Type Exp !SrcLoc
-          | LetExtFunD Var [TyVar] [(Var, Type)] Type !SrcLoc
+          | LetFunD Var [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
+          | LetExtFunD Var [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
           | LetStructD Struct [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -656,15 +661,15 @@ instance Pretty Decl where
       where
         lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
 
-    pprPrec p (LetFunD f tvs vbs tau e _) =
+    pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprFunParams tvs vbs <+>
+        text "letfun" <+> ppr f <+> pprFunParams tvks vbs <+>
         nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
-    pprPrec p (LetExtFunD f tvs vbs tau _) =
+    pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
-        text "letextfun" <+> ppr f <+> pprFunParams tvs vbs <+>
+        text "letextfun" <+> ppr f <+> pprFunParams tvks vbs <+>
         nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
 
     pprPrec p (LetStructD s flds _) =
@@ -873,26 +878,6 @@ instance Pretty VectAnn where
     ppr (UpTo f from to)      = text "<=" <+> ppr (Rigid f from to)
     ppr AutoVect              = empty
 
-pprFunParams :: [TyVar] -> [(Var, Type)] -> Doc
-pprFunParams = go
-  where
-    go :: [TyVar] -> [(Var, Type)] -> Doc
-    go [] [] =
-        empty
-
-    go [] [vb] =
-        pprArg vb
-
-    go [] vbs =
-        sep (map pprArg vbs)
-
-    go nats vbs =
-        sep (map ppr nats ++ map pprArg vbs)
-
-    pprArg :: (Var, Type) -> Doc
-    pprArg (v, tau) =
-        parens $ ppr v <+> text ":" <+> ppr tau
-
 instance Pretty WildVar where
     ppr WildV     = text "_"
     ppr (TameV v) = ppr v
@@ -1002,14 +987,6 @@ instance Pretty Type where
     pprPrec _ (TyVarT tv _) =
         ppr tv
 
-pprForall :: [(TyVar, Kind)] -> Doc
-pprForall []   = empty
-pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
-
-pprKindSig :: Pretty a => (a, Kind) -> Doc
-pprKindSig (tau, TauK)  = ppr tau
-pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)
-
 instance Pretty Omega where
     pprPrec p (C tau) =
         parensIf (p > tyappPrec) $
@@ -1025,6 +1002,26 @@ instance Pretty Kind where
     ppr MuK    = text "mu"
     ppr PhiK   = text "phi"
     ppr NatK   = text "N"
+
+-- | Pretty-print a forall quantifier
+pprForall :: [(TyVar, Kind)] -> Doc
+pprForall []   = empty
+pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
+
+-- | Pretty-print a thing with a type signature
+pprTypeSig :: Pretty a => (a, Type) -> Doc
+pprTypeSig (v, tau) = parens (ppr v <+> colon <+> ppr tau)
+
+-- | Pretty-print a thing with a kind signature
+pprKindSig :: Pretty a => (a, Kind) -> Doc
+pprKindSig (tau, TauK)  = ppr tau
+pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)
+
+-- | Pretty-print function parameters
+pprFunParams :: [(TyVar, Kind)] -> [(Var, Type)] -> Doc
+pprFunParams []   []   = empty
+pprFunParams []   [vb] = pprTypeSig vb
+pprFunParams tvks vbs  = sep (map pprKindSig tvks ++ map pprTypeSig vbs)
 
 -- %left '&&' '||'
 -- %left '==' '!='

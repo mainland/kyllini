@@ -123,7 +123,7 @@ data Val l m a where
     CmdV :: FrozenHeap l m -> Exp -> Val l m Exp
 
     -- A function closure
-    FunClosV :: !Theta -> ![TyVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m Exp)) -> Val l m Exp
+    FunClosV :: !Theta -> ![(TyVar,Kind)] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m Exp)) -> Val l m Exp
 
     -- A value returned from a computation.
     CompReturnV :: Val l m Exp -> Val l m (Comp l)
@@ -139,7 +139,7 @@ data Val l m a where
     CompClosV :: !Theta -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
 
     -- A computation function closure.
-    FunCompClosV :: !Theta -> ![TyVar] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
+    FunCompClosV :: !Theta -> ![(TyVar,Kind)] -> ![(Var, Type)] -> Type -> !(EvalM l m (Val l m (Comp l))) -> Val l m (Comp l)
 
 deriving instance Eq l => Eq (Val l m a)
 deriving instance Ord l => Ord (Val l m a)

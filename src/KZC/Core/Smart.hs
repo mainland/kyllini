@@ -99,6 +99,8 @@ import KZC.Expr.Smart (tyVarT,
                        unFunT,
                        forallT,
 
+                       isNatK,
+
                        isBaseT,
                        isUnitT,
                        isBitT,

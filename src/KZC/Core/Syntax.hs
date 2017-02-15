@@ -170,7 +170,9 @@ import KZC.Expr.Syntax (Var(..),
                         arrowPrec,
                         arrowPrec1,
                         tyappPrec,
-                        tyappPrec1
+                        tyappPrec1,
+
+                        pprFunParams
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
 import KZC.Label
@@ -228,11 +230,11 @@ data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
 data Decl l = LetD LocalDecl !SrcLoc
-            | LetFunD BoundVar [TyVar] [(Var, Type)] Type Exp !SrcLoc
-            | LetExtFunD BoundVar [TyVar] [(Var, Type)] Type !SrcLoc
+            | LetFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
             | LetStructD Struct [(Field, Type)] !SrcLoc
             | LetCompD BoundVar Type (Comp l) !SrcLoc
-            | LetFunCompD BoundVar [TyVar] [(Var, Type)] Type (Comp l) !SrcLoc
+            | LetFunCompD BoundVar [(TyVar, Kind)] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data View = IdxVW Var Exp (Maybe Int) !SrcLoc
@@ -908,18 +910,6 @@ pprBody e =
     case expToStms e of
       [_]  -> line <> align (ppr e)
       stms -> space <> semiEmbraceWrap (map ppr stms)
-
-pprFunParams :: [TyVar] -> [(Var, Type)] -> Doc
-pprFunParams = go
-  where
-    go :: [TyVar] -> [(Var, Type)] -> Doc
-    go []   []   = empty
-    go []   [vb] = pprArg vb
-    go []   vbs  = sep (map pprArg vbs)
-    go nats vbs  = sep (map ppr nats ++ map pprArg vbs)
-
-    pprArg :: (Var, Type) -> Doc
-    pprArg (v, tau) = parens $ ppr v <+> text ":" <+> ppr tau
 
 instance IsLabel l => Pretty (Arg l) where
     pprPrec p (ExpA e)  = pprPrec p e

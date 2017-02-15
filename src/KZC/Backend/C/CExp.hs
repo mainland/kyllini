@@ -84,7 +84,7 @@ instance Show (CompC l a) where
 
 -- | A computation function compiler, which produces a compiled call to a
 -- computation function when given the appropriate arguments.
-type FunCompC l a =  [Type]   -- Array length arguments
+type FunCompC l a =  [Type]   -- Type arguments
                   -> [Arg l]  -- Function arguments
                   -> l        -- Label of our continuation
                   -> Kont l a -- Continuation accepting the compilation result

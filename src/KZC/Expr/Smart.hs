@@ -36,6 +36,8 @@ module KZC.Expr.Smart (
     unFunT,
     forallT,
 
+    isNatK,
+
     isBaseT,
     isUnitT,
     isBitT,
@@ -173,18 +175,23 @@ unSTC :: Type -> Type
 unSTC (ST _ (C tau) _ _ _ _) = tau
 unSTC tau                    = tau
 
-funT :: [TyVar] -> [Type] -> Type -> SrcLoc -> Type
-funT [] taus tau l = FunT taus tau l
-funT ns taus tau l = ForallT (ns `zip` repeat NatK) (FunT taus tau l) l
+funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT []   taus tau l = FunT taus tau l
+funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
-unFunT :: Monad m => Type -> m ([TyVar], [Type], Type)
-unFunT (ForallT tvks (FunT taus tau _) _) = return (map fst tvks, taus, tau)
+unFunT :: Monad m => Type -> m ([(TyVar, Kind)], [Type], Type)
+unFunT (ForallT tvks (FunT taus tau _) _) = return (tvks, taus, tau)
 unFunT (FunT taus tau _)                  = return ([], taus, tau)
 unFunT _                                  = fail "unFunT: not a function"
 
 forallT :: [(TyVar, Kind)] -> Type -> Type
 forallT []   tau = tau
 forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
+
+-- | Return 'True' if a kind is kind Nat
+isNatK :: Kind -> Bool
+isNatK NatK{} = True
+isNatK _      = False
 
 -- | Return 'True' if a type is a base type.
 isBaseT :: Type -> Bool

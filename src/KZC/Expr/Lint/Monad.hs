@@ -400,13 +400,13 @@ extendLet _v tau k =
 
 extendLetFun :: MonadTc m
              => v
-             -> [TyVar]
+             -> [(TyVar, Kind)]
              -> [(Var, Type)]
              -> Type
              -> m a
              -> m a
-extendLetFun _f alphas vbs tau_ret k =
-    extendTyVars (alphas `zip` repeat NatK) $
+extendLetFun _f tvks vbs tau_ret k =
+    extendTyVars tvks $
     extendVars vbs $
     inSTScope tau_ret $
     inLocalScope k
