@@ -363,8 +363,8 @@ unknownRate :: (IsLabel l, MonadTc m) => Step l -> RM m ()
 unknownRate step = do
     tau <- inferStep step
     case tau of
-      ST _ C{} _ _ _ _ -> plusRate unknownCompRate
-      _                -> plusRate unknownTransRate
+      ST C{} _ _ _ _ -> plusRate unknownCompRate
+      _              -> plusRate unknownTransRate
 
 unknownCompRate :: Rate M
 unknownCompRate = CompR (Z 1) (Z 1)

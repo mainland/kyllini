@@ -476,7 +476,7 @@ inferExp (CallE f taus es _) = do
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -486,7 +486,7 @@ inferExp (AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
-    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -578,14 +578,14 @@ inferExp e0@(StructE s flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
-    appSTScope $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
     b = "b"
 
 inferExp (ErrorE nu _ l) =
-    appSTScope $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
+    appSTScope $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -593,7 +593,7 @@ inferExp (ErrorE nu _ l) =
 
 inferExp (ReturnE _ e l) = do
     tau <- inferExp e
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -627,35 +627,35 @@ inferExp e@(BindE wv tau e1 e2 _) = do
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
+    appSTScope $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferExp (TakesE i tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    appSTScope $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferExp (EmitE e l) = do
     tau <- withFvContext e $ inferExp e
-    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferExp (EmitsE e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
-    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferExp (RepeatE _ e l) = do
     (s, a, b) <- withFvContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
-    return $ ST [] T s a b l
+    return $ forallST [] T s a b l
 
 inferExp e0@(ParE _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
@@ -671,7 +671,7 @@ inferExp e0@(ParE _ b e1 e2 l) = do
         checkTypeEquality (stT omega2 b'' b''' c') (stT omega2 b b c)
     omega <- withFvContext e0 $
              joinOmega omega1 omega2
-    return $ ST [] omega s a c l
+    return $ forallST [] omega s a c l
 
 checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
@@ -813,16 +813,12 @@ checkTypeEquality tau1 tau2 =
     checkT _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
         return ()
 
-    checkT theta (ST alphas_a omega_a tau1_a tau2_a tau3_a _)
-                 (ST alphas_b omega_b tau1_b tau2_b tau3_b _)
-        | length alphas_a == length alphas_b = do
+    checkT theta (ST omega_a tau1_a tau2_a tau3_a _)
+                 (ST omega_b tau1_b tau2_b tau3_b _) = do
           checkO theta  omega_a omega_b
-          checkT theta' tau1_a tau1_b
-          checkT theta' tau2_a tau2_b
-          checkT theta' tau3_a tau3_b
-      where
-        theta' :: Map TyVar TyVar
-        theta' = Map.fromList (alphas_a `zip` alphas_b) `Map.union` theta
+          checkT theta tau1_a tau1_b
+          checkT theta tau2_a tau2_b
+          checkT theta tau3_a tau3_b
 
     checkT theta (FunT taus_a tau_a _)
                  (FunT taus_b tau_b _)
@@ -894,8 +890,7 @@ inferKind = inferType
         checkKindEquality kappa TauK
         return TauK
 
-    inferType (ST alphas omega tau1 tau2 tau3 _) =
-        extendTyVars (alphas `zip` repeat TauK) $ do
+    inferType (ST omega tau1 tau2 tau3 _) = do
         void $ inferOmega omega
         checkKind tau1 TauK
         checkKind tau2 TauK
@@ -1152,39 +1147,41 @@ computation.
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
 withInstantiatedTyVars :: MonadTc m => Type -> m a -> m a
-withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
-    ST _ _ s' a' b' _ <- appSTScope tau
+withInstantiatedTyVars tau@(ForallT _ (ST _ s a b _) _) k = do
+    ST _ s' a' b' _ <- appSTScope tau
     extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
 
 withInstantiatedTyVars _tau k =
     k
 
 absSTScope :: MonadTc m => Type -> m Type
-absSTScope (ST [] omega s a b l) = do
+absSTScope (ST omega s a b l) = do
     (s',a',b') <- askSTIndTypes
     let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
-    return $ ST alphas omega s a b l
+    return $ forallST alphas omega s a b l
 
 absSTScope tau =
     return tau
 
 appSTScope :: MonadTc m => Type -> m Type
-appSTScope tau@(ST alphas omega s a b l) = do
+appSTScope tau@(ForallT tvks (ST omega s a b l) _) = do
     (s',a',b') <- askSTIndTypes
-    let theta = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
-                                           , alpha `elem` alphas]
-    let phi   = fvs tau
-    return $ ST [] omega
-                (subst theta phi s)
-                (subst theta phi a)
-                (subst theta phi b)
-                l
+    let theta  = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
+                                            , alpha `elem` alphas]
+    let phi    = fvs tau
+    return $ subst theta phi $ ST omega s a b l
+  where
+    alphas :: [TyVar]
+    alphas = map fst tvks
 
 appSTScope tau =
     return tau
 
 checkForallSTC :: MonadTc m => Type -> m Type
-checkForallSTC (ST _ (C tau) _ _ _ _) =
+checkForallSTC (ForallT _ tau _) =
+    checkForallSTC tau
+
+checkForallSTC (ST (C tau) _ _ _ _) =
     return tau
 
 checkForallSTC tau =
@@ -1192,7 +1189,10 @@ checkForallSTC tau =
     text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
 
 checkForallSTCUnit :: MonadTc m => Type -> m ()
-checkForallSTCUnit (ST _ (C (UnitT _)) _ _ _ _) =
+checkForallSTCUnit (ForallT _ tau _) =
+    checkForallSTCUnit tau
+
+checkForallSTCUnit (ST (C (UnitT _)) _ _ _ _) =
     return ()
 
 checkForallSTCUnit tau =
@@ -1200,7 +1200,7 @@ checkForallSTCUnit tau =
     text "Expected type of the form 'ST (C ()) s a b' but got:" <+/> ppr tau
 
 checkST :: MonadTc m => Type -> m (Omega, Type, Type, Type)
-checkST (ST [] omega s a b _) =
+checkST (ST omega s a b _) =
     return (omega, s, a, b)
 
 checkST tau =
@@ -1208,7 +1208,7 @@ checkST tau =
     text "Expected type of the form 'ST omega s a b' but got:" <+/> ppr tau
 
 checkSTC :: MonadTc m => Type -> m (Type, Type, Type, Type)
-checkSTC (ST [] (C tau) s a b _) =
+checkSTC (ST (C tau) s a b _) =
     return (tau, s, a, b)
 
 checkSTC tau =
@@ -1216,7 +1216,7 @@ checkSTC tau =
     text "Expected type of the form 'ST (C tau) s a b' but got:" </> ppr tau
 
 checkSTCUnit :: MonadTc m => Type -> m (Type, Type, Type)
-checkSTCUnit (ST [] (C (UnitT _)) s a b _) =
+checkSTCUnit (ST (C (UnitT _)) s a b _) =
     return (s, a, b)
 
 checkSTCUnit tau =
@@ -1236,24 +1236,33 @@ checkPureish tau@ST{} = void $ checkPureishST tau
 checkPureish _        = return ()
 
 checkPureishST :: MonadTc m => Type -> m ([TyVar], Omega, Type, Type, Type)
-checkPureishST tau@(ST alphas omega s a b _) | isPureishT tau =
-    return (alphas, omega, s, a, b)
+checkPureishST tau@(ForallT tvks (ST omega s a b _) _) | isPureishT tau =
+    return (map fst tvks, omega, s, a, b)
+
+checkPureishST tau@(ST omega s a b _) | isPureishT tau =
+    return ([], omega, s, a, b)
 
 checkPureishST tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'forall s a b . ST omega s a b' but got:" <+/> ppr tau
 
 checkPureishSTC :: MonadTc m => Type -> m ([TyVar], Type, Type, Type, Type)
-checkPureishSTC tau0@(ST alphas (C tau) s a b _) | isPureishT tau0 =
-    return (alphas, tau, s, a, b)
+checkPureishSTC tau0@(ForallT tvks (ST (C tau) s a b _) _) | isPureishT tau0 =
+    return (map fst tvks, tau, s, a, b)
+
+checkPureishSTC tau0@(ST (C tau) s a b _) | isPureishT tau0 =
+    return ([], tau, s, a, b)
 
 checkPureishSTC tau =
     faildoc $ nest 2 $ group $
     text "Expected type of the form 'forall s a b . ST (C tau) s a b' but got:" </> ppr tau
 
 checkPureishSTCUnit :: MonadTc m => Type -> m ([TyVar], Type, Type, Type)
-checkPureishSTCUnit tau@(ST alphas (C (UnitT _)) s a b _) | isPureishT tau =
-    return (alphas, s, a, b)
+checkPureishSTCUnit tau@(ForallT tvks (ST (C (UnitT _)) s a b _) _) | isPureishT tau =
+    return (map fst tvks, s, a, b)
+
+checkPureishSTCUnit tau@(ST (C (UnitT _)) s a b _) | isPureishT tau =
+    return ([], s, a, b)
 
 checkPureishSTCUnit tau =
     faildoc $ nest 2 $ group $

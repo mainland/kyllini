@@ -369,7 +369,10 @@ inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
 inSTScope = scopeOver
   where
     scopeOver :: Type -> m a -> m a
-    scopeOver (ST _ _ s a b _) m =
+    scopeOver (ForallT _ (ST _ s a b _) _) m =
+        localSTIndTypes (Just (s, a, b)) m
+
+    scopeOver (ST _ s a b _) m =
         localSTIndTypes (Just (s, a, b)) m
 
     scopeOver _ m =
@@ -416,22 +419,25 @@ typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                   = pure 0
-    go BoolT{}                   = pure 1
-    go (FixT ip _)               = pure $ ipWidth ip
-    go (FloatT fp _)             = pure $ fpWidth fp
-    go (StructT "complex" _)     = pure $ 2 * dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)    = pure 16
-    go (StructT "complex16" _)   = pure 32
-    go (StructT "complex32" _)   = pure 64
-    go (StructT "complex64" _)   = pure 128
+    go UnitT{}                 = pure 0
+    go BoolT{}                 = pure 1
+    go (FixT ip _)             = pure $ ipWidth ip
+    go (FloatT fp _)           = pure $ fpWidth fp
+    go (StructT "complex" _)   = pure $ 2 * dEFAULT_INT_WIDTH
+    go (StructT "complex8" _)  = pure 16
+    go (StructT "complex16" _) = pure 32
+    go (StructT "complex32" _) = pure 64
+    go (StructT "complex64" _) = pure 128
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST _ (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)              = go tau
+    go (ST (C tau) _ _ _ _)    = go tau
+    go (RefT tau _)            = go tau
 
     go (StructT s _) = do
         StructDef _ flds _ <- lookupStruct s
         sum <$> mapM (typeSize . snd) flds
+
+    go (ForallT _ (ST (C tau) _ _ _ _) _) =
+        go tau
 
     go tau =
         faildoc $ text "Cannot calculate bit width of type" <+> ppr tau

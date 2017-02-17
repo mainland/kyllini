@@ -31,6 +31,7 @@ module KZC.Expr.Smart (
     arrKnownT,
     structT,
     stT,
+    forallST,
     unSTC,
     funT,
     unFunT,
@@ -169,10 +170,18 @@ structT :: Struct -> Type
 structT struct = StructT struct (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
-stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+stT omega s a b = ST omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+
+forallST :: [TyVar] -> Omega -> Type -> Type -> Type -> SrcLoc -> Type
+forallST [] omega s a b l =
+    ST omega s a b l
+
+forallST alphas omega s a b l =
+    ForallT (alphas `zip` repeat TauK) (ST omega s a b l) l
 
 unSTC :: Type -> Type
-unSTC (ST _ (C tau) _ _ _ _) = tau
+unSTC (ForallT _ tau@ST{} _) = unSTC tau
+unSTC (ST (C tau) _ _ _ _)   = tau
 unSTC tau                    = tau
 
 funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
@@ -235,25 +244,35 @@ isRefT RefT{} = True
 isRefT _      = False
 
 isSTUnitT :: Type -> Bool
-isSTUnitT (ST [] (C UnitT{}) _ _ _ _) = True
-isSTUnitT _                           = False
+isSTUnitT (ForallT _ tau@ST{} _)   = isSTUnitT tau
+isSTUnitT (ST (C UnitT{}) _ _ _ _) = True
+isSTUnitT _                        = False
 
 -- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
 isCompT :: Type -> Bool
-isCompT ST{} = True
-isCompT _    = False
+isCompT (ForallT _ tau@ST{} _) = isCompT tau
+isCompT ST{}                   = True
+isCompT _                      = False
 
 -- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
-isPureT ST{} = False
-isPureT _    = True
+isPureT (ForallT _ tau@ST{} _) = isPureT tau
+isPureT ST{}                   = False
+isPureT _                      = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
 -- otherwise. A pureish computation may use references, but it may not take or
 -- emit, so it has type @forall s a b . ST omega s a b@.
 isPureishT :: Type -> Bool
-isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
+isPureishT (ForallT tvks (ST _ (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) =
+    alphas' == alphas
+  where
+    alphas, alphas' :: [TyVar]
+    alphas  = sort $ map fst tvks
+    alphas' = sort [s, a, b]
+
+isPureishT (ForallT _ ST{} _) =
+    False
 
 isPureishT ST{} =
     False

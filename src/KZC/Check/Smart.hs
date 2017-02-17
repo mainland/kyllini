@@ -28,6 +28,7 @@ module KZC.Check.Smart (
     refT,
     arrT,
     stT,
+    forallST,
     cT,
     funT,
     forallT,
@@ -101,7 +102,14 @@ arrT iota tau = ArrT iota tau (iota `srcspan` tau)
 
 stT :: Type -> Type -> Type -> Type -> Type
 stT omega sigma alpha beta =
-    ST [] omega sigma alpha beta (omega `srcspan` sigma `srcspan` alpha `srcspan` beta)
+    ST omega sigma alpha beta (omega `srcspan` sigma `srcspan` alpha `srcspan` beta)
+
+forallST :: [TyVar] -> Type -> Type -> Type -> Type -> SrcLoc -> Type
+forallST [] omega s a b l =
+    ST omega s a b l
+
+forallST alphas omega s a b l =
+    ForallT (alphas `zip` repeat TauK) (ST omega s a b l) l
 
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
@@ -127,15 +135,23 @@ isRefT _      = False
 
 -- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
-isPureT ST{} = False
-isPureT _    = True
+isPureT (ForallT _ tau@ST{} _) = isPureT tau
+isPureT ST{}                   = False
+isPureT _                      = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation,
 -- @False@ otherwise. A pureish computation may use references, but it may not
 -- take or emit, so it has type @forall s a b . ST omega s a b@.
 isPureishT :: Type -> Bool
-isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
+isPureishT (ForallT tvks (ST _ (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) =
+    alphas' == alphas
+  where
+    alphas, alphas' :: [TyVar]
+    alphas  = sort $ map fst tvks
+    alphas' = sort [s, a, b]
+
+isPureishT (ForallT _ ST{} _) =
+    False
 
 isPureishT ST{} =
     False

@@ -48,7 +48,7 @@ instance Located Type where
   locOf (StringT l) = locOf l
   locOf (StructT _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
-  locOf (ST _ _ _ _ _ l) = locOf l
+  locOf (ST _ _ _ _ l) = locOf l
   locOf (RefT _ l) = locOf l
   locOf (FunT _ _ l) = locOf l
   locOf (NatT _ l) = locOf l

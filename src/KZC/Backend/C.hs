@@ -1474,7 +1474,7 @@ cgType (ArrT (NatT n _) tau _) = do
 cgType tau@(ArrT _ _ _) =
     panicdoc $ text "cgType: cannot translate array of unknown size:" <+> ppr tau
 
-cgType tau@(ST _ (C tau') _ _ _ _) | isPureishT tau =
+cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
     cgType tau'
 
 cgType tau@ST{} =
@@ -1710,7 +1710,7 @@ cgBinder :: Var -> Type -> Bool -> Cg l (CExp l)
 cgBinder _ UnitT{} _ =
     return CVoid
 
-cgBinder v tau@(ST _ (C tau') _ _ _ _) init | isPureishT tau =
+cgBinder v tau@(ST (C tau') _ _ _ _) init | isPureishT tau =
     cgBinder v tau' init
 
 cgBinder v tau init = do
@@ -2541,8 +2541,9 @@ isLvalue _                    = False
 -- is just of type @tau. For a non-terminating computation of type @ST T s a b@,
 -- the result type is the unit type.
 resultType :: Type -> Type
-resultType (ST _ (C tau) _ _ _ _) = tau
-resultType (ST _ T _ _ _ l)       = UnitT l
+resultType (ForallT _ tau@ST{} _) = resultType tau
+resultType (ST (C tau) _ _ _ _)   = tau
+resultType (ST T _ _ _ l)         = UnitT l
 resultType tau                    = tau
 
 -- | Return @True@ is a value of the given type is passed by reference, i.e., if

@@ -344,7 +344,7 @@ toBitsV = go
     go (ArrayV arr) (ArrT _ tau _) =
         packValues (P.toList arr `zip` repeat tau)
 
-    go (ReturnV val) (ST _ (C tau) _ _ _ _) =
+    go (ReturnV val) (ST (C tau) _ _ _ _) =
         toBitsV val tau
 
     go val tau = do

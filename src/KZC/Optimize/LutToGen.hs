@@ -202,11 +202,17 @@ lutExp e info = do
         fs = map fst flds
 
         mkResult :: Exp -> Maybe Var -> Type -> G l m Exp
-        mkResult _e_lut Nothing (ST _ (C UnitT{}) _ _ _ _) =
+        mkResult _e_lut Nothing (ForallT _ (ST (C UnitT{}) _ _ _ _) _) =
+            return $ returnE unitE
+
+        mkResult _e_lut Nothing (ST (C UnitT{}) _ _ _ _) =
             return $ returnE unitE
 
         mkResult _e_lut Nothing UnitT{} =
             return unitE
+
+        mkResult e_lut Nothing (ForallT _ ST{} _) =
+            return $ returnE $ projE e_lut (last fs)
 
         mkResult e_lut Nothing ST{} =
             return $ returnE $ projE e_lut (last fs)

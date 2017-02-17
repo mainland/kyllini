@@ -334,7 +334,7 @@ data Type = UnitT !SrcLoc
           | StringT !SrcLoc
           | StructT Struct !SrcLoc
           | ArrT Type Type !SrcLoc
-          | ST [TyVar] Omega Type Type Type !SrcLoc
+          | ST Omega Type Type Type !SrcLoc
           | RefT Type !SrcLoc
           | FunT [Type] Type !SrcLoc
           | NatT Int !SrcLoc
@@ -952,18 +952,13 @@ instance Pretty Type where
     pprPrec _ (ArrT ind tau _) =
         ppr tau <> brackets (ppr ind)
 
-    pprPrec p (ST alphas omega tau1 tau2 tau3 _) =
+    pprPrec p (ST omega tau1 tau2 tau3 _) =
         parensIf (p > tyappPrec) $
-        pprForall alphas <+>
         text "ST" <+>
         align (sep [pprPrec tyappPrec1 omega
                    ,pprPrec tyappPrec1 tau1
                    ,pprPrec tyappPrec1 tau2
                    ,pprPrec tyappPrec1 tau3])
-      where
-        pprForall :: [TyVar] -> Doc
-        pprForall []     = empty
-        pprForall alphas = text "forall" <+> sep (map ppr alphas) <+> dot
 
     pprPrec p (FunT taus tau _) =
         parensIf (p > arrowPrec) $
@@ -1100,21 +1095,19 @@ instance HasFixity Unop where
  ------------------------------------------------------------------------------}
 
 instance Fvs Type TyVar where
-    fvs UnitT{}                            = mempty
-    fvs BoolT{}                            = mempty
-    fvs FixT{}                             = mempty
-    fvs FloatT{}                           = mempty
-    fvs StringT{}                          = mempty
-    fvs (StructT _ _)                      = mempty
-    fvs (ArrT _ tau _)                     = fvs tau
-    fvs (ST alphas omega tau1 tau2 tau3 _) = fvs omega <>
-                                             (fvs tau1 <> fvs tau2 <> fvs tau3)
-                                             <\\> fromList alphas
-    fvs (RefT tau _)                       = fvs tau
-    fvs (FunT taus tau _)                  = fvs taus <> fvs tau
-    fvs NatT{}                             = mempty
-    fvs (ForallT tvks tau _)               = fvs tau <\\> fromList (map fst tvks)
-    fvs (TyVarT tv _)                      = singleton tv
+    fvs UnitT{}                      = mempty
+    fvs BoolT{}                      = mempty
+    fvs FixT{}                       = mempty
+    fvs FloatT{}                     = mempty
+    fvs StringT{}                    = mempty
+    fvs (StructT _ _)                = mempty
+    fvs (ArrT _ tau _)               = fvs tau
+    fvs (ST  omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
+    fvs (RefT tau _)                 = fvs tau
+    fvs (FunT taus tau _)            = fvs taus <> fvs tau
+    fvs NatT{}                       = mempty
+    fvs (ForallT tvks tau _)         = fvs tau <\\> fromList (map fst tvks)
+    fvs (TyVarT tv _)                = singleton tv
 
 instance Fvs Omega TyVar where
     fvs (C tau) = fvs tau
@@ -1263,9 +1256,8 @@ instance Subst Type TyVar Type where
     substM (ArrT nat tau l) =
         ArrT <$> substM nat <*> substM tau <*> pure l
 
-    substM (ST alphas omega tau1 tau2 tau3 l) =
-        freshen alphas $ \alphas' ->
-        ST alphas' <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
+    substM (ST omega tau1 tau2 tau3 l) =
+        ST <$> substM omega <*> substM tau1 <*> substM tau2 <*> substM tau3 <*> pure l
 
     substM (RefT tau l) =
         RefT <$> substM tau <*> pure l

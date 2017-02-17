@@ -474,7 +474,7 @@ inferExp (CallE f ies es _) = do
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -484,7 +484,7 @@ inferExp e@(AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- withFvContext e2 $ inferExp e2
     withFvContext e $ checkTypeEquality tau' tau
-    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -602,14 +602,14 @@ inferExp e0@(StructE s flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
-    return $ ST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
     b = "b"
 
 inferExp (ErrorE nu _ l) =
-    return $ ST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -617,7 +617,7 @@ inferExp (ErrorE nu _ l) =
 
 inferExp (ReturnE _ e l) = do
     tau <- inferExp e
-    return $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
+    return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -631,7 +631,7 @@ inferExp (BindE wv tau e1 e2 _) = do
         extendWildVars [(wv, tau)] $ do
         tau_e2              <- inferExp e2
         (_, omega, _, _, _) <- checkPureishST tau_e2
-        checkTypeEquality tau_e2 (ST alphas omega s a b noLoc)
+        checkTypeEquality tau_e2 (forallST alphas omega s a b noLoc)
         return tau_e2
 
 inferExp (LutE _ e) =
@@ -641,9 +641,11 @@ inferExp (GenE e gs _) =
     checkGenerators gs $ \n -> do
     tau <- inferExp e
     case tau of
-      ST _ (C tau') _ _ _ _ -> do checkPureish tau
-                                  return $ arrKnownT n tau'
-      _                     -> return $ arrKnownT n tau
+      ForallT _ (ST (C tau') _ _ _ _) _ ->
+          do checkPureish tau
+             return $ arrKnownT n tau'
+      _ ->
+          return $ arrKnownT n tau
 
 checkGenerators :: forall a m . MonadTc m => [Gen] -> (Int -> m a) -> m a
 checkGenerators gs k =
@@ -760,7 +762,7 @@ inferComp comp =
         return tau
 
     inferBind step [BindC{}] _ =
-        appSTScope $ ST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
+        appSTScope $ forallST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
       where
         s = "s"
         a = "a"
@@ -870,7 +872,7 @@ inferStep (ReturnC _ e _) =
     tau <- inferExp e
     unless (isPureT tau) $
         faildoc $ text "Returned expression must be pure but has type" <+> ppr tau
-    appSTScope $ ST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
+    appSTScope $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
     s = "s"
     a = "a"
@@ -881,35 +883,35 @@ inferStep BindC{} =
 
 inferStep (TakeC _ tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [b] (C tau) tau tau (tyVarT b) l
+    appSTScope $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferStep (TakesC _ i tau l) = do
     checkKind tau TauK
-    appSTScope $ ST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    appSTScope $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferStep (EmitC _ e l) = do
     tau <- withFvContext e $ inferExp e
-    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferStep (EmitsC _ e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
-    appSTScope $ ST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferStep (RepeatC _ _ c l) = do
     (s, a, b) <- withFvContext c $ inferComp c >>= checkSTCUnit
-    return $ ST [] T s a b l
+    return $ forallST [] T s a b l
 
 inferStep step@(ParC _ b e1 e2 l) = do
     (s, a, c) <- askSTIndTypes
@@ -925,7 +927,7 @@ inferStep step@(ParC _ b e1 e2 l) = do
         checkTypeEquality (stT omega2 b'' b''' c') (stT omega2 b b c)
     omega <- withFvContext step $
              joinOmega omega1 omega2
-    return $ ST [] omega s a c l
+    return $ ST omega s a c l
 
 checkComp :: (IsLabel l, MonadTc m)
           => Comp l
