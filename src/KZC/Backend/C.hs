@@ -55,6 +55,7 @@ import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Error
 import KZC.Util.Memoize
+import KZC.Util.Pretty
 import KZC.Util.Staged
 import KZC.Util.Summary
 import KZC.Util.Trace

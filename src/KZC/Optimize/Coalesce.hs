@@ -49,6 +49,7 @@ import KZC.Core.Transform
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq

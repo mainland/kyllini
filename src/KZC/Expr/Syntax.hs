@@ -64,20 +64,9 @@ module KZC.Expr.Syntax (
 
     renormalize,
 
-    arrPrec,
-    doPrec,
-    doPrec1,
-    appPrec,
-    appPrec1,
-    arrowPrec,
-    arrowPrec1,
-    tyappPrec,
-    tyappPrec1,
-
-    pprForall,
     pprTypeSig,
     pprKindSig,
-    pprFunParams
+    pprFunDecl
 #endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
@@ -264,9 +253,10 @@ data Exp = ConstE Const !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Stm v e = ReturnS InlineAnn e !SrcLoc
-             | BindS (Maybe v) Type e !SrcLoc
-             | ExpS e !SrcLoc
+data Stm d v e = ReturnS InlineAnn e !SrcLoc
+               | LetS d !SrcLoc
+               | BindS (Maybe v) Type e !SrcLoc
+               | ExpS e !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
@@ -594,6 +584,19 @@ instance LiftedBits Const (Maybe Const) where
 
 {------------------------------------------------------------------------------
  -
+ - Statements
+ -
+ ------------------------------------------------------------------------------}
+
+expToStms :: Exp -> [Stm Decl Var Exp]
+expToStms (LetE decl e l)               = LetS decl l : expToStms e
+expToStms (ReturnE ann e l)             = [ReturnS ann e l]
+expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
+expToStms e                             = [ExpS e (srclocOf e)]
+
+{------------------------------------------------------------------------------
+ -
  - Summaries
  -
  ------------------------------------------------------------------------------}
@@ -648,41 +651,33 @@ instance Pretty Program where
 instance Pretty Import where
     ppr (Import mod) = text "import" <+> ppr mod
 
+    pprList []      = empty
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
     pprPrec p (LetRefD v tau Nothing _) =
         parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau
+        text "let ref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetRefD v tau (Just e) _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
+        text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
     pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprFunParams tvks vbs <+>
-        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
-        nest 2 (text "=" </> ppr e)
+        text "fun" <+> pprFunDecl f tvks vbs tau <> pprBody e
 
     pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
-        text "letextfun" <+> ppr f <+> pprFunParams tvks vbs <+>
-        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
+        text "fun external" <+> pprFunDecl f tvks vbs tau
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> pprStruct colon flds))
-      where
-        lhs = text "struct" <+> ppr s
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon flds
 
     pprList decls = stack (map ppr decls)
 
@@ -696,10 +691,10 @@ instance Pretty Const where
     pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
     pprPrec _ (FloatC _ f)     = ppr f
     pprPrec _ (StringC s)      = text (show s)
-    pprPrec _ (StructC s flds) = ppr s <+> pprStruct equals flds
+    pprPrec _ (StructC s flds) = ppr s <+> pprStruct comma equals flds
     pprPrec _ (ArrayC cs)
         | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
-        | otherwise                         = text "arr" <+> embrace commasep (map ppr (V.toList cs))
+        | otherwise                         = text "arr" <+> enclosesep lbrace rbrace comma (map ppr (V.toList cs))
       where
         isBit :: Const -> Bool
         isBit (FixC (U 1) _) = True
@@ -742,17 +737,15 @@ instance Pretty Exp where
 
     pprPrec p (IfE e1 e2 e3 _) =
         parensIf (p >= appPrec) $
-        text "if"   <+> pprPrec appPrec1 e1 <+/>
-        text "then" <+> pprPrec appPrec1 e2 <+/>
-        text "else" <+> pprPrec appPrec1 e3
+        text "if"   <+> pprPrec ifPrec1 e1 <+/>
+        text "then" <+> pprPrec ifPrec1 e2 <+/>
+        text "else" <+> pprPrec ifPrec1 e3
 
     pprPrec p (LetE decl body _) =
         parensIf (p > appPrec) $
         case body of
-          LetE{} -> ppr decl <+> text "in" </>
-                    pprPrec doPrec1 body
-          _      -> ppr decl </>
-                    nest 2 (text "in" </> pprPrec doPrec1 body)
+          LetE{} -> ppr decl <+> text "in" </> pprPrec doPrec1 body
+          _      -> ppr decl </> text "in" <> pprBody body
 
     pprPrec _ (CallE f taus es _) =
         ppr f <> parens (commasep (map ppr taus ++ map ppr es))
@@ -762,24 +755,20 @@ instance Pretty Exp where
 
     pprPrec p (AssignE v e _) =
         parensIf (p > appPrec) $
-        ppr v <+> text ":=" <+> pprPrec appPrec1 e
+        ppr v <+> text ":=" <+/> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
-        nest 2 $
         text "while" <+>
-        group (pprPrec appPrec1 e1) <+/>
+        group (pprPrec appPrec1 e1) <>
         pprBody e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
-        nest 2 $
-        ppr ann <+> text "for" <+>
-        group (parens (ppr v <+> colon <+> ppr tau) <+>
-               text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <+/>
+        ppr ann <+> text "for" <+> pprTypeSig v tau <+>
+        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
-        text "arr" <+> embrace commasep (map ppr es)
+        text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
 
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
@@ -788,7 +777,7 @@ instance Pretty Exp where
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
     pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct equals fields
+        ppr s <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -829,31 +818,22 @@ instance Pretty Exp where
         ppr ann <+> text "repeat" <> pprBody e
 
     pprPrec p (ParE ann tau e1 e2 _) =
-        parensIf (p > arrPrec) $
-        pprPrec arrPrec e1 <+>
-        ppr ann <> text "@" <> pprPrec appPrec1 tau <+>
-        pprPrec arrPrec e2
+        parensIf (p > parrPrec) $
+        pprPrec parrPrec e1 <+>
+        ppr ann <> text "@" <> pprPrec tyappPrec1 tau <+>
+        pprPrec parrPrec1 e2
 
 instance Pretty PipelineAnn where
     ppr AlwaysPipeline = text "|>>>|"
     ppr _              = text ">>>"
 
-expToStms :: Exp -> [Stm Var Exp]
-expToStms (ReturnE ann e l)             = [ReturnS ann e l]
-expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
-expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
-expToStms e                             = [ExpS e (srclocOf e)]
-
-pprBody :: Exp -> Doc
-pprBody e =
-    case expToStms e of
-      [_]  -> line <> align (ppr e)
-      stms -> space <> semiEmbraceWrap (map ppr stms)
-
-instance (Pretty v, Pretty e) => Pretty (Stm v e) where
+instance (Pretty d, Pretty v, Pretty e) => Pretty (Stm d v e) where
     pprPrec p (ReturnS ann e _) =
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
+
+    pprPrec _ (LetS d _) =
+        ppr d
 
     pprPrec _ (BindS Nothing _ e _) =
         ppr e
@@ -866,7 +846,7 @@ instance (Pretty v, Pretty e) => Pretty (Stm v e) where
         pprPrec p e
 
     pprList stms =
-        semiEmbrace (map ppr stms)
+        embrace (map ppr stms)
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
@@ -929,11 +909,13 @@ instance Pretty Type where
     pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I w) _) =
-        text "int" <> ppr w
+    pprPrec _ (FixT (I w) _)
+      | w == dEFAULT_INT_WIDTH = text "int"
+      | otherwise              = text "int" <> ppr w
 
-    pprPrec _ (FixT (U w) _) =
-        text "uint" <> ppr w
+    pprPrec _ (FixT (U w) _)
+      | w == dEFAULT_INT_WIDTH = text "uint"
+      | otherwise              = text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
@@ -955,35 +937,40 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "struct" <+> ppr s
 
+    pprPrec p (ArrT ind tau@StructT{} _) =
+        parensIf (p > tyappPrec) $
+        ppr tau <> brackets (ppr ind)
+
     pprPrec _ (ArrT ind tau _) =
         ppr tau <> brackets (ppr ind)
 
     pprPrec p (ST omega tau1 tau2 tau3 _) =
         parensIf (p > tyappPrec) $
-        text "ST" <+>
-        align (sep [pprPrec tyappPrec1 omega
-                   ,pprPrec tyappPrec1 tau1
-                   ,pprPrec tyappPrec1 tau2
-                   ,pprPrec tyappPrec1 tau3])
+        text "ST" <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau1
+                  <+> pprPrec tyappPrec1 tau2
+                  <+> pprPrec tyappPrec1 tau3
 
     pprPrec p (FunT taus tau _) =
         parensIf (p > arrowPrec) $
-        pprArgs taus <+>
-        text "->" <+>
+        group $
+        parens (commasep (map ppr taus)) <+>
+        text "->" </>
         pprPrec arrowPrec1 tau
-      where
-        pprArgs :: [Type] -> Doc
-        pprArgs [tau1] =
-            ppr tau1
-
-        pprArgs taus =
-            parens (commasep (map ppr taus))
 
     pprPrec _ (NatT i _) =
         ppr i
 
+    pprPrec p (ForallT tvks (ST omega tau1 tau2 tau3 _) _) =
+        parensIf (p > tyappPrec) $
+        text "ST" <>  pprForall tvks
+                  <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau1
+                  <+> pprPrec tyappPrec1 tau2
+                  <+> pprPrec tyappPrec1 tau3
+
     pprPrec _ (ForallT tvks tau _) =
-        pprForall tvks <+> ppr tau
+        pprForall tvks <> ppr tau
 
     pprPrec _ (TyVarT tv _) =
         ppr tv
@@ -991,7 +978,7 @@ instance Pretty Type where
 instance Pretty Omega where
     pprPrec p (C tau) =
         parensIf (p > tyappPrec) $
-        text "C" <+> ppr tau
+        text "C" <+> pprPrec tyappPrec1 tau
 
     pprPrec _ T =
         text "T"
@@ -1009,11 +996,11 @@ instance Pretty Kind where
 -- | Pretty-print a forall quantifier
 pprForall :: [(TyVar, Kind)] -> Doc
 pprForall []   = empty
-pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
+pprForall tvks = angles $ commasep (map pprKindSig tvks)
 
 -- | Pretty-print a thing with a type signature
-pprTypeSig :: Pretty a => (a, Type) -> Doc
-pprTypeSig (v, tau) = parens (ppr v <+> colon <+> ppr tau)
+pprTypeSig :: Pretty a => a -> Type -> Doc
+pprTypeSig v tau = parens (ppr v <+> colon <+> ppr tau)
 
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
@@ -1024,11 +1011,22 @@ pprKindSig (tau, TauK traits)
 pprKindSig (tau, kappa) =
     parens (ppr tau <+> colon <+> ppr kappa)
 
--- | Pretty-print function parameters
-pprFunParams :: [(TyVar, Kind)] -> [(Var, Type)] -> Doc
-pprFunParams []   []   = empty
-pprFunParams []   [vb] = pprTypeSig vb
-pprFunParams tvks vbs  = sep (map pprKindSig tvks ++ map pprTypeSig vbs)
+-- | Pretty-print a function declaration.
+pprFunDecl :: Var -> [(TyVar, Kind)] -> [(Var, Type)] -> Type -> Doc
+pprFunDecl f tvks vbs tau_ret =
+    group $
+    nest 2 $
+    ppr f <>
+    pprForall tvks <>
+    parens (commasep (map pprArg vbs)) <+>
+    text "->" </>
+    ppr tau_ret
+  where
+    pprArg :: (Var, Type) -> Doc
+    pprArg (v, tau) = ppr v <+> colon <+> ppr tau
+
+pprBody :: Exp -> Doc
+pprBody e = softline <> ppr (expToStms e)
 
 -- %left '&&' '||'
 -- %left '==' '!='
@@ -1038,36 +1036,10 @@ pprFunParams tvks vbs  = sep (map pprKindSig tvks ++ map pprTypeSig vbs)
 -- %left '<' '<=' '>' '>='
 -- %left '<<' '>>'
 -- %left '+' '-'
--- %left '*' '/' '%' '**'
--- %left NEG
--- %left '>>>'
-
-arrPrec :: Int
-arrPrec = 11
-
-doPrec :: Int
-doPrec = 12
-
-doPrec1 :: Int
-doPrec1 = doPrec + 1
-
-appPrec :: Int
-appPrec = 13
-
-appPrec1 :: Int
-appPrec1 = appPrec + 1
-
-arrowPrec :: Int
-arrowPrec = 0
-
-arrowPrec1 :: Int
-arrowPrec1 = arrowPrec + 1
-
-tyappPrec :: Int
-tyappPrec = 1
-
-tyappPrec1 :: Int
-tyappPrec1 = tyappPrec + 1
+-- %left '*' '/' '%'
+-- %left '**'
+-- %left 'length'
+-- %left '~' 'not' NEG
 
 instance HasFixity Binop where
     fixity Eq   = infixl_ 2
@@ -1089,14 +1061,14 @@ instance HasFixity Binop where
     fixity Mul  = infixl_ 9
     fixity Div  = infixl_ 9
     fixity Rem  = infixl_ 9
-    fixity Pow  = infixl_ 9
+    fixity Pow  = infixl_ 10
     fixity Cat  = infixr_ 2
 
 instance HasFixity Unop where
-    fixity Lnot        = infixr_ 10
-    fixity Bnot        = infixr_ 10
-    fixity Neg         = infixr_ 10
-    fixity Len         = infixr_ 10
+    fixity Lnot        = infixr_ 12
+    fixity Bnot        = infixr_ 12
+    fixity Neg         = infixr_ 12
+    fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
     fixity (Bitcast _) = infixr_ 10
 

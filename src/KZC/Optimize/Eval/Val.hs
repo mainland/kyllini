@@ -92,6 +92,7 @@ import KZC.Core.Syntax
 import KZC.Label
 import {-# SOURCE #-} KZC.Optimize.Eval.Monad (EvalM)
 import qualified KZC.Optimize.Eval.PArray as P
+import KZC.Util.Pretty
 
 type Theta = Map Var Var
 

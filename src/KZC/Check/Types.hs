@@ -178,25 +178,13 @@ instance Named TyVar where
  -
  ------------------------------------------------------------------------------}
 
-appPrec :: Int
-appPrec = 10
-
-appPrec1 :: Int
-appPrec1 = appPrec + 1
-
 #if !defined(ONLY_TYPEDEFS)
-arrowPrec :: Int
-arrowPrec = 0
-
-arrowPrec1 :: Int
-arrowPrec1 = arrowPrec + 1
-
 instance Pretty TyVar where
     ppr (TyVar n) = ppr n
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct colon fields
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -228,67 +216,72 @@ instance Pretty Type where
     pprPrec _ (StringT _) =
         text "string"
 
-    pprPrec _ (StructT s _) =
-        ppr s
+    pprPrec p (StructT s _) =
+        parensIf (p > tyappPrec) $
+        text "struct" <+> ppr s
+
+    pprPrec p (ArrT ind tau@StructT{} _) =
+        parensIf (p > tyappPrec) $
+        ppr tau <> brackets (ppr ind)
 
     pprPrec _ (ArrT ind tau _) =
-        pprPrec appPrec1 tau <> brackets (ppr ind)
+        ppr tau <> brackets (ppr ind)
 
     pprPrec p (C tau _) =
-        parensIf (p > appPrec) $
-        text "C" <+> pprPrec appPrec1 tau
+        parensIf (p > tyappPrec) $
+        text "C" <+> pprPrec tyappPrec1 tau
 
     pprPrec _ (T _) =
         text "T"
 
-    pprPrec p (ForallT tvks (ST (C tau _) (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) | expertTypes && alphas' == alphas =
+    pprPrec p (ST omega tau1 tau2 tau3 _) | expertTypes =
+        parensIf (p > tyappPrec) $
+        text "ST" <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau1
+                  <+> pprPrec tyappPrec1 tau2
+                  <+> pprPrec tyappPrec1 tau3
+
+    pprPrec p (ST omega _ tau2 tau3 _) =
+        parensIf (p > tyappPrec) $
+        text "ST" <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau2
+                  <+> pprPrec tyappPrec1 tau3
+
+    pprPrec p (RefT tau _) | expertTypes =
+        parensIf (p > tyappPrec) $
+        text "ref" <+> pprPrec tyappPrec1 tau
+
+    pprPrec p (RefT tau _) =
+        parensIf (p > tyappPrec) $
+        text "var" <+> pprPrec tyappPrec1 tau
+
+    pprPrec p (FunT taus tau _) =
+        parensIf (p > tyappPrec) $
+        group $
+        parens (commasep (map ppr taus)) <+>
+        text "->" </>
+        pprPrec arrowPrec1 tau
+
+    pprPrec _ (NatT i _) =
+        ppr i
+
+    pprPrec p (ForallT tvks (ST (C tau _) (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) | not expertTypes && alphas' == alphas =
         pprPrec p tau
       where
         alphas, alphas' :: [TyVar]
         alphas  = sort $ map fst tvks
         alphas' = sort [s, a, b]
 
-    pprPrec p (ST omega tau1 tau2 tau3 _) | expertTypes =
-        parensIf (p > appPrec) $
-        text "ST" <+>
-        align (sep [pprPrec appPrec1 omega
-                   ,pprPrec appPrec1 tau1
-                   ,pprPrec appPrec1 tau2
-                   ,pprPrec appPrec1 tau3])
-
-    pprPrec p (ST omega _ tau2 tau3 _) =
-        parensIf (p > appPrec) $
-        text "ST" <+>
-        align (sep [pprPrec appPrec1 omega
-                   ,pprPrec appPrec1 tau2
-                   ,pprPrec appPrec1 tau3])
-
-    pprPrec p (RefT tau _) | expertTypes =
-        parensIf (p > appPrec) $
-        text "ref" <+> ppr tau
-
-    pprPrec p (RefT tau _) =
-        parensIf (p > appPrec) $
-        text "var" <+> ppr tau
-
-    pprPrec p (FunT taus tau _) =
-        parensIf (p > arrowPrec) $
-        pprArgs taus <+>
-        text "->" <+>
-        pprPrec arrowPrec1 tau
-      where
-        pprArgs :: [Type] -> Doc
-        pprArgs [tau1] =
-            ppr tau1
-
-        pprArgs taus =
-            parens (commasep (map ppr taus))
-
-    pprPrec _ (NatT i _) =
-        ppr i
+    pprPrec p (ForallT tvks (ST omega tau1 tau2 tau3 _) _) =
+        parensIf (p > tyappPrec) $
+        text "ST" <> pprForall tvks
+                  <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau1
+                  <+> pprPrec tyappPrec1 tau2
+                  <+> pprPrec tyappPrec1 tau3
 
     pprPrec _ (ForallT tvks tau _) =
-        pprForall tvks <+> ppr tau
+        pprForall tvks <> ppr tau
 
     pprPrec p (MetaT mtv _) =
         text (showsPrec p mtv "")
@@ -312,7 +305,7 @@ instance Pretty R where
 -- | Pretty-print a forall quantifier
 pprForall :: [(TyVar, Kind)] -> Doc
 pprForall []   = empty
-pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
+pprForall tvks = angles $ commasep (map pprKindSig tvks)
 
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc

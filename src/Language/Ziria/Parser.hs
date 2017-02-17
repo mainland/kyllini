@@ -34,6 +34,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Monad
+import KZC.Util.Pretty
 import KZC.Util.SysTools
 
 import qualified Language.Ziria.Parser.Classic as Classic
@@ -60,7 +61,7 @@ moduleDialect filepath =
     ext = takeExtension filepath
 
     go :: [(String, Dialect)] -> m Dialect
-    go [] = faildoc $ text "Unknown dialect" <+> squotes (text ext)
+    go [] = faildoc $ text "Unknown dialect" <+> enquote (text ext)
 
     go ((ext', dialect):dialects)
       | ext' == ext = return dialect

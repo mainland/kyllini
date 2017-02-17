@@ -33,6 +33,7 @@ import Language.Ziria.Smart
 import Language.Ziria.Syntax
 
 import KZC.Name
+import KZC.Util.Pretty
 }
 
 %token
@@ -903,10 +904,7 @@ opt_semi :
 {
 happyError :: L T.Token -> P a
 happyError (L loc t) =
-    parserError (locStart loc) (text "parse error on" <+> quote (ppr t))
-  where
-    quote :: Doc -> Doc
-    quote = enclose (char '`') (char '\'')
+    parserError (locStart loc) (text "parse error on" <+> enquote (ppr t))
 
 getINT         (L _ (T.TintConst T.S x))         = x
 getUINT        (L _ (T.TintConst T.U x))         = x

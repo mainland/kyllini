@@ -8,11 +8,21 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Util.Pretty (
-    quote,
+    ifPrec,
+    ifPrec1,
+    parrPrec,
+    parrPrec1,
+    doPrec,
+    doPrec1,
+    appPrec,
+    appPrec1,
+    arrowPrec,
+    arrowPrec1,
+    tyappPrec,
+    tyappPrec1,
 
-    commaEmbrace,
-    semiEmbrace,
-    semiEmbraceWrap,
+    enquote,
+
     embrace,
 
     pprStruct,
@@ -29,44 +39,81 @@ module KZC.Util.Pretty (
 
 import Text.PrettyPrint.Mainland
 
-quote :: Pretty a => a -> Doc
-quote x = char '`' <> ppr x <> char '\''
+-- %nonassoc IF
+-- %left ','
+-- %left '&&' '||'
+-- %left '==' '!='
+-- %left '|'
+-- %left '^'
+-- %left '&'
+-- %left '<' '<=' '>' '>='
+-- %left '<<' '>>'
+-- %left '+' '-'
+-- %left '*' '/' '%'
+-- %left '**'
+-- %left 'length'
+-- %left '~' 'not' NEG
 
-commaEmbrace :: [Doc] -> Doc
-commaEmbrace = embrace commasep
+-- %left '|>>>|'
+-- %left '>>>'
 
-embrace :: ([Doc] -> Doc) -> [Doc] -> Doc
-embrace combine ds =
+-- %left 'in'
+
+-- application
+
+ifPrec :: Int
+ifPrec = 0
+
+ifPrec1 :: Int
+ifPrec1 = ifPrec + 1
+
+parrPrec :: Int
+parrPrec = 15
+
+parrPrec1 :: Int
+parrPrec1 = parrPrec + 1
+
+doPrec :: Int
+doPrec = 12
+
+doPrec1 :: Int
+doPrec1 = doPrec + 1
+
+appPrec :: Int
+appPrec = 17
+
+appPrec1 :: Int
+appPrec1 = appPrec + 1
+
+arrowPrec :: Int
+arrowPrec = 0
+
+arrowPrec1 :: Int
+arrowPrec1 = arrowPrec + 1
+
+tyappPrec :: Int
+tyappPrec = 1
+
+tyappPrec1 :: Int
+tyappPrec1 = tyappPrec + 1
+
+-- | Surround a 'Doc' with single quotes.
+enquote :: Doc -> Doc
+enquote d = char '`' <> d <> char '\''
+
+-- | Print a block of code surrounded by braces and separated by semicolons and
+-- newlines. The opening brace appears on its own line, and all lines are nested
+-- and aligned.
+embrace :: [Doc] -> Doc
+embrace ds =
     case ds of
-      []   -> lbrace <> rbrace
-      [d]  -> lbrace <+> d <+> rbrace
-      _    -> align $ lbrace <+> combine ds <+> rbrace
+      [] -> lbrace <> rbrace
+      _  -> nest 2 (lbrace </> (align . folddoc (</>) . punctuate semi) ds) </> rbrace
 
--- | Print a block of code surrounded by braces and separate by semicolons and
--- newlines.
-semiEmbrace :: [Doc] -> Doc
-semiEmbrace ds =
-    case ds of
-      []   -> lbrace <> rbrace
-      [d]  -> lbrace <+> d <+> rbrace
-      _    -> lbrace <+> (align . folddoc (</>) . punctuate semi) ds </> rbrace
-
--- | Print a block of code surrounded by braces and separate by semicolons and
--- newlines. The opening braces appears on its own line.
-semiEmbraceWrap :: [Doc] -> Doc
-semiEmbraceWrap ds =
-    case ds of
-      []   -> lbrace <> rbrace
-      [d]  -> lbrace </> d </> rbrace
-      _    -> nest 2 (lbrace </> (align . folddoc (</>) . punctuate semi) ds) </> rbrace
-
-pprStruct :: forall a b . (Pretty a, Pretty b) => Doc -> [(a, b)] -> Doc
-pprStruct sep flds =
-    embrace commasep $
-    map pprField flds
-  where
-    pprField :: (a, b) -> Doc
-    pprField (f, v) = ppr f <+> sep <+> ppr v
+pprStruct :: forall a b . (Pretty a, Pretty b) => Doc -> Doc -> [(a, b)] -> Doc
+pprStruct fldsep valsep flds =
+    enclosesep lbrace rbrace fldsep
+    [ppr k <+> valsep <+> ppr v | (k, v) <- flds]
 
 data Fixity = Fixity Assoc Int
   deriving (Eq, Ord)

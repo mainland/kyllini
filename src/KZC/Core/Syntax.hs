@@ -90,16 +90,6 @@ module KZC.Core.Syntax (
     LiftedIntegral(..),
     LiftedBits(..),
     LiftedCast(..),
-
-    arrPrec,
-    doPrec,
-    doPrec1,
-    appPrec,
-    appPrec1,
-    arrowPrec,
-    arrowPrec1,
-    tyappPrec,
-    tyappPrec1
 #endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
@@ -164,17 +154,8 @@ import KZC.Expr.Syntax (Var(..),
                         LiftedBits(..),
                         LiftedCast(..),
 
-                        arrPrec,
-                        doPrec,
-                        doPrec1,
-                        appPrec,
-                        appPrec1,
-                        arrowPrec,
-                        arrowPrec1,
-                        tyappPrec,
-                        tyappPrec1,
-
-                        pprFunParams
+                        pprTypeSig,
+                        pprFunDecl
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
 import KZC.Label
@@ -639,7 +620,8 @@ instance LUTSize (Comp l) where
  -
  ------------------------------------------------------------------------------}
 
-expToStms :: Exp -> [Stm BoundVar Exp]
+expToStms :: Exp -> [Stm LocalDecl BoundVar Exp]
+expToStms (LetE decl e l)               = LetS decl l : expToStms e
 expToStms (ReturnE ann e l)             = [ReturnS ann e l]
 expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
 expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
@@ -720,11 +702,7 @@ instance IsLabel l => Pretty (Main l) where
     ppr (Main comp tau) = ppr (LetCompD "main" tau comp noLoc)
 
 instance IsLabel l => Pretty (Program l) where
-    ppr (Program imports decls Nothing) =
-        ppr imports </>
-        ppr decls
-
-    ppr (Program imports decls (Just main)) =
+    ppr (Program imports decls main) =
         ppr imports </>
         ppr decls </>
         ppr main
@@ -732,6 +710,7 @@ instance IsLabel l => Pretty (Program l) where
 instance Pretty Import where
     ppr (Import mod) = text "import" <+> ppr mod
 
+    pprList []      = empty
     pprList imports = semisep (map ppr imports)
 
 instance IsLabel l => Pretty (Decl l) where
@@ -740,32 +719,24 @@ instance IsLabel l => Pretty (Decl l) where
 
     pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprFunParams tvks vbs <+>
-        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
-        nest 2 (text "=" </> ppr e)
+        align $
+        text "fun" <+> pprFunDecl (bVar f) tvks vbs tau <> pprBody e
 
     pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
-        text "letextfun" <+> ppr f <+> pprFunParams tvks vbs <+>
-        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
+        text "fun external" <+> pprFunDecl (bVar f) tvks vbs tau
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> pprStruct colon flds))
-      where
-        lhs = text "struct" <+> ppr s
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon flds
 
-    pprPrec p (LetCompD v tau ccomp _) =
+    pprPrec p (LetCompD v tau c _) =
         parensIf (p > appPrec) $
-        nest 2 (lhs <+/> text "=" </> ppr ccomp)
-      where
-        lhs = text "letcomp" <+> ppr v <+> text ":" <+> ppr tau
+        text "let comp" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr c
 
-    pprPrec p (LetFunCompD f tvks vbs tau e _) =
+    pprPrec p (LetFunCompD f tvks vbs tau c _) =
         parensIf (p > appPrec) $
-        text "letfuncomp" <+> ppr f <+> pprFunParams tvks vbs <+>
-        nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
-        nest 2 (text "=" </> ppr e)
+        text "fun comp" <+> pprFunDecl (bVar f) tvks vbs tau <+> ppr c
 
     pprList decls = stack (map ppr decls)
 
@@ -779,25 +750,19 @@ instance Pretty View where
 instance Pretty LocalDecl where
     pprPrec p (LetLD v tau e _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "let" <+> ppr v <+> text ":" <+> ppr tau
+        text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
     pprPrec p (LetRefLD v tau Nothing _) =
         parensIf (p > appPrec) $
-        text "letref" <+> ppr v <+> text ":" <+> ppr tau
+        text "let ref" <+> ppr v <+> text ":" <+> ppr tau
 
     pprPrec p (LetRefLD v tau (Just e) _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr e))
-      where
-        lhs = text "letref" <+> ppr v <+> text ":" <+> ppr tau
+        text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
     pprPrec p (LetViewLD v tau vw _) =
         parensIf (p > appPrec) $
-        group (nest 2 (lhs <+/> text "=" </> ppr vw))
-      where
-        lhs = text "letview" <+> ppr v <+> text ":" <+> ppr tau
+        text "let view" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr vw
 
     pprList decls = stack (map ppr decls)
 
@@ -821,17 +786,15 @@ instance Pretty Exp where
 
     pprPrec p (IfE e1 e2 e3 _) =
         parensIf (p >= appPrec) $
-        text "if"   <+> pprPrec appPrec1 e1 <+/>
-        text "then" <+> pprPrec appPrec1 e2 <+/>
-        text "else" <+> pprPrec appPrec1 e3
+        text "if"   <+> pprPrec ifPrec1 e1 <+/>
+        text "then" <+> pprPrec ifPrec1 e2 <+/>
+        text "else" <+> pprPrec ifPrec1 e3
 
     pprPrec p (LetE decl body _) =
         parensIf (p > appPrec) $
         case body of
-          LetE{} -> ppr decl <+> text "in" </>
-                    pprPrec doPrec1 body
-          _      -> ppr decl </>
-                    nest 2 (text "in" </> pprPrec doPrec1 body)
+          LetE{} -> ppr decl <+> text "in" </> pprPrec doPrec1 body
+          _      -> ppr decl </> text "in" <> pprBody body
 
     pprPrec _ (CallE f is es _) =
         ppr f <> parens (commasep (map ppr is ++ map ppr es))
@@ -841,25 +804,20 @@ instance Pretty Exp where
 
     pprPrec p (AssignE v e _) =
         parensIf (p > appPrec) $
-        group $
-        nest 4 $ ppr v <+> text ":=" <+/> pprPrec appPrec1 e
+        nest 2 $ ppr v <+> text ":=" <+/> pprPrec appPrec1 e
 
     pprPrec _ (WhileE e1 e2 _) =
-        nest 2 $
         text "while" <+>
-        group (pprPrec appPrec1 e1) <+/>
+        group (pprPrec appPrec1 e1) <>
         pprBody e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
-        nest 2 $
-        ppr ann <+> text "for" <+>
-        group (parens (ppr v <+> colon <+> ppr tau) <+>
-               text "in" <+>
-               brackets (commasep [ppr e1, ppr e2])) <+/>
+        ppr ann <+> text "for" <+> pprTypeSig v tau <+>
+        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <>
         pprBody e3
 
     pprPrec _ (ArrayE es _) =
-        text "arr" <+> embrace commasep (map ppr es)
+        text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
 
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
@@ -868,7 +826,7 @@ instance Pretty Exp where
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
     pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct equals fields
+        ppr s <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -907,12 +865,6 @@ instance Pretty Gen where
     ppr (GenRefG v tau c _) =
         ppr v <+> text ":" <+> ppr (RefT tau noLoc) <+> text "<-" <+> ppr c
 
-pprBody :: Exp -> Doc
-pprBody e =
-    case expToStms e of
-      [_]  -> line <> align (ppr e)
-      stms -> space <> semiEmbraceWrap (map ppr stms)
-
 instance IsLabel l => Pretty (Arg l) where
     pprPrec p (ExpA e)  = pprPrec p e
     pprPrec p (CompA c) = pprPrec p c
@@ -926,8 +878,8 @@ instance IsLabel l => Pretty (Comp l) where
     pprPrec p comp =
         pprRate comp <+>
         case pprComp comp of
-          [stm] -> parensIf (p > appPrec) $ align stm
-          stms  -> semiEmbraceWrap stms
+          [stm] -> parensIf (p > appPrec) stm
+          stms  -> embrace stms
       where
         pprRate :: Comp l -> Doc
         pprRate Comp{ unComp = [ParC{}] }    = empty
@@ -942,6 +894,9 @@ instance Pretty M where
     ppr (N i) = ppr i
     ppr (Z i) = ppr i <> char '*'
     ppr (P i) = ppr i <> char '+'
+
+pprBody :: Exp -> Doc
+pprBody e = softline <> ppr (expToStms e)
 
 pprComp :: forall l . IsLabel l
         => Comp l
@@ -963,9 +918,9 @@ pprComp comp =
 
     pprSteps (IfC _ e1 e2 e3 _ : k) =
         pprBind k $
-        text "if"   <+> pprPrec appPrec1 e1 <+/>
-        text "then" <+> pprPrec appPrec1 e2 <+/>
-        text "else" <+> pprPrec appPrec1 e3
+        text "if"   <+> pprPrec ifPrec1 e1 <+/>
+        text "then" <+> pprPrec ifPrec1 e2 <+/>
+        text "else" <+> pprPrec ifPrec1 e3
 
     pprSteps (LetC _ decl _ : k) =
         pprBind k $
@@ -1026,9 +981,9 @@ pprComp comp =
     pprSteps (ParC ann tau e1 e2 _ : k) =
         pprBind k $
         group $
-        pprPrec arrPrec e1 </>
+        pprPrec parrPrec e1 </>
         ppr ann <> text "@" <> pprPrec appPrec1 tau </>
-        pprPrec arrPrec e2
+        pprPrec parrPrec1 e2
 
     pprBind :: [Step l] -> Doc -> [Doc]
     pprBind (BindC _ WildV _ _  : k) step =

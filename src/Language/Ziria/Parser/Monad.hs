@@ -62,6 +62,8 @@ import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Tokens
 import Language.Ziria.Parser.Exceptions
 
+import KZC.Util.Pretty
+
 data PState = PState
     { input             :: !AlexInput
     , curToken          :: L Token
@@ -223,7 +225,7 @@ parserError loc msg =
 
 unclosed :: Loc -> String -> P a
 unclosed loc x =
-    parserError (locEnd loc) (text "unclosed" <+> quote (text x))
+    parserError (locEnd loc) (text "unclosed" <+> enquote (text x))
 
 expected :: [String] -> Maybe String -> P b
 expected alts after = do
@@ -242,11 +244,8 @@ expectedAt tok@(L loc _) alts after =
 
     pprGot :: L Token -> Doc
     pprGot (L _ Teof)  = text "but reached end of file"
-    pprGot (L _ t)     = text "but got" <+> quote (ppr t)
+    pprGot (L _ t)     = text "but got" <+> enquote (ppr t)
 
     pprAfter :: Maybe String -> Doc
     pprAfter Nothing     = empty
     pprAfter (Just what) = text " after" <+> text what
-
-quote :: Doc -> Doc
-quote = enclose (char '`') (char '\'')

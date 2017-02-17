@@ -393,46 +393,42 @@ instance Pretty FP where
 
 instance Pretty Program where
     ppr (Program imports decls) =
-        ppr imports </>
-        ppr decls
+        ppr imports </> ppr decls
 
 instance Pretty Import where
     ppr (Import mod) = text "import" <+> ppr mod
 
+    pprList []      = empty
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    ppr (LetD v tau e _) =
-        nest 2 $
+    pprPrec p (LetD v tau e _) =
+        parensIf (p > appPrec) $
         text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
 
-    ppr (LetRefD v tau e _) =
-        nest 2 $
+    pprPrec p (LetRefD v tau e _) =
+        parensIf (p > appPrec) $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
-    ppr (LetFunD f ps e _) =
-        nest 2 $
-        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+/> ppr e
+    pprPrec _ (LetFunD f ps e _) =
+        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
-    ppr (LetFunExternalD f ps tau isPure _) =
-        nest 2 $
+    pprPrec _ (LetFunExternalD f ps tau isPure _) =
         text "fun" <+> text "external" <+> pureDoc <+>
         ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
       where
         pureDoc = if isPure then empty else text "impure"
 
-    ppr (LetStructD def _) =
+    pprPrec _ (LetStructD def _) =
         ppr def
 
-    ppr (LetCompD v tau range e _) =
-        nest 2 $
+    pprPrec _ (LetCompD v tau range e _) =
         text "let" <+> text "comp" <+> pprRange range <+>
         pprSig v tau <+> text "=" <+/> ppr e
 
-    ppr (LetFunCompD f range ps e _) =
-        nest 2 $
+    pprPrec _ (LetFunCompD f range ps e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
-        ppr f <> parens (commasep (map ppr ps)) <+> text "=" <+/> ppr e
+        ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
     pprList cls = stack (map ppr cls)
 
@@ -467,11 +463,11 @@ instance Pretty Exp where
 
     pprPrec p (IfE e1 e2 maybe_e3 _) =
         parensIf (p >= appPrec) $
-        text "if"   <+> pprPrec appPrec1 e1 <+/>
-        text "then" <+> pprPrec appPrec1 e2 <+/>
+        text "if"   <+> pprPrec ifPrec1 e1 <+/>
+        text "then" <+> pprPrec ifPrec1 e2 <+/>
         case maybe_e3 of
           Nothing -> empty
-          Just e3 -> text "else" <+> pprPrec appPrec1 e3
+          Just e3 -> text "else" <+> pprPrec ifPrec1 e3
 
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
@@ -482,14 +478,13 @@ instance Pretty Exp where
 
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        nest 2 $
         text "var" <+> ppr v <+> colon <+> ppr tau <+>
         pprInitializer e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
 
     pprPrec p (LetDeclE decl e _) =
         parensIf (p >= appPrec) $
-        nest 2 $ ppr decl <+/> text "in" <+/> ppr e
+        ppr decl <+/> text "in" <+/> ppr e
 
     pprPrec _ (CallE f vs _) =
         ppr f <> parens (commasep (map ppr vs))
@@ -498,28 +493,24 @@ instance Pretty Exp where
         ppr v <+> text ":=" <+> ppr e
 
     pprPrec _ (WhileE e1 e2 _) =
-        nest 2 $
         text "while" <+> pprPrec appPrec1 e1 <+/>
         pprPrec appPrec1 e2
 
     pprPrec _ (UntilE e1 e2 _) =
-        nest 2 $
         text "until" <+> pprPrec appPrec1 e1 <+/>
         pprPrec appPrec1 e2
 
     pprPrec _ (TimesE ann e1 e2 _) =
-        nest 2 $
         ppr ann <+> text "times" <+> ppr e1 <+/>
         ppr e2
 
     pprPrec _ (ForE ann v tau e1 e2 e3 _) =
-        nest 2 $
-        ppr ann <+> text "for" <+> pprSig v tau <+> text "in" <+>
-        flatten (brackets (commasep [ppr e1, ppr e2])) <+/>
+        ppr ann <+> text "for" <+> pprSig v tau <+>
+        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <+/>
         ppr e3
 
     pprPrec _ (ArrayE es _) =
-        text "arr" <+> embrace commasep (map ppr es)
+        text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
 
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
@@ -528,7 +519,7 @@ instance Pretty Exp where
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
     pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct equals fields
+        ppr s <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -568,12 +559,12 @@ instance Pretty Exp where
         ppr ann <+> text "repeat" <+> ppr e
 
     pprPrec p (ParE Pipeline e1 e2 _) =
-        parensIf (p > arrPrec) $
-        pprPrec arrPrec e1 <+> text "|>>>|" <+> pprPrec arrPrec e2
+        parensIf (p > parrPrec) $
+        pprPrec parrPrec e1 <+> text "|>>>|" <+> pprPrec parrPrec1 e2
 
     pprPrec p (ParE _ e1 e2 _) =
-        parensIf (p > arrPrec) $
-        pprPrec arrPrec e1 <+> text ">>>" <+> pprPrec arrPrec e2
+        parensIf (p > parrPrec) $
+        pprPrec parrPrec e1 <+> text ">>>" <+> pprPrec parrPrec1 e2
 
     pprPrec _ (ReadE tau _) =
         text "read" <> pprTypeAnn tau
@@ -662,11 +653,12 @@ instance Pretty Stm where
         ppr e
 
     pprList cmds =
-        semiEmbrace (map ppr cmds)
+        embrace (map ppr cmds)
 
 instance Pretty StructDef where
     ppr (StructDef s fields _) =
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct colon fields
+        align $ nest 2 $
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -699,10 +691,12 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec _ (ArrT ind tau _) =
-        ppr tau <> brackets (ppr ind)
+    pprPrec p (ArrT ind tau _) =
+        parensIf (p > tyappPrec) $
+        text "arr" <> brackets (ppr ind) <+> ppr tau
 
-    pprPrec _ (StructT s _) =
+    pprPrec p (StructT s _) =
+        parensIf (p > tyappPrec) $
         text "struct" <+> ppr s
 
     pprPrec p (C tau _) =
@@ -712,9 +706,11 @@ instance Pretty Type where
     pprPrec _ (T _) =
         text "T"
 
-    pprPrec p (ST w tau1 tau2 _) =
+    pprPrec p (ST omega tau1 tau2 _) =
         parensIf (p > tyappPrec) $
-        text "ST" <+> ppr w <+> ppr tau1 <+> ppr tau2
+        text "ST" <+> pprPrec tyappPrec1 omega
+                  <+> pprPrec tyappPrec1 tau1
+                  <+> pprPrec tyappPrec1 tau2
 
 instance Pretty Ind where
     ppr (NatT i _) = ppr i
@@ -745,21 +741,10 @@ pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
 -- %left '<' '<=' '>' '>='
 -- %left '<<' '>>'
 -- %left '+' '-'
--- %left '*' '/' '%' '**'
--- %left NEG
--- %left '>>>'
-
-arrPrec :: Int
-arrPrec = 11
-
-appPrec :: Int
-appPrec = 12
-
-appPrec1 :: Int
-appPrec1 = 13
-
-tyappPrec :: Int
-tyappPrec = 1
+-- %left '*' '/' '%'
+-- %left '**'
+-- %left 'length'
+-- %left '~' 'not' NEG
 
 instance HasFixity Binop where
     fixity Eq   = infixl_ 2
@@ -781,14 +766,14 @@ instance HasFixity Binop where
     fixity Mul  = infixl_ 9
     fixity Div  = infixl_ 9
     fixity Rem  = infixl_ 9
-    fixity Pow  = infixl_ 9
+    fixity Pow  = infixl_ 10
 
 instance HasFixity Unop where
-    fixity Lnot     = infixr_ 10
-    fixity Bnot     = infixr_ 10
-    fixity Neg      = infixr_ 10
-    fixity Len      = infixr_ 10
-    fixity (Cast _) = infixr_ 10
+    fixity Lnot        = infixr_ 12
+    fixity Bnot        = infixr_ 12
+    fixity Neg         = infixr_ 12
+    fixity Len         = infixr_ 11
+    fixity (Cast _)    = infixr_ 10
 
 #if !defined(ONLY_TYPEDEFS)
 

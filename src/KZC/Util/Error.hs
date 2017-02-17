@@ -340,7 +340,7 @@ checkDuplicates desc vs =
 
     pprGroup :: [(a, Loc)] -> Doc
     pprGroup ns = nest 4 $
-        desc <+> quote ((fst . head) ns) <+> text "at:" </>
+        desc <+> enquote ((ppr . fst . head) ns) <+> text "at:" </>
         stack (map (ppr . snd) ns)
 
 equivalence :: forall a . (a -> a -> Ordering) -> [a] -> [[a]]

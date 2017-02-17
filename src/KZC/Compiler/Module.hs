@@ -37,6 +37,7 @@ import KZC.Compiler.Types
 import KZC.Config
 import KZC.Name
 import KZC.Monad
+import KZC.Util.Pretty
 
 import qualified Language.Ziria.Parser as P
 import qualified Language.Ziria.Syntax as Z
@@ -48,7 +49,7 @@ locateModuleSource mod = do
     paths        <- asksConfig importPaths
     maybe_module <- searchPaths paths
     case maybe_module of
-      Nothing  -> faildoc $ text "Cannot find module" <+> squotes (ppr mod)
+      Nothing  -> faildoc $ text "Cannot find module" <+> enquote (ppr mod)
       Just mod -> return mod
   where
     searchPaths :: [FilePath] -> m (Maybe FilePath)
