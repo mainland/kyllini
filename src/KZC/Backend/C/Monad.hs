@@ -329,9 +329,9 @@ evalCg m = do
 -- restore it.
 saveCgEnv :: Cg l (Cg l a -> Cg l a)
 saveCgEnv = do
-    (s, a, c)   <- askSTIndTypes
+    (s, a, c)   <- askSTIndices
     env         <- ask
-    return $ localSTIndTypes (Just (s, a, c)) . local (const env)
+    return $ localSTIndices (Just (s, a, c)) . local (const env)
 
 withGuardTakeK :: GuardTakeK l -> Cg l a -> Cg l a
 withGuardTakeK f = local (\env -> env { guardTakeCg = f})

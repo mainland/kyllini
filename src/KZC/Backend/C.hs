@@ -2101,10 +2101,10 @@ cgParSingleThreaded :: forall a l . IsLabel l
                     -> Kont l a -- ^ Continuation accepting the compilation result
                     -> Cg l a
 cgParSingleThreaded _tau_res b left right klbl k = do
-    (s, a, c)          <- askSTIndTypes
-    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+    (s, a, c)          <- askSTIndices
+    (omega_l, _, _, _) <- localSTIndices (Just (s, a, b)) $
                           inferComp left >>= checkST
-    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+    (omega_r, _, _, _) <- localSTIndices (Just (b, b, c)) $
                           inferComp right >>= checkST
     -- Generate variables to hold the left and right computations'
     -- continuations.
@@ -2132,11 +2132,11 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     let k'  =  mapKont (\f ce -> restore $ f ce) k
     -- Code generators for left and right sides
     let cgLeft, cgRight :: forall a . Kont l a -> Cg l a
-        cgLeft k  = localSTIndTypes (Just (s, a, b)) $
+        cgLeft k  = localSTIndices (Just (s, a, b)) $
                     withEmitK  (emitk cleftk crightk cbuf cbufp) $
                     withEmitsK (emitsk cleftk crightk cbuf cbufp) $
                     cgComp left klbl k
-        cgRight k = localSTIndTypes (Just (b, b, c)) $
+        cgRight k = localSTIndices (Just (b, b, c)) $
                     withTakeK  (takek cleftk crightk cbuf cbufp) $
                     withTakesK (takesk cleftk crightk cbuf cbufp) $
                     cgComp right klbl k
@@ -2260,10 +2260,10 @@ cgParMultiThreaded :: forall a l . IsLabel l
                    -> Kont l a    -- ^ Continuation accepting the compilation result
                    -> Cg l a
 cgParMultiThreaded strategy free tau_res b left right klbl k = do
-    (s, a, c)          <- askSTIndTypes
-    (omega_l, _, _, _) <- localSTIndTypes (Just (s, a, b)) $
+    (s, a, c)          <- askSTIndices
+    (omega_l, _, _, _) <- localSTIndices (Just (s, a, b)) $
                           inferComp left >>= checkST
-    (omega_r, _, _, _) <- localSTIndTypes (Just (b, b, c)) $
+    (omega_r, _, _, _) <- localSTIndices (Just (b, b, c)) $
                           inferComp right >>= checkST
     -- Create storage for the result of the par and a continuation to consume
     -- the storage.
@@ -2307,12 +2307,12 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         cgWithLabel l_consumer $
             cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
         -- Generate code for the producer
-        localSTIndTypes (Just (s, a, b)) $
+        localSTIndices (Just (s, a, b)) $
             withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
             cgProducer ctinfo cbuf $
             cgParSpawn cf ctinfo left (donek omega_l)
         -- Generate code for the consumer
-        localSTIndTypes (Just (b, b, c)) $
+        localSTIndices (Just (b, b, c)) $
             withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
             cgConsumer ctinfo cbuf $
             cgComp right' klbl (donek omega_r)
@@ -2347,12 +2347,12 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         cgWithLabel l_consumer $
             cgCheckErr [cexp|kz_thread_post(&$ctinfo)|] "Cannot start thread." right
         -- Generate code for the producer
-        localSTIndTypes (Just (s, a, b)) $
+        localSTIndices (Just (s, a, b)) $
             withExitK (appendStms [cstms|$ctinfo.done = 1; BREAK;|]) $
             cgProducer ctinfo cbuf $
             cgComp left klbl (leftdonek omega_l)
         -- Generate code for the consumer
-        localSTIndTypes (Just (b, b, c)) $
+        localSTIndices (Just (b, b, c)) $
             withExitK (appendStm [cstm|$ctinfo.done = 1;|] >> cgJump l_pardone) $
             cgConsumer ctinfo cbuf $
             cgParSpawn cf ctinfo right' (rightdonek omega_r)

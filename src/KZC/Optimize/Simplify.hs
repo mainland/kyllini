@@ -1085,12 +1085,12 @@ simplStep (RepeatC l ann c s) =
     RepeatC l ann <$> simplC c <*> pure s >>= return1
 
 simplStep (ParC ann b c1 c2 sloc) = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c) <- askSTIndices
     c1'       <- withFvContext c1 $
-                 localSTIndTypes (Just (s, a, b)) $
+                 localSTIndices (Just (s, a, b)) $
                  simplC c1
     c2'       <- withFvContext c2 $
-                 localSTIndTypes (Just (b, b, c)) $
+                 localSTIndices (Just (b, b, c)) $
                  simplC c2
     return1 $ ParC ann b c1' c2' sloc
 

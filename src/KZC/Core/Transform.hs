@@ -200,9 +200,9 @@ transStep (RepeatC l ann c s) =
     RepeatC l ann <$> compT c <*> pure s
 
 transStep (ParC ann b c1 c2 sloc) = do
-    (s, a, c) <- askSTIndTypes
-    ParC ann b <$> localSTIndTypes (Just (s, a, b)) (compT c1)
-               <*> localSTIndTypes (Just (b, b, c)) (compT c2)
+    (s, a, c) <- askSTIndices
+    ParC ann b <$> localSTIndices (Just (s, a, b)) (compT c1)
+               <*> localSTIndices (Just (b, b, c)) (compT c2)
                <*> pure sloc
 
 transArg :: TransformComp l m => Arg l -> m (Arg l)

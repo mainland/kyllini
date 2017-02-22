@@ -62,8 +62,8 @@ module KZC.Core.Lint (
     checkFunT,
 
     withInstantiatedTyVars,
-    absSTScope,
-    appSTScope,
+    genST,
+    instST,
     checkST,
     checkSTC,
     checkSTCUnit,
@@ -126,8 +126,8 @@ import KZC.Expr.Lint (Tc(..),
                       checkFunT,
 
                       withInstantiatedTyVars,
-                      absSTScope,
-                      appSTScope,
+                      genST,
+                      instST,
                       checkST,
                       checkSTC,
                       checkSTCUnit,
@@ -178,7 +178,7 @@ checkDecl decl@(LetFunD f ns vbs tau_ret e l) k =
         checkKind tau PhiK
         tau_ret' <- extendLetFun f ns vbs tau_ret $
                     withFvContext e $
-                    inferExp e >>= absSTScope
+                    inferExp e >>= genST
         checkTypeEquality tau_ret' tau_ret
         unless (isPureishT tau_ret) $
           faildoc $ text "Function" <+> ppr f <+> text "is not pureish but is in a letfun!"
@@ -216,7 +216,7 @@ checkDecl decl@(LetCompD v tau comp _) k = do
         checkKind tau MuK
         tau' <- extendLet v tau $
                 withSummaryContext comp $
-                inferComp comp >>= absSTScope
+                inferComp comp >>= genST
         checkTypeEquality tau' tau
     extendVars [(bVar v, tau)] k
 
@@ -226,7 +226,7 @@ checkDecl decl@(LetFunCompD f ns vbs tau_ret comp l) k =
         checkKind tau PhiK
         tau_ret' <- extendLetFun f ns vbs tau_ret $
                     withFvContext comp $
-                    inferComp comp >>= absSTScope
+                    inferComp comp >>= genST
         checkTypeEquality tau_ret' tau_ret
         when (isPureishT tau_ret) $
           faildoc $ text "Function" <+> ppr f <+> text "is pureish but is in a letfuncomp!"
@@ -762,7 +762,7 @@ inferComp comp =
         return tau
 
     inferBind step [BindC{}] _ =
-        appSTScope $ forallST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
+        instST $ forallST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
       where
         s = "s"
         a = "a"
@@ -770,12 +770,12 @@ inferComp comp =
 
     inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $
-                             appSTScope tau0 >>= checkSTC
+                             instST tau0 >>= checkSTC
         withFvContext step $
             checkTypeEquality tau' tau
         withFvContext (mkComp k) $
             extendWildVars [(wv, tau)] $ do
-            tau2             <- inferSteps k >>= appSTScope
+            tau2             <- inferSteps k >>= instST
             (omega, _, _, _) <- checkST tau2
             checkTypeEquality tau2 (stT omega s a b)
             return tau2
@@ -787,7 +787,7 @@ inferComp comp =
 
 inferStep :: forall l m . (IsLabel l, MonadTc m) => Step l -> m Type
 inferStep (VarC _ v _) =
-    lookupVar v >>= appSTScope
+    lookupVar v >>= instST
 
 inferStep (CallC _ f ies args _) = do
     (taus, tau_ret) <- inferCall f ies args
@@ -795,7 +795,7 @@ inferStep (CallC _ f ies args _) = do
     unless (isPureishT tau_ret) $ do
         args' <- concat <$> zipWithM argRefs args taus
         checkNoAliasing args'
-    appSTScope tau_ret
+    instST tau_ret
   where
     checkArg :: Arg l -> Type -> m ()
     checkArg (ExpA e) tau =
@@ -808,7 +808,7 @@ inferStep (CallC _ f ies args _) = do
         withFvContext c $ do
         tau' <- inferComp c
         void $ checkST tau
-        tau'' <- appSTScope tau'
+        tau'' <- instST tau'
         checkTypeEquality tau tau''
 
     -- We treat all free variables of ref type in a computation argument as if
@@ -865,14 +865,14 @@ inferStep (LiftC _ e _) =
     tau <- inferExp e
     unless (isPureishT tau) $
         faildoc $ text "Lifted expression must be pureish but has type" <+> ppr tau
-    appSTScope tau
+    instST tau
 
 inferStep (ReturnC _ e _) =
     withFvContext e $ do
     tau <- inferExp e
     unless (isPureT tau) $
         faildoc $ text "Returned expression must be pure but has type" <+> ppr tau
-    appSTScope $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
+    instST $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
   where
     s = "s"
     a = "a"
@@ -883,28 +883,28 @@ inferStep BindC{} =
 
 inferStep (TakeC _ tau l) = do
     checkKind tau TauK
-    appSTScope $ forallST [b] (C tau) tau tau (tyVarT b) l
+    instST $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferStep (TakesC _ i tau l) = do
     checkKind tau TauK
-    appSTScope $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferStep (EmitC _ e l) = do
     tau <- withFvContext e $ inferExp e
-    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferStep (EmitsC _ e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
-    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
@@ -914,12 +914,12 @@ inferStep (RepeatC _ _ c l) = do
     return $ forallST [] T s a b l
 
 inferStep step@(ParC _ b e1 e2 l) = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c) <- askSTIndices
     (omega1, s', a',    b') <- withFvContext e1 $
-                               localSTIndTypes (Just (s, a, b)) $
+                               localSTIndices (Just (s, a, b)) $
                                inferComp e1 >>= checkST
     (omega2, b'', b''', c') <- withFvContext e2 $
-                               localSTIndTypes (Just (b, b, c)) $
+                               localSTIndices (Just (b, b, c)) $
                                inferComp e2 >>= checkST
     withFvContext e1 $
         checkTypeEquality (stT omega1 s'  a'   b') (stT omega1 s a b)

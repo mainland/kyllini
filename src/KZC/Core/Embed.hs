@@ -251,9 +251,9 @@ parC' :: (IsLabel l, MonadTc m)
      -> K l m b
      -> K l m Exp
 parC' ann b m1 m2 = do
-    (s, a, c) <- askSTIndTypes
-    c1        <- runComp $ localSTIndTypes (Just (s, a, b)) m1
-    c2        <- runComp $ localSTIndTypes (Just (b, b, c)) m2
+    (s, a, c) <- askSTIndices
+    c1        <- runComp $ localSTIndices (Just (s, a, b)) m1
+    c2        <- runComp $ localSTIndices (Just (b, b, c)) m2
     compC $
       case (identityRateC c1, identityRateC c2) of
         (Just n, _) | hasLeftIdentity  c2 == Just n -> c2

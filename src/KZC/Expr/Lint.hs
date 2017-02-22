@@ -59,8 +59,8 @@ module KZC.Expr.Lint (
     checkFunT,
 
     withInstantiatedTyVars,
-    absSTScope,
-    appSTScope,
+    genST,
+    instST,
     checkST,
     checkSTC,
     checkSTCUnit,
@@ -155,7 +155,7 @@ checkDecl decl@(LetD v tau e _) k = do
         void $ inferKind tau
         tau' <- withFvContext e $
                 extendLet v tau $
-                inferExp e >>= appSTScope >>= absSTScope
+                inferExp e >>= instST >>= genST
         checkTypeEquality tau' tau
     extendVars [(v, tau)] k
 
@@ -177,7 +177,7 @@ checkDecl decl@(LetFunD f tvks vbs tau_ret e l) k = do
       alwaysWithSummaryContext decl $ do
           tau_ret' <- extendLetFun f tvks vbs tau_ret $
                       withFvContext e $
-                      inferExp e >>= absSTScope
+                      inferExp e >>= genST
           checkTypeEquality tau_ret' tau_ret
       k
   where
@@ -417,8 +417,8 @@ inferExp (IfE e1 e2 e3 _) = do
         return tau2
 
     go tau2 tau3 = do
-        tau2' <- withFvContext e2 $ appSTScope tau2
-        tau3' <- withFvContext e3 $ appSTScope tau3
+        tau2' <- withFvContext e2 $ instST tau2
+        tau3' <- withFvContext e3 $ instST tau3
         withFvContext e3 $ checkTypeEquality tau3' tau2'
         return tau2'
 
@@ -457,7 +457,7 @@ inferExp (CallE f taus es _) = do
     checkArg e tau
         | isPureishT tau = withFvContext e $ checkExp e tau
         | otherwise      = withFvContext e $ do
-                           tau' <- inferExp e >>= appSTScope
+                           tau' <- inferExp e >>= instST
                            checkTypeEquality tau tau'
 
     checkNumTypeArgs :: Int -> Int -> m ()
@@ -578,14 +578,14 @@ inferExp e0@(StructE s flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
-    appSTScope $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+    instST $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
     b = "b"
 
 inferExp (ErrorE nu _ l) =
-    appSTScope $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
+    instST $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
     s = "s"
     a = "a"
@@ -616,8 +616,8 @@ inferExp e@(BindE wv tau e1 e2 _) = do
         return tau2
 
     go tau1 tau2 = do
-        tau1' <- withFvContext e1 $ appSTScope tau1
-        tau2' <- withFvContext e2 $ appSTScope tau2
+        tau1' <- withFvContext e1 $ instST tau1
+        tau2' <- withFvContext e2 $ instST tau2
         (_, s,  a,  b) <- withFvContext e1 $
                           checkSTC tau1'
         withFvContext e2 $ do
@@ -627,44 +627,44 @@ inferExp e@(BindE wv tau e1 e2 _) = do
 
 inferExp (TakeE tau l) = do
     checkKind tau TauK
-    appSTScope $ forallST [b] (C tau) tau tau (tyVarT b) l
+    instST $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferExp (TakesE i tau l) = do
     checkKind tau TauK
-    appSTScope $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferExp (EmitE e l) = do
     tau <- withFvContext e $ inferExp e
-    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferExp (EmitsE e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
-    appSTScope $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
+    instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
   where
     s = "s"
     a = "a"
 
 inferExp (RepeatE _ e l) = do
-    (s, a, b) <- withFvContext e $ inferExp e >>= appSTScope >>= checkSTCUnit
+    (s, a, b) <- withFvContext e $ inferExp e >>= instST >>= checkSTCUnit
     return $ forallST [] T s a b l
 
 inferExp e0@(ParE _ b e1 e2 l) = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c) <- askSTIndices
     (omega1, s', a',    b') <- withFvContext e1 $
-                               localSTIndTypes (Just (s, a, b)) $
-                               inferExp e1 >>= appSTScope >>= checkST
+                               localSTIndices (Just (s, a, b)) $
+                               inferExp e1 >>= instST >>= checkST
     (omega2, b'', b''', c') <- withFvContext e2 $
-                               localSTIndTypes (Just (b, b, c)) $
-                               inferExp e2 >>= appSTScope >>= checkST
+                               localSTIndices (Just (b, b, c)) $
+                               inferExp e2 >>= instST >>= checkST
     withFvContext e1 $
         checkTypeEquality (stT omega1 s'  a'   b') (stT omega1 s a b)
     withFvContext e2 $
@@ -1135,7 +1135,7 @@ The ST type provides a very limited form of polymorphism. To avoid type
 abstraction and application, we keep track of the current "ST typing context,"
 which consist of the three ST index types. Whenever we type check a value with
 an ST type, we immediately instantiate it by applying it to the current ST
-context using the function 'appSTScope'.
+context using the function 'instST'.
 
 In the core language, we differentiate syntactically between expressions, which
 may be pure or pureish, and computations that take and emit. In that language,
@@ -1148,24 +1148,29 @@ computation.
 -- to the ST type of the current computational context.
 withInstantiatedTyVars :: MonadTc m => Type -> m a -> m a
 withInstantiatedTyVars tau@(ForallT _ (ST _ s a b _) _) k = do
-    ST _ s' a' b' _ <- appSTScope tau
+    ST _ s' a' b' _ <- instST tau
     extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
 
 withInstantiatedTyVars _tau k =
     k
 
-absSTScope :: MonadTc m => Type -> m Type
-absSTScope (ST omega s a b l) = do
-    (s',a',b') <- askSTIndTypes
-    let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b']]
+-- | Generalize an ST type.
+genST :: forall m . MonadTc m => Type -> m Type
+genST (ST omega s a b l) = do
+    -- We can't quantify over in-scope type variables *except* those that the
+    -- current ST type already quantifies over.
+    tvs        <- (Set.\\) <$> inScopeTyVars <*> askSTTyVars
+    (s',a',b') <- askSTIndices
+    let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b'], alpha `Set.notMember` tvs]
     return $ forallST alphas omega s a b l
 
-absSTScope tau =
+genST tau =
     return tau
 
-appSTScope :: MonadTc m => Type -> m Type
-appSTScope tau@(ForallT tvks (ST omega s a b l) _) = do
-    (s',a',b') <- askSTIndTypes
+-- | Instantiate an ST type.
+instST :: MonadTc m => Type -> m Type
+instST tau@(ForallT tvks (ST omega s a b l) _) = do
+    (s',a',b') <- askSTIndices
     let theta  = Map.fromList [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']
                                             , alpha `elem` alphas]
     let phi    = fvs tau
@@ -1174,7 +1179,7 @@ appSTScope tau@(ForallT tvks (ST omega s a b l) _) = do
     alphas :: [TyVar]
     alphas = map fst tvks
 
-appSTScope tau =
+instST tau =
     return tau
 
 checkForallSTC :: MonadTc m => Type -> m Type

@@ -43,20 +43,22 @@ module KZC.Expr.Lint.Monad (
 
     extendTyVars,
     lookupTyVar,
+    inScopeTyVars,
 
     extendTyVarTypes,
     maybeLookupTyVarType,
     lookupTyVarType,
     askTyVarTypeSubst,
 
-    localSTIndTypes,
-    askSTIndTypes,
+    localSTTyVars,
+    askSTTyVars,
+
+    localSTIndices,
+    askSTIndices,
     inSTScope,
 
     extendLet,
     extendLetFun,
-
-    inScopeTyVars,
 
     typeSize,
     typeSizeInBytes,
@@ -117,7 +119,8 @@ data TcEnv = TcEnv
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , tyVarTypes :: !(Map TyVar Type)
-    , stIndTys   :: !(Maybe (Type, Type, Type))
+    , stTyVars   :: !(Set TyVar)
+    , stIndices  :: !(Maybe (Type, Type, Type))
     }
   deriving (Eq, Ord, Show)
 
@@ -131,7 +134,8 @@ defaultTcEnv = TcEnv
     , varTypes   = mempty
     , tyVars     = mempty
     , tyVarTypes = mempty
-    , stIndTys   = Nothing
+    , stTyVars   = mempty
+    , stIndices  = Nothing
     }
   where
     builtinStructs :: [StructDef]
@@ -337,6 +341,10 @@ lookupTyVar tv =
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
+-- | Return currently in scope type variables.
+inScopeTyVars :: MonadTc m => m (Set TyVar)
+inScopeTyVars = asksTc (Map.keysSet . tyVars)
+
 extendTyVarTypes :: MonadTc m => [(TyVar, Type)] -> m a -> m a
 extendTyVarTypes = extendTcEnv tyVarTypes (\env x -> env { tyVarTypes = x })
 
@@ -355,42 +363,43 @@ lookupTyVarType alpha =
 askTyVarTypeSubst :: MonadTc m => m (Map TyVar Type)
 askTyVarTypeSubst = asksTc tyVarTypes
 
-localSTIndTypes :: MonadTc m => Maybe (Type, Type, Type) -> m a -> m a
-localSTIndTypes taus m =
-    extendTyVars (alphas `zip` repeat TauK) $
-    localTc (\env -> env { stIndTys = taus }) m
-  where
-    alphas :: [TyVar]
-    alphas = case taus of
-               Nothing      -> []
-               Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
+-- | Record the set of type variables quantified over an ST type inside the term
+-- of that type. For example, inside a term of type @forall a b . ST (C c) a a
+-- b@, we mark @a@ and @b@ as locally quantified.
+localSTTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
+localSTTyVars tvks =
+    localTc (\env -> env { stTyVars = Set.fromList (map fst tvks) })
 
-inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
-inSTScope = scopeOver
-  where
-    scopeOver :: Type -> m a -> m a
-    scopeOver (ForallT _ (ST _ s a b _) _) m =
-        localSTIndTypes (Just (s, a, b)) m
+askSTTyVars :: MonadTc m => m (Set TyVar)
+askSTTyVars = asksTc stTyVars
 
-    scopeOver (ST _ s a b _) m =
-        localSTIndTypes (Just (s, a, b)) m
+-- | Specify the current three ST type indices.
+localSTIndices :: MonadTc m => Maybe (Type, Type, Type) -> m a -> m a
+localSTIndices taus = localTc (\env -> env { stIndices = taus })
 
-    scopeOver _ m =
-        localSTIndTypes Nothing m
-
-askSTIndTypes :: MonadTc m => m (Type, Type, Type)
-askSTIndTypes = do
-    maybe_taus <- asksTc stIndTys
+-- | Return the current three ST type indices.
+askSTIndices :: MonadTc m => m (Type, Type, Type)
+askSTIndices = do
+    maybe_taus <- asksTc stIndices
     case maybe_taus of
       Just taus -> return taus
       Nothing   -> faildoc $ text "Not in scope of an ST computation"
 
-inScopeTyVars :: MonadTc m => m (Set TyVar)
-inScopeTyVars = do
-    maybe_idxs <- asksTc stIndTys
-    case maybe_idxs of
-      Nothing         -> return mempty
-      Just (s',a',b') -> return $ fvs [s',a',b']
+-- | Execute a continuation in the scope of an ST type.
+inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
+inSTScope = scopeOver
+  where
+    scopeOver :: Type -> m a -> m a
+    scopeOver (ForallT tvks (ST _ s a b _) _) k =
+        extendTyVars tvks $
+        localSTTyVars tvks $
+        localSTIndices (Just (s, a, b)) k
+
+    scopeOver (ST _ s a b _) k =
+        localSTIndices (Just (s, a, b)) k
+
+    scopeOver _ k =
+        localSTIndices Nothing k
 
 extendLet :: MonadTc m
           => v

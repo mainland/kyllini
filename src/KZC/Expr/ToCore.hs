@@ -397,12 +397,12 @@ transComp (E.RepeatE ann e _) = do
     repeatC ann c
 
 transComp (E.ParE ann b e1 e2 _) = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c) <- askSTIndices
     c1        <- withFvContext e1 $
-                 localSTIndTypes (Just (s, a, b)) $
+                 localSTIndices (Just (s, a, b)) $
                  transComp e1
     c2        <- withFvContext e2 $
-                 localSTIndTypes (Just (b, b, c)) $
+                 localSTIndices (Just (b, b, c)) $
                  transComp e2
     parC ann b c1 c2
 

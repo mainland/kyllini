@@ -216,9 +216,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
 
     stepT step@(ParC ann b c1 c2 sloc) =
         withLocContext step (text "In par") $ do
-        (s, a, c) <- askSTIndTypes
-        c1'       <- localSTIndTypes (Just (s, a, b)) $ compT c1
-        c2'       <- localSTIndTypes (Just (b, b, c)) $ compT c2
+        (s, a, c) <- askSTIndices
+        c1'       <- localSTIndices (Just (s, a, b)) $ compT c1
+        c2'       <- localSTIndices (Just (b, b, c)) $ compT c2
         -- traceRate $ ppr c1' <+> text ">>>" <+> ppr c2'
         traceRate $ ppr (compR c1') <+> text ">>>" <+> ppr (compR c2')
         r <- parRate (compR c1') (compR c2')
