@@ -1,0 +1,10 @@
+fun comp poly_take() {
+  take;
+}
+
+fun comp ident() {
+  x <- poly_take();
+  emit(x);
+}
+
+let comp main = read[int] >>> repeat ident() >>> write[int]
