@@ -2264,11 +2264,11 @@ instance FromZ Z.Ind Type where
 
 instance FromZ Z.VarBind (Z.Var, Type) where
     fromZ (Z.VarBind v False ztau) = do
-          tau <- fromZ ztau
+          tau <- fromZ (ztau, TauK)
           return (v, tau)
 
     fromZ (Z.VarBind v True ztau) = do
-          tau <- refT <$> fromZ ztau
+          tau <- refT <$> fromZ (ztau, TauK)
           return (v, tau)
 
 instance FromZ [Z.VarBind] [(Z.Var, Type)] where
@@ -2276,13 +2276,13 @@ instance FromZ [Z.VarBind] [(Z.Var, Type)] where
         return []
 
     fromZ (Z.VarBind v False ztau : vbs) = do
-          tau  <- fromZ ztau
+          tau  <- fromZ (ztau, TauK)
           vbs' <- extendVars [(v, tau)] $
                   fromZ vbs
           return $ (v, tau) : vbs'
 
     fromZ (Z.VarBind v True ztau : vbs) = do
-          tau  <- refT <$> fromZ ztau
+          tau  <- refT <$> fromZ (ztau, TauK)
           vbs' <- extendVars [(v, tau)] $
                   fromZ vbs
           return $ (v, tau) : vbs'

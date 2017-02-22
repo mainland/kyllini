@@ -196,7 +196,7 @@ data Stm = LetS Decl !SrcLoc
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
 -- @False@ otherwise.
-data VarBind = VarBind Var Bool Type
+data VarBind = VarBind Var Bool (Maybe Type)
   deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
@@ -596,13 +596,15 @@ instance Pretty Exp where
         ppr stms
 
 instance Pretty VarBind where
-    pprPrec p (VarBind v True tau) =
-        parensIf (p > appPrec) $
-        text "var" <+> ppr v <+> colon <+> ppr tau
-
-    pprPrec p (VarBind v False tau) =
-        parensIf (p > appPrec) $
-        ppr v <+> colon <+> ppr tau
+    pprPrec p (VarBind v isRef maybe_tau) =
+        case maybe_tau of
+          Nothing  -> vdoc
+          Just tau -> parensIf (p > appPrec) $
+                      vdoc <+> colon <+> ppr tau
+      where
+        vdoc :: Doc
+        vdoc | isRef     = text "var" <+> ppr v
+             | otherwise = ppr v
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
