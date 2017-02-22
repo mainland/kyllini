@@ -124,6 +124,7 @@ SOURCE = \
 	KZC/Util/Derive.hs \
 	KZC/Util/Error.hs \
 	KZC/Util/Logic.hs \
+	KZC/Util/Memoize.hs \
 	KZC/Util/Pretty.hs \
 	KZC/Util/SetLike.hs \
 	KZC/Util/Staged.hs \
