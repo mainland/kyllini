@@ -122,6 +122,7 @@ SOURCE = \
 	KZC/Rename/Monad.hs \
 	KZC/Rename/State.hs \
 	KZC/Util/Derive.hs \
+	KZC/Util/EnumSet.hs \
 	KZC/Util/Error.hs \
 	KZC/Util/Logic.hs \
 	KZC/Util/Memoize.hs \

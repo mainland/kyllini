@@ -98,6 +98,7 @@ library
     KZC.Rename.Monad
     KZC.Rename.State
     KZC.Util.Derive
+    KZC.Util.EnumSet
     KZC.Util.Error
     KZC.Util.Logic
     KZC.Util.Memoize
