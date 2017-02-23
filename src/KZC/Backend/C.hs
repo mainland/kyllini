@@ -508,8 +508,8 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
     extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
     appendTopComment (ppr f <+> colon <+> align (ppr tau))
     withSummaryContext decl $ do
-        -- External functions may only be polymorphic in types of kind nat.
-        nats          <- checkNatPoly tvks
+        -- External functions are only be polymorphic in types of kind nat.
+        let nats      =  map fst tvks
         (_, cparams1) <- unzip <$> mapM cgNatTyVar nats
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
@@ -590,17 +590,6 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
           where
             compc :: forall a . CompC l a
             compc = cgComp comp
-
--- | Check that we quantify only over type variables of kind Nat.
-checkNatPoly :: Monad m => [(TyVar, Kind)] -> m [TyVar]
-checkNatPoly [] =
-    return []
-
-checkNatPoly ((alpha, NatK) : tvks) =
-    (alpha :) <$> checkNatPoly tvks
-
-checkNatPoly _ =
-    faildoc $ text "Cannot compile functions that are polymorphic over kinds other than Nat"
 
 -- Perform type application and return type variables of kind Nat, which become
 -- function arguments, and the non-Nat types to which the function was applied.

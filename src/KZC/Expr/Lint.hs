@@ -171,7 +171,8 @@ checkDecl decl@(LetRefD v tau (Just e) _) k = do
     extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetFunD f tvks vbs tau_ret e l) k = do
-    alwaysWithSummaryContext decl $
+    alwaysWithSummaryContext decl $ do
+        checkNatTauPoly tvks
         checkKind tau PhiK
     extendVars [(f, tau)] $ do
       alwaysWithSummaryContext decl $ do
@@ -185,7 +186,9 @@ checkDecl decl@(LetFunD f tvks vbs tau_ret e l) k = do
     tau = funT tvks (map snd vbs) tau_ret l
 
 checkDecl decl@(LetExtFunD f tvks vbs tau_ret l) k = do
-    alwaysWithSummaryContext decl $ checkKind tau PhiK
+    alwaysWithSummaryContext decl $ do
+        checkNatPoly tvks
+        checkKind tau PhiK
     extendExtFuns [(f, tau)] k
   where
     tau :: Type
@@ -207,6 +210,31 @@ checkDecl decl@(LetStructD s flds l) k = do
         Nothing   -> return ()
         Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
                      parens (text "original definition at" <+> ppr (locOf sdef))
+
+-- | Check that we quantify only over type variables of kind Nat.
+checkNatPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatPoly tvks =
+    extendTyVars tvks $
+    mapM_ check tvks
+  where
+    check :: (TyVar, Kind) -> m ()
+    check (alpha, kappa) = checkKind (tyVarT alpha) kappa
+
+-- | Check that we quantify only over type variables of kind Tau or Nat.
+checkNatTauPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatTauPoly = mapM_ check
+  where
+    check :: (TyVar, Kind) -> m ()
+    check (_alpha, TauK) =
+        return ()
+
+    check (_alpha, NatK) =
+        return ()
+
+    check (alpha, kappa) =
+        withSummaryContext alpha $
+        faildoc $
+        text "Expected type-level nat or base type but got:" <+> ppr kappa
 
 inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
 inferConst l UnitC         = return (UnitT l)

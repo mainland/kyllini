@@ -595,6 +595,9 @@ instance LiftedBits Const (Maybe Const) where
  -
  ------------------------------------------------------------------------------}
 
+instance Summary TyVar where
+    summary alpha = text "type variable:" <+> align (ppr alpha)
+
 instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
