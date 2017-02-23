@@ -135,40 +135,37 @@ collectInferValCtx k = do
       else do unifyTypes tau tau''
               return (tau'', mce)
 
-checkPureLet :: Z.Var
-             -> Maybe Z.Type
-             -> Z.Exp
-             -> SrcLoc
-             -> Ti (Type, Ti E.Decl)
-checkPureLet v ztau e l =
+checkLet :: Z.Var
+         -> Maybe Z.Type
+         -> Z.Exp
+         -> SrcLoc
+         -> Ti (Type, Ti E.Decl)
+checkLet v ztau e l =
     withExpContext e $ do
     tau <- fromZ (ztau, TauK)
-    extendVars [(v, tau)] $ do
-      mce <- castVal tau e
-      let mcdecl = do checkUnresolvedMtvs v tau
-                      cv   <- trans v
-                      ctau <- trans tau
-                      ce   <- mce
-                      return $ E.LetD cv ctau ce l
-      return (tau, mcdecl)
+    mce <- castVal tau e
+    let mcdecl = do checkUnresolvedMtvs v tau
+                    cv   <- trans v
+                    ctau <- trans tau
+                    ce   <- mce
+                    return $ E.LetD cv ctau ce l
+    return (tau, mcdecl)
 
-checkCompLet :: Z.Var
+checkLetComp :: Z.Var
              -> Maybe Z.Type
              -> Z.Exp
              -> SrcLoc
              -> Ti (Type, Ti E.Decl)
-checkCompLet f ztau e l =
+checkLetComp v ztau e l =
     withExpContext e $ do
     tau <- fromZ (ztau, MuK)
-    mce <- extendVars [(f, tau)] $
-           collectCheckValCtx tau $
+    mce <- collectCheckValCtx tau $
            checkExp e tau
     (tau_gen, co) <- generalize tau
-    traceVar f tau_gen
-    let mcdecl = co $ do cf   <- trans f
+    let mcdecl = co $ do cv   <- trans v
                          ctau <- trans tau_gen
                          ce   <- mce
-                         return $ E.LetD cf ctau ce l
+                         return $ E.LetD cv ctau ce l
     return (tau_gen, mcdecl)
 
 checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp -> SrcLoc
@@ -293,7 +290,7 @@ checkDecl :: Z.Decl
           -> Ti a
 checkDecl decl@(Z.LetD v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
-                     checkPureLet v ztau e l
+                     checkLet v ztau e l
     extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
 checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
@@ -340,7 +337,7 @@ checkDecl decl@(Z.LetStructD (Z.StructDef zs zflds l) _) k = do
 
 checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
-                     checkCompLet v ztau e l
+                     checkLetComp v ztau e l
     extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
 checkDecl decl@(Z.LetFunCompD f _ ps e l) k = do
@@ -538,7 +535,7 @@ tcExp (Z.IfE e1 e2 (Just e3) l) exp_ty = do
                 return $ E.IfE ce1 ce2 ce3 l
 
 tcExp (Z.LetE v ztau e1 e2 l) exp_ty = do
-    (tau, mcdecl) <- checkPureLet v ztau e1 l
+    (tau, mcdecl) <- checkLet v ztau e1 l
     withExpContext e2 $
       extendVars [(v, tau)] $
       checkLetBody e2 exp_ty mcdecl l
