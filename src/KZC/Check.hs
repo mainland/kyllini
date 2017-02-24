@@ -1266,23 +1266,14 @@ generalize tau0 =
   where
     go :: Type -> Ti (Type, CoDecl)
     go tau@(ST omega sigma tau1 tau2 l) = do
-        mtvs          <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
-        let alphaMtvs =  filter (isKind TauK) mtvs
-        alphas        <- freshVars (length alphaMtvs) ((Set.toList . fvs) tau)
-        extendTyVars (alphas `zip` repeat TauK) $
-            zipWithM_ kcWriteTv alphaMtvs [TyVarT alpha noLoc | alpha <- alphas]
-        tau    <- compress $ forallST alphas omega sigma tau1 tau2 l
-        let co =  extendTyVars (alphas `zip` repeat TauK)
+        tvks   <- gen tau
+        tau    <- compress $ forallST (map fst tvks) omega sigma tau1 tau2 l
+        let co =  extendTyVars tvks
         return (tau, co)
 
     go tau@(FunT taus tau_ret l) = do
-        mtvs     <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
-        alphas   <- freshVars (length mtvs) ((Set.toList . allVars) tau)
-        kappas   <- mapM inferKind (map metaT mtvs)
-        let tvks =  alphas `zip` kappas
-        extendTyVars tvks $
-            zipWithM_ kcWriteTv mtvs (map tyVarT alphas)
-        tau <- compress $ funT tvks taus tau_ret l
+        tvks <- gen tau
+        tau  <- compress $ funT tvks taus tau_ret l
         let co mcdecl = extendTyVars tvks $ do
                         ctvks <- mapM trans tvks
                         mcdecl >>= checkLetFunE ctvks
@@ -1305,8 +1296,15 @@ generalize tau0 =
     go tau =
         panicdoc $ text "Asked to generalize non-ST/non-function type:" <+> (text . show) tau
 
-    isKind :: Kind -> MetaTv -> Bool
-    isKind kappa1 (MetaTv _ kappa2 _) = kappa2 == kappa1
+    gen :: Type -> Ti [(TyVar, Kind)]
+    gen tau = do
+        mtvs     <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
+        alphas   <- freshVars (length mtvs) ((Set.toList . allVars) tau)
+        kappas   <- mapM (inferKind . metaT) mtvs
+        let tvks =  alphas `zip` kappas
+        extendTyVars tvks $
+            zipWithM_ kcWriteTv mtvs (map tyVarT alphas)
+        return $ alphas `zip` kappas
 
 instantiate :: Type -> Ti (Type, Co)
 instantiate tau0 =
