@@ -301,12 +301,12 @@ data Unop = Lnot
           | Len
   deriving (Eq, Ord, Read, Show)
 
-data Binop = Lt
+data Binop = Eq
+           | Ne
+           | Lt
            | Le
-           | Eq
            | Ge
            | Gt
-           | Ne
            | Land
            | Lor
            | Band
@@ -894,12 +894,12 @@ instance Pretty Unop where
     ppr (Bitcast tau) = text "bitcast" <> langle <> ppr tau <> rangle
 
 instance Pretty Binop where
+    ppr Eq   = text "=="
+    ppr Ne   = text "!="
     ppr Lt   = text "<"
     ppr Le   = text "<="
-    ppr Eq   = text "=="
     ppr Ge   = text ">="
     ppr Gt   = text ">"
-    ppr Ne   = text "!="
     ppr Land = text "&&"
     ppr Lor  = text "||"
     ppr Band = text "&"
@@ -1061,12 +1061,12 @@ tyappPrec1 :: Int
 tyappPrec1 = tyappPrec + 1
 
 instance HasFixity Binop where
+    fixity Eq   = infixl_ 2
+    fixity Ne   = infixl_ 2
     fixity Lt   = infixl_ 6
     fixity Le   = infixl_ 6
-    fixity Eq   = infixl_ 2
     fixity Ge   = infixl_ 6
     fixity Gt   = infixl_ 6
-    fixity Ne   = infixl_ 2
     fixity Land = infixl_ 1
     fixity Lor  = infixl_ 1
     fixity Band = infixl_ 5

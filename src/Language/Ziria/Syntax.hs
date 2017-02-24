@@ -227,12 +227,12 @@ data Unop = Lnot      -- ^ Logical not
           | Len       -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 
-data Binop = Lt   -- ^ Less-than
+data Binop = Eq   -- ^ Equal
+           | Ne   -- ^ Not-equal
+           | Lt   -- ^ Less-than
            | Le   -- ^ Less-than-or-equal
-           | Eq   -- ^ Equal
            | Ge   -- ^ Greater-than-or-equal
            | Gt   -- ^ Greater-than
-           | Ne   -- ^ Not-equal
            | Land -- ^ Logical and
            | Lor  -- ^ Logical or
            | Band -- ^ Bitwise and
@@ -630,12 +630,12 @@ instance Pretty Unop where
     ppr (Cast tau) = parens (ppr tau)
 
 instance Pretty Binop where
+    ppr Eq   = text "=="
+    ppr Ne   = text "!="
     ppr Lt   = text "<"
     ppr Le   = text "<="
-    ppr Eq   = text "=="
     ppr Ge   = text ">="
     ppr Gt   = text ">"
-    ppr Ne   = text "!="
     ppr Land = text "&&"
     ppr Lor  = text "||"
     ppr Band = text "&"
@@ -762,12 +762,12 @@ tyappPrec :: Int
 tyappPrec = 1
 
 instance HasFixity Binop where
+    fixity Eq   = infixl_ 2
+    fixity Ne   = infixl_ 2
     fixity Lt   = infixl_ 6
     fixity Le   = infixl_ 6
-    fixity Eq   = infixl_ 2
     fixity Ge   = infixl_ 6
     fixity Gt   = infixl_ 6
-    fixity Ne   = infixl_ 2
     fixity Land = infixl_ 1
     fixity Lor  = infixl_ 1
     fixity Band = infixl_ 5

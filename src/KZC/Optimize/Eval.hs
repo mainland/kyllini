@@ -632,23 +632,23 @@ evalExp e =
         binop op val1 val2
       where
         binop :: Binop -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
+        binop Eq val1 val2 =
+            maybePartialVal $ liftEq op (==) val1 val2
+
+        binop Ne val1 val2 =
+            maybePartialVal $ liftEq op (/=) val1 val2
+
         binop Lt val1 val2 =
             maybePartialVal $ liftOrd op (<) val1 val2
 
         binop Le val1 val2 =
             maybePartialVal $ liftOrd op (<=) val1 val2
 
-        binop Eq val1 val2 =
-            maybePartialVal $ liftEq op (==) val1 val2
-
         binop Ge val1 val2 =
             maybePartialVal $ liftOrd op (>=) val1 val2
 
         binop Gt val1 val2 =
             maybePartialVal $ liftOrd op (>) val1 val2
-
-        binop Ne val1 val2 =
-            maybePartialVal $ liftEq op (/=) val1 val2
 
         binop Land val1 val2
             | isTrue  val1 = maybePartialVal val2

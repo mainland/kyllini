@@ -375,23 +375,23 @@ evalExp e0@(BinopE op e1 e2 _) = do
     binop op val1 val2
   where
     binop :: Binop -> Val -> Val -> I s m Val
+    binop Eq c1 c2 =
+        return $ liftEq op (==) c1 c2
+
+    binop Ne c1 c2 =
+        return $ liftEq op (/=) c1 c2
+
     binop Lt c1 c2 =
         return $ liftOrd op (<) c1 c2
 
     binop Le c1 c2 =
         return $ liftOrd op (<=) c1 c2
 
-    binop Eq c1 c2 =
-        return $ liftEq op (==) c1 c2
-
     binop Ge c1 c2 =
         return $ liftOrd op (>=) c1 c2
 
     binop Gt c1 c2 =
         return $ liftOrd op (>) c1 c2
-
-    binop Ne c1 c2 =
-        return $ liftEq op (/=) c1 c2
 
     binop Land (BoolC False) _ =
         return $ BoolC False
@@ -621,23 +621,23 @@ compileExp e0@(BinopE op e1 e2 _) = do
                 binop op val1 val2
   where
     binop :: Binop -> Val -> Val -> IO Val
+    binop Eq c1 c2 =
+        return $ liftEq op (==) c1 c2
+
+    binop Ne c1 c2 =
+        return $ liftEq op (/=) c1 c2
+
     binop Lt c1 c2 =
         return $ liftOrd op (<) c1 c2
 
     binop Le c1 c2 =
         return $ liftOrd op (<=) c1 c2
 
-    binop Eq c1 c2 =
-        return $ liftEq op (==) c1 c2
-
     binop Ge c1 c2 =
         return $ liftOrd op (>=) c1 c2
 
     binop Gt c1 c2 =
         return $ liftOrd op (>) c1 c2
-
-    binop Ne c1 c2 =
-        return $ liftEq op (/=) c1 c2
 
     binop Land (BoolC False) _ =
         return $ BoolC False

@@ -611,19 +611,21 @@ evalExp e =
         binop op <$> go e1 <*> go e2
       where
         binop :: Binop -> Val -> Val -> Val
-        binop Lt (IntV i) (IntV j) = BoolV . Known $ i < j
-        binop Le (IntV i) (IntV j) = BoolV . Known $ i P.<= j
         binop Eq (IntV i) (IntV j) = BoolV . Known $ i == j
-        binop Ge (IntV i) (IntV j) = BoolV . Known $ i >= j
-        binop Gt (IntV i) (IntV j) = BoolV . Known $ i > j
         binop Ne (IntV i) (IntV j) = BoolV . Known $ i /= j
 
-        binop Lt _ _ = BoolV top
+        binop Lt (IntV i) (IntV j) = BoolV . Known $ i < j
+        binop Le (IntV i) (IntV j) = BoolV . Known $ i P.<= j
+        binop Ge (IntV i) (IntV j) = BoolV . Known $ i >= j
+        binop Gt (IntV i) (IntV j) = BoolV . Known $ i > j
+
         binop Eq _ _ = BoolV top
+        binop Ne _ _ = BoolV top
+
+        binop Lt _ _ = BoolV top
         binop Le _ _ = BoolV top
         binop Ge _ _ = BoolV top
         binop Gt _ _ = BoolV top
-        binop Ne _ _ = BoolV top
 
         binop Land (BoolV b) (BoolV b') = BoolV $ (&&) <$> b <*> b'
         binop Lor  (BoolV b) (BoolV b') = BoolV $ (||) <$> b <*> b'

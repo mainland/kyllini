@@ -447,12 +447,12 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     binop op
   where
     binop :: Z.Binop -> Ti (Ti E.Exp)
+    binop Z.Eq   = checkEqBinop E.Eq
+    binop Z.Ne   = checkEqBinop E.Ne
     binop Z.Lt   = checkOrdBinop E.Lt
     binop Z.Le   = checkOrdBinop E.Le
-    binop Z.Eq   = checkEqBinop E.Eq
     binop Z.Ge   = checkOrdBinop E.Ge
     binop Z.Gt   = checkOrdBinop E.Gt
-    binop Z.Ne   = checkEqBinop E.Ne
     binop Z.Land = checkBoolBinop E.Land
     binop Z.Lor  = checkBoolBinop E.Lor
     binop Z.Band = checkBitBinop E.Band

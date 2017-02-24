@@ -324,23 +324,23 @@ inferExp (BinopE op e1 e2 _) = do
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> m Type
+    binop Eq tau1 tau2 =
+        checkEqBinop tau1 tau2
+
+    binop Ne tau1 tau2 =
+        checkEqBinop tau1 tau2
+
     binop Lt tau1 tau2 =
         checkOrdBinop tau1 tau2
 
     binop Le tau1 tau2 =
         checkOrdBinop tau1 tau2
 
-    binop Eq tau1 tau2 =
-        checkEqBinop tau1 tau2
-
     binop Ge tau1 tau2 =
         checkOrdBinop tau1 tau2
 
     binop Gt tau1 tau2 =
         checkOrdBinop tau1 tau2
-
-    binop Ne tau1 tau2 =
-        checkEqBinop tau1 tau2
 
     binop Land tau1 tau2 =
         checkBoolBinop tau1 tau2
