@@ -1312,7 +1312,7 @@ instantiate tau0 =
   where
     go :: Type -> Ti (Type, Co)
     go (ForallT tvks (ST omega sigma tau1 tau2 l) _) = do
-        (_, theta, phi) <- instVars tvks
+        (_, theta, phi) <- instTyVars tvks
         let tau = subst theta phi $ ST omega sigma tau1 tau2 l
         return (tau, id)
 
@@ -1331,7 +1331,7 @@ instantiate tau0 =
              -> SrcLoc
              -> Ti (Type, Co)
     instFunT tvks taus tau_ret l =do
-        (mtvs, theta, phi) <- instVars tvks
+        (mtvs, theta, phi) <- instTyVars tvks
         let tau    = FunT (subst theta phi taus) (subst theta phi tau_ret) l
         let co mce = do
                 (cf, ces, l) <- mce >>= checkFunE
@@ -1347,8 +1347,8 @@ instantiate tau0 =
             panicdoc $
             text "instantiate: expected to coerce a call, but got:" <+> ppr ce
 
-    instVars :: [(TyVar, Kind)] -> Ti ([Type], Map TyVar Type, Set TyVar)
-    instVars tvks = do
+    instTyVars :: [(TyVar, Kind)] -> Ti ([Type], Map TyVar Type, Set TyVar)
+    instTyVars tvks = do
         mtvs      <- mapM (\(alpha, kappa) -> newMetaTvT kappa alpha) tvks
         let theta =  Map.fromList (alphas `zip` mtvs)
         let phi   =  fvs tau0 <\\> fromList alphas
