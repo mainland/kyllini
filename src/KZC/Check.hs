@@ -359,13 +359,17 @@ checkDecls (decl:decls) k =
     checkDecls decls $ \mcdecls ->
     k (mcdecl:mcdecls)
 
-mkSigned :: Type -> Type
-mkSigned (FixT (U w) l) = FixT (I w) l
-mkSigned tau            = tau
+mkSigned :: Monad m => Type -> m Type
+mkSigned (FixT (U w) l)   = return $ FixT (I w) l
+mkSigned tau@(FixT I{} _) = return tau
+mkSigned tau =
+    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to unsigned."
 
-mkUnsigned :: Type -> Type
-mkUnsigned (FixT (I w) l) = FixT (U w) l
-mkUnsigned tau            = tau
+mkUnsigned :: Monad m => Type -> m Type
+mkUnsigned (FixT (I w) l)   = return $ FixT (U w) l
+mkUnsigned tau@(FixT U{} _) = return tau
+mkUnsigned tau =
+    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to signed."
 
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
@@ -423,7 +427,8 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop Z.Neg = do
         (tau, mce) <- inferVal e
         checkNumT tau
-        instType (mkSigned tau) exp_ty
+        tau' <- mkSigned tau
+        instType tau' exp_ty
         return $ E.UnopE E.Neg <$> mce <*> pure l
 
     unop (Z.Cast ztau2) = do
@@ -1713,11 +1718,9 @@ mkCheckedSafeCast e tau1 tau2 = do
 
 mkBitCast :: Z.Exp -> Type -> Ti (Type, Co)
 mkBitCast e tau = do
-    co <- mkCheckedSafeCast e tau tau'
+    tau' <- mkUnsigned tau
+    co   <- mkCheckedSafeCast e tau tau'
     return (tau', co)
-  where
-    tau' :: Type
-    tau' = mkUnsigned tau
 
 -- | @mkCastT tau1 tau2@ generates a computation of type @ST T tau1 tau2@ that
 -- casts values from @tau1@ to @tau2@.
