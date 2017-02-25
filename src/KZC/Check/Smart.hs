@@ -20,6 +20,11 @@ module KZC.Check.Smart (
     int16T,
     int32T,
     int64T,
+    uintT,
+    uint8T,
+    uint16T,
+    uint32T,
+    uint64T,
     refT,
     arrT,
     stT,
@@ -71,6 +76,21 @@ int32T = FixT (I 32) noLoc
 
 int64T :: Type
 int64T = FixT (I 64) noLoc
+
+uintT :: Type
+uintT = FixT (U dEFAULT_INT_WIDTH) noLoc
+
+uint8T :: Type
+uint8T = FixT (U 8) noLoc
+
+uint16T :: Type
+uint16T = FixT (U 16) noLoc
+
+uint32T :: Type
+uint32T = FixT (U 32) noLoc
+
+uint64T :: Type
+uint64T = FixT (U 64) noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
