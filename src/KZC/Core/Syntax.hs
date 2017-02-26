@@ -1953,8 +1953,8 @@ instance LiftedNum Exp Exp where
     liftNum2 Sub _ e1 e2 | isZero e1 = negate e2
                          | isZero e2 = e1
 
-    liftNum2 Mul _ e1 e2 | isZero e1 = 0
-                         | isZero e2 = 0
+    liftNum2 Mul _ e1 e2 | isZero e1 = e1
+                         | isZero e2 = e2
                          | isOne  e1 = e2
                          | isOne  e2 = e1
 
