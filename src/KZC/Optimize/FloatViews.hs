@@ -288,6 +288,15 @@ instance MonadTc m => TransformExp (F m) where
     expT e = transExp e
 
 instance (IsLabel l, MonadTc m) => TransformComp l (F m) where
+    declsT (LetD ldecl s : decls) k = do
+        (ldecl', (ldecls', (decls', x))) <-
+            localDeclT ldecl $
+            withSlices (binders ldecl) $
+            declsT decls k
+        return ([LetD ldecl s | ldecl <- ldecl' : ldecls'] ++ decls', x)
+
+    declsT decls k = transDecls decls k
+
     declT (LetFunD f iotas vbs tau_ret e l) m =
         extendVars [(bVar f, tau)] $ do
         e' <- extendLetFun f iotas vbs tau_ret $
