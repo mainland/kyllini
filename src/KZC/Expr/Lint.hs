@@ -399,7 +399,7 @@ inferExp (BinopE op e1 e2 _) = do
     checkBitShiftBinop :: Type -> Type -> m Type
     checkBitShiftBinop tau1 tau2 = do
         checkBitT tau1
-        checkIntT tau2
+        checkTypeEquality tau2 uintT
         return tau1
 
 inferExp (IfE e1 e2 e3 _) = do

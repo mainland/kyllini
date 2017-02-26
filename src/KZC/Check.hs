@@ -509,12 +509,12 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitShiftBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
-        (tau1', co)  <- mkBitCast e1 tau1
+        (tau1', co1) <- mkBitCast e1 tau1
         checkBitT tau1'
         (tau2, mce2) <- inferVal e2
-        checkIntT tau2
+        co2          <- mkCheckedSafeCast e2 tau2 uintT
         instType tau1' exp_ty
-        return $ E.BinopE cop <$> co mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> co1 mce1 <*> co2 mce2 <*> pure l
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
