@@ -659,7 +659,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
                 cx   <- gensymAt "x" l
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ E.ForE cann cx E.intT (E.intE 1) ce1 ce2 l
+                return $ E.ForE cann cx E.intT (E.intE (1 :: Int)) ce1 ce2 l
 
 tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)

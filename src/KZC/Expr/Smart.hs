@@ -69,6 +69,7 @@ module KZC.Expr.Smart (
     castE,
     unitE,
     intE,
+    uintE,
     varE,
     letE,
     callE,
@@ -294,8 +295,11 @@ castE tau e = UnopE (Cast tau) e (srclocOf e)
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 
-intE :: Integer -> Exp
-intE i = ConstE (FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)) noLoc
+intE :: Integral a => a -> Exp
+intE i = ConstE (intC i) noLoc
+
+uintE :: Integral a => a -> Exp
+uintE i = ConstE (uintC i) noLoc
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
