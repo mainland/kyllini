@@ -519,8 +519,17 @@ inferExp (ArrayE es l) = do
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
     withFvContext e2 $ checkExp e2 uintT
+    checkLen len
     go tau
   where
+    checkLen :: Maybe Int -> m ()
+    checkLen Nothing =
+        return ()
+
+    checkLen (Just len) =
+        unless (len >= 0) $
+        faildoc $ text "Slice length must be non-negative."
+
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l

@@ -694,8 +694,17 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
                    checkIntT tau2
                    co <- mkCast tau2 uintT
                    return $ co mce2
+    checkLen len
     checkIdxE tau mce1 mce2
   where
+    checkLen :: Maybe Int -> Ti ()
+    checkLen Nothing =
+        return ()
+
+    checkLen (Just len) =
+        unless (len >= 0) $
+        faildoc $ text "Slice length must be non-negative."
+
     checkIdxE :: Type
               -> Ti E.Exp
               -> Ti E.Exp
