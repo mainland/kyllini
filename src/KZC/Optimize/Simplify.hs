@@ -656,7 +656,7 @@ simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
     zs <- gensym "zs"
     extendVars [(zs, arrKnownT total tau)] $
       extendSubsts [(v, DoneExp e) | (v, i, n) <- zip3 vs offs lens,
-                                     let e = sliceE (varE zs) (intE i) n] $ do
+                                     let e = sliceE (varE zs) (uintE i) n] $ do
       steps' <- simplSteps rest
       simplSteps $ TakesC l1 total tau s1 :
                    BindC l2 (TameV (mkBoundVar zs)) (arrKnownT total tau) s2 :
@@ -1537,7 +1537,7 @@ simplE (ArrayE es s) =
       where
         coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
         coalesce xs i len [] =
-            return $ sliceE (varE xs) (intE i) (fromIntegral len)
+            return $ sliceE (varE xs) (uintE i) (fromIntegral len)
 
         coalesce xs i len (IdxE (VarE xs' _) ej Nothing _ : es'')
           | Just j <- fromIntE ej, j == i + len, xs' == xs =

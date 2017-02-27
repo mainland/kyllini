@@ -355,7 +355,7 @@ lutGenToExp v_lut e gs =
     bits <- sum <$> mapM typeSize taus
     mkFor 0 (2^bits) $ \i ->
         unpackLUTIdx i (reverse (vs `zip` taus)) $
-        mkAssign (idxE (varE v_lut) (castE intT i)) e tau
+        mkAssign (idxE (varE v_lut) i) e tau
   where
     vs :: [Var]
     taus :: [Type]
@@ -368,7 +368,7 @@ lutGenToExp v_lut e gs =
     mkFor :: Int -> Int -> (Exp -> m Exp) -> m Exp
     mkFor from to k = do
         i <- gensym "i"
-        forE AutoUnroll i uintT (fromIntegral from) (fromIntegral to) <$> k (varE i)
+        forE AutoUnroll i uintT (uintE from) (uintE to) <$> k (varE i)
 
     mkAssign :: Exp -> Exp -> Type -> m Exp
     mkAssign e_lhs e_rhs tau | isPureT tau =
@@ -466,10 +466,10 @@ instance MonadTc m => TransformExp (L m) where
             return $ varE v
 
         go (Just (IdxL _ off _)) | Just e_len <- maybe_len =
-            return $ sliceE (varE v) (e_i - fromIntegral off) e_len
+            return $ sliceE (varE v) (e_i - uintE off) e_len
 
         go (Just (IdxL _ off _)) =
-            return $ idxE (varE v) (e_i - fromIntegral off)
+            return $ idxE (varE v) (e_i - uintE off)
 
         go _ =
             return e

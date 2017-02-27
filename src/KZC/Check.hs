@@ -692,7 +692,7 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
                    checkIntT tau2
-                   co <- mkCast tau2 intT
+                   co <- mkCast tau2 uintT
                    return $ co mce2
     checkIdxE tau mce1 mce2
   where

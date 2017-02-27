@@ -265,7 +265,7 @@ instance MonadTc m => TransformExp (F m) where
         maybe_v'     <- lookupView (Slice v es isRef tau) (i + fromMaybe 1 len)
         case maybe_v' of
           Nothing -> return e
-          Just v' -> return $ IdxE (varE v') (intE i) len s
+          Just v' -> return $ IdxE (varE v') (uintE i) len s
       where
         viewType :: Type -> F m (Bool, Type)
         viewType (ArrT _ tau _) =

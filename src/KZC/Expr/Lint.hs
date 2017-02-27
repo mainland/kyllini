@@ -526,7 +526,7 @@ inferExp (ArrayE es l) = do
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
-    withFvContext e2 $ checkExp e2 intT
+    withFvContext e2 $ checkExp e2 uintT
     go tau
   where
     go :: Type -> m Type
