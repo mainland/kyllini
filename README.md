@@ -6,7 +6,11 @@ Windows, [msys2](https://msys2.github.io/) should be used.
 
 The compiler can be built as follows:
 
-    autoconf && ./configure && make
+```
+cabal sandbox init
+cabal install --only-dependencies --enable-tests
+autoconf && ./configure && make
+```
 
 # Validating changes
 
