@@ -399,7 +399,7 @@ inferExp (BinopE op e1 e2 _) = do
     checkBitShiftBinop :: Type -> Type -> m Type
     checkBitShiftBinop tau1 tau2 = do
         checkBitT tau1
-        checkIntT tau2
+        checkTypeEquality tau2 uintT
         return tau1
 
 inferExp (IfE e1 e2 e3 _) = do
@@ -526,9 +526,18 @@ inferExp (ArrayE es l) = do
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
-    withFvContext e2 $ checkExp e2 intT
+    withFvContext e2 $ checkExp e2 uintT
+    checkLen len
     go tau
   where
+    checkLen :: Maybe Int -> m ()
+    checkLen Nothing =
+        return ()
+
+    checkLen (Just len) =
+        unless (len >= 0) $
+        faildoc $ text "Slice length must be non-negative."
+
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
         return $ RefT (mkArrSlice tau len) l

@@ -678,7 +678,7 @@ runRight lss rss = do
         l_joint <- joint (ls:lss) (rs:rss)
         traceFusion $ text "runRight: merged for loops"
         let step = ForC l_joint AutoUnroll v_r tau_r ei_r elen_r
-                   (subst1 (v_l /-> varE v_r + intE (i_l - i_r)) c)
+                   (subst1 (v_l /-> varE v_r + asintE tau_r (i_l - i_r)) c)
                    s
         jointStep step $ runRight lss rss
 
@@ -725,7 +725,7 @@ runRight lss rss = do
         diverge :: F l m [Step l]
         diverge = do
             unrollingFor ann c
-            unrolled <- unrollFor l v e1 e2 c
+            unrolled <- unrollFor l v tau e1 e2 c
             traceFusion $ text "runRight: unrolling right for"
             runRight lss (unComp unrolled ++ rss)
 
@@ -777,7 +777,7 @@ runRight lss rss = do
         diverge :: F l m [Step l]
         diverge = do
             unrollingFor ann c
-            unrolled <- unrollFor l v e1 e2 c
+            unrolled <- unrollFor l v tau e1 e2 c
             traceFusion $ text "runRight: unrolling left for"
             runRight (unComp unrolled ++ lss) rss
 
@@ -1195,14 +1195,15 @@ computational step.
 unrollFor :: forall l m . (IsLabel l, MonadTc m)
           => l
           -> Var
+          -> Type
           -> Exp
           -> Exp
           -> Comp l
           -> F l m (Comp l)
-unrollFor l v e1 e2 c = do
+unrollFor l v tau e1 e2 c = do
     i   <- tryFromIntE e1
     len <- tryFromIntE e2
-    return $ setCompLabel l $ unrollBody i len $ \j -> subst1 (v /-> intE j) c
+    return $ setCompLabel l $ unrollBody i len $ \j -> subst1 (v /-> asintE tau j) c
 
 splitFor :: forall l m . (IsLabel l, MonadTc m)
          => l
@@ -1216,8 +1217,8 @@ splitFor :: forall l m . (IsLabel l, MonadTc m)
 splitFor l v tau i len k c =
     cacheCode l $ do
     v' <- gensym "i"
-    C.forC AutoUnroll v' tau 0 (intE k) $
-      unrollBody 0 q $ \j -> subst1 (v /-> varE v' * intE q + intE (i+j)) c
+    C.forC AutoUnroll v' tau (asintE tau (0 :: Integer)) (asintE tau k) $
+      unrollBody 0 q $ \j -> subst1 (v /-> varE v' * asintE tau q + asintE tau (i+j)) c
   where
     q = len `quot` k
 

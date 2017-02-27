@@ -359,13 +359,17 @@ checkDecls (decl:decls) k =
     checkDecls decls $ \mcdecls ->
     k (mcdecl:mcdecls)
 
-mkSigned :: Type -> Type
-mkSigned (FixT (U w) l) = FixT (I w) l
-mkSigned tau            = tau
+mkSigned :: Monad m => Type -> m Type
+mkSigned (FixT (U w) l)   = return $ FixT (I w) l
+mkSigned tau@(FixT I{} _) = return tau
+mkSigned tau =
+    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to unsigned."
 
-mkUnsigned :: Type -> Type
-mkUnsigned (FixT (I w) l) = FixT (U w) l
-mkUnsigned tau            = tau
+mkUnsigned :: Monad m => Type -> m Type
+mkUnsigned (FixT (I w) l)   = return $ FixT (U w) l
+mkUnsigned tau@(FixT U{} _) = return tau
+mkUnsigned tau =
+    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to signed."
 
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
@@ -423,7 +427,8 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop Z.Neg = do
         (tau, mce) <- inferVal e
         checkNumT tau
-        instType (mkSigned tau) exp_ty
+        tau' <- mkSigned tau
+        instType tau' exp_ty
         return $ E.UnopE E.Neg <$> mce <*> pure l
 
     unop (Z.Cast ztau2) = do
@@ -504,12 +509,12 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitShiftBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
-        (tau1', co)  <- mkBitCast e1 tau1
+        (tau1', co1) <- mkBitCast e1 tau1
         checkBitT tau1'
         (tau2, mce2) <- inferVal e2
-        checkIntT tau2
+        co2          <- mkCheckedSafeCast e2 tau2 uintT
         instType tau1' exp_ty
-        return $ E.BinopE cop <$> co mce1 <*> mce2 <*> pure l
+        return $ E.BinopE cop <$> co1 mce1 <*> co2 mce2 <*> pure l
 
 tcExp (Z.IfE e1 e2 Nothing l) exp_ty = do
     mce1        <- checkVal e1 (BoolT l)
@@ -654,7 +659,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
                 cx   <- gensymAt "x" l
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ E.ForE cann cx E.intT (E.intE 1) ce1 ce2 l
+                return $ E.ForE cann cx E.intT (E.intE (1 :: Int)) ce1 ce2 l
 
 tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
     tau_i <- fromZ (ztau_i, TauK)
@@ -687,10 +692,19 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
                    checkIntT tau2
-                   co <- mkCast tau2 intT
+                   co <- mkCast tau2 uintT
                    return $ co mce2
+    checkLen len
     checkIdxE tau mce1 mce2
   where
+    checkLen :: Maybe Int -> Ti ()
+    checkLen Nothing =
+        return ()
+
+    checkLen (Just len) =
+        unless (len >= 0) $
+        faildoc $ text "Slice length must be non-negative."
+
     checkIdxE :: Type
               -> Ti E.Exp
               -> Ti E.Exp
@@ -1713,11 +1727,9 @@ mkCheckedSafeCast e tau1 tau2 = do
 
 mkBitCast :: Z.Exp -> Type -> Ti (Type, Co)
 mkBitCast e tau = do
-    co <- mkCheckedSafeCast e tau tau'
+    tau' <- mkUnsigned tau
+    co   <- mkCheckedSafeCast e tau tau'
     return (tau', co)
-  where
-    tau' :: Type
-    tau' = mkUnsigned tau
 
 -- | @mkCastT tau1 tau2@ generates a computation of type @ST T tau1 tau2@ that
 -- casts values from @tau1@ to @tau2@.

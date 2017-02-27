@@ -22,6 +22,7 @@ module KZC.Core.Smart (
     unitE,
     intE,
     uintE,
+    asintE,
     varE,
     notE,
     catE,
@@ -179,6 +180,11 @@ intE i = ConstE (intC i) noLoc
 uintE :: Integral a => a -> Exp
 uintE i = ConstE (uintC i) noLoc
 
+-- | Create an integer constant expression at the given integer type.
+asintE :: Integral a => Type -> a -> Exp
+asintE (FixT ip l) i = ConstE (FixC ip (fromIntegral i)) l
+asintE tau         _ = errordoc $ text "Expected integer type but got:" <+> ppr tau
+
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
@@ -189,6 +195,9 @@ catE :: Exp -> Exp -> Exp
 catE e1 e2 = BinopE Cat e1 e2 (e1 `srcspan` e2)
 
 castE :: Type -> Exp -> Exp
+castE tau (ConstE c l) | Just c' <- liftCast tau c =
+    ConstE c' l
+
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 bitcastE :: Type -> Exp -> Exp
@@ -240,10 +249,10 @@ structE :: Struct -> [(Field, Exp)] -> Exp
 structE s fs = StructE s fs (srclocOf (map snd fs))
 
 idxE :: Exp -> Exp -> Exp
-idxE e1 e2 = IdxE e1 e2 Nothing (e1 `srcspan` e2)
+idxE e1 e2 = IdxE e1 (castE uintT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
-sliceE e1 e2 len = IdxE e1 e2 (Just len) (e1 `srcspan` e2)
+sliceE e1 e2 len = IdxE e1 (castE uintT e2) (Just len) (e1 `srcspan` e2)
 
 projE :: Exp -> Field -> Exp
 projE e f = ProjE e f (e `srcspan` f)

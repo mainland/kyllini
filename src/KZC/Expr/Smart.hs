@@ -69,6 +69,8 @@ module KZC.Expr.Smart (
     castE,
     unitE,
     intE,
+    uintE,
+    asintE,
     varE,
     letE,
     callE,
@@ -289,13 +291,24 @@ notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
 
 castE :: Type -> Exp -> Exp
+castE tau (ConstE c l) | Just c' <- liftCast tau c =
+    ConstE c' l
+
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
 
-intE :: Integer -> Exp
-intE i = ConstE (FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)) noLoc
+intE :: Integral a => a -> Exp
+intE i = ConstE (intC i) noLoc
+
+uintE :: Integral a => a -> Exp
+uintE i = ConstE (uintC i) noLoc
+
+-- | Create an integer constant expression at the given integer type.
+asintE :: Integral a => Type -> a -> Exp
+asintE (FixT ip l) i = ConstE (FixC ip (fromIntegral i)) l
+asintE tau         _ = errordoc $ text "Expected integer type but got:" <+> ppr tau
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

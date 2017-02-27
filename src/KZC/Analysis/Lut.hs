@@ -143,8 +143,8 @@ instance Summary LUTVar where
 
 instance ToExp LUTVar where
     toExp (VarL v)                  = varE v
-    toExp (IdxL v start Nothing)    = idxE (varE v) (intE start)
-    toExp (IdxL v start (Just len)) = sliceE (varE v) (intE start) len
+    toExp (IdxL v start Nothing)    = idxE (varE v) (uintE start)
+    toExp (IdxL v start (Just len)) = sliceE (varE v) (uintE start) len
 
 unLUTVar :: LUTVar -> Var
 unLUTVar (VarL v)     = v
