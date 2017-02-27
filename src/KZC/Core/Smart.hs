@@ -195,6 +195,9 @@ catE :: Exp -> Exp -> Exp
 catE e1 e2 = BinopE Cat e1 e2 (e1 `srcspan` e2)
 
 castE :: Type -> Exp -> Exp
+castE tau (ConstE c l) | Just c' <- liftCast tau c =
+    ConstE c' l
+
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 bitcastE :: Type -> Exp -> Exp

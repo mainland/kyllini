@@ -291,6 +291,9 @@ notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
 
 castE :: Type -> Exp -> Exp
+castE tau (ConstE c l) | Just c' <- liftCast tau c =
+    ConstE c' l
+
 castE tau e = UnopE (Cast tau) e (srclocOf e)
 
 unitE :: Exp
