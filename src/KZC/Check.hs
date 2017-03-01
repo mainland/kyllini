@@ -1717,7 +1717,7 @@ mkCast tau1 tau2 = do
     go _ tau2 mce = do
         ctau <- trans tau2
         ce   <- mce
-        return $ E.UnopE (E.Cast ctau) ce (srclocOf ce)
+        return $ E.castE ctau ce
 
 mkCheckedSafeCast :: Z.Exp -> Type -> Type -> Ti Co
 mkCheckedSafeCast e tau1 tau2 = do
