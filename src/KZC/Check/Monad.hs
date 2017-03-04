@@ -48,6 +48,10 @@ module KZC.Check.Monad (
     newMetaKv,
     newMetaKvK,
 
+    readRv,
+    writeRv,
+    newMetaRv,
+
     relevantBindings,
     sanitizeTypes,
 
@@ -218,7 +222,11 @@ newMetaTv :: Kind -> Ti MetaTv
 newMetaTv k = do
     u     <- newUnique
     tref  <- newRef Nothing
-    return $ MetaTv u k tref
+    k'    <- case k of
+               TauK (R ts) -> do mrv <- newMetaRv ts
+                                 return $ TauK (MetaR mrv)
+               _           -> return k
+    return $ MetaTv u k' tref
 
 newMetaTvT :: Located a => Kind -> a -> Ti Type
 newMetaTvT k x = MetaT <$> newMetaTv k <*> pure (srclocOf x)
@@ -237,6 +245,18 @@ newMetaKv = do
 
 newMetaKvK :: Located a => a -> Ti Kind
 newMetaKvK _x = MetaK <$> newMetaKv
+
+readRv :: MonadRef IORef m => MetaRv -> m (Maybe R)
+readRv (MetaRv _ _ ref) = readRef ref
+
+writeRv :: MonadRef IORef m => MetaRv -> R -> m ()
+writeRv (MetaRv _ _ ref) ts = writeRef ref (Just ts)
+
+newMetaRv :: Traits -> Ti MetaRv
+newMetaRv ts = do
+    u     <- newUnique
+    tref  <- newRef Nothing
+    return $ MetaRv u ts tref
 
 {------------------------------------------------------------------------------
  -
@@ -346,7 +366,7 @@ instance Compress Type where
         pure tau
 
     compress (ForallT tvks tau l) =
-        ForallT tvks <$> compress tau <*> pure l
+        ForallT <$> compress tvks <*> compress tau <*> pure l
 
     compress tau@TyVarT{} =
         pure tau
@@ -360,7 +380,7 @@ instance Compress Type where
                              return tau''
 
 instance Compress Kind where
-    compress kappa@TauK   = return kappa
+    compress (TauK r)     = TauK <$> compress r
     compress kappa@OmegaK = return kappa
     compress kappa@MuK    = return kappa
     compress kappa@RhoK   = return kappa
@@ -374,3 +394,17 @@ instance Compress Kind where
           Just kappa' ->  do  kappa'' <- compress kappa'
                               writeKv mkv kappa''
                               return kappa''
+
+instance Compress (Type, Kind) where
+    compress (alpha, kappa) = (,) <$> pure alpha <*> compress kappa
+
+instance Compress R where
+    compress traits@R{} = pure traits
+
+    compress traits@(MetaR mrv) = do
+        maybe_traits' <- readRv mrv
+        case maybe_traits' of
+          Nothing      -> return traits
+          Just traits' -> do  traits'' <- compress traits'
+                              writeRv mrv traits''
+                              return traits''

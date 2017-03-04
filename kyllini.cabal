@@ -97,6 +97,7 @@ library
     KZC.Rename
     KZC.Rename.Monad
     KZC.Rename.State
+    KZC.Traits
     KZC.Util.Derive
     KZC.Util.EnumSet
     KZC.Util.Error

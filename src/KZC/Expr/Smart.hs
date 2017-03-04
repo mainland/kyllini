@@ -10,6 +10,16 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Expr.Smart (
+    qualK,
+    tauK,
+    eqK,
+    ordK,
+    boolK,
+    numK,
+    intK,
+    fracK,
+    bitsK,
+
     tyVarT,
 
     unitT,
@@ -105,6 +115,33 @@ import KZC.Expr.Syntax
 import KZC.Name
 import KZC.Platform
 
+qualK :: [Trait] -> Kind
+qualK ts = TauK (traits ts)
+
+tauK :: Kind
+tauK = TauK mempty
+
+eqK :: Kind
+eqK = qualK [EqR]
+
+ordK :: Kind
+ordK = qualK [OrdR]
+
+boolK :: Kind
+boolK = qualK [BoolR]
+
+numK :: Kind
+numK = qualK [NumR]
+
+intK :: Kind
+intK = qualK [IntegralR]
+
+fracK :: Kind
+fracK = qualK [FractionalR]
+
+bitsK :: Kind
+bitsK = qualK [BitsR]
+
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
 
@@ -177,7 +214,7 @@ forallST [] omega s a b l =
     ST omega s a b l
 
 forallST alphas omega s a b l =
-    ForallT (alphas `zip` repeat TauK) (ST omega s a b l) l
+    ForallT (alphas `zip` repeat (TauK mempty)) (ST omega s a b l) l
 
 unSTC :: Type -> Type
 unSTC (ForallT _ tau@ST{} _) = unSTC tau

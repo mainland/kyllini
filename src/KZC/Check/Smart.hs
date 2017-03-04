@@ -9,6 +9,16 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Check.Smart (
+    qualK,
+    tauK,
+    eqK,
+    ordK,
+    boolK,
+    numK,
+    intK,
+    fracK,
+    bitsK,
+
     tyVarT,
     metaT,
 
@@ -48,6 +58,33 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Types
 import KZC.Platform
+
+qualK :: [Trait] -> Kind
+qualK ts = TauK (R (traits ts))
+
+tauK :: Kind
+tauK = qualK []
+
+eqK :: Kind
+eqK = qualK [EqR]
+
+ordK :: Kind
+ordK = qualK [OrdR]
+
+boolK :: Kind
+boolK = qualK [BoolR]
+
+numK :: Kind
+numK = qualK [NumR]
+
+intK :: Kind
+intK = qualK [IntegralR]
+
+fracK :: Kind
+fracK = qualK [FractionalR]
+
+bitsK :: Kind
+bitsK = qualK [BitsR]
 
 tyVarT :: TyVar -> Type
 tyVarT tv@(TyVar n) = TyVarT tv (srclocOf n)
@@ -109,7 +146,7 @@ forallST [] omega s a b l =
     ST omega s a b l
 
 forallST alphas omega s a b l =
-    ForallT (alphas `zip` repeat TauK) (ST omega s a b l) l
+    ForallT (alphas `zip` repeat tauK) (ST omega s a b l) l
 
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)

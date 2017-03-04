@@ -15,6 +15,7 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Expr.Syntax (
+    module KZC.Traits,
     Var(..),
     WildVar(..),
     Field(..),
@@ -100,6 +101,8 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Name
 import KZC.Platform
+import KZC.Traits
+import qualified KZC.Util.EnumSet as Set
 import KZC.Util.Pretty
 import KZC.Util.SetLike
 import KZC.Util.Staged
@@ -346,12 +349,12 @@ data Omega = C Type
            | T
   deriving (Eq, Ord, Read, Show)
 
-data Kind = TauK   -- ^ Base types, including arrays of base types
-          | RhoK   -- ^ Reference types
-          | OmegaK -- ^ @C tau@ or @T@
-          | MuK    -- ^ @ST omega tau tau tau@ types
-          | PhiK   -- ^ Function types
-          | NatK   -- ^ Type-level natural number
+data Kind = TauK Traits -- ^ Base types, including arrays of base types
+          | RhoK        -- ^ Reference types
+          | OmegaK      -- ^ @C tau@ or @T@
+          | MuK         -- ^ @ST omega tau tau tau@ types
+          | PhiK        -- ^ Function types
+          | NatK        -- ^ Type-level natural number
   deriving (Eq, Ord, Read, Show)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
@@ -994,7 +997,9 @@ instance Pretty Omega where
         text "T"
 
 instance Pretty Kind where
-    ppr TauK   = text "tau"
+    ppr (TauK ts) | nullTraits ts = text "tau"
+                  | otherwise     = ppr ts
+
     ppr RhoK   = text "rho"
     ppr OmegaK = text "omega"
     ppr MuK    = text "mu"
@@ -1012,8 +1017,12 @@ pprTypeSig (v, tau) = parens (ppr v <+> colon <+> ppr tau)
 
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
-pprKindSig (tau, TauK)  = ppr tau
-pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)
+pprKindSig (tau, TauK traits)
+    | Set.null traits = ppr tau
+    | otherwise       = parens (ppr tau <+> colon <+> ppr traits)
+
+pprKindSig (tau, kappa) =
+    parens (ppr tau <+> colon <+> ppr kappa)
 
 -- | Pretty-print function parameters
 pprFunParams :: [(TyVar, Kind)] -> [(Var, Type)] -> Doc

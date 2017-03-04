@@ -73,7 +73,17 @@ import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
 import KZC.Core.Syntax
-import KZC.Expr.Smart (tyVarT,
+import KZC.Expr.Smart (qualK,
+                       tauK,
+                       eqK,
+                       ordK,
+                       boolK,
+                       numK,
+                       intK,
+                       fracK,
+                       bitsK,
+
+                       tyVarT,
 
                        unitT,
                        boolT,

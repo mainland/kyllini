@@ -46,6 +46,7 @@ DERIVE(Unop)
 DERIVE(Binop)
 DERIVE(StructDef)
 DERIVE(Type)
+DERIVE(Trait)
 DERIVE(Kind)
 DERIVE(Omega)
 

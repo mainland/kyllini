@@ -12,6 +12,8 @@
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Check.Types (
+    module KZC.Traits,
+
     TyVar(..),
     IP(..),
     ipWidth,
@@ -22,7 +24,9 @@ module KZC.Check.Types (
     Type(..),
     Kind(..),
     MetaTv(..),
-    MetaKv(..)
+    MetaKv(..),
+    R(..),
+    MetaRv(..)
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -54,6 +58,7 @@ import KZC.Expr.Syntax (IP(..),
 import KZC.Globals
 import KZC.Name
 import KZC.Platform
+import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
 import KZC.Util.Uniq
@@ -98,15 +103,7 @@ data Type -- Base Types
           | MetaT MetaTv !SrcLoc
   deriving (Eq, Ord, Show)
 
-data Kind = TauK   -- ^ Base types, including arrays of base types
-          | OmegaK -- ^ @C tau@ or @T@
-          | MuK    -- ^ @ST omega tau tau@ types
-          | RhoK   -- ^ Reference types
-          | PhiK   -- ^ Function types
-          | NatK   -- ^ Type-level natural number
-          | MetaK MetaKv
-  deriving (Eq, Ord, Show)
-
+-- | Type meta-variable
 data MetaTv = MetaTv Uniq Kind TyRef
   deriving (Show)
 
@@ -117,6 +114,32 @@ instance Ord MetaTv where
     compare (MetaTv u1 _ _) (MetaTv u2 _ _) = compare u1 u2
 
 type TyRef = IORef (Maybe Type)
+
+-- | Kinds
+data Kind = TauK R -- ^ Base types, including arrays of base types
+          | OmegaK -- ^ @C tau@ or @T@
+          | MuK    -- ^ @ST omega tau tau@ types
+          | RhoK   -- ^ Reference types
+          | PhiK   -- ^ Function types
+          | NatK   -- ^ Type-level natural number
+          | MetaK MetaKv
+  deriving (Eq, Ord, Show)
+
+data R = R Traits
+       | MetaR MetaRv
+  deriving (Eq, Ord, Show)
+
+-- | Traits meta-variable
+data MetaRv = MetaRv Uniq Traits TraitsRef
+  deriving (Show)
+
+instance Eq MetaRv where
+    (MetaRv u1 _ _) == (MetaRv u2 _ _) = u1 == u2
+
+instance Ord MetaRv where
+    compare (MetaRv u1 _ _) (MetaRv u2 _ _) = compare u1 u2
+
+type TraitsRef = IORef (Maybe R)
 
 data MetaKv = MetaKv Uniq KindRef
   deriving (Show)
@@ -273,6 +296,19 @@ instance Pretty Type where
     pprPrec _ (TyVarT tv _) =
         ppr tv
 
+instance Pretty Kind where
+    pprPrec p (TauK ts)   = pprPrec p ts
+    pprPrec _ OmegaK      = text "omega"
+    pprPrec _ MuK         = text "mu"
+    pprPrec _ RhoK        = text "rho"
+    pprPrec _ PhiK        = text "phi"
+    pprPrec _ NatK        = text "N"
+    pprPrec p (MetaK mkv) = text (showsPrec p mkv "")
+
+instance Pretty R where
+    pprPrec p (R ts)      = pprPrec p ts
+    pprPrec p (MetaR mrv) = text (showsPrec p mrv "")
+
 -- | Pretty-print a forall quantifier
 pprForall :: [(TyVar, Kind)] -> Doc
 pprForall []   = empty
@@ -280,17 +316,14 @@ pprForall tvks = text "forall" <+> commasep (map pprKindSig tvks) <+> dot
 
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
-pprKindSig (tau, TauK)  = ppr tau
-pprKindSig (tau, kappa) = parens (ppr tau <+> colon <+> ppr kappa)
+pprKindSig (tau, TauK (R ts)) | nullTraits ts =
+    ppr tau
 
-instance Pretty Kind where
-    pprPrec _ TauK        = text "tau"
-    pprPrec _ OmegaK      = text "omega"
-    pprPrec _ MuK         = text "mu"
-    pprPrec _ RhoK        = text "rho"
-    pprPrec _ PhiK        = text "phi"
-    pprPrec _ NatK        = text "N"
-    pprPrec p (MetaK mkv) = text (showsPrec p mkv "")
+pprKindSig (tau, TauK traits) =
+    parens (ppr tau <+> colon <+> ppr traits)
+
+pprKindSig (tau, kappa) =
+    parens (ppr tau <+> colon <+> ppr kappa)
 
 {------------------------------------------------------------------------------
  -
@@ -337,6 +370,13 @@ instance Fvs Type MetaTv where
     fvs (MetaT mtv _)               = singleton mtv
 
 instance Fvs Type n => Fvs [Type] n where
+    fvs = foldMap fvs
+
+instance Fvs Kind MetaRv where
+    fvs (TauK (MetaR mrv)) = singleton mrv
+    fvs _                  = mempty
+
+instance Fvs Kind n => Fvs [Kind] n where
     fvs = foldMap fvs
 
 instance HasVars Type TyVar where

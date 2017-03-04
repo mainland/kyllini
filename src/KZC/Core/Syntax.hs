@@ -53,6 +53,7 @@ module KZC.Core.Syntax (
     StructDef(..),
     Type(..),
     Omega(..),
+    Trait(..),
     Kind(..),
 
     mkBoundVar,
@@ -147,6 +148,7 @@ import KZC.Expr.Syntax (Var(..),
                         StructDef(..),
                         Type(..),
                         Omega(..),
+                        Trait(..),
                         Kind(..),
 
                         isComplexStruct,

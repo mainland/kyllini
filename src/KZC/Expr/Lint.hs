@@ -43,12 +43,6 @@ module KZC.Expr.Lint (
 
     joinOmega,
 
-    checkEqT,
-    checkOrdT,
-    checkBoolT,
-    checkBitT,
-    checkIntT,
-    checkNumT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -160,13 +154,13 @@ checkDecl decl@(LetD v tau e _) k = do
     extendVars [(v, tau)] k
 
 checkDecl decl@(LetRefD v tau Nothing _) k = do
-    alwaysWithSummaryContext decl $ checkKind tau TauK
+    alwaysWithSummaryContext decl $ checkKind tau tauK
     extendVars [(v, refT tau)] k
 
 checkDecl decl@(LetRefD v tau (Just e) _) k = do
     alwaysWithSummaryContext decl $
         inLocalScope $ do
-        checkKind tau TauK
+        checkKind tau tauK
         checkExp e tau
     extendVars [(v, refT tau)] k
 
@@ -198,7 +192,7 @@ checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
-        mapM_ (`checkKind` TauK) taus
+        mapM_ (`checkKind` tauK) taus
     extendStructs [StructDef s flds l] k
   where
     (fnames, taus) = unzip flds
@@ -225,7 +219,7 @@ checkNatTauPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
 checkNatTauPoly = mapM_ check
   where
     check :: (TyVar, Kind) -> m ()
-    check (_alpha, TauK) =
+    check (_alpha, TauK{}) =
         return ()
 
     check (_alpha, NatK) =
@@ -257,7 +251,7 @@ inferConst l (ReplicateC n c) = do
     return $ arrKnownT n tau
 
 inferConst _ (EnumC tau) = do
-    checkKind tau TauK
+    checkKind tau tauK
     w <- typeSize tau
     return $ arrKnownT (2^w) tau
 
@@ -285,22 +279,16 @@ inferExp (ConstE c l) =
 inferExp (VarE v _) =
     lookupVar v
 
-inferExp (UnopE op e1 _) = do
+inferExp (UnopE op e1 l) = do
     tau1 <- inferExp e1
     unop op tau1
   where
     unop :: Unop -> Type -> m Type
-    unop Lnot tau = do
-        checkBoolT tau
-        return tau
+    unop Lnot tau = inferOp [(a, boolK)] aT aT tau
+    unop Bnot tau = inferOp [(a, bitsK)] aT aT tau
 
-    unop Bnot tau = do
-        checkBitT tau
-        return tau
-
-    unop Neg tau = do
-        checkNumT tau
-        return $ mkSigned tau
+    unop Neg tau =
+        mkSigned <$> inferOp [(a, numK)] aT aT tau
       where
         mkSigned :: Type -> Type
         mkSigned (FixT (U w) l) = FixT (I w) l
@@ -318,71 +306,49 @@ inferExp (UnopE op e1 _) = do
         _ <- checkArrOrRefArrT tau
         return intT
 
-inferExp (BinopE op e1 e2 _) = do
+    a :: TyVar
+    a = "a"
+
+    aT :: Type
+    aT = tyVarT a
+
+    inferOp :: [(TyVar, Kind)]
+            -> Type
+            -> Type
+            -> Type
+            -> m Type
+    inferOp tvks a b tau1 =
+        inferCall tau_op [tau1] [e1]
+      where
+        tau_op :: Type
+        tau_op = ForallT tvks (FunT [a] b l) l
+
+inferExp (BinopE op e1 e2 l) = do
     tau1 <- inferExp e1
     tau2 <- inferExp e2
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> m Type
-    binop Eq tau1 tau2 =
-        checkEqBinop tau1 tau2
-
-    binop Ne tau1 tau2 =
-        checkEqBinop tau1 tau2
-
-    binop Lt tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Le tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Ge tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Gt tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Land tau1 tau2 =
-        checkBoolBinop tau1 tau2
-
-    binop Lor tau1 tau2 =
-        checkBoolBinop tau1 tau2
-
-    binop Band tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop Bor tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop Bxor tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop LshL tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop LshR tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop AshR tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop Add tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Sub tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Mul tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Div tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Rem tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Pow tau1 tau2 =
-        checkNumBinop tau1 tau2
+    binop Eq   tau1 _tau2 = inferOp [(a, eqK)] aT aT boolT tau1
+    binop Ne   tau1 _tau2 = inferOp [(a, eqK)] aT aT boolT tau1
+    binop Lt   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Le   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Ge   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Gt   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Land tau1 _tau2 = inferOp [(a, boolK)] aT aT aT tau1
+    binop Lor  tau1 _tau2 = inferOp [(a, boolK)] aT aT aT tau1
+    binop Band tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop Bor  tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop Bxor tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop LshL tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop LshR tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop AshR tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop Add  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Sub  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Mul  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Div  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Rem  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
         (iota1, tau1_elem) <- checkArrT tau1
@@ -395,41 +361,23 @@ inferExp (BinopE op e1 e2 _) = do
         s :: SrcLoc
         s = tau1 `srcspan` tau2
 
-    checkEqBinop :: Type -> Type -> m Type
-    checkEqBinop tau1 tau2 = do
-        checkEqT tau1
-        checkTypeEquality tau2 tau1
-        return boolT
+    a :: TyVar
+    a = "a"
 
-    checkOrdBinop :: Type -> Type -> m Type
-    checkOrdBinop tau1 tau2 = do
-        checkOrdT tau1
-        checkTypeEquality tau2 tau1
-        return boolT
+    aT :: Type
+    aT = tyVarT a
 
-    checkBoolBinop :: Type -> Type -> m Type
-    checkBoolBinop tau1 tau2 = do
-        checkBoolT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkNumBinop :: Type -> Type -> m Type
-    checkNumBinop tau1 tau2 = do
-        checkNumT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkBitBinop :: Type -> Type -> m Type
-    checkBitBinop tau1 tau2 = do
-        checkBitT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkBitShiftBinop :: Type -> Type -> m Type
-    checkBitShiftBinop tau1 tau2 = do
-        checkBitT tau1
-        checkTypeEquality tau2 uintT
-        return tau1
+    inferOp :: [(TyVar, Kind)]
+            -> Type
+            -> Type
+            -> Type
+            -> Type
+            -> m Type
+    inferOp tvks a b c tau1 =
+        inferCall tau_op [tau1] [e1, e2]
+      where
+        tau_op :: Type
+        tau_op = ForallT tvks (FunT [a, b] c l) l
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
@@ -458,49 +406,15 @@ inferExp (LetE decl body _) =
     return tau
   where
     checkLetKind :: Kind -> m ()
-    checkLetKind TauK = return ()
-    checkLetKind MuK  = return ()
+    checkLetKind TauK{} = return ()
+    checkLetKind MuK    = return ()
 
     checkLetKind kappa =
       faildoc $ text "Body of let has kind" <+> ppr kappa
 
 inferExp (CallE f taus es _) = do
-    (tvks, taus_args, tau_ret) <- lookupVar f >>= checkFunT
-    checkNumTypeArgs (length taus) (length tvks)
-    checkNumArgs     (length es)   (length taus_args)
-    extendTyVars tvks $ do
-      zipWithM_ checkKind taus (map snd tvks)
-      let theta      = Map.fromList (map fst tvks `zip` taus)
-      let phi        = fvs taus_args <> fvs tau_ret
-      let taus_args' = subst theta phi taus_args
-      let tau_ret'   = subst theta phi tau_ret
-      zipWithM_ checkArg es taus_args'
-      unless (isPureishT tau_ret') $
-          checkNoAliasing (es `zip` taus_args')
-      return tau_ret'
-  where
-    -- The argument may not have a fully instantiated ST type even though the
-    -- parameter is a fully instantiated ST type.
-    checkArg :: Exp -> Type -> m ()
-    checkArg e tau
-        | isPureishT tau = withFvContext e $ checkExp e tau
-        | otherwise      = withFvContext e $ do
-                           tau' <- inferExp e >>= instST
-                           checkTypeEquality tau tau'
-
-    checkNumTypeArgs :: Int -> Int -> m ()
-    checkNumTypeArgs n ntaus =
-        when (n /= ntaus) $
-             faildoc $
-             text "Expected" <+> ppr ntaus <+>
-             text "type arguments but got" <+> ppr n
-
-    checkNumArgs :: Int -> Int -> m ()
-    checkNumArgs n nexp =
-        when (n /= nexp) $
-             faildoc $
-             text "Expected" <+> ppr nexp <+>
-             text "arguments but got" <+> ppr n
+    tau_f <- lookupVar f
+    inferCall tau_f taus es
 
 inferExp (DerefE e l) = do
     tau <- withFvContext e $ inferExp e >>= checkRefT
@@ -511,8 +425,8 @@ inferExp (DerefE e l) = do
     b = "b"
 
 inferExp (AssignE e1 e2 l) = do
-    tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
-    tau' <- inferExp e2
+    tau  <- withSummaryContext e1 $ withFvContext e1 $ inferExp e1 >>= checkRefT
+    tau' <- withSummaryContext e2 $ inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
   where
@@ -530,7 +444,7 @@ inferExp (WhileE e1 e2 _) = do
         return tau
 
 inferExp (ForE _ v tau e1 e2 e3 _) = do
-    checkIntT tau
+    checkKind tau intK
     withFvContext e1 $
         checkExp e1 tau
     withFvContext e2 $
@@ -654,14 +568,14 @@ inferExp e@(BindE wv tau e1 e2 _) = do
         return tau2'
 
 inferExp (TakeE tau l) = do
-    checkKind tau TauK
+    checkKind tau tauK
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferExp (TakesE i tau l) = do
-    checkKind tau TauK
+    checkKind tau tauK
     instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
@@ -700,6 +614,46 @@ inferExp e0@(ParE _ b e1 e2 l) = do
     omega <- withFvContext e0 $
              joinOmega omega1 omega2
     return $ forallST [] omega s a c l
+
+-- | Infer the type of a function call.
+inferCall :: forall m . MonadTc m => Type -> [Type] -> [Exp] -> m Type
+inferCall tau_f taus es = do
+    (tvks, taus_args, tau_ret) <- checkFunT tau_f
+    checkNumTypeArgs (length taus) (length tvks)
+    checkNumArgs     (length es)   (length taus_args)
+    extendTyVars tvks $ do
+      zipWithM_ checkKind taus (map snd tvks)
+      let theta      = Map.fromList (map fst tvks `zip` taus)
+      let phi        = fvs taus_args <> fvs tau_ret
+      let taus_args' = subst theta phi taus_args
+      let tau_ret'   = subst theta phi tau_ret
+      zipWithM_ checkArg es taus_args'
+      unless (isPureishT tau_ret') $
+          checkNoAliasing (es `zip` taus_args')
+      return tau_ret'
+  where
+    -- The argument may not have a fully instantiated ST type even though the
+    -- parameter is a fully instantiated ST type.
+    checkArg :: Exp -> Type -> m ()
+    checkArg e tau
+        | isPureishT tau = withFvContext e $ checkExp e tau
+        | otherwise      = withFvContext e $ do
+                           tau' <- inferExp e >>= instST
+                           checkTypeEquality tau tau'
+
+    checkNumTypeArgs :: Int -> Int -> m ()
+    checkNumTypeArgs n ntaus =
+        when (n /= ntaus) $
+             faildoc $
+             text "Expected" <+> ppr ntaus <+>
+             text "type arguments but got" <+> ppr n
+
+    checkNumArgs :: Int -> Int -> m ()
+    checkNumArgs n nexp =
+        when (n /= nexp) $
+             faildoc $
+             text "Expected" <+> ppr nexp <+>
+             text "arguments but got" <+> ppr n
 
 checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
@@ -805,8 +759,8 @@ checkCast tau1 tau2 =
 -- to a value of type @tau2@.
 checkBitcast :: MonadTc m => Type -> Type -> m ()
 checkBitcast tau1 tau2 = do
-    checkKind tau1 TauK
-    checkKind tau2 TauK
+    checkKind tau1 tauK
+    checkKind tau2 tauK
     w1 <- typeSize tau1
     w2 <- typeSize tau2
     when (w2 /= w1) $
@@ -901,32 +855,51 @@ expectedTypeErr tau1 tau2 = do
       text "but got:      " <+> ppr tau1 <>
       msg
 
+-- Must be kept in sync with 'KZC.Check.kcType'
 inferKind :: forall m . MonadTc m => Type -> m Kind
 inferKind = inferType
   where
     inferType :: Type -> m Kind
-    inferType UnitT{}   = return TauK
-    inferType BoolT{}   = return TauK
-    inferType FixT{}    = return TauK
-    inferType FloatT{}  = return TauK
-    inferType StringT{} = return TauK
-    inferType StructT{} = return TauK
+    inferType UnitT{} =
+        return $ qualK [EqR]
+
+    inferType BoolT{} =
+        return $ qualK [EqR, OrdR, BoolR]
+
+    inferType (FixT (U 1) _) =
+        return $ qualK [EqR, OrdR, BoolR, BitsR]
+
+    inferType (FixT U{} _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
+
+    inferType (FixT I{} _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR]
+
+    inferType FloatT{} =
+        return $ qualK [EqR, OrdR, NumR, FractionalR]
+
+    inferType StringT{} =
+        return tauK
+
+    inferType (StructT s _)
+      | isComplexStruct s = return $ qualK [EqR, OrdR, NumR]
+      | otherwise         = return tauK
 
     inferType (ArrT n tau _) = do
         checkKind n NatK
         kappa <- inferType tau
-        checkKindEquality kappa TauK
-        return TauK
+        checkKindImplies kappa tauK
+        return tauK
 
     inferType (ST omega tau1 tau2 tau3 _) = do
         void $ inferOmega omega
-        checkKind tau1 TauK
-        checkKind tau2 TauK
-        checkKind tau3 TauK
+        checkKind tau1 tauK
+        checkKind tau2 tauK
+        checkKind tau3 tauK
         return MuK
 
     inferType (RefT tau _) = do
-        checkKind tau TauK
+        checkKind tau tauK
         return RhoK
 
     inferType (FunT taus tau_ret _) = do
@@ -942,19 +915,19 @@ inferKind = inferType
         checkArgKind pureish tau = do
             kappa <- inferType tau
             case kappa of
-              TauK            -> return ()
+              TauK{}          -> return ()
               RhoK            -> return ()
               MuK | pureish   -> checkPureish tau
                   | otherwise -> return ()
-              _               -> checkKindEquality kappa TauK
+              _               -> checkKindImplies kappa tauK
 
         checkRetKind :: Type -> m ()
         checkRetKind tau = do
             kappa <- inferType tau
             case kappa of
-              TauK -> return ()
-              MuK  -> return ()
-              _    -> checkKindEquality kappa TauK
+              TauK{} -> return ()
+              MuK    -> return ()
+              _      -> checkKindImplies kappa tauK
 
     inferType NatT{} =
         return NatK
@@ -968,7 +941,7 @@ inferKind = inferType
 
     inferOmega :: Omega -> m Kind
     inferOmega (C tau) = do
-        checkKind tau TauK
+        checkKind tau tauK
         return OmegaK
 
     inferOmega T =
@@ -977,16 +950,16 @@ inferKind = inferType
 checkKind :: MonadTc m => Type -> Kind -> m ()
 checkKind tau kappa = do
     kappa' <- inferKind tau
-    checkKindEquality kappa' kappa
+    checkKindImplies kappa' kappa
 
 checkTauOrRhoKind :: forall m . MonadTc m => Type -> m ()
 checkTauOrRhoKind tau =
     inferKind tau >>= go
   where
     go :: Kind -> m ()
-    go TauK  = return ()
-    go RhoK  = return ()
-    go kappa = faildoc $ text "Expected tau or rho kind but got:" <+> ppr kappa
+    go TauK{} = return ()
+    go RhoK   = return ()
+    go kappa  = faildoc $ text "Expected tau or rho kind but got:" <+> ppr kappa
 
 checkKindEquality :: MonadTc m => Kind -> Kind -> m ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
@@ -997,6 +970,22 @@ checkKindEquality kappa1 kappa2 =
     text "Expected kind:" <+> ppr kappa2 </>
     text "but got:      " <+> ppr kappa1
 
+-- | Check that the first kind implies the second.
+checkKindImplies :: MonadTc m => Kind -> Kind -> m ()
+checkKindImplies (TauK ts1) (TauK ts2) = do
+    unless (ts1 `impliesTraits` ts2) $
+      faildoc $ align $
+      text "Expected traits:" <+> pprTraits ts2 </>
+      text "but got:        " <+> pprTraits ts1
+  where
+    pprTraits :: Traits -> Doc
+    pprTraits ts
+      | nullTraits ts = text "no traits"
+      | otherwise     = ppr ts
+
+checkKindImplies kappa1 kappa2 =
+    checkKindEquality kappa1 kappa2
+
 -- | Check that two omega types can be joined.
 joinOmega :: MonadTc m => Omega -> Omega -> m Omega
 joinOmega omega1@C{} T{}        = return omega1
@@ -1005,52 +994,6 @@ joinOmega omega1@T{} T{}        = return omega1
 
 joinOmega omega1 omega2 =
     faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
-
--- | Check that a type supports equality.
-checkEqT :: MonadTc m => Type -> m ()
-checkEqT tau =
-    checkKind tau TauK
-
--- | Check that a type supports ordering.
-checkOrdT :: MonadTc m => Type -> m ()
-checkOrdT FixT{}   = return ()
-checkOrdT FloatT{} = return ()
-checkOrdT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected comparable type but got:" <+/> ppr tau
-
--- | Check that a type is a type on which we can perform Boolean operations.
-checkBoolT :: MonadTc m => Type -> m ()
-checkBoolT BoolT{} = return ()
-checkBoolT FixT{}  = return ()
-checkBoolT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected a Boolean type, e.g., bool or int, but got:" <+/> ppr tau
-
--- | Check that a type is a type on which we can perform bitwise operations.
-checkBitT :: MonadTc m => Type -> m ()
-checkBitT BoolT{}      = return ()
-checkBitT (FixT U{} _) = return ()
-checkBitT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected a bit type, e.g., bool or uint, but got:" <+/> ppr tau
-
--- | Check that a type is an integer type.
-checkIntT :: MonadTc m => Type -> m ()
-checkIntT (FixT I{} _) = return ()
-checkIntT (FixT U{} _) = return ()
-checkIntT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected integer type but got:" <+/> ppr tau
-
--- | Check that a type is a numerical type.
-checkNumT :: MonadTc m => Type -> m ()
-checkNumT FixT{}               = return ()
-checkNumT FloatT{}             = return ()
-checkNumT tau | isComplexT tau = return ()
-checkNumT tau =
-    faildoc $ nest 2 $ group $
-    text "Expected numerical type but got:" <+/> ppr tau
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
@@ -1190,7 +1133,10 @@ genST (ST omega s a b l) = do
     tvs        <- (Set.\\) <$> inScopeTyVars <*> askSTTyVars
     (s',a',b') <- askSTIndices
     let alphas =  nub [alpha | TyVarT alpha _ <- [s',a',b'], alpha `Set.notMember` tvs]
-    return $ forallST alphas omega s a b l
+    kappas     <- mapM lookupTyVar alphas
+    case alphas `zip` kappas of
+      []   -> return $ ST omega s a b l
+      tvks -> return $ ForallT tvks (ST omega s a b l) l
 
 genST tau =
     return tau

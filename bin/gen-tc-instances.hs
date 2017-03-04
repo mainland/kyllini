@@ -11,6 +11,7 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Name
 import KZC.Check.Types
+import KZC.Traits
 import KZC.Util.Derive
 import KZC.Util.Uniq
 
@@ -27,8 +28,11 @@ DERIVE(TyVar)
 DERIVE(IP)
 DERIVE(FP)
 DERIVE(Type)
-DERIVE(Kind)
 DERIVE(MetaTv)
+DERIVE(Trait)
+DERIVE(Kind)
+DERIVE(R)
+DERIVE(MetaRv)
 DERIVE(MetaKv)
 DERIVE(StructDef)
 

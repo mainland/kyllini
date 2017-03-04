@@ -46,12 +46,6 @@ module KZC.Core.Lint (
 
     joinOmega,
 
-    checkEqT,
-    checkOrdT,
-    checkBoolT,
-    checkBitT,
-    checkIntT,
-    checkNumT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -110,12 +104,6 @@ import KZC.Expr.Lint (Tc(..),
 
                       joinOmega,
 
-                      checkEqT,
-                      checkOrdT,
-                      checkBoolT,
-                      checkBitT,
-                      checkIntT,
-                      checkNumT,
                       checkArrT,
                       checkKnownArrT,
                       checkArrOrRefArrT,
@@ -198,7 +186,7 @@ checkDecl decl@(LetStructD s flds l) k = do
     alwaysWithSummaryContext decl $ do
         checkStructNotRedefined s
         checkDuplicates "field names" fnames
-        mapM_ (`checkKind` TauK) taus
+        mapM_ (`checkKind` tauK) taus
     extendStructs [StructDef s flds l] k
   where
     (fnames, taus) = unzip flds
@@ -265,14 +253,14 @@ checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do
     alwaysWithSummaryContext decl $
         inLocalScope $ do
-        checkKind tau TauK
+        checkKind tau tauK
         withSummaryContext e $ checkExp e tau
     extendVars [(bVar v, tau)] k
 
 checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
     alwaysWithSummaryContext decl $
         inLocalScope $ do
-        checkKind tau TauK
+        checkKind tau tauK
         case maybe_e of
           Nothing -> return ()
           Just e  -> withSummaryContext e $ checkExp e tau
@@ -292,22 +280,16 @@ inferExp (ConstE c l) =
 inferExp (VarE v _) =
     lookupVar v
 
-inferExp (UnopE op e1 _) = do
+inferExp (UnopE op e1 l) = do
     tau1 <- inferExp e1
     unop op tau1
   where
     unop :: Unop -> Type -> m Type
-    unop Lnot tau = do
-        checkBoolT tau
-        return tau
+    unop Lnot tau = inferOp [(a, boolK)] aT aT tau
+    unop Bnot tau = inferOp [(a, bitsK)] aT aT tau
 
-    unop Bnot tau = do
-        checkBitT tau
-        return tau
-
-    unop Neg tau = do
-        checkNumT tau
-        return $ mkSigned tau
+    unop Neg tau =
+        mkSigned <$> inferOp [(a, numK)] aT aT tau
       where
         mkSigned :: Type -> Type
         mkSigned (FixT (U w) l) = FixT (I w) l
@@ -325,71 +307,49 @@ inferExp (UnopE op e1 _) = do
         _ <- checkArrOrRefArrT tau
         return intT
 
-inferExp (BinopE op e1 e2 _) = do
+    a :: TyVar
+    a = "a"
+
+    aT :: Type
+    aT = tyVarT a
+
+    inferOp :: [(TyVar, Kind)]
+            -> Type
+            -> Type
+            -> Type
+            -> m Type
+    inferOp tvks a b tau1 =
+        inferPureCall tau_op [tau1] [e1]
+      where
+        tau_op :: Type
+        tau_op = ForallT tvks (FunT [a] b l) l
+
+inferExp (BinopE op e1 e2 l) = do
     tau1 <- inferExp e1
     tau2 <- inferExp e2
     binop op tau1 tau2
   where
     binop :: Binop -> Type -> Type -> m Type
-    binop Eq tau1 tau2 =
-        checkEqBinop tau1 tau2
-
-    binop Ne tau1 tau2 =
-        checkEqBinop tau1 tau2
-
-    binop Lt tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Le tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Ge tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Gt tau1 tau2 =
-        checkOrdBinop tau1 tau2
-
-    binop Land tau1 tau2 =
-        checkBoolBinop tau1 tau2
-
-    binop Lor tau1 tau2 =
-        checkBoolBinop tau1 tau2
-
-    binop Band tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop Bor tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop Bxor tau1 tau2 =
-        checkBitBinop tau1 tau2
-
-    binop LshL tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop LshR tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop AshR tau1 tau2 =
-        checkBitShiftBinop tau1 tau2
-
-    binop Add tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Sub tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Mul tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Div tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Rem tau1 tau2 =
-        checkNumBinop tau1 tau2
-
-    binop Pow tau1 tau2 =
-        checkNumBinop tau1 tau2
+    binop Eq   tau1 _tau2 = inferOp [(a, eqK)] aT aT boolT tau1
+    binop Ne   tau1 _tau2 = inferOp [(a, eqK)] aT aT boolT tau1
+    binop Lt   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Le   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Ge   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Gt   tau1 _tau2 = inferOp [(a, ordK)] aT aT boolT tau1
+    binop Land tau1 _tau2 = inferOp [(a, boolK)] aT aT aT tau1
+    binop Lor  tau1 _tau2 = inferOp [(a, boolK)] aT aT aT tau1
+    binop Band tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop Bor  tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop Bxor tau1 _tau2 = inferOp [(a, bitsK)] aT aT aT tau1
+    binop LshL tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop LshR tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop AshR tau1 _tau2 = inferOp [(a, bitsK)] aT uintT aT tau1
+    binop Add  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Sub  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Mul  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Div  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Rem  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
+    binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
         (iota1, tau1_elem) <- checkArrT tau1
@@ -402,41 +362,23 @@ inferExp (BinopE op e1 e2 _) = do
         s :: SrcLoc
         s = tau1 `srcspan` tau2
 
-    checkEqBinop :: Type -> Type -> m Type
-    checkEqBinop tau1 tau2 = do
-        checkEqT tau1
-        checkTypeEquality tau2 tau1
-        return boolT
+    a :: TyVar
+    a = "a"
 
-    checkOrdBinop :: Type -> Type -> m Type
-    checkOrdBinop tau1 tau2 = do
-        checkOrdT tau1
-        checkTypeEquality tau2 tau1
-        return boolT
+    aT :: Type
+    aT = tyVarT a
 
-    checkBoolBinop :: Type -> Type -> m Type
-    checkBoolBinop tau1 tau2 = do
-        checkBoolT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkNumBinop :: Type -> Type -> m Type
-    checkNumBinop tau1 tau2 = do
-        checkNumT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkBitBinop :: Type -> Type -> m Type
-    checkBitBinop tau1 tau2 = do
-        checkBitT tau1
-        checkTypeEquality tau2 tau1
-        return tau1
-
-    checkBitShiftBinop :: Type -> Type -> m Type
-    checkBitShiftBinop tau1 tau2 = do
-        checkBitT tau1
-        checkTypeEquality tau2 uintT
-        return tau1
+    inferOp :: [(TyVar, Kind)]
+            -> Type
+            -> Type
+            -> Type
+            -> Type
+            -> m Type
+    inferOp tvks a b c tau1 =
+        inferPureCall tau_op [tau1] [e1, e2]
+      where
+        tau_op :: Type
+        tau_op = ForallT tvks (FunT [a, b] c l) l
 
 inferExp (IfE e1 e2 e3 _) = do
     checkExp e1 boolT
@@ -452,14 +394,15 @@ inferExp (LetE decl body _) =
     return tau
   where
     checkLetKind :: Kind -> m ()
-    checkLetKind TauK = return ()
-    checkLetKind MuK  = return ()
+    checkLetKind TauK{} = return ()
+    checkLetKind MuK    = return ()
 
     checkLetKind kappa =
       faildoc $ text "Body of let has kind" <+> ppr kappa
 
 inferExp (CallE f ies es _) = do
-    (taus, tau_ret) <- inferCall f ies es
+    tau_f           <- lookupVar f
+    (taus, tau_ret) <- inferCall tau_f ies es
     zipWithM_ checkArg es taus
     unless (isPureishT tau_ret) $
         checkNoAliasing (es `zip` taus)
@@ -500,7 +443,7 @@ inferExp (WhileE e1 e2 _) = do
         return tau
 
 inferExp (ForE _ v tau e1 e2 e3 _) = do
-    checkIntT tau
+    checkKind tau intK
     withFvContext e1 $
         checkExp e1 tau
     withFvContext e2 $
@@ -671,9 +614,9 @@ checkGenerators gs k =
           go (n*m) gs
 
 inferCall :: forall m e . MonadTc m
-          => Var -> [Type] -> [e] -> m ([Type], Type)
-inferCall f taus args = do
-    (tvks, taus_args, tau_ret) <- lookupVar f >>= checkFunT
+          => Type -> [Type] -> [e] -> m ([Type], Type)
+inferCall tau_f taus args = do
+    (tvks, taus_args, tau_ret) <- checkFunT tau_f
     checkNumTypeArgs (length taus) (length tvks)
     checkNumArgs     (length args) (length taus_args)
     extendTyVars tvks $ do
@@ -694,6 +637,22 @@ inferCall f taus args = do
              faildoc $
              text "Expected" <+> ppr nexp <+>
              text "arguments but got" <+> ppr n
+
+inferPureCall :: forall m . MonadTc m
+              => Type -> [Type] -> [Exp] -> m Type
+inferPureCall tau_f taus es = do
+    (taus, tau_ret) <- inferCall tau_f taus es
+    zipWithM_ checkArg es taus
+    unless (isPureishT tau_ret) $
+        checkNoAliasing (es `zip` taus)
+    return tau_ret
+  where
+    checkArg :: Exp -> Type -> m ()
+    checkArg e tau =
+        withFvContext e $ do
+        tau' <- inferExp e
+        checkTypeEquality tau tau'
+        checkPure tau
 
 checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
@@ -790,7 +749,8 @@ inferStep (VarC _ v _) =
     lookupVar v >>= instST
 
 inferStep (CallC _ f ies args _) = do
-    (taus, tau_ret) <- inferCall f ies args
+    tau_f           <- lookupVar f
+    (taus, tau_ret) <- inferCall tau_f ies args
     zipWithM_ checkArg args taus
     unless (isPureishT tau_ret) $ do
         args' <- concat <$> zipWithM argRefs args taus
@@ -848,7 +808,7 @@ inferStep (WhileC _ e c _) = do
         return tau
 
 inferStep (ForC _ _ v tau e1 e2 c _) = do
-    checkIntT tau
+    checkKind tau intK
     withFvContext e1 $
         checkExp e1 tau
     withFvContext e2 $
@@ -882,14 +842,14 @@ inferStep BindC{} =
     faildoc $ text "Bind computation step does not have a type."
 
 inferStep (TakeC _ tau l) = do
-    checkKind tau TauK
+    checkKind tau tauK
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
   where
     b :: TyVar
     b = "b"
 
 inferStep (TakesC _ i tau l) = do
-    checkKind tau TauK
+    checkKind tau tauK
     instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
   where
     b :: TyVar
