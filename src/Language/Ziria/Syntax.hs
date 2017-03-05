@@ -7,12 +7,14 @@
 
 -- |
 -- Module      : Language.Ziria.Syntax
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Syntax (
+    Dialect(..),
+
     Var(..),
     Field(..),
     Struct(..),
@@ -62,6 +64,10 @@ import KZC.Util.SetLike
 import KZC.Util.Summary
 import KZC.Util.Uniq
 import KZC.Vars
+
+data Dialect = Classic
+             | Kyllini
+  deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)

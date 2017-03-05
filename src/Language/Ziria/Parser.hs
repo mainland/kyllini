@@ -3,7 +3,7 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      : Language.Ziria.Parser
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -11,7 +11,6 @@
 --------------------------------------------------------------------------------
 
 module Language.Ziria.Parser (
-    Dialect(..),
     dialectExts,
     moduleDialect,
 
@@ -42,10 +41,6 @@ import qualified Language.Ziria.Parser.Kyllini as Kyllini
 import qualified Language.Ziria.Parser.LenientClassic as LenientClassic
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax
-
-data Dialect = Classic
-             | Kyllini
-  deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 dialectExts :: [(String, Dialect)]
 dialectExts = [ (".wpl", Classic)
