@@ -39,7 +39,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Parser.Tokens
-import Language.Ziria.Syntax (Dialect)
+import Language.Ziria.Syntax (Dialect(..))
 
 -- import Debug.Trace (trace)
 }
@@ -176,6 +176,23 @@ ziria :-
 }
 
 {
+-- | The components of an 'AlexPredicate' are the predicate state, input stream
+-- before the token, length of the token, input stream after the token.
+type AlexPredicate =  PState
+                   -> AlexInput
+                   -> Int
+                   -> AlexInput
+                   -> Bool
+
+ifDialect :: Dialect -> AlexPredicate
+ifDialect d s _ _ _ = dialect s == d
+
+ifClassic :: AlexPredicate
+ifClassic = ifDialect Classic
+
+ifKyllini :: AlexPredicate
+ifKyllini = ifDialect Kyllini
+
 identifier :: Action P Token
 identifier beg end =
     case Map.lookup ident keywordMap of
@@ -183,7 +200,11 @@ identifier beg end =
                      if isStruct
                         then token (TstructIdentifier ident) beg end
                         else token (Tidentifier ident) beg end
-      Just (tok, _) -> token tok beg end
+      Just (tok, Nothing) -> token tok beg end
+      Just (tok, Just d') -> do d <- getDialect
+                                if d == d'
+                                  then token tok beg end
+                                  else token (Tidentifier ident) beg end
   where
     ident :: Symbol
     ident = intern (inputString beg end)
@@ -282,12 +303,13 @@ lexToken = do
              return $! trace (show x) x
 -}
 
-lexTokens  ::  MonadException m
-           =>  T.Text
-           ->  Pos
-           ->  m [L Token]
-lexTokens buf start =
-    liftException (evalP tokens (emptyPState buf start))
+lexTokens :: MonadException m
+          => Dialect
+          -> T.Text
+          -> Pos
+          -> m [L Token]
+lexTokens dialect buf start =
+    liftException (evalP tokens (emptyPState dialect buf start))
   where
     tokens :: P [L Token]
     tokens = do

@@ -62,20 +62,22 @@ moduleDialect filepath =
       | ext' == ext = return dialect
       | otherwise   = go dialects
 
-parse :: P a
+parse :: Dialect
+      -> P a
       -> T.Text
       -> Pos
       -> Either SomeException a
-parse p buf pos =
-    evalP p (emptyPState buf pos)
+parse d p buf pos =
+    evalP p (emptyPState d buf pos)
 
-parseFromFile :: P a
+parseFromFile :: Dialect
+              -> P a
               -> FilePath
               -> KZC a
-parseFromFile p filepath = do
+parseFromFile d p filepath = do
     text  <- liftIO $ E.decodeUtf8 <$> B.readFile filepath
     text' <- runCpp filepath text
-    liftException (parse p text' start)
+    liftException (parse d p text' start)
   where
     start :: Pos
     start = startPos filepath
@@ -85,7 +87,7 @@ parseProgram :: Dialect
              -> Pos
              -> IO Program
 parseProgram dialect buf pos =
-    liftException $ parse (chooseParser dialect) buf pos
+    liftException $ parse dialect (chooseParser dialect) buf pos
   where
     chooseParser :: Dialect -> P Program
     chooseParser Classic | strictClassic = Classic.parseProgram
@@ -97,7 +99,7 @@ parseImports :: Dialect
              -> Pos
              -> IO [Import]
 parseImports dialect buf pos =
-    liftException $ parse (chooseParser dialect) buf pos
+    liftException $ parse dialect (chooseParser dialect) buf pos
   where
     chooseParser :: Dialect -> P [Import]
     chooseParser Classic | strictClassic = Classic.parseImports
@@ -107,7 +109,7 @@ parseImports dialect buf pos =
 parseProgramFromFile :: Set Symbol -> FilePath -> KZC Program
 parseProgramFromFile structIds filepath = do
     dialect <- moduleDialect filepath
-    parseFromFile (addStructIdentifiers structIds >> chooseParser dialect) filepath
+    parseFromFile dialect (addStructIdentifiers structIds >> chooseParser dialect) filepath
   where
     chooseParser :: Dialect -> P Program
     chooseParser Classic | strictClassic = Classic.parseProgram
@@ -117,7 +119,7 @@ parseProgramFromFile structIds filepath = do
 parseImportsFromFile :: FilePath -> KZC [Import]
 parseImportsFromFile filepath = do
     dialect <- moduleDialect filepath
-    parseFromFile (chooseParser dialect) filepath
+    parseFromFile dialect (chooseParser dialect) filepath
   where
     chooseParser :: Dialect -> P [Import]
     chooseParser Classic | strictClassic = Classic.parseImports
