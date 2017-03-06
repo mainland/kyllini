@@ -7,7 +7,7 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      : Language.Ziria.Parser.Lexer
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -39,6 +39,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Parser.Tokens
+import Language.Ziria.Syntax (Dialect)
 
 -- import Debug.Trace (trace)
 }
@@ -175,78 +176,14 @@ ziria :-
 }
 
 {
-keywords :: Map Symbol Token
-keywords = Map.fromList kws
-  where
-    kws :: [(Symbol, Token)]
-    kws = [ ("C",           TC)
-          , ("ST",          TST)
-          , ("T",           TT)
-          , ("arr",         Tarr)
-          , ("bit",         Tbit)
-          , ("bool",        Tbool)
-          , ("autoinline",  Tautoinline)
-          , ("comp",        Tcomp)
-          , ("do",          Tdo)
-          , ("double",      Tdouble)
-          , ("else",        Telse)
-          , ("emit",        Temit)
-          , ("emits",       Temits)
-          , ("error",       Terror)
-          , ("external",    Texternal)
-          , ("false",       Tfalse)
-          , ("filter",      Tfilter)
-          , ("for",         Tfor)
-          , ("forceinline", Tforceinline)
-          , ("fun",         Tfun)
-          , ("if",          Tif)
-          , ("import",      Timport)
-          , ("impure",      Timpure)
-          , ("in",          Tin)
-          , ("int",         Tint)
-          , ("int8",        Tint8)
-          , ("int16",       Tint16)
-          , ("int32",       Tint32)
-          , ("int64",       Tint64)
-          , ("length",      Tlength)
-          , ("let",         Tlet)
-          , ("map",         Tmap)
-          , ("not",         Tnot)
-          , ("noinline",    Tnoinline)
-          , ("nounroll",    Tnounroll)
-          , ("print",       Tprint)
-          , ("println",     Tprintln)
-          , ("read",        Tread)
-          , ("repeat",      Trepeat)
-          , ("return",      Treturn)
-          , ("seq",         Tseq)
-          , ("standalone",  Tstandalone)
-          , ("struct",      Tstruct)
-          , ("take",        Ttake)
-          , ("takes",       Ttakes)
-          , ("then",        Tthen)
-          , ("times",       Ttimes)
-          , ("true",        Ttrue)
-          , ("uint",        Tuint)
-          , ("uint8",       Tuint8)
-          , ("uint16",      Tuint16)
-          , ("uint32",      Tuint32)
-          , ("uint64",      Tuint64)
-          , ("unroll",      Tunroll)
-          , ("until",       Tuntil)
-          , ("var",         Tvar)
-          , ("while",       Twhile)
-          , ("write",       Twrite)
-          ]
-
 identifier :: Action P Token
 identifier beg end =
-    case Map.lookup ident keywords of
+    case Map.lookup ident keywordMap of
       Nothing  -> do isStruct <- isStructIdentifier ident
                      if isStruct
                         then token (TstructIdentifier ident) beg end
                         else token (Tidentifier ident) beg end
-      Just tok -> token tok beg end
+      Just (tok, _) -> token tok beg end
   where
     ident :: Symbol
     ident = intern (inputString beg end)

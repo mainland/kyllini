@@ -1,17 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- |
 -- Module      : Language.Ziria.Parser.Tokens
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Parser.Tokens (
     Signedness(..),
-    Token(..)
+    Token(..),
+    keywords,
+    keywordMap
   ) where
 
+import qualified Data.Map as Map
 import Data.Symbol
 import Text.PrettyPrint.Mainland
+
+import Language.Ziria.Syntax
 
 data Signedness = S
                 | U
@@ -245,3 +252,71 @@ instance Pretty Token where
     ppr Tcomma = text ","
     ppr Tsemi  = text ";"
     ppr Tcolon = text ":"
+
+keywords :: [(Symbol, Token, Maybe Dialect)]
+keywords = [ ("C",           TC,           Nothing)
+           , ("ST",          TST,          Nothing)
+           , ("T",           TT,           Nothing)
+           , ("arr",         Tarr,         Nothing)
+           , ("bit",         Tbit,         Nothing)
+           , ("bool",        Tbool,        Nothing)
+           , ("autoinline",  Tautoinline,  Nothing)
+           , ("comp",        Tcomp,        Nothing)
+           , ("do",          Tdo,          Nothing)
+           , ("double",      Tdouble,      Nothing)
+           , ("else",        Telse,        Nothing)
+           , ("emit",        Temit,        Nothing)
+           , ("emits",       Temits,       Nothing)
+           , ("error",       Terror,       Nothing)
+           , ("external",    Texternal,    Nothing)
+           , ("false",       Tfalse,       Nothing)
+           , ("filter",      Tfilter,      Nothing)
+           , ("for",         Tfor,         Nothing)
+           , ("forceinline", Tforceinline, Nothing)
+           , ("fun",         Tfun,         Nothing)
+           , ("if",          Tif,          Nothing)
+           , ("import",      Timport,      Nothing)
+           , ("impure",      Timpure,      Nothing)
+           , ("in",          Tin,          Nothing)
+           , ("int",         Tint,         Nothing)
+           , ("int8",        Tint8,        Nothing)
+           , ("int16",       Tint16,       Nothing)
+           , ("int32",       Tint32,       Nothing)
+           , ("int64",       Tint64,       Nothing)
+           , ("length",      Tlength,      Nothing)
+           , ("let",         Tlet,         Nothing)
+           , ("map",         Tmap,         Nothing)
+           , ("not",         Tnot,         Nothing)
+           , ("noinline",    Tnoinline,    Nothing)
+           , ("nounroll",    Tnounroll,    Nothing)
+           , ("print",       Tprint,       Nothing)
+           , ("println",     Tprintln,     Nothing)
+           , ("read",        Tread,        Nothing)
+           , ("repeat",      Trepeat,      Nothing)
+           , ("return",      Treturn,      Nothing)
+           , ("seq",         Tseq,         Nothing)
+           , ("standalone",  Tstandalone,  Nothing)
+           , ("struct",      Tstruct,      Nothing)
+           , ("take",        Ttake,        Nothing)
+           , ("takes",       Ttakes,       Nothing)
+           , ("then",        Tthen,        Nothing)
+           , ("times",       Ttimes,       Nothing)
+           , ("true",        Ttrue,        Nothing)
+           , ("uint",        Tuint,        Nothing)
+           , ("uint8",       Tuint8,       Nothing)
+           , ("uint16",      Tuint16,      Nothing)
+           , ("uint32",      Tuint32,      Nothing)
+           , ("uint64",      Tuint64,      Nothing)
+           , ("unroll",      Tunroll,      Nothing)
+           , ("until",       Tuntil,       Nothing)
+           , ("var",         Tvar,         Nothing)
+           , ("while",       Twhile,       Nothing)
+           , ("write",       Twrite,       Nothing)
+           ]
+
+keywordMap :: Map.Map Symbol (Token, Maybe Dialect)
+keywordMap = Map.fromList (map f keywords)
+  where
+    f  ::  (Symbol, Token, Maybe Dialect)
+       ->  (Symbol, (Token, Maybe Dialect))
+    f (s, t, d) = (s, (t, d))
