@@ -725,15 +725,27 @@ decl :
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' 'comp' maybe_comp_range identifier comp_params '{' stms '}'
-      { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
-  | 'fun' identifier params '{' stms '}'
-      { LetFunD $2 $3 (stmsE $5) ($1 `srcspan` $6) }
+  | 'fun' 'comp' maybe_comp_range identifier comp_params fun_comp_sig '{' stms '}'
+      { LetFunCompD $4 $3 $5 Nothing (stmsE $8) ($1 `srcspan` $9) }
+  | 'fun' identifier params fun_sig '{' stms '}'
+      { LetFunD $2 $3 Nothing (stmsE $6) ($1 `srcspan` $7) }
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp
       { let { (v, tau) = $4 }
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
+
+fun_sig :: { Maybe Type }
+fun_sig :
+    {- empty -}   { Nothing }
+  | ':' base_type { Just $2 }
+  | ':' error     {% expected ["base type"] Nothing }
+
+fun_comp_sig :: { Maybe Type }
+fun_comp_sig :
+    {- empty -}        { Nothing }
+  | ':' comp_base_type { Just $2 }
+  | ':' error          {% expected ["ST type"] Nothing }
 
 inline_ann :: { L InlineAnn }
 inline_ann :

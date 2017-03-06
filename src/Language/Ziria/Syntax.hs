@@ -138,11 +138,11 @@ data Import = Import ModuleName
 
 data Decl = LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
-          | LetFunD Var [VarBind] Exp !SrcLoc
+          | LetFunD Var [VarBind] (Maybe Type) Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           | LetStructD StructDef !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
+          | LetFunCompD Var (Maybe (Int, Int)) [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -290,13 +290,13 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Fvs Decl Var where
-    fvs d@(LetD _ _ e _)           = fvs e <\\> binders d
-    fvs d@(LetRefD _ _ e _)        = fvs e <\\> binders d
-    fvs d@(LetFunD _ _ e _)        = fvs e <\\> binders d
-    fvs LetFunExternalD{}          = mempty
-    fvs LetStructD{}               = mempty
-    fvs d@(LetCompD _ _ _ e _)     = fvs e <\\> binders d
-    fvs d@(LetFunCompD  _ _ _ e _) = fvs e <\\> binders d
+    fvs d@(LetD _ _ e _)             = fvs e <\\> binders d
+    fvs d@(LetRefD _ _ e _)          = fvs e <\\> binders d
+    fvs d@(LetFunD _ _ _ e _)        = fvs e <\\> binders d
+    fvs LetFunExternalD{}            = mempty
+    fvs LetStructD{}                 = mempty
+    fvs d@(LetCompD _ _ _ e _)       = fvs e <\\> binders d
+    fvs d@(LetFunCompD  _ _ _ _ e _) = fvs e <\\> binders d
 
 instance Fvs Exp Var where
     fvs ConstE{}                = mempty
@@ -345,11 +345,11 @@ instance Fvs [Stm] Var where
 instance Binders Decl Var where
     binders (LetD v _ _ _)               = singleton v
     binders (LetRefD v _ _ _)            = singleton v
-    binders (LetFunD v ps _ _)           = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunD v ps _ _ _)         = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetFunExternalD v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders LetStructD{}                 = mempty
     binders (LetCompD v _ _ _ _)         = singleton v
-    binders (LetFunCompD v _ ps _ _ )    = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunCompD v _ ps _ _ _ )  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -360,11 +360,11 @@ instance Binders Decl Var where
 instance Summary Decl where
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
-    summary (LetFunD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunD v _ _ _ _)         = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
     summary (LetStructD s _)            = text "definition of" <+> summary s
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
-    summary (LetFunCompD v _ _ _ _)     = text "definition of" <+> ppr v
+    summary (LetFunCompD v _ _ _ _ _)   = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -416,7 +416,7 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
-    pprPrec _ (LetFunD f ps e _) =
+    pprPrec _ (LetFunD f ps _tau e _) =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) =
@@ -432,7 +432,7 @@ instance Pretty Decl where
         text "let" <+> text "comp" <+> pprRange range <+>
         pprSig v tau <+> text "=" <+/> ppr e
 
-    pprPrec _ (LetFunCompD f range ps e _) =
+    pprPrec _ (LetFunCompD f range ps _tau e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
         ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 

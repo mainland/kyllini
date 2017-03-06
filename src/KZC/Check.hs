@@ -223,13 +223,18 @@ checkLetBody e exp_ty mcdecl l = do
     go _tau mce =
         return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
-checkLetFun :: Z.Var -> [Z.VarBind] -> Z.Exp -> SrcLoc -> Ti (Type, Ti E.Decl)
-checkLetFun f ps e l = do
-    tau   <- newMetaTvT PhiK f
-    ptaus <- fromZ ps
-    (tau_ret, mce) <-
+checkLetFun :: Z.Var
+            -> [Z.VarBind]
+            -> Maybe Z.Type
+            -> Z.Exp
+            -> SrcLoc
+            -> Ti (Type, Ti E.Decl)
+checkLetFun f ps ztau_ret e l = do
+    tau     <- newMetaTvT PhiK f
+    ptaus   <- fromZ ps
+    tau_ret <- instantiateFunRetType ztau_ret
+    (tau_ret_gen, mce) <-
         extendVars ((f,tau) : ptaus) $ do
-        tau_ret           <- newMetaTvT MuK l
         mce               <- collectCheckValCtx tau_ret $
                              checkExp e tau_ret
         (tau_ret_gen, _)  <- generalize tau_ret
@@ -239,10 +244,34 @@ checkLetFun f ps e l = do
     traceVar f tau_gen
     let mkLetFun = co $ do cf       <- trans f
                            cptaus   <- mapM trans ptaus
-                           ctau_ret <- trans tau_ret
+                           ctau_ret <- trans tau_ret_gen
                            ce       <- withSummaryContext e mce
                            return $ E.LetFunD cf [] cptaus ctau_ret ce l
     return (tau_gen, mkLetFun)
+  where
+    -- Coerce a user-annotated function return type to a "real" function return
+    -- type and instantiate it so we can check it. For example, we convert the
+    -- user-annotated return type 'int' to 'forall s a b . ST (C int) s a b'.
+    instantiateFunRetType :: Maybe Z.Type -> Ti Type
+    instantiateFunRetType Nothing =
+        newMetaTvT MuK l
+
+    instantiateFunRetType (Just ztau@Z.ST{}) =
+        fromZ ztau
+
+    -- If we are givne a base type, turn it into an ST type.
+    instantiateFunRetType (Just ztau) = do
+        tau         <- fromZ ztau
+        (tau', _cp) <- instantiate $ forallST [s,a,b] (C tau l) (tyVarT s) (tyVarT a) (tyVarT b) l
+        return tau'
+      where
+        s, a, b :: TyVar
+        s = TyVar "s"
+        a = TyVar "a"
+        b = TyVar "b"
+
+        l :: SrcLoc
+        l = srclocOf ztau
 
 {- Note [External Functions]
 
@@ -301,9 +330,9 @@ checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
-checkDecl decl@(Z.LetFunD f ps e l) k = do
+checkDecl decl@(Z.LetFunD f ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ps e l
+                       checkLetFun f ps tau e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
@@ -343,9 +372,9 @@ checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
                      checkLetComp v ztau e l
     extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkDecl decl@(Z.LetFunCompD f _ ps e l) k = do
+checkDecl decl@(Z.LetFunCompD f _ ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ps e l
+                       checkLetFun f ps tau e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 

@@ -3,7 +3,7 @@
 
 -- |
 -- Module      :  KZC.Rename
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -222,18 +222,18 @@ rnDecl decl@(LetRefD v tau e l) k =
              LetRefD <$> rn v <*> pure tau <*> inPureScope (rn e) <*> pure l
     k decl'
 
-rnDecl decl@(LetFunD v vbs e l) k =
+rnDecl decl@(LetFunD v vbs tau_ret e l) k =
     extendVars (text "function") [v] $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-             LetFunD <$> rn v <*> rn vbs <*> rn e <*> pure l
+             LetFunD <$> rn v <*> rn vbs <*> pure tau_ret <*> rn e <*> pure l
     k decl'
 
 rnDecl decl@(LetFunExternalD v vbs tau isPure l) k =
     extendVars (text "external function") [v] $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-             LetFunExternalD <$> rn v <*> rn vbs  <*> pure tau <*> pure isPure <*> pure l
+             LetFunExternalD <$> rn v <*> rn vbs <*> pure tau <*> pure isPure <*> pure l
     k decl'
 
 rnDecl decl@(LetStructD s l) k = do
@@ -247,12 +247,12 @@ rnDecl decl@(LetCompD v tau range e l) k =
              LetCompD <$> rn v <*> pure tau <*> pure range <*> inCompScope (rn e) <*> pure l
     k decl'
 
-rnDecl decl@(LetFunCompD f range vbs e l) k =
+rnDecl decl@(LetFunCompD f range vbs tau_ret e l) k =
     extendCompVars (text "computation function") [f] $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunCompD <$> inCompScope (lookupMaybeCompVar f) <*>
-                 pure range <*> rn vbs <*> rn e <*> pure l
+                 pure range <*> rn vbs <*> pure tau_ret <*> rn e <*> pure l
     k decl'
 
 rnDecls :: [Decl]

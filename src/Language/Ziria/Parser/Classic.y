@@ -693,9 +693,9 @@ decl :
   | 'fun' 'external' 'impure' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
   | 'fun' 'comp' maybe_comp_range identifier comp_params '{' commands '}'
-      { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
+      { LetFunCompD $4 $3 $5 Nothing (stmsE $7) ($1 `srcspan` $8) }
   | 'fun' identifier params stm_block
-      { LetFunD $2 $3 (stmsE $4) ($1 `srcspan` $4) }
+      { LetFunD $2 $3 Nothing (stmsE $4) ($1 `srcspan` $4) }
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' comp
       { let { (v, tau) = $4 }
         in
