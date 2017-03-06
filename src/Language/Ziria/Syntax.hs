@@ -133,7 +133,7 @@ data Import = Import ModuleName
 data Decl = LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
           | LetFunD Var [VarBind] Exp !SrcLoc
-          | LetFunExternalD Var [VarBind] Type  Bool !SrcLoc
+          | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           | LetStructD StructDef !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
           | LetFunCompD Var (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
