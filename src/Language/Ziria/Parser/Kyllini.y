@@ -427,7 +427,7 @@ bexp :
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (mkVar (varid $2)) $4 $5 $7 ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) (Just $4) $5 $7 ($1 `srcspan` $7) }
 
 bexp_or_stms :: { Exp }
 bexp_or_stms :
@@ -718,7 +718,7 @@ decl :
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | struct
       { LetStructD $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type

@@ -137,7 +137,7 @@ data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
 data Decl = LetD Var (Maybe Type) Exp !SrcLoc
-          | LetRefD Var Type (Maybe Exp) !SrcLoc
+          | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
           | LetFunD Var [VarBind] Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           | LetStructD StructDef !SrcLoc
@@ -158,7 +158,7 @@ data Exp = ConstE Const !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
-         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
+         | LetRefE Var (Maybe Type) (Maybe Exp) Exp !SrcLoc
          | LetDeclE Decl Exp !SrcLoc
          -- Functions
          | CallE Var [Exp] !SrcLoc
@@ -484,7 +484,7 @@ instance Pretty Exp where
 
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "var" <+> ppr v <+> colon <+> ppr tau <+>
+        text "var" <+> pprSig v tau <+>
         pprInitializer e1 <+/>
         text "in"  <+> pprPrec appPrec1 e2
 

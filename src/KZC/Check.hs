@@ -10,7 +10,7 @@
 
 -- |
 -- Module      :  KZC.Check
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -168,11 +168,14 @@ checkLetComp v ztau e l =
                          return $ E.LetD cv ctau ce l
     return (tau_gen, mcdecl)
 
-checkLetRef :: Z.Var -> Z.Type -> Maybe Z.Exp -> SrcLoc
+checkLetRef :: Z.Var
+            -> Maybe Z.Type
+            -> Maybe Z.Exp
+            -> SrcLoc
             -> Ti (Type, Ti E.Decl)
 checkLetRef v ztau e_init l =
     withMaybeExpContext e_init $ do
-    tau <- fromZ ztau
+    tau <- fromZ (ztau, tauK)
     extendVars [(v, refT tau)] $ do
       mce <- mkRhs tau e_init
       let mcdecl = do checkUnresolvedMtvs v tau

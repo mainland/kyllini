@@ -425,7 +425,7 @@ bexp :
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (mkVar (varid $2)) $4 $5 $7 ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) (Just $4) $5 $7 ($1 `srcspan` $7) }
 
 bexp_or_stms :: { Exp }
 bexp_or_stms :
@@ -592,7 +592,7 @@ stm :
           letS $ LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'var' ID ':' base_type maybe_initializer
-      { letS $ LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { letS $ LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | stm_exp { ExpS $1 (srclocOf $1) }
 
 stm_exp :: { Exp }
@@ -645,7 +645,7 @@ stm_exp :
           LetE v tau $4 (stmsE $6) ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' stm_block
-      { LetRefE (mkVar (varid $2)) $4 $5 (stmsE $7) ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) (Just $4) $5 (stmsE $7) ($1 `srcspan` $7) }
 
 unroll_info :: { L UnrollAnn }
 unroll_info :
@@ -685,7 +685,7 @@ decl :
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | struct
       { LetStructD $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type
