@@ -66,6 +66,7 @@ import qualified KZC.Core.Syntax as C
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
+import KZC.Globals
 import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad
@@ -165,8 +166,15 @@ getStructIds = do
     decls <- askDecls
     return [nameSym n | E.LetStructD (E.Struct n) _ _ <- decls]
 
+setFileDialect :: MonadIO m => FilePath -> m ()
+setFileDialect filepath = do
+    dialect <- moduleDialect filepath
+    when (dialect == Z.Classic) $
+        setClassicDialect True
+
 loadDependencies :: FilePath -> C KZC a -> C KZC a
 loadDependencies filepath k = do
+    setFileDialect filepath
     maybe_prog <- runMaybeT $ pipeline filepath
     case maybe_prog of
       Nothing                  -> k
@@ -213,7 +221,8 @@ loadDependencies filepath k = do
         return x
 
 compileExprProgram :: FilePath -> E.Program -> C KZC ()
-compileExprProgram filepath prog =
+compileExprProgram filepath prog =  do
+    setFileDialect filepath
     void $ runMaybeT $ pipeline prog
   where
     pipeline :: E.Program -> MaybeT (C KZC) ()
