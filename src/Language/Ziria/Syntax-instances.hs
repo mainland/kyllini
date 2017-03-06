@@ -64,3 +64,6 @@ instance Located Type where
   locOf (C _ l) = locOf l
   locOf (T l) = locOf l
   locOf (ST _ _ _ l) = locOf l
+  locOf (NatT _ l) = locOf l
+  locOf (LenT _ l) = locOf l
+  locOf (UnknownT l) = locOf l

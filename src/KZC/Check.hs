@@ -2279,20 +2279,19 @@ instance FromZ Z.Type Type where
         ST <$> fromZ omega <*> newMetaTvT tauK l <*>
                fromZ tau1 <*> fromZ tau2 <*> pure l
 
-instance FromZ (Maybe Z.Type, Kind) Type where
-    fromZ (Just tau, _)    = fromZ tau
-    fromZ (Nothing, kappa) = newMetaTvT kappa NoLoc
-
-instance FromZ Z.Ind Type where
     fromZ (Z.NatT i l) =
         pure $ NatT i l
 
-    fromZ (Z.ArrI v _) = do
+    fromZ (Z.LenT v _) = do
         (n, _) <- lookupVar v >>= checkArrT
         return n
 
-    fromZ (Z.NoneI l) =
+    fromZ (Z.UnknownT l) =
         newMetaTvT NatK l
+
+instance FromZ (Maybe Z.Type, Kind) Type where
+    fromZ (Just tau, _)    = fromZ tau
+    fromZ (Nothing, kappa) = newMetaTvT kappa NoLoc
 
 instance FromZ Z.VarBind (Z.Var, Type) where
     fromZ (Z.VarBind v False ztau) = do

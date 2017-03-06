@@ -542,14 +542,14 @@ cast_type :: { Type }
 cast_type :
     simple_type { $1 }
 
-arr_length :: { (Ind, Type) }
+arr_length :: { (Type, Type) }
 arr_length :
     '[' 'length' '(' ID ')' ']' base_type
-      { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
+      { (LenT (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
       { (NatT (unLoc $2) (srclocOf $2), $4) }
   | base_type
-      { (NoneI (srclocOf $1), $1) }
+      { (UnknownT (srclocOf $1), $1) }
 
 comp_base_type :: { Type }
 comp_base_type :

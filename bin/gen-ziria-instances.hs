@@ -37,7 +37,6 @@ DERIVE(Binop)
 DERIVE(Stm)
 DERIVE(StructDef)
 DERIVE(Type)
-DERIVE(Ind)
 
 main :: IO ()
 main = do

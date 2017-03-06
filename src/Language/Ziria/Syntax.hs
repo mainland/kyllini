@@ -45,7 +45,6 @@ module Language.Ziria.Syntax (
 
     StructDef(..),
     Type(..),
-    Ind(..),
 
     isComplexStruct
   ) where
@@ -262,16 +261,20 @@ data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
-          | ArrT Ind Type !SrcLoc
+          | ArrT Type Type !SrcLoc
           | StructT Struct !SrcLoc
           | C Type !SrcLoc
           | T !SrcLoc
           | ST Type Type Type !SrcLoc
-  deriving (Eq, Ord, Read, Show)
 
-data Ind = NatT Int !SrcLoc
-         | ArrI Var !SrcLoc
-         | NoneI !SrcLoc
+          -- | Natural number types
+          | NatT Int !SrcLoc
+
+          -- | Reference to array length
+          | LenT Var !SrcLoc
+
+          -- | Elided type
+          | UnknownT !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
@@ -718,10 +721,14 @@ instance Pretty Type where
                   <+> pprPrec tyappPrec1 tau1
                   <+> pprPrec tyappPrec1 tau2
 
-instance Pretty Ind where
-    ppr (NatT i _) = ppr i
-    ppr (ArrI v _)   = ppr v
-    ppr (NoneI _)    = empty
+    pprPrec _ (NatT i _) =
+        ppr i
+
+    pprPrec _ (LenT v _) =
+        text "length" <> parens (ppr v)
+
+    pprPrec _ UnknownT{} =
+        empty
 
 pprSig :: Var -> Maybe Type -> Doc
 pprSig v Nothing    = ppr v
