@@ -54,7 +54,6 @@ import KZC.Util.Pretty
   'bit'         { L _ T.Tbit }
   'bool'        { L _ T.Tbool }
   'comp'        { L _ T.Tcomp }
-  'do'          { L _ T.Tdo }
   'double'      { L _ T.Tdouble }
   'else'        { L _ T.Telse }
   'emit'        { L _ T.Temit }
@@ -87,7 +86,6 @@ import KZC.Util.Pretty
   'read'        { L _ T.Tread }
   'repeat'      { L _ T.Trepeat }
   'return'      { L _ T.Treturn }
-  'seq'         { L _ T.Tseq }
   'standalone'  { L _ T.Tstandalone }
   'struct'      { L _ T.Tstruct }
   'take'        { L _ T.Ttake }
@@ -102,7 +100,6 @@ import KZC.Util.Pretty
   'uint64'      { L _ T.Tuint64 }
   'unroll'      { L _ T.Tunroll }
   'until'       { L _ T.Tuntil }
-  'var'         { L _ T.Tvar }
   'while'       { L _ T.Twhile }
   'write'       { L _ T.Twrite }
 
@@ -131,7 +128,6 @@ import KZC.Util.Pretty
   '||' { L _ T.Tlor }
 
   '='     { L _ T.Tdef }
-  ':='    { L _ T.Tassign }
   '<-'    { L _ T.Tbind }
   '>>>'   { L _ T.Tcompose }
   '|>>>|' { L _ T.Tpcompose }
@@ -148,6 +144,12 @@ import KZC.Util.Pretty
   ','  { L _ T.Tcomma }
   ';'  { L _ T.Tsemi }
   ':'  { L _ T.Tcolon }
+
+  -- For the kyllini dialect
+  'mut' { L _ T.Tmut }
+
+  '->' { L _ T.Tarrow }
+  '..' { L _ T.Tdotdot }
 
 -- We give 'if'...'else' a higher precedence than an 'if' without an 'else'
 -- clause.
@@ -338,8 +340,8 @@ aexp :
       { $1 }
   | scalar_value
       { ConstE (unLoc $1) (srclocOf $1) }
-  | 'arr' '{' exp_list '}'
-      { ArrayE $3 ($1 `srcspan` $4) }
+  | '[' exp_list ']'
+      { ArrayE $2 ($1 `srcspan` $3) }
 
   | aexp '+' aexp
       { BinopE Add $1 $3 ($1 `srcspan` $3)}
@@ -426,8 +428,11 @@ bexp :
         in
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
-  | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (mkVar (varid $2)) (Just $4) $5 $7 ($1 `srcspan` $7) }
+  | 'let' 'mut' var_bind maybe_initializer 'in' bexp_or_stms
+      { let { (v, tau) = $3 }
+        in
+          LetRefE v tau $4 $6 ($1 `srcspan` $6)
+      }
 
 bexp_or_stms :: { Exp }
 bexp_or_stms :
@@ -439,14 +444,14 @@ var_bind :: { (Var, Maybe Type) }
 var_bind :
     identifier
       { ($1, Nothing) }
-  | '(' identifier ':' base_type ')'
-      { ($2, Just $4) }
+  | identifier ':' base_type
+      { ($1, Just $3) }
 
 -- Mutable variable initializer
 maybe_initializer :: { Maybe Exp }
 maybe_initializer :
     {- empty -} { Nothing }
-  | ':=' exp    { Just $2 }
+  | '=' exp     { Just $2 }
 
 -- Constant integer expressions
 const_int_exp :: { L Int }
@@ -486,7 +491,7 @@ struct_init_list1 :
 struct_init1_rlist :: { RevList (Field, Exp) }
 struct_init1_rlist :
     struct_init                        { rsingleton $1 }
-  | struct_init1_rlist ';' struct_init { rcons $3 $1 }
+  | struct_init1_rlist ',' struct_init { rcons $3 $1 }
 
 struct_init :: { (Field, Exp) }
 struct_init :
@@ -494,13 +499,8 @@ struct_init :
 
 gen_interval :: { GenInterval }
 gen_interval :
-    '[' exp ':' const_int_exp ']'
-      { let to = intC (unLoc $4) (srclocOf $4)
-        in
-          FromToInclusive $2 to ($1 `srcspan` $5)
-      }
-  | '[' exp ',' exp ']'
-      { StartLen $2 $4 ($1 `srcspan` $5) }
+    exp '..' exp
+      { FromToExclusive $1 $3 ($1 `srcspan` $3) }
 
 {------------------------------------------------------------------------------
  -
@@ -531,9 +531,9 @@ base_type :
     simple_type       { $1 }
   | '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
-  | 'arr' arr_length  { let { (ind, tau) = $2 }
+  | array_type        { let { (tau, ind) = $1 }
                         in
-                          ArrT ind tau ($1 `srcspan` tau)
+                          ArrT ind tau (tau `srcspan` ind)
                       }
   | '(' base_type ')' { $2 }
 
@@ -541,14 +541,14 @@ cast_type :: { Type }
 cast_type :
     simple_type { $1 }
 
-arr_length :: { (Type, Type) }
-arr_length :
-    '[' 'length' '(' ID ')' ']' base_type
-      { (LenT (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
-  | '[' const_int_exp ']' base_type
-      { (NatT (unLoc $2) (srclocOf $2), $4) }
-  | base_type
-      { (UnknownT (srclocOf $1), $1) }
+array_type :: { (Type, Type) }
+array_type :
+    '[' base_type ';' 'length' '(' ID ')' ']'
+      { ($2, LenT (mkVar (varid $6)) ($4 `srcspan` $7)) }
+  | '[' base_type ';' const_int_exp ']'
+      { ($2, NatT (unLoc $4) (srclocOf $4)) }
+  | '[' base_type ']'
+      { ($2, UnknownT (srclocOf $2)) }
 
 comp_base_type :: { Type }
 comp_base_type :
@@ -574,23 +574,23 @@ stm :
     decl
       { LetS $1 (srclocOf $1) }
   | var_bind '<-' stm_exp
-      { let { (v, tau) = $1
-            ; body     = $3
-            }
+      { let (v, tau) = $1
         in
-          BindS v tau body (v `srcspan` $3)
+          BindS v tau $3 (v `srcspan` $3)
       }
   | stm_exp
       { ExpS $1 (srclocOf $1) }
 
 stms :: { [Stm] }
 stms :
-    stm_rlist opt_semi { rev $1 }
+    stm_rlist { rev $1 }
 
 stm_rlist :: { RevList Stm }
 stm_rlist :
-    stm                    { rsingleton $1 }
-  | stm_rlist opt_semi stm { rcons $3 $1 }
+    {- empty -}       { rnil }
+  | stm               { rsingleton $1 }
+  | stm_rlist ';'     { $1 }
+  | stm_rlist ';' stm { rcons $3 $1 }
 
 stm_exp :: { Exp }
 stm_exp :
@@ -609,7 +609,7 @@ stm_exp :
   | STRUCTID '(' exp_list ')'
       { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
 
-  | pexp ':=' exp
+  | pexp '=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }
 
   | 'if' exp 'then' stm_exp 'else' stm_exp
@@ -676,10 +676,6 @@ stm_exp :
           MapE $2 v tau ($1 `srcspan` tau)
       }
 
-  | 'do' '{' stms '}'
-      { stmsE $3 }
-  | 'seq' '{' stms '}'
-      { stmsE $3 }
   | '{' stms '}'
       { stmsE $2 }
 
@@ -705,42 +701,45 @@ unroll_info :
 
 decl :: { Decl }
 decl :
-    'let' var_bind '=' exp
+    'let' var_bind '=' exp ';'
       { let { (v, tau) = $2 }
         in
           LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
-  | 'var' ID ':' base_type maybe_initializer
-      { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
+  | 'let' var_bind '=' exp error
+      {% expected ["';'"] Nothing }
+  | 'let' 'mut' var_bind maybe_initializer ';'
+      { let { (v, tau) = $3 }
+        in
+          LetRefD v tau $4 ($1 `srcspan` $4)
+      }
+  | 'let' 'mut' var_bind error
+      {% expected ["initializer", "';'"] Nothing }
   | struct
       { LetStructD $1 (srclocOf $1) }
-  | 'fun' 'external' ID params ':' base_type
+  | 'fun' 'external' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
-  | 'fun' 'external' 'impure' ID params ':' base_type
+  | 'fun' 'external' 'impure' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' 'comp' maybe_comp_range identifier comp_params fun_comp_sig '{' stms '}'
-      { LetFunCompD $4 $3 $5 Nothing (stmsE $8) ($1 `srcspan` $9) }
   | 'fun' identifier params fun_sig '{' stms '}'
-      { LetFunD $2 $3 Nothing (stmsE $6) ($1 `srcspan` $7) }
-  | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp
+      { LetFunD $2 $3 $4 (stmsE $6) ($1 `srcspan` $7) }
+
+  | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp ';'
       { let { (v, tau) = $4 }
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
+  | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp error
+      {% expected ["';'"] Nothing }
 
 fun_sig :: { Maybe Type }
 fun_sig :
-    {- empty -}   { Nothing }
-  | ':' base_type { Just $2 }
-  | ':' error     {% expected ["base type"] Nothing }
-
-fun_comp_sig :: { Maybe Type }
-fun_comp_sig :
-    {- empty -}        { Nothing }
-  | ':' comp_base_type { Just $2 }
-  | ':' error          {% expected ["ST type"] Nothing }
+    {- empty -}         { Nothing }
+  | '->' base_type      { Just $2 }
+  | '->' comp_base_type { Just $2 }
+  | '->' error          {% expected ["base type"] Nothing }
 
 inline_ann :: { L InlineAnn }
 inline_ann :
@@ -792,18 +791,20 @@ comp_var_bind :
             ; return ($1, Nothing)
             }
       }
-  | '(' identifier ':' comp_base_type ')'
+  | identifier ':' comp_base_type
       {% do { -- addCompIdentifier (symbol $2)
-            ; return ($2, Just $4)
+            ; return ($1, Just $3)
             }
       }
+  | identifier ':' error
+      {% expected ["ST type"] Nothing }
 
 -- structs
 struct :: { StructDef }
 struct :
-    'struct' ID '=' '{' field_list '}'
+    'struct' ID '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
+            ; return $ StructDef (mkStruct (varid $2)) $4 ($1 `srcspan` $5)
             }
       }
 
@@ -815,8 +816,8 @@ field_rlist :: { RevList (Field, Type) }
 field_rlist :
     {- empty -}           { rnil }
   | field                 { rsingleton $1 }
-  | field_rlist ';'       { $1 }
-  | field_rlist ';' field { rcons $3 $1 }
+  | field_rlist ','       { $1 }
+  | field_rlist ',' field { rcons $3 $1 }
 
 field :: { (Field, Type) }
 field :
@@ -835,33 +836,11 @@ param_rlist :
 
 param :: { VarBind  }
 param :
-    'var' ID
+    'mut' ID
       { VarBind (mkVar (varid $2)) True Nothing }
-  | 'var' ID ':' base_type
+  | 'mut' ID ':' base_type
       { VarBind (mkVar (varid $2)) True (Just $4) }
-  | identifier
-      { VarBind $1 False Nothing }
-  | identifier ':' base_type
-      { VarBind $1 False (Just $3) }
-
--- Parameters to a comp function
-comp_params :: { [VarBind] }
-comp_params :
-    '(' comp_param_rlist ')' { rev $2 }
-
-comp_param_rlist :: { RevList VarBind }
-comp_param_rlist :
-    {- empty -}                     { rnil }
-  | comp_param                      { rsingleton $1 }
-  | comp_param_rlist ',' comp_param { rcons $3 $1 }
-
-comp_param :: { VarBind }
-comp_param :
-    'var' ID
-      { VarBind (mkVar (varid $2)) True Nothing }
-  | 'var' ID ':' base_type
-      { VarBind (mkVar (varid $2)) True (Just $4) }
-  | 'var' ID ':' comp_base_type
+  | 'mut' ID ':' comp_base_type
       {% fail "Computation parameter cannot be mutable" }
   | ID
       { VarBind (mkVar (varid $1)) False Nothing }
@@ -880,7 +859,7 @@ comp_param :
 
 program :: { Program }
 program :
-    imports decl_rlist opt_semi { Program $1 (rev $2) }
+    imports decl_rlist { Program $1 (rev $2) }
 
 import :: { Import }
 import :
@@ -890,23 +869,12 @@ import :
 imports :: { [Import] }
 imports :
     {- empty -}             { [] }
-  | import opt_semi imports { $1 : $3 }
+  | import ';' imports { $1 : $3 }
 
 decl_rlist :: { RevList Decl }
 decl_rlist :
-    decl                     { rsingleton $1 }
-  | decl_rlist opt_semi decl { rcons $3 $1 }
-
-{------------------------------------------------------------------------------
- -
- - Miscellaneous
- -
- ------------------------------------------------------------------------------}
-
-opt_semi :: { () }
-opt_semi :
-    {- empty -} { () }
-  | ';'         { () }
+    decl            { rsingleton $1 }
+  | decl_rlist decl { rcons $2 $1 }
 
 {
 happyError :: L T.Token -> P a

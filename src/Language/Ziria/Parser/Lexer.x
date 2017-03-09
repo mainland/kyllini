@@ -166,13 +166,17 @@ ziria :-
   "||"   { token Tlor }
 
   "="     { token Tdef }
-  ":="    { token Tassign }
+  ":="    / { ifClassic } { token Tassign }
   "<-"    { token Tbind }
   ">>>"   { token Tcompose }
   "|>>>|" { token Tpcompose }
 
   "'0" { token TzeroBit }
   "'1" { token ToneBit }
+
+  -- For the new dialect
+  "->" / { ifKyllini } { token Tarrow }
+  ".." / { ifKyllini } { token Tdotdot }
 }
 
 {

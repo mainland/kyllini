@@ -737,7 +737,7 @@ instance IsLabel l => Pretty (Decl l) where
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon flds
+        text "struct" <+> ppr s <+> pprStruct comma colon flds
 
     pprPrec p (LetCompD v tau c _) =
         parensIf (p > appPrec) $

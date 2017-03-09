@@ -58,6 +58,7 @@ import Data.Monoid
 import Data.String
 import Text.PrettyPrint.Mainland
 
+import KZC.Globals
 import KZC.Name
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -429,12 +430,25 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
 
-    pprPrec p (LetRefD v tau e _) =
+    pprPrec p (LetRefD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
+    pprPrec p (LetRefD v tau e _) =
+        parensIf (p > appPrec) $
+        text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
+
+    pprPrec _ (LetFunD f ps _tau e _) | classicDialect =
+        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+
     pprPrec _ (LetFunD f ps _tau e _) =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+
+    pprPrec _ (LetFunExternalD f ps tau isPure _) | classicDialect =
+        text "fun" <+> text "external" <+> pureDoc <+>
+        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+      where
+        pureDoc = if isPure then empty else text "impure"
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) =
         text "fun" <+> text "external" <+> pureDoc <+>
@@ -499,11 +513,17 @@ instance Pretty Exp where
         text "="   <+>
         ppr e1 <+/> text "in" <+> ppr e2
 
-    pprPrec p (LetRefE v tau e1 e2 _) =
+    pprPrec p (LetRefE v tau e1 e2 _) | classicDialect =
         parensIf (p >= appPrec) $
         text "var" <+> pprSig v tau <+>
         pprInitializer e1 <+/>
-        text "in"  <+> pprPrec appPrec1 e2
+        text "in" <+> pprPrec appPrec1 e2
+
+    pprPrec p (LetRefE v tau e1 e2 _) =
+        parensIf (p >= appPrec) $
+        text "let mut" <+> pprSig v tau <+>
+        pprInitializer e1 <+/>
+        text "in" <+> pprPrec appPrec1 e2
 
     pprPrec p (LetDeclE decl e _) =
         parensIf (p >= appPrec) $
@@ -532,8 +552,11 @@ instance Pretty Exp where
         text "in" <+> ppr gint <+/>
         ppr e3
 
-    pprPrec _ (ArrayE es _) =
+    pprPrec _ (ArrayE es _) | classicDialect =
         text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
+
+    pprPrec _ (ArrayE es _) =
+        list (map ppr es)
 
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
@@ -627,8 +650,9 @@ instance Pretty VarBind where
                       vdoc <+> colon <+> ppr tau
       where
         vdoc :: Doc
-        vdoc | isRef     = text "var" <+> ppr v
-             | otherwise = ppr v
+        vdoc | isRef && classicDialect = text "var" <+> ppr v
+             | isRef                   = text "mut" <+> ppr v
+             | otherwise               = ppr v
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
@@ -689,9 +713,13 @@ instance Pretty Stm where
         embrace (map ppr cmds)
 
 instance Pretty StructDef where
-    ppr (StructDef s fields _) =
+    ppr (StructDef s fields _) | classicDialect =
         align $ nest 2 $
         text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
+
+    ppr (StructDef s fields _)=
+        align $ nest 2 $
+        text "struct" <+> ppr s <+> pprStruct comma colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -724,9 +752,15 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec p (ArrT ind tau _) =
+    pprPrec p (ArrT ind tau _) | classicDialect =
         parensIf (p > tyappPrec) $
         text "arr" <> brackets (ppr ind) <+> ppr tau
+
+    pprPrec _ (ArrT UnknownT{} tau _) =
+        brackets (ppr tau)
+
+    pprPrec _ (ArrT ind tau _) =
+        brackets (pprPrec appPrec1 tau <+> semi <+> ppr ind)
 
     pprPrec p (StructT s _) =
         parensIf (p > tyappPrec) $

@@ -688,7 +688,7 @@ instance Pretty Decl where
 
     pprPrec p (LetStructD s flds _) =
         parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon flds
+        text "struct" <+> ppr s <+> pprStruct comma colon flds
 
     pprList decls = stack (map ppr decls)
 

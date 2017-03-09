@@ -136,6 +136,12 @@ data Token = Teof
            | Tcomma
            | Tsemi
            | Tcolon
+
+           -- Tokens for the new dialect
+           | Tmut
+
+           | Tarrow  -- ^ Right arrow (->)
+           | Tdotdot -- ^ Range (..)
   deriving (Eq, Ord, Read, Show)
 
 instance Pretty Token where
@@ -253,6 +259,12 @@ instance Pretty Token where
     ppr Tsemi  = text ";"
     ppr Tcolon = text ":"
 
+    -- Tokens for the new dialect
+    ppr Tmut = text "mut"
+
+    ppr Tarrow  = text "->"
+    ppr Tdotdot = text ".."
+
 keywords :: [(Symbol, Token, Maybe Dialect)]
 keywords = [ ("C",           TC,           Nothing)
            , ("ST",          TST,          Nothing)
@@ -262,7 +274,7 @@ keywords = [ ("C",           TC,           Nothing)
            , ("bool",        Tbool,        Nothing)
            , ("autoinline",  Tautoinline,  Nothing)
            , ("comp",        Tcomp,        Nothing)
-           , ("do",          Tdo,          Nothing)
+           , ("do",          Tdo,          Just Classic)
            , ("double",      Tdouble,      Nothing)
            , ("else",        Telse,        Nothing)
            , ("emit",        Temit,        Nothing)
@@ -294,7 +306,7 @@ keywords = [ ("C",           TC,           Nothing)
            , ("read",        Tread,        Nothing)
            , ("repeat",      Trepeat,      Nothing)
            , ("return",      Treturn,      Nothing)
-           , ("seq",         Tseq,         Nothing)
+           , ("seq",         Tseq,         Just Classic)
            , ("standalone",  Tstandalone,  Nothing)
            , ("struct",      Tstruct,      Nothing)
            , ("take",        Ttake,        Nothing)
@@ -309,9 +321,12 @@ keywords = [ ("C",           TC,           Nothing)
            , ("uint64",      Tuint64,      Nothing)
            , ("unroll",      Tunroll,      Nothing)
            , ("until",       Tuntil,       Nothing)
-           , ("var",         Tvar,         Nothing)
+           , ("var",         Tvar,         Just Classic)
            , ("while",       Twhile,       Nothing)
            , ("write",       Twrite,       Nothing)
+
+           -- Tokens for the new dialect
+           , ("mut", Tmut, Just Kyllini)
            ]
 
 keywordMap :: Map.Map Symbol (Token, Maybe Dialect)
