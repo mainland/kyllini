@@ -197,6 +197,8 @@ data Exp = ConstE Const !SrcLoc
 
 data GenInterval -- | The interval @e1..e2@, /inclusive/ of @e2@.
                  = FromToInclusive Exp Exp !SrcLoc
+                 -- | The interval @e1..e2@, /exclusive/ of @e2@.
+                 | FromToExclusive Exp Exp !SrcLoc
                  -- | The interval that starts at @e1@ and has length @e2@.
                  | StartLen Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -348,6 +350,7 @@ instance Fvs Exp v => Fvs [Exp] v where
 
 instance Fvs GenInterval Var where
     fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (FromToExclusive e1 e2 _) = fvs e1 <> fvs e2
     fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 instance Fvs [Stm] Var where
@@ -609,6 +612,9 @@ instance Pretty Exp where
 instance Pretty GenInterval where
     ppr (FromToInclusive e1 e2 _) =
         brackets $ ppr e1 <> colon <> ppr e2
+
+    ppr (FromToExclusive e1 e2 _) =
+        ppr e1 <> text ".." <> ppr e2
 
     ppr (StartLen e1 e2 _) =
         brackets $ ppr e1 <> comma <+> ppr e2

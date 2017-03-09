@@ -48,6 +48,7 @@ instance Located Exp where
   locOf (StmE _ l) = locOf l
 instance Located GenInterval where
   locOf (FromToInclusive _ _ l) = locOf l
+  locOf (FromToExclusive _ _ l) = locOf l
   locOf (StartLen _ _ l) = locOf l
 instance Located VarBind where
   locOf (VarBind _ _ _) = NoLoc

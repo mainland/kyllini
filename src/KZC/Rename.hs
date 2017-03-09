@@ -212,6 +212,9 @@ instance Rename GenInterval where
     rn (FromToInclusive e1 e2 l) =
         FromToInclusive <$> rn e1 <*> rn e2 <*> pure l
 
+    rn (FromToExclusive e1 e2 l) =
+        FromToExclusive <$> rn e1 <*> rn e2 <*> pure l
+
     rn (StartLen e1 e2 l) =
         StartLen <$> rn e1 <*> rn e2 <*> pure l
 

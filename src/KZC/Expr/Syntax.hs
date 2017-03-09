@@ -258,6 +258,8 @@ data Exp = ConstE Const !SrcLoc
 
 data GenInterval a -- | The interval @e1..e2@, /inclusive/ of @e2@.
                    = FromToInclusive a a !SrcLoc
+                   -- | The interval @e1..e2@, /exclusive/ of @e2@.
+                   | FromToExclusive a a !SrcLoc
                    -- | The interval that starts at @e1@ and has length @e2@.
                    | StartLen a a !SrcLoc
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
@@ -836,6 +838,9 @@ instance Pretty a => Pretty (GenInterval a) where
     ppr (FromToInclusive e1 e2 _) =
         brackets $ ppr e1 <> colon <> ppr e2
 
+    ppr (FromToExclusive e1 e2 _) =
+        ppr e1 <> text ".." <> ppr e2
+
     ppr (StartLen e1 e2 _) =
         brackets $ ppr e1 <> comma <+> ppr e2
 
@@ -1172,6 +1177,7 @@ instance Fvs Exp v => Fvs [Exp] v where
 
 instance Fvs e v => Fvs (GenInterval e) v where
     fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (FromToExclusive e1 e2 _) = fvs e1 <> fvs e2
     fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 {------------------------------------------------------------------------------
@@ -1220,6 +1226,7 @@ instance HasVars Exp Var where
 
 instance HasVars e v => HasVars (GenInterval e) v where
     allVars (FromToInclusive e1 e2 _) = allVars e1 <> allVars e2
+    allVars (FromToExclusive e1 e2 _) = allVars e1 <> allVars e2
     allVars (StartLen e1 e2 _)        = allVars e1 <> allVars e2
 
 {------------------------------------------------------------------------------
@@ -1383,6 +1390,9 @@ instance Subst Type TyVar Exp where
 instance Subst e v a => Subst e v (GenInterval a) where
     substM (FromToInclusive e1 e2 l) =
         FromToInclusive <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (FromToExclusive e1 e2 l) =
+        FromToExclusive <$> substM e1 <*> substM e2 <*> pure l
 
     substM (StartLen e1 e2 l) =
         StartLen <$> substM e1 <*> substM e2 <*> pure l

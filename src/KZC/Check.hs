@@ -725,6 +725,13 @@ tcExp (Z.ForE ann i ztau_i gint e l) exp_ty = do
                         ce2 <- mce2
                         return $ E.FromToInclusive ce1 ce2 l
 
+        go (Z.FromToExclusive e1 e2 l) = do
+            mce1 <- castVal tau e1
+            mce2 <- castVal tau e2
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        return $ E.FromToExclusive ce1 ce2 l
+
         go (Z.StartLen e1 e2 l) = do
             mce1 <- castVal tau e1
             mce2 <- castVal tau e2

@@ -40,6 +40,7 @@ instance Located Exp where
   locOf (ParE _ _ _ _ l) = locOf l
 instance Located (GenInterval a) where
   locOf (FromToInclusive _ _ l) = locOf l
+  locOf (FromToExclusive _ _ l) = locOf l
   locOf (StartLen _ _ l) = locOf l
 instance Located StructDef where
   locOf (StructDef _ _ l) = locOf l

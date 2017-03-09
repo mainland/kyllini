@@ -1338,6 +1338,11 @@ cgGenInterval (FromToInclusive e1 e2 _) = do
     ce2 <- cgExpOneshot e2
     return (ce1, \i -> CExp [cexp|$id:i <= $ce2|])
 
+cgGenInterval (FromToExclusive e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i < $ce2|])
+
 cgGenInterval (StartLen e1 e2 _) = do
     ce1 <- cgExpOneshot e1
     ce2 <- cgExpOneshot e2

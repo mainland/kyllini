@@ -296,6 +296,7 @@ startLenGenInt e1 e2 = StartLen e1 e2 (e1 `srcspan` e2)
 
 toStartLenGenInt :: GenInterval Exp -> (Exp, Exp)
 toStartLenGenInt (FromToInclusive from to _) = (from, to - from + 1)
+toStartLenGenInt (FromToExclusive from to _) = (from, to - from)
 toStartLenGenInt (StartLen start len _)      = (start, len)
 
 genE :: Exp -> [Gen] -> Exp
