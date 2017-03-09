@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.Rate
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -44,6 +44,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Core.Lint
+import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Label
@@ -174,11 +175,13 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         plusRate $ CompR (mstar i) (mstar j)
         return $ WhileC l e c' s
 
-    stepT (ForC l ann v tau e1 e2 c s) = do
+    stepT (ForC l ann v tau gint c s) = do
         c' <- extendVars [(v, tau)] $
               compT c
         plusRate $ expM e2 $ compR c'
-        return $ ForC l ann v tau e1 e2 c' s
+        return $ ForC l ann v tau (startLenGenInt e1 e2) c' s
+      where
+        (e1, e2) = toStartLenGenInt gint
 
     stepT step@LiftC{} =
         return step
@@ -351,8 +354,8 @@ compR _                         = error "compR: no rate"
 
 -- | Convert an 'Exp' to an iteration factor
 expM :: Exp -> Rate M -> Rate M
-expM (ConstE (FixC _ i) _) = rtimes i
-expM _                     = rstar
+expM e | Just i <- fromIntE e = rtimes i
+expM _                        = rstar
 
 -- | Convert a type-level natural number to a multiplicity.
 natM :: Type -> M

@@ -144,10 +144,9 @@ instance Rename Exp where
     rn (TimesE ann e1 e2 l) =
         TimesE <$> pure ann <*> rn e1 <*> rn e2 <*> pure l
 
-    rn (ForE ann v tau e1 e2 e3 l) =
+    rn (ForE ann v tau int e l) =
         extendVars (text "variable") [v] $
-        ForE <$> pure ann <*> rn v <*> pure tau <*>
-             rn e1 <*> rn e2 <*> rn e3 <*> pure l
+        ForE <$> pure ann <*> rn v <*> pure tau <*> rn int <*> rn e <*> pure l
 
     rn (ArrayE es l) =
         ArrayE <$> rn es <*> pure l
@@ -208,6 +207,13 @@ instance Rename Exp where
 
     rn (StmE stms l) =
         StmE <$> rnStms stms <*> pure l
+
+instance Rename GenInterval where
+    rn (FromToInclusive e1 e2 l) =
+        FromToInclusive <$> rn e1 <*> rn e2 <*> pure l
+
+    rn (StartLen e1 e2 l) =
+        StartLen <$> rn e1 <*> rn e2 <*> pure l
 
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
 rnDecl decl@(LetD v tau e l) k =

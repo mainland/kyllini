@@ -6,7 +6,7 @@
 
 {-|
 Module      :  KZC.Analysis.NeedDefault
-Copyright   :  (c) 2016 Drexel University
+Copyright   :  (c) 2016-2017 Drexel University
 License     :  BSD-style
 Maintainer  :  mainland@drexel.edu
 
@@ -543,12 +543,14 @@ useStep LetC{} =
 useStep (WhileC l e c s) =
     WhileC l <$> (fst <$> useExp e) <*> useComp c <*> pure s
 
-useStep (ForC l ann v tau e1 e2 c s) = do
+useStep (ForC l ann v tau gint c s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
     c'          <- extendVars [(v, tau)] $
                    useFor v val1 val2 (useComp c)
-    return $ ForC l ann v tau e1' e2' c' s
+    return $ ForC l ann v tau (startLenGenInt e1' e2') c' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
 useStep (LiftC l e s) =
     LiftC l <$> (fst <$> useExp e) <*> pure s
@@ -714,12 +716,14 @@ useExp (AssignE e1 e2 s) = do
 useExp (WhileE e1 e2 s) =
     topA $ WhileE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure s
 
-useExp (ForE ann v tau e1 e2 e3 s) = do
+useExp (ForE ann v tau gint e3 s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
     e3'         <- extendVars [(v, tau)] $
                    useFor v val1 val2 (fst <$> useExp e3)
-    topA $ return $ ForE ann v tau e1' e2' e3' s
+    topA $ return $ ForE ann v tau (startLenGenInt e1' e2') e3' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
 useExp (ArrayE es s) = do
     es' <- map fst <$> mapM useExp es

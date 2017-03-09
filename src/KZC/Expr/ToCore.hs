@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Expr.ToCore
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -237,14 +237,13 @@ transExp (E.AssignE e1 e2 l) =
 transExp (E.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (E.ForE ann v tau e1 e2 e3 l) =
+transExp (E.ForE ann v tau gint e l) =
     ensureUnique v $ \v' -> do
-    e1' <- withFvContext e1 $ transExp e1
-    e2' <- withFvContext e2 $ transExp e2
-    e3' <- withFvContext e3 $
-           extendVars [(v, tau)] $
-           transExp e3
-    return $ ForE ann v' tau e1' e2' e3' l
+    gint' <- traverse (\e -> withFvContext e $ transExp e) gint
+    e'    <- withFvContext e $
+             extendVars [(v, tau)] $
+             transExp e
+    return $ ForE ann v' tau gint' e' l
 
 transExp (E.ArrayE es l) =
     ArrayE <$> mapM transExp es <*> pure l
@@ -356,14 +355,13 @@ transComp (E.WhileE e c _) = do
     c' <- transComp c
     whileC e' c'
 
-transComp (E.ForE ann v tau e1 e2 e3 _) =
+transComp (E.ForE ann v tau gint e _) =
     ensureUnique v $ \v' -> do
-    e1' <- withFvContext e1 $ transExp e1
-    e2' <- withFvContext e2 $ transExp e2
-    c'  <- withFvContext e3 $
-           extendVars [(v, tau)] $
-           transComp e3
-    forC ann v' tau e1' e2' c'
+    gint' <- traverse (\e -> withFvContext e $ transExp e) gint
+    c'    <- withFvContext e $
+             extendVars [(v, tau)] $
+             transComp e
+    forGenC ann v' tau gint' c'
 
 transComp (E.ReturnE _ e _) = do
     e <- transExp e

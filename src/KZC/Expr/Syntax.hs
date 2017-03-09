@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -9,7 +11,7 @@
 
 -- |
 -- Module      : KZC.Expr.Syntax
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -35,6 +37,7 @@ module KZC.Expr.Syntax (
     Decl(..),
     Const(..),
     Exp(..),
+    GenInterval(..),
     Stm(..),
 
     UnrollAnn(..),
@@ -232,7 +235,7 @@ data Exp = ConstE Const !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
-         | ForE UnrollAnn Var Type Exp Exp Exp !SrcLoc
+         | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
@@ -252,6 +255,12 @@ data Exp = ConstE Const !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+data GenInterval a -- | The interval @e1..e2@, /inclusive/ of @e2@.
+                   = FromToInclusive a a !SrcLoc
+                   -- | The interval that starts at @e1@ and has length @e2@.
+                   | StartLen a a !SrcLoc
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Stm d v e = ReturnS InlineAnn e !SrcLoc
                | LetS d !SrcLoc
@@ -762,10 +771,10 @@ instance Pretty Exp where
         group (pprPrec appPrec1 e1) <>
         pprBody e2
 
-    pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+    pprPrec _ (ForE ann v tau gint e _) =
         ppr ann <+> text "for" <+> pprTypeSig v tau <+>
-        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <>
-        pprBody e3
+        text "in" <+> ppr gint <>
+        pprBody e
 
     pprPrec _ (ArrayE es _) =
         text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
@@ -822,6 +831,13 @@ instance Pretty Exp where
         pprPrec parrPrec e1 <+>
         ppr ann <> text "@" <> pprPrec tyappPrec1 tau <+>
         pprPrec parrPrec1 e2
+
+instance Pretty a => Pretty (GenInterval a) where
+    ppr (FromToInclusive e1 e2 _) =
+        brackets $ ppr e1 <> colon <> ppr e2
+
+    ppr (StartLen e1 e2 _) =
+        brackets $ ppr e1 <> comma <+> ppr e2
 
 instance Pretty PipelineAnn where
     ppr AlwaysPipeline = text "|>>>|"
@@ -1125,34 +1141,38 @@ instance Binders Decl Var where
     binders LetStructD{}           = mempty
 
 instance Fvs Exp Var where
-    fvs ConstE{}                = mempty
-    fvs (VarE v _)              = singleton v
-    fvs (UnopE _ e _)           = fvs e
-    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE decl body _)      = fvs decl <> (fvs body <\\> binders decl)
-    fvs (CallE f _ es _)        = singleton f <> fvs es
-    fvs (DerefE e _)            = fvs e
-    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)           = fvs es
-    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)      = fvs (map snd flds)
-    fvs (ProjE e _ _)           = fvs e
-    fvs (PrintE _ es _)         = fvs es
-    fvs ErrorE{}                = mempty
-    fvs (ReturnE _ e _)         = fvs e
-    fvs (BindE wv _ e1 e2 _)    = fvs e1 <> (fvs e2 <\\> binders wv)
-    fvs TakeE{}                 = mempty
-    fvs TakesE{}                = mempty
-    fvs (EmitE e _)             = fvs e
-    fvs (EmitsE e _)            = fvs e
-    fvs (RepeatE _ e _)         = fvs e
-    fvs (ParE _ _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs ConstE{}              = mempty
+    fvs (VarE v _)            = singleton v
+    fvs (UnopE _ e _)         = fvs e
+    fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE decl body _)    = fvs decl <> (fvs body <\\> binders decl)
+    fvs (CallE f _ es _)      = singleton f <> fvs es
+    fvs (DerefE e _)          = fvs e
+    fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
+    fvs (ArrayE es _)         = fvs es
+    fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
+    fvs (StructE _ flds _)    = fvs (map snd flds)
+    fvs (ProjE e _ _)         = fvs e
+    fvs (PrintE _ es _)       = fvs es
+    fvs ErrorE{}              = mempty
+    fvs (ReturnE _ e _)       = fvs e
+    fvs (BindE wv _ e1 e2 _)  = fvs e1 <> (fvs e2 <\\> binders wv)
+    fvs TakeE{}               = mempty
+    fvs TakesE{}              = mempty
+    fvs (EmitE e _)           = fvs e
+    fvs (EmitsE e _)          = fvs e
+    fvs (RepeatE _ e _)       = fvs e
+    fvs (ParE _ _ e1 e2 _)    = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
+
+instance Fvs e v => Fvs (GenInterval e) v where
+    fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 {------------------------------------------------------------------------------
  -
@@ -1172,31 +1192,35 @@ instance HasVars Decl Var where
     allVars LetStructD{}             = mempty
 
 instance HasVars Exp Var where
-    allVars ConstE{}                = mempty
-    allVars (VarE v _)              = singleton v
-    allVars (UnopE _ e _)           = allVars e
-    allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
-    allVars (IfE e1 e2 e3 _)        = allVars e1 <> allVars e2 <> allVars e3
-    allVars (LetE decl body _)      = allVars decl <> allVars body
-    allVars (CallE f _ es _)        = singleton f <> allVars es
-    allVars (DerefE e _)            = allVars e
-    allVars (AssignE e1 e2 _)       = allVars e1 <> allVars e2
-    allVars (WhileE e1 e2 _)        = allVars e1 <> allVars e2
-    allVars (ForE _ v _ e1 e2 e3 _) = singleton v <> allVars e1 <> allVars e2 <> allVars e3
-    allVars (ArrayE es _)           = allVars es
-    allVars (IdxE e1 e2 _ _)        = allVars e1 <> allVars e2
-    allVars (StructE _ flds _)      = allVars (map snd flds)
-    allVars (ProjE e _ _)           = allVars e
-    allVars (PrintE _ es _)         = allVars es
-    allVars ErrorE{}                = mempty
-    allVars (ReturnE _ e _)         = allVars e
-    allVars (BindE wv _ e1 e2 _)    = allVars wv <> allVars e1 <> allVars e2
-    allVars TakeE{}                 = mempty
-    allVars TakesE{}                = mempty
-    allVars (EmitE e _)             = allVars e
-    allVars (EmitsE e _)            = allVars e
-    allVars (RepeatE _ e _)         = allVars e
-    allVars (ParE _ _ e1 e2 _)      = allVars e1 <> allVars e2
+    allVars ConstE{}              = mempty
+    allVars (VarE v _)            = singleton v
+    allVars (UnopE _ e _)         = allVars e
+    allVars (BinopE _ e1 e2 _)    = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)      = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)    = allVars decl <> allVars body
+    allVars (CallE f _ es _)      = singleton f <> allVars es
+    allVars (DerefE e _)          = allVars e
+    allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
+    allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
+    allVars (ArrayE es _)         = allVars es
+    allVars (IdxE e1 e2 _ _)      = allVars e1 <> allVars e2
+    allVars (StructE _ flds _)    = allVars (map snd flds)
+    allVars (ProjE e _ _)         = allVars e
+    allVars (PrintE _ es _)       = allVars es
+    allVars ErrorE{}              = mempty
+    allVars (ReturnE _ e _)       = allVars e
+    allVars (BindE wv _ e1 e2 _)  = allVars wv <> allVars e1 <> allVars e2
+    allVars TakeE{}               = mempty
+    allVars TakesE{}              = mempty
+    allVars (EmitE e _)           = allVars e
+    allVars (EmitsE e _)          = allVars e
+    allVars (RepeatE _ e _)       = allVars e
+    allVars (ParE _ _ e1 e2 _)    = allVars e1 <> allVars e2
+
+instance HasVars e v => HasVars (GenInterval e) v where
+    allVars (FromToInclusive e1 e2 _) = allVars e1 <> allVars e2
+    allVars (StartLen e1 e2 _)        = allVars e1 <> allVars e2
 
 {------------------------------------------------------------------------------
  -
@@ -1311,8 +1335,8 @@ instance Subst Type TyVar Exp where
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
-    substM (ForE ann v tau e1 e2 e3 l) =
-        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+    substM (ForE ann v tau gint e l) =
+        ForE ann v <$> substM tau <*> substM gint <*> substM e <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
@@ -1355,6 +1379,13 @@ instance Subst Type TyVar Exp where
 
     substM (ParE ann tau e1 e2 l) =
         ParE ann tau <$> substM e1 <*> substM e2 <*> pure l
+
+instance Subst e v a => Subst e v (GenInterval a) where
+    substM (FromToInclusive e1 e2 l) =
+        FromToInclusive <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (StartLen e1 e2 l) =
+        StartLen <$> substM e1 <*> substM e2 <*> pure l
 
 {------------------------------------------------------------------------------
  -
@@ -1402,11 +1433,10 @@ instance Subst Exp Var Exp where
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
-    substM (ForE ann v tau e1 e2 e3 l) = do
-        e1' <- substM e1
-        e2' <- substM e2
+    substM (ForE ann v tau gint e l) = do
+        gint' <- substM gint
         freshen v $ \v' ->
-          ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+          ForE ann v' tau gint' <$> substM e <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l

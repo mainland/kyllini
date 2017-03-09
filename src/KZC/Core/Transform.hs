@@ -2,7 +2,7 @@
 
 -- |
 -- Module      : KZC.Core.Transform
--- Copyright   : (c) 2016 Drexel University
+-- Copyright   : (c) 2016-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -169,9 +169,8 @@ transStep LetC{} =
 transStep (WhileC l e c s) =
     WhileC l <$> expT e <*> compT c <*> pure s
 
-transStep (ForC l ann v tau e1 e2 c s) =
-    ForC l ann v tau <$> expT e1
-                     <*> expT e2
+transStep (ForC l ann v tau gint c s) =
+    ForC l ann v tau <$> traverse expT gint
                      <*> extendVars [(v, tau)] (compT c)
                      <*> pure s
 
@@ -261,10 +260,9 @@ transExp (AssignE e1 e2 s) =
 transExp (WhileE e1 e2 s) =
     WhileE <$> expT e1 <*> expT e2 <*> pure s
 
-transExp (ForE ann v tau e1 e2 e3 s) =
-    ForE ann v tau <$> expT e1
-                   <*> expT e2
-                   <*> extendVars [(v, tau)] (expT e3)
+transExp (ForE ann v tau gint e s) =
+    ForE ann v tau <$> traverse expT gint
+                   <*> extendVars [(v, tau)] (expT e)
                    <*> pure s
 
 transExp (ArrayE es s) =

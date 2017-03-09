@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.ReadWriteSet
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -732,11 +732,14 @@ evalExp e =
         evalWhile val $
           evalExp e2
 
-    go (ForE _ v tau e_start e_len e_body _) = do
+    go (ForE _ v tau gint e_body _) = do
         v_start <- evalExp e_start
         v_len   <- evalExp e_len
         extendVars [(v, tau)] $
           evalFor v v_start v_len (evalExp e_body)
+      where
+        e_start, e_len :: Exp
+        (e_start, e_len) = toStartLenGenInt gint
 
     go (ArrayE es _) = do
         mapM_ evalExp es

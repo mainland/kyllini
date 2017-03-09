@@ -492,18 +492,15 @@ struct_init :: { (Field, Exp) }
 struct_init :
     ID '=' exp { (mkField (fieldid $1), $3) }
 
-gen_interval :: { L (Exp, Exp) }
+gen_interval :: { GenInterval }
 gen_interval :
     '[' exp ':' const_int_exp ']'
-      {% do { from     <- constIntExp $2
-            ; let to   =  unLoc $4
-            ; let len  =  to - from + 1
-            ; return $ L ($1 <--> $5)
-                (intC from (srclocOf $2), intC len (srclocOf $4))
-            }
+      { let to = intC (unLoc $4) (srclocOf $4)
+        in
+          FromToInclusive $2 to ($1 `srcspan` $5)
       }
   | '[' exp ',' exp ']'
-      {L ($1 <--> $5) ($2, $4) }
+      { StartLen $2 $4 ($1 `srcspan` $5) }
 
 {------------------------------------------------------------------------------
  -
@@ -639,11 +636,9 @@ stm_exp :
   | unroll_info 'times' exp stm_exp %prec STANDALONE
       { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
   | unroll_info 'for' var_bind 'in' gen_interval stm_exp %prec STANDALONE
-      { let { (v, tau)     = $3
-            ; (start, len) = unLoc $5
-            }
+      { let (v, tau) = $3
         in
-          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
+          ForE (unLoc $1) v tau $5 $6 ($1 `srcspan` $6)
       }
 
   | inline_ann 'return' exp

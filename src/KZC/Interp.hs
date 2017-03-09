@@ -10,7 +10,7 @@
 
 -- |
 -- Module      :  KZC.Interp
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -473,7 +473,7 @@ evalExp (WhileE e1 e2 _) =
     go val =
         faildoc $ text "Bad conditional:" <+> ppr val
 
-evalExp (ForE _ v tau e1 e2 e3 _) = do
+evalExp (ForE _ v tau gint e3 _) = do
     i   <- evalExp e1 >>= fromIntV
     len <- evalExp e2 >>= fromIntV
     ref <- newRef $ intV tau i
@@ -481,6 +481,9 @@ evalExp (ForE _ v tau e1 e2 e3 _) = do
       loop ref i (i+len)
     return UnitC
   where
+    e1, e2 :: Exp
+    (e1, e2) = toStartLenGenInt gint
+
     loop :: IORef Val -> Int -> Int -> I s m ()
     loop !ref !i !end | i < end = do
         void $ evalExp e3
@@ -725,7 +728,7 @@ compileExp (WhileE e1 e2 _) = do
             faildoc $ text "Bad conditional:" <+> ppr val
     return $ mval1 >>= go
 
-compileExp (ForE _ v tau e1 e2 e3 _) = do
+compileExp (ForE _ v tau gint e3 _) = do
     mi    <- compileExp e1
     mlen  <- compileExp e2
     ref   <- newRef $ error "naughty"
@@ -743,6 +746,9 @@ compileExp (ForE _ v tau e1 e2 e3 _) = do
                 len <- mlen >>= fromIntV
                 writeRef ref $ intV tau i
                 loop i (i+len)
+  where
+    e1, e2 :: Exp
+    (e1, e2) = toStartLenGenInt gint
 
 compileExp (ArrayE es _) = do
     mvals <- mapM compileExp es

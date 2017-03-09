@@ -26,7 +26,7 @@ instance Located Exp where
   locOf (WhileE _ _ l) = locOf l
   locOf (UntilE _ _ l) = locOf l
   locOf (TimesE _ _ _ l) = locOf l
-  locOf (ForE _ _ _ _ _ _ l) = locOf l
+  locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
   locOf (StructE _ _ l) = locOf l
@@ -46,6 +46,9 @@ instance Located Exp where
   locOf (MapE _ _ _ l) = locOf l
   locOf (FilterE _ _ l) = locOf l
   locOf (StmE _ l) = locOf l
+instance Located GenInterval where
+  locOf (FromToInclusive _ _ l) = locOf l
+  locOf (StartLen _ _ l) = locOf l
 instance Located VarBind where
   locOf (VarBind _ _ _) = NoLoc
 instance Located Stm where

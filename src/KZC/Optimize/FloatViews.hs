@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.FloatViews
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -116,14 +116,16 @@ lookupLoopVar :: MonadTc m => Var -> F m (Maybe Int)
 lookupLoopVar v = asks (Map.lookup v . loopVars)
 
 extendLoopVar :: MonadTc m
-              => Var -> Exp -> Exp
+              => Var -> GenInterval Exp
               -> F m a
               -> F m a
-extendLoopVar v e_i e_len k | Just 0   <- fromIntE e_i,
-                              Just len <- fromIntE e_len =
+extendLoopVar v gint k | Just 0   <- fromIntE e_i,
+                         Just len <- fromIntE e_len =
     local (\env -> env { loopVars = Map.insert v (len-1) (loopVars env) }) k
+  where
+    (e_i, e_len) = toStartLenGenInt gint
 
-extendLoopVar _ _ _ k =
+extendLoopVar _ _ k =
     k
 
 lookupView :: forall m . MonadTc m => Slice -> Int -> F m (Maybe Var)
@@ -250,14 +252,13 @@ instance MonadTc m => TransformExp (F m) where
     expT e@CallE{} =
         return e
 
-    expT (ForE ann v tau e1 e2 e3 s) = do
-        e1' <- expT e1
-        e2' <- expT e2
-        e3' <- extendVars [(v, tau)] $
-               extendLoopVar v e1 e2 $
-               withSlicesExp [v] $
-               expT e3
-        return $ ForE ann v tau e1' e2' e3' s
+    expT (ForE ann v tau iter e s) = do
+        iter' <- traverse expT iter
+        e'    <- extendVars [(v, tau)] $
+                 extendLoopVar v iter $
+                 withSlicesExp [v] $
+                 expT e
+        return $ ForE ann v tau iter' e' s
 
     expT e@(IdxE (VarE v _) e2 len s)
       | Just (es, i) <- unSlice e2 = do
@@ -338,13 +339,12 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F m) where
     stepT step@CallC{} =
         return step
 
-    stepT (ForC l ann v tau e1 e2 c3 s) = do
-        e1' <- expT e1
-        e2' <- expT e2
-        c3' <- extendVars [(v, tau)] $
-               extendLoopVar v e1 e2 $
-               withSlicesComp [v] $
-               compT c3
-        return $ ForC l ann v tau e1' e2' c3' s
+    stepT (ForC l ann v tau iter c s) = do
+        iter' <- traverse expT iter
+        c'    <- extendVars [(v, tau)] $
+                 extendLoopVar v iter $
+                 withSlicesComp [v] $
+                 compT c
+        return $ ForC l ann v tau iter' c' s
 
     stepT step = transStep step

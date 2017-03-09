@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Core.Lint
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -442,15 +442,12 @@ inferExp (WhileE e1 e2 _) = do
         void $ checkPureishSTCUnit tau
         return tau
 
-inferExp (ForE _ v tau e1 e2 e3 _) = do
+inferExp (ForE _ v tau gint e _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) gint
     extendVars [(v, tau)] $
-        withFvContext e3 $ do
-        tau_body <- inferExp e3
+        withFvContext e $ do
+        tau_body <- inferExp e
         void $ checkPureishSTCUnit tau_body
         return tau_body
 
@@ -807,12 +804,9 @@ inferStep (WhileC _ e c _) = do
         void $ checkSTCUnit tau
         return tau
 
-inferStep (ForC _ _ v tau e1 e2 c _) = do
+inferStep (ForC _ _ v tau gint c _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) gint
     extendVars [(v, tau)] $
         withFvContext c $ do
         tau_body <- inferComp c
@@ -944,8 +938,8 @@ compToExp comp =
     stepToExp (WhileC _ e1 c2 l) =
         WhileE e1 <$> compToExp c2 <*> pure l
 
-    stepToExp (ForC _ ann v tau e1 e2 c3 l) =
-        ForE ann v tau e1 e2 <$> compToExp c3 <*> pure l
+    stepToExp (ForC _ ann v tau gint c3 l) =
+        ForE ann v tau gint <$> compToExp c3 <*> pure l
 
     stepToExp (LiftC _ e _) =
         pure e

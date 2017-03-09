@@ -11,7 +11,7 @@ instance Located (Step a) where
   locOf (IfC _ _ _ _ l) = locOf l
   locOf (LetC _ _ l) = locOf l
   locOf (WhileC _ _ _ l) = locOf l
-  locOf (ForC _ _ _ _ _ _ _ l) = locOf l
+  locOf (ForC _ _ _ _ _ _ l) = locOf l
   locOf (LiftC _ _ l) = locOf l
   locOf (ReturnC _ _ l) = locOf l
   locOf (BindC _ _ _ l) = locOf l
@@ -38,7 +38,7 @@ instance Located Exp where
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
-  locOf (ForE _ _ _ _ _ _ l) = locOf l
+  locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
   locOf (StructE _ _ l) = locOf l

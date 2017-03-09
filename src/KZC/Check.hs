@@ -696,25 +696,41 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
                 cx   <- gensymAt "x" l
                 ce1  <- mce1
                 ce2  <- mce2
-                return $ E.ForE cann cx E.intT (E.intE (1 :: Int)) ce1 ce2 l
+                return $ E.ForE cann cx E.intT (E.StartLen (E.intE (1 :: Int)) ce1 (srclocOf e1)) ce2 l
 
-tcExp (Z.ForE ann i ztau_i e1 e2 e3 l) exp_ty = do
+tcExp (Z.ForE ann i ztau_i gint e l) exp_ty = do
     tau_i <- fromZ (ztau_i, tauK)
     checkIntT tau_i
-    mce1 <- castVal tau_i e1
-    mce2 <- castVal tau_i e2
-    tau  <- mkSTC (UnitT l)
-    mce3 <- extendVars [(i, tau_i)] $
-            collectCheckValCtx tau $
-            checkExp e3 tau
+    mcgint <- tcGenInterval tau_i gint
+    tau    <- mkSTC (UnitT l)
+    mce    <- extendVars [(i, tau_i)] $
+              collectCheckValCtx tau $
+              checkExp e tau
     instType tau exp_ty
     return $ do cann   <- trans ann
                 ci     <- trans i
                 ctau_i <- trans tau_i
-                ce1    <- mce1
-                ce2    <- mce2
-                ce3    <- mce3
-                return $ E.ForE cann ci ctau_i ce1 ce2 ce3 l
+                cgint  <- mcgint
+                ce     <- mce
+                return $ E.ForE cann ci ctau_i cgint ce l
+  where
+    tcGenInterval :: Type -> Z.GenInterval -> Ti (Ti (E.GenInterval E.Exp))
+    tcGenInterval tau = go
+      where
+        go :: Z.GenInterval -> Ti (Ti (E.GenInterval E.Exp))
+        go (Z.FromToInclusive e1 e2 l) = do
+            mce1 <- castVal tau e1
+            mce2 <- castVal tau e2
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        return $ E.FromToInclusive ce1 ce2 l
+
+        go (Z.StartLen e1 e2 l) = do
+            mce1 <- castVal tau e1
+            mce2 <- castVal tau e2
+            return $ do ce1 <- mce1
+                        ce2 <- mce2
+                        return $ E.StartLen ce1 ce2 l
 
 tcExp (Z.ArrayE es l) exp_ty = do
     tau  <- newMetaTvT tauK l

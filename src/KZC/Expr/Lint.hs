@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Expr.Lint
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -81,6 +81,7 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
+import Data.Foldable (traverse_)
 import Data.IORef
 import Data.List (nub)
 import Data.Loc
@@ -443,15 +444,12 @@ inferExp (WhileE e1 e2 _) = do
         void $ checkForallSTCUnit tau
         return tau
 
-inferExp (ForE _ v tau e1 e2 e3 _) = do
+inferExp (ForE _ v tau int e _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) int
     extendVars [(v, tau)] $
-        withFvContext e3 $ do
-        tau_body <- inferExp e3
+        withFvContext e $ do
+        tau_body <- inferExp e
         void $ checkForallSTCUnit tau_body
         return tau_body
 

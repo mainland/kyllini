@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Simplify
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -829,9 +829,9 @@ simplLift (WhileC l e1 Comp{unComp=[LiftC _ e2 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (WhileE e1 e2 s) s : steps
 
-simplLift (ForC l ann v tau e1 e2 Comp{unComp=[LiftC _ e3 _]} s : steps) = do
+simplLift (ForC l ann v tau gint Comp{unComp=[LiftC _ e _]} s : steps) = do
     rewrite
-    simplLift $ LiftC l (ForE ann v tau e1 e2 e3 s) s : steps
+    simplLift $ LiftC l (ForE ann v tau gint e s) s : steps
 
 simplLift (LiftC l e1 _ : LiftC _ e2 _ : steps) = do
     rewrite
@@ -1007,11 +1007,14 @@ simplStep LetC{} =
 simplStep (WhileC l e c s) =
     WhileC l <$> simplE e <*> simplC c <*> pure s >>= return1
 
-simplStep (ForC l ann v tau ei elen c s) = do
+simplStep (ForC l ann v tau gint c s) = do
     ei'   <- simplE ei
     elen' <- simplE elen
     unroll ann ei' elen'
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unroll :: UnrollAnn
            -> Exp
            -> Exp
@@ -1043,7 +1046,7 @@ simplStep (ForC l ann v tau ei elen c s) = do
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplC c
-        return1 $ ForC l ann v' tau ei' elen' c' s
+        return1 $ ForC l ann v' tau (startLenGenInt ei' elen') c' s
 
 simplStep (LiftC l e s) =
     simplE e >>= go
@@ -1390,7 +1393,7 @@ simplE (WhileE e1 e2 s) =
 -- ->
 --   return ()
 
-simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
+simplE (ForE _ann _v _tau _gint e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
     rewrite
     return e
 
@@ -1404,7 +1407,7 @@ simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
 --
 -- This loop form shows up regularly in fused code.
 --
-simplE (ForE _ann v _tau ei elen
+simplE (ForE _ann v _tau gint
              (AssignE (IdxE (VarE xs _) (VarE v' _)  Nothing _) e_rhs _)
              s)
   | Just len <- fromIntE elen
@@ -1417,6 +1420,9 @@ simplE (ForE _ann v _tau ei elen
                         (IdxE e_ys (f ei) (Just len) s)
                         s
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
     unIdx (IdxE e1 (VarE v _) Nothing _) =
         Just (e1, v, id)
@@ -1430,11 +1436,14 @@ simplE (ForE _ann v _tau ei elen
     unIdx _ =
         Nothing
 
-simplE (ForE ann v tau ei elen e3 s) = do
+simplE (ForE ann v tau gint e3 s) = do
     ei'   <- simplE ei
     elen' <- simplE elen
     unroll ann ei' elen'
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unroll :: UnrollAnn
            -> Exp
            -> Exp
@@ -1466,7 +1475,7 @@ simplE (ForE ann v tau ei elen e3 s) = do
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplE e3
-        return $ ForE ann v' tau ei' elen' e3' s
+        return $ ForE ann v' tau (startLenGenInt ei' elen') e3' s
 
 simplE (ArrayE es s) =
     mapM simplE es >>= go

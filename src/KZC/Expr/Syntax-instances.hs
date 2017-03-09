@@ -23,7 +23,7 @@ instance Located Exp where
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
-  locOf (ForE _ _ _ _ _ _ l) = locOf l
+  locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
   locOf (StructE _ _ l) = locOf l
@@ -38,6 +38,9 @@ instance Located Exp where
   locOf (EmitsE _ l) = locOf l
   locOf (RepeatE _ _ l) = locOf l
   locOf (ParE _ _ _ _ l) = locOf l
+instance Located (GenInterval a) where
+  locOf (FromToInclusive _ _ l) = locOf l
+  locOf (StartLen _ _ l) = locOf l
 instance Located StructDef where
   locOf (StructDef _ _ l) = locOf l
 instance Located Type where

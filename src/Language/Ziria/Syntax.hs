@@ -31,6 +31,7 @@ module Language.Ziria.Syntax (
     Decl(..),
     Const(..),
     Exp(..),
+    GenInterval(..),
     Stm(..),
 
     VarBind(..),
@@ -167,7 +168,7 @@ data Exp = ConstE Const !SrcLoc
          | WhileE Exp Exp !SrcLoc
          | UntilE Exp Exp !SrcLoc
          | TimesE UnrollAnn Exp Exp !SrcLoc
-         | ForE UnrollAnn Var (Maybe Type) Exp Exp Exp !SrcLoc
+         | ForE UnrollAnn Var (Maybe Type) GenInterval Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
@@ -192,6 +193,12 @@ data Exp = ConstE Const !SrcLoc
          | MapE VectAnn Var (Maybe Type) !SrcLoc
          | FilterE Var (Maybe Type) !SrcLoc
          | StmE [Stm] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data GenInterval -- | The interval @e1..e2@, /inclusive/ of @e2@.
+                 = FromToInclusive Exp Exp !SrcLoc
+                 -- | The interval that starts at @e1@ and has length @e2@.
+                 | StartLen Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Stm = LetS Decl !SrcLoc
@@ -302,42 +309,46 @@ instance Fvs Decl Var where
     fvs d@(LetFunCompD  _ _ _ _ e _) = fvs e <\\> binders d
 
 instance Fvs Exp Var where
-    fvs ConstE{}                = mempty
-    fvs (VarE v _)              = singleton v
-    fvs (UnopE _ e _)           = fvs e
-    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE v _ e1 e2 _)      = delete v (fvs e1 <> fvs e2)
-    fvs (LetRefE v _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
-    fvs (LetDeclE decl e _)     = fvs decl <> (fvs e <\\> binders decl)
-    fvs (CallE v es _)          = singleton v <> fvs es
-    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (UntilE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (TimesE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)           = fvs es
-    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)      = fvs (map snd flds)
-    fvs (ProjE e _ _)           = fvs e
-    fvs (PrintE _ es _)         = fvs es
-    fvs ErrorE{}                = mempty
-    fvs (ReturnE _ e _)         = fvs e
-    fvs TakeE{}                 = mempty
-    fvs TakesE{}                = mempty
-    fvs (EmitE e _)             = fvs e
-    fvs (EmitsE e _)            = fvs e
-    fvs (RepeatE _ e _)         = fvs e
-    fvs (ParE _ e1 e2 _)        = fvs e1 <> fvs e2
-    fvs ReadE{}                 = mempty
-    fvs WriteE{}                = mempty
-    fvs (StandaloneE e _)       = fvs e
-    fvs (MapE _ v _ _)          = singleton v
-    fvs (FilterE v _ _)         = singleton v
-    fvs (StmE stms _)           = fvs stms
+    fvs ConstE{}              = mempty
+    fvs (VarE v _)            = singleton v
+    fvs (UnopE _ e _)         = fvs e
+    fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE v _ e1 e2 _)    = delete v (fvs e1 <> fvs e2)
+    fvs (LetRefE v _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (LetDeclE decl e _)   = fvs decl <> (fvs e <\\> binders decl)
+    fvs (CallE v es _)        = singleton v <> fvs es
+    fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (UntilE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (TimesE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
+    fvs (ArrayE es _)         = fvs es
+    fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
+    fvs (StructE _ flds _)    = fvs (map snd flds)
+    fvs (ProjE e _ _)         = fvs e
+    fvs (PrintE _ es _)       = fvs es
+    fvs ErrorE{}              = mempty
+    fvs (ReturnE _ e _)       = fvs e
+    fvs TakeE{}               = mempty
+    fvs TakesE{}              = mempty
+    fvs (EmitE e _)           = fvs e
+    fvs (EmitsE e _)          = fvs e
+    fvs (RepeatE _ e _)       = fvs e
+    fvs (ParE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs ReadE{}               = mempty
+    fvs WriteE{}              = mempty
+    fvs (StandaloneE e _)     = fvs e
+    fvs (MapE _ v _ _)        = singleton v
+    fvs (FilterE v _ _)       = singleton v
+    fvs (StmE stms _)         = fvs stms
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
+
+instance Fvs GenInterval Var where
+    fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 instance Fvs [Stm] Var where
     fvs []                     = mempty
@@ -513,9 +524,9 @@ instance Pretty Exp where
         ppr ann <+> text "times" <+> ppr e1 <+/>
         ppr e2
 
-    pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+    pprPrec _ (ForE ann v tau gint e3 _) =
         ppr ann <+> text "for" <+> pprSig v tau <+>
-        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <+/>
+        text "in" <+> ppr gint <+/>
         ppr e3
 
     pprPrec _ (ArrayE es _) =
@@ -594,6 +605,13 @@ instance Pretty Exp where
 
     pprPrec _ (StmE stms _) =
         ppr stms
+
+instance Pretty GenInterval where
+    ppr (FromToInclusive e1 e2 _) =
+        brackets $ ppr e1 <> colon <> ppr e2
+
+    ppr (StartLen e1 e2 _) =
+        brackets $ ppr e1 <> comma <+> ppr e2
 
 instance Pretty VarBind where
     pprPrec p (VarBind v isRef maybe_tau) =

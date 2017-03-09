@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Backend.C
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -1189,7 +1189,7 @@ cgExp e k =
             cgExpOneshot e_body
         runKont k CVoid
 
-    go (ForE _ v v_tau e_start e_len e_body l) k = do
+    go (ForE _ v v_tau gint e_body l) k = do
         cv     <- cvar v
         cv_tau <- cgType v_tau
         extendVars [(v, v_tau)] $
@@ -1197,11 +1197,10 @@ cgExp e k =
             appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
             cgLoop Nothing $ do
                 useCId cv
-                ce_start <- cgExpOneshot e_start
-                ce_len   <- cgExpOneshot e_len
-                citems   <- inNewBlock_ $ cgExpVoid e_body
+                (ce_start, ce_test) <- cgGenInterval gint
+                citems              <- inNewBlock_ $ cgExpVoid e_body
                 appendStm $ rl l [cstm|for ($id:cv = $ce_start;
-                                            $id:cv < $(ce_start + ce_len);
+                                            $(ce_test cv);
                                             $id:cv++) {
                                          $items:citems
                                        }|]
@@ -1329,6 +1328,20 @@ cgConstExp e (CInit cinit) k = do
 
 cgConstExp _ ce k =
     runKont k ce
+
+-- | Generate loop initialization and loop test for a 'GenInterval Exp'.
+cgGenInterval :: IsLabel l
+              => GenInterval Exp
+              -> Cg l (CExp l, C.Id -> CExp l)
+cgGenInterval (FromToInclusive e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i <= $ce2|])
+
+cgGenInterval (StartLen e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i < $(ce1 + ce2)|])
 
 -- | Generate code for a looping construct. Any identifiers used in the body of
 -- the loop are marked as used again after code for the body has been generated
@@ -2052,23 +2065,22 @@ cgComp comp klbl = cgSteps (unComp comp)
             cgLabel l_inner
         newScope $ runKont k CVoid
 
-    cgStep (ForC l _ v v_tau e_start e_len c_body sloc) _ k = do
+    cgStep (ForC l _ v v_tau gint c_body sloc) _ k = do
         cv     <- cvar v
         cv_tau <- cgType v_tau
-        extendVars     [(v, v_tau)] $
+        extendVars [(v, v_tau)] $
             extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
             appendDecl $ rl sloc [cdecl|$ty:cv_tau $id:cv;|]
             cgLoop (Just l) $ do
                 useCId cv
-                ce_start <- cgExpOneshot e_start
-                ce_len   <- cgExpOneshot e_len
-                citems   <- inNewBlock_ $ do
-                            l_inner <- gensym "inner_fork"
-                            cgCompVoid c_body l_inner
-                            cgLabel l_inner
+                (ce_start, ce_test) <- cgGenInterval gint
+                citems              <- inNewBlock_ $ do
+                                       l_inner <- gensym "inner_fork"
+                                       cgCompVoid c_body l_inner
+                                       cgLabel l_inner
                 appendStm $
                   rl sloc [cstm|for ($id:cv = $ce_start;
-                                     $id:cv < $(ce_start + ce_len);
+                                     $(ce_test cv);
                                      $id:cv++) {
                                   $items:citems
                                 }|]

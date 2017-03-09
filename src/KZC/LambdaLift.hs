@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.LambdaLift
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -243,10 +243,9 @@ liftExp (AssignE e1 e2 l) =
 liftExp (WhileE e1 e2 l) =
     WhileE <$> liftExp e1 <*> liftExp e2 <*> pure l
 
-liftExp (ForE ann v tau e1 e2 e3 l) =
-    ForE ann v tau <$> liftExp e1
-                   <*> liftExp e2
-                   <*> extendVars [(v, tau)] (liftExp e3)
+liftExp (ForE ann v tau int e l) =
+    ForE ann v tau <$> traverse liftExp int
+                   <*> extendVars [(v, tau)] (liftExp e)
                    <*> pure l
 
 liftExp (ArrayE es l) =

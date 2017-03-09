@@ -442,8 +442,8 @@ evalStep LetC{} =
 evalStep (WhileC _ e c _) =
     evalWhileC e c
 
-evalStep (ForC _ ann v tau e1 e2 c _) =
-    evalForC ann v tau e1 e2 c
+evalStep (ForC _ ann v tau gint c _) =
+    evalForC ann v tau gint c
 
 evalStep (LiftC l e s) = do
     val <- withSummaryContext e $ evalExp e
@@ -864,8 +864,8 @@ evalExp e =
     eval _flags (WhileE e1 e2 _) =
         evalWhileE e1 e2
 
-    eval _flags (ForE ann v tau e1 e2 e3 _) =
-        evalForE ann v tau e1 e2 e3
+    eval _flags (ForE ann v tau gint e _) =
+        evalForE ann v tau gint e
 
     eval flags e@(ArrayE es _) = do
         (_, tau)   <- inferExp e >>= checkArrT
@@ -1138,11 +1138,10 @@ evalForE :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type
-         -> Exp
-         -> Exp
+         -> GenInterval Exp
          -> Exp
          -> EvalM l m (Val l m Exp)
-evalForE ann v tau e1 e2 e3 = do
+evalForE ann v tau gint e3 = do
     start <- evalExp e1
     len   <- evalExp e2
     withUniqVar v $ \v' ->
@@ -1150,6 +1149,8 @@ evalForE ann v tau e1 e2 e3 = do
         extendVars [(v, tau)] $
         go v' start len
   where
+    (e1, e2) = toStartLenGenInt gint
+
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
     go v' start len | Just i_start <- fromIntV start,
                       Just i_len   <- fromIntV len =
@@ -1181,11 +1182,10 @@ evalForC :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type
-         -> Exp
-         -> Exp
+         -> GenInterval Exp
          -> Comp l
          -> EvalM l m (Val l m (Comp l))
-evalForC ann v tau e1 e2 c3 = do
+evalForC ann v tau gint c3 = do
     start <- evalExp e1
     len   <- evalExp e2
     withUniqVar v $ \v' ->
@@ -1193,6 +1193,8 @@ evalForC ann v tau e1 e2 c3 = do
         extendVars [(v, tau)] $
         go v' start len
   where
+    (e1, e2) = toStartLenGenInt gint
+
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m (Comp l))
     go v' start len | Just i_start <- fromIntV start,
                       Just i_len   <- fromIntV len =

@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.Lut
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -425,11 +425,14 @@ lutStats e =
         go e1
         go e2
 
-    go (ForE _ _ _ e1 e2 e3 _) = do
+    go (ForE _ _ _ gint e3 _) = do
         hasLoop
         go e1
         go e2
         go e3
+      where
+        e1, e2 :: Exp
+        (e1, e2) = toStartLenGenInt gint
 
     go (ArrayE es _) =
         mapM_ go es
