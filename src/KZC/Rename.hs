@@ -152,7 +152,6 @@ instance Rename Exp where
     rn (ArrayE es l) =
         ArrayE <$> rn es <*> pure l
 
-
     rn (IdxE e1 e2 len l) =
         IdxE <$> rn e1 <*> rn e2 <*> pure len <*> pure l
 
