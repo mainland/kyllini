@@ -443,9 +443,9 @@ useDecl (LetExtFunD f ns vbs tau_ret l) m = do
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-useDecl (LetStructD s flds l) m = do
+useDecl (StructD s flds l) m = do
     x <- extendStructs [StructDef s flds l] m
-    return (LetStructD s flds l, x)
+    return (StructD s flds l, x)
 
 useDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $

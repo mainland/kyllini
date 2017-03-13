@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.LutToGen
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -135,7 +135,7 @@ lutExp e info = do
     maybeMkLUT :: Maybe (Var, StructDef) -> G l m (Var, StructDef)
     maybeMkLUT Nothing = do
         structdef@(StructDef struct flds _) <- mkStructDef
-        appendTopDecl $ LetStructD struct flds noLoc
+        appendTopDecl $ StructD struct flds noLoc
         extendStructs [structdef] $ do
           e'    <- lowerLUTVars (toList $ lutInVars info) e
           v_lut <- mkLUT structdef e'

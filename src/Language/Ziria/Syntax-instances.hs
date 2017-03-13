@@ -7,11 +7,11 @@ instance Located Struct where
 instance Located Field where
   locOf (Field l) = locOf l
 instance Located Decl where
+  locOf (StructD _ l) = locOf l
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetFunExternalD _ _ _ _ l) = locOf l
-  locOf (LetStructD _ l) = locOf l
   locOf (LetCompD _ _ _ _ l) = locOf l
   locOf (LetFunCompD _ _ _ _ _ _ l) = locOf l
 instance Located Exp where

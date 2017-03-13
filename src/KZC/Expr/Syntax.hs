@@ -204,11 +204,11 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = LetD Var Type Exp !SrcLoc
+data Decl = StructD Struct [(Field, Type)] !SrcLoc
+          | LetD Var Type Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
           | LetFunD Var [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
           | LetExtFunD Var [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
-          | LetStructD Struct [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -619,11 +619,11 @@ instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
 instance Summary Decl where
+    summary (StructD s _ _)        = text "definition of" <+> ppr s
     summary (LetD v _ _ _)         = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)  = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructD s _ _)     = text "definition of" <+> ppr s
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -666,6 +666,10 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
+    pprPrec p (StructD s flds _) =
+        parensIf (p > appPrec) $
+        text "struct" <+> ppr s <+> pprStruct comma colon flds
+
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
         text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
@@ -685,10 +689,6 @@ instance Pretty Decl where
     pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
         text "fun external" <+> pprFunDecl f tvks vbs tau
-
-    pprPrec p (LetStructD s flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> pprStruct comma colon flds
 
     pprList decls = stack (map ppr decls)
 
@@ -1132,18 +1132,18 @@ instance Binders WildVar Var where
     binders (TameV v) = singleton v
 
 instance Fvs Decl Var where
+    fvs StructD{}               = mempty
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetRefD v _ e _)       = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs LetExtFunD{}            = mempty
-    fvs LetStructD{}            = mempty
 
 instance Binders Decl Var where
+    binders StructD{}              = mempty
     binders (LetD v _ _ _)         = singleton v
     binders (LetRefD v _ _ _)      = singleton v
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
-    binders LetStructD{}           = mempty
 
 instance Fvs Exp Var where
     fvs ConstE{}              = mempty
@@ -1191,11 +1191,11 @@ instance HasVars WildVar Var where
     allVars (TameV v) = singleton v
 
 instance HasVars Decl Var where
+    allVars StructD{}                = mempty
     allVars (LetD v _ e _)           = singleton v <> allVars e
     allVars (LetRefD v _ e _)        = singleton v <> allVars e
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
-    allVars LetStructD{}             = mempty
 
 instance HasVars Exp Var where
     allVars ConstE{}              = mempty
@@ -1296,6 +1296,9 @@ instance Subst Type TyVar Omega where
     substM T       = pure T
 
 instance Subst Type TyVar Decl where
+    substM decl@StructD{} =
+        pure decl
+
     substM (LetD v tau e l) =
         LetD v <$> substM tau <*> substM e <*> pure l
 
@@ -1307,9 +1310,6 @@ instance Subst Type TyVar Decl where
 
     substM (LetExtFunD v alphas vbs tau l) =
         LetExtFunD v alphas <$> substM vbs <*> substM tau <*> pure l
-
-    substM decl@LetStructD{} =
-        pure decl
 
 instance Subst Type TyVar Exp where
     substM e@ConstE{} =
@@ -1519,6 +1519,9 @@ instance Freshen (TyVar, Kind) Type TyVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen Decl Exp Var where
+    freshen decl@StructD{} k =
+        k decl
+
     freshen (LetD v tau e l) k = do
         e' <- substM e
         freshen v $ \v' ->
@@ -1540,9 +1543,6 @@ instance Freshen Decl Exp Var where
         freshen vbs $ \vbs' -> do
         decl' <- LetExtFunD v' alphas vbs' tau <$> pure l
         k decl'
-
-    freshen decl@LetStructD{} k =
-        k decl
 
 instance Freshen Var Exp Var where
     freshen v@(Var n) =

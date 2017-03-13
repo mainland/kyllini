@@ -680,7 +680,7 @@ decl :
   | 'var' ID ':' base_type maybe_initializer
       { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | struct
-      { LetStructD $1 (srclocOf $1) }
+      { StructD $1 (srclocOf $1) }
   | 'fun' 'external' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type

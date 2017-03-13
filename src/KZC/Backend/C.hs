@@ -450,6 +450,17 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
+cgDecl decl@(StructD s flds l) k = do
+    withSummaryContext decl $ do
+        cflds <- mapM cgField flds
+        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
+    extendStructs [StructDef s flds l] k
+  where
+    cgField :: (Field, Type) -> Cg l C.FieldGroup
+    cgField (fld, tau) = do
+        ctau <- cgType tau
+        return [csdecl|$ty:ctau $id:(cfield fld);|]
+
 cgDecl (LetD decl _) k = do
     flags <- askConfig
     cgLocalDecl flags decl k
@@ -530,17 +541,6 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
 
     cf :: C.Id
     cf = C.Id ("__kz_" ++ namedString f) l
-
-cgDecl decl@(LetStructD s flds l) k = do
-    withSummaryContext decl $ do
-        cflds <- mapM cgField flds
-        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
-    extendStructs [StructDef s flds l] k
-  where
-    cgField :: (Field, Type) -> Cg l C.FieldGroup
-    cgField (fld, tau) = do
-        ctau <- cgType tau
-        return [csdecl|$ty:ctau $id:(cfield fld);|]
 
 cgDecl (LetCompD v tau comp _) k =
     extendVars [(bVar v, tau)] $

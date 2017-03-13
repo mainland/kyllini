@@ -760,7 +760,7 @@ decl :
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
   | struct
-      { LetStructD $1 (srclocOf $1) }
+      { StructD $1 (srclocOf $1) }
   | 'fun' 'external' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params '->' base_type

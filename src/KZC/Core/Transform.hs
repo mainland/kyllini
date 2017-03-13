@@ -88,6 +88,10 @@ transDecls (d:ds) m = do
     return (d':ds', x)
 
 transDecl :: TransformComp l m => Decl l -> m a -> m (Decl l, a)
+transDecl decl@(StructD s flds l) m = do
+    x <- extendStructs [StructDef s flds l] m
+    return (decl, x)
+
 transDecl (LetD decl s) m = do
     (decl', x) <- localDeclT decl m
     return (LetD decl' s, x)
@@ -108,10 +112,6 @@ transDecl (LetExtFunD f ns vbs tau_ret l) m = do
   where
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
-
-transDecl decl@(LetStructD s flds l) m = do
-    x <- extendStructs [StructDef s flds l] m
-    return (decl, x)
 
 transDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $

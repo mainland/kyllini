@@ -129,6 +129,11 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: MonadTc m => Decl -> (Maybe Decl -> LiftM m a) -> LiftM m a
+liftDecl (StructD s flds l) k =
+    extendStructs [StructDef s flds l] $ do
+    appendTopDecl $ StructD s flds l
+    k Nothing
+
 liftDecl decl@(LetD v tau e l) k | isPureT tau =
     extendFunFvs [(v, (v, []))] $ do
     e' <- extendLet v tau $
@@ -183,11 +188,6 @@ liftDecl (LetExtFunD f ns vbs tau_ret l) k =
   where
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
-
-liftDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $ do
-    appendTopDecl $ LetStructD s flds l
-    k Nothing
 
 nonFunFvs :: MonadTc m => Decl -> LiftM m [(Var, Type)]
 nonFunFvs decl = do

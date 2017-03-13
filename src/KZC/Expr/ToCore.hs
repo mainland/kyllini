@@ -116,6 +116,10 @@ transDecl :: (IsLabel l, MonadTc m)
           => E.Decl
           -> (Decl l -> TC m a)
           -> TC m a
+transDecl (E.StructD s flds l) k =
+    extendStructs [StructDef s flds l] $
+    k $ StructD s flds l
+
 transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
@@ -161,10 +165,6 @@ transDecl (E.LetExtFunD f ns vbs tau_ret l) k =
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-transDecl (E.LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ LetStructD s flds l
-
 transLocalDecl :: MonadTc m
                => E.Decl
                -> (LocalDecl -> TC m a)
@@ -193,13 +193,13 @@ transLocalDecl decl _ =
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
   where
     pprDeclType :: E.Decl -> Doc
+    pprDeclType E.StructD{}    = text "letstruct"
     pprDeclType (E.LetD _ tau _ _)
         | isPureishT tau       = text "let"
         | otherwise            = text "letcomp"
     pprDeclType E.LetFunD{}    = text "letfun"
     pprDeclType E.LetExtFunD{} = text "letextfun"
     pprDeclType E.LetRefD{}    = text "letref"
-    pprDeclType E.LetStructD{} = text "letstruct"
 
 transExp :: forall m . MonadTc m
          => E.Exp

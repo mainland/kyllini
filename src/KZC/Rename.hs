@@ -210,6 +210,11 @@ rnTvk :: (TyVar, Maybe Kind) -> Rn (TyVar, Maybe Kind)
 rnTvk (alpha, kappa) = (,) <$> rn alpha <*> pure kappa
 
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
+rnDecl decl@(StructD s l) k = do
+    decl' <- withSummaryContext decl $
+             StructD <$> pure s <*> pure l
+    k decl'
+
 rnDecl decl@(LetD v tau e l) k =
     extendVars (text "variable") [v] $ do
     decl' <- withSummaryContext decl $
@@ -235,11 +240,6 @@ rnDecl decl@(LetFunExternalD v vbs tau isPure l) k =
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunExternalD <$> rn v <*> rn vbs <*> rn tau <*> pure isPure <*> pure l
-    k decl'
-
-rnDecl decl@(LetStructD s l) k = do
-    decl' <- withSummaryContext decl $
-             LetStructD <$> pure s <*> pure l
     k decl'
 
 rnDecl decl@(LetCompD v tau range e l) k =

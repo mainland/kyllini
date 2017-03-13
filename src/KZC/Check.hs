@@ -325,6 +325,31 @@ checkLetExtFun f ps ztau_ret isPure l = do
 checkDecl :: Z.Decl
           -> (Ti E.Decl -> Ti a)
           -> Ti a
+checkDecl decl@(Z.StructD (Z.StructDef zs zflds l) _) k = do
+    (taus, mkLetStruct) <-
+        alwaysWithSummaryContext decl $ do
+        checkStructNotRedefined zs
+        checkDuplicates "field names" zfnames
+        taus <- mapM fromZ ztaus
+        mapM_ (`checkKind` tauK) taus
+        let mkLetStruct = do cs      <- trans zs
+                             cfnames <- mapM trans zfnames
+                             ctaus   <- mapM trans taus
+                             return $ E.StructD cs (cfnames `zip` ctaus) l
+        return (taus, mkLetStruct)
+    let mcdecl = alwaysWithSummaryContext decl mkLetStruct
+    extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
+  where
+    (zfnames, ztaus) = unzip zflds
+
+    checkStructNotRedefined :: Z.Struct -> Ti ()
+    checkStructNotRedefined s = do
+      maybe_sdef <- maybeLookupStruct zs
+      case maybe_sdef of
+        Nothing   -> return ()
+        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf sdef))
+
 checkDecl decl@(Z.LetD v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLet v ztau e l
@@ -346,31 +371,6 @@ checkDecl decl@(Z.LetFunExternalD f ps ztau_ret isPure l) k = do
                           checkLetExtFun f ps ztau_ret isPure l
     let mcdecl = alwaysWithSummaryContext decl mkLetExtFun
     extendVars [(f,tau)] $ k mcdecl
-
-checkDecl decl@(Z.LetStructD (Z.StructDef zs zflds l) _) k = do
-    (taus, mkLetStruct) <-
-        alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined zs
-        checkDuplicates "field names" zfnames
-        taus <- mapM fromZ ztaus
-        mapM_ (`checkKind` tauK) taus
-        let mkLetStruct = do cs      <- trans zs
-                             cfnames <- mapM trans zfnames
-                             ctaus   <- mapM trans taus
-                             return $ E.LetStructD cs (cfnames `zip` ctaus) l
-        return (taus, mkLetStruct)
-    let mcdecl = alwaysWithSummaryContext decl mkLetStruct
-    extendStructs [StructDef zs (zfnames `zip` taus) l] $ k mcdecl
-  where
-    (zfnames, ztaus) = unzip zflds
-
-    checkStructNotRedefined :: Z.Struct -> Ti ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct zs
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $

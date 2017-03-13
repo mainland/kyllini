@@ -347,6 +347,9 @@ simplDecl decl m = do
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
     preInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    preInlineUnconditionally flags decl@StructD{} =
+        postInlineUnconditionally flags decl
+
     preInlineUnconditionally _flags LetD{} =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
@@ -367,9 +370,6 @@ simplDecl decl m = do
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead = bOccInfo f == Just Dead
-
-    preInlineUnconditionally flags decl@LetStructD{} =
-        postInlineUnconditionally flags decl
 
     preInlineUnconditionally flags decl@(LetCompD v _ comp _)
         | isDead = dropBinding v >> withoutBinding m
@@ -401,6 +401,10 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    postInlineUnconditionally _flags decl@(StructD s flds l) =
+        extendStructs [StructDef s flds l] $
+        withBinding decl m
+
     postInlineUnconditionally _flags LetD{} =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
@@ -431,10 +435,6 @@ simplDecl decl m = do
         withBinding (LetExtFunD f tvks vbs tau_ret l) m
       where
         tau = funT tvks (map snd vbs) tau_ret l
-
-    postInlineUnconditionally _flags decl@(LetStructD s flds l) =
-        extendStructs [StructDef s flds l] $
-        withBinding decl m
 
     postInlineUnconditionally _flags (LetCompD v tau comp l) = do
         comp' <- extendLet v tau $

@@ -145,6 +145,23 @@ checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
+checkDecl decl@(StructD s flds l) k = do
+    alwaysWithSummaryContext decl $ do
+        checkStructNotRedefined s
+        checkDuplicates "field names" fnames
+        mapM_ (`checkKind` tauK) taus
+    extendStructs [StructDef s flds l] k
+  where
+    (fnames, taus) = unzip flds
+
+    checkStructNotRedefined :: Struct -> m ()
+    checkStructNotRedefined s = do
+      maybe_sdef <- maybeLookupStruct s
+      case maybe_sdef of
+        Nothing   -> return ()
+        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf sdef))
+
 checkDecl decl@(LetD v tau e _) k = do
     alwaysWithSummaryContext decl $ do
         void $ inferKind tau
@@ -188,23 +205,6 @@ checkDecl decl@(LetExtFunD f tvks vbs tau_ret l) k = do
   where
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
-
-checkDecl decl@(LetStructD s flds l) k = do
-    alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (`checkKind` tauK) taus
-    extendStructs [StructDef s flds l] k
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> m ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 -- | Check that we quantify only over type variables of kind Nat.
 checkNatPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()

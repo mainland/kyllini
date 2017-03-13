@@ -215,10 +215,10 @@ data Import = Import ModuleName
 data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
-data Decl l = LetD LocalDecl !SrcLoc
+data Decl l = StructD Struct [(Field, Type)] !SrcLoc
+            | LetD LocalDecl !SrcLoc
             | LetFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
             | LetExtFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
-            | LetStructD Struct [(Field, Type)] !SrcLoc
             | LetCompD BoundVar Type (Comp l) !SrcLoc
             | LetFunCompD BoundVar [(TyVar, Kind)] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -643,10 +643,10 @@ expToStms e                             = [ExpS e (srclocOf e)]
  ------------------------------------------------------------------------------}
 
 instance Summary (Decl l) where
+    summary (StructD s _ _)           = text "definition of" <+> ppr s
     summary (LetD decl _)             = summary decl
     summary (LetFunD v _ _ _ _ _)     = text "definition of" <+> ppr v
     summary (LetExtFunD v _ _ _ _)    = text "definition of" <+> ppr v
-    summary (LetStructD s _ _)        = text "definition of" <+> ppr s
     summary (LetCompD v _ _ _)        = text "definition of" <+> ppr v
     summary (LetFunCompD v _ _ _ _ _) = text "definition of" <+> ppr v
 
@@ -723,6 +723,10 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance IsLabel l => Pretty (Decl l) where
+    pprPrec p (StructD s flds _) =
+        parensIf (p > appPrec) $
+        text "struct" <+> ppr s <+> pprStruct comma colon flds
+
     pprPrec p (LetD decl _) =
         pprPrec p decl
 
@@ -734,10 +738,6 @@ instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
         text "fun external" <+> pprFunDecl (bVar f) tvks vbs tau
-
-    pprPrec p (LetStructD s flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> pprStruct comma colon flds
 
     pprPrec p (LetCompD v tau c _) =
         parensIf (p > appPrec) $
@@ -1029,18 +1029,18 @@ instance Binders WildVar Var where
     binders (TameV v) = singleton (bVar v)
 
 instance Fvs (Decl l) Var where
+    fvs StructD{}                   = mempty
     fvs (LetD decl _)               = fvs decl
     fvs (LetFunD v _ vbs _ e _)     = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
     fvs LetExtFunD{}                = mempty
-    fvs LetStructD{}                = mempty
     fvs (LetCompD v _ ccomp _)      = delete (bVar v) (fvs ccomp)
     fvs (LetFunCompD v _ vbs _ e _) = delete (bVar v) (fvs e) <\\> fromList (map fst vbs)
 
 instance Binders (Decl l) Var where
+    binders StructD{}                 = mempty
     binders (LetD decl _)             = binders decl
     binders (LetFunD v _ _ _ _ _)     = singleton (bVar v)
     binders (LetExtFunD v _ _ _ _)    = singleton (bVar v)
-    binders LetStructD{}              = mempty
     binders (LetCompD v _ _ _)        = singleton (bVar v)
     binders (LetFunCompD v _ _ _ _ _) = singleton (bVar v)
 
@@ -1142,10 +1142,10 @@ instance HasVars WildVar Var where
     allVars (TameV v) = singleton (bVar v)
 
 instance HasVars (Decl l) Var where
+    allVars StructD{}                   = mempty
     allVars (LetD decl _)               = allVars decl
     allVars (LetFunD v _ vbs _ e _)     = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _)    = singleton (bVar v) <> fromList (map fst vbs)
-    allVars LetStructD{}                = mempty
     allVars (LetCompD v _ ccomp _)      = singleton (bVar v) <> allVars ccomp
     allVars (LetFunCompD v _ vbs _ e _) = singleton (bVar v) <> fromList (map fst vbs) <> allVars e
 
@@ -1596,6 +1596,9 @@ instance Subst Exp Var (Comp l) where
  ------------------------------------------------------------------------------}
 
 instance Freshen (Decl l) Exp Var where
+    freshen decl@StructD{} k =
+        k decl
+
     freshen (LetD decl l) k =
         freshen decl $ \decl' ->
         k $ LetD decl' l
@@ -1611,9 +1614,6 @@ instance Freshen (Decl l) Exp Var where
         freshen vbs $ \vbs' -> do
         decl' <- LetExtFunD v' tvks vbs' tau <$> pure l
         k decl'
-
-    freshen decl@LetStructD{} k =
-        k decl
 
     freshen (LetCompD v tau comp l) k = do
         comp' <- substM comp

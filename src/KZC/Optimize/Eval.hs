@@ -108,6 +108,10 @@ evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
+evalDecl (StructD s flds l) k =
+    extendStructs [StructDef s flds l] $
+    k $ const . return $ StructD s flds l
+
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
   where
@@ -150,10 +154,6 @@ evalDecl (LetExtFunD f tvks vbs tau_ret l) k =
   where
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
-
-evalDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ const . return $ LetStructD s flds l
 
 evalDecl decl@(LetCompD v tau comp s) k =
     withSummaryContext decl $

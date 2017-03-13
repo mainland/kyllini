@@ -159,11 +159,11 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = LetD Var (Maybe Type) Exp !SrcLoc
+data Decl = StructD StructDef !SrcLoc
+          | LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
           | LetFunD Var [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
-          | LetStructD StructDef !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
           | LetFunCompD Var (Maybe (Int, Int)) [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -330,11 +330,11 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Fvs Decl Var where
+    fvs StructD{}                      = mempty
     fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
     fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
     fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
     fvs LetFunExternalD{}              = mempty
-    fvs LetStructD{}                   = mempty
     fvs d@(LetCompD _ _ _ e _)         = fvs e <\\> binders d
     fvs d@(LetFunCompD  _ _ _ _ _ e _) = fvs e <\\> binders d
 
@@ -388,11 +388,11 @@ instance Fvs [Stm] Var where
     fvs (ExpS e _      : cmds) = fvs e <> fvs cmds
 
 instance Binders Decl Var where
+    binders StructD{}                     = mempty
     binders (LetD v _ _ _)                = singleton v
     binders (LetRefD v _ _ _)             = singleton v
     binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetFunExternalD v ps _ _ _)  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders LetStructD{}                  = mempty
     binders (LetCompD v _ _ _ _)          = singleton v
     binders (LetFunCompD v _ _ ps _ _ _ ) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
@@ -403,11 +403,11 @@ instance Binders Decl Var where
  ------------------------------------------------------------------------------}
 
 instance Summary Decl where
+    summary (StructD s _)               = text "definition of" <+> summary s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructD s _)            = text "definition of" <+> summary s
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
     summary (LetFunCompD v _ _ _ _ _ _) = text "definition of" <+> ppr v
 
@@ -456,6 +456,9 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
+    pprPrec _ (StructD def _) =
+        ppr def
+
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
         text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e
@@ -485,9 +488,6 @@ instance Pretty Decl where
         ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
       where
         pureDoc = if isPure then empty else text "impure"
-
-    pprPrec _ (LetStructD def _) =
-        ppr def
 
     pprPrec _ (LetCompD v tau range e _) =
         text "let" <+> text "comp" <+> pprRange range <+>

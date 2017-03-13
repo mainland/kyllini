@@ -322,7 +322,7 @@ m1 .>>. m2 = do
     return $ m1' <> m2'
 
 isStructD :: Decl l -> Bool
-isStructD LetStructD{} = True
+isStructD StructD{} = True
 isStructD _            = False
 
 isConstE :: Exp -> Bool
