@@ -459,9 +459,13 @@ instance Pretty Decl where
     pprPrec _ (StructD def _) =
         ppr def
 
-    pprPrec p (LetD v tau e _) =
+    pprPrec p (LetD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
         text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e
+
+    pprPrec p (LetD v tau e _) =
+        parensIf (p > appPrec) $
+        text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e <> semi
 
     pprPrec p (LetRefD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
@@ -469,7 +473,7 @@ instance Pretty Decl where
 
     pprPrec p (LetRefD v tau e _) =
         parensIf (p > appPrec) $
-        text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
+        text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e <> semi
 
     pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
@@ -489,10 +493,15 @@ instance Pretty Decl where
       where
         pureDoc = if isPure then empty else text "impure"
 
-    pprPrec _ (LetCompD v tau range e _) =
+    pprPrec _ (LetCompD v tau range e _) | classicDialect =
         text "let" <+> text "comp" <+> pprRange range <+>
         pprTypeSig v tau <+> text "=" <+/> ppr e
 
+    pprPrec _ (LetCompD v tau range e _) =
+        text "let" <+> text "comp" <+> pprRange range <+>
+        pprTypeSig v tau <+> text "=" <+/> ppr e <> semi
+
+    -- We never see this form in the new dialect.
     pprPrec _ (LetFunCompD f range tvks ps _tau e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
         ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
