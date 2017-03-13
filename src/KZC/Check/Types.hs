@@ -23,6 +23,7 @@ module KZC.Check.Types (
     StructDef(..),
     Type(..),
     Kind(..),
+    Tvk,
     MetaTv(..),
     MetaKv(..),
     R(..),
@@ -96,7 +97,7 @@ data Type -- Base Types
           | NatT Int !SrcLoc
 
           -- forall type
-          | ForallT [(TyVar, Kind)] Type !SrcLoc
+          | ForallT [Tvk] Type !SrcLoc
 
           -- Type variables
           | TyVarT TyVar !SrcLoc
@@ -128,6 +129,8 @@ data Kind = TauK R -- ^ Base types, including arrays of base types
 data R = R Traits
        | MetaR MetaRv
   deriving (Eq, Ord, Show)
+
+type Tvk = (TyVar, Kind)  
 
 -- | Traits meta-variable
 data MetaRv = MetaRv Uniq Traits TraitsRef
@@ -303,7 +306,7 @@ instance Pretty R where
     pprPrec p (MetaR mrv) = text (showsPrec p mrv "")
 
 -- | Pretty-print a forall quantifier
-pprForall :: [(TyVar, Kind)] -> Doc
+pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
 

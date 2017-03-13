@@ -53,6 +53,7 @@ module KZC.Expr.Syntax (
     Type(..),
     Omega(..),
     Kind(..),
+    Tvk,
 
     isComplexStruct,
 
@@ -207,8 +208,8 @@ data Import = Import ModuleName
 data Decl = StructD Struct [(Field, Type)] !SrcLoc
           | LetD Var Type Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
-          | LetFunD Var [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
-          | LetExtFunD Var [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
+          | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
+          | LetExtFunD Var [Tvk] [(Var, Type)] Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -342,7 +343,7 @@ data Type = UnitT !SrcLoc
           | RefT Type !SrcLoc
           | FunT [Type] Type !SrcLoc
           | NatT Int !SrcLoc
-          | ForallT [(TyVar, Kind)] Type !SrcLoc
+          | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -357,6 +358,8 @@ data Kind = TauK Traits -- ^ Base types, including arrays of base types
           | PhiK        -- ^ Function types
           | NatK        -- ^ Type-level natural number
   deriving (Eq, Ord, Read, Show)
+
+type Tvk = (TyVar, Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
@@ -1015,7 +1018,7 @@ instance Pretty Kind where
     ppr NatK   = text "N"
 
 -- | Pretty-print a forall quantifier
-pprForall :: [(TyVar, Kind)] -> Doc
+pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
 
@@ -1033,7 +1036,7 @@ pprKindSig (tau, kappa) =
     parens (ppr tau <+> colon <+> ppr kappa)
 
 -- | Pretty-print a function declaration.
-pprFunDecl :: Var -> [(TyVar, Kind)] -> [(Var, Type)] -> Type -> Doc
+pprFunDecl :: Var -> [Tvk] -> [(Var, Type)] -> Type -> Doc
 pprFunDecl f tvks vbs tau_ret =
     group $
     nest 2 $

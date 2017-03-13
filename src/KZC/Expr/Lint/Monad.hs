@@ -8,7 +8,7 @@
 
 -- |
 -- Module      :  KZC.Expr.Lint.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -332,7 +332,7 @@ lookupVar v =
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
-extendTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
+extendTyVars :: MonadTc m => [Tvk] -> m a -> m a
 extendTyVars = extendTcEnv tyVars (\env x -> env { tyVars = x })
 
 lookupTyVar :: MonadTc m => TyVar -> m Kind
@@ -366,7 +366,7 @@ askTyVarTypeSubst = asksTc tyVarTypes
 -- | Record the set of type variables quantified over an ST type inside the term
 -- of that type. For example, inside a term of type @forall a b . ST (C c) a a
 -- b@, we mark @a@ and @b@ as locally quantified.
-localSTTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
+localSTTyVars :: MonadTc m => [Tvk] -> m a -> m a
 localSTTyVars tvks =
     localTc (\env -> env { stTyVars = Set.fromList (map fst tvks) })
 
@@ -412,7 +412,7 @@ extendLet _v tau k =
 
 extendLetFun :: MonadTc m
              => v
-             -> [(TyVar, Kind)]
+             -> [Tvk]
              -> [(Var, Type)]
              -> Type
              -> m a

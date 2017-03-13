@@ -313,7 +313,7 @@ inferExp (UnopE op e1 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -368,7 +368,7 @@ inferExp (BinopE op e1 e2 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type

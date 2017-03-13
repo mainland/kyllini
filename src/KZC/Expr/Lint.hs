@@ -207,19 +207,19 @@ checkDecl decl@(LetExtFunD f tvks vbs tau_ret l) k = do
     tau = funT tvks (map snd vbs) tau_ret l
 
 -- | Check that we quantify only over type variables of kind Nat.
-checkNatPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatPoly :: forall m . MonadTc m => [Tvk] -> m ()
 checkNatPoly tvks =
     extendTyVars tvks $
     mapM_ check tvks
   where
-    check :: (TyVar, Kind) -> m ()
+    check :: Tvk -> m ()
     check (alpha, kappa) = checkKind (tyVarT alpha) kappa
 
 -- | Check that we quantify only over type variables of kind Tau or Nat.
-checkNatTauPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatTauPoly :: forall m . MonadTc m => [Tvk] -> m ()
 checkNatTauPoly = mapM_ check
   where
-    check :: (TyVar, Kind) -> m ()
+    check :: Tvk -> m ()
     check (_alpha, TauK{}) =
         return ()
 
@@ -313,7 +313,7 @@ inferExp (UnopE op e1 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -368,7 +368,7 @@ inferExp (BinopE op e1 e2 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -1066,7 +1066,7 @@ checkRefT tau =
     faildoc $ nest 2 $ group $
     text "Expected ref type but got:" <+/> ppr tau
 
-checkFunT :: MonadTc m => Type -> m ([(TyVar, Kind)], [Type], Type)
+checkFunT :: MonadTc m => Type -> m ([Tvk], [Type], Type)
 checkFunT (ForallT tvks (FunT taus tau_ret _) _) =
     return (tvks, taus, tau_ret)
 

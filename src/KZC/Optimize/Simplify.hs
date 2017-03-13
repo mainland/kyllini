@@ -68,22 +68,22 @@ type OutComp l = Comp l
 type Theta l = Map InVar (SubstRng l)
 
 data SubstRng l = SuspExp     (Theta l) InExp
-                | SuspFun     (Theta l) [(TyVar, Kind)] [(Var, Type)] Type InExp
+                | SuspFun     (Theta l) [Tvk] [(Var, Type)] Type InExp
                 | SuspComp    (Theta l) (InComp l)
-                | SuspFunComp (Theta l) [(TyVar, Kind)] [(Var, Type)] Type (InComp l)
+                | SuspFunComp (Theta l) [Tvk] [(Var, Type)] Type (InComp l)
                 | DoneExp     OutExp
-                | DoneFun     [(TyVar, Kind)] [(Var, Type)] Type OutExp
+                | DoneFun     [Tvk] [(Var, Type)] Type OutExp
                 | DoneComp    (OutComp l)
-                | DoneFunComp [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
+                | DoneFunComp [Tvk] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 type VarDefs l = Map OutVar (Definition l)
 
 data Definition l = Unknown
                   | BoundToExp     (Maybe OccInfo) Level OutExp
-                  | BoundToFun     (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type OutExp
+                  | BoundToFun     (Maybe OccInfo) [Tvk] [(Var, Type)] Type OutExp
                   | BoundToComp    (Maybe OccInfo) (OutComp l)
-                  | BoundToFunComp (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
+                  | BoundToFunComp (Maybe OccInfo) [Tvk] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 data Level = Top | Nested
@@ -964,7 +964,7 @@ simplStep (CallC l f0 taus0 args0 s) = do
 
     inlineFunCompRhs :: [Type]
                      -> [Arg l]
-                     -> [(TyVar, Kind)]
+                     -> [Tvk]
                      -> [(Var, Type)]
                      -> Type
                      -> Comp l
@@ -1349,7 +1349,7 @@ simplE (CallE f0 taus0 es0 s) = do
 
     inlineFunRhs :: [Type]
                  -> [Exp]
-                 -> [(TyVar, Kind)]
+                 -> [Tvk]
                  -> [(Var, Type)]
                  -> Type
                  -> Exp
@@ -1778,7 +1778,7 @@ shouldInlineExpUnconditionally _ =
     return False
 
 shouldInlineFunUnconditionally :: MonadTc m
-                               => [(TyVar, Kind)]
+                               => [Tvk]
                                -> [(Var, Type)]
                                -> Type
                                -> OutExp
@@ -1795,7 +1795,7 @@ shouldInlineCompUnconditionally _ =
     asksConfig (testDynFlag AlwaysInlineComp)
 
 shouldInlineCompFunUnconditionally :: MonadTc m
-                                   => [(TyVar, Kind)]
+                                   => [Tvk]
                                    -> [(Var, Type)]
                                    -> Type
                                    -> OutComp l

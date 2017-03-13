@@ -48,6 +48,7 @@ module Language.Ziria.Syntax (
     StructDef(..),
     Type(..),
     Kind,
+    Tvk,
     Trait(..),
     Traits,
     traits,
@@ -162,10 +163,10 @@ data Import = Import ModuleName
 data Decl = StructD StructDef !SrcLoc
           | LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
-          | LetFunD Var [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetFunCompD Var (Maybe (Int, Int)) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -308,11 +309,13 @@ data Type = UnitT !SrcLoc
           -- | Elided type
           | UnknownT !SrcLoc
 
-          | ForallT [(TyVar, Maybe Kind)] Type !SrcLoc
+          | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 type Kind = Traits
+
+type Tvk = (TyVar, Maybe Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
@@ -853,7 +856,7 @@ pprRange :: Maybe (Int, Int) -> Doc
 pprRange Nothing           = empty
 pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
 
-pprForall :: [(TyVar, Maybe Kind)] -> Doc
+pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
 

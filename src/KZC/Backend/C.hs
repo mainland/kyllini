@@ -594,7 +594,7 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
 
 -- Perform type application and return type variables of kind Nat, which become
 -- function arguments, and the non-Nat types to which the function was applied.
-splitNats :: forall l a . [(TyVar, Kind)]
+splitNats :: forall l a . [Tvk]
           -> [Type]
           -> ([TyVar] -> [Type] -> Cg l a)
           -> Cg l a
@@ -1141,7 +1141,7 @@ cgExp e k =
       where
         -- Perform type application and return the type variables that are of
         -- kind Nat along with the types to which they are bound.
-        tyApplyNats :: [(TyVar, Kind)] -> [Type] -> [(TyVar, Type)]
+        tyApplyNats :: [Tvk] -> [Type] -> [(TyVar, Type)]
         tyApplyNats tvks taus =
             [(alpha, tau) | ((alpha, kappa), tau) <- tvks `zip` taus,
                             isNatK kappa]

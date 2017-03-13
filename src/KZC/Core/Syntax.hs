@@ -56,6 +56,7 @@ module KZC.Core.Syntax (
     Omega(..),
     Trait(..),
     Kind(..),
+    Tvk,
 
     mkBoundVar,
 
@@ -143,6 +144,7 @@ import KZC.Expr.Syntax (Var(..),
                         Omega(..),
                         Trait(..),
                         Kind(..),
+                        Tvk,
 
                         isComplexStruct,
 
@@ -217,10 +219,10 @@ data Main l = Main (Comp l) Type
 
 data Decl l = StructD Struct [(Field, Type)] !SrcLoc
             | LetD LocalDecl !SrcLoc
-            | LetFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
-            | LetExtFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
+            | LetFunD BoundVar [Tvk] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD BoundVar [Tvk] [(Var, Type)] Type !SrcLoc
             | LetCompD BoundVar Type (Comp l) !SrcLoc
-            | LetFunCompD BoundVar [(TyVar, Kind)] [(Var, Type)] Type (Comp l) !SrcLoc
+            | LetFunCompD BoundVar [Tvk] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data View = IdxVW Var Exp (Maybe Int) !SrcLoc

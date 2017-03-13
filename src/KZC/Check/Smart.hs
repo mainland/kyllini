@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.Check.Smart
--- Copyright   :  (c) 2015 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -151,11 +151,11 @@ forallST alphas omega s a b l =
 cT :: Type -> Type
 cT nu = C nu (srclocOf nu)
 
-funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT :: [Tvk] -> [Type] -> Type -> SrcLoc -> Type
 funT []   taus tau l = FunT taus tau l
 funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
-forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT :: [Tvk] -> Type -> Type
 forallT [] tau =
     tau
 

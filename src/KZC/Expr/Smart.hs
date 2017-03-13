@@ -4,7 +4,7 @@
 
 -- |
 -- Module      : KZC.Expr.Smart
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -221,16 +221,16 @@ unSTC (ForallT _ tau@ST{} _) = unSTC tau
 unSTC (ST (C tau) _ _ _ _)   = tau
 unSTC tau                    = tau
 
-funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT :: [Tvk] -> [Type] -> Type -> SrcLoc -> Type
 funT []   taus tau l = FunT taus tau l
 funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
-unFunT :: Monad m => Type -> m ([(TyVar, Kind)], [Type], Type)
+unFunT :: Monad m => Type -> m ([Tvk], [Type], Type)
 unFunT (ForallT tvks (FunT taus tau _) _) = return (tvks, taus, tau)
 unFunT (FunT taus tau _)                  = return ([], taus, tau)
 unFunT _                                  = fail "unFunT: not a function"
 
-forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT :: [Tvk] -> Type -> Type
 forallT []   tau = tau
 forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
 

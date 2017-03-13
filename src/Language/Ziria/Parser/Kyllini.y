@@ -594,15 +594,15 @@ opt_kind :
     {- empty -} { Nothing }
   | ':' traits  { Just $2 }
 
-tvk :: { (TyVar, Maybe Kind) }
+tvk :: { Tvk }
 tvk : tyvar opt_kind { ($1, $2) }
 
-tvks :: { [(TyVar, Maybe Kind)] }
+tvks :: { [Tvk] }
 tvks :
     {- empty -}        { [] }
   | '<' tvks_rlist '>' { rev $2 }
 
-tvks_rlist :: { RevList (TyVar, Maybe Kind) }
+tvks_rlist :: { RevList Tvk }
 tvks_rlist :
     tvk                { rsingleton $1 }
   | tvks_rlist ',' tvk { rcons $3 $1 }

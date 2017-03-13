@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Check.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -198,7 +198,7 @@ askEnvMtvs =
           Just tau  -> (Set.toList . fvs) <$> compress tau
           Nothing   -> return [mtv]
 
-extendTyVars :: [(TyVar, Kind)] -> Ti a -> Ti a
+extendTyVars :: [Tvk] -> Ti a -> Ti a
 extendTyVars = extendEnv tyVars (\env x -> env { tyVars = x })
 
 lookupTyVar :: TyVar -> Ti Kind

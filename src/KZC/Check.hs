@@ -1386,7 +1386,7 @@ generalize tau0 =
     go tau =
         panicdoc $ text "Asked to generalize non-ST/non-function type:" <+> (text . show) tau
 
-    gen :: Type -> Ti [(TyVar, Kind)]
+    gen :: Type -> Ti [Tvk]
     gen tau = do
         mtvs     <- (<\\>) <$> metaTvs tau <*> askEnvMtvs
         alphas   <- freshVars (length mtvs) ((Set.toList . allVars) tau)
@@ -1420,7 +1420,7 @@ instantiate tau0 =
     go tau =
         return (tau, id)
 
-    instFunT :: [(TyVar, Kind)]
+    instFunT :: [Tvk]
              -> [Type]
              -> Type
              -> SrcLoc
@@ -1442,7 +1442,7 @@ instantiate tau0 =
             panicdoc $
             text "instantiate: expected to coerce a call, but got:" <+> ppr ce
 
-    instTyVars :: [(TyVar, Kind)] -> Ti ([Type], Map TyVar Type, Set TyVar)
+    instTyVars :: [Tvk] -> Ti ([Type], Map TyVar Type, Set TyVar)
     instTyVars tvks = do
         mtvs      <- mapM (\(alpha, kappa) -> newMetaTvT kappa alpha) tvks
         let theta =  Map.fromList (alphas `zip` mtvs)
@@ -2324,7 +2324,7 @@ instance FromZ Z.Type Type where
     fromZ (Z.ForallT tvks tau l) =
         ForallT <$> mapM fromZ tvks <*> fromZ tau <*> pure l
 
-instance FromZ (Z.TyVar, Maybe Z.Kind) (TyVar, Kind) where
+instance FromZ (Z.TyVar, Maybe Z.Kind) Tvk where
     fromZ (zalpha, Nothing) = do
         alpha <- fromZ zalpha
         kappa <- newMetaKvK NoLoc

@@ -205,8 +205,7 @@ instance Rename GenInterval where
     rn (StartLen e1 e2 l) =
         StartLen <$> rn e1 <*> rn e2 <*> pure l
 
-
-rnTvk :: (TyVar, Maybe Kind) -> Rn (TyVar, Maybe Kind)
+rnTvk :: Tvk -> Rn Tvk
 rnTvk (alpha, kappa) = (,) <$> rn alpha <*> pure kappa
 
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
