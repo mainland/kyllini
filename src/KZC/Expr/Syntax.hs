@@ -1027,7 +1027,7 @@ pprTypeSig v tau = parens (ppr v <+> colon <+> ppr tau)
 pprKindSig :: Pretty a => (a, Kind) -> Doc
 pprKindSig (tau, TauK traits)
     | Set.null traits = ppr tau
-    | otherwise       = parens (ppr tau <+> colon <+> ppr traits)
+    | otherwise       = ppr tau <+> colon <+> ppr traits
 
 pprKindSig (tau, kappa) =
     parens (ppr tau <+> colon <+> ppr kappa)

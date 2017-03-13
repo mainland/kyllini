@@ -224,30 +224,35 @@ checkLetBody e exp_ty mcdecl l = do
         return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
 checkLetFun :: Z.Var
+            -> [(Z.TyVar, Maybe Z.Kind)]
             -> [Z.VarBind]
             -> Maybe Z.Type
             -> Z.Exp
             -> SrcLoc
             -> Ti (Type, Ti E.Decl)
-checkLetFun f ps ztau_ret e l = do
-    tau     <- newMetaTvT PhiK f
-    ptaus   <- fromZ ps
-    tau_ret <- instantiateFunRetType ztau_ret
-    (tau_ret_gen, mce) <-
-        extendVars ((f,tau) : ptaus) $ do
-        mce               <- collectCheckValCtx tau_ret $
-                             checkExp e tau_ret
-        (tau_ret_gen, _)  <- generalize tau_ret
-        unifyTypes (funT [] (map snd ptaus) tau_ret_gen l) tau
-        return (tau_ret_gen, mce)
-    (tau_gen, co) <- generalize tau
-    traceVar f tau_gen
-    let mkLetFun = co $ do cf       <- trans f
-                           cptaus   <- mapM trans ptaus
-                           ctau_ret <- trans tau_ret_gen
-                           ce       <- withSummaryContext e mce
-                           return $ E.LetFunD cf [] cptaus ctau_ret ce l
-    return (tau_gen, mkLetFun)
+checkLetFun f ztvks ps ztau_ret e l = do
+    tau  <- newMetaTvT PhiK f
+    tvks <- traverse fromZ ztvks
+    extendTyVars tvks $ do
+      ptaus   <- fromZ ps
+      tau_ret <- instantiateFunRetType ztau_ret
+      (tau_ret_gen, mce) <-
+          extendVars ((f,tau) : ptaus) $ do
+          mce               <- collectCheckValCtx tau_ret $
+                               checkExp e tau_ret
+          (tau_ret_gen, _)  <- generalize tau_ret
+          unifyTypes (funT [] (map snd ptaus) tau_ret_gen l) tau
+          return (tau_ret_gen, mce)
+      (tau_gen, co) <- generalize tau
+      let tau_gen'  = forallT tvks tau_gen
+      traceVar f tau_gen'
+      let mkLetFun = co $ do cf       <- trans f
+                             ctvks    <- traverse trans tvks
+                             cptaus   <- mapM trans ptaus
+                             ctau_ret <- trans tau_ret_gen
+                             ce       <- withSummaryContext e mce
+                             return $ E.LetFunD cf ctvks cptaus ctau_ret ce l
+      return (tau_gen', mkLetFun)
   where
     -- Coerce a user-annotated function return type to a "real" function return
     -- type and instantiate it so we can check it. For example, we convert the
@@ -330,9 +335,9 @@ checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k mcdecl
 
-checkDecl decl@(Z.LetFunD f ps tau e l) k = do
+checkDecl decl@(Z.LetFunD f tvks ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ps tau e l
+                       checkLetFun f tvks ps tau e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
@@ -372,9 +377,9 @@ checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
                      checkLetComp v ztau e l
     extendVars [(v, tau)] $ k (alwaysWithSummaryContext decl mcdecl)
 
-checkDecl decl@(Z.LetFunCompD f _ ps tau e l) k = do
+checkDecl decl@(Z.LetFunCompD f _range tvks ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f ps tau e l
+                       checkLetFun f tvks ps tau e l
     let mcdecl = alwaysWithSummaryContext decl mkLetFun
     extendVars [(f,tau)] $ k mcdecl
 
@@ -1365,11 +1370,11 @@ generalize tau0 =
         return (tau, co)
       where
         checkLetFunE :: [(E.TyVar, E.Kind)] -> E.Decl -> Ti E.Decl
-        checkLetFunE ctvks (E.LetFunD cf [] cvtaus ctau ce l) =
-            return $ E.LetFunD cf ctvks cvtaus ctau ce l
+        checkLetFunE ctvks' (E.LetFunD cf ctvks cvtaus ctau ce l) =
+            return $ E.LetFunD cf (ctvks ++ ctvks') cvtaus ctau ce l
 
-        checkLetFunE ctvks (E.LetExtFunD cf [] cvtaus ctau l) =
-            return $ E.LetExtFunD cf ctvks cvtaus ctau l
+        checkLetFunE ctvks' (E.LetExtFunD cf ctvks cvtaus ctau l) =
+            return $ E.LetExtFunD cf (ctvks ++ ctvks') cvtaus ctau l
 
         checkLetFunE _ ce =
             panicdoc $
@@ -2277,6 +2282,9 @@ traceVar v tau = do
 class FromZ a b where
     fromZ :: a -> Ti b
 
+instance FromZ Z.TyVar TyVar where
+    fromZ (Z.TyVar n) = pure $ TyVar n
+
 instance FromZ Z.IP IP where
     fromZ (Z.I Nothing)  = pure $ I dEFAULT_INT_WIDTH
     fromZ (Z.I (Just w)) = pure $ I w
@@ -2289,14 +2297,15 @@ instance FromZ Z.FP FP where
     fromZ Z.FP64 = pure FP64
 
 instance FromZ Z.Type Type where
-    fromZ (Z.UnitT l)      = pure $ UnitT l
-    fromZ (Z.BoolT l)      = pure $ BoolT l
-    fromZ (Z.FixT ip l)    = FixT <$> fromZ ip <*> pure l
-    fromZ (Z.FloatT fp l)  = FloatT <$> fromZ fp <*> pure l
-    fromZ (Z.ArrT i tau l) = ArrT <$> fromZ i <*> fromZ tau <*> pure l
-    fromZ (Z.StructT s l)  = pure $ StructT s l
-    fromZ (Z.C tau l)      = C <$> fromZ tau <*> pure l
-    fromZ (Z.T l)          = T <$> pure l
+    fromZ (Z.UnitT l)        = pure $ UnitT l
+    fromZ (Z.BoolT l)        = pure $ BoolT l
+    fromZ (Z.FixT ip l)      = FixT <$> fromZ ip <*> pure l
+    fromZ (Z.FloatT fp l)    = FloatT <$> fromZ fp <*> pure l
+    fromZ (Z.ArrT i tau l)   = ArrT <$> fromZ i <*> fromZ tau <*> pure l
+    fromZ (Z.StructT s l)    = pure $ StructT s l
+    fromZ (Z.C tau l)        = C <$> fromZ tau <*> pure l
+    fromZ (Z.T l)            = T <$> pure l
+    fromZ (Z.TyVarT alpha l) = TyVarT <$> fromZ alpha <*> pure l
 
     fromZ (Z.ST omega tau1 tau2 l) =
         ST <$> fromZ omega <*> newMetaTvT tauK l <*>
@@ -2311,6 +2320,19 @@ instance FromZ Z.Type Type where
 
     fromZ (Z.UnknownT l) =
         newMetaTvT NatK l
+
+    fromZ (Z.ForallT tvks tau l) =
+        ForallT <$> mapM fromZ tvks <*> fromZ tau <*> pure l
+
+instance FromZ (Z.TyVar, Maybe Z.Kind) (TyVar, Kind) where
+    fromZ (zalpha, Nothing) = do
+        alpha <- fromZ zalpha
+        kappa <- newMetaKvK NoLoc
+        return (alpha, kappa)
+
+    fromZ (zalpha, Just ts) = do
+        alpha <- fromZ zalpha
+        return (alpha, TauK (R ts))
 
 instance FromZ (Maybe Z.Type, Kind) Type where
     fromZ (Just tau, _)    = fromZ tau

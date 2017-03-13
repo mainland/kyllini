@@ -16,6 +16,7 @@ module Language.Ziria.Syntax (
     Dialect(..),
 
     Var(..),
+    TyVar(..),
     Field(..),
     Struct(..),
 
@@ -46,6 +47,10 @@ module Language.Ziria.Syntax (
 
     StructDef(..),
     Type(..),
+    Kind,
+    Trait(..),
+    Traits,
+    traits,
 
     isComplexStruct
   ) where
@@ -60,6 +65,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Name
+import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
 import KZC.Util.Summary
@@ -69,6 +75,22 @@ import KZC.Vars
 data Dialect = Classic
              | Kyllini
   deriving (Eq, Ord, Read, Show, Enum, Bounded)
+
+newtype TyVar = TyVar Name
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString TyVar where
+    fromString s = TyVar $ fromString s
+
+instance Named TyVar where
+    namedSymbol (TyVar n) = namedSymbol n
+
+    mapName f (TyVar n) = TyVar (f n)
+
+instance Gensym TyVar where
+    gensymAt s l = TyVar <$> gensymAt s (locOf l)
+
+    uniquify (TyVar n) = TyVar <$> uniquify n
 
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)
@@ -139,11 +161,11 @@ data Import = Import ModuleName
 
 data Decl = LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
-          | LetFunD Var [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetFunD Var [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           | LetStructD StructDef !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetFunCompD Var (Maybe (Int, Int)) [(TyVar, Maybe Kind)] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -285,7 +307,12 @@ data Type = UnitT !SrcLoc
 
           -- | Elided type
           | UnknownT !SrcLoc
+
+          | ForallT [(TyVar, Maybe Kind)] Type !SrcLoc
+          | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+type Kind = Traits
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
@@ -303,13 +330,13 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Fvs Decl Var where
-    fvs d@(LetD _ _ e _)             = fvs e <\\> binders d
-    fvs d@(LetRefD _ _ e _)          = fvs e <\\> binders d
-    fvs d@(LetFunD _ _ _ e _)        = fvs e <\\> binders d
-    fvs LetFunExternalD{}            = mempty
-    fvs LetStructD{}                 = mempty
-    fvs d@(LetCompD _ _ _ e _)       = fvs e <\\> binders d
-    fvs d@(LetFunCompD  _ _ _ _ e _) = fvs e <\\> binders d
+    fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
+    fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
+    fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
+    fvs LetFunExternalD{}              = mempty
+    fvs LetStructD{}                   = mempty
+    fvs d@(LetCompD _ _ _ e _)         = fvs e <\\> binders d
+    fvs d@(LetFunCompD  _ _ _ _ _ e _) = fvs e <\\> binders d
 
 instance Fvs Exp Var where
     fvs ConstE{}              = mempty
@@ -361,13 +388,13 @@ instance Fvs [Stm] Var where
     fvs (ExpS e _      : cmds) = fvs e <> fvs cmds
 
 instance Binders Decl Var where
-    binders (LetD v _ _ _)               = singleton v
-    binders (LetRefD v _ _ _)            = singleton v
-    binders (LetFunD v ps _ _ _)         = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetFunExternalD v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders LetStructD{}                 = mempty
-    binders (LetCompD v _ _ _ _)         = singleton v
-    binders (LetFunCompD v _ ps _ _ _ )  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetD v _ _ _)                = singleton v
+    binders (LetRefD v _ _ _)             = singleton v
+    binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunExternalD v ps _ _ _)  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders LetStructD{}                  = mempty
+    binders (LetCompD v _ _ _ _)          = singleton v
+    binders (LetFunCompD v _ _ ps _ _ _ ) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -378,11 +405,11 @@ instance Binders Decl Var where
 instance Summary Decl where
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
-    summary (LetFunD v _ _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
     summary (LetStructD s _)            = text "definition of" <+> summary s
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
-    summary (LetFunCompD v _ _ _ _ _)   = text "definition of" <+> ppr v
+    summary (LetFunCompD v _ _ _ _ _ _) = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -403,6 +430,9 @@ instance Summary StructDef where
 
 instance Pretty Var where
     ppr (Var n) = ppr n
+
+instance Pretty TyVar where
+    ppr (TyVar n) = ppr n
 
 instance Pretty Field where
     ppr (Field n) = ppr n
@@ -428,7 +458,7 @@ instance Pretty Import where
 instance Pretty Decl where
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
-        text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
+        text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e
 
     pprPrec p (LetRefD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
@@ -438,11 +468,11 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
-    pprPrec _ (LetFunD f ps _tau e _) | classicDialect =
+    pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
-    pprPrec _ (LetFunD f ps _tau e _) =
-        text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+    pprPrec _ (LetFunD f tvks ps _tau e _) =
+        text "fun" <+> ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) | classicDialect =
         text "fun" <+> text "external" <+> pureDoc <+>
@@ -461,11 +491,11 @@ instance Pretty Decl where
 
     pprPrec _ (LetCompD v tau range e _) =
         text "let" <+> text "comp" <+> pprRange range <+>
-        pprSig v tau <+> text "=" <+/> ppr e
+        pprTypeSig v tau <+> text "=" <+/> ppr e
 
-    pprPrec _ (LetFunCompD f range ps _tau e _) =
+    pprPrec _ (LetFunCompD f range tvks ps _tau e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
-        ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+        ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
 
     pprList cls = stack (map ppr cls)
 
@@ -509,19 +539,19 @@ instance Pretty Exp where
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
         nest 2 $
-        text "let" <+> pprSig v tau <+>
+        text "let" <+> pprTypeSig v tau <+>
         text "="   <+>
         ppr e1 <+/> text "in" <+> ppr e2
 
     pprPrec p (LetRefE v tau e1 e2 _) | classicDialect =
         parensIf (p >= appPrec) $
-        text "var" <+> pprSig v tau <+>
+        text "var" <+> pprTypeSig v tau <+>
         pprInitializer e1 <+/>
         text "in" <+> pprPrec appPrec1 e2
 
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "let mut" <+> pprSig v tau <+>
+        text "let mut" <+> pprTypeSig v tau <+>
         pprInitializer e1 <+/>
         text "in" <+> pprPrec appPrec1 e2
 
@@ -548,7 +578,7 @@ instance Pretty Exp where
         ppr e2
 
     pprPrec _ (ForE ann v tau gint e3 _) =
-        ppr ann <+> text "for" <+> pprSig v tau <+>
+        ppr ann <+> text "for" <+> pprTypeSig v tau <+>
         text "in" <+> ppr gint <+/>
         ppr e3
 
@@ -623,11 +653,11 @@ instance Pretty Exp where
 
     pprPrec p (MapE ann v tau _) =
         parensIf (p > appPrec) $
-        text "map" <+> ppr ann <+> pprSig v tau
+        text "map" <+> ppr ann <+> pprTypeSig v tau
 
     pprPrec p (FilterE v tau _) =
         parensIf (p > appPrec) $
-        text "filter" <+> pprSig v tau
+        text "filter" <+> pprTypeSig v tau
 
     pprPrec _ (StmE stms _) =
         ppr stms
@@ -704,7 +734,7 @@ instance Pretty Stm where
         ppr l
 
     ppr (BindS v tau e _) =
-        pprSig v tau <+> text "<-" <+> ppr e
+        pprTypeSig v tau <+> text "<-" <+> ppr e
 
     ppr (ExpS e _) =
         ppr e
@@ -788,9 +818,19 @@ instance Pretty Type where
     pprPrec _ UnknownT{} =
         empty
 
-pprSig :: Var -> Maybe Type -> Doc
-pprSig v Nothing    = ppr v
-pprSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
+    pprPrec _ (ForallT tvks tau _) =
+        pprForall tvks <> ppr tau
+
+    pprPrec _ (TyVarT alpha _) =
+        ppr alpha
+
+pprTypeSig :: Pretty a => a -> Maybe Type -> Doc
+pprTypeSig v Nothing    = ppr v
+pprTypeSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
+
+pprKindSig :: Pretty a => (a, Maybe Kind)-> Doc
+pprKindSig (v, Just ts) | not (nullTraits ts) = ppr v <+> colon <+> ppr ts
+pprKindSig (v, _)                             = ppr v
 
 pprInitializer :: Maybe Exp -> Doc
 pprInitializer Nothing  = empty
@@ -803,6 +843,10 @@ pprTypeAnn (Just tau) = brackets (ppr tau)
 pprRange :: Maybe (Int, Int) -> Doc
 pprRange Nothing           = empty
 pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
+
+pprForall :: [(TyVar, Maybe Kind)] -> Doc
+pprForall []   = empty
+pprForall tvks = angles $ commasep (map pprKindSig tvks)
 
 -- %left '&&' '||'
 -- %left '==' '!='

@@ -8,6 +8,7 @@ module Main where
 import Data.Generics
 
 import KZC.Name
+import KZC.Traits
 import KZC.Util.Derive
 import KZC.Util.Uniq
 import Language.Ziria.Syntax
@@ -19,6 +20,7 @@ deriving instance Data a
 DERIVE(Uniq)
 DERIVE(Name)
 DERIVE(NameSort)
+DERIVE(TyVar)
 DERIVE(Var)
 DERIVE(Struct)
 DERIVE(Field)
@@ -38,11 +40,13 @@ DERIVE(Binop)
 DERIVE(Stm)
 DERIVE(StructDef)
 DERIVE(Type)
+DERIVE(Trait)
 
 main :: IO ()
 main = do
 #undef DERIVE
 #define DERIVE(a) deriveM deriveLocated (undefined::a)
+    DERIVE(TyVar)
     DERIVE(Var)
     DERIVE(Struct)
     DERIVE(Field)

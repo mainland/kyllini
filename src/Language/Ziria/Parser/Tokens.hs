@@ -140,6 +140,14 @@ data Token = Teof
            -- Tokens for the new dialect
            | Tmut
 
+           | TEq
+           | TOrd
+           | TBool
+           | TNum
+           | TIntegral
+           | TFractional
+           | TBits
+
            | Tarrow  -- ^ Right arrow (->)
            | Tdotdot -- ^ Range (..)
   deriving (Eq, Ord, Read, Show)
@@ -262,6 +270,14 @@ instance Pretty Token where
     -- Tokens for the new dialect
     ppr Tmut = text "mut"
 
+    ppr TEq         = text "Eq"
+    ppr TOrd        = text "Ord"
+    ppr TBool       = text "Bool"
+    ppr TNum        = text "Num"
+    ppr TIntegral   = text "Integral"
+    ppr TFractional = text "Fractional"
+    ppr TBits       = text "Bits"
+
     ppr Tarrow  = text "->"
     ppr Tdotdot = text ".."
 
@@ -327,6 +343,14 @@ keywords = [ ("C",           TC,           Nothing)
 
            -- Tokens for the new dialect
            , ("mut", Tmut, Just Kyllini)
+
+           , ("Eq",         TEq,         Just Kyllini)
+           , ("Ord",        TOrd,        Just Kyllini)
+           , ("Bool",       TBool,       Just Kyllini)
+           , ("Num",        TNum,        Just Kyllini)
+           , ("Integral",   TIntegral,   Just Kyllini)
+           , ("Fractional", TFractional, Just Kyllini)
+           , ("Bits",       TBits,       Just Kyllini)
            ]
 
 keywordMap :: Map.Map Symbol (Token, Maybe Dialect)

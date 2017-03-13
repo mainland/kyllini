@@ -156,8 +156,14 @@ funT []   taus tau l = FunT taus tau l
 funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
 forallT :: [(TyVar, Kind)] -> Type -> Type
-forallT []   tau = tau
-forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
+forallT [] tau =
+    tau
+
+forallT tvks (ForallT tvks' tau l) =
+    ForallT (tvks ++ tvks') tau (map fst tvks `srcspan` l)
+
+forallT tvks tau =
+    ForallT tvks tau (map fst tvks `srcspan` tau)
 
 structName :: StructDef -> Z.Struct
 structName (StructDef s _ _) = s

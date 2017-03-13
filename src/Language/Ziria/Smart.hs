@@ -1,12 +1,13 @@
 -- |
 -- Module      : Language.Ziria.Smart
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Smart (
     mkVar,
+    mkTyVar,
     mkField,
     mkStruct,
 
@@ -24,6 +25,9 @@ import KZC.Name
 
 mkVar :: Name -> Var
 mkVar = Var
+
+mkTyVar :: Name -> TyVar
+mkTyVar = TyVar
 
 mkField :: Name -> Field
 mkField = Field

@@ -1,6 +1,7 @@
 -- -*- mode: haskell -*-
 
 {
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS -w #-}
 
 -- |
@@ -145,6 +146,14 @@ import KZC.Util.Pretty
 
   -- For the kyllini dialect
   'mut' { L _ T.Tmut }
+
+  'Eq'         { L _ T.TEq }
+  'Ord'        { L _ T.TOrd }
+  'Bool'       { L _ T.TBool }
+  'Num'        { L _ T.TNum }
+  'Integral'   { L _ T.TIntegral }
+  'Fractional' { L _ T.TFractional }
+  'Bits'       { L _ T.TBits }
 
   '->' { L _ T.Tarrow }
   '..' { L _ T.Tdotdot }
@@ -501,6 +510,12 @@ gen_interval :
  -
  ------------------------------------------------------------------------------}
 
+tyvar :: { TyVar }
+tyvar :
+    ID  { mkTyVar $ mkSymName (getID $1) (locOf $1) }
+  | 'T' { mkTyVar $ mkSymName "T" (locOf $1) }
+  | 'C' { mkTyVar $ mkSymName "C" (locOf $1) }
+
 simple_type :: { Type }
 simple_type :
     'bit'             { FixT (U (Just 1))  (srclocOf $1) }
@@ -525,6 +540,7 @@ base_type :
   | '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
   | array_type        { $1 }
+  | tyvar             { TyVarT $1 (srclocOf $1) }
   | '(' base_type ')' { $2 }
 
 array_type :: { Type }
@@ -548,6 +564,48 @@ index_type :
     'T'                { T (srclocOf $1) }
   | 'C' base_type      { C $2 ($1 `srcspan` $2) }
   | '(' index_type ')' { $2 }
+
+{------------------------------------------------------------------------------
+ -
+ - Traits and kinds
+ -
+ ------------------------------------------------------------------------------}
+
+trait :: { Trait }
+trait :
+    'Eq'         { EqR }
+  | 'Ord'        { OrdR }
+  | 'Bool'       { BoolR }
+  | 'Num'        { NumR }
+  | 'Integral'   { IntegralR }
+  | 'Fractional' { FractionalR }
+  | 'Bits'       { BitsR }
+
+traits :: { Traits }
+traits : trait_rlist { traits (rev $1) }
+
+trait_rlist :: { RevList Trait }
+trait_rlist :
+    trait                 { rsingleton $1 }
+  | trait_rlist '+' trait { rcons $3 $1 }
+
+opt_kind :: { Maybe Kind }
+opt_kind :
+    {- empty -} { Nothing }
+  | ':' traits  { Just $2 }
+
+tvk :: { (TyVar, Maybe Kind) }
+tvk : tyvar opt_kind { ($1, $2) }
+
+tvks :: { [(TyVar, Maybe Kind)] }
+tvks :
+    {- empty -}        { [] }
+  | '<' tvks_rlist '>' { rev $2 }
+
+tvks_rlist :: { RevList (TyVar, Maybe Kind) }
+tvks_rlist :
+    tvk                { rsingleton $1 }
+  | tvks_rlist ',' tvk { rcons $3 $1 }
 
 {------------------------------------------------------------------------------
  -
@@ -707,8 +765,8 @@ decl :
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' identifier params fun_sig '{' stms '}'
-      { LetFunD $2 $3 $4 (stmsE $6) ($1 `srcspan` $7) }
+  | 'fun' identifier tvks params fun_sig '{' stms '}'
+      { LetFunD $2 $3 $4 $5 (stmsE $7) ($1 `srcspan` $8) }
 
 fun_sig :: { Maybe Type }
 fun_sig :

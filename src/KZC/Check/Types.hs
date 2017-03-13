@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Check.Types
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -313,10 +313,10 @@ pprKindSig (tau, TauK (R ts)) | nullTraits ts =
     ppr tau
 
 pprKindSig (tau, TauK traits) =
-    parens (ppr tau <+> colon <+> ppr traits)
+    ppr tau <+> colon <+> ppr traits
 
 pprKindSig (tau, kappa) =
-    parens (ppr tau <+> colon <+> ppr kappa)
+    ppr tau <+> colon <+> ppr kappa
 
 {------------------------------------------------------------------------------
  -

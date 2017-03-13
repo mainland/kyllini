@@ -1,3 +1,5 @@
+instance Located TyVar where
+  locOf (TyVar l) = locOf l
 instance Located Var where
   locOf (Var l) = locOf l
 instance Located Struct where
@@ -7,11 +9,11 @@ instance Located Field where
 instance Located Decl where
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
-  locOf (LetFunD _ _ _ _ l) = locOf l
+  locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetFunExternalD _ _ _ _ l) = locOf l
   locOf (LetStructD _ l) = locOf l
   locOf (LetCompD _ _ _ _ l) = locOf l
-  locOf (LetFunCompD _ _ _ _ _ l) = locOf l
+  locOf (LetFunCompD _ _ _ _ _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l
@@ -71,3 +73,5 @@ instance Located Type where
   locOf (NatT _ l) = locOf l
   locOf (LenT _ l) = locOf l
   locOf (UnknownT l) = locOf l
+  locOf (ForallT _ _ l) = locOf l
+  locOf (TyVarT _ l) = locOf l
