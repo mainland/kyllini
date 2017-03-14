@@ -38,7 +38,10 @@ rnModule (Program imports decls) k =
 class Rename a where
     rn :: a -> Rn a
 
-instance (Rename a, Traversable f) => Rename (f a) where
+instance Rename a => Rename [a] where
+    rn = mapM rn
+
+instance Rename a => Rename (Maybe a) where
     rn = mapM rn
 
 instance Rename TyVar where
@@ -82,7 +85,7 @@ instance Rename Type where
 
     rn (ForallT tvks tau l) =
         extendTyVars (text "type variable") (map fst tvks) $
-        ForallT <$> traverse rnTvk tvks <*> rn tau <*> pure l
+        ForallT <$> rn tvks <*> rn tau <*> pure l
 
     rn (TyVarT alpha l) =
         TyVarT <$> rn alpha <*> pure l
@@ -205,8 +208,8 @@ instance Rename GenInterval where
     rn (StartLen e1 e2 l) =
         StartLen <$> rn e1 <*> rn e2 <*> pure l
 
-rnTvk :: Tvk -> Rn Tvk
-rnTvk (alpha, kappa) = (,) <$> rn alpha <*> pure kappa
+instance Rename (TyVar, Maybe Kind) where
+    rn (alpha, kappa) = (,) <$> rn alpha <*> pure kappa
 
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
 rnDecl decl@(StructD s l) k = do
@@ -231,7 +234,7 @@ rnDecl decl@(LetFunD v tvks vbs tau_ret e l) k =
     extendTyVars (text "type variable") (map fst tvks) $ do
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
-             LetFunD <$> rn v <*> traverse rnTvk tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
+             LetFunD <$> rn v <*> rn tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
     k decl'
 
 rnDecl decl@(LetFunExternalD v vbs tau isPure l) k =
@@ -253,7 +256,7 @@ rnDecl decl@(LetFunCompD f range tvks vbs tau_ret e l) k =
     decl' <- withSummaryContext decl $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunCompD <$> inCompScope (lookupMaybeCompVar f) <*>
-                 pure range <*> traverse rnTvk tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
+                 pure range <*> rn tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
     k decl'
 
 rnDecls :: [Decl]
