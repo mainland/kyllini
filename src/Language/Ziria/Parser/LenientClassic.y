@@ -714,8 +714,11 @@ decl :
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
       { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
-  | struct
-      { StructD $1 (srclocOf $1) }
+  | 'struct' ID '=' '{' field_list '}'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ StructD (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
+            }
+      }
   | 'fun' 'external' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
@@ -795,15 +798,6 @@ comp_var_bind :
   | '(' identifier ':' comp_base_type ')'
       {% do { -- addCompIdentifier (symbol $2)
             ; return ($2, Just $4)
-            }
-      }
-
--- structs
-struct :: { StructDef }
-struct :
-    'struct' ID '=' '{' field_list '}'
-      {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
             }
       }
 

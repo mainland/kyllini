@@ -325,7 +325,7 @@ checkLetExtFun f ps ztau_ret isPure l = do
 checkDecl :: Z.Decl
           -> (Ti E.Decl -> Ti a)
           -> Ti a
-checkDecl decl@(Z.StructD (Z.StructDef zs zflds l) _) k = do
+checkDecl decl@(Z.StructD zs zflds l) k = do
     (taus, mkLetStruct) <-
         alwaysWithSummaryContext decl $ do
         checkStructNotRedefined zs

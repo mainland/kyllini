@@ -45,7 +45,6 @@ module Language.Ziria.Syntax (
     Unop(..),
     Binop(..),
 
-    StructDef(..),
     Type(..),
     Kind,
     Tvk,
@@ -160,7 +159,7 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = StructD StructDef !SrcLoc
+data Decl = StructD Struct [(Field, Type)] !SrcLoc
           | LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
           | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
@@ -287,9 +286,6 @@ data Binop = Eq   -- ^ Equal
            | Pow  -- ^ Power
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | FixT IP !SrcLoc
@@ -406,7 +402,7 @@ instance Binders Decl Var where
  ------------------------------------------------------------------------------}
 
 instance Summary Decl where
-    summary (StructD s _)               = text "definition of" <+> summary s
+    summary (StructD s _ _)             = text "definition of" <+> text "struct" <+> ppr s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
@@ -421,9 +417,6 @@ instance Summary Stm where
     summary (LetS d _)      = summary d
     summary (BindS v _ _ _) = text "definition of" <+> ppr v
     summary (ExpS e _)      = summary e
-
-instance Summary StructDef where
-    summary (StructDef s _ _) = text "struct" <+> ppr s
 
 {------------------------------------------------------------------------------
  -
@@ -459,8 +452,13 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    pprPrec _ (StructD def _) =
-        ppr def
+    pprPrec _ (StructD s fields _) | classicDialect =
+        align $ nest 2 $
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
+
+    pprPrec _ (StructD s fields _)=
+        align $ nest 2 $
+        text "struct" <+> ppr s <+> pprStruct comma colon fields
 
     pprPrec p (LetD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
@@ -753,15 +751,6 @@ instance Pretty Stm where
 
     pprList cmds =
         embrace (map ppr cmds)
-
-instance Pretty StructDef where
-    ppr (StructDef s fields _) | classicDialect =
-        align $ nest 2 $
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
-
-    ppr (StructDef s fields _)=
-        align $ nest 2 $
-        text "struct" <+> ppr s <+> pprStruct comma colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =

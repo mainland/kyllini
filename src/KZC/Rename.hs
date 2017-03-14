@@ -211,10 +211,13 @@ instance Rename GenInterval where
 instance Rename (TyVar, Maybe Kind) where
     rn (alpha, kappa) = (,) <$> rn alpha <*> pure kappa
 
+instance Rename (Field, Type) where
+    rn (fld, tau) = (,) <$> pure fld <*> rn tau
+
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
-rnDecl decl@(StructD s l) k = do
+rnDecl decl@(StructD s flds l) k = do
     decl' <- withSummaryContext decl $
-             StructD <$> pure s <*> pure l
+             StructD <$> pure s <*> rn flds <*> pure l
     k decl'
 
 rnDecl decl@(LetD v tau e l) k =

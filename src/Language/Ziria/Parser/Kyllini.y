@@ -759,8 +759,11 @@ decl :
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
-  | struct
-      { StructD $1 (srclocOf $1) }
+  | 'struct' ID '{' field_list '}'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ StructD (mkStruct (varid $2)) $4 ($1 `srcspan` $5)
+            }
+      }
   | 'fun' 'external' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params '->' base_type
@@ -827,15 +830,6 @@ comp_var_bind :
       }
   | identifier ':' error
       {% expected ["ST type"] Nothing }
-
--- structs
-struct :: { StructDef }
-struct :
-    'struct' ID '{' field_list '}'
-      {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (varid $2)) $4 ($1 `srcspan` $5)
-            }
-      }
 
 field_list :: { [(Field, Type)] }
 field_list :

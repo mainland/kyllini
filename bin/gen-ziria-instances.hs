@@ -38,7 +38,6 @@ DERIVE(VectAnn)
 DERIVE(Unop)
 DERIVE(Binop)
 DERIVE(Stm)
-DERIVE(StructDef)
 DERIVE(Type)
 DERIVE(Trait)
 
@@ -55,5 +54,4 @@ main = do
     DERIVE(GenInterval)
     DERIVE(VarBind)
     DERIVE(Stm)
-    DERIVE(StructDef)
     DERIVE(Type)
