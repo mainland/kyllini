@@ -68,30 +68,26 @@ type OutComp l = Comp l
 type Theta l = Map InVar (SubstRng l)
 
 data SubstRng l = SuspExp     (Theta l) InExp
-                | SuspFun     (Theta l) [IVar] [(Var, Type)] Type InExp
+                | SuspFun     (Theta l) [(TyVar, Kind)] [(Var, Type)] Type InExp
                 | SuspComp    (Theta l) (InComp l)
-                | SuspFunComp (Theta l) [IVar] [(Var, Type)] Type (InComp l)
+                | SuspFunComp (Theta l) [(TyVar, Kind)] [(Var, Type)] Type (InComp l)
                 | DoneExp     OutExp
-                | DoneFun     [IVar] [(Var, Type)] Type OutExp
+                | DoneFun     [(TyVar, Kind)] [(Var, Type)] Type OutExp
                 | DoneComp    (OutComp l)
-                | DoneFunComp [IVar] [(Var, Type)] Type (OutComp l)
+                | DoneFunComp [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 type VarDefs l = Map OutVar (Definition l)
 
 data Definition l = Unknown
                   | BoundToExp     (Maybe OccInfo) Level OutExp
-                  | BoundToFun     (Maybe OccInfo) [IVar] [(Var, Type)] Type OutExp
+                  | BoundToFun     (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type OutExp
                   | BoundToComp    (Maybe OccInfo) (OutComp l)
-                  | BoundToFunComp (Maybe OccInfo) [IVar] [(Var, Type)] Type (OutComp l)
+                  | BoundToFunComp (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 data Level = Top | Nested
   deriving (Eq, Ord, Read, Show)
-
-type Phi = Map IVar Iota
-
-type Psi = Map TyVar Type
 
 data SimplStats = SimplStats
     { simplDrop     :: {-# UNPACK #-} !Int
@@ -117,13 +113,16 @@ data SimplEnv l = SimplEnv
     { simplOccInfo :: !(Map Var OccInfo)
     , simplTheta   :: !(Theta l)
     , simplVarDefs :: !(VarDefs l)
-    , simplPhi     :: !Phi
-    , simplPsi     :: !Psi
     , simplRefDrop :: !(Set Var)
     }
 
 defaultSimplEnv :: SimplEnv l
-defaultSimplEnv = SimplEnv mempty mempty mempty mempty mempty mempty
+defaultSimplEnv = SimplEnv
+    { simplOccInfo = mempty
+    , simplTheta   = mempty
+    , simplVarDefs = mempty
+    , simplRefDrop = mempty
+    }
 
 data SimplState = SimplState
     { simplStats :: {-# UNPACK #-} !SimplStats }
@@ -268,29 +267,6 @@ withUniqBoundVar v k = do
               extendSubst (bVar v) ((DoneExp . varE . bVar) v') $ k v'
       else killVars [bVar v] $ k v
 
-askIVarSubst :: MonadTc m => SimplM l m Phi
-askIVarSubst = asks simplPhi
-
-extendIVarSubst :: MonadTc m => [(IVar, Iota)] -> SimplM l m a -> SimplM l m a
-extendIVarSubst ivs =
-    local $ \env -> env { simplPhi = foldl' insert (simplPhi env) ivs }
-  where
-    insert :: Ord k => Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
-askTyVarSubst :: MonadTc m => SimplM l m Psi
-askTyVarSubst = asks simplPsi
-
-extendTyVarSubst :: MonadTc m
-                 => [(TyVar, Type)]
-                 -> SimplM l m a
-                 -> SimplM l m a
-extendTyVarSubst tvs =
-    local $ \env -> env { simplPsi = foldl' insert (simplPsi env) tvs }
-  where
-    insert :: Ord k => Map k v -> (k, v) -> Map k v
-    insert mp (k, v) = Map.insert k v mp
-
 dropRef :: MonadTc m => Var -> SimplM l m a -> SimplM l m a
 dropRef v =
     local $ \env -> env { simplRefDrop = Set.insert v (simplRefDrop env) }
@@ -301,20 +277,6 @@ keepRef v =
 
 isDroppedRef :: MonadTc m => Var -> SimplM l m Bool
 isDroppedRef v = asks (Set.member v . simplRefDrop)
-
--- | Figure out the type substitution necessary for transforming the given type
--- to the ST type of the current computational context.
-withInstantiatedTyVars :: MonadTc m
-                       => Type
-                       -> SimplM l m a
-                       -> SimplM l m a
-withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
-    ST _ _ s' a' b' _ <- appSTScope tau
-    extendTyVarSubst [(alpha, tau) | (TyVarT alpha _, tau) <-
-                                       [s,a,b] `zip` [s',a',b']] k
-
-withInstantiatedTyVars _tau k =
-    k
 
 simplProgram :: (IsLabel l, MonadTc m)
              => Program l
@@ -353,14 +315,8 @@ simplComp c = do
 
 simplType :: MonadTc m => Type -> SimplM l m Type
 simplType tau = do
-    phi <- askTyVarSubst
-    psi <- askIVarSubst
-    return $ subst psi mempty (subst phi mempty tau)
-
-simplIota :: MonadTc m => Iota -> SimplM l m Iota
-simplIota iota = do
-    psi <- askIVarSubst
-    return $ subst psi mempty iota
+    phi <- askTyVarTypeSubst
+    return $ subst phi mempty tau
 
 simplDecls :: (IsLabel l, MonadTc m)
            => [Decl l]
@@ -394,11 +350,11 @@ simplDecl decl m = do
     preInlineUnconditionally _flags LetD{} =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
-    preInlineUnconditionally flags decl@(LetFunD f ivs vbs tau_ret e _)
+    preInlineUnconditionally flags decl@(LetFunD f tvks vbs tau_ret e _)
         | isDead = dropBinding f >> withoutBinding m
         | isOnce && testDynFlag MayInlineFun flags = do
               theta <- askSubst
-              extendSubst (bVar f) (SuspFun theta ivs vbs tau_ret e) $ do
+              extendSubst (bVar f) (SuspFun theta tvks vbs tau_ret e) $ do
                 dropBinding f
                 withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
@@ -427,12 +383,12 @@ simplDecl decl m = do
         isDead = bOccInfo v == Just Dead
         isOnce = bOccInfo v == Just Once
 
-    preInlineUnconditionally flags (LetFunCompD f ivs vbs tau_ret comp _)
+    preInlineUnconditionally flags (LetFunCompD f tvks vbs tau_ret comp _)
         | isDead = dropBinding f >> withoutBinding m
         | isOnce && testDynFlag MayInlineComp flags = do
               theta <- askSubst
               extendSubst (bVar f)
-                          (SuspFunComp theta ivs vbs tau_ret comp) $ do
+                          (SuspFunComp theta tvks vbs tau_ret comp) $ do
                 dropBinding f
                 withoutBinding m
         | otherwise = postInlineUnconditionally flags decl
@@ -448,33 +404,33 @@ simplDecl decl m = do
     postInlineUnconditionally _flags LetD{} =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
-    postInlineUnconditionally _flags (LetFunD f ivs vbs tau_ret e l) = do
-        (ivs', vbs', tau_ret', e') <-
-            extendLetFun f ivs vbs tau_ret $
+    postInlineUnconditionally _flags (LetFunD f tvks vbs tau_ret e l) = do
+        (tvks', vbs', tau_ret', e') <-
+            extendLetFun f tvks vbs tau_ret $
             withUniqVars vs $ \vs' ->
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             e'       <- simplE e
-            return (ivs, vs' `zip` taus, tau_ret', e')
-        inlineIt <- shouldInlineFunUnconditionally ivs' vbs' tau_ret' e'
+            return (tvks, vs' `zip` taus, tau_ret', e')
+        inlineIt <- shouldInlineFunUnconditionally tvks' vbs' tau_ret' e'
         if inlineIt
-          then extendSubst (bVar f) (DoneFun ivs' vbs' tau_ret' e') $ do
+          then extendSubst (bVar f) (DoneFun tvks' vbs' tau_ret' e') $ do
                dropBinding f
                withoutBinding m
           else withUniqBoundVar f $ \f' ->
                extendVars [(bVar f', tau)] $
                extendDefinitions
-                   [(bVar f', BoundToFun (bOccInfo f') ivs' vbs' tau_ret' e')] $
-               withBinding (LetFunD f' ivs' vbs' tau_ret' e' l) m
+                   [(bVar f', BoundToFun (bOccInfo f') tvks' vbs' tau_ret' e')] $
+               withBinding (LetFunD f' tvks' vbs' tau_ret' e' l) m
       where
         (vs, taus) = unzip vbs
-        tau        = FunT ivs (map snd vbs) tau_ret l
+        tau        = funT tvks (map snd vbs) tau_ret l
 
-    postInlineUnconditionally _flags (LetExtFunD f iotas vbs tau_ret l) =
+    postInlineUnconditionally _flags (LetExtFunD f tvks vbs tau_ret l) =
         extendExtFuns [(bVar f, tau)] $
-        withBinding (LetExtFunD f iotas vbs tau_ret l) m
+        withBinding (LetExtFunD f tvks vbs tau_ret l) m
       where
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT tvks (map snd vbs) tau_ret l
 
     postInlineUnconditionally _flags decl@(LetStructD s flds l) =
         extendStructs [StructDef s flds l] $
@@ -493,32 +449,32 @@ simplDecl decl m = do
                extendDefinitions [(bVar v', BoundToComp (bOccInfo v') comp')] $
                withBinding (LetCompD v' tau comp' l) m
 
-    postInlineUnconditionally _flags (LetFunCompD f ivs vbs tau_ret comp l) = do
-        (ivs', vbs', tau_ret', comp') <-
-            extendLetFun f ivs vbs tau_ret $
+    postInlineUnconditionally _flags (LetFunCompD f tvks vbs tau_ret comp l) = do
+        (tvks', vbs', tau_ret', comp') <-
+            extendLetFun f tvks vbs tau_ret $
             withUniqVars vs $ \vs' ->
             extendDefinitions (vs `zip` repeat Unknown) $ do
             tau_ret' <- simplType tau_ret
             comp'    <- simplC comp
-            return (ivs, vs' `zip` taus, tau_ret', comp')
-        inlineIt <- shouldInlineCompFunUnconditionally ivs' vbs' tau_ret' comp'
+            return (tvks, vs' `zip` taus, tau_ret', comp')
+        inlineIt <- shouldInlineCompFunUnconditionally tvks' vbs' tau_ret' comp'
         if inlineIt
-          then extendSubst (bVar f) (DoneFunComp ivs' vbs' tau_ret' comp') $ do
+          then extendSubst (bVar f) (DoneFunComp tvks' vbs' tau_ret' comp') $ do
                dropBinding f
                withoutBinding m
           else withUniqBoundVar f $ \f' ->
                extendVars [(bVar f', tau)] $
                extendDefinitions
                    [(bVar f',
-                     BoundToFunComp (bOccInfo f') ivs' vbs' tau_ret' comp')] $
-               withBinding (LetFunCompD f' ivs' vbs' tau_ret' comp' l) m
+                     BoundToFunComp (bOccInfo f') tvks' vbs' tau_ret' comp')] $
+               withBinding (LetFunCompD f' tvks' vbs' tau_ret' comp' l) m
       where
         vs :: [Var]
         taus :: [Type]
         (vs, taus) = unzip vbs
 
         tau :: Type
-        tau = FunT ivs (map snd vbs) tau_ret l
+        tau = funT tvks (map snd vbs) tau_ret l
 
     withoutBinding :: SimplM l m a -> SimplM l m (Maybe (Decl l), a)
     withoutBinding m = (,) <$> pure Nothing <*> m
@@ -959,30 +915,30 @@ simplStep step@(VarC l v _) =
         unComp <$> (simplC comp >>= traverse uniquify) >>=
                    rewriteStepsLabel l
 
-simplStep (CallC l f0 iotas0 args0 s) = do
-    iotas <- mapM simplIota iotas0
-    args  <- mapM simplArg args0
-    lookupSubst f0 >>= go f0 iotas args
+simplStep (CallC l f0 taus0 args0 s) = do
+    taus <- mapM simplType taus0
+    args <- mapM simplArg args0
+    lookupSubst f0 >>= go f0 taus args
   where
-    go :: Var -> [Iota] -> [Arg l] -> Maybe (SubstRng l) -> SimplM l m [Step l]
-    go f iotas args Nothing =
-        lookupDefinition f >>= callSiteInline f iotas args
+    go :: Var -> [Type] -> [Arg l] -> Maybe (SubstRng l) -> SimplM l m [Step l]
+    go f taus args Nothing =
+        lookupDefinition f >>= callSiteInline f taus args
 
     -- This can occur when f was in scope, so it was renamed to f'. We need to
     -- recurse because we may still want to inline the call to f', nee f.
-    go _ iotas args (Just (DoneExp (VarE f' _))) =
-       lookupSubst f' >>= go f' iotas args
+    go _ taus args (Just (DoneExp (VarE f' _))) =
+       lookupSubst f' >>= go f' taus args
 
-    go _ iotas args (Just (SuspFunComp theta ivs vbs tau_ret comp)) =
+    go _ taus args (Just (SuspFunComp theta tvks vbs tau_ret comp)) =
         withSubst theta $
-        extendIVarSubst (ivs `zip` iotas) $
+        extendTyVarTypes (map fst tvks `zip` taus) $
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
         unComp <$> simplC comp >>= rewriteStepsLabel l
 
-    go _ iotas args (Just (DoneFunComp ivs vbs tau_ret comp)) =
-        inlineFunCompRhs iotas args ivs vbs tau_ret comp
+    go _ taus args (Just (DoneFunComp tvks vbs tau_ret comp)) =
+        inlineFunCompRhs taus args tvks vbs tau_ret comp
 
     go f _ _ _ =
         faildoc $
@@ -990,32 +946,32 @@ simplStep (CallC l f0 iotas0 args0 s) = do
         text "substituted with non-computation function."
 
     callSiteInline :: Var
-                   -> [Iota]
+                   -> [Type]
                    -> [Arg l]
                    -> Maybe (Definition l)
                    -> SimplM l m [Step l]
-    callSiteInline f iotas args maybe_def = do
+    callSiteInline f taus args maybe_def = do
         flags <- askConfig
         go flags maybe_def
       where
         go :: Config -> Maybe (Definition l) -> SimplM l m [Step l]
-        go flags (Just (BoundToFunComp _occ ivs vbs tau_ret rhs))
+        go flags (Just (BoundToFunComp _occ tvks vbs tau_ret rhs))
             | testDynFlag MayInlineComp flags =
-          inlineFunCompRhs iotas args ivs vbs tau_ret rhs
+          inlineFunCompRhs taus args tvks vbs tau_ret rhs
 
         go _ _ =
-            return1 $ CallC l f iotas args s
+            return1 $ CallC l f taus args s
 
-    inlineFunCompRhs :: [Iota]
+    inlineFunCompRhs :: [Type]
                      -> [Arg l]
-                     -> [IVar]
+                     -> [(TyVar, Kind)]
                      -> [(Var, Type)]
                      -> Type
                      -> Comp l
                      -> SimplM l m [Step l]
-    inlineFunCompRhs iotas args ivs vbs tau_ret comp =
+    inlineFunCompRhs taus args tvks vbs tau_ret comp =
         withSubst mempty $
-        extendIVarSubst (ivs `zip` iotas) $
+        extendTyVarTypes (map fst tvks `zip` taus) $
         extendArgs (map fst vbs `zip` args) $
         withInstantiatedTyVars tau_ret $ do
         inlineBinding f0
@@ -1129,12 +1085,12 @@ simplStep (RepeatC l ann c s) =
     RepeatC l ann <$> simplC c <*> pure s >>= return1
 
 simplStep (ParC ann b c1 c2 sloc) = do
-    (s, a, c) <- askSTIndTypes
+    (s, a, c) <- askSTIndices
     c1'       <- withFvContext c1 $
-                 localSTIndTypes (Just (s, a, b)) $
+                 localSTIndices (Just (s, a, b)) $
                  simplC c1
     c2'       <- withFvContext c2 $
-                 localSTIndTypes (Just (b, b, c)) $
+                 localSTIndices (Just (b, b, c)) $
                  simplC c2
     return1 $ ParC ann b c1' c2' sloc
 
@@ -1240,10 +1196,10 @@ simplE (UnopE op e s) = do
         return $ UnopE op e s
 
     unop Len e' = do
-        (iota, _) <- inferExp e' >>= checkArrOrRefArrT
-        iota'     <- simplIota iota
-        case iota' of
-          ConstI n _ -> return $ ConstE (intC n) s
+        (tau, _) <- inferExp e' >>= checkArrOrRefArrT
+        tau'     <- simplType tau
+        case tau' of
+          NatT n _ -> return $ ConstE (intC n) s
           _          -> return $ UnopE op e' s
 
     unop op e' =
@@ -1342,29 +1298,29 @@ simplE (LetE decl e s) = do
     go (Just decl') e' =
         return $ LetE decl' e' s
 
-simplE (CallE f0 iotas0 es0 s) = do
-    iotas <- mapM simplIota iotas0
-    es    <- mapM simplE es0
-    lookupSubst f0 >>= go f0 iotas es
+simplE (CallE f0 taus0 es0 s) = do
+    taus <- mapM simplType taus0
+    es   <- mapM simplE es0
+    lookupSubst f0 >>= go f0 taus es
   where
-    go :: Var -> [Iota] -> [Exp] -> Maybe (SubstRng l) -> SimplM l m Exp
-    go f iotas args Nothing =
-        lookupDefinition f >>= callSiteInline f iotas args
+    go :: Var -> [Type] -> [Exp] -> Maybe (SubstRng l) -> SimplM l m Exp
+    go f taus args Nothing =
+        lookupDefinition f >>= callSiteInline f taus args
 
     -- This can occur when f was in scope, so it was renamed to f'. We need to
     -- recurse because we may still want to inline the call to f', nee f.
-    go _ iotas args (Just (DoneExp (VarE f' _))) =
-       lookupSubst f' >>= go f' iotas args
+    go _ taus args (Just (DoneExp (VarE f' _))) =
+       lookupSubst f' >>= go f' taus args
 
-    go _ iotas args (Just (SuspFun theta ivs vbs _tau_ret e)) =
+    go _ taus args (Just (SuspFun theta tvks vbs _tau_ret e)) =
         withSubst theta $
-        extendIVarSubst (ivs `zip` iotas) $
+        extendTyVarTypes (map fst tvks `zip` taus) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
         simplE e
 
-    go _ iotas args (Just (DoneFun ivs vbs tau_ret rhs)) =
-        inlineFunRhs iotas args ivs vbs tau_ret rhs
+    go _ taus args (Just (DoneFun tvks vbs tau_ret rhs)) =
+        inlineFunRhs taus args tvks vbs tau_ret rhs
 
     go f _ _ _ =
         faildoc $
@@ -1372,32 +1328,32 @@ simplE (CallE f0 iotas0 es0 s) = do
         text "substituted with non-function."
 
     callSiteInline :: Var
-                   -> [Iota]
+                   -> [Type]
                    -> [Exp]
                    -> Maybe (Definition l)
                    -> SimplM l m Exp
-    callSiteInline f iotas args maybe_def = do
+    callSiteInline f taus args maybe_def = do
         flags <- askConfig
         go flags maybe_def
       where
         go :: Config -> Maybe (Definition l) -> SimplM l m Exp
-        go flags (Just (BoundToFun _occ ivs vbs tau_ret rhs))
+        go flags (Just (BoundToFun _occ tvks vbs tau_ret rhs))
             | testDynFlag MayInlineFun flags =
-          inlineFunRhs iotas args ivs vbs tau_ret rhs
+          inlineFunRhs taus args tvks vbs tau_ret rhs
 
         go _ _ =
-            return $ CallE f iotas args s
+            return $ CallE f taus args s
 
-    inlineFunRhs :: [Iota]
+    inlineFunRhs :: [Type]
                  -> [Exp]
-                 -> [IVar]
+                 -> [(TyVar, Kind)]
                  -> [(Var, Type)]
                  -> Type
                  -> Exp
                  -> SimplM l m Exp
-    inlineFunRhs iotas args ivs vbs _tau_ret e =
+    inlineFunRhs taus args tvks vbs _tau_ret e =
         withSubst mempty $
-        extendIVarSubst (ivs `zip` iotas) $
+        extendTyVarTypes (map fst tvks `zip` taus) $
         extendArgs (map fst vbs `zip` args) $ do
         inlineBinding f0
         simplE e
@@ -1572,8 +1528,8 @@ simplE (IdxE e1 e2 len0 s) = do
     go e1' e2' (Just len) | Just 0 <- fromIntE e2' = do
         (iota, _) <- inferExp e1' >>= checkArrOrRefArrT
         case iota of
-          ConstI n _ | len == n -> do rewrite
-                                      return e1'
+          NatT n _ | len == n -> do rewrite
+                                    return e1'
           _ -> return $ IdxE e1' e2' (Just len) s
 
     go e1' e2' len =
@@ -1813,7 +1769,7 @@ shouldInlineExpUnconditionally _ =
     return False
 
 shouldInlineFunUnconditionally :: MonadTc m
-                               => [IVar]
+                               => [(TyVar, Kind)]
                                -> [(Var, Type)]
                                -> Type
                                -> OutExp
@@ -1830,7 +1786,7 @@ shouldInlineCompUnconditionally _ =
     asksConfig (testDynFlag AlwaysInlineComp)
 
 shouldInlineCompFunUnconditionally :: MonadTc m
-                                   => [IVar]
+                                   => [(TyVar, Kind)]
                                    -> [(Var, Type)]
                                    -> Type
                                    -> OutComp l

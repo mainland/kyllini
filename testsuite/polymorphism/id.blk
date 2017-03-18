@@ -1,0 +1,12 @@
+fun comp id (x) {
+  return x;
+}
+
+fun comp ident() {
+  x <- take;
+  emit id(x);
+  y <- take;
+  emit id(y);
+}
+
+let comp main = read[int] >>> repeat ident() >>> write[int]

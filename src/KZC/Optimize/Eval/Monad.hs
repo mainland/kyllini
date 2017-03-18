@@ -37,14 +37,6 @@ module KZC.Optimize.Eval.Monad (
     withUniqBoundVar,
     withUniqWildVar,
 
-    askIVarSubst,
-    extendIVarSubst,
-
-    askTyVarSubst,
-    extendTyVarSubst,
-
-    withInstantiatedTyVars,
-
     isInScope,
 
     lookupVarBind,
@@ -80,7 +72,6 @@ module KZC.Optimize.Eval.Monad (
     diffHeapExps,
 
     simplType,
-    simplIota,
 
     ModifiedVars(..)
   ) where
@@ -147,16 +138,10 @@ deriving instance Show l => Show (ArgVal l m)
 
 type Theta = Map Var Var
 
-type Phi = Map IVar Iota
-
-type Psi = Map TyVar Type
-
 data EvalEnv l m = EvalEnv
-    { varSubst   :: Theta
-    , ivarSubst  :: Phi
-    , tyVarSubst :: Psi
-    , varBinds   :: Map Var (Val l m Exp)
-    , cvarBinds  :: Map Var (Val l m (Comp l))
+    { varSubst  :: Theta
+    , varBinds  :: Map Var (Val l m Exp)
+    , cvarBinds :: Map Var (Val l m (Comp l))
     }
 
 deriving instance Eq l => Eq (EvalEnv l m)
@@ -166,8 +151,6 @@ deriving instance Show l => Show (EvalEnv l m)
 defaultEvalEnv :: EvalEnv l m
 defaultEvalEnv = EvalEnv
     { varSubst   = mempty
-    , ivarSubst  = mempty
-    , tyVarSubst = mempty
     , varBinds   = mempty
     , cvarBinds  = mempty
     }
@@ -288,38 +271,6 @@ withUniqWildVar :: MonadTc m
                 -> EvalM l m a
 withUniqWildVar WildV     k = k WildV
 withUniqWildVar (TameV v) k = withUniqBoundVar v $ \v' -> k (TameV v')
-
-askIVarSubst :: MonadTc m => EvalM l m Phi
-askIVarSubst = asks ivarSubst
-
-extendIVarSubst :: MonadTc m
-                => [(IVar, Iota)]
-                -> EvalM l m a
-                -> EvalM l m a
-extendIVarSubst = extendEnv ivarSubst (\env x -> env { ivarSubst = x })
-
-askTyVarSubst :: MonadTc m => EvalM l m Psi
-askTyVarSubst = asks tyVarSubst
-
-extendTyVarSubst :: MonadTc m
-                 => [(TyVar, Type)]
-                 -> EvalM l m a
-                 -> EvalM l m a
-extendTyVarSubst = extendEnv tyVarSubst (\env x -> env { tyVarSubst = x })
-
--- | Figure out the type substitution necessary for transforming the given type
--- to the ST type of the current computational context.
-withInstantiatedTyVars :: MonadTc m
-                       => Type
-                       -> EvalM l m a
-                       -> EvalM l m a
-withInstantiatedTyVars tau@(ST _ _ s a b _) k = do
-    ST _ _ s' a' b' _ <- appSTScope tau
-    extendTyVarSubst [(alpha, tau) | (TyVarT alpha _, tau) <-
-                                       [s,a,b] `zip` [s',a',b']] k
-
-withInstantiatedTyVars _tau k =
-    k
 
 isInScope :: MonadTc m => Var -> EvalM l m Bool
 isInScope v = asks (Map.member v . varBinds)
@@ -554,14 +505,8 @@ killHeap m =
 
 simplType :: MonadTc m => Type -> EvalM l m Type
 simplType tau = do
-    phi <- askTyVarSubst
-    psi <- askIVarSubst
-    return $ subst psi mempty (subst phi mempty tau)
-
-simplIota :: MonadTc m => Iota -> EvalM l m Iota
-simplIota iota = do
-    psi <- askIVarSubst
-    return $ subst psi mempty iota
+    phi <- askTyVarTypeSubst
+    return $ subst phi mempty tau
 
 class Ord n => ModifiedVars x n where
     mvs :: SetLike m n => x -> m n

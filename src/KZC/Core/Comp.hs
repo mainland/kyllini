@@ -44,10 +44,10 @@ varC v = do
     l <- gensym "vark"
     return $ mkComp [VarC l v (srclocOf v)]
 
-callC :: (IsLabel l, MonadUnique m) => Var -> [Iota] -> [Arg l] -> m (Comp l)
-callC f is args = do
+callC :: (IsLabel l, MonadUnique m) => Var -> [Type] -> [Arg l] -> m (Comp l)
+callC f taus args = do
     l <- gensym "callk"
-    return $ mkComp [CallC l f is args (f `srcspan` is `srcspan` args)]
+    return $ mkComp [CallC l f taus args (f `srcspan` taus `srcspan` args)]
 
 ifC :: (IsLabel l, MonadUnique m) => Exp -> Comp l -> Comp l -> m (Comp l)
 ifC e thenc elsec = do

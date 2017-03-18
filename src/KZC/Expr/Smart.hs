@@ -10,6 +10,16 @@
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module KZC.Expr.Smart (
+    qualK,
+    tauK,
+    eqK,
+    ordK,
+    boolK,
+    numK,
+    intK,
+    fracK,
+    bitsK,
+
     tyVarT,
 
     unitT,
@@ -31,7 +41,13 @@ module KZC.Expr.Smart (
     arrKnownT,
     structT,
     stT,
+    forallST,
     unSTC,
+    funT,
+    unFunT,
+    forallT,
+
+    isNatK,
 
     isBaseT,
     isUnitT,
@@ -51,7 +67,7 @@ module KZC.Expr.Smart (
 
     splitArrT,
 
-    constI,
+    natT,
 
     bitC,
     intC,
@@ -98,6 +114,33 @@ import Text.PrettyPrint.Mainland
 import KZC.Expr.Syntax
 import KZC.Name
 import KZC.Platform
+
+qualK :: [Trait] -> Kind
+qualK ts = TauK (traits ts)
+
+tauK :: Kind
+tauK = TauK mempty
+
+eqK :: Kind
+eqK = qualK [EqR]
+
+ordK :: Kind
+ordK = qualK [OrdR]
+
+boolK :: Kind
+boolK = qualK [BoolR]
+
+numK :: Kind
+numK = qualK [NumR]
+
+intK :: Kind
+intK = qualK [IntegralR]
+
+fracK :: Kind
+fracK = qualK [FractionalR]
+
+bitsK :: Kind
+bitsK = qualK [BitsR]
 
 tyVarT :: TyVar -> Type
 tyVarT alpha = TyVarT alpha noLoc
@@ -148,14 +191,14 @@ unRefT :: Type -> Type
 unRefT (RefT tau _) = tau
 unRefT tau          = tau
 
-arrT :: Iota -> Type -> Type
-arrT iota tau = ArrT iota tau l
+arrT :: Type -> Type -> Type
+arrT nat tau = ArrT nat tau l
   where
     l :: SrcLoc
-    l = iota `srcspan` tau
+    l = nat `srcspan` tau
 
 arrKnownT :: Int -> Type -> Type
-arrKnownT i tau = ArrT (ConstI i l) tau l
+arrKnownT i tau = ArrT (NatT i l) tau l
   where
     l :: SrcLoc
     l = srclocOf tau
@@ -164,11 +207,37 @@ structT :: Struct -> Type
 structT struct = StructT struct (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
-stT omega s a b = ST [] omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+stT omega s a b = ST omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
+
+forallST :: [TyVar] -> Omega -> Type -> Type -> Type -> SrcLoc -> Type
+forallST [] omega s a b l =
+    ST omega s a b l
+
+forallST alphas omega s a b l =
+    ForallT (alphas `zip` repeat (TauK mempty)) (ST omega s a b l) l
 
 unSTC :: Type -> Type
-unSTC (ST _ (C tau) _ _ _ _) = tau
+unSTC (ForallT _ tau@ST{} _) = unSTC tau
+unSTC (ST (C tau) _ _ _ _)   = tau
 unSTC tau                    = tau
+
+funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT []   taus tau l = FunT taus tau l
+funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
+
+unFunT :: Monad m => Type -> m ([(TyVar, Kind)], [Type], Type)
+unFunT (ForallT tvks (FunT taus tau _) _) = return (tvks, taus, tau)
+unFunT (FunT taus tau _)                  = return ([], taus, tau)
+unFunT _                                  = fail "unFunT: not a function"
+
+forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT []   tau = tau
+forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
+
+-- | Return 'True' if a kind is kind Nat
+isNatK :: Kind -> Bool
+isNatK NatK{} = True
+isNatK _      = False
 
 -- | Return 'True' if a type is a base type.
 isBaseT :: Type -> Bool
@@ -212,25 +281,35 @@ isRefT RefT{} = True
 isRefT _      = False
 
 isSTUnitT :: Type -> Bool
-isSTUnitT (ST [] (C UnitT{}) _ _ _ _) = True
-isSTUnitT _                           = False
+isSTUnitT (ForallT _ tau@ST{} _)   = isSTUnitT tau
+isSTUnitT (ST (C UnitT{}) _ _ _ _) = True
+isSTUnitT _                        = False
 
 -- | @'isCompT' tau@ returns 'True' if @tau@ is a computation, @False@ otherwise.
 isCompT :: Type -> Bool
-isCompT ST{} = True
-isCompT _    = False
+isCompT (ForallT _ tau@ST{} _) = isCompT tau
+isCompT ST{}                   = True
+isCompT _                      = False
 
 -- | Return 'True' if the type is pure.
 isPureT :: Type -> Bool
-isPureT ST{} = False
-isPureT _    = True
+isPureT (ForallT _ tau@ST{} _) = isPureT tau
+isPureT ST{}                   = False
+isPureT _                      = True
 
 -- | @'isPureishT' tau@ returns 'True' if @tau@ is a "pureish" computation, @False@
 -- otherwise. A pureish computation may use references, but it may not take or
 -- emit, so it has type @forall s a b . ST omega s a b@.
 isPureishT :: Type -> Bool
-isPureishT (ST [s,a,b] _ (TyVarT s' _) (TyVarT a' _) (TyVarT b' _) _) | sort [s,a,b] == sort [s',a',b'] =
-    True
+isPureishT (ForallT tvks (ST _ (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) =
+    alphas' == alphas
+  where
+    alphas, alphas' :: [TyVar]
+    alphas  = sort $ map fst tvks
+    alphas' = sort [s, a, b]
+
+isPureishT (ForallT _ ST{} _) =
+    False
 
 isPureishT ST{} =
     False
@@ -241,15 +320,15 @@ isPureishT _ =
 structName :: StructDef -> Struct
 structName (StructDef s _ _) = s
 
-splitArrT :: Monad m => Type -> m (Iota, Type)
-splitArrT (ArrT iota tau _) =
-    return (iota, tau)
+splitArrT :: Monad m => Type -> m (Type, Type)
+splitArrT (ArrT nat tau _) =
+    return (nat, tau)
 
 splitArrT tau =
     faildoc $ text "Expected array type, but got:" <+> ppr tau
 
-constI :: Integral a => a -> Iota
-constI x = ConstI (fromIntegral x) noLoc
+natT :: Integral a => a -> Type
+natT x = NatT (fromIntegral x) noLoc
 
 bitC :: Bool -> Const
 bitC b = FixC (U 1) (if b then 1 else 0)

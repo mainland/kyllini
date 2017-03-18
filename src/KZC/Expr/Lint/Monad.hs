@@ -43,18 +43,22 @@ module KZC.Expr.Lint.Monad (
 
     extendTyVars,
     lookupTyVar,
+    inScopeTyVars,
 
-    extendIVars,
-    lookupIVar,
+    extendTyVarTypes,
+    maybeLookupTyVarType,
+    lookupTyVarType,
+    askTyVarTypeSubst,
 
-    localSTIndTypes,
-    askSTIndTypes,
+    localSTTyVars,
+    askSTTyVars,
+
+    localSTIndices,
+    askSTIndices,
     inSTScope,
 
     extendLet,
     extendLetFun,
-
-    inScopeTyVars,
 
     typeSize,
     typeSizeInBytes,
@@ -86,7 +90,7 @@ import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.IORef (IORef)
 import Data.List (foldl')
-import Data.Loc (Located, noLoc, srclocOf)
+import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
 #if !MIN_VERSION_base(4,8,0)
@@ -114,8 +118,9 @@ data TcEnv = TcEnv
     , extFuns    :: !(Set Var)
     , varTypes   :: !(Map Var Type)
     , tyVars     :: !(Map TyVar Kind)
-    , iVars      :: !(Map IVar Kind)
-    , stIndTys   :: !(Maybe (Type, Type, Type))
+    , tyVarTypes :: !(Map TyVar Type)
+    , stTyVars   :: !(Set TyVar)
+    , stIndices  :: !(Maybe (Type, Type, Type))
     }
   deriving (Eq, Ord, Show)
 
@@ -128,8 +133,9 @@ defaultTcEnv = TcEnv
     , extFuns    = mempty
     , varTypes   = mempty
     , tyVars     = mempty
-    , iVars      = mempty
-    , stIndTys   = Nothing
+    , tyVarTypes = mempty
+    , stTyVars   = mempty
+    , stIndices  = Nothing
     }
   where
     builtinStructs :: [StructDef]
@@ -247,7 +253,7 @@ defaultValueC (StructT s _) = do
     cs                 <- mapM defaultValueC taus
     return $ StructC s (fs `zip` cs)
 
-defaultValueC (ArrT (ConstI n _) tau _) = do
+defaultValueC (ArrT (NatT n _) tau _) = do
     c <- defaultValueC tau
     return $ ReplicateC n c
 
@@ -335,48 +341,65 @@ lookupTyVar tv =
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendIVars :: MonadTc m => [(IVar, Kind)] -> m a -> m a
-extendIVars = extendTcEnv iVars (\env x -> env { iVars = x })
+-- | Return currently in scope type variables.
+inScopeTyVars :: MonadTc m => m (Set TyVar)
+inScopeTyVars = asksTc (Map.keysSet . tyVars)
 
-lookupIVar :: MonadTc m => IVar -> m Kind
-lookupIVar iv =
-    lookupTcEnv iVars onerr iv
+extendTyVarTypes :: MonadTc m => [(TyVar, Type)] -> m a -> m a
+extendTyVarTypes = extendTcEnv tyVarTypes (\env x -> env { tyVarTypes = x })
+
+maybeLookupTyVarType :: MonadTc m => TyVar -> m (Maybe Type)
+maybeLookupTyVarType alpha = asksTc (Map.lookup alpha . tyVarTypes)
+
+lookupTyVarType :: MonadTc m => TyVar -> m Type
+lookupTyVarType alpha =
+    lookupTcEnv tyVarTypes onerr alpha
   where
-    onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
+    onerr = faildoc $
+            text "Instantiated type variable" <+> ppr alpha <+>
+            text "not in scope"
 
-localSTIndTypes :: MonadTc m => Maybe (Type, Type, Type) -> m a -> m a
-localSTIndTypes taus m =
-    extendTyVars (alphas `zip` repeat TauK) $
-    localTc (\env -> env { stIndTys = taus }) m
-  where
-    alphas :: [TyVar]
-    alphas = case taus of
-               Nothing      -> []
-               Just (s,a,b) -> [alpha | TyVarT alpha _ <- [s,a,b]]
+-- | Return the current substitution from type variables to types.
+askTyVarTypeSubst :: MonadTc m => m (Map TyVar Type)
+askTyVarTypeSubst = asksTc tyVarTypes
 
-inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
-inSTScope = scopeOver
-  where
-    scopeOver :: Type -> m a -> m a
-    scopeOver (ST _ _ s a b _) m =
-        localSTIndTypes (Just (s, a, b)) m
+-- | Record the set of type variables quantified over an ST type inside the term
+-- of that type. For example, inside a term of type @forall a b . ST (C c) a a
+-- b@, we mark @a@ and @b@ as locally quantified.
+localSTTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
+localSTTyVars tvks =
+    localTc (\env -> env { stTyVars = Set.fromList (map fst tvks) })
 
-    scopeOver _ m =
-        localSTIndTypes Nothing m
+askSTTyVars :: MonadTc m => m (Set TyVar)
+askSTTyVars = asksTc stTyVars
 
-askSTIndTypes :: MonadTc m => m (Type, Type, Type)
-askSTIndTypes = do
-    maybe_taus <- asksTc stIndTys
+-- | Specify the current three ST type indices.
+localSTIndices :: MonadTc m => Maybe (Type, Type, Type) -> m a -> m a
+localSTIndices taus = localTc (\env -> env { stIndices = taus })
+
+-- | Return the current three ST type indices.
+askSTIndices :: MonadTc m => m (Type, Type, Type)
+askSTIndices = do
+    maybe_taus <- asksTc stIndices
     case maybe_taus of
       Just taus -> return taus
       Nothing   -> faildoc $ text "Not in scope of an ST computation"
 
-inScopeTyVars :: MonadTc m => m (Set TyVar)
-inScopeTyVars = do
-    maybe_idxs <- asksTc stIndTys
-    case maybe_idxs of
-      Nothing         -> return mempty
-      Just (s',a',b') -> return $ fvs [s',a',b']
+-- | Execute a continuation in the scope of an ST type.
+inSTScope :: forall m a . MonadTc m => Type -> m a -> m a
+inSTScope = scopeOver
+  where
+    scopeOver :: Type -> m a -> m a
+    scopeOver (ForallT tvks (ST _ s a b _) _) k =
+        extendTyVars tvks $
+        localSTTyVars tvks $
+        localSTIndices (Just (s, a, b)) k
+
+    scopeOver (ST _ s a b _) k =
+        localSTIndices (Just (s, a, b)) k
+
+    scopeOver _ k =
+        localSTIndices Nothing k
 
 extendLet :: MonadTc m
           => v
@@ -389,41 +412,41 @@ extendLet _v tau k =
 
 extendLetFun :: MonadTc m
              => v
-             -> [IVar]
+             -> [(TyVar, Kind)]
              -> [(Var, Type)]
              -> Type
              -> m a
              -> m a
-extendLetFun _f ivs vbs tau_ret k =
-    extendIVars (ivs `zip` repeat IotaK) $
+extendLetFun _f tvks vbs tau_ret k =
+    extendTyVars tvks $
     extendVars vbs $
     inSTScope tau_ret $
     inLocalScope k
-  where
-    _tau :: Type
-    _tau = FunT ivs (map snd vbs) tau_ret (srclocOf tau_ret)
 
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                   = pure 0
-    go BoolT{}                   = pure 1
-    go (FixT ip _)               = pure $ ipWidth ip
-    go (FloatT fp _)             = pure $ fpWidth fp
-    go (StructT "complex" _)     = pure $ 2 * dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)    = pure 16
-    go (StructT "complex16" _)   = pure 32
-    go (StructT "complex32" _)   = pure 64
-    go (StructT "complex64" _)   = pure 128
-    go (ArrT (ConstI n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST _ (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)              = go tau
+    go UnitT{}                 = pure 0
+    go BoolT{}                 = pure 1
+    go (FixT ip _)             = pure $ ipWidth ip
+    go (FloatT fp _)           = pure $ fpWidth fp
+    go (StructT "complex" _)   = pure $ 2 * dEFAULT_INT_WIDTH
+    go (StructT "complex8" _)  = pure 16
+    go (StructT "complex16" _) = pure 32
+    go (StructT "complex32" _) = pure 64
+    go (StructT "complex64" _) = pure 128
+    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
+    go (ST (C tau) _ _ _ _)    = go tau
+    go (RefT tau _)            = go tau
 
     go (StructT s _) = do
         StructDef _ flds _ <- lookupStruct s
         sum <$> mapM (typeSize . snd) flds
+
+    go (ForallT _ (ST (C tau) _ _ _ _) _) =
+        go tau
 
     go tau =
         faildoc $ text "Cannot calculate bit width of type" <+> ppr tau

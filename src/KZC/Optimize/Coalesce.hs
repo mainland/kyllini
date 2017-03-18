@@ -342,7 +342,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
         inLocalScope $
         withLocContext comp (text "In definition of main") $ do
         traceCoalesce $ text "Top rate:" <+> ppr (compRate comp)
-        (_s, a, b) <- askSTIndTypes
+        (_s, a, b) <- askSTIndices
         comp'      <- compT comp
         flags      <- askConfig
         if testDynFlag CoalesceTop flags
@@ -378,7 +378,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
     compT c = transComp c >>= rateComp
 
     stepT c0@(ParC ann b c1 c2 sloc) = withSummaryContext c0 $ do
-        (s, a, c)   <- askSTIndTypes
+        (s, a, c)   <- askSTIndices
         -- Why can we use c1 and c2 instead of c1' and c1' when calling
         -- withRightCtx and withLeftCtx? The only time the context will limit
         -- our choices is when it is a computer, in which case both the original
@@ -386,7 +386,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
         traceCoalesce $ nest 2 $
           text "Producer:" <+> ppr (compRate c1) <+> text "::" <+> pprST a b </>
           ppr c1
-        (c1', bcs1) <- localSTIndTypes (Just (s, a, b)) $
+        (c1', bcs1) <- localSTIndices (Just (s, a, b)) $
                        withRightCtx (compRate c2) $ do
                        c1'  <- compT c1
                        bcs1 <- coalesceComp c1'
@@ -394,7 +394,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
         traceCoalesce $ nest 2 $
           text "Consumer:" <+> ppr (compRate c2) <+> text "::" <+> pprST b c </>
           ppr c2
-        (c2', bcs2) <- localSTIndTypes (Just (b, b, c)) $
+        (c2', bcs2) <- localSTIndices (Just (b, b, c)) $
                        withLeftCtx (compRate c1) $ do
                        c2'  <- compT c2
                        bcs2 <- coalesceComp c2'
@@ -635,7 +635,7 @@ coalesceComp :: forall l m . MonadTc m
              => Comp l
              -> Co m [BC]
 coalesceComp comp = do
-    (_, a, b) <- askSTIndTypes
+    (_, a, b) <- askSTIndices
     ctx_left  <- askLeftCtx
     ctx_right <- askRightCtx
     traceCoalesce $ text "Left context:" <+> ppr ctx_left

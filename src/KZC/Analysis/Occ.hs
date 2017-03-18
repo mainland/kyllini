@@ -202,23 +202,23 @@ instance MonadTc m => TransformExp (OccM m) where
         transExp e
 
 instance MonadTc m => TransformComp l (OccM m) where
-    declT (LetFunD f iotas vbs tau_ret e l) m =
+    declT (LetFunD f ns vbs tau_ret e l) m =
         extendVars [(bVar f, tau)] $ do
-        e'       <- extendLetFun f iotas vbs tau_ret $
+        e'       <- extendLetFun f ns vbs tau_ret $
                     expT e
         (occ, x) <- withOccInfo f m
-        return (LetFunD (updOccInfo f occ) iotas vbs tau_ret e' l, x)
+        return (LetFunD (updOccInfo f occ) ns vbs tau_ret e' l, x)
       where
         tau :: Type
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT ns (map snd vbs) tau_ret l
 
-    declT (LetExtFunD f iotas vbs tau_ret l) m = do
+    declT (LetExtFunD f ns vbs tau_ret l) m = do
         (occ, x) <- extendExtFuns [(bVar f, tau)] $
                     withOccInfo f m
-        return (LetExtFunD (updOccInfo f occ) iotas vbs tau_ret l, x)
+        return (LetExtFunD (updOccInfo f occ) ns vbs tau_ret l, x)
       where
         tau :: Type
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT ns (map snd vbs) tau_ret l
 
     declT (LetCompD v tau comp l) m = do
         comp'    <- extendLet v tau $
@@ -226,15 +226,15 @@ instance MonadTc m => TransformComp l (OccM m) where
         (occ, x) <- extendVars [(bVar v, tau)] $ withOccInfo v m
         return (LetCompD (updOccInfo v occ) tau comp' l, x)
 
-    declT (LetFunCompD f iotas vbs tau_ret comp l) m =
+    declT (LetFunCompD f ns vbs tau_ret comp l) m =
         extendVars [(bVar f, tau)] $ do
-        comp'    <- extendLetFun f iotas vbs tau_ret $
+        comp'    <- extendLetFun f ns vbs tau_ret $
                     compT comp
         (occ, x) <- withOccInfo f m
-        return (LetFunCompD (updOccInfo f occ) iotas vbs tau_ret comp' l, x)
+        return (LetFunCompD (updOccInfo f occ) ns vbs tau_ret comp' l, x)
       where
         tau :: Type
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT ns (map snd vbs) tau_ret l
 
     declT decl m =
         transDecl decl m

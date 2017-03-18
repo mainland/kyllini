@@ -47,7 +47,7 @@ instance Pretty Label where
     ppr (ParL l1 l2)      = ppr (l1, l2)
 
 instance C.ToIdent Label where
-    toIdent = C.Id . zencode . flip displayS "" . renderCompact . ppr
+    toIdent = C.Id . zencode . ppr
 
 instance Gensym Label where
     gensym s = SeqL (intern s) <$> maybeNewUnique

@@ -196,7 +196,7 @@ data Stm = LetS Decl !SrcLoc
 
 -- | A variable binding. The boolean is @True@ if the variable is a reference,
 -- @False@ otherwise.
-data VarBind = VarBind Var Bool Type
+data VarBind = VarBind Var Bool (Maybe Type)
   deriving (Eq, Ord, Read, Show)
 
 data UnrollAnn = Unroll     -- ^ Always unroll
@@ -227,12 +227,12 @@ data Unop = Lnot      -- ^ Logical not
           | Len       -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 
-data Binop = Lt   -- ^ Less-than
+data Binop = Eq   -- ^ Equal
+           | Ne   -- ^ Not-equal
+           | Lt   -- ^ Less-than
            | Le   -- ^ Less-than-or-equal
-           | Eq   -- ^ Equal
            | Ge   -- ^ Greater-than-or-equal
            | Gt   -- ^ Greater-than
-           | Ne   -- ^ Not-equal
            | Land -- ^ Logical and
            | Lor  -- ^ Logical or
            | Band -- ^ Bitwise and
@@ -263,7 +263,7 @@ data Type = UnitT !SrcLoc
           | ST Type Type Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Ind = ConstI Int !SrcLoc
+data Ind = NatT Int !SrcLoc
          | ArrI Var !SrcLoc
          | NoneI !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -596,13 +596,15 @@ instance Pretty Exp where
         ppr stms
 
 instance Pretty VarBind where
-    pprPrec p (VarBind v True tau) =
-        parensIf (p > appPrec) $
-        text "var" <+> ppr v <+> colon <+> ppr tau
-
-    pprPrec p (VarBind v False tau) =
-        parensIf (p > appPrec) $
-        ppr v <+> colon <+> ppr tau
+    pprPrec p (VarBind v isRef maybe_tau) =
+        case maybe_tau of
+          Nothing  -> vdoc
+          Just tau -> parensIf (p > appPrec) $
+                      vdoc <+> colon <+> ppr tau
+      where
+        vdoc :: Doc
+        vdoc | isRef     = text "var" <+> ppr v
+             | otherwise = ppr v
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
@@ -628,12 +630,12 @@ instance Pretty Unop where
     ppr (Cast tau) = parens (ppr tau)
 
 instance Pretty Binop where
+    ppr Eq   = text "=="
+    ppr Ne   = text "!="
     ppr Lt   = text "<"
     ppr Le   = text "<="
-    ppr Eq   = text "=="
     ppr Ge   = text ">="
     ppr Gt   = text ">"
-    ppr Ne   = text "!="
     ppr Land = text "&&"
     ppr Lor  = text "||"
     ppr Band = text "&"
@@ -715,7 +717,7 @@ instance Pretty Type where
         text "ST" <+> ppr w <+> ppr tau1 <+> ppr tau2
 
 instance Pretty Ind where
-    ppr (ConstI i _) = ppr i
+    ppr (NatT i _) = ppr i
     ppr (ArrI v _)   = ppr v
     ppr (NoneI _)    = empty
 
@@ -760,12 +762,12 @@ tyappPrec :: Int
 tyappPrec = 1
 
 instance HasFixity Binop where
+    fixity Eq   = infixl_ 2
+    fixity Ne   = infixl_ 2
     fixity Lt   = infixl_ 6
     fixity Le   = infixl_ 6
-    fixity Eq   = infixl_ 2
     fixity Ge   = infixl_ 6
     fixity Gt   = infixl_ 6
-    fixity Ne   = infixl_ 2
     fixity Land = infixl_ 1
     fixity Lor  = infixl_ 1
     fixity Band = infixl_ 5

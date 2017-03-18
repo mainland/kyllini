@@ -36,15 +36,21 @@ module KZC.Check.Monad (
     extendTyVars,
     lookupTyVar,
 
-    extendIVars,
-    lookupIVar,
-
     withExpContext,
 
     readTv,
     writeTv,
     newMetaTv,
     newMetaTvT,
+
+    readKv,
+    writeKv,
+    newMetaKv,
+    newMetaKvK,
+
+    readRv,
+    writeRv,
+    newMetaRv,
 
     relevantBindings,
     sanitizeTypes,
@@ -201,15 +207,6 @@ lookupTyVar tv =
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
 
-extendIVars :: [(IVar, Kind)] -> Ti a -> Ti a
-extendIVars = extendEnv iVars (\env x -> env { iVars = x })
-
-lookupIVar :: IVar -> Ti Kind
-lookupIVar iv =
-    lookupEnv iVars onerr iv
-  where
-    onerr = faildoc $ text "Index variable" <+> ppr iv <+> text "not in scope"
-
 withExpContext :: Z.Exp -> Ti a -> Ti a
 withExpContext e m =
     localExp e $
@@ -225,10 +222,41 @@ newMetaTv :: Kind -> Ti MetaTv
 newMetaTv k = do
     u     <- newUnique
     tref  <- newRef Nothing
-    return $ MetaTv u k tref
+    k'    <- case k of
+               TauK (R ts) -> do mrv <- newMetaRv ts
+                                 return $ TauK (MetaR mrv)
+               _           -> return k
+    return $ MetaTv u k' tref
 
 newMetaTvT :: Located a => Kind -> a -> Ti Type
 newMetaTvT k x = MetaT <$> newMetaTv k <*> pure (srclocOf x)
+
+readKv :: MonadRef IORef m => MetaKv -> m (Maybe Kind)
+readKv (MetaKv _ ref) = readRef ref
+
+writeKv :: MonadRef IORef m => MetaKv -> Kind -> m ()
+writeKv (MetaKv _ ref) kappa = writeRef ref (Just kappa)
+
+newMetaKv :: Ti MetaKv
+newMetaKv = do
+    u     <- newUnique
+    kref  <- newRef Nothing
+    return $ MetaKv u kref
+
+newMetaKvK :: Located a => a -> Ti Kind
+newMetaKvK _x = MetaK <$> newMetaKv
+
+readRv :: MonadRef IORef m => MetaRv -> m (Maybe R)
+readRv (MetaRv _ _ ref) = readRef ref
+
+writeRv :: MonadRef IORef m => MetaRv -> R -> m ()
+writeRv (MetaRv _ _ ref) ts = writeRef ref (Just ts)
+
+newMetaRv :: Traits -> Ti MetaRv
+newMetaRv ts = do
+    u     <- newUnique
+    tref  <- newRef Nothing
+    return $ MetaRv u ts tref
 
 {------------------------------------------------------------------------------
  -
@@ -324,21 +352,21 @@ instance Compress Type where
     compress tau@T{} =
         pure tau
 
-    compress (ST alphas omega tau1 tau2 tau3 l) =
-        ST <$> pure alphas <*> compress omega <*> compress tau1 <*>
+    compress (ST omega tau1 tau2 tau3 l) =
+        ST <$> compress omega <*> compress tau1 <*>
            compress tau2 <*> compress tau3 <*> pure l
 
     compress (RefT tau l) =
         RefT <$> compress tau <*> pure l
 
-    compress (FunT iotas taus tau l) =
-        FunT <$> pure iotas <*> compress taus <*> compress tau <*> pure l
+    compress (FunT taus tau l) =
+        FunT <$> compress taus <*> compress tau <*> pure l
 
-    compress tau@ConstI{} =
+    compress tau@NatT{} =
         pure tau
 
-    compress tau@VarI{} =
-        pure tau
+    compress (ForallT tvks tau l) =
+        ForallT <$> compress tvks <*> compress tau <*> pure l
 
     compress tau@TyVarT{} =
         pure tau
@@ -350,3 +378,33 @@ instance Compress Type where
           Just tau'  ->  do  tau'' <- compress tau'
                              writeTv mtv tau''
                              return tau''
+
+instance Compress Kind where
+    compress (TauK r)     = TauK <$> compress r
+    compress kappa@OmegaK = return kappa
+    compress kappa@MuK    = return kappa
+    compress kappa@RhoK   = return kappa
+    compress kappa@PhiK   = return kappa
+    compress kappa@NatK   = return kappa
+
+    compress kappa@(MetaK mkv) = do
+        maybe_kappa' <- readKv mkv
+        case maybe_kappa' of
+          Nothing     ->  return kappa
+          Just kappa' ->  do  kappa'' <- compress kappa'
+                              writeKv mkv kappa''
+                              return kappa''
+
+instance Compress (Type, Kind) where
+    compress (alpha, kappa) = (,) <$> pure alpha <*> compress kappa
+
+instance Compress R where
+    compress traits@R{} = pure traits
+
+    compress traits@(MetaR mrv) = do
+        maybe_traits' <- readRv mrv
+        case maybe_traits' of
+          Nothing      -> return traits
+          Just traits' -> do  traits'' <- compress traits'
+                              writeRv mrv traits''
+                              return traits''

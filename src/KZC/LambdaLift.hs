@@ -160,29 +160,29 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
     extendVars [(v, refT tau)] $
       withDecl (LetRefD v tau maybe_e' l) k
 
-liftDecl decl@(LetFunD f ivs vbs tau_ret e l) k =
+liftDecl decl@(LetFunD f ns vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
     f'   <- uniquifyLifted f
     fvbs <- nonFunFvs decl
     extendFunFvs [(f, (f', map fst fvbs))] $ do
       e' <- withSummaryContext decl $
-            extendLetFun f ivs vbs tau_ret $
+            extendLetFun f ns vbs tau_ret $
             withFvContext e $
             liftExp e
-      appendTopDecl $ LetFunD f' ivs (fvbs ++ vbs) tau_ret e' l
+      appendTopDecl $ LetFunD f' ns (fvbs ++ vbs) tau_ret e' l
       k Nothing
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
-liftDecl (LetExtFunD f ivs vbs tau_ret l) k =
+liftDecl (LetExtFunD f ns vbs tau_ret l) k =
     extendExtFuns [(f, tau)] $
     extendFunFvs [(f, (f, []))] $ do
-    appendTopDecl $ LetExtFunD f ivs vbs tau_ret l
+    appendTopDecl $ LetExtFunD f ns vbs tau_ret l
     k Nothing
   where
     tau :: Type
-    tau = FunT ivs (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 liftDecl (LetStructD s flds l) k =
     extendStructs [StructDef s flds l] $ do

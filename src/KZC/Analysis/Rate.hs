@@ -202,8 +202,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         return step
 
     stepT step@(EmitsC _ e _) = do
-        (iota, _) <- inferExp e >>= checkArrT
-        plusRate $ CompR (N 0) (iotaM iota)
+        (n, _) <- inferExp e >>= checkArrT
+        plusRate $ CompR (N 0) (natM n)
         return step
 
     stepT (RepeatC l ann c s) = do
@@ -216,9 +216,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
 
     stepT step@(ParC ann b c1 c2 sloc) =
         withLocContext step (text "In par") $ do
-        (s, a, c) <- askSTIndTypes
-        c1'       <- localSTIndTypes (Just (s, a, b)) $ compT c1
-        c2'       <- localSTIndTypes (Just (b, b, c)) $ compT c2
+        (s, a, c) <- askSTIndices
+        c1'       <- localSTIndices (Just (s, a, b)) $ compT c1
+        c2'       <- localSTIndices (Just (b, b, c)) $ compT c2
         -- traceRate $ ppr c1' <+> text ">>>" <+> ppr c2'
         traceRate $ ppr (compR c1') <+> text ">>>" <+> ppr (compR c2')
         r <- parRate (compR c1') (compR c2')
@@ -354,17 +354,17 @@ expM :: Exp -> Rate M -> Rate M
 expM (ConstE (FixC _ i) _) = rtimes i
 expM _                     = rstar
 
--- | Convert an 'Iota' to a multiplicity.
-iotaM :: Iota -> M
-iotaM (ConstI n _) = N n
-iotaM _            = Z 1
+-- | Convert a type-level natural number to a multiplicity.
+natM :: Type -> M
+natM (NatT n _) = N n
+natM _          = Z 1
 
 unknownRate :: (IsLabel l, MonadTc m) => Step l -> RM m ()
 unknownRate step = do
     tau <- inferStep step
     case tau of
-      ST _ C{} _ _ _ _ -> plusRate unknownCompRate
-      _                -> plusRate unknownTransRate
+      ST C{} _ _ _ _ -> plusRate unknownCompRate
+      _              -> plusRate unknownTransRate
 
 unknownCompRate :: Rate M
 unknownCompRate = CompR (Z 1) (Z 1)

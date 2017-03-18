@@ -21,7 +21,6 @@ module KZC.Core.Syntax (
     Field(..),
     Struct(..),
     TyVar(..),
-    IVar(..),
 
     IP(..),
     ipWidth,
@@ -54,7 +53,7 @@ module KZC.Core.Syntax (
     StructDef(..),
     Type(..),
     Omega(..),
-    Iota(..),
+    Trait(..),
     Kind(..),
 
     mkBoundVar,
@@ -129,7 +128,6 @@ import KZC.Expr.Syntax (Var(..),
                         Field(..),
                         Struct(..),
                         TyVar(..),
-                        IVar(..),
 
                         IP(..),
                         ipWidth,
@@ -150,7 +148,7 @@ import KZC.Expr.Syntax (Var(..),
                         StructDef(..),
                         Type(..),
                         Omega(..),
-                        Iota(..),
+                        Trait(..),
                         Kind(..),
 
                         isComplexStruct,
@@ -174,7 +172,9 @@ import KZC.Expr.Syntax (Var(..),
                         arrowPrec,
                         arrowPrec1,
                         tyappPrec,
-                        tyappPrec1
+                        tyappPrec1,
+
+                        pprFunParams
 #endif /* !defined(ONLY_TYPEDEFS) */
                        )
 import KZC.Label
@@ -232,11 +232,11 @@ data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
 data Decl l = LetD LocalDecl !SrcLoc
-            | LetFunD BoundVar [IVar] [(Var, Type)] Type Exp !SrcLoc
-            | LetExtFunD BoundVar [IVar] [(Var, Type)] Type !SrcLoc
+            | LetFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
+            | LetExtFunD BoundVar [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
             | LetStructD Struct [(Field, Type)] !SrcLoc
             | LetCompD BoundVar Type (Comp l) !SrcLoc
-            | LetFunCompD BoundVar [IVar] [(Var, Type)] Type (Comp l) !SrcLoc
+            | LetFunCompD BoundVar [(TyVar, Kind)] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data View = IdxVW Var Exp (Maybe Int) !SrcLoc
@@ -261,7 +261,7 @@ data Exp = ConstE Const !SrcLoc
          | IfE Exp Exp Exp !SrcLoc
          | LetE LocalDecl Exp !SrcLoc
          -- Functions
-         | CallE Var [Iota] [Exp] !SrcLoc
+         | CallE Var [Type] [Exp] !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
@@ -306,7 +306,7 @@ data Arg l = ExpA  Exp
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Step l = VarC l Var !SrcLoc
-            | CallC l Var [Iota] [Arg l] !SrcLoc
+            | CallC l Var [Type] [Arg l] !SrcLoc
             | IfC l Exp (Comp l) (Comp l) !SrcLoc
             | LetC l LocalDecl !SrcLoc
 
@@ -738,15 +738,15 @@ instance IsLabel l => Pretty (Decl l) where
     pprPrec p (LetD decl _) =
         pprPrec p decl
 
-    pprPrec p (LetFunD f ibs vbs tau e _) =
+    pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
-        text "letfun" <+> ppr f <+> pprFunParams ibs vbs <+>
+        text "letfun" <+> ppr f <+> pprFunParams tvks vbs <+>
         nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
-    pprPrec p (LetExtFunD f ibs vbs tau _) =
+    pprPrec p (LetExtFunD f tvks vbs tau _) =
         parensIf (p > appPrec) $
-        text "letextfun" <+> ppr f <+> pprFunParams ibs vbs <+>
+        text "letextfun" <+> ppr f <+> pprFunParams tvks vbs <+>
         nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau)
 
     pprPrec p (LetStructD s flds _) =
@@ -761,9 +761,9 @@ instance IsLabel l => Pretty (Decl l) where
       where
         lhs = text "letcomp" <+> ppr v <+> text ":" <+> ppr tau
 
-    pprPrec p (LetFunCompD f ibs vbs tau e _) =
+    pprPrec p (LetFunCompD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
-        text "letfuncomp" <+> ppr f <+> pprFunParams ibs vbs <+>
+        text "letfuncomp" <+> ppr f <+> pprFunParams tvks vbs <+>
         nest 4 (text ":" <+> flatten (ppr tau) <|> text ":" </> ppr tau) <+>
         nest 2 (text "=" </> ppr e)
 
@@ -912,18 +912,6 @@ pprBody e =
     case expToStms e of
       [_]  -> line <> align (ppr e)
       stms -> space <> semiEmbraceWrap (map ppr stms)
-
-pprFunParams :: [IVar] -> [(Var, Type)] -> Doc
-pprFunParams = go
-  where
-    go :: [IVar] -> [(Var, Type)] -> Doc
-    go []    []   = empty
-    go []    [vb] = pprArg vb
-    go []    vbs  = sep (map pprArg vbs)
-    go iotas vbs  = sep (map ppr iotas ++ map pprArg vbs)
-
-    pprArg :: (Var, Type) -> Doc
-    pprArg (v, tau) = parens $ ppr v <+> text ":" <+> ppr tau
 
 instance IsLabel l => Pretty (Arg l) where
     pprPrec p (ExpA e)  = pprPrec p e
@@ -1326,149 +1314,6 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Comp l) where
 
 {------------------------------------------------------------------------------
  -
- - Iota substitution
- -
- ------------------------------------------------------------------------------}
-
-instance Subst Iota IVar View where
-    substM (IdxVW v e i l) =
-        IdxVW v <$> substM e <*> pure i <*> pure l
-
-instance Subst Iota IVar LocalDecl where
-    substM (LetLD v tau e s) =
-        LetLD v <$> substM tau <*> substM e <*> pure s
-
-    substM (LetRefLD v tau e s) =
-        LetRefLD v <$> substM tau <*> substM e <*> pure s
-
-    substM (LetViewLD v tau vw s) =
-        LetViewLD v <$> substM tau <*> substM vw <*> pure s
-
-instance Subst Iota IVar Exp where
-    substM e@ConstE{} =
-        return e
-
-    substM e@VarE{} =
-        return e
-
-    substM (UnopE op e l) =
-        UnopE op <$> substM e <*> pure l
-
-    substM (BinopE op e1 e2 l) =
-        BinopE op <$> substM e1 <*> substM e2 <*> pure l
-
-    substM (IfE e1 e2 e3 l) =
-        IfE <$> substM e1 <*> substM e2 <*> substM e3 <*> pure l
-
-    substM (LetE decl e l) =
-        LetE <$> substM decl <*> substM e <*> pure l
-
-    substM (CallE v iotas es l) =
-        CallE v <$> substM iotas <*> substM es <*> pure l
-
-    substM (DerefE e l) =
-        DerefE <$> substM e <*> pure l
-
-    substM (AssignE e1 e2 l) =
-        AssignE <$> substM e1 <*> substM e2 <*> pure l
-
-    substM (WhileE e1 e2 l) =
-        WhileE <$> substM e1 <*> substM e2 <*> pure l
-
-    substM (ForE ann v tau e1 e2 e3 l) =
-        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
-
-    substM (ArrayE es l) =
-        ArrayE <$> substM es <*> pure l
-
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
-
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
-
-    substM (ProjE e fld l) =
-        ProjE <$> substM e <*> pure fld <*> pure l
-
-    substM (PrintE nl es l) =
-        PrintE nl <$> substM es <*> pure l
-
-    substM (ErrorE tau str s) =
-        ErrorE <$> substM tau <*> pure str <*> pure s
-
-    substM (ReturnE ann e l) =
-        ReturnE ann <$> substM e <*> pure l
-
-    substM (BindE wv tau e1 e2 l) =
-        BindE wv <$> substM tau <*> substM e1 <*> substM e2 <*> pure l
-
-    substM (LutE sz e) =
-        LutE sz <$> substM e
-
-    substM (GenE e gs l) =
-        GenE <$> substM e <*> substM gs <*> pure l
-
-instance Subst Iota IVar Gen where
-    substM (GenG    v tau c l)  = GenG v    <$> substM tau <*> pure c <*> pure l
-    substM (GenRefG v tau c l)  = GenRefG v <$> substM tau <*> pure c <*> pure l
-
-instance Subst Iota IVar (Arg l) where
-    substM (ExpA e)  = ExpA <$> substM e
-    substM (CompA c) = CompA <$> substM c
-
-instance Subst Iota IVar (Step l) where
-    substM step@VarC{} =
-        pure step
-
-    substM (CallC l v iotas es s) =
-        CallC l v <$> substM iotas <*> substM es <*> pure s
-
-    substM (IfC l e c1 c2 s) =
-        IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
-
-    substM (LetC l decl s) =
-        LetC l <$> substM decl <*> pure s
-
-    substM (WhileC l e c s) =
-        WhileC l <$> substM e <*> substM c <*> pure s
-
-    substM (ForC l ann v tau e1 e2 c s) =
-        ForC l ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM c <*> pure s
-
-    substM (LiftC l e s) =
-        LiftC l <$> substM e <*> pure s
-
-    substM (ReturnC l e s) =
-        ReturnC l <$> substM e <*> pure s
-
-    substM (BindC l wv tau s) =
-        BindC l wv <$> substM tau <*> pure s
-
-    substM (TakeC l tau s) =
-        TakeC l <$> substM tau <*> pure s
-
-    substM (TakesC l i tau s) =
-        TakesC l i <$> substM tau <*> pure s
-
-    substM (EmitC l e s) =
-        EmitC l <$> substM e <*> pure s
-
-    substM (EmitsC l e s) =
-        EmitsC l <$> substM e <*> pure s
-
-    substM (RepeatC l ann c s) =
-        RepeatC l ann <$> substM c <*> pure s
-
-    substM (ParC ann tau c1 c2 s) =
-        ParC ann <$> substM tau <*> substM c1 <*> substM c2 <*> pure s
-
-instance Subst Iota IVar (Comp l) where
-    substM comp = do
-        steps' <- substM (unComp comp)
-        return comp { unComp = steps' }
-
-{------------------------------------------------------------------------------
- -
  - Type substitution
  -
  ------------------------------------------------------------------------------}
@@ -1785,52 +1630,6 @@ instance Subst Exp Var (Comp l) where
 
 {------------------------------------------------------------------------------
  -
- - Freshening I-variables
- -
- ------------------------------------------------------------------------------}
-
-instance Freshen (Decl l) Iota IVar where
-    freshen (LetD decl l) k =
-        freshen decl $ \decl' ->
-        k $ LetD decl' l
-
-    freshen (LetFunD v ibs vbs tau e l) k =
-        freshen ibs $ \ibs' -> do
-        decl' <- LetFunD v ibs' <$> substM vbs <*> substM tau <*> substM e <*> pure l
-        k decl'
-
-    freshen (LetExtFunD v ibs vbs tau l) k =
-        freshen ibs $ \ibs' -> do
-        decl' <- LetExtFunD v ibs' <$> substM vbs <*> substM tau <*> pure l
-        k decl'
-
-    freshen decl@LetStructD{} k =
-        k decl
-
-    freshen (LetCompD v tau comp l) k = do
-        decl' <- LetCompD v <$> substM tau <*> substM comp <*> pure l
-        k decl'
-
-    freshen (LetFunCompD v ibs vbs tau comp l) k =
-        freshen ibs $ \ibs' -> do
-        decl' <- LetFunCompD v ibs' vbs <$> substM tau <*> substM comp <*> pure l
-        k decl'
-
-instance Freshen LocalDecl Iota IVar where
-    freshen (LetLD v tau e l) k = do
-        decl' <- LetLD v <$> substM tau <*> substM e <*> pure l
-        k decl'
-
-    freshen (LetRefLD v tau e l) k = do
-        decl' <- LetRefLD v <$> substM tau <*> substM e <*> pure l
-        k decl'
-
-    freshen (LetViewLD v tau vw l) k = do
-        decl' <- LetViewLD v <$> substM tau <*> substM vw <*> pure l
-        k decl'
-
-{------------------------------------------------------------------------------
- -
  - Freshening variables
  -
  ------------------------------------------------------------------------------}
@@ -1840,16 +1639,16 @@ instance Freshen (Decl l) Exp Var where
         freshen decl $ \decl' ->
         k $ LetD decl' l
 
-    freshen (LetFunD v ibs vbs tau e l) k =
+    freshen (LetFunD v tvks vbs tau e l) k =
         freshen v   $ \v'   ->
         freshen vbs $ \vbs' -> do
-        decl' <- LetFunD v' ibs vbs' tau <$> substM e <*> pure l
+        decl' <- LetFunD v' tvks vbs' tau <$> substM e <*> pure l
         k decl'
 
-    freshen (LetExtFunD v ibs vbs tau l) k =
+    freshen (LetExtFunD v tvks vbs tau l) k =
         freshen v   $ \v'   ->
         freshen vbs $ \vbs' -> do
-        decl' <- LetExtFunD v' ibs vbs' tau <$> pure l
+        decl' <- LetExtFunD v' tvks vbs' tau <$> pure l
         k decl'
 
     freshen decl@LetStructD{} k =
@@ -1860,10 +1659,10 @@ instance Freshen (Decl l) Exp Var where
         freshen v $ \v' ->
           k (LetCompD v' tau comp' l)
 
-    freshen (LetFunCompD v ibs vbs tau comp l) k =
+    freshen (LetFunCompD v tvks vbs tau comp l) k =
         freshen v   $ \v'   ->
         freshen vbs $ \vbs' -> do
-        decl' <- LetFunCompD v' ibs vbs' tau <$> substM comp <*> pure l
+        decl' <- LetFunCompD v' tvks vbs' tau <$> substM comp <*> pure l
         k decl'
 
 instance Freshen LocalDecl Exp Var where

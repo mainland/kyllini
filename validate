@@ -44,7 +44,7 @@ test_run() {
 }
 
 # Standard test suite
-test_run testsuite "backend lut libs kzc-issues threads" $@
+test_run testsuite "backend polymorphism lut libs kzc-issues threads" $@
 
 # WiFi tests
 test_run examples/wifi "transmitter/tests receiver/tests tests sniffer" $@

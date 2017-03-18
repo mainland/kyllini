@@ -71,10 +71,10 @@ import qualified Control.Monad.Trans.Cont as Cont
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
-import Data.Bits
 import Data.List (foldl')
 import Data.Monoid
-import Data.Word
+
+import qualified KZC.Util.EnumSet as ES
 
 data ModeFlag = Help
               | Compile
@@ -162,26 +162,16 @@ data TraceFlag = TracePhase
                | TraceViews
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-newtype FlagSet a = FlagSet Word32
-  deriving (Eq, Ord)
+type FlagSet a = ES.Set a
 
-testFlag :: Enum a => FlagSet a -> a -> Bool
-testFlag (FlagSet fs) f = fs `testBit` fromEnum f
+testFlag :: Enum a => a -> FlagSet a -> Bool
+testFlag = ES.member
 
-setFlag :: Enum a => FlagSet a -> a -> FlagSet a
-setFlag (FlagSet fs) f = FlagSet $ fs `setBit` fromEnum f
+setFlag :: Enum a => a -> FlagSet a -> FlagSet a
+setFlag = ES.insert
 
-unsetFlag :: Enum a => FlagSet a -> a -> FlagSet a
-unsetFlag (FlagSet fs) f = FlagSet $ fs `clearBit` fromEnum f
-
-instance Monoid (FlagSet a) where
-    mempty = FlagSet 0
-
-    FlagSet x `mappend` FlagSet y = FlagSet (x .|. y)
-
-instance (Enum a, Bounded a, Show a) => Show (FlagSet a) where
-    show (FlagSet n) = show [f | f <- [minBound..maxBound::a],
-                                 n `testBit` fromEnum f]
+unsetFlag :: Enum a => a -> FlagSet a -> FlagSet a
+unsetFlag = ES.delete
 
 data Config = Config
     { mode       :: !ModeFlag
@@ -379,58 +369,58 @@ setMode :: ModeFlag -> Config -> Config
 setMode f flags = flags { mode = f }
 
 testDynFlag :: DynFlag -> Config -> Bool
-testDynFlag f flags = dynFlags flags `testFlag` f
+testDynFlag f = testFlag f . dynFlags
 
 setDynFlag :: DynFlag -> Config -> Config
-setDynFlag f flags = flags { dynFlags = setFlag (dynFlags flags) f }
+setDynFlag f flags = flags { dynFlags = setFlag f (dynFlags flags) }
 
 setDynFlags :: [DynFlag] -> Config -> Config
 setDynFlags fs flags = foldl' (flip setDynFlag) flags fs
 
 unsetDynFlag :: DynFlag -> Config -> Config
-unsetDynFlag f flags = flags { dynFlags = unsetFlag (dynFlags flags) f }
+unsetDynFlag f flags = flags { dynFlags = unsetFlag f (dynFlags flags) }
 
 unsetDynFlags :: [DynFlag] -> Config -> Config
 unsetDynFlags fs flags = foldl' (flip unsetDynFlag) flags fs
 
 testWarnFlag :: WarnFlag -> Config -> Bool
-testWarnFlag f flags = warnFlags flags `testFlag` f
+testWarnFlag f = testFlag f . warnFlags
 
 setWarnFlag :: WarnFlag -> Config -> Config
-setWarnFlag f flags = flags { warnFlags = setFlag (warnFlags flags) f }
+setWarnFlag f flags = flags { warnFlags = setFlag f (warnFlags flags) }
 
 setWarnFlags :: [WarnFlag] -> Config -> Config
 setWarnFlags fs flags = foldl' (flip setWarnFlag) flags fs
 
 unsetWarnFlag :: WarnFlag -> Config -> Config
-unsetWarnFlag f flags = flags { warnFlags = unsetFlag (warnFlags flags) f }
+unsetWarnFlag f flags = flags { warnFlags = unsetFlag f (warnFlags flags) }
 
 testWerrorFlag :: WarnFlag -> Config -> Bool
-testWerrorFlag f flags = werrorFlags flags `testFlag` f
+testWerrorFlag f = testFlag f . werrorFlags
 
 setWerrorFlag :: WarnFlag -> Config -> Config
-setWerrorFlag f flags = flags { werrorFlags = setFlag (werrorFlags flags) f }
+setWerrorFlag f flags = flags { werrorFlags = setFlag f (werrorFlags flags) }
 
 setWerrorFlags :: [WarnFlag] -> Config -> Config
 setWerrorFlags fs flags = foldl' (flip setWerrorFlag) flags fs
 
 unsetWerrorFlag :: WarnFlag -> Config -> Config
-unsetWerrorFlag f flags = flags { werrorFlags = unsetFlag (werrorFlags flags) f }
+unsetWerrorFlag f flags = flags { werrorFlags = unsetFlag f (werrorFlags flags) }
 
 testDumpFlag :: DumpFlag -> Config -> Bool
-testDumpFlag f flags = dumpFlags flags `testFlag` f
+testDumpFlag f = testFlag f . dumpFlags
 
 setDumpFlag :: DumpFlag -> Config -> Config
-setDumpFlag f flags = flags { dumpFlags = setFlag (dumpFlags flags) f }
+setDumpFlag f flags = flags { dumpFlags = setFlag f (dumpFlags flags) }
 
 setDumpFlags :: [DumpFlag] -> Config -> Config
 setDumpFlags fs flags = foldl' (flip setDumpFlag) flags fs
 
 testTraceFlag :: TraceFlag -> Config -> Bool
-testTraceFlag f flags = traceFlags flags `testFlag` f
+testTraceFlag f = testFlag f . traceFlags
 
 setTraceFlag :: TraceFlag -> Config -> Config
-setTraceFlag f flags = flags { traceFlags = setFlag (traceFlags flags) f }
+setTraceFlag f flags = flags { traceFlags = setFlag f (traceFlags flags) }
 
 setTraceFlags :: [TraceFlag] -> Config -> Config
 setTraceFlags fs flags = foldl' (flip setTraceFlag) flags fs

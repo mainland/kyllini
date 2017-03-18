@@ -297,27 +297,27 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F m) where
 
     declsT decls k = transDecls decls k
 
-    declT (LetFunD f iotas vbs tau_ret e l) m =
+    declT (LetFunD f tvks vbs tau_ret e l) m =
         extendVars [(bVar f, tau)] $ do
-        e' <- extendLetFun f iotas vbs tau_ret $
+        e' <- extendLetFun f tvks vbs tau_ret $
               withSlicesExp (map fst vbs) $
               expT e
         x  <- m
-        return (LetFunD f iotas vbs tau_ret e' l, x)
+        return (LetFunD f tvks vbs tau_ret e' l, x)
       where
         tau :: Type
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT tvks (map snd vbs) tau_ret l
 
-    declT (LetFunCompD f iotas vbs tau_ret comp l) m =
+    declT (LetFunCompD f tvks vbs tau_ret comp l) m =
         extendVars [(bVar f, tau)] $ do
-        comp' <- extendLetFun f iotas vbs tau_ret $
+        comp' <- extendLetFun f tvks vbs tau_ret $
                  withSlicesComp (map fst vbs) $
                  compT comp
         x     <- m
-        return (LetFunCompD f iotas vbs tau_ret comp' l, x)
+        return (LetFunCompD f tvks vbs tau_ret comp' l, x)
       where
         tau :: Type
-        tau = FunT iotas (map snd vbs) tau_ret l
+        tau = funT tvks (map snd vbs) tau_ret l
 
     declT decl m = transDecl decl m
 

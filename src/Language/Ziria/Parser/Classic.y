@@ -546,7 +546,7 @@ arr_length :
     '[' 'length' '(' ID ')' ']' base_type
       { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
-      { (ConstI (unLoc $2) (srclocOf $2), $4) }
+      { (NatT (unLoc $2) (srclocOf $2), $4) }
   | base_type
       { (NoneI (srclocOf $1), $1) }
 
@@ -881,9 +881,9 @@ param_rlist :
 param :: { VarBind  }
 param :
     'var' ID ':' base_type
-      { VarBind (mkVar (varid $2)) True $4 }
+      { VarBind (mkVar (varid $2)) True (Just $4) }
   | identifier ':' base_type
-      { VarBind $1 False $3 }
+      { VarBind $1 False (Just $3) }
 
 -- Parameters to a comp function
 comp_params :: { [VarBind] }
@@ -899,13 +899,13 @@ comp_param_rlist :
 comp_param :: { VarBind }
 comp_param :
     'var' ID ':' base_type
-      { VarBind (mkVar (varid $2)) True $4 }
+      { VarBind (mkVar (varid $2)) True (Just $4) }
   | 'var' ID ':' comp_base_type
       {% fail "Computation parameter cannot be mutable" }
   | ID ':' base_type
-      { VarBind (mkVar (varid $1)) False $3 }
+      { VarBind (mkVar (varid $1)) False (Just $3) }
   | ID ':' comp_base_type
-      { VarBind (mkVar (varid $1)) False $3 }
+      { VarBind (mkVar (varid $1)) False (Just $3) }
   | ID ':' error
       {% expected ["'ST' or base type"] Nothing }
 

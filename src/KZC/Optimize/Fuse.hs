@@ -384,17 +384,17 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
            -> Maybe (Type, Type, Comp l, Comp l, Comp l)
            -> F l m (Comp l)
         go _ (Just (b, c, c1, c2, c3)) = do
-          (s, a, d) <- askSTIndTypes
-          c2'       <- localSTIndTypes (Just (b, b, c)) $
+          (s, a, d) <- askSTIndices
+          c2'       <- localSTIndices (Just (b, b, c)) $
                        withLeftKont [] $
                        withRightKont [] $
                        compT c2
-          ifte (do ssfuse1 <- localSTIndTypes (Just (s, a, c)) $
+          ifte (do ssfuse1 <- localSTIndices (Just (s, a, c)) $
                               ifte (fusePar c1 c2')
                                    return
                                    (fusionFailed c1 c2' >> mzero)
                    cfuse1  <- rateComp (mkComp ssfuse1)
-                   ssfuse2 <- localSTIndTypes (Just (s, a, d)) $
+                   ssfuse2 <- localSTIndices (Just (s, a, d)) $
                               ifte (fusePar cfuse1 c3)
                                    return
                                    (fusionFailed cfuse1 c3 >> mzero)
@@ -423,10 +423,10 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
 
     stepsT (ParC ann b c1 c2 sloc : steps) = do
         conf      <- askConfig
-        (s, a, c) <- askSTIndTypes
-        c1'       <- localSTIndTypes (Just (s, a, b)) $
+        (s, a, c) <- askSTIndices
+        c1'       <- localSTIndices (Just (s, a, b)) $
                      compT c1
-        c2'       <- localSTIndTypes (Just (b, b, c)) $
+        c2'       <- localSTIndices (Just (b, b, c)) $
                      compT c2
         steps1    <- if shouldFuse conf ann
                      then ifte (withLeftKont steps $
@@ -1028,7 +1028,7 @@ knownArraySize :: MonadTc m => Type -> m (Int, Type)
 knownArraySize tau = do
     (iota, tau_elem) <- checkArrT tau
     case iota of
-      ConstI n _ -> return (n, tau_elem)
+      NatT n _ -> return (n, tau_elem)
       _          -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.

@@ -92,22 +92,22 @@ transDecl (LetD decl s) m = do
     (decl', x) <- localDeclT decl m
     return (LetD decl' s, x)
 
-transDecl (LetFunD f iotas vbs tau_ret e l) m =
+transDecl (LetFunD f ns vbs tau_ret e l) m =
     extendVars [(bVar f, tau)] $ do
-    e' <- extendLetFun f iotas vbs tau_ret $
+    e' <- extendLetFun f ns vbs tau_ret $
           expT e
     x  <- m
-    return (LetFunD f iotas vbs tau_ret e' l, x)
+    return (LetFunD f ns vbs tau_ret e' l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
-transDecl (LetExtFunD f iotas vbs tau_ret l) m = do
+transDecl (LetExtFunD f ns vbs tau_ret l) m = do
     x <- extendExtFuns [(bVar f, tau)] m
-    return (LetExtFunD f iotas vbs tau_ret l, x)
+    return (LetExtFunD f ns vbs tau_ret l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 transDecl decl@(LetStructD s flds l) m = do
     x <- extendStructs [StructDef s flds l] m
@@ -119,15 +119,15 @@ transDecl (LetCompD v tau comp l) m = do
     x     <- extendVars [(bVar v, tau)] m
     return (LetCompD v tau comp' l, x)
 
-transDecl (LetFunCompD f iotas vbs tau_ret comp l) m =
+transDecl (LetFunCompD f ns vbs tau_ret comp l) m =
     extendVars [(bVar f, tau)] $ do
-    comp' <- extendLetFun f iotas vbs tau_ret $
+    comp' <- extendLetFun f ns vbs tau_ret $
              compT comp
     x     <- m
-    return (LetFunCompD f iotas vbs tau_ret comp' l, x)
+    return (LetFunCompD f ns vbs tau_ret comp' l, x)
   where
     tau :: Type
-    tau = FunT iotas (map snd vbs) tau_ret l
+    tau = funT ns (map snd vbs) tau_ret l
 
 transComp :: TransformComp l m => Comp l -> m (Comp l)
 transComp comp = do
@@ -200,9 +200,9 @@ transStep (RepeatC l ann c s) =
     RepeatC l ann <$> compT c <*> pure s
 
 transStep (ParC ann b c1 c2 sloc) = do
-    (s, a, c) <- askSTIndTypes
-    ParC ann b <$> localSTIndTypes (Just (s, a, b)) (compT c1)
-               <*> localSTIndTypes (Just (b, b, c)) (compT c2)
+    (s, a, c) <- askSTIndices
+    ParC ann b <$> localSTIndices (Just (s, a, b)) (compT c1)
+               <*> localSTIndices (Just (b, b, c)) (compT c2)
                <*> pure sloc
 
 transArg :: TransformComp l m => Arg l -> m (Arg l)
