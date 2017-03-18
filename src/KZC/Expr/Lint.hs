@@ -1116,9 +1116,12 @@ computation.
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
 withInstantiatedTyVars :: MonadTc m => Type -> m a -> m a
-withInstantiatedTyVars tau@(ForallT _ (ST _ s a b _) _) k = do
+withInstantiatedTyVars tau@(ForallT tvks (ST _ s a b _) _) k = do
     ST _ s' a' b' _ <- instST tau
-    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
+    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b'], alpha `elem` alphas] k
+  where
+    alphas :: [TyVar]
+    alphas = map fst tvks
 
 withInstantiatedTyVars _tau k =
     k
