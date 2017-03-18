@@ -103,7 +103,6 @@ library
     KZC.Util.EnumSet
     KZC.Util.Error
     KZC.Util.Logic
-    KZC.Util.Memoize
     KZC.Util.Pretty
     KZC.Util.SetLike
     KZC.Util.Staged

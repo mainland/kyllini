@@ -54,14 +54,11 @@ import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Error
-import KZC.Util.Memoize
-import KZC.Util.Pretty
 import KZC.Util.Staged
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
 import KZC.Util.ZEncode
-import KZC.Vars
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a
@@ -467,53 +464,36 @@ cgDecl (LetD decl _) k = do
 
 cgDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
-    func' <- memoize func
-    extendVarCExps [(bVar f, CFun func')] k
+    cf <- cvar f
+    extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
+      appendTopComment (ppr f <+> colon <+> align (ppr tau))
+      withSummaryContext decl $
+          extendLetFun f tvks vbs tau_ret $ do
+          let nats          =  map fst tvks
+          (cnats, cparams1) <- unzip <$> mapM cgNatTyVar nats
+          (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
+          cres_ident        <- gensym "let_res"
+          cblock <- inNewCodeBlock_ $
+                    extendTyVarCExps (nats `zip` cnats) $
+                    extendVarCExps  (map fst vbs `zip` cvbs) $ do
+                    cres <- if isReturnedByRef tau_res
+                            then return $ CExp [cexp|$id:cres_ident|]
+                            else cgTemp "let_res" tau_res
+                    cgExp e $ multishotBind tau_res cres
+                    when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
+                        appendStm $ rl l [cstm|return $cres;|]
+          if isReturnedByRef tau_res
+            then do cretparam <- cgRetParam tau_res (Just cres_ident)
+                    appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
+            else do ctau_res <- cgType tau_res
+                    appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
+      k
   where
     tau_res :: Type
     tau_res = resultType tau_ret
 
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
-
-    -- Compile a bound function given its arguments. This will be called in some
-    -- future context. It may be called with different type arguments---we need
-    -- to specialize the function at each distinct type.
-    func :: FunC l
-    func taus = do
-        appendTopComment (ppr f <+> colon <+> align (ppr tau))
-        withSummaryContext decl $
-          extendLetFun f tvks vbs tau_ret $
-          splitNats tvks taus $ \nats nonNats -> do
-            cf                <- funName (bVar f) nonNats
-            (cnats, cparams1) <- unzip <$> mapM cgNatTyVar nats
-            (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
-            cres_ident        <- gensym "let_res"
-            cblock <- inNewCodeBlock_ $
-                      extendTyVarCExps (nats `zip` cnats) $
-                      extendVarCExps  (map fst vbs `zip` cvbs) $ do
-                      cres <- if isReturnedByRef tau_res
-                              then return $ CExp [cexp|$id:cres_ident|]
-                              else cgTemp "let_res" tau_res
-                      cgExp e $ multishotBind tau_res cres
-                      when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
-                          appendStm $ rl l [cstm|return $cres;|]
-            if isReturnedByRef tau_res
-              then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                      appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
-              else do ctau_res <- cgType tau_res
-                      appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
-            return $ CExp [cexp|$id:cf|]
-      where
-        -- Generate a name for the monomorphized function.
-        funName :: Var -> [Type] -> Cg l C.Id
-        funName f taus = do
-            theta     <- askTyVarTypeSubst
-            let taus' = subst theta mempty taus
-            reloc (f <--> taus') <$> gensym (zencode (fname taus'))
-          where
-            fname :: [Type] -> Doc
-            fname taus = cat $ punctuate (char '_') $ ppr f : map (pprPrec appPrec1) taus
 
 cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
@@ -529,9 +509,7 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
                   appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
           else do ctau_ret <- cgType tau_res
                   appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
-    let func :: FunC l
-        func _taus = return $ CExp [cexp|$id:cf|]
-    extendVarCExps [(bVar f, CFun func)] k
+    k
   where
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
@@ -568,18 +546,18 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
     funcompc :: forall a . FunCompC l a
-    funcompc taus es klbl k =
-        withInstantiatedTyVars tau_ret $
-          splitNats tvks taus $ \nats _ -> do
-          comp' <- traverse uniquify comp
-          cnats <- mapM (cgNatType . tyVarT) nats
-          ces   <- mapM cgArg es
-          extendTyVars tvks $
-            extendVars  vbs $
-            extendTyVarCExps (nats `zip` cnats) $
-            extendVarCExps   (map fst vbs `zip` ces) $ do
-            useLabels (compUsedLabels comp')
-            cgComp comp' klbl k
+    funcompc _taus es klbl k =
+        withInstantiatedTyVars tau_ret $ do
+        comp'      <- traverse uniquify comp
+        let nats   =  map fst tvks
+        (cnats, _) <- unzip <$> mapM cgNatTyVar (map fst tvks)
+        ces        <- mapM cgArg es
+        extendTyVars tvks $
+          extendVars  vbs $
+          extendTyVarCExps (nats `zip` cnats) $
+          extendVarCExps   (map fst vbs `zip` ces) $ do
+          useLabels (compUsedLabels comp')
+          cgComp comp' klbl k
       where
         cgArg :: Arg l -> Cg l (CExp l)
         cgArg (ExpA e) =
@@ -591,22 +569,6 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
           where
             compc :: forall a . CompC l a
             compc = cgComp comp
-
--- Perform type application and return type variables of kind Nat, which become
--- function arguments, and the non-Nat types to which the function was applied.
-splitNats :: forall l a . [Tvk]
-          -> [Type]
-          -> ([TyVar] -> [Type] -> Cg l a)
-          -> Cg l a
-splitNats tvks taus k =
-    extendTyVarTypes nonNats $ k nats (map snd nonNats)
-  where
-    nats :: [TyVar]
-    nats = [alpha | (alpha, kappa) <- tvks, isNatK kappa]
-
-    nonNats :: [(TyVar, Type)]
-    nonNats = [(alpha, tau) | ((alpha, kappa), tau) <- tvks `zip` taus,
-                              not (isNatK kappa)]
 
 cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
@@ -1127,10 +1089,9 @@ cgExp e k =
     go (CallE f taus es l) k = do
         (tvks, _, tau_ret) <- lookupVar f >>= unFunT
         let tau_res        =  resultType tau_ret
-        func               <- lookupVarCExp f >>= unCFun
-        cf                 <- func taus
-        let (nats, ntaus)  =  unzip $ tyApplyNats tvks taus
-        cnats              <- mapM cgNatType ntaus
+        cf                 <- lookupVarCExp f
+        let nats           =  map fst tvks
+        cnats              <- mapM cgNatType taus
         ces                <- mapM cgArg es
         if isReturnedByRef tau_res
           then extendTyVarCExps (nats `zip` cnats) $ do
@@ -1139,13 +1100,6 @@ cgExp e k =
                k'
           else runKont k $ CExp [cexp|$cf($args:cnats, $args:ces)|]
       where
-        -- Perform type application and return the type variables that are of
-        -- kind Nat along with the types to which they are bound.
-        tyApplyNats :: [Tvk] -> [Type] -> [(TyVar, Type)]
-        tyApplyNats tvks taus =
-            [(alpha, tau) | ((alpha, kappa), tau) <- tvks `zip` taus,
-                            isNatK kappa]
-
         cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
             tau <- inferExp e
@@ -1413,13 +1367,6 @@ cgComplex cre cim =
 -- and imaginary parts.
 unComplex :: CExp l -> Cg l (CExp l, CExp l)
 unComplex ce = (,) <$> cgProj ce "re" <*> cgProj ce "im"
-
-unCFun :: CExp l -> Cg l (FunC l)
-unCFun (CFun func) =
-    return func
-
-unCFun ce =
-    panicdoc $ nest 2 $ text "unCFunC: not a CFun:" </> ppr ce
 
 unCComp :: CExp l -> Cg l (CompC l a)
 unCComp (CComp compc) =
