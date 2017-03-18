@@ -333,7 +333,17 @@ lookupVar v =
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
 extendTyVars :: MonadTc m => [Tvk] -> m a -> m a
-extendTyVars = extendTcEnv tyVars (\env x -> env { tyVars = x })
+extendTyVars tvks =
+    localTc $ \env -> env
+      { tyVars     = foldl' insert (tyVars env) tvks
+      , tyVarTypes = foldl' delete (tyVarTypes env) (map fst tvks)
+      }
+  where
+    insert :: Ord k => Map k v -> (k, v) -> Map k v
+    insert m (k, v) = Map.insert k v m
+
+    delete :: Ord k => Map k v -> k -> Map k v
+    delete m k = Map.delete k m
 
 lookupTyVar :: MonadTc m => TyVar -> m Kind
 lookupTyVar tv =
