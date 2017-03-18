@@ -141,7 +141,6 @@ evalDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
 
     eval :: EvalM l m (Val l m Exp)
     eval =
-        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         withSummaryContext e $
@@ -191,7 +190,6 @@ evalDecl decl@(LetFunCompD f tvks vbs tau_ret comp l) k =
     eval :: EvalM l m (Val l m (Comp l))
     eval =
         withSummaryContext comp $
-        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         traverse uniquify comp >>= evalComp
