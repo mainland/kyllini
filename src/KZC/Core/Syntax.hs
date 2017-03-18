@@ -159,6 +159,7 @@ import KZC.Expr.Syntax (Var(..),
                         LiftedBits(..),
                         LiftedCast(..),
 
+                        pprTyApp,
                         pprTypeSig,
                         pprFunDecl
 #endif /* !defined(ONLY_TYPEDEFS) */
@@ -807,8 +808,8 @@ instance Pretty Exp where
           LetE{} -> ppr decl <+> text "in" </> pprPrec doPrec1 body
           _      -> ppr decl </> text "in" <> pprBody body
 
-    pprPrec _ (CallE f is es _) =
-        ppr f <> parens (commasep (map ppr is ++ map ppr es))
+    pprPrec _ (CallE f taus es _) =
+        ppr f <> pprTyApp taus <> parens (commasep (map ppr es))
 
     pprPrec _ (DerefE v _) =
         text "!" <> pprPrec appPrec1 v
@@ -923,9 +924,9 @@ pprComp comp =
         pprBind k $
         ppr v
 
-    pprSteps (CallC _ f is es _ : k) =
+    pprSteps (CallC _ f taus es _ : k) =
         pprBind k $
-        ppr f <> parens (commasep (map ppr is ++ map ppr es))
+        ppr f <> pprTyApp taus <> parens (commasep (map ppr es))
 
     pprSteps (IfC _ e1 e2 e3 _ : k) =
         pprBind k $

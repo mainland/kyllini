@@ -68,6 +68,7 @@ module KZC.Expr.Syntax (
 
     renormalize,
 
+    pprTyApp,
     pprTypeSig,
     pprKindSig,
     pprFunDecl
@@ -762,7 +763,7 @@ instance Pretty Exp where
           _      -> ppr decl </> text "in" <> pprBody body
 
     pprPrec _ (CallE f taus es _) =
-        ppr f <> parens (commasep (map ppr taus ++ map ppr es))
+        ppr f <> pprTyApp taus <> parens (commasep (map ppr es))
 
     pprPrec _ (DerefE v _) =
         text "!" <> pprPrec appPrec1 v
@@ -1021,6 +1022,11 @@ instance Pretty Kind where
 pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
+
+-- | Pretty-print a type application.
+pprTyApp :: [Type] -> Doc
+pprTyApp []   = empty
+pprTyApp taus = angles $ commasep (map ppr taus)
 
 -- | Pretty-print a thing with a type signature
 pprTypeSig :: Pretty a => a -> Type -> Doc
