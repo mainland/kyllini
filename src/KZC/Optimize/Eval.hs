@@ -489,13 +489,18 @@ evalStep (RepeatC l ann c s) = do
     steps' <- toSteps val
     partial $ CompV h [RepeatC l ann (mkComp  steps') s]
 
-evalStep (ParC ann tau c1 c2 s) = do
-    h      <- freezeHeap
-    val1   <- withSummaryContext c1 $ evalComp c1
-    val2   <- withSummaryContext c2 $ evalComp c2
-    steps1 <- toSteps val1
-    steps2 <- toSteps val2
-    partial $ CompV h [ParC ann tau (mkComp  steps1) (mkComp  steps2) s]
+evalStep (ParC ann b c1 c2 l) = do
+    h         <- freezeHeap
+    (s, a, c) <- askSTIndices
+    val1      <- withSummaryContext c1 $
+                 localSTIndices (Just (s, a, b)) $
+                 evalComp c1
+    val2      <- withSummaryContext c2 $
+                 localSTIndices (Just (b, b, c)) $
+                 evalComp c2
+    steps1    <- toSteps val1
+    steps2    <- toSteps val2
+    partial $ CompV h [ParC ann b (mkComp  steps1) (mkComp  steps2) l]
 
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
