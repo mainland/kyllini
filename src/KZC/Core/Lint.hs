@@ -79,8 +79,6 @@ import Control.Monad (unless,
 import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
@@ -93,9 +91,13 @@ import KZC.Expr.Lint (Tc(..),
                       checkConst,
                       inferConst,
 
+                      checkStructDecl,
+                      checkStructUse,
+
                       inferKind,
                       checkKind,
                       checkTauOrRhoKind,
+                      checkTyApp,
 
                       checkCast,
                       checkBitcast,
@@ -157,22 +159,10 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
-checkDecl decl@(StructD s flds l) k = do
-    alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (`checkKind` tauK) taus
-    extendStructs [StructDef s flds l] k
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> m ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
+checkDecl decl@(StructD s tvks flds l) k = do
+    alwaysWithSummaryContext decl $
+        checkStructDecl s tvks flds
+    extendStructs [StructDef s tvks flds l] k
 
 checkDecl (LetD decl _) k =
     checkLocalDecl decl k
@@ -493,21 +483,21 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        tau_f     <- checkStructFieldT sdef taus f
         return $ RefT tau_f l
 
     go tau = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        checkStructFieldT sdef taus f
 
-inferExp e0@(StructE s flds l) =
+inferExp e0@(StructE s taus flds l) =
     withFvContext e0 $ do
-    StructDef _ fldDefs _ <- lookupStruct s
-    checkMissingFields flds fldDefs
-    checkExtraFields flds fldDefs
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do
@@ -515,30 +505,6 @@ inferExp e0@(StructE s flds l) =
                Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
-
-    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkMissingFields flds fldDefs =
-        unless (Set.null missing) $
-          faildoc $
-            text "Struct definition has missing fields:" <+>
-            (commasep . map ppr . Set.toList) missing
-      where
-        fs, fs', missing :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        missing = fs Set.\\ fs'
-
-    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkExtraFields flds fldDefs =
-        unless (Set.null extra) $
-          faildoc $
-            text "Struct definition has extra fields:" <+>
-            (commasep . map ppr . Set.toList) extra
-      where
-        fs, fs', extra :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        extra = fs' Set.\\ fs
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
@@ -614,20 +580,13 @@ inferCall :: forall m e . MonadTc m
           => Type -> [Type] -> [e] -> m ([Type], Type)
 inferCall tau_f taus args = do
     (tvks, taus_args, tau_ret) <- checkFunT tau_f
-    checkNumTypeArgs (length taus) (length tvks)
-    checkNumArgs     (length args) (length taus_args)
+    checkTyApp tvks taus
+    checkNumArgs (length args) (length taus_args)
     extendTyVars tvks $ do
       let theta = Map.fromList (map fst tvks `zip` taus)
       let phi   = fvs taus_args <> fvs tau_ret
       return (subst theta phi taus_args, subst theta phi tau_ret)
   where
-    checkNumTypeArgs :: Int -> Int -> m ()
-    checkNumTypeArgs n ntaus =
-        when (n /= ntaus) $
-             faildoc $
-             text "Expected" <+> ppr ntaus <+>
-             text "type arguments but got" <+> ppr n
-
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
         when (n /= nexp) $

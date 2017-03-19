@@ -68,6 +68,7 @@ module KZC.Expr.Syntax (
 
     renormalize,
 
+    pprForall,
     pprTyApp,
     pprTypeSig,
     pprKindSig,
@@ -206,7 +207,7 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = StructD Struct [(Field, Type)] !SrcLoc
+data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
           | LetD Var Type Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
           | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
@@ -221,7 +222,7 @@ data Const = UnitC
            | ArrayC !(Vector Const)
            | ReplicateC Int Const
            | EnumC Type
-           | StructC Struct [(Field, Const)]
+           | StructC Struct [Type] [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -242,7 +243,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | StructE Struct [(Field, Exp)] !SrcLoc
+         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -330,7 +331,7 @@ data Binop = Eq
            | Cat -- ^ Array concatenation.
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
+data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Type = UnitT !SrcLoc
@@ -338,7 +339,7 @@ data Type = UnitT !SrcLoc
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
-          | StructT Struct !SrcLoc
+          | StructT Struct [Type] !SrcLoc
           | ArrT Type Type !SrcLoc
           | ST Omega Type Type Type !SrcLoc
           | RefT Type !SrcLoc
@@ -489,19 +490,19 @@ instance LiftedNum Const (Maybe Const) where
     liftNum2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
 
-    liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+    liftNum2 Add _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a+c) (b+d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+    liftNum2 Sub _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a-c) (b-d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
+    liftNum2 Mul _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
         Just $ complexC sn (a*c - b*d) (b*c + a*d)
       where
         (a, b) = uncomplexC x
@@ -520,7 +521,7 @@ instance LiftedIntegral Const (Maybe Const) where
     liftIntegral2 Rem _ (FixC ip x) (FixC _ y) =
         Just $ FixC ip (fromIntegral (x `rem` y))
 
-    liftIntegral2 Div _ x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn = do
+    liftIntegral2 Div _ x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn = do
         re <- (a*c + b*d)/(c*c + d*d)
         im <- (b*c - a*d)/(c*c + d*d)
         return $ complexC sn re im
@@ -564,10 +565,10 @@ instance LiftedCast Const (Maybe Const) where
 
 complexC :: Struct -> Const -> Const -> Const
 complexC sname a b =
-    StructC sname [("re", a), ("im", b)]
+    StructC sname [] [("re", a), ("im", b)]
 
 uncomplexC :: Const -> (Const, Const)
-uncomplexC c@(StructC sname x) | isComplexStruct sname =
+uncomplexC c@(StructC sname [] x) | isComplexStruct sname =
     fromMaybe err $ do
       re <- lookup "re" x
       im <- lookup "im" x
@@ -623,17 +624,20 @@ instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
 instance Summary Decl where
-    summary (StructD s _ _)        = text "definition of" <+> ppr s
-    summary (LetD v _ _ _)         = text "definition of" <+> ppr v
-    summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
-    summary (LetFunD v _ _ _ _ _)  = text "definition of" <+> ppr v
-    summary (LetExtFunD v _ _ _ _) = text "definition of" <+> ppr v
+    summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
+    summary (LetD v _ _ _)            = text "definition of" <+> ppr v
+    summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
+    summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
 instance Summary StructDef where
-    summary (StructDef s _ _) = text "struct" <+> ppr s
+    summary (StructDef s _ _ _) = text "struct" <+> ppr s
+
+instance Summary Type where
+    summary tau = text "type:" <+> align (ppr tau)
 
 {------------------------------------------------------------------------------
  -
@@ -670,9 +674,9 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    pprPrec p (StructD s flds _) =
+    pprPrec p (StructD s tvks flds _) =
         parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> pprStruct comma colon flds
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
 
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
@@ -706,7 +710,10 @@ instance Pretty Const where
     pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
     pprPrec _ (FloatC _ f)     = ppr f
     pprPrec _ (StringC s)      = text (show s)
-    pprPrec _ (StructC s flds) = ppr s <+> pprStruct comma equals flds
+
+    pprPrec _ (StructC s taus flds) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals flds
+
     pprPrec _ (ArrayC cs)
         | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
         | otherwise                         = text "arr" <+> enclosesep lbrace rbrace comma (map ppr (V.toList cs))
@@ -791,8 +798,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct comma equals fields
+    pprPrec _ (StructE s taus fields _) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -958,9 +965,9 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "ref" <+> pprPrec tyappPrec1 tau
 
-    pprPrec p (StructT s _) =
+    pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s
+        text "struct" <+> ppr s <> pprTyApp taus
 
     pprPrec p (ArrT ind tau@StructT{} _) =
         parensIf (p > tyappPrec) $
@@ -1114,7 +1121,7 @@ instance Fvs Type TyVar where
     fvs FixT{}                       = mempty
     fvs FloatT{}                     = mempty
     fvs StringT{}                    = mempty
-    fvs (StructT _ _)                = mempty
+    fvs (StructT _ taus _)           = fvs taus
     fvs (ArrT _ tau _)               = fvs tau
     fvs (ST  omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
     fvs (RefT tau _)                 = fvs tau
@@ -1168,7 +1175,7 @@ instance Fvs Exp Var where
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
     fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)    = fvs (map snd flds)
+    fvs (StructE _ _ flds _)  = fvs (map snd flds)
     fvs (ProjE e _ _)         = fvs e
     fvs (PrintE _ es _)       = fvs es
     fvs ErrorE{}              = mempty
@@ -1220,7 +1227,7 @@ instance HasVars Exp Var where
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
     allVars (IdxE e1 e2 _ _)      = allVars e1 <> allVars e2
-    allVars (StructE _ flds _)    = allVars (map snd flds)
+    allVars (StructE _ _ flds _)  = allVars (map snd flds)
     allVars (ProjE e _ _)         = allVars e
     allVars (PrintE _ es _)       = allVars es
     allVars ErrorE{}              = mempty
@@ -1360,8 +1367,8 @@ instance Subst Type TyVar Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s <$> substM taus <*> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
@@ -1463,8 +1470,8 @@ instance Subst Exp Var Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s taus <$> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l

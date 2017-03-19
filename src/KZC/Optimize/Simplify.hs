@@ -401,8 +401,8 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
-    postInlineUnconditionally _flags decl@(StructD s flds l) =
-        extendStructs [StructDef s flds l] $
+    postInlineUnconditionally _flags decl@(StructD s taus flds l) =
+        extendStructs [StructDef s taus flds l] $
         withBinding decl m
 
     postInlineUnconditionally _flags LetD{} =
@@ -1174,18 +1174,18 @@ simplE (UnopE op e s) = do
     unop Neg (ConstE c _) | Just c' <- liftNum op negate c =
         return $ ConstE c' s
 
-    unop (Cast (StructT sn' _)) (ConstE (StructC sn flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+    unop (Cast (StructT sn' taus' _)) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
         flds' <- castStruct cast sn' flds
-        return $ ConstE (StructC sn' flds') s
+        return $ ConstE (StructC sn' taus' flds') s
       where
         cast :: Type -> Const -> SimplM l m Const
         cast tau c = do
             ConstE c' _ <- unop (Cast tau) (ConstE c s)
             return c'
 
-    unop (Cast (StructT sn' _)) (StructE sn flds s) | isComplexStruct sn && isComplexStruct sn' = do
+    unop (Cast (StructT sn' taus' _)) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
         flds' <- castStruct cast sn' flds
-        return $ StructE sn' flds' s
+        return $ StructE sn' taus' flds' s
       where
         cast :: Type -> Exp -> SimplM l m Exp
         cast tau = unop (Cast tau)
@@ -1544,12 +1544,12 @@ simplE (IdxE e1 e2 len0 s) = do
     go e1' e2' len =
         return $ IdxE e1' e2' len s
 
-simplE (StructE struct flds s) = do
+simplE (StructE struct taus flds s) = do
     es <- mapM simplE es
     if all isConstE es
       then do cs <- mapM unConstE es
-              return $ ConstE (StructC struct (fs `zip` cs)) s
-      else return $ StructE struct (fs `zip` es) s
+              return $ ConstE (StructC struct taus (fs `zip` cs)) s
+      else return $ StructE struct taus (fs `zip` es) s
   where
     fs :: [Field]
     es :: [Exp]
@@ -1559,12 +1559,12 @@ simplE (ProjE e f s) =
     simplE e >>= go
   where
     go :: Exp -> SimplM l m Exp
-    go (StructE _ flds _) =
+    go (StructE _ _ flds _) =
         case lookup f flds of
           Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
           Just e' -> return e'
 
-    go (ConstE (StructC _ flds) _) =
+    go (ConstE (StructC _ _ flds) _) =
         case lookup f flds of
           Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
           Just c  -> return $ ConstE c s

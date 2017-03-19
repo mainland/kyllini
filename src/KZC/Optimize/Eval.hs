@@ -108,9 +108,9 @@ evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
-evalDecl (StructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ const . return $ StructD s flds l
+evalDecl decl@(StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $
+    k $ const . return $ decl
 
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
@@ -366,15 +366,21 @@ evalStep step@(CallC _ f taus args _) =
     go v_f taus' v_args
   where
     go :: Val l m a -> [Type] -> [ArgVal l m] -> EvalM l m (Val l m (Comp l))
-    go (FunCompClosV theta tvks vbs _tau_ret k) taus' v_args =
+    go (FunCompClosV theta tvks vbs tau_ret k) taus' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' ->
+        extendTyVars tvks $
         extendTyVarTypes (map fst tvks `zip` taus') $
-        extendArgBinds  (vs' `zip` v_args) $ do
+        extendSTTyVars tau_ret $
+        withInstantiatedTyVars tau_ret $
+        extendArgBinds (vs' `zip` v_args) $ do
         taus' <- mapM simplType taus
         k >>= wrapLetArgs vs' taus'
       where
         (vs, taus) = unzip vbs
+
+        extendSTTyVars (ForallT tvks ST{} _) k = extendTyVars tvks k
+        extendSTTyVars _                     k = k
 
         -- If @val@ uses any of the function's parameter bindings, we need to
         -- keep them around. This is exactly what we need to do in the @CallE@
@@ -542,9 +548,9 @@ evalConst (ReplicateC n c) = do
 evalConst (EnumC tau) =
     evalConst =<< ArrayC <$> enumType tau
 
-evalConst (StructC s flds) = do
+evalConst (StructC s taus flds) = do
     vals <- mapM evalConst cs
-    return $ StructV s (Map.fromList (fs `zip` vals))
+    return $ StructV s taus (Map.fromList (fs `zip` vals))
   where
     fs :: [Field]
     cs :: [Const]
@@ -605,9 +611,9 @@ evalExp e =
         unop Neg val =
             maybePartialVal $ liftNum op negate val
 
-        unop (Cast (StructT sn' _)) (StructV sn flds) | isComplexStruct sn && isComplexStruct sn' = do
-            flds' <- castStruct cast sn' (Map.toList flds)
-            return $ StructV sn' (Map.fromList flds')
+        unop (Cast (StructT s [_tau] _)) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
+            flds' <- castStruct cast s' (Map.toList flds)
+            return $ StructV s' [tau'] (Map.fromList flds')
           where
             cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
             cast tau = unop (Cast tau)
@@ -774,6 +780,7 @@ evalExp e =
         go _tau (FunClosV theta tvks vbs _tau_ret k) tau' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
+            extendTyVars tvks $
             extendTyVarTypes (map fst tvks `zip` tau') $
             extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
@@ -885,13 +892,13 @@ evalExp e =
           then evalIdx v_arr v_start len
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
 
-    eval flags (StructE s flds _) = do
+    eval flags (StructE s taus flds _) = do
         vals <- mapM (eval flags) es
-        return $ StructV s (Map.fromList (fs `zip` vals))
+        return $ StructV s taus (Map.fromList (fs `zip` vals))
       where
         fs :: [Field]
         es :: [Exp]
-        (fs, es) = unzip  flds
+        (fs, es) = unzip flds
 
     eval flags (ProjE e f s) = do
         val <- eval flags e
@@ -1029,8 +1036,8 @@ refUpdate (ProjR r f) old new = do
     go f old' new
   where
     --go :: Field -> Val l m Exp -> Val l m Exp -> t m (Val l m Exp)
-    go f (StructV s flds) new = do
-        let new' = StructV s (Map.insert f new flds)
+    go f (StructV s tau flds) new = do
+        let new' = StructV s tau (Map.insert f new flds)
         refUpdate r old new'
 
     go _ _ _ =
@@ -1264,7 +1271,7 @@ evalProj :: (IsLabel l, MonadTc m)
 evalProj (RefV r) f =
     return $ RefV $ ProjR r f
 
-evalProj (StructV _ kvs) f =
+evalProj (StructV _ _ kvs) f =
     case Map.lookup f kvs of
       Nothing  -> faildoc $ text "Unknown struct field" <+> ppr f
       Just val -> return val

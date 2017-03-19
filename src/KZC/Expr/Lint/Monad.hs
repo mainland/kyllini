@@ -28,6 +28,8 @@ module KZC.Expr.Lint.Monad (
     extendStructs,
     lookupStruct,
     maybeLookupStruct,
+    lookupStructFields,
+    tyAppStruct,
 
     inLocalScope,
     isInTopScope,
@@ -148,7 +150,7 @@ defaultTcEnv = TcEnv
 
     complexStruct :: Struct -> Type -> StructDef
     complexStruct s tau =
-        StructDef s [("re", tau), ("im", tau)] noLoc
+        StructDef s [] [("re", tau), ("im", tau)] noLoc
 
 class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
@@ -247,11 +249,11 @@ defaultValueC (FixT ip _)   = return $ FixC ip 0
 defaultValueC (FloatT fp _) = return $ FloatC fp 0
 defaultValueC StringT{}     = return $ StringC ""
 
-defaultValueC (StructT s _) = do
-    StructDef s flds _ <- lookupStruct s
-    let (fs, taus)     =  unzip flds
-    cs                 <- mapM defaultValueC taus
-    return $ StructC s (fs `zip` cs)
+defaultValueC (StructT s taus _) = do
+    sdef        <- lookupStruct s
+    (fs, ftaus) <- unzip <$> tyAppStruct sdef taus
+    cs          <- mapM defaultValueC ftaus
+    return $ StructC s taus (fs `zip` cs)
 
 defaultValueC (ArrT (NatT n _) tau _) = do
     c <- defaultValueC tau
@@ -283,6 +285,20 @@ lookupStruct s =
 maybeLookupStruct :: MonadTc m => Struct -> m (Maybe StructDef)
 maybeLookupStruct s =
     asksTc (Map.lookup s . structs)
+
+lookupStructFields :: MonadTc m => Struct -> [Type] -> m [(Field, Type)]
+lookupStructFields struct taus = do
+    sdef <- lookupStruct struct
+    tyAppStruct sdef taus
+
+-- | Perform type application of a struct to type arguments and return the
+-- resulting fields and their types.
+tyAppStruct :: forall m . MonadTc m => StructDef -> [Type] -> m [(Field, Type)]
+tyAppStruct (StructDef _ tvks flds _) taus =
+    return (map fst flds `zip` subst theta mempty (map snd flds))
+  where
+    theta :: Map TyVar Type
+    theta = Map.fromList (map fst tvks `zip` taus)
 
 inLocalScope :: MonadTc m => m a -> m a
 inLocalScope = localTc $ \env -> env { topScope = False }
@@ -438,21 +454,22 @@ typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                 = pure 0
-    go BoolT{}                 = pure 1
-    go (FixT ip _)             = pure $ ipWidth ip
-    go (FloatT fp _)           = pure $ fpWidth fp
-    go (StructT "complex" _)   = pure $ 2 * dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)  = pure 16
-    go (StructT "complex16" _) = pure 32
-    go (StructT "complex32" _) = pure 64
-    go (StructT "complex64" _) = pure 128
-    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)            = go tau
+    go UnitT{}                    = pure 0
+    go BoolT{}                    = pure 1
+    go (FixT ip _)                = pure $ ipWidth ip
+    go (FloatT fp _)              = pure $ fpWidth fp
+    go (StructT "complex" [] _)   = pure $ 2 * dEFAULT_INT_WIDTH
+    go (StructT "complex8" [] _)  = pure 16
+    go (StructT "complex16" [] _) = pure 32
+    go (StructT "complex32" [] _) = pure 64
+    go (StructT "complex64" [] _) = pure 128
+    go (ArrT (NatT n _) tau _)    = (*) <$> pure n <*> go tau
+    go (ST (C tau) _ _ _ _)       = go tau
+    go (RefT tau _)               = go tau
 
-    go (StructT s _) = do
-        StructDef _ flds _ <- lookupStruct s
+    go (StructT s taus _) = do
+        sdef <- lookupStruct s
+        flds <- tyAppStruct sdef taus
         sum <$> mapM (typeSize . snd) flds
 
     go (ForallT _ (ST (C tau) _ _ _ _) _) =
@@ -508,7 +525,7 @@ castStruct :: forall a m . MonadTc m
            -> [(Field, a)]
            -> m [(Field, a)]
 castStruct cast sn flds = do
-    StructDef _ fldtaus _ <- lookupStruct sn
+    StructDef _ _ fldtaus _ <- lookupStruct sn
     mapM (castField fldtaus) flds
   where
     castField :: [(Field, Type)] -> (Field, a) -> m (Field, a)

@@ -36,6 +36,8 @@ module KZC.Check.Smart (
     uint32T,
     uint64T,
     refT,
+    structT,
+    synT,
     arrT,
     stT,
     forallST,
@@ -137,6 +139,12 @@ refT tau = RefT tau (srclocOf tau)
 arrT :: Type -> Type -> Type
 arrT iota tau = ArrT iota tau (iota `srcspan` tau)
 
+structT :: Z.Struct -> [Type] -> Type
+structT s taus = StructT s taus (srclocOf taus)
+
+synT :: Type -> Type -> Type
+synT tau1 tau2 = SynT tau1 tau2 (tau1 `srcspan` tau2)
+
 stT :: Type -> Type -> Type -> Type -> Type
 stT omega sigma alpha beta =
     ST omega sigma alpha beta (omega `srcspan` sigma `srcspan` alpha `srcspan` beta)
@@ -166,7 +174,8 @@ forallT tvks tau =
     ForallT tvks tau (map fst tvks `srcspan` tau)
 
 structName :: StructDef -> Z.Struct
-structName (StructDef s _ _) = s
+structName (StructDef s _ _ _) = s
+structName (TypeDef s _ _ _)   = s
 
 isUnitT :: Type -> Bool
 isUnitT UnitT{} = True

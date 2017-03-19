@@ -159,7 +159,8 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = StructD Struct [(Field, Type)] !SrcLoc
+data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          | TypeD Struct [Tvk] Type !SrcLoc
           | LetD Var (Maybe Type) Exp !SrcLoc
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
           | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
@@ -196,7 +197,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | StructE Struct [(Field, Exp)] !SrcLoc
+         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -291,7 +292,7 @@ data Type = UnitT !SrcLoc
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Type Type !SrcLoc
-          | StructT Struct !SrcLoc
+          | StructT Struct [Type] !SrcLoc
           | C Type !SrcLoc
           | T !SrcLoc
           | ST Type Type Type !SrcLoc
@@ -330,6 +331,7 @@ isComplexStruct _           = False
 
 instance Fvs Decl Var where
     fvs StructD{}                      = mempty
+    fvs TypeD  {}                      = mempty
     fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
     fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
     fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
@@ -354,7 +356,7 @@ instance Fvs Exp Var where
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
     fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)    = fvs (map snd flds)
+    fvs (StructE _ _ flds _)  = fvs (map snd flds)
     fvs (ProjE e _ _)         = fvs e
     fvs (PrintE _ es _)       = fvs es
     fvs ErrorE{}              = mempty
@@ -388,6 +390,7 @@ instance Fvs [Stm] Var where
 
 instance Binders Decl Var where
     binders StructD{}                     = mempty
+    binders TypeD{}                       = mempty
     binders (LetD v _ _ _)                = singleton v
     binders (LetRefD v _ _ _)             = singleton v
     binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
@@ -402,7 +405,8 @@ instance Binders Decl Var where
  ------------------------------------------------------------------------------}
 
 instance Summary Decl where
-    summary (StructD s _ _)             = text "definition of" <+> text "struct" <+> ppr s
+    summary (StructD s _ _ _)           = text "definition of" <+> ppr s
+    summary (TypeD s _ _ _)             = text "definition of" <+> ppr s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
     summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
@@ -452,13 +456,16 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    pprPrec _ (StructD s fields _) | classicDialect =
+    pprPrec _ (StructD s _ fields _) | classicDialect =
         align $ nest 2 $
         text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
 
-    pprPrec _ (StructD s fields _)=
+    pprPrec _ (StructD s tvks fields _)=
         align $ nest 2 $
-        text "struct" <+> ppr s <+> pprStruct comma colon fields
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon fields
+
+    pprPrec _ (TypeD s tvks tau _) =
+        text "type" <+> ppr s <> pprForall tvks <+> text "=" <+> ppr tau
 
     pprPrec p (LetD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
@@ -604,8 +611,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct comma equals fields
+    pprPrec _ (StructE s taus fields _) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -793,9 +800,9 @@ instance Pretty Type where
     pprPrec _ (ArrT ind tau _) =
         brackets (pprPrec appPrec1 tau <+> semi <+> ppr ind)
 
-    pprPrec p (StructT s _) =
+    pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s
+        text "struct" <+> ppr s <> pprTyApp taus
 
     pprPrec p (C tau _) =
         parensIf (p > tyappPrec) $
@@ -848,6 +855,11 @@ pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
 pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
+
+-- | Pretty-print a type application. This is used for struct instantiation.
+pprTyApp :: [Type] -> Doc
+pprTyApp []   = empty
+pprTyApp taus = angles $ commasep (map ppr taus)
 
 -- %left '&&' '||'
 -- %left '==' '!='

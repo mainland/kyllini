@@ -443,9 +443,9 @@ useDecl (LetExtFunD f ns vbs tau_ret l) m = do
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-useDecl (StructD s flds l) m = do
-    x <- extendStructs [StructDef s flds l] m
-    return (StructD s flds l, x)
+useDecl decl@(StructD s tvks flds l) m = do
+    x <- extendStructs [StructDef s tvks flds l] m
+    return (decl, x)
 
 useDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $
@@ -694,10 +694,8 @@ useExp (AssignE e1 e2 s) = do
       where
         go :: Val -> ND m (Exp, Val)
         go val | val == bot = do
-            StructDef _ flds _ <- lookupVar v >>=
-                                  checkRefT >>=
-                                  checkStructT >>=
-                                  lookupStruct
+            (struct, taus) <- lookupVar v >>= checkRefT >>= checkStructT
+            flds           <- lookupStructFields struct taus
             putVal v $ StructV $
                 Map.insert f val2 $
                 Map.fromList (map fst flds `zip` repeat bot)
@@ -750,8 +748,8 @@ useExp (IdxE e1@(VarE v _) e2 len s) = do
 useExp (IdxE e1 e2 len s) =
     topA $ IdxE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure len <*> pure s
 
-useExp (StructE struct flds s) =
-    topA $ StructE struct <$> (zip fs <$> mapM (fmap fst . useExp) es) <*> pure s
+useExp (StructE struct taus flds s) =
+    topA $ StructE struct taus <$> (zip fs <$> mapM (fmap fst . useExp) es) <*> pure s
   where
     fs :: [Field]
     es :: [Exp]

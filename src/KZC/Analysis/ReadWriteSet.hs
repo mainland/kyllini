@@ -499,7 +499,8 @@ readRef (Ref v path) = do
         return $ ArrayRW top ws
 
     go ref@(StructRW _rs ws) [] = do
-        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
+        flds           <- lookupStructFields struct taus
         let rs :: BoundedFields
             rs = fields (map fst flds)
         if rs `inPrecise` ws
@@ -553,7 +554,8 @@ writeRef (Ref v path) = do
         return $ ArrayRW rs top
 
     go (StructRW rs _) [] = do
-        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
+        flds           <- lookupStructFields struct taus
         let ws :: PreciseFields
             ws  = fields (map fst flds)
         return $ StructRW rs ws
@@ -754,7 +756,7 @@ evalExp e =
         void $ evalExp e2
         return top
 
-    go (StructE _ flds _) = do
+    go (StructE _ _ flds _) = do
         mapM_ (go . snd) flds
         return top
 

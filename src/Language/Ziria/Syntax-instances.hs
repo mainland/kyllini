@@ -7,7 +7,8 @@ instance Located Struct where
 instance Located Field where
   locOf (Field l) = locOf l
 instance Located Decl where
-  locOf (StructD _ _ l) = locOf l
+  locOf (StructD _ _ _ l) = locOf l
+  locOf (TypeD _ _ _ l) = locOf l
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
@@ -31,7 +32,7 @@ instance Located Exp where
   locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
-  locOf (StructE _ _ l) = locOf l
+  locOf (StructE _ _ _ l) = locOf l
   locOf (ProjE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ l) = locOf l
@@ -64,7 +65,7 @@ instance Located Type where
   locOf (FixT _ l) = locOf l
   locOf (FloatT _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
-  locOf (StructT _ l) = locOf l
+  locOf (StructT _ _ l) = locOf l
   locOf (C _ l) = locOf l
   locOf (T l) = locOf l
   locOf (ST _ _ _ l) = locOf l

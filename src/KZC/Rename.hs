@@ -62,8 +62,8 @@ instance Rename Type where
     rn (ArrT tau1 tau2 l) =
         ArrT <$> rn tau1 <*> rn tau2 <*> pure l
 
-    rn tau@StructT{} =
-        pure tau
+    rn (StructT s taus l) =
+        StructT s <$> traverse rn taus <*> pure l
 
     rn (C tau l) =
         C <$> rn tau <*> pure l
@@ -144,8 +144,8 @@ instance Rename Exp where
     rn (IdxE e1 e2 len l) =
         IdxE <$> rn e1 <*> rn e2 <*> pure len <*> pure l
 
-    rn (StructE s flds l) =
-        StructE <$> pure s <*> traverse rnField flds <*> pure l
+    rn (StructE s taus flds l) =
+        StructE s <$> traverse rn taus <*> traverse rnField flds <*> pure l
       where
         rnField (f, e) = (,) <$> pure f <*> rn e
 
@@ -215,9 +215,16 @@ instance Rename (Field, Type) where
     rn (fld, tau) = (,) <$> pure fld <*> rn tau
 
 rnDecl :: Decl -> (Decl -> Rn a) -> Rn a
-rnDecl decl@(StructD s flds l) k = do
+rnDecl decl@(StructD s tvks flds l) k = do
     decl' <- withSummaryContext decl $
-             StructD <$> pure s <*> rn flds <*> pure l
+             extendTyVars (text "type variable") (map fst tvks) $
+             StructD s <$> rn tvks <*> rn flds <*> pure l
+    k decl'
+
+rnDecl decl@(TypeD s tvks tau l) k = do
+    decl' <- withSummaryContext decl $
+             extendTyVars (text "type variable") (map fst tvks) $
+             TypeD s <$> rn tvks <*> rn tau <*> pure l
     k decl'
 
 rnDecl decl@(LetD v tau e l) k =

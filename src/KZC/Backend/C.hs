@@ -284,22 +284,22 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT _ tau _)          = go tau
-        go tau | isBitT tau        = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT (I 8)  _)         = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT (I 16) _)         = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT (I 32) _)         = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT (U 8)  _)         = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT (U 16) _)         = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT (U 32) _)         = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP32 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP64 _)         = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
-        go _                       = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+        go (ArrT _ tau _)             = go tau
+        go tau | isBitT tau           = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (FixT (I 8)  _)            = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT (I 16) _)            = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT (I 32) _)            = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT (U 8)  _)            = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT (U 16) _)            = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT (U 32) _)            = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                        text "are not supported."
+        go (FloatT FP16 _)            = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP32 _)            = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP64 _)            = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+        go (StructT "complex16" [] _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+        go (StructT "complex32" [] _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+        go _                          = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
@@ -308,49 +308,49 @@ void kz_main(const typename kz_params_t* $id:params)
     cgInput tau cbuf cn = go tau
       where
         go :: Type -> Cg l (CExp l)
-        go (ArrT n tau _)          = do ci <- cgNatType n
-                                        cgInput tau cbuf (cn*ci)
-        go tau | isBitT tau        = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
-        go (FixT (I 8)  _)         = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
-        go (FixT (I 16) _)         = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
-        go (FixT (I 32) _)         = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
-        go (FixT (U 8)  _)         = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
-        go (FixT (U 16) _)         = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
-        go (FixT (U 32) _)         = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP32 _)         = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP64 _)         = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
-        go (StructT "complex16" _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
-        go (StructT "complex32" _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
-        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
-        go tau                     = do ctau <- cgType tau
-                                        return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+        go (ArrT n tau _)             = do ci <- cgNatType n
+                                           cgInput tau cbuf (cn*ci)
+        go tau | isBitT tau           = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
+        go (FixT (I 8)  _)            = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (FixT (I 16) _)            = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (FixT (I 32) _)            = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (FixT (U 8)  _)            = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (FixT (U 16) _)            = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (FixT (U 32) _)            = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                        text "are not supported."
+        go (FloatT FP16 _)            = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP32 _)            = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP64 _)            = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
+        go (StructT "complex16" [] _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
+        go (StructT "complex32" [] _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
+        go (TyVarT alpha _)           = lookupTyVarType alpha >>= go
+        go tau                        = do ctau <- cgType tau
+                                           return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
     cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgOutput tau cbuf cn cval = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT n tau _)          = do ci <- cgNatType n
-                                        cgOutput tau cbuf (cn*ci) cval
-        go tau | isBitT tau        = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
-        go (FixT (I 8)  _)         = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
-        go (FixT (I 16) _)         = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
-        go (FixT (I 32) _)         = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
-        go (FixT (U 8)  _)         = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
-        go (FixT (U 16) _)         = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
-        go (FixT (U 32) _)         = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP32 _)         = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP64 _)         = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
-        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
-        go tau                     = do ctau <- cgType tau
-                                        appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+        go (ArrT n tau _)             = do ci <- cgNatType n
+                                           cgOutput tau cbuf (cn*ci) cval
+        go tau | isBitT tau           = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
+        go (FixT (I 8)  _)            = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (FixT (I 16) _)            = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (FixT (I 32) _)            = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (FixT (U 8)  _)            = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (FixT (U 16) _)            = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (FixT (U 32) _)            = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                        text "are not supported."
+        go (FloatT FP16 _)            = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP32 _)            = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP64 _)            = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
+        go (StructT "complex16" [] _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
+        go (StructT "complex32" [] _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
+        go (TyVarT alpha _)           = lookupTyVarType alpha >>= go
+        go tau                        = do ctau <- cgType tau
+                                           appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
 cgInitThreads :: Located a => a -> Cg l ()
 cgInitThreads x =
@@ -447,16 +447,20 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl decl@(StructD s flds l) k = do
+cgDecl decl@(StructD s [] flds l) k = do
     withSummaryContext decl $ do
         cflds <- mapM cgField flds
         appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
-    extendStructs [StructDef s flds l] k
+    extendStructs [StructDef s [] flds l] k
   where
     cgField :: (Field, Type) -> Cg l C.FieldGroup
     cgField (fld, tau) = do
         ctau <- cgType tau
         return [csdecl|$ty:ctau $id:(cfield fld);|]
+
+cgDecl decl@StructD{} _k =
+    withSummaryContext decl $
+    faildoc $ text "Cannot compile polymorphic structs."
 
 cgDecl (LetD decl _) k = do
     flags <- askConfig
@@ -626,8 +630,8 @@ cgConst (ReplicateC n c) = do
 cgConst (EnumC tau) =
     cgConst =<< ArrayC <$> enumType tau
 
-cgConst (StructC s flds) = do
-    StructDef _ fldDefs _ <- lookupStruct s
+cgConst (StructC struct taus flds) = do
+    fldDefs <- lookupStructFields struct taus
     -- We must be careful to generate initializers in the same order as the
     -- struct's fields are declared, which is why we map 'cgField' over the
     -- struct's field definitions rather than mapping it over the values as
@@ -1185,7 +1189,7 @@ cgExp e k =
           Nothing  -> calias e <$> cgIdx tau ce1 cn ce2 >>= runKont k
           Just len -> calias e <$> cgSlice tau ce1 cn ce2 len >>= runKont k
 
-    go e@(StructE _ flds l) k =
+    go e@(StructE _ _ flds l) k =
         case unConstE e of
           Nothing -> CStruct <$> mapM cgField flds >>= runKont k
           Just c  -> cgExp (ConstE c l) k
@@ -1226,7 +1230,7 @@ cgExp e k =
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
         cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
 
-        cgPrintScalar (StructT s _) ce | isComplexStruct s =
+        cgPrintScalar (StructT s [] _) ce | isComplexStruct s =
             appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
 
         cgPrintScalar tau _ =
@@ -1469,8 +1473,12 @@ cgType (FloatT FP64 _) =
 cgType StringT{} =
     return [cty|char*|]
 
-cgType (StructT s l) =
+cgType (StructT s [] l) =
     return [cty|typename $id:(cstruct s l)|]
+
+cgType tau@StructT{} =
+    withSummaryContext tau $
+    faildoc $ text "Cannot compile polymorphic struct types."
 
 cgType (ArrT (NatT n _) tau _) | isBitT tau =
     return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
@@ -2831,12 +2839,13 @@ cgAssign tau ce1 ce2 = do
                 return ce
 
     assign _ tau cv (CStruct flds) = do
-        structdef <- checkStructOrRefStructT tau >>= lookupStruct
-        mapM_ (cgAssignField structdef) flds
+        (struct, taus) <- checkStructOrRefStructT tau
+        structdef      <- lookupStruct struct
+        mapM_ (cgAssignField structdef taus) flds
       where
-        cgAssignField :: StructDef -> (Field, CExp l) -> Cg l ()
-        cgAssignField structdef (fld, ce) = do
-            tau <- checkStructFieldT structdef fld
+        cgAssignField :: StructDef -> [Type] -> (Field, CExp l) -> Cg l ()
+        cgAssignField structdef taus (fld, ce) = do
+            tau <- checkStructFieldT structdef taus fld
             cgAssign tau (CExp [cexp|$cv.$id:(cfield fld)|]) ce
 
     -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and

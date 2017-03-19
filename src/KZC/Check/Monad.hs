@@ -27,6 +27,7 @@ module KZC.Check.Monad (
     extendStructs,
     lookupStruct,
     maybeLookupStruct,
+    tyAppStruct,
 
     extendVars,
     lookupVar,
@@ -70,6 +71,7 @@ import Control.Monad.State
 import Data.Foldable (toList)
 import Data.IORef
 import Data.Loc
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
@@ -174,6 +176,33 @@ lookupStruct s =
 maybeLookupStruct :: Z.Struct -> Ti (Maybe StructDef)
 maybeLookupStruct s =
     asks (Map.lookup s . structs)
+
+-- | Perform type application of a struct to type arguments and return the
+-- resulting type and its fields.
+tyAppStruct :: StructDef -> [Type] -> Ti (Type, [(Z.Field, Type)])
+tyAppStruct sdef taus = go sdef
+  where
+    theta :: Map TyVar Type
+    theta = Map.fromList (map fst tvks `zip` taus)
+
+    tvks :: [Tvk]
+    tvks = case sdef of
+             StructDef _ tvks _ _ -> tvks
+             TypeDef _ tvks _ _   -> tvks
+
+    go (StructDef s _ flds _) =
+        return (structT s taus, map fst flds `zip` subst theta mempty (map snd flds))
+
+    go (TypeDef s tvks (SynT _ tau' _) l) =
+        go (TypeDef s tvks tau' l)
+
+    go (TypeDef s _ (StructT s' taus' _) _) = do
+        sdef'        <- lookupStruct s'
+        (tau', flds) <- tyAppStruct sdef' taus'
+        return (synT (structT s taus) tau', flds)
+
+    go (TypeDef s _ tau' _) =
+        return (synT (structT s taus) tau', [])
 
 extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do
@@ -340,8 +369,11 @@ instance Compress Type where
     compress tau@StringT{} =
         pure tau
 
-    compress tau@StructT{} =
-        pure tau
+    compress (StructT s taus l) =
+        StructT s <$> compress taus <*> pure l
+
+    compress (SynT tau1 tau2 l) =
+        SynT <$> compress tau1 <*> compress tau2 <*> pure l
 
     compress (ArrT tau1 tau2 l) =
         ArrT <$> compress tau1 <*> compress tau2 <*> pure l

@@ -39,9 +39,9 @@ module KZC.Core.Smart (
     whileE,
     forE,
     arrayE,
-    structE,
     idxE,
     sliceE,
+    structE,
     projE,
     returnE,
     bindE,
@@ -145,7 +145,8 @@ import KZC.Expr.Smart (qualK,
 
                        fromIntC,
 
-                       mkVar)
+                       mkVar,
+                       mkStruct)
 
 letD :: Var -> Type -> Exp -> LocalDecl
 letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
@@ -172,9 +173,9 @@ unConstE (ArrayE es _) = do
     cs <- mapM unConstE es
     return $ ArrayC $ V.fromList cs
 
-unConstE (StructE s flds _) = do
+unConstE (StructE s taus flds _) = do
     cs <- mapM unConstE es
-    return $ StructC s (fs `zip` cs)
+    return $ StructC s taus (fs `zip` cs)
   where
     fs :: [Field]
     es :: [Exp]
@@ -266,14 +267,14 @@ forE ann v tau e1 e2 e3 = ForE ann v tau (startLenGenInt e1 e2) e3 l
 arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
 
-structE :: Struct -> [(Field, Exp)] -> Exp
-structE s fs = StructE s fs (srclocOf (map snd fs))
-
 idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 (castE uintT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
 sliceE e1 e2 len = IdxE e1 (castE uintT e2) (Just len) (e1 `srcspan` e2)
+
+structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
+structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
 
 projE :: Exp -> Field -> Exp
 projE e f = ProjE e f (e `srcspan` f)

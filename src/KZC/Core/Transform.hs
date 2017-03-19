@@ -113,10 +113,10 @@ transDecls (d:ds) m = do
     return (d':ds', x)
 
 transDecl :: TransformComp l m => Decl l -> m a -> m (Decl l, a)
-transDecl (StructD s flds l) m = do
+transDecl (StructD s tvks flds l) m = do
     flds' <- mapM transField flds
-    x     <- extendStructs [StructDef s flds l] m
-    return (StructD s flds' l, x)
+    x     <- extendStructs [StructDef s tvks flds l] m
+    return (StructD s tvks flds' l, x)
 
 transDecl (LetD decl s) m = do
     (decl', x) <- localDeclT decl m
@@ -314,8 +314,8 @@ transConst (ArrayC v)       = ArrayC <$> traverse constT v
 transConst (ReplicateC i c) = ReplicateC i <$> constT c
 transConst (EnumC tau)      = EnumC <$> typeT tau
 
-transConst (StructC struct fs) =
-    StructC struct <$> mapM transFieldConst fs
+transConst (StructC struct taus fs) =
+    StructC struct <$> mapM typeT taus <*> mapM transFieldConst fs
 
 transExp :: TransformExp m => Exp -> m Exp
 transExp (ConstE c s) =
@@ -367,8 +367,8 @@ transExp (ArrayE es s) =
 transExp (IdxE e1 e2 len s) =
     IdxE <$> expT e1 <*> expT e2 <*> pure len <*> pure s
 
-transExp (StructE struct flds s) =
-    StructE struct <$> (zip fs <$> mapM expT es) <*> pure s
+transExp (StructE struct taus flds s) =
+    StructE struct taus <$> (zip fs <$> mapM expT es) <*> pure s
   where
     (fs, es) = unzip flds
 

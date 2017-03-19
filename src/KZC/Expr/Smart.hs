@@ -80,6 +80,7 @@ module KZC.Expr.Smart (
     fromIntC,
 
     mkVar,
+    mkStruct,
 
     notE,
     castE,
@@ -91,6 +92,8 @@ module KZC.Expr.Smart (
     letE,
     callE,
     derefE,
+    structE,
+    projE,
     returnE,
     bindE,
     seqE,
@@ -204,7 +207,7 @@ arrKnownT i tau = ArrT (NatT i l) tau l
     l = srclocOf tau
 
 structT :: Struct -> Type
-structT struct = StructT struct (srclocOf struct)
+structT struct = StructT struct [] (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
 stT omega s a b = ST omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
@@ -260,8 +263,8 @@ isBitArrT (ArrT _ tau _) = isBitT tau
 isBitArrT _              = False
 
 isComplexT :: Type -> Bool
-isComplexT (StructT s _) = isComplexStruct s
-isComplexT _             = False
+isComplexT (StructT s _ _) = isComplexStruct s
+isComplexT _               = False
 
 isFunT :: Type -> Bool
 isFunT FunT{} = True
@@ -318,7 +321,7 @@ isPureishT _ =
     True
 
 structName :: StructDef -> Struct
-structName (StructDef s _ _) = s
+structName (StructDef s _ _ _) = s
 
 splitArrT :: Monad m => Type -> m (Type, Type)
 splitArrT (ArrT nat tau _) =
@@ -347,7 +350,7 @@ arrayC cs
     n :: Int
     n = V.length cs
 
-structC :: Struct -> [(Field, Const)] -> Const
+structC :: Struct -> [Type] -> [(Field, Const)] -> Const
 structC = StructC
 
 isArrC :: Const -> Bool
@@ -365,6 +368,9 @@ fromIntC _ =
 
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
+
+mkStruct :: String -> Struct
+mkStruct s = Struct (mkName s noLoc)
 
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
@@ -400,6 +406,12 @@ callE f es = CallE f [] es (f `srcspan` es)
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
+
+structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
+structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
+
+projE :: Exp -> Field -> Exp
+projE e f = ProjE e f (e `srcspan` f)
 
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)

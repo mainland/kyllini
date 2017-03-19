@@ -134,8 +134,8 @@ lutExp e info = do
 
     maybeMkLUT :: Maybe (Var, StructDef) -> G l m (Var, StructDef)
     maybeMkLUT Nothing = do
-        structdef@(StructDef struct flds _) <- mkStructDef
-        appendTopDecl $ StructD struct flds noLoc
+        structdef@(StructDef struct _taus flds _) <- mkStructDef
+        appendTopDecl $ StructD struct [] flds noLoc
         extendStructs [structdef] $ do
           e'    <- lowerLUTVars (toList $ lutInVars info) e
           v_lut <- mkLUT structdef e'
@@ -155,12 +155,12 @@ lutExp e info = do
               f_res     <- gensym "result"
               let fs'   = fs ++ [f_res]
               let taus' = taus ++ [tau_res]
-              return $ StructDef struct (fs' `zip` taus') noLoc
+              return $ StructDef struct [] (fs' `zip` taus') noLoc
           _ ->
-              return $ StructDef struct (fs `zip` taus) noLoc
+              return $ StructDef struct [] (fs `zip` taus) noLoc
 
     mkLUT :: StructDef -> Exp -> G l m Var
-    mkLUT structdef@(StructDef struct _ _) e = do
+    mkLUT structdef@(StructDef struct _taus _flds _) e = do
         taus_in     <- mapM lookupLUTVar lvs_in
         bits        <- sum <$> mapM typeSize taus_in
         v_lut       <- gensym "lut"
@@ -182,7 +182,7 @@ lutExp e info = do
           | otherwise  = genG (unLUTVar lv) tau (EnumC tau)
 
     mkLUTLookup :: StructDef -> Var -> G l m Exp
-    mkLUTLookup (StructDef _struct flds _) v_lut = do
+    mkLUTLookup (StructDef _struct _taus flds _) v_lut = do
         taus_in     <- mapM lookupLUTVar lvs_in
         w_in        <- sum <$> mapM typeSize taus_in
         v_idx       <- gensym "lutidx"
@@ -272,7 +272,7 @@ packLUTElement :: forall m . MonadTc m
                -> StructDef
                -> Exp
                -> m Exp
-packLUTElement info (StructDef struct flds _) e =
+packLUTElement info (StructDef struct _taus flds _) e =
     bindFreeOutVars $
       bindResult e $
       bindResultVars (reverse (resultVars `zip` taus))
@@ -322,10 +322,10 @@ packLUTElement info (StructDef struct flds _) e =
 
     bindResultVars :: [(LUTVar, Type)] -> [Exp] -> m Exp
     bindResultVars [] vals | isPureT (lutResultType info) =
-        return $ structE struct (fs `zip` vals)
+        return $ structE struct [] (fs `zip` vals)
 
     bindResultVars [] vals =
-        return $ returnE $ structE struct (fs `zip` vals)
+        return $ returnE $ structE struct [] (fs `zip` vals)
 
     bindResultVars ((lv,tau):vtaus) vals = do
         x <- gensym (namedString (unLUTVar lv))

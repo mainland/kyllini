@@ -31,9 +31,13 @@ module KZC.Expr.Lint (
 
     refPath,
 
+    checkStructDecl,
+    checkStructUse,
+
     inferKind,
     checkKind,
     checkTauOrRhoKind,
+    checkTyApp,
 
     checkCast,
     checkBitcast,
@@ -145,22 +149,10 @@ checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
-checkDecl decl@(StructD s flds l) k = do
-    alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (`checkKind` tauK) taus
-    extendStructs [StructDef s flds l] k
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> m ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
+checkDecl decl@(StructD s tvks flds l) k = do
+    alwaysWithSummaryContext decl $
+        checkStructDecl s tvks flds
+    extendStructs [StructDef s tvks flds l] k
 
 checkDecl decl@(LetD v tau e _) k = do
     alwaysWithSummaryContext decl $ do
@@ -256,10 +248,10 @@ inferConst _ (EnumC tau) = do
     w <- typeSize tau
     return $ arrKnownT (2^w) tau
 
-inferConst l (StructC s flds) = do
-    fldDefs <- checkStructFields s (map fst flds)
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+inferConst l (StructC s taus flds) = do
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Const) -> m ()
     checkField fldDefs (f, c) = do
@@ -495,23 +487,25 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        tau_f     <- checkStructFieldT sdef taus f
         return $ RefT tau_f l
 
     go tau = do
-        sdef <- checkStructT tau >>= lookupStruct
-        checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        checkStructFieldT sdef taus f
 
-inferExp e0@(StructE s flds l) =
+inferExp e0@(StructE s taus flds l) =
     withFvContext e0 $ do
-    fldDefs <- checkStructFields s (map fst flds)
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
-    checkField fldDefs (f, e) = do
-      tau <- case lookup f fldDefs of
+    checkField fdefs (f, e) = do
+      tau <- case lookup f fdefs of
                Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
@@ -617,8 +611,8 @@ inferExp e0@(ParE _ b e1 e2 l) = do
 inferCall :: forall m . MonadTc m => Type -> [Type] -> [Exp] -> m Type
 inferCall tau_f taus es = do
     (tvks, taus_args, tau_ret) <- checkFunT tau_f
-    checkNumTypeArgs (length taus) (length tvks)
-    checkNumArgs     (length es)   (length taus_args)
+    checkTyApp tvks taus
+    checkNumArgs (length es) (length taus_args)
     extendTyVars tvks $ do
       zipWithM_ checkKind taus (map snd tvks)
       let theta      = Map.fromList (map fst tvks `zip` taus)
@@ -638,13 +632,6 @@ inferCall tau_f taus es = do
         | otherwise      = withFvContext e $ do
                            tau' <- inferExp e >>= instST
                            checkTypeEquality tau tau'
-
-    checkNumTypeArgs :: Int -> Int -> m ()
-    checkNumTypeArgs n ntaus =
-        when (n /= ntaus) $
-             faildoc $
-             text "Expected" <+> ppr ntaus <+>
-             text "type arguments but got" <+> ppr n
 
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
@@ -694,16 +681,38 @@ refPath e =
     go e _ =
         faildoc $ text "refPath: Not a reference:" <+> ppr e
 
+-- | Check that a struct is not being re-defined.
+checkStructNotRedefined :: MonadTc m => Struct -> m ()
+checkStructNotRedefined s = do
+    maybe_sdef <- maybeLookupStruct s
+    case maybe_sdef of
+      Nothing   -> return ()
+      Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                   parens (text "original definition at" <+> ppr (locOf sdef))
+
+-- | Check a struct declaration.
+checkStructDecl :: MonadTc m => Struct -> [Tvk] -> [(Field, Type)] -> m ()
+checkStructDecl s tvks flds = do
+    checkStructNotRedefined s
+    checkDuplicates "field names" fnames
+    extendTyVars tvks $
+      mapM_ (`checkKind` tauK) taus
+  where
+    (fnames, taus) = unzip flds
+
 -- | Check that a struct has no missing and no extra fields.
-checkStructFields :: forall m . MonadTc m
-                  => Struct
-                  -> [Field]
-                  -> m [(Field, Type)]
-checkStructFields s flds = do
-    StructDef _ fldDefs _ <- lookupStruct s
-    checkMissingFields flds fldDefs
-    checkExtraFields flds fldDefs
-    return fldDefs
+checkStructUse :: forall m . MonadTc m
+               => Struct
+               -> [Type]
+               -> [Field]
+               -> m [(Field, Type)]
+checkStructUse struct taus flds = do
+    sdef  <- lookupStruct struct
+    checkStructTyApp sdef taus
+    fdefs <- lookupStructFields struct taus
+    checkMissingFields flds fdefs
+    checkExtraFields flds fdefs
+    return fdefs
   where
     checkMissingFields :: [Field] -> [(Field, Type)] -> m ()
     checkMissingFields flds fldDefs =
@@ -728,6 +737,11 @@ checkStructFields s flds = do
         fs  = Set.fromList flds
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         extra = fs' Set.\\ fs
+
+-- | Check a struct type application.
+checkStructTyApp :: MonadTc m => StructDef -> [Type] -> m ()
+checkStructTyApp (StructDef _ tvks _ _) taus =
+    checkTyApp tvks taus
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
@@ -790,8 +804,8 @@ checkTypeEquality tau1 tau2 =
         checkT theta nat1 nat2
         checkT theta tau1 tau2
 
-    checkT _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
-        return ()
+    checkT theta (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
+        zipWithM_ (checkT theta) taus1 taus2
 
     checkT theta (ST omega_a tau1_a tau2_a tau3_a _)
                  (ST omega_b tau1_b tau2_b tau3_b _) = do
@@ -879,9 +893,13 @@ inferKind = inferType
     inferType StringT{} =
         return tauK
 
-    inferType (StructT s _)
-      | isComplexStruct s = return $ qualK [EqR, OrdR, NumR]
-      | otherwise         = return tauK
+    inferType (StructT s [] _) | isComplexStruct s =
+        return $ qualK [EqR, OrdR, NumR]
+
+    inferType (StructT s taus _) = do
+        StructDef _ tvks _ _ <- lookupStruct s
+        checkTyApp tvks taus
+        return tauK
 
     inferType (ArrT n tau _) = do
         checkKind n NatK
@@ -959,6 +977,18 @@ checkTauOrRhoKind tau =
     go RhoK   = return ()
     go kappa  = faildoc $ text "Expected tau or rho kind but got:" <+> ppr kappa
 
+checkTyApp :: forall m . MonadTc m => [Tvk] -> [Type] -> m ()
+checkTyApp tvks taus = do
+    checkNumTypeArgs (length taus) (length tvks)
+    zipWithM_ (\(_alpha, kappa) tau -> checkKind tau kappa) tvks taus
+  where
+    checkNumTypeArgs :: Int -> Int -> m ()
+    checkNumTypeArgs ntaus ntvks =
+        when (ntaus /= ntvks) $
+        faildoc $
+        text "Expected" <+> ppr ntvks <+>
+        text "type arguments but got" <+> ppr ntaus </> ppr tvks </> ppr taus
+
 checkKindEquality :: MonadTc m => Kind -> Kind -> m ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
     return ()
@@ -1032,9 +1062,11 @@ checkArrOrRefArrT tau =
     text "Expected array type but got:" <+/> ppr tau
 
 -- | Check that a type is a struct type, returning the name of the struct.
-checkStructT :: MonadTc m => Type -> m Struct
-checkStructT (StructT s _) =
-    return s
+checkStructT :: MonadTc m => Type -> m (Struct, [Type])
+checkStructT (StructT s taus _) = do
+    sdef <- lookupStruct s
+    checkStructTyApp sdef taus
+    return (s, taus)
 
 checkStructT tau =
     faildoc $ nest 2 $
@@ -1042,15 +1074,16 @@ checkStructT tau =
 
 -- | Check that a type is a struct or struct reference type, returning the name
 -- of the struct.
-checkStructOrRefStructT :: MonadTc m => Type -> m Struct
-checkStructOrRefStructT (StructT s _)          = return s
-checkStructOrRefStructT (RefT (StructT s _) _) = return s
+checkStructOrRefStructT :: MonadTc m => Type -> m (Struct, [Type])
+checkStructOrRefStructT (StructT s taus _)          = return (s, taus)
+checkStructOrRefStructT (RefT (StructT s taus _) _) = return (s, taus)
 checkStructOrRefStructT tau =
     faildoc $ nest 2 $
     text "Expected struct type, but got:" <+/> ppr tau
 
-checkStructFieldT :: MonadTc m => StructDef -> Field -> m Type
-checkStructFieldT (StructDef s flds _) f =
+checkStructFieldT :: MonadTc m => StructDef -> [Type] -> Field -> m Type
+checkStructFieldT sdef@(StructDef s _ _ _) taus f = do
+    flds <- tyAppStruct sdef taus
     case lookup f flds of
       Just tau -> return tau
       Nothing ->

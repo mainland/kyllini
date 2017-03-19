@@ -6,7 +6,8 @@ instance Located Type where
   locOf (FixT _ l) = locOf l
   locOf (FloatT _ l) = locOf l
   locOf (StringT l) = locOf l
-  locOf (StructT _ l) = locOf l
+  locOf (StructT _ _ l) = locOf l
+  locOf (SynT _ _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
   locOf (C _ l) = locOf l
   locOf (T l) = locOf l
@@ -18,4 +19,5 @@ instance Located Type where
   locOf (TyVarT _ l) = locOf l
   locOf (MetaT _ l) = locOf l
 instance Located StructDef where
-  locOf (StructDef _ _ l) = locOf l
+  locOf (StructDef _ _ _ l) = locOf l
+  locOf (TypeDef _ _ _ l) = locOf l

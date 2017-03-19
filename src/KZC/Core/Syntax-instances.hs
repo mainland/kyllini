@@ -1,5 +1,5 @@
 instance Located (Decl a) where
-  locOf (StructD _ _ l) = locOf l
+  locOf (StructD _ _ _ l) = locOf l
   locOf (LetD _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l
@@ -41,7 +41,7 @@ instance Located Exp where
   locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
   locOf (IdxE _ _ _ l) = locOf l
-  locOf (StructE _ _ l) = locOf l
+  locOf (StructE _ _ _ l) = locOf l
   locOf (ProjE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l

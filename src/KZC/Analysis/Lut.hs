@@ -441,7 +441,7 @@ lutStats e =
         go e1
         go e2
 
-    go (StructE _ flds _) =
+    go (StructE _ _ flds _) =
         mapM_ (go . snd) flds
 
     go (ProjE e _ _) =

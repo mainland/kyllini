@@ -145,7 +145,8 @@ import KZC.Util.Pretty
   ':'  { L _ T.Tcolon }
 
   -- For the kyllini dialect
-  'mut' { L _ T.Tmut }
+  'mut'  { L _ T.Tmut }
+  'type' { L _ T.Ttype }
 
   'Eq'         { L _ T.TEq }
   'Ord'        { L _ T.TOrd }
@@ -394,10 +395,10 @@ aexp :
   | simple_type '(' exp ')'
       { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
 
-  | structid '{' struct_init_list1 '}'
-      { StructE $1 $3 ($1 `srcspan` $4) }
-  | 'struct' structid '{' struct_init_list1 '}'
-      { StructE $2 $4 ($1 `srcspan` $5) }
+  | structid type_application '{' struct_init_list1 '}'
+      { StructE $1 $2 $4 ($1 `srcspan` $5) }
+  | 'struct' structid type_application '{' struct_init_list1 '}'
+      { StructE $2 $3 $5 ($1 `srcspan` $6) }
 
   | ID '(' exp_list ')'
       { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
@@ -518,21 +519,21 @@ tyvar :
 
 simple_type :: { Type }
 simple_type :
-    'bit'             { FixT (U (Just 1))  (srclocOf $1) }
-  | 'int8'            { FixT (I (Just 8))  (srclocOf $1) }
-  | 'int16'           { FixT (I (Just 16)) (srclocOf $1) }
-  | 'int32'           { FixT (I (Just 32)) (srclocOf $1) }
-  | 'int64'           { FixT (I (Just 64)) (srclocOf $1) }
-  | 'int'             { FixT (I Nothing)   (srclocOf $1) }
-  | 'uint8'           { FixT (U (Just 8))  (srclocOf $1) }
-  | 'uint16'          { FixT (U (Just 16)) (srclocOf $1) }
-  | 'uint32'          { FixT (U (Just 32)) (srclocOf $1) }
-  | 'uint64'          { FixT (U (Just 64)) (srclocOf $1) }
-  | 'uint'            { FixT (U Nothing)   (srclocOf $1) }
-  | 'float'           { FloatT FP32 (srclocOf $1) }
-  | 'double'          { FloatT FP64 (srclocOf $1) }
-  | structid          { StructT $1 (srclocOf $1) }
-  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
+    'bit'                              { FixT (U (Just 1))  (srclocOf $1) }
+  | 'int8'                             { FixT (I (Just 8))  (srclocOf $1) }
+  | 'int16'                            { FixT (I (Just 16)) (srclocOf $1) }
+  | 'int32'                            { FixT (I (Just 32)) (srclocOf $1) }
+  | 'int64'                            { FixT (I (Just 64)) (srclocOf $1) }
+  | 'int'                              { FixT (I Nothing)   (srclocOf $1) }
+  | 'uint8'                            { FixT (U (Just 8))  (srclocOf $1) }
+  | 'uint16'                           { FixT (U (Just 16)) (srclocOf $1) }
+  | 'uint32'                           { FixT (U (Just 32)) (srclocOf $1) }
+  | 'uint64'                           { FixT (U (Just 64)) (srclocOf $1) }
+  | 'uint'                             { FixT (U Nothing)   (srclocOf $1) }
+  | 'float'                            { FloatT FP32 (srclocOf $1) }
+  | 'double'                           { FloatT FP64 (srclocOf $1) }
+  | structid type_application          { StructT $1 $2 ($1 `srcspan` $1) }
+  | 'struct' structid type_application { StructT $2 $3 ($1 `srcspan` $3) }
 
 base_type :: { Type }
 base_type :
@@ -564,6 +565,16 @@ index_type :
     'T'                { T (srclocOf $1) }
   | 'C' base_type      { C $2 ($1 `srcspan` $2) }
   | '(' index_type ')' { $2 }
+
+type_application :: { [Type] }
+type_application :
+    {- empty -}             { [] }
+  | '<' base_type_rlist '>' { rev $2 }
+
+base_type_rlist :: { RevList Type }
+base_type_rlist :
+    base_type                     { rsingleton $1 }
+  | base_type_rlist ',' base_type { rcons $3 $1 }
 
 {------------------------------------------------------------------------------
  -
@@ -759,11 +770,18 @@ decl :
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
-  | 'struct' ID '{' field_list '}'
+  | 'struct' ID tvks '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
-            ; return $ StructD (mkStruct (varid $2)) $4 ($1 `srcspan` $5)
+            ; return $ StructD (mkStruct (varid $2)) $3 $5 ($1 `srcspan` $6)
             }
       }
+  | 'type' ID tvks '=' base_type ';'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ TypeD (mkStruct (varid $2)) $3 $5 ($1 `srcspan` $6)
+            }
+      }
+  | 'type' ID tvks '=' base_type error
+      {% expected ["';'"] Nothing }
   | 'fun' 'external' ID params '->' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params '->' base_type

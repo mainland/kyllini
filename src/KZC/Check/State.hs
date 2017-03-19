@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Check.State
--- Copyright   :  (c) 2014-2015 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -68,4 +68,4 @@ builtinStructs =
   where
     complexStruct :: Z.Struct -> Type -> StructDef
     complexStruct s tau =
-        StructDef s [("im", tau), ("re", tau)] noLoc
+        StructDef s [] [("im", tau), ("re", tau)] noLoc

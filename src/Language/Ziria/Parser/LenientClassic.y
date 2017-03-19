@@ -393,7 +393,7 @@ aexp :
       { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
 
   | structid '{' struct_init_list1 '}'
-      { StructE $1 $3 ($1 `srcspan` $4) }
+      { StructE $1 [] $3 ($1 `srcspan` $4) }
 
   | ID '(' exp_list ')'
       { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
@@ -523,8 +523,8 @@ simple_type :
   | 'uint'            { FixT (U Nothing)   (srclocOf $1) }
   | 'float'           { FloatT FP32 (srclocOf $1) }
   | 'double'          { FloatT FP64 (srclocOf $1) }
-  | structid          { StructT $1 (srclocOf $1) }
-  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
+  | structid          { StructT $1 [] (srclocOf $1) }
+  | 'struct' structid { StructT $2 [] ($1 `srcspan` $2) }
 
 base_type :: { Type }
 base_type :
@@ -716,7 +716,7 @@ decl :
       { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | 'struct' ID '=' '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
-            ; return $ StructD (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
+            ; return $ StructD (mkStruct (varid $2)) [] $5 ($1 `srcspan` $6)
             }
       }
   | 'fun' 'external' ID params ':' base_type

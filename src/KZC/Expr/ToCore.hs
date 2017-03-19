@@ -116,9 +116,9 @@ transDecl :: (IsLabel l, MonadTc m)
           => E.Decl
           -> (Decl l -> TC m a)
           -> TC m a
-transDecl (E.StructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ StructD s flds l
+transDecl (E.StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $
+    k $ StructD s taus flds l
 
 transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =
@@ -251,8 +251,8 @@ transExp (E.ArrayE es l) =
 transExp (E.IdxE e1 e2 i l) =
     IdxE <$> transExp e1 <*> transExp e2 <*> pure i <*> pure l
 
-transExp (E.StructE s flds l) =
-    StructE s <$> mapM transField flds <*> pure l
+transExp (E.StructE s taus flds l) =
+    StructE s taus <$> mapM transField flds <*> pure l
   where
     transField :: (Field, E.Exp) -> TC m (Field, Exp)
     transField (f, e) = (,) <$> pure f <*> transExp e

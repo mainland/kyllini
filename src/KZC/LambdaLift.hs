@@ -129,9 +129,9 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: MonadTc m => Decl -> (Maybe Decl -> LiftM m a) -> LiftM m a
-liftDecl (StructD s flds l) k =
-    extendStructs [StructDef s flds l] $ do
-    appendTopDecl $ StructD s flds l
+liftDecl (StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $ do
+    appendTopDecl $ StructD s taus flds l
     k Nothing
 
 liftDecl decl@(LetD v tau e l) k | isPureT tau =
@@ -254,8 +254,8 @@ liftExp (ArrayE es l) =
 liftExp (IdxE e1 e2 len l) =
     IdxE <$> liftExp e1 <*> liftExp e2 <*> pure len <*> pure l
 
-liftExp (StructE s flds l) =
-    StructE s <$> mapM liftField flds <*> pure l
+liftExp (StructE s taus flds l) =
+    StructE s taus <$> mapM liftField flds <*> pure l
   where
     liftField :: (Field, Exp) -> LiftM m (Field, Exp)
     liftField (f, e) = (,) <$> pure f <*> liftExp e

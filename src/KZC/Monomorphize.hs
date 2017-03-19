@@ -48,26 +48,30 @@ import KZC.Core.Transform
 import KZC.Label
 import KZC.Util.Error
 import KZC.Util.Pretty
+import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
 import KZC.Vars
 
--- | Generate a monomorphized version of a function. Called with all type
--- arguments /not/ of kind Nat.
-type FunGen l m = [Type] -> MonoM l m Var
+-- | Generate a monomorphized version of a thing.
+type MonoGen l m a = [Type] -> MonoM l m a
 
--- | Cache of monomorphized versions of a function.
-type Cache = IORef (Map [Type] Var)
+type FunGen l m = MonoGen l m Var
+
+type StructGen l m = MonoGen l m Struct
+
+-- | Cache of monomorphized things.
+type Cache a = IORef (Map [Type] a)
 
 data MonoEnv l m = MonoEnv
-    { funGens   :: Map Var (FunGen l m)
-    , funCaches :: Map Var Cache
+    { structGens :: Map Struct (MonoGen l m Struct, Cache Struct)
+    , funGens    :: Map Var (MonoGen l m Var, Cache Var)
     }
 
 defaultMonoEnv :: MonoEnv l m
 defaultMonoEnv = MonoEnv
-    { funGens   = mempty
-    , funCaches = mempty
+    { structGens = mempty
+    , funGens    = mempty
     }
 
 newtype MonoState l = MonoState { topdecls :: Seq (Decl l) }
@@ -95,45 +99,57 @@ instance MonadTrans (MonoM l) where
 runMono :: MonadTcRef m => MonoM l m a -> m a
 runMono m = evalStateT (runReaderT (unMonoM m) defaultMonoEnv) defaultMonoState
 
-extendFun :: MonadTcRef m => Var -> FunGen l m -> MonoM l m a -> MonoM l m a
+extendStruct :: MonadTcRef m
+             => Struct
+             -> StructGen l m
+             -> MonoM l m a
+             -> MonoM l m a
+extendStruct struct sgen k = do
+  cacheRef <- newRef mempty
+  local (\env -> env { structGens = Map.insert struct (sgen, cacheRef) (structGens env) }) k
+
+extendFun :: MonadTcRef m
+          => Var
+          -> FunGen l m
+          -> MonoM l m a
+          -> MonoM l m a
 extendFun f fgen k = do
   cacheRef <- newRef mempty
-  local (\env -> env { funGens   = Map.insert f fgen (funGens env)
-                     , funCaches = Map.insert f cacheRef (funCaches env)
-                     })
-        k
+  local (\env -> env { funGens = Map.insert f (fgen, cacheRef) (funGens env) }) k
 
-lookupFunGen :: MonadTcRef m => Var -> MonoM l m (FunGen l m)
-lookupFunGen f = do
-    maybe_fgen <- asks (Map.lookup f . funGens)
-    case maybe_fgen of
-      Nothing   -> faildoc $ text "Unknown function" <+> enquote (ppr f)
-      Just fgen -> return fgen
-
-lookupFunCache :: MonadTcRef m => Var -> MonoM l m Cache
-lookupFunCache f = do
-    maybe_cache <- asks (Map.lookup f . funCaches)
-    case maybe_cache of
-      Nothing    -> faildoc $ text "Unknown function" <+> enquote (ppr f)
-      Just cache -> return cache
-
-lookupFun :: MonadTcRef m => Var -> [Type] -> MonoM l m Var
-lookupFun f taus = do
-    cacheRef <- lookupFunCache f
-    cache    <- readRef cacheRef
+lookupMono :: (Ord a, Pretty a, MonadTcRef m)
+           => Doc
+           -> (MonoEnv l m -> Map a (MonoGen l m a, Cache a))
+           -> a
+           -> [Type]
+           -> MonoM l m a
+lookupMono desc proj x taus = do
+    maybe_gen       <- asks (Map.lookup x . proj)
+    (gen, cacheRef) <- case maybe_gen of
+                         Nothing  -> faildoc $ text "Unknown" <+> desc <+> enquote (ppr x)
+                         Just gen -> return gen
+    cache           <- readRef cacheRef
     case Map.lookup taus cache of
-      Just f' -> return f'
-      Nothing -> do fgen <- lookupFunGen f
-                    f'   <- fgen taus
-                    writeRef cacheRef (Map.insert taus f' cache)
-                    return f'
+      Just x' -> return x'
+      Nothing -> do x'   <- gen taus
+                    writeRef cacheRef (Map.insert taus x' cache)
+                    return x'
+
+lookupMonoFun :: MonadTcRef m => Var -> [Type] -> MonoM l m Var
+lookupMonoFun = lookupMono (text "function") funGens
+
+lookupMonoStruct :: MonadTcRef m => Struct -> [Type] -> MonoM l m Struct
+lookupMonoStruct = lookupMono (text "struct") structGens
 
 appendTopDecl :: MonadTcRef m => Decl l -> MonoM l m ()
 appendTopDecl decl =
     modify $ \s -> s { topdecls = topdecls s |> decl }
 
 getTopDecls :: MonadTcRef m => MonoM l m [Decl l]
-getTopDecls = gets (toList . topdecls)
+getTopDecls = do
+    decls <- gets (toList . topdecls)
+    modify $ \s -> s { topdecls = mempty }
+    return decls
 
 monomorphizeProgram :: forall l m . (IsLabel l, MonadTcRef m)
                     => Program l
@@ -157,22 +173,60 @@ the types from the explicit type application.
 -}
 
 instance MonadTcRef m => TransformExp (MonoM l m) where
-    expT (CallE f taus args s) = do
+    typeT (StructT struct taus@(_:_) s) = do
+        taus'   <- mapM typeT taus
+        struct' <- lookupMonoStruct struct taus'
+        return $ StructT struct' [] s
+
+    typeT tau = transType tau
+
+    constT (StructC struct taus@(_:_) flds) = do
+        taus'   <- mapM typeT taus
+        struct' <- lookupMonoStruct struct taus'
+        return $ StructC struct' [] flds
+
+    constT c = transConst c
+
+    expT (CallE f taus@(_:_) args s) = do
         (tvks, _, _tau_ret) <- lookupVar f >>= unFunT
-        splitNatArgs tvks taus $ \nonNatTaus natTaus -> do
-          taus' <- mapM typeT nonNatTaus
-          f'    <- lookupFun f taus'
+        taus' <- mapM typeT taus
+        splitNatArgs tvks taus' $ \nonNatTaus natTaus -> do
+          f' <- lookupMonoFun f nonNatTaus
           CallE f' natTaus <$> mapM expT args <*> pure s
+
+    expT (StructE struct taus@(_:_) flds s) = do
+        taus'   <- mapM typeT taus
+        struct' <- lookupMonoStruct struct taus'
+        return $ StructE struct' [] flds s
 
     expT e = transExp e
 
-instance MonadTcRef m => TransformComp l (MonoM l m) where
+instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
     programT prog = do
         Program imports decls main <- transProgram prog
         decls' <- getTopDecls
         return $ Program imports (decls <> decls') main
 
-    declsT (LetFunD f tvks vbs tau_ret e l : decls) k =
+    declsT [] m = do
+        x     <- m
+        decls <- getTopDecls
+        return (decls, x)
+
+    declsT (StructD struct tvks@(_:_) flds l : decls) k =
+        extendStructs [StructDef struct tvks flds l] $
+        extendStruct struct sgen $
+        declsT decls k
+      where
+        sgen :: StructGen l m
+        sgen taus = do
+            taus' <- mapM typeT taus
+            extendTyVarTypes (map fst tvks `zip` taus') $ do
+              struct' <- monoStructName struct taus
+              flds'   <- mapM transField flds
+              appendTopDecl $ StructD struct' [] flds' l
+              return struct'
+
+    declsT (LetFunD f tvks@(_:_) vbs tau_ret e l : decls) k =
         extendVars [(bVar f, tau)] $
         extendFun (bVar f) fgen $
         declsT decls k
@@ -183,23 +237,31 @@ instance MonadTcRef m => TransformComp l (MonoM l m) where
         fgen :: FunGen l m
         fgen taus =
             splitNatParams tvks taus $ \tvks' ->
-            withInstantiatedTyVars tau_ret $ do
+            withMonoInstantiatedTyVars tau_ret $ do
             vbs'     <- mapM transField vbs
             tau_ret' <- typeT tau_ret
-            e'       <- extendVars vbs' $
+            e'       <- extendVars vbs $
                         expT e
-            f'       <- monoFunName (bVar f) taus
-            appendTopDecl $ LetFunD (f { bVar = f' }) tvks' vbs' tau_ret' e' l
-            return f'
+            f'       <- monoFunName f taus
+            appendTopDecl $ LetFunD f' tvks' vbs' tau_ret' e' l
+            return (bVar f')
 
-    declsT decls@(LetExtFunD f _tvks _vbs _tau_ret _l : _) k =
-        extendFun (bVar f) fgen $
-        transDecls decls k
+    declsT (LetExtFunD f tvks@(_:_) vbs tau_ret l : decls) k =
+        extendVars [(bVar f, tau)] $
+        extendFun (bVar f) fgen $ do
+        appendTopDecl $ LetExtFunD f tvks vbs tau_ret l
+        declsT decls k
       where
+        tau :: Type
+        tau = funT tvks (map snd vbs) tau_ret l
+
         fgen :: FunGen l m
         fgen _taus = return (bVar f)
 
-    declsT (LetFunCompD f tvks vbs tau_ret c l : decls) k =
+    -- We must transform /all/ computation functions because we need to
+    -- eliminate polymorphism in the return type, which may exist even if the
+    -- function doesn't take any type arguments.
+    declsT (decl@(LetFunCompD f tvks vbs tau_ret c l) : decls) k =
         extendVars [(bVar f, tau)] $
         extendFun (bVar f) fgen $
         declsT decls k
@@ -208,44 +270,97 @@ instance MonadTcRef m => TransformComp l (MonoM l m) where
         tau = funT tvks (map snd vbs) tau_ret l
 
         fgen :: FunGen l m
-        fgen taus =
+        fgen taus = withSummaryContext decl $
             splitNatParams tvks taus $ \tvks' ->
-            withInstantiatedTyVars tau_ret $ do
+            withMonoInstantiatedTyVars tau_ret $ do
             vbs'     <- mapM transField vbs
-            tau_ret' <- typeT tau_ret >>= instST
-            c'       <- extendVars vbs' $
+            tau_ret' <- instST tau_ret >>= typeT
+            c'       <- extendVars vbs $
                         compT c
-            f'       <- monoFunName (bVar f) taus
-            appendTopDecl $ LetFunCompD (f { bVar = f' }) tvks' vbs' tau_ret' c' l
-            return f'
+            f'       <- monoFunName f taus
+            appendTopDecl $ LetFunCompD f' tvks' vbs' tau_ret' c' l
+            return (bVar f')
 
-    declsT decls k = transDecls decls k
+    declsT (d:ds) m = do
+        (d', (ds1, ds2, x)) <-
+            declT d $ do
+            ds1      <- getTopDecls
+            (ds2, x) <- declsT ds m
+            return (ds1, ds2, x)
+        return (ds1 ++ d':ds2, x)
 
+    -- We must transform all calls to computation functions for the reason noted
+    -- just above.
     stepT (CallC l f taus args s) = do
         (tvks, _, tau_ret) <- lookupVar f >>= unFunT
-        splitNatArgs tvks taus $ \nonNatTaus natTaus -> do
-          taus'    <- mapM typeT nonNatTaus
-          taus2    <- typeT tau_ret >>= instSTTypes
-          f'       <- lookupFun f (taus' ++ taus2)
+        taus' <- mapM typeT taus
+        splitNatArgs tvks taus' $ \nonNatTaus natTaus -> do
+          stTaus <- typeT tau_ret >>= instSTTypes
+          f'     <- lookupMonoFun f (nonNatTaus ++ stTaus)
           CallC l f' natTaus <$> mapM argT args <*> pure s
 
     stepT s = transStep s
 
 -- | Generate a name for the monomorphized version of a function.
-monoFunName :: MonadTc m => Var -> [Type] -> m Var
+monoStructName :: MonadTc m => Struct -> [Type] -> m Struct
+monoStructName struct [] =
+    return struct
+
+monoStructName struct taus = do
+    struct' <- monoName struct taus
+    return $ mkStruct struct'
+
+-- | Generate a name for the monomorphized version of a function.
+monoFunName :: MonadTc m => BoundVar -> [Type] -> m BoundVar
+monoFunName f [] =
+    return f
+
 monoFunName f taus = do
+    f' <- monoName (bVar f) taus
+    return f { bVar = mkVar f' }
+
+-- | Generate a name for the monomorphized version of a thing.
+monoName :: (Pretty a, MonadTc m) => a -> [Type] -> m String
+monoName x taus = do
     theta     <- askTyVarTypeSubst
-    let taus' = subst theta mempty taus
-    return $ mkVar . flip displayS "" . renderCompact $ fname taus'
+    let taus' =  subst theta mempty taus
+    return $ flip displayS "" . renderCompact $ fname taus'
   where
     fname :: [Type] -> Doc
-    fname taus = cat $ punctuate (char '_') $ ppr f : map (pprPrec appPrec1) taus
+    fname taus = ppr x <> char '_' <> monoTypes taus
+
+    monoType :: Type -> Doc
+    monoType (StructT struct taus _) =
+        ppr struct <> char '_' <> monoTypes taus
+
+    monoType tau =
+        pprPrec appPrec1 tau
+
+    monoTypes :: [Type] -> Doc
+    monoTypes = cat . punctuate (char '_') . map monoType
+
+-- | Figure out the type substitution necessary for transforming the given type
+-- to the ST type of the current computational context. We can't use
+-- @withInstantiatedTyVars@ because it doesn't translate types after
+-- instantiation.
+withMonoInstantiatedTyVars :: TransformExp m => Type -> m a -> m a
+withMonoInstantiatedTyVars tau@(ForallT tvks (ST _ s a b _) _) k = do
+    ST _ s' a' b' _ <- instST tau >>= typeT
+    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b'], alpha `elem` alphas] k
+  where
+    alphas :: [TyVar]
+    alphas = map fst tvks
+
+withMonoInstantiatedTyVars _tau k =
+    k
 
 -- | Return the types at which an ST type in the current ST context is
 -- instantiated.
-instSTTypes :: MonadTc m => Type -> MonoM l m [Type]
+instSTTypes :: (MonadTcRef m, TransformExp (MonoM l m))
+            => Type
+            -> MonoM l m [Type]
 instSTTypes tau_ret =
-    withInstantiatedTyVars tau_ret $
+    withMonoInstantiatedTyVars tau_ret $
     case tau_ret of
       ForallT tvks ST{} _ -> mapM (lookupTyVarType . fst) tvks
       _                   -> return []

@@ -159,6 +159,7 @@ import KZC.Expr.Syntax (Var(..),
                         LiftedBits(..),
                         LiftedCast(..),
 
+                        pprForall,
                         pprTyApp,
                         pprTypeSig,
                         pprFunDecl
@@ -218,7 +219,7 @@ data Import = Import ModuleName
 data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
-data Decl l = StructD Struct [(Field, Type)] !SrcLoc
+data Decl l = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
             | LetD LocalDecl !SrcLoc
             | LetFunD BoundVar [Tvk] [(Var, Type)] Type Exp !SrcLoc
             | LetExtFunD BoundVar [Tvk] [(Var, Type)] Type !SrcLoc
@@ -259,7 +260,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | StructE Struct [(Field, Exp)] !SrcLoc
+         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -489,15 +490,15 @@ instance Size a => Size [a] where
     size = sizeList
 
 instance Size Const where
-    size UnitC{}          = 0
-    size BoolC{}          = 1
-    size FixC{}           = 1
-    size FloatC{}         = 1
-    size StringC{}        = 1
-    size (ArrayC cs)      = if V.null cs then 0 else V.length cs * size (V.head cs)
-    size (ReplicateC n c) = n * size c
-    size EnumC{}          = 0
-    size (StructC _ flds) = size (map snd flds)
+    size UnitC{}            = 0
+    size BoolC{}            = 1
+    size FixC{}             = 1
+    size FloatC{}           = 1
+    size StringC{}          = 1
+    size (ArrayC cs)        = if V.null cs then 0 else V.length cs * size (V.head cs)
+    size (ReplicateC n c)   = n * size c
+    size EnumC{}            = 0
+    size (StructC _ _ flds) = size (map snd flds)
 
 instance Size LocalDecl where
     size (LetLD _ _ e _)           = 1 + size e
@@ -519,7 +520,7 @@ instance Size Exp where
     size (ForE _ _ _ gint e3 _) = 1 + size gint + size e3
     size (ArrayE es _)          = 1 + size es
     size (IdxE e1 e2 _ _)       = 1 + size e1 + size e2
-    size (StructE _ flds _)     = size (map snd flds)
+    size (StructE _ _ flds _)   = size (map snd flds)
     size (ProjE e _ _)          = 1 + size e
     size (PrintE _ es _)        = 1 + size es
     size ErrorE{}               = 1
@@ -590,7 +591,7 @@ instance LUTSize Exp where
     lutSize (ForE _ _ _ gint e _) = lutSize gint + lutSize e
     lutSize (ArrayE es _)         = lutSize es
     lutSize (IdxE e1 e2 _ _)      = lutSize e1 + lutSize e2
-    lutSize (StructE _ flds _)    = lutSize (map snd flds)
+    lutSize (StructE _ _ flds _)  = lutSize (map snd flds)
     lutSize (ProjE e _ _)         = lutSize e
     lutSize (PrintE _ es _)       = lutSize es
     lutSize ErrorE{}              = 0
@@ -646,12 +647,12 @@ expToStms e                             = [ExpS e (srclocOf e)]
  ------------------------------------------------------------------------------}
 
 instance Summary (Decl l) where
-    summary (StructD s _ _)           = text "definition of" <+> ppr s
-    summary (LetD decl _)             = summary decl
-    summary (LetFunD v _ _ _ _ _)     = text "definition of" <+> ppr v
-    summary (LetExtFunD v _ _ _ _)    = text "definition of" <+> ppr v
-    summary (LetCompD v _ _ _)        = text "definition of" <+> ppr v
-    summary (LetFunCompD v _ _ _ _ _) = text "definition of" <+> ppr v
+    summary (StructD s tvks _ _)         = text "definition of" <+> ppr s <> pprForall tvks
+    summary (LetD decl _)                = summary decl
+    summary (LetFunD f tvks _ _ _ _)     = text "definition of" <+> ppr f <> pprForall tvks
+    summary (LetExtFunD f tvks _ _ _)    = text "definition of" <+> ppr f <> pprForall tvks
+    summary (LetCompD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunCompD f tvks _ _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
 instance Summary LocalDecl where
     summary (LetLD v _ _ _)     = text "definition of" <+> ppr v
@@ -726,9 +727,9 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance IsLabel l => Pretty (Decl l) where
-    pprPrec p (StructD s flds _) =
+    pprPrec p (StructD s tvks flds _) =
         parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> pprStruct comma colon flds
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
 
     pprPrec p (LetD decl _) =
         pprPrec p decl
@@ -837,8 +838,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct comma equals fields
+    pprPrec _ (StructE s taus fields _) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -1074,7 +1075,7 @@ instance Fvs Exp Var where
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
     fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)    = fvs (map snd flds)
+    fvs (StructE _ _ flds _)  = fvs (map snd flds)
     fvs (ProjE e _ _)         = fvs e
     fvs (PrintE _ es _)       = fvs es
     fvs ErrorE{}              = mempty
@@ -1174,7 +1175,7 @@ instance HasVars Exp Var where
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
     allVars (IdxE e1 e2 _ _)      = allVars e1 <> allVars e2
-    allVars (StructE _ flds _)    = allVars (map snd flds)
+    allVars (StructE _ _ flds _)  = allVars (map snd flds)
     allVars (ProjE e _ _)         = allVars e
     allVars (PrintE _ es _)       = allVars es
     allVars ErrorE{}              = mempty
@@ -1338,8 +1339,8 @@ instance Subst Type TyVar Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s <$> substM taus <*> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
@@ -1478,8 +1479,8 @@ instance Subst Exp Var Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s taus <$> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
