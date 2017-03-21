@@ -398,8 +398,11 @@ asintE tau         _ = errordoc $ text "Expected integer type but got:" <+> ppr 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
-letE :: Decl -> Exp -> Exp
-letE d e = LetE d e (d `srcspan` e)
+letE :: Var -> Type -> Exp -> Exp -> Exp
+letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
+  where
+    d :: Decl
+    d = LetD v tau e1 (v `srcspan` e1)
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
