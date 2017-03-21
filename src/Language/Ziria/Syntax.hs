@@ -316,12 +316,8 @@ type Tvk = (TyVar, Maybe Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
+isComplexStruct "Complex" = True
+isComplexStruct _         = False
 
 {------------------------------------------------------------------------------
  -

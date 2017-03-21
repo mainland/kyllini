@@ -24,6 +24,7 @@ import Control.Monad (forM_,
                       unless,
                       when)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Bits
 import Data.Foldable (toList)
 import Data.Loc
@@ -280,26 +281,32 @@ void kz_main(const typename kz_params_t* $id:params)
     cgBufferCleanup = cgBufferConfig appendThreadCleanupStm
 
     cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferConfig appStm f tau cp cbuf =
-        go tau
+    cgBufferConfig appStm f tau cp cbuf = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT _ tau _)             = go tau
-        go tau | isBitT tau           = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT (I 8)  _)            = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT (I 16) _)            = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT (I 32) _)            = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT (U 8)  _)            = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT (U 16) _)            = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT (U 32) _)            = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
-        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (ArrT _ tau _)   = go tau
+        go tau | isBitT tau = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (FixT (I 8)  _)  = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT (I 16) _)  = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT (I 32) _)  = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT (U 8)  _)  = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT (U 16) _)  = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT (U 32) _)  = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go tau@FixT{}       = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                         text "are not supported."
-        go (FloatT FP16 _)            = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP32 _)            = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP64 _)            = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
-        go (StructT "complex16" [] _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
-        go (StructT "complex32" [] _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
-        go _                          = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+        go (FloatT FP16 _)  = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP32 _)  = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP64 _)  = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+                       | tau == int32T -> appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+              _                        -> appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+
+        go _ =
+            appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
@@ -308,49 +315,65 @@ void kz_main(const typename kz_params_t* $id:params)
     cgInput tau cbuf cn = go tau
       where
         go :: Type -> Cg l (CExp l)
-        go (ArrT n tau _)             = do ci <- cgNatType n
-                                           cgInput tau cbuf (cn*ci)
-        go tau | isBitT tau           = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
-        go (FixT (I 8)  _)            = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
-        go (FixT (I 16) _)            = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
-        go (FixT (I 32) _)            = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
-        go (FixT (U 8)  _)            = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
-        go (FixT (U 16) _)            = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
-        go (FixT (U 32) _)            = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
-        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (ArrT n tau _)   = do ci <- cgNatType n
+                                 cgInput tau cbuf (cn*ci)
+        go tau | isBitT tau = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
+        go (FixT (I 8)  _)  = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (FixT (I 16) _)  = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (FixT (I 32) _)  = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (FixT (U 8)  _)  = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (FixT (U 16) _)  = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (FixT (U 32) _)  = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go tau@FixT{}       = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                         text "are not supported."
-        go (FloatT FP16 _)            = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP32 _)            = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP64 _)            = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
-        go (StructT "complex16" [] _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
-        go (StructT "complex32" [] _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
-        go (TyVarT alpha _)           = lookupTyVarType alpha >>= go
-        go tau                        = do ctau <- cgType tau
-                                           return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+        go (FloatT FP16 _)  = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP32 _)  = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP64 _)  = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
+        go (TyVarT alpha _) = lookupTyVarType alpha >>= go
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
+                       | tau == int32T -> return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
+              _                        -> do ctau <- cgType tau
+                                             return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+
+        go tau = do
+            ctau <- cgType tau
+            return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
     cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgOutput tau cbuf cn cval = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT n tau _)             = do ci <- cgNatType n
-                                           cgOutput tau cbuf (cn*ci) cval
-        go tau | isBitT tau           = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
-        go (FixT (I 8)  _)            = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
-        go (FixT (I 16) _)            = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
-        go (FixT (I 32) _)            = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
-        go (FixT (U 8)  _)            = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
-        go (FixT (U 16) _)            = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
-        go (FixT (U 32) _)            = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
-        go tau@FixT{}                 = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (ArrT n tau _)   = do ci <- cgNatType n
+                                 cgOutput tau cbuf (cn*ci) cval
+        go tau | isBitT tau = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
+        go (FixT (I 8)  _)  = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (FixT (I 16) _)  = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (FixT (I 32) _)  = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (FixT (U 8)  _)  = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (FixT (U 16) _)  = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (FixT (U 32) _)  = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go tau@FixT{}       = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                         text "are not supported."
-        go (FloatT FP16 _)            = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP32 _)            = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP64 _)            = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
-        go (StructT "complex16" [] _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
-        go (StructT "complex32" [] _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
-        go (TyVarT alpha _)           = lookupTyVarType alpha >>= go
-        go tau                        = do ctau <- cgType tau
-                                           appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+        go (FloatT FP16 _)  = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP32 _)  = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP64 _)  = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
+        go (TyVarT alpha _) = lookupTyVarType alpha >>= go
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
+                       | tau == int32T -> appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
+              _                        -> do ctau <- cgType tau
+                                             appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+
+        go tau = do
+            ctau <- cgType tau
+            appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
 cgInitThreads :: Located a => a -> Cg l ()
 cgInitThreads x =
@@ -888,9 +911,12 @@ cgExp e k =
         lookupVarCExp v >>= runKont k
 
     go (UnopE op e l) k = do
-        tau <- inferExp e
-        ce  <- cgExpOneshot e
-        cgUnop tau ce op >>= runKont k
+        tau       <- inferExp e
+        ce        <- cgExpOneshot e
+        maybe_tau <- runMaybeT $ checkComplexT tau
+        case maybe_tau of
+          Just{}  -> cgUnopComplex ce op >>= runKont k
+          Nothing -> cgUnop tau ce op >>= runKont k
       where
         cgUnop :: Type -> CExp l -> Unop -> Cg l (CExp l)
         cgUnop tau_from ce (Cast tau_to) =
@@ -909,36 +935,20 @@ cgExp e k =
             panicdoc $
             text "cgUnop: tried to take the length of a non-array type!"
 
-        cgUnop tau ce op | isComplexT tau =
-            go op
-          where
-            go :: Unop -> Cg l (CExp l)
-            go Neg = do
-                (a, b) <- unComplex ce
-                cgComplex (-a) (-b)
-
-            go op =
-                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
-
         cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
         cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
                            | otherwise  = return $ CExp [cexp|~$ce|]
         cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
 
-        cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
-        cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
+        cgUnopComplex :: CExp l -> Unop -> Cg l (CExp l)
+        cgUnopComplex ce Neg = do
             (a, b) <- unComplex ce
-            ctemp  <- cgTemp "cast_complex" tau_to
-            appendStm $ rl l [cstm|$ctemp.re = $a;|]
-            appendStm $ rl l [cstm|$ctemp.im = $b;|]
-            return ctemp
+            cgComplex (-a) (-b)
 
-        cgCast ce _ tau_to | isComplexT tau_to = do
-            ctemp <- cgTemp "cast_complex" tau_to
-            appendStm $ rl l [cstm|$ctemp.re = $ce;|]
-            appendStm $ rl l [cstm|$ctemp.im = $ce;|]
-            return ctemp
+        cgUnopComplex _ce op =
+            panicdoc $ text "Illegal operation on complex value:" <+> ppr op
 
+        cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
         cgCast ce _ tau_to | isBitT tau_to =
             return $ CExp $ rl l [cexp|$ce > 0 ? 1 : 0|]
 
@@ -975,46 +985,12 @@ cgExp e k =
         tau <- inferExp e1
         ce1 <- cgExpOneshot e1
         ce2 <- cgExpOneshot e2
-        cgBinop tau ce1 ce2 op >>= runKont k
+        maybe_tau <- runMaybeT $ checkComplexT tau
+        case maybe_tau of
+          Just{}  -> cgBinopComplex ce1 ce2 op >>= runKont k
+          Nothing -> cgBinop tau ce1 ce2 op >>= runKont k
       where
         cgBinop :: Type -> CExp l -> CExp l -> Binop -> Cg l (CExp l)
-        cgBinop tau ce1 ce2 op | isComplexT tau =
-            go op
-          where
-            go :: Binop -> Cg l (CExp l)
-            go Eq = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                return $ CExp $ rl l [cexp|$a == $c && $b == $d|]
-
-            go Ne = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                return $ CExp $ rl l [cexp|$a != $c || $b != $d|]
-
-            go Add = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a+c) (b+d)
-
-            go Sub = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a-c) (b-d)
-
-            go Mul = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a*c - b*d) (b*c + a*d)
-
-            go Div = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
-
-            go op =
-                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
-
         cgBinop _ ce1 ce2 Lt   = return $ CExp $ rl l [cexp|$ce1 <  $ce2|]
         cgBinop _ ce1 ce2 Ne   = return $ CExp $ rl l [cexp|$ce1 != $ce2|]
         cgBinop _ ce1 ce2 Le   = return $ CExp $ rl l [cexp|$ce1 <= $ce2|]
@@ -1080,6 +1056,40 @@ cgExp e k =
                 asBits (e, w) = do
                     cbits <- cgExpOneshot e >>= cgBits (arrKnownT w bitT)
                     return (CBits $ CExp $ rl (locOf l) cbits, w)
+
+        cgBinopComplex :: CExp l -> CExp l -> Binop -> Cg l (CExp l)
+        cgBinopComplex ce1 ce2 Eq = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            return $ CExp $ rl l [cexp|$a == $c && $b == $d|]
+
+        cgBinopComplex ce1 ce2 Ne = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            return $ CExp $ rl l [cexp|$a != $c || $b != $d|]
+
+        cgBinopComplex ce1 ce2 Add = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a+c) (b+d)
+
+        cgBinopComplex ce1 ce2 Sub = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a-c) (b-d)
+
+        cgBinopComplex ce1 ce2 Mul = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a*c - b*d) (b*c + a*d)
+
+        cgBinopComplex ce1 ce2 Div = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
+
+        cgBinopComplex _ce1 _ce2 op =
+            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
 
     go (IfE e1 e2 e3 _) k = do
         tau <- inferExp e2
@@ -1230,8 +1240,13 @@ cgExp e k =
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
         cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
 
-        cgPrintScalar (StructT s [] _) ce | isComplexStruct s =
-            appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+        cgPrintScalar tau_struct@StructT{} ce = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just (FixT I{} _) -> appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+              Just (FixT U{} _) -> appendStm $ rl l [cstm|printf("(%lu,%lu)", (unsigned long) $ce.re, (unsigned long) $ce.im);|]
+              Just FloatT{}     -> appendStm $ rl l [cstm|printf("(%Lf,%Lf)", (long double) $ce.re, (long double) $ce.im);|]
+              _                 -> faildoc $ text "Cannot print type:" <+> ppr tau_struct
 
         cgPrintScalar tau _ =
             faildoc $ text "Cannot print type:" <+> ppr tau
@@ -1473,8 +1488,14 @@ cgType (FloatT FP64 _) =
 cgType StringT{} =
     return [cty|char*|]
 
-cgType (StructT s [] l) =
-    return [cty|typename $id:(cstruct s l)|]
+cgType tau_struct@(StructT struct [] l) = do
+    maybe_tau <- runMaybeT $ checkComplexT tau_struct
+    case maybe_tau of
+      Just tau | tau == int8T  -> return [cty|typename complex8_t|]
+               | tau == int16T -> return [cty|typename complex16_t|]
+               | tau == int32T -> return [cty|typename complex32_t|]
+               | tau == int64T -> return [cty|typename complex64_t|]
+      _ -> return [cty|typename $id:(cstruct struct l)|]
 
 cgType tau@StructT{} =
     withSummaryContext tau $

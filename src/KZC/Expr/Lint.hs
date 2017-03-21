@@ -47,6 +47,7 @@ module KZC.Expr.Lint (
 
     joinOmega,
 
+    checkComplexT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -85,6 +86,7 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
+import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Foldable (traverse_)
 import Data.IORef
 import Data.List (nub)
@@ -761,9 +763,6 @@ checkCast FloatT{} FixT{} =
 checkCast FloatT{} FloatT{} =
     return ()
 
-checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
-    return ()
-
 checkCast tau1 tau2 =
     faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
@@ -893,13 +892,17 @@ inferKind = inferType
     inferType StringT{} =
         return tauK
 
-    inferType (StructT s [] _) | isComplexStruct s =
-        return $ qualK [EqR, OrdR, NumR]
-
-    inferType (StructT s taus _) = do
+    inferType tau_struct@(StructT s taus _) = do
         StructDef _ tvks _ _ <- lookupStruct s
         checkTyApp tvks taus
-        return tauK
+        maybe_tau <- runMaybeT $ checkComplexT tau_struct
+        case maybe_tau of
+          -- A struct has traits Eq, Ord, and Num if its elements do.
+          Just tau -> do kappa <- inferKind tau
+                         case kappa of
+                           TauK ts -> return $ TauK (ts `intersectTraits` traits [EqR, OrdR, NumR])
+                           _       -> return tauK
+          Nothing  -> return tauK
 
     inferType (ArrT n tau _) = do
         checkKind n NatK
@@ -1022,6 +1025,19 @@ joinOmega omega1@T{} T{}        = return omega1
 
 joinOmega omega1 omega2 =
     faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
+
+-- | Check that a type is a complex type, returning the type of its constituent
+-- fields. A complex type has two fields named "re" and "im", in that order, and
+-- both fields must have the same type.
+checkComplexT :: MonadTc m => Type -> m Type
+checkComplexT (StructT struct taus _) = do
+    flds <- lookupStructFields struct taus
+    case flds of
+      [("re", tau), ("im", tau')] | tau' == tau -> return tau
+      _                                         -> fail "Not a complex type"
+
+checkComplexT _ =
+    fail "Not a complex type"
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.

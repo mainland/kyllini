@@ -459,9 +459,9 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop (Z.Cast ztau2) = do
         (tau1, mce) <- inferVal e
         tau2        <- fromZ ztau2
-        checkLegalCast tau1 tau2
+        co          <- mkCast tau1 tau2
         instType tau2 exp_ty
-        return $ E.UnopE <$> (E.Cast <$> trans tau2) <*> mce <*> pure l
+        return $ co mce
 
     unop Z.Len = do
         (tau, mce) <- inferExp e
@@ -1085,6 +1085,21 @@ inferExp e = do
     tau <- readRef ref
     return (tau, mce)
 
+-- | Construct a let expression given an expression, its type, and a
+-- continuation. The continuation is called with the new binding.
+mkLetE :: Type -> E.Exp -> (E.Exp -> Ti E.Exp) -> Ti E.Exp
+mkLetE _tau ce1@E.ConstE{} k =
+    k ce1
+
+mkLetE _tau ce1@E.VarE{} k =
+    k ce1
+
+mkLetE tau ce1 k = do
+    cx   <- gensym "x"
+    ctau <- trans tau
+    ce2  <- k (E.varE cx)
+    return $ E.letE cx ctau ce1 ce2
+
 -- | Check that there is no aliasing between function arguments.
 checkNoAliasing :: [(Z.Exp, Type)] -> Ti ()
 checkNoAliasing etaus = do
@@ -1289,13 +1304,18 @@ kcType tau@FloatT{} kappa_exp =
 kcType tau@StringT{} kappa_exp =
     instKind tau tauK kappa_exp
 
-kcType tau@(StructT s [] _) kappa_exp | Z.isComplexStruct s =
-    instKind tau (qualK [EqR, OrdR, NumR]) kappa_exp
-
-kcType tau@(StructT s taus _) kappa_exp = do
+kcType tau_struct@(StructT s taus _) kappa_exp = do
     sdef <- lookupStruct s
     checkTyApp (structDefTvks sdef) taus
-    instKind tau tauK kappa_exp
+    maybe_tau <- checkComplexT tau_struct
+    kappa'    <- case maybe_tau of
+                 -- A struct has traits Eq, Ord, and Num if its elements do.
+                 Just tau -> do kappa <- inferKind tau
+                                case kappa of
+                                  TauK (R ts) -> return $ TauK $ R (ts `intersectTraits` traits [EqR, OrdR, NumR])
+                                  _           -> return tauK
+                 Nothing  -> return tauK
+    instKind tau_struct kappa' kappa_exp
 
 kcType (SynT _tau1 tau2 _) kappa_exp =
     kcType tau2 kappa_exp
@@ -1552,6 +1572,20 @@ checkArrT tau =
         unifyTypes tau (arrT nat alpha)
         return (nat, alpha)
 
+-- | Check that a type is a complex type, returning the type of its constituent
+-- fields. A complex type has two fields named "re" and "im", in that order, and
+-- both fields must have the same type.
+checkComplexT :: Type -> Ti (Maybe Type)
+checkComplexT (StructT struct taus _) = do
+    sdef       <- lookupStruct struct
+    (_, zflds) <- tyAppStruct sdef taus
+    case zflds of
+      [("re", tau), ("im", tau')] | tau' == tau -> return $ Just tau
+      _                                         -> return Nothing
+
+checkComplexT _ =
+    return Nothing
+
 -- | Check that a type is a struct type, returning the name of the struct.
 checkStructT :: Type -> Ti (Z.Struct, [Type])
 checkStructT tau =
@@ -1754,6 +1788,7 @@ castVal tau2 e0 = do
         faildoc $ nest 2 $
         text "Expected array expression but got:" <+/> ppr e
 
+-- | Construct a coercion from @tau1@ to @tau2@.
 mkCast :: Type -> Type -> Ti Co
 mkCast tau1 tau2 = do
     checkLegalCast tau1 tau2
@@ -1772,10 +1807,28 @@ mkCast tau1 tau2 = do
     go tau1 (SynT _ tau2 _) mce =
         go tau1 tau2 mce
 
+    go (StructT zs1 taus1 _) (StructT zs2 taus2 _) mce | zs2 == zs1 && length taus2 == length taus1 =
+        mkStructCast zs1 taus1 taus2 mce
+
     go _ tau2 mce = do
         ctau <- trans tau2
         ce   <- mce
         return $ E.castE ctau ce
+
+-- | Construct a cast between two instantiations of a struct at different types.
+mkStructCast :: Z.Struct -> [Type] -> [Type] -> Co
+mkStructCast zs taus1 taus2 mce = do
+    sdef        <- lookupStruct zs
+    (_, zflds1) <- tyAppStruct sdef taus1
+    (_, zflds2) <- tyAppStruct sdef taus2
+    fs          <- mapM (trans . fst) zflds1
+    coercions   <- zipWithM (\(_, tau1) (_, tau2) -> mkCast tau1 tau2) zflds1 zflds2
+    cs          <- trans zs
+    ctaus2      <- mapM trans taus2
+    ce1         <- mce
+    mkLetE (structT zs taus1) ce1 $ \cx -> do
+        ces <- zipWithM ($) coercions [return $ E.projE cx f | f <- fs]
+        return $ E.structE cs ctaus2 (fs `zip` ces)
 
 mkCheckedSafeCast :: Z.Exp -> Type -> Type -> Ti Co
 mkCheckedSafeCast e tau1 tau2 = do
@@ -1871,8 +1924,8 @@ checkLegalCast tau1 tau2 = do
     go FloatT{} FloatT{} =
         return ()
 
-    go (StructT s1 [] _) (StructT s2 [] _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 =
-        return ()
+    go (StructT s taus _) (StructT s' taus' _) | s' == s && length taus' == length taus =
+        zipWithM_ go taus taus'
 
     go tau1 tau2 =
         unifyTypes tau1 tau2
@@ -2294,9 +2347,9 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     lubType (FloatT w _) (FixT _ l) =
         return $ FloatT w l
 
-    lubType (StructT s1 [] l) (StructT s2 [] _) | Z.isComplexStruct s1 && Z.isComplexStruct s2 = do
-        s <- lubComplex s1 s2
-        return $ StructT s [] l
+    lubType (StructT s taus l) (StructT s' taus' _) | s' == s && length taus' == length taus = do
+        taus'' <- zipWithM lubType taus taus'
+        return $ StructT s taus'' l
 
     lubType tau1@FixT{} tau2 = do
         unifyTypes tau2 tau1
@@ -2315,27 +2368,6 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     lubIP (I w) (U w') = I (max w w')
     lubIP (U w) (I w') = I (max w w')
     lubIP (U w) (U w') = U (max w w')
-
-    lubComplex :: Z.Struct -> Z.Struct -> Ti Z.Struct
-    lubComplex s1 s2 = do
-        i1 <- complexToInt s1
-        i2 <- complexToInt s2
-        intToComplex (max i1 i2)
-      where
-        complexToInt :: Z.Struct -> Ti Int
-        complexToInt "complex"   = return 3
-        complexToInt "complex8"  = return 0
-        complexToInt "complex16" = return 1
-        complexToInt "complex32" = return 2
-        complexToInt "complex64" = return 3
-        complexToInt _           = fail "intFromComplex: not a complex struct"
-
-        intToComplex :: Int -> Ti Z.Struct
-        intToComplex 0 = return "complex8"
-        intToComplex 1 = return "complex16"
-        intToComplex 2 = return "complex32"
-        intToComplex 3 = return "complex64"
-        intToComplex _ = fail "intToComplex: out of bounds"
 
 traceVar :: Z.Var -> Type -> Ti ()
 traceVar v tau = do

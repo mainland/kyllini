@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -201,8 +202,18 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
 
     expT e = transExp e
 
+mkStructGen :: MonadTcRef m => StructDef -> StructGen l m
+mkStructGen (StructDef struct tvks flds l) taus = do
+    taus' <- mapM typeT taus
+    extendTyVarTypes (map fst tvks `zip` taus') $ do
+      struct' <- monoStructName struct taus
+      flds'   <- mapM transField flds
+      appendTopDecl $ StructD struct' [] flds' l
+      return struct'
+
 instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
-    programT prog = do
+    programT prog =
+        extendStruct "Complex" (mkStructGen (complexStructDef)) $  do
         Program imports decls main <- transProgram prog
         decls' <- getTopDecls
         return $ Program imports (decls <> decls') main
@@ -214,17 +225,8 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
 
     declsT (StructD struct tvks@(_:_) flds l : decls) k =
         extendStructs [StructDef struct tvks flds l] $
-        extendStruct struct sgen $
+        extendStruct struct (mkStructGen (StructDef struct tvks flds l)) $
         declsT decls k
-      where
-        sgen :: StructGen l m
-        sgen taus = do
-            taus' <- mapM typeT taus
-            extendTyVarTypes (map fst tvks `zip` taus') $ do
-              struct' <- monoStructName struct taus
-              flds'   <- mapM transField flds
-              appendTopDecl $ StructD struct' [] flds' l
-              return struct'
 
     declsT (LetFunD f tvks@(_:_) vbs tau_ret e l : decls) k =
         extendVars [(bVar f, tau)] $
@@ -249,7 +251,9 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
     declsT (LetExtFunD f tvks@(_:_) vbs tau_ret l : decls) k =
         extendVars [(bVar f, tau)] $
         extendFun (bVar f) fgen $ do
-        appendTopDecl $ LetExtFunD f tvks vbs tau_ret l
+        vbs'     <- mapM transField vbs
+        tau_ret' <- typeT tau_ret
+        appendTopDecl $ LetExtFunD f tvks vbs' tau_ret' l
         declsT decls k
       where
         tau :: Type

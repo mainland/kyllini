@@ -50,6 +50,25 @@ defaultTiEnv = TiEnv
     , envMtvs    = Set.empty
     , valCtxType = error "valCtxType: not yet defined"
     }
+  where
+    builtinStructs :: [StructDef]
+    builtinStructs =
+        [ StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVarT a)] noLoc
+        , complexType "complex"   intT
+        , complexType "complex8"  int8T
+        , complexType "complex16" int16T
+        , complexType "complex32" int32T
+        , complexType "complex64" int64T
+        ]
+      where
+        a :: TyVar
+        a = "a"
+
+        num :: Kind
+        num = TauK (R (traits [NumR]))
+
+    complexType :: Z.Struct -> Type -> StructDef
+    complexType s tau = TypeDef s [] (structT "Complex" [tau]) noLoc
 
 data TiState = TiState
     { valctx :: E.Exp -> E.Exp }
@@ -57,15 +76,3 @@ data TiState = TiState
 defaultTiState :: TiState
 defaultTiState = TiState
     { valctx = error "valctx: not yet defined" }
-
-builtinStructs :: [StructDef]
-builtinStructs =
-    [ complexStruct "complex"   intT
-    , complexStruct "complex8"  int8T
-    , complexStruct "complex16" int16T
-    , complexStruct "complex32" int32T
-    , complexStruct "complex64" int64T ]
-  where
-    complexStruct :: Z.Struct -> Type -> StructDef
-    complexStruct s tau =
-        StructDef s [] [("im", tau), ("re", tau)] noLoc

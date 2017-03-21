@@ -365,12 +365,8 @@ type Tvk = (TyVar, Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
+isComplexStruct "Complex" = True
+isComplexStruct _         = False
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -490,20 +486,20 @@ instance LiftedNum Const (Maybe Const) where
     liftNum2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
 
-    liftNum2 Add _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a+c) (b+d)
+    liftNum2 Add _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a+c) (b+d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Sub _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a-c) (b-d)
+    liftNum2 Sub _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a-c) (b-d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Mul _f x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a*c - b*d) (b*c + a*d)
+    liftNum2 Mul _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a*c - b*d) (b*c + a*d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
@@ -521,10 +517,10 @@ instance LiftedIntegral Const (Maybe Const) where
     liftIntegral2 Rem _ (FixC ip x) (FixC _ y) =
         Just $ FixC ip (fromIntegral (x `rem` y))
 
-    liftIntegral2 Div _ x@(StructC sn [] _) y@(StructC sn' [] _) | isComplexStruct sn && sn' == sn = do
+    liftIntegral2 Div _ x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s = do
         re <- (a*c + b*d)/(c*c + d*d)
         im <- (b*c - a*d)/(c*c + d*d)
-        return $ complexC sn re im
+        return $ complexC s re im
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
@@ -568,7 +564,7 @@ complexC sname a b =
     StructC sname [] [("re", a), ("im", b)]
 
 uncomplexC :: Const -> (Const, Const)
-uncomplexC c@(StructC sname [] x) | isComplexStruct sname =
+uncomplexC c@(StructC struct _ x) | isComplexStruct struct =
     fromMaybe err $ do
       re <- lookup "re" x
       im <- lookup "im" x

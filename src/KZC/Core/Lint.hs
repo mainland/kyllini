@@ -46,6 +46,7 @@ module KZC.Core.Lint (
 
     joinOmega,
 
+    checkComplexT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -106,6 +107,7 @@ import KZC.Expr.Lint (Tc(..),
 
                       joinOmega,
 
+                      checkComplexT,
                       checkArrT,
                       checkKnownArrT,
                       checkArrOrRefArrT,

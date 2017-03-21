@@ -15,6 +15,7 @@
 module KZC.Expr.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
+    complexStructDef,
 
     MonadTc(..),
     MonadTcRef,
@@ -105,7 +106,6 @@ import Text.PrettyPrint.Mainland
 import KZC.Config
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
-import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -141,16 +141,16 @@ defaultTcEnv = TcEnv
     }
   where
     builtinStructs :: [StructDef]
-    builtinStructs =
-        [ complexStruct "complex"   intT
-        , complexStruct "complex8"  int8T
-        , complexStruct "complex16" int16T
-        , complexStruct "complex32" int32T
-        , complexStruct "complex64" int64T ]
+    builtinStructs = [complexStructDef]
 
-    complexStruct :: Struct -> Type -> StructDef
-    complexStruct s tau =
-        StructDef s [] [("re", tau), ("im", tau)] noLoc
+complexStructDef :: StructDef
+complexStructDef = StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVarT a)] noLoc
+  where
+    a :: TyVar
+    a = "a"
+
+    num :: Kind
+    num = TauK (traits [NumR])
 
 class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
@@ -454,18 +454,13 @@ typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                    = pure 0
-    go BoolT{}                    = pure 1
-    go (FixT ip _)                = pure $ ipWidth ip
-    go (FloatT fp _)              = pure $ fpWidth fp
-    go (StructT "complex" [] _)   = pure $ 2 * dEFAULT_INT_WIDTH
-    go (StructT "complex8" [] _)  = pure 16
-    go (StructT "complex16" [] _) = pure 32
-    go (StructT "complex32" [] _) = pure 64
-    go (StructT "complex64" [] _) = pure 128
-    go (ArrT (NatT n _) tau _)    = (*) <$> pure n <*> go tau
-    go (ST (C tau) _ _ _ _)       = go tau
-    go (RefT tau _)               = go tau
+    go UnitT{}                 = pure 0
+    go BoolT{}                 = pure 1
+    go (FixT ip _)             = pure $ ipWidth ip
+    go (FloatT fp _)           = pure $ fpWidth fp
+    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
+    go (ST (C tau) _ _ _ _)    = go tau
+    go (RefT tau _)            = go tau
 
     go (StructT s taus _) = do
         sdef <- lookupStruct s
