@@ -14,7 +14,8 @@ module KZC.Traits (
     traits,
     nullTraits,
     impliesTraits,
-    reduceTraits
+    reduceTraits,
+    intersectTraits
   ) where
 
 import Text.PrettyPrint.Mainland
@@ -79,3 +80,6 @@ fixpoint f x | x' == x   = x
              | otherwise = fixpoint f (f x)
   where
     x' = f x
+
+intersectTraits :: Traits -> Traits -> Traits
+intersectTraits = Set.intersection
