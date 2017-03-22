@@ -602,14 +602,25 @@ evalExp e =
         unop op val
       where
         unop :: Unop -> Val l m Exp -> EvalM l m (Val l m Exp)
-        unop Lnot val =
-            maybePartialVal $ liftBool op not val
-
-        unop Bnot val =
-            maybePartialVal $ liftBits op complement val
-
-        unop Neg val =
-            maybePartialVal $ liftNum op negate val
+        unop Lnot  val = maybePartialVal $ liftBool op not val
+        unop Bnot  val = maybePartialVal $ liftBits op complement val
+        unop Neg   val = maybePartialVal $ liftNum op negate val
+        unop Abs   val = maybePartialVal $ liftNum op abs val
+        unop Exp   val = maybePartialVal $ liftFloating op exp val
+        unop Log   val = maybePartialVal $ liftFloating op log val
+        unop Sqrt  val = maybePartialVal $ liftFloating op sqrt val
+        unop Sin   val = maybePartialVal $ liftFloating op sin val
+        unop Cos   val = maybePartialVal $ liftFloating op cos val
+        unop Tan   val = maybePartialVal $ liftFloating op tan val
+        unop Asin  val = maybePartialVal $ liftFloating op asin val
+        unop Acos  val = maybePartialVal $ liftFloating op acos val
+        unop Atan  val = maybePartialVal $ liftFloating op atan val
+        unop Sinh  val = maybePartialVal $ liftFloating op sinh val
+        unop Cosh  val = maybePartialVal $ liftFloating op cosh val
+        unop Tanh  val = maybePartialVal $ liftFloating op tanh val
+        unop Asinh val = maybePartialVal $ liftFloating op asinh val
+        unop Acosh val = maybePartialVal $ liftFloating op acosh val
+        unop Atanh val = maybePartialVal $ liftFloating op atanh val
 
         unop (Cast (StructT s [_tau] _)) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
             flds' <- castStruct cast s' (Map.toList flds)
@@ -811,9 +822,6 @@ evalExp e =
 
                 isFree :: (Var, Type, Val l m Exp) -> Bool
                 isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
-
-        go _tau (ExpV (VarE (Var "sqrt") _)) [] [ConstV (FloatC fp x)] =
-            return $ ConstV $ FloatC fp (sqrt x)
 
         -- Note that the heap cannot change as the result of evaluating function
         -- arguments, so we can call 'partialCmd' here instead of saving the heap

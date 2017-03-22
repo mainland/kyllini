@@ -11,7 +11,9 @@ module Language.Ziria.Parser.Tokens (
     Signedness(..),
     Token(..),
     keywords,
-    keywordMap
+    keywordMap,
+    unopFuns,
+    unopFunMap
   ) where
 
 import qualified Data.Map as Map
@@ -362,3 +364,28 @@ keywordMap = Map.fromList (map f keywords)
     f  ::  (Symbol, Token, Maybe Dialect)
        ->  (Symbol, (Token, Maybe Dialect))
     f (s, t, d) = (s, (t, d))
+
+-- | Unary functions that are written using function call syntax.
+unopFuns :: [(Symbol, Unop)]
+unopFuns = [ ("abs",   Abs)
+           , ("exp",   Exp)
+           , ("log",   Log)
+           , ("sqrt",  Sqrt)
+           , ("sin",   Sin)
+           , ("cos",   Cos)
+           , ("tan",   Tan)
+           , ("asin",  Asin)
+           , ("acos",  Acos)
+           , ("atan",  Atan)
+           , ("sinh",  Sinh)
+           , ("cosh",  Cosh)
+           , ("tanh",  Tanh)
+           , ("asinh", Asinh)
+           , ("acosh", Acosh)
+           , ("atanh", Atanh)
+           ]
+
+-- | Map unary functions that are written using function call syntax to the
+-- appropriate 'Unop'.
+unopFunMap :: Map.Map Symbol Unop
+unopFunMap = Map.fromList unopFuns

@@ -47,6 +47,7 @@ module KZC.Expr.Syntax (
     VectAnn(..),
 
     Unop(..),
+    isFunUnop,
     Binop(..),
 
     StructDef(..),
@@ -63,6 +64,7 @@ module KZC.Expr.Syntax (
     LiftedOrd(..),
     LiftedNum(..),
     LiftedIntegral(..),
+    LiftedFloating(..),
     LiftedBits(..),
     LiftedCast(..),
 
@@ -300,13 +302,51 @@ data VectAnn = AutoVect
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
-data Unop = Lnot
-          | Bnot
-          | Neg
-          | Cast Type
-          | Bitcast Type
-          | Len
+data Unop = Lnot         -- ^ Logical not
+          | Bnot         -- ^ Bitwise not
+          | Neg          -- ^ Negation
+          | Abs          -- ^ Absolute value
+          | Exp          -- ^ e^x
+          | Log          -- ^ Natural log
+          | Sqrt         -- ^ Square root
+          | Sin
+          | Cos
+          | Tan
+          | Asin
+          | Acos
+          | Atan
+          | Sinh
+          | Cosh
+          | Tanh
+          | Asinh
+          | Acosh
+          | Atanh
+          | Cast Type    -- ^ Type case
+          | Bitcast Type -- ^ Bit-wise type case
+          | Len          -- ^ Array length
   deriving (Eq, Ord, Read, Show)
+
+-- | Returns 'True' if 'Unop' application should be pretty-printed as a function
+-- call.
+isFunUnop :: Unop -> Bool
+isFunUnop Abs   = True
+isFunUnop Exp   = True
+isFunUnop Log   = True
+isFunUnop Sqrt  = True
+isFunUnop Sin   = True
+isFunUnop Cos   = True
+isFunUnop Tan   = True
+isFunUnop Asin  = True
+isFunUnop Acos  = True
+isFunUnop Atan  = True
+isFunUnop Sinh  = True
+isFunUnop Cosh  = True
+isFunUnop Tanh  = True
+isFunUnop Asinh = True
+isFunUnop Acosh = True
+isFunUnop Atanh = True
+isFunUnop Len   = True
+isFunUnop _     = False
 
 data Binop = Eq
            | Ne
@@ -419,6 +459,11 @@ class LiftedNum a b | a -> b where
 class LiftedIntegral a b | a -> b where
     liftIntegral2 :: Binop -> (forall a . Integral a => a -> a -> a) -> a -> a -> b
 
+-- | A type to which operations on 'Floating' types can be lifted.
+class LiftedFloating a b | a -> b where
+    liftFloating  :: Unop  -> (forall a . Floating a => a -> a)      -> a -> b
+    liftFloating2 :: Binop -> (forall a . Floating a => a -> a -> a) -> a -> a -> b
+
 -- | A type to which operations on 'Bits' types can be lifted.
 class LiftedBits a b | a -> b where
     liftBits  :: Unop  -> (forall a . Bits a => a -> a)        -> a -> b
@@ -529,6 +574,19 @@ instance LiftedIntegral Const (Maybe Const) where
         x / y = liftIntegral2 Div quot x y
 
     liftIntegral2 _ _ _ _ =
+        Nothing
+
+instance LiftedFloating Const (Maybe Const) where
+    liftFloating _op f (FloatC fp x) =
+        Just $ FloatC fp (f x)
+
+    liftFloating _op _f _c =
+        Nothing
+
+    liftFloating2 _op f (FloatC fp x) (FloatC _ y) =
+        Just $ FloatC fp (f x y)
+
+    liftFloating2 _ _ _ _ =
         Nothing
 
 instance LiftedCast Const (Maybe Const) where
@@ -738,6 +796,9 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
+    pprPrec _ (UnopE op e _) | isFunUnop op =
+        ppr op <> parens (ppr e)
+
     pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
         ppr op <> parens (ppr e)
@@ -900,7 +961,23 @@ instance Pretty Unop where
     ppr Lnot          = text "not" <> space
     ppr Bnot          = text "~"
     ppr Neg           = text "-"
-    ppr Len           = text "length" <> space
+    ppr Abs           = text "abs"
+    ppr Exp           = text "exp"
+    ppr Log           = text "log"
+    ppr Sqrt          = text "sqrt"
+    ppr Sin           = text "sin"
+    ppr Cos           = text "cos"
+    ppr Tan           = text "tan"
+    ppr Asin          = text "asin"
+    ppr Acos          = text "acos"
+    ppr Atan          = text "atan"
+    ppr Sinh          = text "sinh"
+    ppr Cosh          = text "cosh"
+    ppr Tanh          = text "tanh"
+    ppr Asinh         = text "asinh"
+    ppr Acosh         = text "acosh"
+    ppr Atanh         = text "atanh"
+    ppr Len           = text "length"
     ppr (Cast tau)    = text "cast" <> langle <> ppr tau <> rangle
     ppr (Bitcast tau) = text "bitcast" <> langle <> ppr tau <> rangle
 
@@ -1101,6 +1178,22 @@ instance HasFixity Unop where
     fixity Lnot        = infixr_ 12
     fixity Bnot        = infixr_ 12
     fixity Neg         = infixr_ 12
+    fixity Abs         = infixr_ 11
+    fixity Exp         = infixr_ 11
+    fixity Log         = infixr_ 11
+    fixity Sqrt        = infixr_ 11
+    fixity Sin         = infixr_ 11
+    fixity Cos         = infixr_ 11
+    fixity Tan         = infixr_ 11
+    fixity Asin        = infixr_ 11
+    fixity Acos        = infixr_ 11
+    fixity Atan        = infixr_ 11
+    fixity Sinh        = infixr_ 11
+    fixity Cosh        = infixr_ 11
+    fixity Tanh        = infixr_ 11
+    fixity Asinh       = infixr_ 11
+    fixity Acosh       = infixr_ 11
+    fixity Atanh       = infixr_ 11
     fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
     fixity (Bitcast _) = infixr_ 10

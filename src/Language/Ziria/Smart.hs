@@ -10,6 +10,7 @@ module Language.Ziria.Smart (
     mkTyVar,
     mkField,
     mkStruct,
+    mkCall,
 
     varE,
     letDeclE,
@@ -18,8 +19,10 @@ module Language.Ziria.Smart (
   ) where
 
 import Data.Loc
+import qualified Data.Map as Map
 
 import Language.Ziria.Syntax
+import Language.Ziria.Parser.Tokens (unopFunMap)
 
 import KZC.Name
 
@@ -34,6 +37,13 @@ mkField = Field
 
 mkStruct :: Name -> Struct
 mkStruct = Struct
+
+mkCall :: Name -> [Exp] -> SrcLoc -> Exp
+mkCall f [e] l | Just op <- Map.lookup (nameSym f) unopFunMap =
+    UnopE op e l
+
+mkCall f es l =
+    CallE (mkVar f) es l
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

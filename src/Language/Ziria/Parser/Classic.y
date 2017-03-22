@@ -396,7 +396,7 @@ aexp :
       { StructE $1 [] $3 ($1 `srcspan` $4) }
 
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
@@ -613,9 +613,9 @@ stm_exp :
       { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
 
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (structid $1) $3 ($1 `srcspan` $4) }
 
   | pexp ':=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }
@@ -749,9 +749,9 @@ acomp :
   | ID
       { varE (mkVar (varid $1)) }
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
+      {mkCall (structid $1) $3 ($1 `srcspan` $4) }
 
   | '(' comp ')'
       { $2 }

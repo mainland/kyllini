@@ -609,6 +609,7 @@ evalExp e =
         unop (Bitcast FixT{}) _    = IntV top
         unop Bitcast{} _           = top
         unop Len _                 = IntV top
+        unop _ _                   = top
 
     go (BinopE op e1 e2 _) =
         binop op <$> go e1 <*> go e2

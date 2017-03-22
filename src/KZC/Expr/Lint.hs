@@ -289,6 +289,23 @@ inferExp (UnopE op e1 l) = do
         mkSigned (FixT (U w) l) = FixT (I w) l
         mkSigned tau            = tau
 
+    unop Abs   tau = inferOp [(a, numK)] aT aT tau
+    unop Exp   tau = inferOp [(a, fracK)] aT aT tau
+    unop Log   tau = inferOp [(a, fracK)] aT aT tau
+    unop Sqrt  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sin   tau = inferOp [(a, fracK)] aT aT tau
+    unop Cos   tau = inferOp [(a, fracK)] aT aT tau
+    unop Tan   tau = inferOp [(a, fracK)] aT aT tau
+    unop Asin  tau = inferOp [(a, fracK)] aT aT tau
+    unop Acos  tau = inferOp [(a, fracK)] aT aT tau
+    unop Atan  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sinh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Cosh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Tanh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Asinh tau = inferOp [(a, fracK)] aT aT tau
+    unop Acosh tau = inferOp [(a, fracK)] aT aT tau
+    unop Atanh tau = inferOp [(a, fracK)] aT aT tau
+
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
         return tau2

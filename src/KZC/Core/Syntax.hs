@@ -90,6 +90,7 @@ module KZC.Core.Syntax (
     LiftedOrd(..),
     LiftedNum(..),
     LiftedIntegral(..),
+    LiftedFloating(..),
     LiftedBits(..),
     LiftedCast(..),
 #endif /* !defined(ONLY_TYPEDEFS) */
@@ -156,6 +157,7 @@ import KZC.Expr.Syntax (Var(..),
                         LiftedOrd(..),
                         LiftedNum(..),
                         LiftedIntegral(..),
+                        LiftedFloating(..),
                         LiftedBits(..),
                         LiftedCast(..),
 
@@ -1730,6 +1732,19 @@ instance LiftedNum Exp Exp where
         BinopE Add e1 (ConstE (FixC ip (x+y)) sloc) sloc'
 
     liftNum2 op _f e1 e2 =
+        BinopE op e1 e2 (e1 `srcspan` e2)
+
+instance LiftedFloating Exp Exp where
+    liftFloating op f e@(ConstE c _) | Just c' <- liftFloating op f c =
+        ConstE c' (srclocOf e)
+
+    liftFloating op _f e =
+        UnopE op e (srclocOf e)
+
+    liftFloating2 op f e1@(ConstE c1 _) e2@(ConstE c2 _) | Just c' <- liftFloating2 op f c1 c2 =
+        ConstE c' (e1 `srcspan` e2)
+
+    liftFloating2 op _f e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)
 
 instance IsEq Exp where

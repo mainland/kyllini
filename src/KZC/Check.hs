@@ -452,9 +452,25 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop op
   where
     unop :: Z.Unop -> Ti (Ti E.Exp)
-    unop Z.Lnot = checkBoolUnop E.Lnot
-    unop Z.Bnot = checkBitsUnop E.Bnot
-    unop Z.Neg  = checkNumUnop E.Neg
+    unop Z.Lnot   = checkBoolUnop E.Lnot
+    unop Z.Bnot   = checkBitsUnop E.Bnot
+    unop Z.Neg    = checkSignedNumUnop E.Neg
+    unop Z.Abs    = checkNumUnop E.Abs
+    unop Z.Exp    = checkFracUnop E.Exp
+    unop Z.Log    = checkFracUnop E.Log
+    unop Z.Sqrt   = checkFracUnop E.Sqrt
+    unop Z.Sin    = checkFracUnop E.Sin
+    unop Z.Cos    = checkFracUnop E.Cos
+    unop Z.Tan    = checkFracUnop E.Tan
+    unop Z.Asin   = checkFracUnop E.Asin
+    unop Z.Acos   = checkFracUnop E.Acos
+    unop Z.Atan   = checkFracUnop E.Atan
+    unop Z.Sinh   = checkFracUnop E.Sinh
+    unop Z.Cosh   = checkFracUnop E.Cosh
+    unop Z.Tanh   = checkFracUnop E.Tanh
+    unop Z.Asinh  = checkFracUnop E.Asinh
+    unop Z.Acosh  = checkFracUnop E.Acosh
+    unop Z.Atanh  = checkFracUnop E.Atanh
 
     unop (Z.Cast ztau2) = do
         (tau1, mce) <- inferVal e
@@ -488,8 +504,22 @@ tcExp (Z.UnopE op e l) exp_ty =
     checkNumUnop cop = do
         (tau, mce) <- inferVal e
         checkKind tau numK
+        instType tau exp_ty
+        return $ E.UnopE cop <$> mce <*> pure l
+
+    checkSignedNumUnop :: E.Unop -> Ti (Ti E.Exp)
+    checkSignedNumUnop cop = do
+        (tau, mce) <- inferVal e
+        checkKind tau numK
         tau' <- mkSigned tau
         instType tau' exp_ty
+        return $ E.UnopE cop <$> mce <*> pure l
+
+    checkFracUnop :: E.Unop -> Ti (Ti E.Exp)
+    checkFracUnop cop = do
+        (tau, mce) <- inferVal e
+        checkKind tau fracK
+        instType tau exp_ty
         return $ E.UnopE cop <$> mce <*> pure l
 
 tcExp e@(Z.BinopE op e1 e2 l) exp_ty =

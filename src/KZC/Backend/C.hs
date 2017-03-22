@@ -910,42 +910,87 @@ cgExp e k =
     go (VarE v _) k =
         lookupVarCExp v >>= runKont k
 
-    go (UnopE op e l) k = do
+    go e0@(UnopE op e l) k = withSummaryContext e0 $ do
         tau       <- inferExp e
         ce        <- cgExpOneshot e
         maybe_tau <- runMaybeT $ checkComplexT tau
         case maybe_tau of
-          Just{}  -> cgUnopComplex ce op >>= runKont k
-          Nothing -> cgUnop tau ce op >>= runKont k
+          Just{}  -> cgUnopComplex op ce >>= runKont k
+          Nothing -> cgUnop op tau ce  >>= runKont k
       where
-        cgUnop :: Type -> CExp l -> Unop -> Cg l (CExp l)
-        cgUnop tau_from ce (Cast tau_to) =
+        cgUnop ::  Unop -> Type -> CExp l -> Cg l (CExp l)
+        cgUnop (Cast tau_to) tau_from ce =
             cgCast ce tau_from tau_to
 
-        cgUnop tau_from ce (Bitcast tau_to) =
+        cgUnop (Bitcast tau_to) tau_from ce =
             cgBitcast ce tau_from tau_to
 
-        cgUnop (RefT (ArrT n _ _) _) _ Len =
+        cgUnop Len (RefT (ArrT n _ _) _) _ =
             cgNatType n
 
-        cgUnop (ArrT n _ _) _ Len =
+        cgUnop Len (ArrT n _ _) _ =
             cgNatType n
 
-        cgUnop _ _ Len =
+        cgUnop Len _ _ =
             panicdoc $
             text "cgUnop: tried to take the length of a non-array type!"
 
-        cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
-        cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
-                           | otherwise  = return $ CExp [cexp|~$ce|]
-        cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
+        cgUnop Lnot _ ce = return $ CExp [cexp|!$ce|]
 
-        cgUnopComplex :: CExp l -> Unop -> Cg l (CExp l)
-        cgUnopComplex ce Neg = do
+        cgUnop Bnot tau ce
+          | isBitT tau = return $ CExp [cexp|!$ce|]
+          | otherwise  = return $ CExp [cexp|~$ce|]
+
+        cgUnop Neg _ ce = return $ CExp [cexp|-$ce|]
+
+        cgUnop Abs FixT{}          ce = return $ CExp [cexp|abs($ce)|]
+        cgUnop Abs (FloatT FP32 _) ce = return $ CExp [cexp|fabsf($ce)|]
+        cgUnop Abs (FloatT FP64 _) ce = return $ CExp [cexp|fabs($ce)|]
+
+        cgUnop Exp (FloatT FP32 _) ce = return $ CExp [cexp|expf($ce)|]
+        cgUnop Exp (FloatT FP64 _) ce = return $ CExp [cexp|exp($ce)|]
+
+        cgUnop Log (FloatT FP32 _) ce = return $ CExp [cexp|logf($ce)|]
+        cgUnop Log (FloatT FP64 _) ce = return $ CExp [cexp|log($ce)|]
+
+        cgUnop Sqrt (FloatT FP32 _) ce = return $ CExp [cexp|sqrtf($ce)|]
+        cgUnop Sqrt (FloatT FP64 _) ce = return $ CExp [cexp|sqrt($ce)|]
+
+        cgUnop Sin  (FloatT FP32 _) ce = return $ CExp [cexp|sinf($ce)|]
+        cgUnop Sin  (FloatT FP64 _) ce = return $ CExp [cexp|sin($ce)|]
+        cgUnop Cos  (FloatT FP32 _) ce = return $ CExp [cexp|cosf($ce)|]
+        cgUnop Cos  (FloatT FP64 _) ce = return $ CExp [cexp|cos($ce)|]
+        cgUnop Tan  (FloatT FP32 _) ce = return $ CExp [cexp|tanf($ce)|]
+        cgUnop Tan  (FloatT FP64 _) ce = return $ CExp [cexp|tan($ce)|]
+        cgUnop Asin (FloatT FP32 _) ce = return $ CExp [cexp|asinf($ce)|]
+        cgUnop Asin (FloatT FP64 _) ce = return $ CExp [cexp|asin($ce)|]
+        cgUnop Acos (FloatT FP32 _) ce = return $ CExp [cexp|acosf($ce)|]
+        cgUnop Acos (FloatT FP64 _) ce = return $ CExp [cexp|acos($ce)|]
+        cgUnop Atan (FloatT FP32 _) ce = return $ CExp [cexp|atanf($ce)|]
+        cgUnop Atan (FloatT FP64 _) ce = return $ CExp [cexp|atan($ce)|]
+
+        cgUnop Sinh  (FloatT FP32 _) ce = return $ CExp [cexp|sinhf($ce)|]
+        cgUnop Sinh  (FloatT FP64 _) ce = return $ CExp [cexp|sinh($ce)|]
+        cgUnop Cosh  (FloatT FP32 _) ce = return $ CExp [cexp|coshf($ce)|]
+        cgUnop Cosh  (FloatT FP64 _) ce = return $ CExp [cexp|cosh($ce)|]
+        cgUnop Tanh  (FloatT FP32 _) ce = return $ CExp [cexp|tanhf($ce)|]
+        cgUnop Tanh  (FloatT FP64 _) ce = return $ CExp [cexp|tanh($ce)|]
+        cgUnop Asinh (FloatT FP32 _) ce = return $ CExp [cexp|asinhf($ce)|]
+        cgUnop Asinh (FloatT FP64 _) ce = return $ CExp [cexp|asinh($ce)|]
+        cgUnop Acosh (FloatT FP32 _) ce = return $ CExp [cexp|acoshf($ce)|]
+        cgUnop Acosh (FloatT FP64 _) ce = return $ CExp [cexp|acosh($ce)|]
+        cgUnop Atanh (FloatT FP32 _) ce = return $ CExp [cexp|atanhf($ce)|]
+        cgUnop Atanh (FloatT FP64 _) ce = return $ CExp [cexp|atanh($ce)|]
+
+        cgUnop _ _ _ =
+            faildoc $ text "Cannot compile operator."
+
+        cgUnopComplex :: Unop ->  CExp l -> Cg l (CExp l)
+        cgUnopComplex Neg ce = do
             (a, b) <- unComplex ce
             cgComplex (-a) (-b)
 
-        cgUnopComplex _ce op =
+        cgUnopComplex op _ce =
             panicdoc $ text "Illegal operation on complex value:" <+> ppr op
 
         cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
@@ -981,7 +1026,7 @@ cgExp e k =
             caddr   <- cgAddrOf tau_from ce
             return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
-    go (BinopE op e1 e2 l) k = do
+    go e0@(BinopE op e1 e2 l) k = withSummaryContext e0 $ do
         tau <- inferExp e1
         ce1 <- cgExpOneshot e1
         ce2 <- cgExpOneshot e2

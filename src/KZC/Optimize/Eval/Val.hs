@@ -631,6 +631,19 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
     liftIntegral2 op _f val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
+instance IsLabel l => LiftedFloating (Val l m Exp) (Val l m Exp) where
+    liftFloating op f (ConstV c) | Just c' <- liftFloating op f c =
+        ConstV c'
+
+    liftFloating op _f val =
+        ExpV $ UnopE op (toExp val) noLoc
+
+    liftFloating2 op f (ConstV c1) (ConstV c2) | Just c' <- liftFloating2 op f c1 c2 =
+        ConstV c'
+
+    liftFloating2 op _f val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
 instance IsLabel l => LiftedBits (Val l m Exp) (Val l m Exp) where
     liftBits op f (ConstV c) | Just c' <- liftBits op f c =
         ConstV c'
