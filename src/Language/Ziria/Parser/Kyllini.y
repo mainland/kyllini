@@ -107,7 +107,7 @@ import KZC.Util.Pretty
   '*'  { L _ T.Tstar }
   '/'  { L _ T.Tdiv }
   '%'  { L _ T.Trem }
-  '**' { L _ T.Texp }
+  '**' { L _ T.Tpow }
   '<<' { L _ T.Tshiftl }
   '>>' { L _ T.Tshiftr }
 

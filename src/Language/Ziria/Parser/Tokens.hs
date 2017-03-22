@@ -99,7 +99,7 @@ data Token = Teof
            | Tstar   -- ^ Multiplication
            | Tdiv    -- ^ Division
            | Trem    -- ^ Remainder
-           | Texp    -- ^ Exponentiation
+           | Tpow    -- ^ Raise to power
            | Tshiftl -- ^ Shift right
            | Tshiftr -- ^ Shift left
 
@@ -230,7 +230,7 @@ instance Pretty Token where
     ppr Tstar   = text "*"
     ppr Tdiv    = text "/"
     ppr Trem    = text "%"
-    ppr Texp    = text "**"
+    ppr Tpow    = text "**"
     ppr Tshiftl = text "<<"
     ppr Tshiftr = text ">>"
 

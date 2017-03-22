@@ -146,7 +146,7 @@ ziria :-
   "*"   { token Tstar }
   "/"   { token Tdiv }
   "%"   { token Trem }
-  "**"  { token Texp }
+  "**"  { token Tpow }
   "<<"  { token Tshiftl }
   ">>"  { token Tshiftr }
 
