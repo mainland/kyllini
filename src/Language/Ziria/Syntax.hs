@@ -263,7 +263,11 @@ data Unop = Lnot      -- ^ Logical not
           | Neg       -- ^ Negation
           | Abs       -- ^ Absolute value
           | Exp       -- ^ e^x
-          | Log       -- ^ Natural log
+          | Exp2      -- ^ 2^x
+          | Expm1     -- ^ e^x - 1
+          | Log       -- ^ Log base e
+          | Log2      -- ^ Log base 2
+          | Log1p     -- ^ Log base e of (1 + x)
           | Sqrt      -- ^ Square root
           | Sin
           | Cos
@@ -286,7 +290,11 @@ data Unop = Lnot      -- ^ Logical not
 isFunUnop :: Unop -> Bool
 isFunUnop Abs   = True
 isFunUnop Exp   = True
+isFunUnop Exp2  = True
+isFunUnop Expm1 = True
 isFunUnop Log   = True
+isFunUnop Log2  = True
+isFunUnop Log1p = True
 isFunUnop Sqrt  = True
 isFunUnop Sin   = True
 isFunUnop Cos   = True
@@ -760,7 +768,11 @@ instance Pretty Unop where
     ppr Neg        = text "-"
     ppr Abs        = text "abs"
     ppr Exp        = text "exp"
+    ppr Exp2       = text "exp2"
+    ppr Expm1      = text "expm1"
     ppr Log        = text "log"
+    ppr Log2       = text "log2"
+    ppr Log1p      = text "log1p"
     ppr Sqrt       = text "sqrt"
     ppr Sin        = text "sin"
     ppr Cos        = text "cos"
@@ -955,7 +967,11 @@ instance HasFixity Unop where
     fixity Neg         = infixr_ 12
     fixity Abs         = infixr_ 11
     fixity Exp         = infixr_ 11
+    fixity Exp2        = infixr_ 11
+    fixity Expm1       = infixr_ 11
     fixity Log         = infixr_ 11
+    fixity Log2        = infixr_ 11
+    fixity Log1p       = infixr_ 11
     fixity Sqrt        = infixr_ 11
     fixity Sin         = infixr_ 11
     fixity Cos         = infixr_ 11

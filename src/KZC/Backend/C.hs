@@ -947,11 +947,19 @@ cgExp e k =
         cgUnop Abs (FloatT FP32 _) ce = return $ CExp [cexp|fabsf($ce)|]
         cgUnop Abs (FloatT FP64 _) ce = return $ CExp [cexp|fabs($ce)|]
 
-        cgUnop Exp (FloatT FP32 _) ce = return $ CExp [cexp|expf($ce)|]
-        cgUnop Exp (FloatT FP64 _) ce = return $ CExp [cexp|exp($ce)|]
+        cgUnop Exp   (FloatT FP32 _) ce = return $ CExp [cexp|expf($ce)|]
+        cgUnop Exp   (FloatT FP64 _) ce = return $ CExp [cexp|exp($ce)|]
+        cgUnop Exp2  (FloatT FP32 _) ce = return $ CExp [cexp|exp2f($ce)|]
+        cgUnop Exp2  (FloatT FP64 _) ce = return $ CExp [cexp|exp2($ce)|]
+        cgUnop Expm1 (FloatT FP32 _) ce = return $ CExp [cexp|expm1f($ce)|]
+        cgUnop Expm1 (FloatT FP64 _) ce = return $ CExp [cexp|expm1($ce)|]
 
-        cgUnop Log (FloatT FP32 _) ce = return $ CExp [cexp|logf($ce)|]
-        cgUnop Log (FloatT FP64 _) ce = return $ CExp [cexp|log($ce)|]
+        cgUnop Log   (FloatT FP32 _) ce = return $ CExp [cexp|logf($ce)|]
+        cgUnop Log   (FloatT FP64 _) ce = return $ CExp [cexp|log($ce)|]
+        cgUnop Log2  (FloatT FP32 _) ce = return $ CExp [cexp|log2f($ce)|]
+        cgUnop Log2  (FloatT FP64 _) ce = return $ CExp [cexp|log2($ce)|]
+        cgUnop Log1p (FloatT FP32 _) ce = return $ CExp [cexp|log1pf($ce)|]
+        cgUnop Log1p (FloatT FP64 _) ce = return $ CExp [cexp|log1p($ce)|]
 
         cgUnop Sqrt (FloatT FP32 _) ce = return $ CExp [cexp|sqrtf($ce)|]
         cgUnop Sqrt (FloatT FP64 _) ce = return $ CExp [cexp|sqrt($ce)|]

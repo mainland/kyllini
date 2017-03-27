@@ -291,7 +291,11 @@ inferExp (UnopE op e1 l) = do
 
     unop Abs   tau = inferOp [(a, numK)] aT aT tau
     unop Exp   tau = inferOp [(a, fracK)] aT aT tau
+    unop Exp2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Expm1 tau = inferOp [(a, fracK)] aT aT tau
     unop Log   tau = inferOp [(a, fracK)] aT aT tau
+    unop Log2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Log1p tau = inferOp [(a, fracK)] aT aT tau
     unop Sqrt  tau = inferOp [(a, fracK)] aT aT tau
     unop Sin   tau = inferOp [(a, fracK)] aT aT tau
     unop Cos   tau = inferOp [(a, fracK)] aT aT tau
