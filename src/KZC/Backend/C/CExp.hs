@@ -26,7 +26,14 @@ module KZC.Backend.C.CExp (
     unCInt,
     unCIdx,
     unCSlice,
-    unBitCSliceBase
+    unBitCSliceBase,
+
+    bIT_ARRAY_ELEM_BITS,
+
+    bitArrayLen,
+    bitArrayIdxOff,
+    bitArrayIdx,
+    bitArrayOff
   ) where
 
 import Prelude hiding (elem)
@@ -42,7 +49,6 @@ import KZC.Backend.C.Util
 import KZC.Core.Lint (refPath)
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Pretty
 import KZC.Util.Staged
@@ -579,3 +585,27 @@ lowerSlice tau carr cidx len | isBitT tau =
 
 lowerSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]
+
+-- | Number of bits per bit array element.
+bIT_ARRAY_ELEM_BITS :: Num a => a
+bIT_ARRAY_ELEM_BITS = 8
+
+-- | Given the length of a bit array, return the number of bit array elements in
+-- the array's representation.
+bitArrayLen :: Integral a => a -> a
+bitArrayLen n = (n + (bIT_ARRAY_ELEM_BITS-1)) `quot` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit array
+-- element holding the bit and the index of the bit within that element.
+bitArrayIdxOff :: Integral a => a -> (a, a)
+bitArrayIdxOff i = i `quotRem` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit array
+-- element holding the bit.
+bitArrayIdx :: Integral a => a -> a
+bitArrayIdx i = i `quot` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit within
+-- the bit array element holding the bit.
+bitArrayOff :: Integral a => a -> a
+bitArrayOff i = i `rem` bIT_ARRAY_ELEM_BITS

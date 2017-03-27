@@ -52,7 +52,6 @@ import KZC.Label
 import KZC.Monad (KZC)
 import KZC.Name
 import KZC.Optimize.LutToGen (lutGenToExp)
-import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Error
 import KZC.Util.Staged
@@ -1513,7 +1512,7 @@ cgType BoolT{} =
     return [cty|typename uint8_t|]
 
 cgType tau | isBitT tau =
-    return bIT_ARRAY_ELEM_TYPE
+    cgBitElemType
 
 cgType tau@(FixT (I w) _)
     | w <= 8    = return [cty|typename int8_t|]
@@ -1554,8 +1553,9 @@ cgType tau@StructT{} =
     withSummaryContext tau $
     faildoc $ text "Cannot compile polymorphic struct types."
 
-cgType (ArrT (NatT n _) tau _) | isBitT tau =
-    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+cgType (ArrT (NatT n _) tau _) | isBitT tau = do
+    cbitElemType <- cgBitElemType
+    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
 cgType (ArrT (NatT n _) tau _) = do
     ctau <- cgType tau
@@ -1570,8 +1570,9 @@ cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
 cgType tau@ST{} =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
-cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
-    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
+    cbitElemType <- cgBitElemType
+    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
 cgType (RefT (ArrT (NatT n _) tau _) _) = do
     ctau <- cgType tau
@@ -1599,6 +1600,10 @@ cgType tau@ForallT{} =
 
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
+
+-- | Compute the type of array elements in a bit array.
+cgBitElemType :: Cg l C.Type
+cgBitElemType = cgType (FixT (U bIT_ARRAY_ELEM_BITS) noLoc)
 
 cgFunType :: [TyVar] -> [Type] -> Type -> Cg l C.Type
 cgFunType nats args ret = do
@@ -1629,8 +1634,9 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg l C.Type
-    cgParamType (ArrT (NatT n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgParamType (ArrT (NatT n _) tau _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|const $ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
@@ -1640,8 +1646,9 @@ cgParam tau maybe_cv = do
         ctau <- cgType tau
         return [cty|const $ty:ctau*|]
 
-    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (RefT (ArrT (NatT n _) tau _) _) = do
         ctau <- cgType tau
@@ -1666,8 +1673,9 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg l C.Type
-    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
@@ -1852,20 +1860,20 @@ cgStorage cv (ArrT n tau _) init | isBitT tau =
   where
     go :: CExp l -> Cg l (C.InitGroup, CExp l)
     go (CInt n) | init = do
-        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)] = {0};|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:cbitElemType $id:cv[$int:(bitArrayLen n)] = {0};|]
         return (cinit, ce)
 
     go (CInt n) = do
-        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:cbitElemType $id:cv[$int:(bitArrayLen n)];|]
         return (cinit, ce)
 
     go cn = do
-        let cinit = rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
-        appendStm [cstm|memset($id:cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$ty:cbitElemType* $id:cv = ($ty:cbitElemType*) alloca($(bitArrayLen cn) * sizeof($ty:cbitElemType));|]
+        appendStm [cstm|memset($id:cv, 0, $(bitArrayLen cn)*sizeof($ty:cbitElemType));|]
         return (cinit, ce)
-
-    ctau :: C.Type
-    ctau = bIT_ARRAY_ELEM_TYPE
 
     ce :: CExp l
     ce = CExp $ rl cv [cexp|$id:cv|]
@@ -3102,10 +3110,11 @@ cgLower tau = go
         return cv
 
     go ce@CBits{} = do
-        ctau <- cgBitcastType tau
-        cv   <- cgCTemp ce "bits" ctau Nothing
+        cbitElemType <- cgBitElemType
+        ctau         <- cgBitcastType tau
+        cv           <- cgCTemp ce "bits" ctau Nothing
         appendStm [cstm|$cv = $ce;|]
-        return $ CExp [cexp|($ty:bIT_ARRAY_ELEM_TYPE *) &$cv|]
+        return $ CExp [cexp|($ty:cbitElemType *) &$cv|]
 
     go (CAlias _ ce) =
         go ce
