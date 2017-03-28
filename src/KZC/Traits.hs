@@ -70,6 +70,8 @@ reduceTraits = fixpoint (reduce implications)
 
     implications :: [(Trait, Traits)]
     implications = [ (OrdR,        Set.fromList [EqR])
+                   , (BitsR,       Set.fromList [EqR])
+                   , (BoolR,       Set.fromList [EqR])
                    , (NumR,        Set.fromList [OrdR])
                    , (IntegralR,   Set.fromList [NumR])
                    , (FractionalR, Set.fromList [NumR])
