@@ -59,7 +59,6 @@ import KZC.Expr.Syntax (IP(..),
                         FP(..))
 import KZC.Globals
 import KZC.Name
-import KZC.Platform
 import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -212,13 +211,17 @@ instance Pretty Type where
     pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I w) _)
-      | w == dEFAULT_INT_WIDTH = text "int"
-      | otherwise              = text "int" <> ppr w
+    pprPrec _ (FixT IDefault _) =
+        text "int"
 
-    pprPrec _ (FixT (U w) _)
-      | w == dEFAULT_INT_WIDTH = text "uint"
-      | otherwise              = text "uint" <> ppr w
+    pprPrec _ (FixT (I w) _) =
+        text "int" <> ppr w
+
+    pprPrec _ (FixT UDefault _) =
+        text "uint"
+
+    pprPrec _ (FixT (U w) _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

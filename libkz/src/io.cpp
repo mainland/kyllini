@@ -392,10 +392,12 @@ void kz_output_##D(kz_buf_t* buf, const T* data, size_t n) \
     output(buf, data, n); \
 }
 
+DECLARE_IO(int,int)
 DECLARE_IO(int8,int8_t)
 DECLARE_IO(int16,int16_t)
 DECLARE_IO(int32,int32_t)
 
+DECLARE_IO(uint,unsigned)
 DECLARE_IO(uint8,uint8_t)
 DECLARE_IO(uint16,uint16_t)
 DECLARE_IO(uint32,uint32_t)

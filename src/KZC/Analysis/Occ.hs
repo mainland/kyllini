@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.Occ
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -46,6 +46,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -85,6 +86,7 @@ newtype OccM m a = OccM { unOccM :: WriterT Occs m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

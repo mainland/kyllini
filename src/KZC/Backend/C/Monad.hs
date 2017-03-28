@@ -10,7 +10,7 @@
 
 -- |
 -- Module      :  KZC.Backend.C.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -156,6 +156,7 @@ import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Monad
+import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Env
 import KZC.Util.Error
@@ -310,6 +311,7 @@ newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadRef IORef,
               MonadTc,

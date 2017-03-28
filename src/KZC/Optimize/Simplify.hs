@@ -45,12 +45,13 @@ import Data.Traversable (traverse)
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Occ
 import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Label
-import KZC.Analysis.Occ
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -139,6 +140,7 @@ newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

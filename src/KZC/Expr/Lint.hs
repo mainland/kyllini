@@ -105,6 +105,7 @@ import KZC.Expr.Lint.Monad
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Monad
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -119,6 +120,7 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace)
 
 instance MonadTc Tc where
@@ -901,8 +903,14 @@ inferKind = inferType
     inferType (FixT (U 1) _) =
         return $ qualK [EqR, OrdR, BoolR, BitsR]
 
+    inferType (FixT UDefault _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
+
     inferType (FixT U{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
+
+    inferType (FixT IDefault _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR]
 
     inferType (FixT I{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR]

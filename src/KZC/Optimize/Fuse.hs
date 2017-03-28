@@ -67,6 +67,7 @@ import KZC.Name
 import KZC.Optimize.Autolut (autolutComp)
 import KZC.Optimize.FloatViews (floatViewsComp)
 import KZC.Optimize.Simplify (simplComp)
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Logic
 import KZC.Util.SetLike
@@ -169,6 +170,7 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -1263,6 +1265,7 @@ newtype UT m a = UT { runUT :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 
@@ -1294,6 +1297,7 @@ newtype UE m a = UE { runUE :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 

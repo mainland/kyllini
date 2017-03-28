@@ -115,7 +115,6 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax
 import KZC.Name
-import KZC.Platform
 
 qualK :: [Trait] -> Kind
 qualK ts = TauK (traits ts)
@@ -157,7 +156,7 @@ bitT :: Type
 bitT = FixT (U 1) noLoc
 
 intT :: Type
-intT = FixT (I dEFAULT_INT_WIDTH) noLoc
+intT = FixT IDefault noLoc
 
 int8T :: Type
 int8T = FixT (I 8) noLoc
@@ -172,7 +171,7 @@ int64T :: Type
 int64T = FixT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT (U dEFAULT_INT_WIDTH) noLoc
+uintT = FixT UDefault noLoc
 
 uint8T :: Type
 uint8T = FixT (U 8) noLoc
@@ -332,10 +331,10 @@ bitC :: Bool -> Const
 bitC b = FixC (U 1) (if b then 1 else 0)
 
 intC :: Integral i => i -> Const
-intC i = FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)
+intC i = FixC IDefault (fromIntegral i)
 
 uintC :: Integral i => i -> Const
-uintC i = FixC (U dEFAULT_INT_WIDTH) (fromIntegral i)
+uintC i = FixC UDefault (fromIntegral i)
 
 arrayC :: Vector Const -> Const
 arrayC cs

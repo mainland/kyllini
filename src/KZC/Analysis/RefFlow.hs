@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.RefFlow
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -47,6 +47,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -95,6 +96,7 @@ newtype RF m a = RF { unRF :: StateT RFState (WriterT RefSet m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

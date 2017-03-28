@@ -106,6 +106,7 @@ import Text.PrettyPrint.Mainland
 import KZC.Config
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -152,7 +153,7 @@ complexStructDef = StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVa
     num :: Kind
     num = TauK (traits [NumR])
 
-class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadTrace m, MonadUnique m) => MonadTc m where
+class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 
@@ -456,7 +457,10 @@ typeSize = go
     go :: Type -> m Int
     go UnitT{}                 = pure 0
     go BoolT{}                 = pure 1
-    go (FixT ip _)             = pure $ ipWidth ip
+    go (FixT IDefault _)       = asksPlatform platformIntWidth
+    go (FixT (I w) _)          = pure w
+    go (FixT UDefault _)       = asksPlatform platformIntWidth
+    go (FixT (U w) _)          = pure w
     go (FloatT fp _)           = pure $ fpWidth fp
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
     go (ST (C tau) _ _ _ _)    = go tau

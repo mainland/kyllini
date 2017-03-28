@@ -54,6 +54,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax hiding (I)
 import qualified KZC.Core.Syntax as S
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -77,9 +78,11 @@ intV ~(FixT ip _) i = FixC ip (fromIntegral i)
 
 -- | Convert a 'Val' to an 'Integral' value.
 fromIntV :: (Integral a, Monad m) => Val -> m a
-fromIntV (FixC S.I{} x) = return $ fromIntegral x
-fromIntV (FixC U{} x)   = return $ fromIntegral x
-fromIntV val            = faildoc $ text "Not an integer:" <+> ppr val
+fromIntV (FixC IDefault x) = return $ fromIntegral x
+fromIntV (FixC S.I{} x)    = return $ fromIntegral x
+fromIntV (FixC UDefault x) = return $ fromIntegral x
+fromIntV (FixC U{} x)      = return $ fromIntegral x
+fromIntV val               = faildoc $ text "Not an integer:" <+> ppr val
 
 idxV :: Monad m => Val -> Int -> Maybe Int -> m Val
 idxV (ArrayC v) i Nothing =
@@ -220,6 +223,7 @@ newtype I s m a = I { unI :: ReaderT (IEnv s) m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 

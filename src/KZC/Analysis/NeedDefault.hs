@@ -53,6 +53,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Pretty
 import KZC.Util.Trace
@@ -313,6 +314,7 @@ newtype ND m a = ND { unND :: StateT NDState m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

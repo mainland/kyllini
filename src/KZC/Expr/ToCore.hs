@@ -40,6 +40,7 @@ import KZC.Core.Syntax
 import KZC.Expr.Lint
 import qualified KZC.Expr.Syntax as E
 import KZC.Label
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -57,6 +58,7 @@ newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

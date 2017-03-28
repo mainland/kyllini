@@ -88,6 +88,7 @@ import KZC.Check.Types
 import KZC.Config
 import qualified KZC.Expr.Syntax as E
 import KZC.Monad
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.SetLike
@@ -105,6 +106,7 @@ newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)

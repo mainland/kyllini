@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Monad.SEFKT
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -34,6 +34,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Expr.Lint.Monad
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -207,6 +208,10 @@ instance (MonadErr m, MonadUnique m) => MonadUnique (SEFKT m) where
 instance (MonadErr m, MonadConfig m) => MonadConfig (SEFKT m) where
     askConfig   = lift askConfig
     localConfig = liftLocal askConfig localConfig
+
+instance (MonadErr m, MonadPlatform m) => MonadPlatform (SEFKT m) where
+    askPlatform   = lift askPlatform
+    localPlatform = liftLocal askPlatform localPlatform
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (SEFKT m) where
     askTraceDepth   = lift askTraceDepth

@@ -51,6 +51,7 @@ import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Label
 import KZC.Name
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.SetLike
 import KZC.Util.Trace
@@ -97,6 +98,7 @@ newtype F m a = F { unF :: ReaderT FEnv (StateT FState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

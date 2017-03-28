@@ -65,6 +65,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Name
+import KZC.Platform
 import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -131,21 +132,29 @@ instance Named Struct where
     mapName f (Struct n) = Struct (f n)
 
 -- | Fixed-point format.
-data IP = I (Maybe Int)
-        | U (Maybe Int)
+data IP = IDefault
+        | I Int
+        | UDefault
+        | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: IP -> Maybe Int
-ipWidth (I w) = w
-ipWidth (U w) = w
+ipWidth :: MonadPlatform m => IP -> m Int
+ipWidth IDefault = asksPlatform platformIntWidth
+ipWidth (I w)    = return w
+ipWidth UDefault = asksPlatform platformIntWidth
+ipWidth (U w)    = return w
 
 ipIsSigned :: IP -> Bool
-ipIsSigned I{} = True
-ipIsSigned U{} = False
+ipIsSigned IDefault{} = True
+ipIsSigned I{}        = True
+ipIsSigned UDefault{} = False
+ipIsSigned U{}        = False
 
 ipIsIntegral :: IP -> Bool
-ipIsIntegral I{} = True
-ipIsIntegral U{} = True
+ipIsIntegral IDefault{} = True
+ipIsIntegral I{}        = True
+ipIsIntegral UDefault{} = True
+ipIsIntegral U{}        = True
 
 -- | Floating-point width
 data FP = FP16
@@ -559,15 +568,17 @@ instance Pretty Decl where
     pprList cls = stack (map ppr cls)
 
 instance Pretty Const where
-    pprPrec _ UnitC                 = text "()"
-    pprPrec _ (BoolC False)         = text "false"
-    pprPrec _ (BoolC True)          = text "true"
-    pprPrec _ (FixC (U (Just 1)) 0) = text "'0"
-    pprPrec _ (FixC (U (Just 1)) 1) = text "'1"
-    pprPrec _ (FixC I{} x)          = ppr x
-    pprPrec _ (FixC U{} x)          = ppr x <> char 'u'
-    pprPrec _ (FloatC _ f)          = ppr f
-    pprPrec _ (StringC s)           = text (show s)
+    pprPrec _ UnitC             = text "()"
+    pprPrec _ (BoolC False)     = text "false"
+    pprPrec _ (BoolC True)      = text "true"
+    pprPrec _ (FixC (U 1) 0)    = text "'0"
+    pprPrec _ (FixC (U 1) 1)    = text "'1"
+    pprPrec _ (FixC IDefault x) = ppr x
+    pprPrec _ (FixC I{} x)      = ppr x
+    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)      = ppr f
+    pprPrec _ (StringC s)       = text (show s)
 
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
@@ -831,19 +842,19 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U (Just 1)) _) =
+    pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I Nothing) _) =
+    pprPrec _ (FixT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I (Just w)) _) =
+    pprPrec _ (FixT (I w) _) =
         text "int" <> ppr w
 
-    pprPrec _ (FixT (U Nothing) _) =
+    pprPrec _ (FixT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U (Just w)) _) =
+    pprPrec _ (FixT (U w) _) =
         text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =

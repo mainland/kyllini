@@ -60,7 +60,6 @@ import KZC.Check.Types
 import KZC.Config
 import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
-import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -401,14 +400,18 @@ checkDecls (decl:decls) k =
     k (mcdecl ++ mcdecls)
 
 mkSigned :: Monad m => Type -> m Type
-mkSigned (FixT (U w) l)   = return $ FixT (I w) l
-mkSigned tau@(FixT I{} _) = return tau
+mkSigned (FixT UDefault l)     = return $ FixT IDefault l
+mkSigned (FixT (U w) l)        = return $ FixT (I w) l
+mkSigned tau@(FixT IDefault _) = return tau
+mkSigned tau@(FixT I{} _)      = return tau
 mkSigned tau =
     faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to unsigned."
 
 mkUnsigned :: Monad m => Type -> m Type
-mkUnsigned (FixT (I w) l)   = return $ FixT (U w) l
-mkUnsigned tau@(FixT U{} _) = return tau
+mkUnsigned (FixT IDefault l)     = return $ FixT UDefault l
+mkUnsigned (FixT (I w) l)        = return $ FixT (U w) l
+mkUnsigned tau@(FixT UDefault _) = return tau
+mkUnsigned tau@(FixT U{} _)      = return tau
 mkUnsigned tau =
     faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to signed."
 
@@ -1326,8 +1329,14 @@ kcType tau@BoolT{} kappa_exp =
 kcType tau@(FixT (U 1) _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, BoolR, BitsR]) kappa_exp
 
+kcType tau@(FixT UDefault _) kappa_exp =
+    instKind tau (qualK [EqR, OrdR, NumR, IntegralR, BitsR]) kappa_exp
+
 kcType tau@(FixT U{} _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR, BitsR]) kappa_exp
+
+kcType tau@(FixT IDefault _) kappa_exp =
+    instKind tau (qualK [EqR, OrdR, NumR, IntegralR]) kappa_exp
 
 kcType tau@(FixT I{} _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR]) kappa_exp
@@ -2005,15 +2014,17 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
     go _ =
         return ()
 
-checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) | ipWidth ip2 < ipWidth ip1 =
-    maybeWithSummaryContext e $
-    warndocWhen f $ align $
-    text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
-
-checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) | ipIsSigned ip2 /= ipIsSigned ip1 =
-    maybeWithSummaryContext e $
-    warndocWhen f $ align $
-    text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
+checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) = do
+    w1 <- ipWidth ip1
+    w2 <- ipWidth ip2
+    when (w1 < w2) $
+        maybeWithSummaryContext e $
+        warndocWhen f $ align $
+        text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
+    when (ipIsSigned ip2 /= ipIsSigned ip1) $
+        maybeWithSummaryContext e $
+        warndocWhen f $ align $
+        text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
 checkSafeCast _f _e _tau1 _tau2 =
     return ()
@@ -2026,7 +2037,12 @@ constFold (Z.ArrayE es l) =
     Z.ArrayE (map constFold es) l
 
 constFold (Z.UnopE Z.Neg (Z.ConstE (Z.FixC ip r) l) _) =
-    Z.ConstE (Z.FixC (Z.I (Z.ipWidth ip)) (negate r)) l
+    Z.ConstE (Z.FixC (toSigned ip) (negate r)) l
+  where
+    toSigned :: Z.IP -> Z.IP
+    toSigned Z.UDefault = Z.IDefault
+    toSigned (Z.U w)    = Z.I w
+    toSigned ip         = ip
 
 constFold (Z.BinopE op e1 e2 l) =
     constFoldBinopE op (constFold e1) (constFold e2)
@@ -2369,8 +2385,9 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         return (tau, co1 mce1, co2 mce2)
 
     lubType :: Type -> Type -> Ti Type
-    lubType (FixT ip l) (FixT ip' _) =
-        return $ FixT (lubIP ip ip') l
+    lubType (FixT ip l) (FixT ip' _) = do
+        ip'' <- lubIP ip ip'
+        return $ FixT ip'' l
 
     lubType (FloatT fp l) (FloatT fp' _) =
         return $ FloatT (max fp fp') l
@@ -2397,11 +2414,13 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         unifyTypes tau1 tau2
         return tau1
 
-    lubIP :: IP -> IP -> IP
-    lubIP (I w) (I w') = I (max w w')
-    lubIP (I w) (U w') = I (max w w')
-    lubIP (U w) (I w') = I (max w w')
-    lubIP (U w) (U w') = U (max w w')
+    lubIP :: IP -> IP -> Ti IP
+    lubIP ip ip' = do
+        w  <- ipWidth ip
+        w' <- ipWidth ip'
+        if ipIsSigned ip || ipIsSigned ip'
+          then return $ I (max w w')
+          else return $ U (max w w')
 
 traceVar :: Z.Var -> Type -> Ti ()
 traceVar v tau = do
@@ -2415,10 +2434,10 @@ instance FromZ Z.TyVar TyVar where
     fromZ (Z.TyVar n) = pure $ TyVar n
 
 instance FromZ Z.IP IP where
-    fromZ (Z.I Nothing)  = pure $ I dEFAULT_INT_WIDTH
-    fromZ (Z.I (Just w)) = pure $ I w
-    fromZ (Z.U Nothing)  = pure $ U dEFAULT_INT_WIDTH
-    fromZ (Z.U (Just w)) = pure $ U w
+    fromZ Z.IDefault = pure IDefault
+    fromZ (Z.I w)    = pure $ I w
+    fromZ Z.UDefault = pure UDefault
+    fromZ (Z.U w)    = pure $ U w
 
 instance FromZ Z.FP FP where
     fromZ Z.FP16 = pure FP16

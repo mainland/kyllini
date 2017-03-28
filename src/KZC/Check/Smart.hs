@@ -59,7 +59,6 @@ import Data.List (sort)
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Types
-import KZC.Platform
 
 qualK :: [Trait] -> Kind
 qualK ts = TauK (R (traits ts))
@@ -104,7 +103,7 @@ bitT :: Type
 bitT = FixT (U 1) noLoc
 
 intT :: Type
-intT = FixT (I dEFAULT_INT_WIDTH) noLoc
+intT = FixT IDefault noLoc
 
 int8T :: Type
 int8T = FixT (I 8) noLoc
@@ -119,7 +118,7 @@ int64T :: Type
 int64T = FixT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT (U dEFAULT_INT_WIDTH) noLoc
+uintT = FixT UDefault noLoc
 
 uint8T :: Type
 uint8T = FixT (U 8) noLoc

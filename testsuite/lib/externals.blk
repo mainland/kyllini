@@ -74,7 +74,7 @@ fun external v_sum_complex32(x:arr complex32 ) : complex32
 -- equivalent to sora hadd:
 -- Sum all components of vector x and stores it in all components of z
 -- z(i) = sum(x) for all i
-fun external v_hadd_int32(var z:arr[4] int, x:arr[4] int ) : ()
+fun external v_hadd_int32(var z:arr[4] int32, x:arr[4] int32) : ()
 fun external v_hadd_complex16(var z:arr[4] complex16, x:arr[4] complex16) : ()
 
 

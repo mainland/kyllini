@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Coalesce
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -48,6 +48,7 @@ import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Label
 import KZC.Monad.SEFKT
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Pretty
 import KZC.Util.Summary
@@ -86,6 +87,7 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc,
             MonadLogic)

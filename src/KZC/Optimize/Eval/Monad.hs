@@ -119,6 +119,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Optimize.Eval.Val
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.SetLike
@@ -174,6 +175,7 @@ newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalStat
               MonadException,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadUnique,
               MonadTc)

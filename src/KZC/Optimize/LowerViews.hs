@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.LowerViews
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -34,6 +34,7 @@ import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Label
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -52,6 +53,7 @@ newtype L l m a = L { unL :: ReaderT LEnv m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

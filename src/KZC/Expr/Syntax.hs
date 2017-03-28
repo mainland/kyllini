@@ -176,21 +176,29 @@ instance Gensym TyVar where
     uniquify (TyVar n) = TyVar <$> uniquify n
 
 -- | Fixed-point format.
-data IP = I {-# UNPACK #-} !Int
-        | U {-# UNPACK #-} !Int
+data IP = IDefault
+        | I Int
+        | UDefault
+        | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: IP -> Int
-ipWidth (I w) = w
-ipWidth (U w) = w
+ipWidth :: MonadPlatform m => IP -> m Int
+ipWidth IDefault = asksPlatform platformIntWidth
+ipWidth (I w)    = return w
+ipWidth UDefault = asksPlatform platformIntWidth
+ipWidth (U w)    = return w
 
 ipIsSigned :: IP -> Bool
-ipIsSigned I{} = True
-ipIsSigned U{} = False
+ipIsSigned IDefault{} = True
+ipIsSigned I{}        = True
+ipIsSigned UDefault{} = False
+ipIsSigned U{}        = False
 
 ipIsIntegral :: IP -> Bool
-ipIsIntegral I{} = True
-ipIsIntegral U{} = True
+ipIsIntegral IDefault{} = True
+ipIsIntegral I{}        = True
+ipIsIntegral UDefault{} = True
+ipIsIntegral U{}        = True
 
 -- | Floating-point format.
 data FP = FP16
@@ -440,7 +448,7 @@ instance Num Const where
       where
         err = error "Num Const: negate did not result in a constant"
 
-    fromInteger i = FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)
+    fromInteger i = FixC IDefault (fromIntegral i)
 
     abs _    = error "Num Const: abs not implemented"
     signum _ = error "Num Const: signum not implemented"
@@ -603,10 +611,16 @@ instance LiftedCast Const (Maybe Const) where
         Just $ FixC (U 1) (if x == 0 then 0 else 1)
 
     -- Cast int to unsigned int
+    liftCast (FixT UDefault _) (FixC _ x) =
+        Just $ renormalize $ FixC UDefault x
+
     liftCast (FixT (U w) _) (FixC _ x) =
         Just $ renormalize $ FixC (U w) x
 
     -- Cast int to signed int
+    liftCast (FixT IDefault _) (FixC _ x) =
+        Just $ renormalize $ FixC IDefault x
+
     liftCast (FixT (I w) _) (FixC _ x) =
         Just $ renormalize $ FixC (I w) x
 
@@ -615,10 +629,16 @@ instance LiftedCast Const (Maybe Const) where
         Just $ FixC ip (fromIntegral (truncate x :: Integer))
 
     -- Cast signed int to float
+    liftCast (FloatT fp _) (FixC IDefault x) =
+        Just $ FloatC fp (fromIntegral x)
+
     liftCast (FloatT fp _) (FixC I{} x) =
         Just $ FloatC fp (fromIntegral x)
 
     -- Cast unsigned int to float
+    liftCast (FloatT fp _) (FixC UDefault x) =
+        Just $ FloatC fp (fromIntegral x)
+
     liftCast (FloatT fp _) (FixC U{} x) =
         Just $ FloatC fp (fromIntegral x)
 
@@ -763,15 +783,17 @@ instance Pretty Decl where
     pprList decls = stack (map ppr decls)
 
 instance Pretty Const where
-    pprPrec _ UnitC            = text "()"
-    pprPrec _ (BoolC False)    = text "false"
-    pprPrec _ (BoolC True)     = text "true"
-    pprPrec _ (FixC (U 1) 0)   = text "'0"
-    pprPrec _ (FixC (U 1) 1)   = text "'1"
-    pprPrec _ (FixC I{} x)     = ppr x
-    pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
-    pprPrec _ (FloatC _ f)     = ppr f
-    pprPrec _ (StringC s)      = text (show s)
+    pprPrec _ UnitC             = text "()"
+    pprPrec _ (BoolC False)     = text "false"
+    pprPrec _ (BoolC True)      = text "true"
+    pprPrec _ (FixC (U 1) 0)    = text "'0"
+    pprPrec _ (FixC (U 1) 1)    = text "'1"
+    pprPrec _ (FixC IDefault x) = ppr x
+    pprPrec _ (FixC I{} x)      = ppr x
+    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)      = ppr f
+    pprPrec _ (StringC s)       = text (show s)
 
     pprPrec _ (StructC s taus flds) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals flds
@@ -1026,13 +1048,17 @@ instance Pretty Type where
     pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I w) _)
-      | w == dEFAULT_INT_WIDTH = text "int"
-      | otherwise              = text "int" <> ppr w
+    pprPrec _ (FixT IDefault _) =
+        text "int"
 
-    pprPrec _ (FixT (U w) _)
-      | w == dEFAULT_INT_WIDTH = text "uint"
-      | otherwise              = text "uint" <> ppr w
+    pprPrec _ (FixT (I w) _) =
+        text "int" <> ppr w
+
+    pprPrec _ (FixT UDefault _) =
+        text "uint"
+
+    pprPrec _ (FixT (U w) _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

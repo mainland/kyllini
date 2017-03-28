@@ -45,6 +45,7 @@ import KZC.Core.Transform
 import KZC.Label
 import KZC.Name
 import KZC.Optimize.LowerViews
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Staged
 import KZC.Util.Trace
@@ -65,6 +66,7 @@ newtype G l m a = G { unG :: StateT (GState l) m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 
@@ -432,6 +434,7 @@ newtype L m a = L { unL :: ReaderT LEnv m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 
