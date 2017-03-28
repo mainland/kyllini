@@ -76,15 +76,20 @@ $hexit    = [$digit A-F a-f]
 
 $graphic  = [$small $large $symbol $digit $special \:\"\']
 
+-- Identifiers
 $idchar = [$small $large $digit \']
 @id     = $alpha $idchar*
 
+-- Types
+@width = [1-9] [0-9]*
+
+-- Numerical constants
 @decimal     = $digit+
 @octal       = $octit+
 @hexadecimal = $hexit+
 @exponent    = [eE] [\-\+] @decimal | [eE] @decimal
 
--- For strings
+-- String and characters constants
 $charesc  = [abfnrtv\\\"\'\&]
 $cntrl    = [$ascLarge\@\[\\\]\^\_]
 @ascii    = \^ $cntrl | NUL | SOH | STX | ETX | EOT | ENQ | ACK
@@ -112,6 +117,11 @@ ziria :-
   "//".*      ;
 
   "{-" { lexNestedComment }
+
+  "i" @width / { ifKyllini } { lexTypeWidth Ti }
+  "u" @width / { ifKyllini } { lexTypeWidth Tu }
+  "f32"      / { ifKyllini } { token $ Tf 32 }
+  "f64"      / { ifKyllini } { token $ Tf 64 }
 
   @id { identifier }
 
@@ -212,6 +222,10 @@ identifier beg end =
   where
     ident :: Symbol
     ident = intern (inputString beg end)
+
+lexTypeWidth :: (Int -> Token) -> Action P Token
+lexTypeWidth k beg end =
+    token (k ((read . T.unpack . T.drop 1) (inputText beg end))) beg end
 
 lexConst :: Read a => ((String, a) -> Token) -> Action P Token
 lexConst tok beg end = do

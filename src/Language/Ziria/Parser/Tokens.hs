@@ -151,6 +151,10 @@ data Token = Teof
            | TFractional
            | TBits
 
+           | Ti Int -- ^ General-width signed integer type
+           | Tu Int -- ^ General-width unsigned integer type
+           | Tf Int -- ^ General-width float type
+
            | Tarrow  -- ^ Right arrow (->)
            | Tdotdot -- ^ Range (..)
   deriving (Eq, Ord, Read, Show)
@@ -281,6 +285,10 @@ instance Pretty Token where
     ppr TIntegral   = text "Integral"
     ppr TFractional = text "Fractional"
     ppr TBits       = text "Bits"
+
+    ppr (Ti n) = text "i" <> ppr n
+    ppr (Tu n) = text "u" <> ppr n
+    ppr (Tf n) = text "f" <> ppr n
 
     ppr Tarrow  = text "->"
     ppr Tdotdot = text ".."
