@@ -50,6 +50,7 @@ module KZC.Expr.Smart (
     isNatK,
 
     isBaseT,
+    isNumT,
     isUnitT,
     isBitT,
     isBitArrT,
@@ -247,6 +248,12 @@ isBaseT BoolT{}  = True
 isBaseT FixT{}   = True
 isBaseT FloatT{} = True
 isBaseT _        = False
+
+-- | Return 'True' if a type is a numeric type.
+isNumT :: Type -> Bool
+isNumT FixT{}   = True
+isNumT FloatT{} = True
+isNumT _        = False
 
 isUnitT :: Type -> Bool
 isUnitT UnitT{} = True
