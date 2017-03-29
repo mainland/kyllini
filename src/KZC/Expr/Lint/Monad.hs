@@ -502,9 +502,9 @@ relevantBindings =
     go :: Maybe [Var] -> m Doc
     go (Just vs@(_:_)) = do
         taus <- mapM lookupVar vs
-        return $ line <>
-            nest 2 (text "Relevant bindings:" </>
-                    stack (zipWith pprBinding vs taus))
+        return $ nest 2 $
+          text "Relevant bindings:" </>
+          stack (zipWith pprBinding vs taus)
 
     go _ =
         return Text.PrettyPrint.Mainland.empty

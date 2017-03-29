@@ -2090,7 +2090,7 @@ expectedTypeErr tau1 tau2 = do
     [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
     faildoc $
       text "Expected type:" <+> ppr tau2' </>
-      text "but got:      " <+> ppr tau1' <>
+      text "but got:      " <+> ppr tau1' </>
       msg
 
 -- | Generic unification exception

@@ -73,7 +73,6 @@ import Data.IORef
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
 import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (Traversable, traverse)
@@ -302,9 +301,9 @@ relevantBindings =
     go :: Maybe [Z.Var] -> Ti Doc
     go (Just vs@(_:_)) = do
         taus <- mapM lookupVar vs >>= sanitizeTypes
-        return $ line <>
-            nest 2 (text "Relevant bindings:" </>
-                    stack (zipWith pprBinding vs taus))
+        return $ nest 2 $
+          text "Relevant bindings:" </>
+          stack (zipWith pprBinding vs taus)
     go _ =
         return Text.PrettyPrint.Mainland.empty
 
