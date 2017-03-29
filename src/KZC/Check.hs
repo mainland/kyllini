@@ -244,7 +244,8 @@ checkLetFun f ztvks ps ztau_ret e l = do
           unifyTypes (funT [] (map snd ptaus) tau_ret_gen l) tau
           return (tau_ret_gen, mce)
       (tau_gen, co) <- generalize tau
-      let tau_gen'  = forallT tvks tau_gen
+      mapM_ zonkTvk tvks
+      let tau_gen' = forallT tvks tau_gen
       traceVar f tau_gen'
       let mkLetFun = co $ do cf       <- trans f
                              ctvks    <- traverse trans tvks
@@ -334,6 +335,9 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
         extendTyVars tvks $ do
           taus_fields <- mapM fromZ ztaus_fields
           mapM_ (`checkKind` tauK) taus_fields
+          -- XXX for some reason we don't need this here, even though we need it
+          -- in.
+          mapM_ zonkTvk tvks
           return (tvks, taus_fields)
     let mcdecl = alwaysWithSummaryContext decl $ do
                  cs           <- trans zs
@@ -352,6 +356,7 @@ checkDecl decl@(Z.TypeD zs ztvks ztau l) k = do
         tvks <- mapM fromZ ztvks
         tau  <- extendTyVars tvks $
                 fromZ ztau
+        mapM_ zonkTvk tvks
         return (tvks, tau)
     extendStructs [TypeDef zs tvks tau l] $ k []
 
@@ -1437,6 +1442,14 @@ inferKind tau = do
     ref <- newRef (error "inferKind: empty result")
     kcType tau (Infer ref)
     readRef ref
+
+-- | Zonk all trait meta-variables to finalize their constituent traits.
+zonkTvk :: Tvk -> Ti ()
+zonkTvk (_, kappa) = compress kappa >>= go
+  where
+    go :: Kind -> Ti ()
+    go (TauK (MetaR mrv@(MetaRv _ ts _))) = writeRv mrv (R ts)
+    go _                                  = return ()
 
 checkTyApp :: [Tvk] -> [Type] -> Ti ()
 checkTyApp tvks taus = do
@@ -2589,8 +2602,11 @@ instance Trans Kind E.Kind where
             faildoc $ text "Cannot translate" <+> ppr kappa <+> text "to Core kind"
 
 instance Trans R E.Traits where
-    trans (R ts)  = pure ts
-    trans MetaR{} = faildoc $ text "Cannot translate traits meta-variable to Core."
+    trans r = compress r >>= go
+      where
+        go :: R -> Ti E.Traits
+        go (R ts)  = pure ts
+        go MetaR{} = faildoc $ text "Cannot translate traits meta-variable to Core."
 
 instance Trans (TyVar, Kind) (E.TyVar, E.Kind) where
     trans (alpha, kappa) = (,) <$> trans alpha <*> trans kappa
