@@ -1163,8 +1163,9 @@ simplE e0@(VarE v _) =
         simplE rhs
 
 simplE (UnopE op e s) = do
-    e' <- simplE e
-    unop op e'
+    op' <- simplOp op
+    e'  <- simplE e
+    unop op' e'
   where
     unop :: Unop -> Exp -> SimplM l m Exp
     unop Lnot (ConstE c _) | Just c' <- liftBool op not c =
@@ -1209,6 +1210,11 @@ simplE (UnopE op e s) = do
 
     unop op e' =
         return $ UnopE op e' s
+
+    simplOp :: Unop -> SimplM l m Unop
+    simplOp (Cast tau)    = Cast <$> simplType tau
+    simplOp (Bitcast tau) = Bitcast <$> simplType tau
+    simplOp op            = pure op
 
 simplE (BinopE op e1 e2 s) = do
     e1' <- simplE e1

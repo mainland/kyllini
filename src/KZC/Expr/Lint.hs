@@ -77,7 +77,8 @@ import Control.Monad (unless,
                       when,
                       zipWithM_,
                       void)
-import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Exception (MonadException(..),
+                                SomeException)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -770,24 +771,50 @@ checkStructTyApp (StructDef _ tvks _ _) taus =
 
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
-checkCast :: MonadTc m => Type -> Type -> m ()
-checkCast tau1 tau2 | tau1 == tau2 =
-    return ()
+checkCast :: forall m . MonadTc m => Type -> Type -> m ()
+checkCast = go
+  where
+    go tau1 tau2 | tau1 == tau2 =
+        return ()
 
-checkCast FixT{} FixT{} =
-    return ()
+    go FixT{} FixT{} =
+        return ()
 
-checkCast FixT{} FloatT{} =
-    return ()
+    go FixT{} FloatT{} =
+        return ()
 
-checkCast FloatT{} FixT{} =
-    return ()
+    go FloatT{} FixT{} =
+        return ()
 
-checkCast FloatT{} FloatT{} =
-    return ()
+    go FloatT{} FloatT{} =
+        return ()
 
-checkCast tau1 tau2 =
-    faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
+    go tau1@FixT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
+
+    go tau1@FloatT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
+
+    go tau1 tau2 =
+        cannotCast tau1 tau2
+
+    -- | Polymorphic up-cast from type @tau1@ to type @tau2@. We use this to
+    -- cast a constant to a polymorphic type.
+    polyUpcast :: Type -> Type -> m ()
+    polyUpcast tau1 tau2 = do
+        kappa <- constKind tau1
+        checkKind tau2 kappa `catch` \(_ :: SomeException) -> cannotCast tau1 tau2
+
+    -- | Return the kind of constants of the given type. We use this to cast
+    -- constants "polymorphically."
+    constKind :: Type -> m Kind
+    constKind FixT{}   = return numK
+    constKind FloatT{} = return fracK
+    constKind tau      = inferKind tau
+
+    cannotCast :: Type -> Type -> m ()
+    cannotCast tau1 tau2 =
+        faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
 -- | @checkBitcast tau1 tau2@ checks that a value of type @tau1@ can be bitcast
 -- to a value of type @tau2@.

@@ -598,8 +598,9 @@ evalExp e =
           else partialExp $ VarE v' s
 
     eval flags (UnopE op e s) | peval flags = do
+        op' <- evalUnop op
         val <- eval flags e
-        unop op val
+        unop op' val
       where
         unop :: Unop -> Val l m Exp -> EvalM l m (Val l m Exp)
         unop Lnot  val = maybePartialVal $ liftBool op not val
@@ -645,6 +646,13 @@ evalExp e =
 
         unop op val =
             partialExp $ UnopE op (toExp val) s
+
+        evalUnop :: Unop -> EvalM l m Unop
+        evalUnop (Cast tau)    = do phi <- askTyVarTypeSubst
+                                    return $ Cast (subst phi mempty tau)
+        evalUnop (Bitcast tau) = do phi <- askTyVarTypeSubst
+                                    return $ Bitcast (subst phi mempty tau)
+        evalUnop op            = pure op
 
     eval flags (UnopE op e s) = do
         val <- eval flags e
@@ -792,11 +800,11 @@ evalExp e =
         go tau v_f taus' v_es
       where
         go :: Type -> Val l m Exp -> [Type] -> [Val l m Exp] -> EvalM l m (Val l m Exp)
-        go _tau (FunClosV theta tvks vbs _tau_ret k) tau' v_es =
+        go _tau (FunClosV theta tvks vbs _tau_ret k) taus' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
             extendTyVars tvks $
-            extendTyVarTypes (map fst tvks `zip` tau') $
+            extendTyVarTypes (map fst tvks `zip` taus') $
             extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
             k >>= wrapLetArgs vs' taus'

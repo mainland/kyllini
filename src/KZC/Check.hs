@@ -1983,9 +1983,32 @@ checkLegalCast tau1 tau2 = do
     go (StructT s taus _) (StructT s' taus' _) | s' == s && length taus' == length taus =
         zipWithM_ go taus taus'
 
+    go tau1@FixT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
+
+    go tau1@FloatT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
+
     go tau1 tau2 =
         unifyTypes tau1 tau2
-      `catch` \(_ :: UnificationException) -> do
+      `catch` \(_ :: UnificationException) -> cannotCast tau1 tau2
+
+    -- | Polymorphic up-cast from type @tau1@ to type @tau2@. We use this to
+    -- cast a constant to a polymorphic type.
+    polyUpcast :: Type -> Type -> Ti ()
+    polyUpcast tau1 tau2 = do
+        kappa <- constKind tau1
+        checkKind tau2 kappa `catch` \(_ :: SomeException) -> cannotCast tau1 tau2
+
+    -- | Return the kind of constants of the given type. We use this to cast
+    -- constants "polymorphically."
+    constKind :: Type -> Ti Kind
+    constKind FixT{}   = return numK
+    constKind FloatT{} = return fracK
+    constKind tau      = inferKind tau
+
+    cannotCast :: Type -> Type -> Ti ()
+    cannotCast tau1 tau2 = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
 
@@ -2381,13 +2404,13 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     go tau1 _ mce1 tau2 _ mce2 | tau1 == tau2 =
         return (tau1, mce1, mce2)
 
-    -- Always cast integer constants /down/. This lets us, for example, treat
-    -- @1@ as an @int8@.
-    go tau1@FixT{} e@Z.ConstE{} mce1 tau2@FixT{} _ mce2 = do
+    -- Always cast numeric constants to whatever the other type is. This lets
+    -- us, for example, treat @1@ as an @int8@.
+    go tau1 e@Z.ConstE{} mce1 tau2 _ mce2 | isNumT tau1 = do
         co <- mkCheckedSafeCast e tau1 tau2
         return (tau2, co mce1, mce2)
 
-    go tau1@FixT{} _ mce1 tau2@FixT{} e@Z.ConstE{} mce2 = do
+    go tau1 _ mce1 tau2 e@Z.ConstE{} mce2 | isNumT tau2 = do
         co <- mkCheckedSafeCast e tau2 tau1
         return (tau1, mce1, co mce2)
 
