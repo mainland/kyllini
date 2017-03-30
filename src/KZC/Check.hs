@@ -2214,10 +2214,14 @@ unifyTypes tau1 tau2 = do
         unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau1 tau2
 
-    go _ tau1@(MetaT mtv _) tau2 =
+    go _ tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2 = do
+        kappa2 <- inferKind tau2
+        unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau1 tau2
 
-    go _ tau1 tau2@(MetaT mtv _) =
+    go _ tau1 tau2@(MetaT mtv@(MetaTv _ kappa2 _) _) = do
+        kappa1 <- inferKind tau1
+        unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau2 tau1
 
     go theta (SynT _ tau1 _) tau2 =
@@ -2290,15 +2294,13 @@ unifyTypes tau1 tau2 = do
         throw $ TypeUnificationException tau1' tau2' msg
 
     updateMetaTv :: MetaTv -> Type -> Type -> Ti ()
-    updateMetaTv mtv@(MetaTv _ kappa1 _) tau1 tau2 = do
+    updateMetaTv mtv tau1 tau2 = do
         mtvs2 <- metaTvs [tau2]
         when (mtv `elem` mtvs2) $ do
             [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
             faildoc $ nest 2 $
               text "Cannot construct the infinite type:" <+/>
               ppr tau1' <+> text "=" <+> ppr tau2'
-        kappa2 <- inferKind tau2
-        unifyKinds tau1 kappa1 kappa2
         kcWriteTv mtv tau2
 
 -- | Unify two types. The first argument is what we got, and the second is what
@@ -2335,8 +2337,10 @@ unifyKinds tau1 kappa1 kappa2 = do
     updateMetaKv mkv _kappa1 kappa2 =
         writeKv mkv kappa2
 
+-- | Unify two sets of traits. The first argument is what we got, and the second
+-- is what we expect.
 unifyTraits :: Type -> R -> R -> Ti ()
-unifyTraits _tau1 r1 r2 = do
+unifyTraits tau1 r1 r2 = do
     r1' <- compress r1
     r2' <- compress r2
     go r1' r2'
@@ -2357,11 +2361,22 @@ unifyTraits _tau1 r1 r2 = do
       | otherwise               = do mrv' <- newMetaRv (ts1 <> ts2)
                                      writeRv mrv (MetaR mrv')
 
-    go r1@R{} r2@MetaR{} =
-        go r2 r1
+    -- We have to throw an error here if ts1 does not imply ts2 unlike the
+    -- previous case where we can always increase teh set of traits associated
+    -- with a MetaR variable.
+    go (R ts1) (MetaR (MetaRv _ ts2 _))
+      | ts1 `impliesTraits` ts2 = return ()
+      | otherwise               = traitsError ts1 ts2
 
     go (R ts1) (R ts2) =
         unless (ts1 `impliesTraits` ts2) $
+          traitsError ts1 ts2
+
+    traitsError :: Traits -> Traits -> Ti ()
+    traitsError ts1 ts2 = do
+        tau1'    <- compress tau1
+        [tau1''] <- sanitizeTypes [tau1']
+        alwaysWithLocContext tau1'' (text "When considering type:" <+> ppr tau1'') $
           faildoc $ align $
           text "Expected traits:" <+> pprTraits ts2 </>
           text "but got:        " <+> pprTraits ts1
