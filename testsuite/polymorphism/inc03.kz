@@ -1,0 +1,10 @@
+fun inc<T : Fractional> (x : T) {
+  return x + 1;
+}
+
+fun ident() {
+  x <- take;
+  emit inc(x);
+}
+
+let comp main : ST T double double = repeat ident();
