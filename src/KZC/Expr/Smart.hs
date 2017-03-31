@@ -150,37 +150,37 @@ boolT :: Type
 boolT = BoolT noLoc
 
 bitT :: Type
-bitT = FixT (U 1) noLoc
+bitT = IntT (U 1) noLoc
 
 intT :: Type
-intT = FixT IDefault noLoc
+intT = IntT IDefault noLoc
 
 int8T :: Type
-int8T = FixT (I 8) noLoc
+int8T = IntT (I 8) noLoc
 
 int16T :: Type
-int16T = FixT (I 16) noLoc
+int16T = IntT (I 16) noLoc
 
 int32T :: Type
-int32T = FixT (I 32) noLoc
+int32T = IntT (I 32) noLoc
 
 int64T :: Type
-int64T = FixT (I 64) noLoc
+int64T = IntT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT UDefault noLoc
+uintT = IntT UDefault noLoc
 
 uint8T :: Type
-uint8T = FixT (U 8) noLoc
+uint8T = IntT (U 8) noLoc
 
 uint16T :: Type
-uint16T = FixT (U 16) noLoc
+uint16T = IntT (U 16) noLoc
 
 uint32T :: Type
-uint32T = FixT (U 32) noLoc
+uint32T = IntT (U 32) noLoc
 
 uint64T :: Type
-uint64T = FixT (U 64) noLoc
+uint64T = IntT (U 64) noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
@@ -241,13 +241,13 @@ isNatK _      = False
 isBaseT :: Type -> Bool
 isBaseT UnitT{}  = True
 isBaseT BoolT{}  = True
-isBaseT FixT{}   = True
+isBaseT IntT{}   = True
 isBaseT FloatT{} = True
 isBaseT _        = False
 
 -- | Return 'True' if a type is a numeric type.
 isNumT :: Type -> Bool
-isNumT FixT{}   = True
+isNumT IntT{}   = True
 isNumT FloatT{} = True
 isNumT _        = False
 
@@ -256,7 +256,7 @@ isUnitT UnitT{} = True
 isUnitT _       = False
 
 isBitT :: Type -> Bool
-isBitT (FixT (U 1) _) = True
+isBitT (IntT (U 1) _) = True
 isBitT _              = False
 
 isBitArrT :: Type -> Bool
@@ -331,13 +331,13 @@ natT :: Integral a => a -> Type
 natT x = NatT (fromIntegral x) noLoc
 
 bitC :: Bool -> Const
-bitC b = FixC (U 1) (if b then 1 else 0)
+bitC b = IntC (U 1) (if b then 1 else 0)
 
 intC :: Integral i => i -> Const
-intC i = FixC IDefault (fromIntegral i)
+intC i = IntC IDefault (fromIntegral i)
 
 uintC :: Integral i => i -> Const
-uintC i = FixC UDefault (fromIntegral i)
+uintC i = IntC UDefault (fromIntegral i)
 
 arrayC :: Vector Const -> Const
 arrayC cs
@@ -357,7 +357,7 @@ isArrC EnumC{}      = True
 isArrC _            = False
 
 fromIntC :: Monad m => Const -> m Int
-fromIntC (FixC _ x) =
+fromIntC (IntC _ x) =
     return x
 
 fromIntC _ =
@@ -389,7 +389,7 @@ uintE i = ConstE (uintC i) noLoc
 
 -- | Create an integer constant expression at the given integer type.
 asintE :: Integral a => Type -> a -> Exp
-asintE (FixT ip l) i = ConstE (FixC ip (fromIntegral i)) l
+asintE (IntT ip l) i = ConstE (IntC ip (fromIntegral i)) l
 asintE tau         _ = errordoc $ text "Expected integer type but got:" <+> ppr tau
 
 varE :: Var -> Exp

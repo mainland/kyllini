@@ -62,7 +62,7 @@ instance Located Stm where
 instance Located Type where
   locOf (UnitT l) = locOf l
   locOf (BoolT l) = locOf l
-  locOf (FixT _ l) = locOf l
+  locOf (IntT _ l) = locOf l
   locOf (FloatT _ l) = locOf l
   locOf (ArrT _ _ l) = locOf l
   locOf (StructT _ _ l) = locOf l

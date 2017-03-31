@@ -581,7 +581,7 @@ evalExp e =
       where
         evalConst :: Const -> Val
         evalConst (BoolC b)  = BoolV (pure b)
-        evalConst (FixC _ i) = IntV $ unit i
+        evalConst (IntC _ i) = IntV $ unit i
         evalConst _c         = top
 
     go e@(VarE v _) = do
@@ -599,9 +599,9 @@ evalExp e =
         unop Neg (IntV i)
             | Just x <- fromUnit i = IntV $ unit (negate x :: Integer)
         unop Neg _                 = top
-        unop (Cast FixT{}) _       = IntV top
+        unop (Cast IntT{}) _       = IntV top
         unop Cast{} _              = top
-        unop (Bitcast FixT{}) _    = IntV top
+        unop (Bitcast IntT{}) _    = IntV top
         unop Bitcast{} _           = top
         unop Len _                 = IntV top
         unop _ _                   = top

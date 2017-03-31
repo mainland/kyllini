@@ -25,7 +25,6 @@ module KZC.Core.Syntax (
     IP(..),
     ipWidth,
     ipIsSigned,
-    ipIsIntegral,
 
     FP(..),
     fpWidth,
@@ -119,7 +118,6 @@ import KZC.Expr.Syntax (Var(..),
                         IP(..),
                         ipWidth,
                         ipIsSigned,
-                        ipIsIntegral,
 
                         FP(..),
                         fpWidth,
@@ -488,7 +486,7 @@ instance Size a => Size [a] where
 instance Size Const where
     size UnitC{}            = 0
     size BoolC{}            = 1
-    size FixC{}             = 1
+    size IntC{}             = 1
     size FloatC{}           = 1
     size StringC{}          = 1
     size (ArrayC cs)        = if V.null cs then 0 else V.length cs * size (V.head cs)
@@ -1691,12 +1689,12 @@ instance Num Exp where
     signum _ = error "Num Exp: signum not implemented"
 
 isZero :: Exp -> Bool
-isZero (ConstE (FixC _ 0) _)   = True
+isZero (ConstE (IntC _ 0) _)   = True
 isZero (ConstE (FloatC _ 0) _) = True
 isZero _                       = False
 
 isOne :: Exp -> Bool
-isOne (ConstE (FixC _ 1) _)   = True
+isOne (ConstE (IntC _ 1) _)   = True
 isOne (ConstE (FloatC _ 1) _) = True
 isOne _                       = False
 
@@ -1722,8 +1720,8 @@ instance LiftedNum Exp Exp where
         ConstE c' (e1 `srcspan` e2)
 
     -- We special-case addition here to aid tests in the simplifier.
-    liftNum2 Add _f (BinopE Add e1 (ConstE (FixC ip x) sloc) sloc') (ConstE (FixC _ y) _) =
-        BinopE Add e1 (ConstE (FixC ip (x+y)) sloc) sloc'
+    liftNum2 Add _f (BinopE Add e1 (ConstE (IntC ip x) sloc) sloc') (ConstE (IntC _ y) _) =
+        BinopE Add e1 (ConstE (IntC ip (x+y)) sloc) sloc'
 
     liftNum2 op _f e1 e2 =
         BinopE op e1 e2 (e1 `srcspan` e2)

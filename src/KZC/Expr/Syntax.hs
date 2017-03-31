@@ -27,7 +27,6 @@ module KZC.Expr.Syntax (
     IP(..),
     ipWidth,
     ipIsSigned,
-    ipIsIntegral,
 
     FP(..),
     fpWidth,
@@ -138,13 +137,14 @@ instance Gensym TyVar where
 
     uniquify (TyVar n) = TyVar <$> uniquify n
 
--- | Fixed-point format.
+-- | Integer precision.
 data IP = IDefault
         | I Int
         | UDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
+-- | Bit-width of an 'IP' type.
 ipWidth :: MonadPlatform m => IP -> m Int
 ipWidth IDefault = asksPlatform platformIntWidth
 ipWidth (I w)    = return w
@@ -157,13 +157,7 @@ ipIsSigned I{}        = True
 ipIsSigned UDefault{} = False
 ipIsSigned U{}        = False
 
-ipIsIntegral :: IP -> Bool
-ipIsIntegral IDefault{} = True
-ipIsIntegral I{}        = True
-ipIsIntegral UDefault{} = True
-ipIsIntegral U{}        = True
-
--- | Floating-point format.
+-- | Floating-point precision.
 data FP = FP16
         | FP32
         | FP64
@@ -189,7 +183,7 @@ data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Const = UnitC
            | BoolC !Bool
-           | FixC !IP {-# UNPACK #-} !Int
+           | IntC !IP {-# UNPACK #-} !Int
            | FloatC !FP {-# UNPACK #-} !Double
            | StringC String
            | ArrayC !(Vector Const)
@@ -355,7 +349,7 @@ data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Struct [Type] !SrcLoc
@@ -411,7 +405,7 @@ instance Num Const where
       where
         err = error "Num Const: negate did not result in a constant"
 
-    fromInteger i = FixC IDefault (fromIntegral i)
+    fromInteger i = IntC IDefault (fromIntegral i)
 
     abs _    = error "Num Const: abs not implemented"
     signum _ = error "Num Const: signum not implemented"
@@ -456,18 +450,18 @@ class LiftedCast a b | a -> b where
 -- | Renormalize a constant, ensuring that integral constants are within their
 -- bounds. We assume two's complement arithmetic.
 renormalize :: Const -> Const
-renormalize c@(FixC (I w) x)
-    | x > max   = renormalize (FixC (I w) (x - 2^w))
-    | x < min   = renormalize (FixC (I w) (x + 2^w))
+renormalize c@(IntC (I w) x)
+    | x > max   = renormalize (IntC (I w) (x - 2^w))
+    | x < min   = renormalize (IntC (I w) (x + 2^w))
     | otherwise = c
   where
     max, min :: Int
     max = 2^(w-1)-1
     min = -2^(w-1)
 
-renormalize c@(FixC (U w) x)
-    | x > max   = renormalize (FixC (U w) (x - 2^w))
-    | x < 0     = renormalize (FixC (U w) (x + 2^w))
+renormalize c@(IntC (U w) x)
+    | x > max   = renormalize (IntC (U w) (x - 2^w))
+    | x < 0     = renormalize (IntC (U w) (x + 2^w))
     | otherwise = c
   where
     max :: Int
@@ -495,8 +489,8 @@ instance LiftedOrd Const Const where
     liftOrd _ f x y = BoolC (f x y)
 
 instance LiftedNum Const (Maybe Const) where
-    liftNum _op f (FixC ip x) =
-        Just $ FixC ip (f x)
+    liftNum _op f (IntC ip x) =
+        Just $ IntC ip (f x)
 
     liftNum _op f (FloatC fp x) =
         Just $ FloatC fp (f x)
@@ -504,8 +498,8 @@ instance LiftedNum Const (Maybe Const) where
     liftNum _op _f _c =
         Nothing
 
-    liftNum2 _op f (FixC ip x) (FixC _ y) =
-        Just $ renormalize $ FixC ip (f x y)
+    liftNum2 _op f (IntC ip x) (IntC _ y) =
+        Just $ renormalize $ IntC ip (f x y)
 
     liftNum2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
@@ -532,14 +526,14 @@ instance LiftedNum Const (Maybe Const) where
         Nothing
 
 instance LiftedIntegral Const (Maybe Const) where
-    liftIntegral2 Div _ (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (fromIntegral (x `quot` y))
+    liftIntegral2 Div _ (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (fromIntegral (x `quot` y))
 
     liftIntegral2 Div _ (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (x / y)
 
-    liftIntegral2 Rem _ (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (fromIntegral (x `rem` y))
+    liftIntegral2 Rem _ (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (fromIntegral (x `rem` y))
 
     liftIntegral2 Div _ x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s = do
         re <- (a*c + b*d)/(c*c + d*d)
@@ -570,39 +564,39 @@ instance LiftedFloating Const (Maybe Const) where
 
 instance LiftedCast Const (Maybe Const) where
     -- Cast to a bit type
-    liftCast (FixT (U 1) _) (FixC _ x) =
-        Just $ FixC (U 1) (if x == 0 then 0 else 1)
+    liftCast (IntT (U 1) _) (IntC _ x) =
+        Just $ IntC (U 1) (if x == 0 then 0 else 1)
 
     -- Cast int to unsigned int
-    liftCast (FixT UDefault _) (FixC _ x) =
-        Just $ renormalize $ FixC UDefault x
+    liftCast (IntT UDefault _) (IntC _ x) =
+        Just $ renormalize $ IntC UDefault x
 
-    liftCast (FixT (U w) _) (FixC _ x) =
-        Just $ renormalize $ FixC (U w) x
+    liftCast (IntT (U w) _) (IntC _ x) =
+        Just $ renormalize $ IntC (U w) x
 
     -- Cast int to signed int
-    liftCast (FixT IDefault _) (FixC _ x) =
-        Just $ renormalize $ FixC IDefault x
+    liftCast (IntT IDefault _) (IntC _ x) =
+        Just $ renormalize $ IntC IDefault x
 
-    liftCast (FixT (I w) _) (FixC _ x) =
-        Just $ renormalize $ FixC (I w) x
+    liftCast (IntT (I w) _) (IntC _ x) =
+        Just $ renormalize $ IntC (I w) x
 
     -- Cast float to int
-    liftCast (FixT ip _) (FloatC _ x) =
-        Just $ FixC ip (fromIntegral (truncate x :: Integer))
+    liftCast (IntT ip _) (FloatC _ x) =
+        Just $ IntC ip (fromIntegral (truncate x :: Integer))
 
     -- Cast signed int to float
-    liftCast (FloatT fp _) (FixC IDefault x) =
+    liftCast (FloatT fp _) (IntC IDefault x) =
         Just $ FloatC fp (fromIntegral x)
 
-    liftCast (FloatT fp _) (FixC I{} x) =
+    liftCast (FloatT fp _) (IntC I{} x) =
         Just $ FloatC fp (fromIntegral x)
 
     -- Cast unsigned int to float
-    liftCast (FloatT fp _) (FixC UDefault x) =
+    liftCast (FloatT fp _) (IntC UDefault x) =
         Just $ FloatC fp (fromIntegral x)
 
-    liftCast (FloatT fp _) (FixC U{} x) =
+    liftCast (FloatT fp _) (IntC U{} x) =
         Just $ FloatC fp (fromIntegral x)
 
     -- Cast float to float
@@ -630,20 +624,20 @@ uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
 
 instance LiftedBits Const (Maybe Const) where
-    liftBits _ f (FixC ip x) =
-        Just $ FixC ip (f x)
+    liftBits _ f (IntC ip x) =
+        Just $ IntC ip (f x)
 
     liftBits _ _ _ =
         Nothing
 
-    liftBits2 _ f (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (f x y)
+    liftBits2 _ f (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (f x y)
 
     liftBits2 _ _ _ _ =
         Nothing
 
-    liftShift _ f (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (f x (fromIntegral y))
+    liftShift _ f (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (f x (fromIntegral y))
 
     liftShift _ _ _ _ =
         Nothing
@@ -754,12 +748,12 @@ instance Pretty Const where
     pprPrec _ UnitC             = text "()"
     pprPrec _ (BoolC False)     = text "false"
     pprPrec _ (BoolC True)      = text "true"
-    pprPrec _ (FixC (U 1) 0)    = text "'0"
-    pprPrec _ (FixC (U 1) 1)    = text "'1"
-    pprPrec _ (FixC IDefault x) = ppr x
-    pprPrec _ (FixC I{} x)      = ppr x
-    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
-    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (IntC (U 1) 0)    = text "'0"
+    pprPrec _ (IntC (U 1) 1)    = text "'1"
+    pprPrec _ (IntC IDefault x) = ppr x
+    pprPrec _ (IntC I{} x)      = ppr x
+    pprPrec _ (IntC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (IntC U{} x)      = ppr x <> char 'u'
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
@@ -771,12 +765,12 @@ instance Pretty Const where
         | otherwise                         = text "arr" <+> enclosesep lbrace rbrace comma (map ppr (V.toList cs))
       where
         isBit :: Const -> Bool
-        isBit (FixC (U 1) _) = True
+        isBit (IntC (U 1) _) = True
         isBit _              = False
 
         bitDoc :: Const -> Doc
-        bitDoc (FixC (U 1) 0) = char '0'
-        bitDoc (FixC (U 1) 1) = char '1'
+        bitDoc (IntC (U 1) 0) = char '0'
+        bitDoc (IntC (U 1) 1) = char '1'
         bitDoc _              = error "Not a bit"
 
     pprPrec _ (ReplicateC n c) =
@@ -1013,19 +1007,19 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _) =
+    pprPrec _ (IntT (I w) _) =
         char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _) =
+    pprPrec _ (IntT (U w) _) =
         char 'u' <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
@@ -1217,7 +1211,7 @@ instance HasFixity Unop where
 instance Fvs Type TyVar where
     fvs UnitT{}                      = mempty
     fvs BoolT{}                      = mempty
-    fvs FixT{}                       = mempty
+    fvs IntT{}                       = mempty
     fvs FloatT{}                     = mempty
     fvs StringT{}                    = mempty
     fvs (StructT _ taus _)           = fvs taus
@@ -1371,7 +1365,7 @@ instance Subst Type TyVar Type where
     substM tau@BoolT{} =
         pure tau
 
-    substM tau@FixT{} =
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FloatT{} =

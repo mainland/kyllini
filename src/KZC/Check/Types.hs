@@ -14,15 +14,18 @@
 module KZC.Check.Types (
     module KZC.Traits,
 
-    TyVar(..),
     IP(..),
     ipWidth,
     ipIsSigned,
-    ipIsIntegral,
+
     FP(..),
     fpWidth,
+
+    TyVar(..),
+
     StructDef(..),
     structDefTvks,
+
     Type(..),
     Kind(..),
     Tvk,
@@ -54,7 +57,7 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Expr.Syntax (IP(..),
                         ipWidth,
                         ipIsSigned,
-                        ipIsIntegral,
+
                         FP(..),
                         fpWidth)
 import KZC.Globals
@@ -79,7 +82,7 @@ structDefTvks (TypeDef _ tvks _ _)   = tvks
 data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct [Type] !SrcLoc
@@ -208,20 +211,20 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _)
+    pprPrec _ (IntT (I w) _)
       | classicDialect = text "int" <> ppr w
       | otherwise      = char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _)
+    pprPrec _ (IntT (U w) _)
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
 
@@ -356,7 +359,7 @@ pprKindSig (tau, kappa) =
 instance Fvs Type TyVar where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
-    fvs FixT{}                      = mempty
+    fvs IntT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
     fvs (StructT _ taus _)          = fvs taus
@@ -376,7 +379,7 @@ instance Fvs Type TyVar where
 instance Fvs Type MetaTv where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
-    fvs FixT{}                      = mempty
+    fvs IntT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
     fvs (StructT _ taus _)          = fvs taus
@@ -406,7 +409,7 @@ instance Fvs Kind n => Fvs [Kind] n where
 instance HasVars Type TyVar where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
-    allVars FixT{}                      = mempty
+    allVars IntT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
     allVars (StructT _ taus _)          = allVars taus
@@ -428,7 +431,7 @@ instance HasVars Type TyVar where
 instance HasVars Type MetaTv where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
-    allVars FixT{}                      = mempty
+    allVars IntT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
     allVars (StructT _ taus _)          = allVars taus
@@ -453,7 +456,7 @@ instance Subst Type MetaTv Type where
     substM tau@BoolT{} =
         pure tau
 
-    substM tau@FixT{} =
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FloatT{} =
@@ -506,7 +509,7 @@ instance Subst Type TyVar Type where
     substM tau@BoolT{} =
         pure tau
 
-    substM tau@FixT{} =
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FloatT{} =

@@ -23,7 +23,6 @@ module Language.Ziria.Syntax (
     IP(..),
     ipWidth,
     ipIsSigned,
-    ipIsIntegral,
 
     FP(..),
 
@@ -96,7 +95,7 @@ newtype Field = Field Name
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
--- | Fixed-point format.
+-- | Integer precision.
 data IP = IDefault
         | I Int
         | UDefault
@@ -115,13 +114,7 @@ ipIsSigned I{}        = True
 ipIsSigned UDefault{} = False
 ipIsSigned U{}        = False
 
-ipIsIntegral :: IP -> Bool
-ipIsIntegral IDefault{} = True
-ipIsIntegral I{}        = True
-ipIsIntegral UDefault{} = True
-ipIsIntegral U{}        = True
-
--- | Floating-point width
+-- | Floating-point precision.
 data FP = FP16
         | FP32
         | FP64
@@ -145,7 +138,7 @@ data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Const = UnitC
            | BoolC Bool
-           | FixC IP Int
+           | IntC IP Int
            | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
@@ -310,7 +303,7 @@ data Binop = Eq   -- ^ Equal
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Type Type !SrcLoc
           | StructT Struct [Type] !SrcLoc
@@ -543,12 +536,12 @@ instance Pretty Const where
     pprPrec _ UnitC             = text "()"
     pprPrec _ (BoolC False)     = text "false"
     pprPrec _ (BoolC True)      = text "true"
-    pprPrec _ (FixC (U 1) 0)    = text "'0"
-    pprPrec _ (FixC (U 1) 1)    = text "'1"
-    pprPrec _ (FixC IDefault x) = ppr x
-    pprPrec _ (FixC I{} x)      = ppr x
-    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
-    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (IntC (U 1) 0)    = text "'0"
+    pprPrec _ (IntC (U 1) 1)    = text "'1"
+    pprPrec _ (IntC IDefault x) = ppr x
+    pprPrec _ (IntC I{} x)      = ppr x
+    pprPrec _ (IntC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (IntC U{} x)      = ppr x <> char 'u'
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
@@ -827,20 +820,20 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _)
+    pprPrec _ (IntT (I w) _)
       | classicDialect = text "int" <> ppr w
       | otherwise      = char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _)
+    pprPrec _ (IntT (U w) _)
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
 

@@ -397,18 +397,18 @@ checkDecls (decl:decls) k =
     k (mcdecl ++ mcdecls)
 
 mkSigned :: Monad m => Type -> m Type
-mkSigned (FixT UDefault l)     = return $ FixT IDefault l
-mkSigned (FixT (U w) l)        = return $ FixT (I w) l
-mkSigned tau@(FixT IDefault _) = return tau
-mkSigned tau@(FixT I{} _)      = return tau
+mkSigned (IntT UDefault l)     = return $ IntT IDefault l
+mkSigned (IntT (U w) l)        = return $ IntT (I w) l
+mkSigned tau@(IntT IDefault _) = return tau
+mkSigned tau@(IntT I{} _)      = return tau
 mkSigned tau =
     faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to unsigned."
 
 mkUnsigned :: Monad m => Type -> m Type
-mkUnsigned (FixT IDefault l)     = return $ FixT UDefault l
-mkUnsigned (FixT (I w) l)        = return $ FixT (U w) l
-mkUnsigned tau@(FixT UDefault _) = return tau
-mkUnsigned tau@(FixT U{} _)      = return tau
+mkUnsigned (IntT IDefault l)     = return $ IntT UDefault l
+mkUnsigned (IntT (I w) l)        = return $ IntT (U w) l
+mkUnsigned tau@(IntT UDefault _) = return tau
+mkUnsigned tau@(IntT U{} _)      = return tau
 mkUnsigned tau =
     faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to signed."
 
@@ -426,11 +426,11 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (BoolT l) exp_ty
         return $ E.BoolC b
 
-    tcConst (Z.FixC zip x) = do
+    tcConst (Z.IntC zip x) = do
         ip  <- fromZ zip
         cip <- trans ip
-        instType (FixT ip l) exp_ty
-        return $ E.FixC cip x
+        instType (IntT ip l) exp_ty
+        return $ E.IntC cip x
 
     tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
@@ -1173,10 +1173,10 @@ refPath e =
     go (Z.VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC _ i) _) Nothing _) path =
+    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (Z.IdxE e (Z.ConstE (Z.FixC _ i) _) (Just len) _) path =
+    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) (Just len) _) path =
         go e (IdxP i len : path)
 
     go (Z.IdxE e _ _ _) _ =
@@ -1340,19 +1340,19 @@ kcType tau@UnitT{} kappa_exp =
 kcType tau@BoolT{} kappa_exp =
     instKind tau (qualK [EqR, OrdR, BoolR]) kappa_exp
 
-kcType tau@(FixT (U 1) _) kappa_exp =
+kcType tau@(IntT (U 1) _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, BoolR, BitsR]) kappa_exp
 
-kcType tau@(FixT UDefault _) kappa_exp =
+kcType tau@(IntT UDefault _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR, BitsR]) kappa_exp
 
-kcType tau@(FixT U{} _) kappa_exp =
+kcType tau@(IntT U{} _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR, BitsR]) kappa_exp
 
-kcType tau@(FixT IDefault _) kappa_exp =
+kcType tau@(IntT IDefault _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR]) kappa_exp
 
-kcType tau@(FixT I{} _) kappa_exp =
+kcType tau@(IntT I{} _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR]) kappa_exp
 
 kcType tau@FloatT{} kappa_exp =
@@ -1603,7 +1603,7 @@ checkIntT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
-    go FixT{} = return ()
+    go IntT{} = return ()
     go tau    = unifyTypes tau intT
 
 -- | Check that a type is an @ref \alpha@ type, returning @\alpha@.
@@ -1993,13 +1993,13 @@ checkLegalCast tau1 tau2 = do
     go tau1 (SynT _ tau2 _) =
         go tau1 tau2
 
-    go FixT{} FixT{} =
+    go IntT{} IntT{} =
         return ()
 
-    go FixT{} FloatT{} =
+    go IntT{} FloatT{} =
         return ()
 
-    go FloatT{} FixT{} =
+    go FloatT{} IntT{} =
         return ()
 
     go FloatT{} FloatT{} =
@@ -2008,13 +2008,13 @@ checkLegalCast tau1 tau2 = do
     go (StructT s taus _) (StructT s' taus' _) | s' == s && length taus' == length taus =
         zipWithM_ go taus taus'
 
-    go tau1@FixT{} tau2@TyVarT{} =
+    go tau1@IntT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
     go tau1@FloatT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
-    go tau1@TyVarT{} tau2@FixT{} =
+    go tau1@TyVarT{} tau2@IntT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@FloatT{} =
@@ -2034,7 +2034,7 @@ checkLegalCast tau1 tau2 = do
     -- | Return the kind of constants of the given type. We use this to cast
     -- constants "polymorphically."
     constKind :: Type -> Ti Kind
-    constKind FixT{}   = return numK
+    constKind IntT{}   = return numK
     constKind FloatT{} = return fracK
     constKind tau      = inferKind tau
 
@@ -2064,9 +2064,9 @@ checkLegalBitcast tau1 tau2 = do
 -- If it is definitely unsafe, signal an error; if it may be unsafe, signal a
 -- warning if the specified warning flag is set. We assume the cast is legal.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
-checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
+checkSafeCast _f (Just e@(Z.ConstE (Z.IntC ip x) l)) tau1 tau2 =
     withSummaryContext e $ do
-    tau1' <- fromZ $ Z.FixT ip l
+    tau1' <- fromZ $ Z.IntT ip l
     when (tau1' /= tau1) $
         withSummaryContext e $
         faildoc $ align $
@@ -2075,22 +2075,22 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
     go tau2
   where
     go :: Type -> Ti ()
-    go (FixT U{} _) | x < 0 =
+    go (IntT U{} _) | x < 0 =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT (U w) _) | x > 2^w-1 =
+    go (IntT (U w) _) | x > 2^w-1 =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT (I w) _) | x > 2^(w-1)-1 =
+    go (IntT (I w) _) | x > 2^(w-1)-1 =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
 
-    go (FixT (I w) _) | x < -2^(w-1) =
+    go (IntT (I w) _) | x < -2^(w-1) =
         faildoc $ align $
         text "Integer constant" <+> ppr x <+>
         text "cannot be represented as type" <+> ppr tau2
@@ -2098,7 +2098,7 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
     go _ =
         return ()
 
-checkSafeCast f e tau1@(FixT ip1 _) tau2@(FixT ip2 _) = do
+checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) = do
     w1 <- ipWidth ip1
     w2 <- ipWidth ip2
     when (w1 < w2) $
@@ -2120,8 +2120,8 @@ constFold :: Z.Exp -> Z.Exp
 constFold (Z.ArrayE es l) =
     Z.ArrayE (map constFold es) l
 
-constFold (Z.UnopE Z.Neg (Z.ConstE (Z.FixC ip r) l) _) =
-    Z.ConstE (Z.FixC (toSigned ip) (negate r)) l
+constFold (Z.UnopE Z.Neg (Z.ConstE (Z.IntC ip r) l) _) =
+    Z.ConstE (Z.IntC (toSigned ip) (negate r)) l
   where
     toSigned :: Z.IP -> Z.IP
     toSigned Z.UDefault = Z.IDefault
@@ -2132,9 +2132,9 @@ constFold (Z.BinopE op e1 e2 l) =
     constFoldBinopE op (constFold e1) (constFold e2)
   where
     constFoldBinopE :: Z.Binop -> Z.Exp -> Z.Exp -> Z.Exp
-    constFoldBinopE op (Z.ConstE (Z.FixC ip x) _) (Z.ConstE (Z.FixC ip' y) _)
+    constFoldBinopE op (Z.ConstE (Z.IntC ip x) _) (Z.ConstE (Z.IntC ip' y) _)
         | ip' == ip, Just z <- constFoldBinop op x y =
-           Z.ConstE (Z.FixC ip z) l
+           Z.ConstE (Z.IntC ip z) l
 
     constFoldBinopE op e1 e2 = Z.BinopE op e1 e2 l
 
@@ -2281,7 +2281,7 @@ unifyTypes tau1 tau2 = do
     go _ UnitT{} UnitT{} = return ()
     go _ BoolT{} BoolT{} = return ()
 
-    go _ (FixT ip _)    (FixT ip' _)   | ip' == ip = return ()
+    go _ (IntT ip _)    (IntT ip' _)   | ip' == ip = return ()
     go _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
     go _ StringT{}      StringT{}                  = return ()
 
@@ -2469,11 +2469,11 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
 
     -- Always cast integer constants to whatever the other type is. This lets
     -- us, for example, treat @1@ as an @int8@.
-    go tau1@FixT{} e@Z.ConstE{} mce1 tau2 _ mce2 = do
+    go tau1@IntT{} e@Z.ConstE{} mce1 tau2 _ mce2 = do
         co <- mkCheckedSafeCast e tau1 tau2
         return (tau2, co mce1, mce2)
 
-    go tau1 _ mce1 tau2@FixT{} e@Z.ConstE{} mce2 = do
+    go tau1 _ mce1 tau2@IntT{} e@Z.ConstE{} mce2 = do
         co <- mkCheckedSafeCast e tau2 tau1
         return (tau1, mce1, co mce2)
 
@@ -2484,24 +2484,24 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         return (tau, co1 mce1, co2 mce2)
 
     lubType :: Type -> Type -> Ti Type
-    lubType (FixT ip l) (FixT ip' _) = do
+    lubType (IntT ip l) (IntT ip' _) = do
         ip'' <- lubIP ip ip'
-        return $ FixT ip'' l
+        return $ IntT ip'' l
 
     lubType (FloatT fp l) (FloatT fp' _) =
         return $ FloatT (max fp fp') l
 
-    lubType (FixT _ l) (FloatT w _) =
+    lubType (IntT _ l) (FloatT w _) =
         return $ FloatT w l
 
-    lubType (FloatT w _) (FixT _ l) =
+    lubType (FloatT w _) (IntT _ l) =
         return $ FloatT w l
 
     lubType (StructT s taus l) (StructT s' taus' _) | s' == s && length taus' == length taus = do
         taus'' <- zipWithM lubType taus taus'
         return $ StructT s taus'' l
 
-    lubType tau1@FixT{} tau2 = do
+    lubType tau1@IntT{} tau2 = do
         unifyTypes tau2 tau1
         return tau1
 
@@ -2546,7 +2546,7 @@ instance FromZ Z.FP FP where
 instance FromZ Z.Type Type where
     fromZ (Z.UnitT l)          = pure $ UnitT l
     fromZ (Z.BoolT l)          = pure $ BoolT l
-    fromZ (Z.FixT ip l)        = FixT <$> fromZ ip <*> pure l
+    fromZ (Z.IntT ip l)        = IntT <$> fromZ ip <*> pure l
     fromZ (Z.FloatT fp l)      = FloatT <$> fromZ fp <*> pure l
     fromZ (Z.ArrT i tau l)     = ArrT <$> fromZ i <*> fromZ tau <*> pure l
     fromZ (Z.C tau l)          = C <$> fromZ tau <*> pure l
@@ -2642,7 +2642,7 @@ instance Trans Type E.Type where
         go :: Type -> Ti E.Type
         go (UnitT l)          = E.UnitT <$> pure l
         go (BoolT l)          = E.BoolT <$> pure l
-        go (FixT ip l)        = E.FixT <$> trans ip <*> pure l
+        go (IntT ip l)        = E.IntT <$> trans ip <*> pure l
         go (FloatT fp l)      = E.FloatT <$> trans fp <*> pure l
         go (StringT l)        = pure $ E.StringT l
         go (SynT _ tau _)     = go tau

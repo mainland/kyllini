@@ -227,7 +227,7 @@ checkNatTauPoly = mapM_ check
 inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
 inferConst l UnitC         = return (UnitT l)
 inferConst l BoolC{}       = return (BoolT l)
-inferConst l (FixC ip _)   = return (FixT ip l)
+inferConst l (IntC ip _)   = return (IntT ip l)
 inferConst l (FloatC fp _) = return (FloatT fp l)
 inferConst l (StringC _)   = return (StringT l)
 
@@ -285,7 +285,7 @@ inferExp (UnopE op e1 l) = do
         mkSigned <$> inferOp [(a, numK)] aT aT tau
       where
         mkSigned :: Type -> Type
-        mkSigned (FixT (U w) l) = FixT (I w) l
+        mkSigned (IntT (U w) l) = IntT (I w) l
         mkSigned tau            = tau
 
     unop Abs   tau = inferOp [(a, numK)] aT aT tau
@@ -668,10 +668,10 @@ refPath e =
     go (VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (IdxE e (ConstE (FixC _ i) _) Nothing _) path =
+    go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (FixC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =
@@ -753,25 +753,25 @@ checkCast = go
     go tau1 tau2 | tau1 == tau2 =
         return ()
 
-    go FixT{} FixT{} =
+    go IntT{} IntT{} =
         return ()
 
-    go FixT{} FloatT{} =
+    go IntT{} FloatT{} =
         return ()
 
-    go FloatT{} FixT{} =
+    go FloatT{} IntT{} =
         return ()
 
     go FloatT{} FloatT{} =
         return ()
 
-    go tau1@FixT{} tau2@TyVarT{} =
+    go tau1@IntT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
     go tau1@FloatT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
-    go tau1@TyVarT{} tau2@FixT{} =
+    go tau1@TyVarT{} tau2@IntT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@FloatT{} =
@@ -790,7 +790,7 @@ checkCast = go
     -- | Return the kind of constants of the given type. We use this to cast
     -- constants "polymorphically."
     constKind :: Type -> m Kind
-    constKind FixT{}   = return numK
+    constKind IntT{}   = return numK
     constKind FloatT{} = return fracK
     constKind tau      = inferKind tau
 
@@ -823,7 +823,7 @@ checkTypeEquality tau1 tau2 =
     checkT _ UnitT{} UnitT{} = return ()
     checkT _ BoolT{} BoolT{} = return ()
 
-    checkT _ (FixT ip _) (FixT ip' _) | ip' == ip =
+    checkT _ (IntT ip _) (IntT ip' _) | ip' == ip =
         return ()
 
     checkT _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
@@ -909,19 +909,19 @@ inferKind = inferType
     inferType BoolT{} =
         return $ qualK [EqR, OrdR, BoolR]
 
-    inferType (FixT (U 1) _) =
+    inferType (IntT (U 1) _) =
         return $ qualK [EqR, OrdR, BoolR, BitsR]
 
-    inferType (FixT UDefault _) =
+    inferType (IntT UDefault _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
 
-    inferType (FixT U{} _) =
+    inferType (IntT U{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
 
-    inferType (FixT IDefault _) =
+    inferType (IntT IDefault _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR]
 
-    inferType (FixT I{} _) =
+    inferType (IntT I{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR]
 
     inferType FloatT{} =
