@@ -23,11 +23,11 @@ module KZC.Core.Syntax (
     TyVar(..),
 
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
 
     FP(..),
-    fpWidth,
+    fpBitSize,
 
     Const(..),
     Program(..),
@@ -116,11 +116,11 @@ import KZC.Expr.Syntax (Var(..),
                         TyVar(..),
 
                         IP(..),
-                        ipWidth,
+                        ipBitSize,
                         ipIsSigned,
 
                         FP(..),
-                        fpWidth,
+                        fpBitSize,
 
                         GenInterval(..),
 

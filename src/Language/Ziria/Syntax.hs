@@ -21,7 +21,7 @@ module Language.Ziria.Syntax (
     Struct(..),
 
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
 
     FP(..),
@@ -102,11 +102,12 @@ data IP = IDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: MonadPlatform m => IP -> m Int
-ipWidth IDefault = asksPlatform platformIntWidth
-ipWidth (I w)    = return w
-ipWidth UDefault = asksPlatform platformIntWidth
-ipWidth (U w)    = return w
+-- | Number of bits needed to represent integers with the given precision.
+ipBitSize :: MonadPlatform m => IP -> m Int
+ipBitSize IDefault = asksPlatform platformIntWidth
+ipBitSize (I w)    = return w
+ipBitSize UDefault = asksPlatform platformIntWidth
+ipBitSize (U w)    = return w
 
 ipIsSigned :: IP -> Bool
 ipIsSigned IDefault{} = True

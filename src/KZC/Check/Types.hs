@@ -15,11 +15,11 @@ module KZC.Check.Types (
     module KZC.Traits,
 
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
 
     FP(..),
-    fpWidth,
+    fpBitSize,
 
     TyVar(..),
 
@@ -55,11 +55,11 @@ import Text.PrettyPrint.Mainland
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Expr.Syntax (IP(..),
-                        ipWidth,
+                        ipBitSize,
                         ipIsSigned,
 
                         FP(..),
-                        fpWidth)
+                        fpBitSize)
 import KZC.Globals
 import KZC.Name
 import KZC.Traits

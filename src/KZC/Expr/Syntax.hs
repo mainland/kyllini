@@ -25,11 +25,11 @@ module KZC.Expr.Syntax (
     TyVar(..),
 
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
 
     FP(..),
-    fpWidth,
+    fpBitSize,
 
     Program(..),
     Import(..),
@@ -144,12 +144,12 @@ data IP = IDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
--- | Bit-width of an 'IP' type.
-ipWidth :: MonadPlatform m => IP -> m Int
-ipWidth IDefault = asksPlatform platformIntWidth
-ipWidth (I w)    = return w
-ipWidth UDefault = asksPlatform platformIntWidth
-ipWidth (U w)    = return w
+-- | Number of bits needed to represent integers with the given precision.
+ipBitSize :: MonadPlatform m => IP -> m Int
+ipBitSize IDefault = asksPlatform platformIntWidth
+ipBitSize (I w)    = return w
+ipBitSize UDefault = asksPlatform platformIntWidth
+ipBitSize (U w)    = return w
 
 ipIsSigned :: IP -> Bool
 ipIsSigned IDefault{} = True
@@ -163,10 +163,12 @@ data FP = FP16
         | FP64
   deriving (Eq, Ord, Read, Show)
 
-fpWidth :: FP -> Int
-fpWidth FP16 = 16
-fpWidth FP32 = 32
-fpWidth FP64 = 64
+-- | Number of bits needed to represent floating-point values with the given
+-- precision.
+fpBitSize :: FP -> Int
+fpBitSize FP16 = 16
+fpBitSize FP32 = 32
+fpBitSize FP64 = 64
 
 data Program = Program [Import] [Decl]
   deriving (Eq, Ord, Read, Show)

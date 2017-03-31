@@ -437,11 +437,8 @@ typeSize = go
     go :: Type -> m Int
     go UnitT{}                 = pure 0
     go BoolT{}                 = pure 1
-    go (IntT IDefault _)       = asksPlatform platformIntWidth
-    go (IntT (I w) _)          = pure w
-    go (IntT UDefault _)       = asksPlatform platformIntWidth
-    go (IntT (U w) _)          = pure w
-    go (FloatT fp _)           = pure $ fpWidth fp
+    go (IntT ip _)             = ipBitSize ip
+    go (FloatT fp _)           = pure $ fpBitSize fp
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
     go (ST (C tau) _ _ _ _)    = go tau
     go (RefT tau _)            = go tau

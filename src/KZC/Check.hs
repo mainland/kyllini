@@ -2099,8 +2099,8 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.IntC ip x) l)) tau1 tau2 =
         return ()
 
 checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) = do
-    w1 <- ipWidth ip1
-    w2 <- ipWidth ip2
+    w1 <- ipBitSize ip1
+    w2 <- ipBitSize ip2
     when (w1 < w2) $
         maybeWithSummaryContext e $
         warndocWhen f $ align $
@@ -2515,8 +2515,8 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
 
     lubIP :: IP -> IP -> Ti IP
     lubIP ip ip' = do
-        w  <- ipWidth ip
-        w' <- ipWidth ip'
+        w  <- ipBitSize ip
+        w' <- ipBitSize ip'
         if ipIsSigned ip || ipIsSigned ip'
           then return $ I (max w w')
           else return $ U (max w w')
