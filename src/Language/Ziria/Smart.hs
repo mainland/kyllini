@@ -1,14 +1,16 @@
 -- |
 -- Module      : Language.Ziria.Smart
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Smart (
     mkVar,
+    mkTyVar,
     mkField,
     mkStruct,
+    mkCall,
 
     varE,
     letDeclE,
@@ -17,19 +19,31 @@ module Language.Ziria.Smart (
   ) where
 
 import Data.Loc
+import qualified Data.Map as Map
 
 import Language.Ziria.Syntax
+import Language.Ziria.Parser.Tokens (unopFunMap)
 
 import KZC.Name
 
 mkVar :: Name -> Var
 mkVar = Var
 
+mkTyVar :: Name -> TyVar
+mkTyVar = TyVar
+
 mkField :: Name -> Field
 mkField = Field
 
 mkStruct :: Name -> Struct
 mkStruct = Struct
+
+mkCall :: Name -> [Exp] -> SrcLoc -> Exp
+mkCall f [e] l | Just op <- Map.lookup (nameSym f) unopFunMap =
+    UnopE op e l
+
+mkCall f es l =
+    CallE (mkVar f) es l
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

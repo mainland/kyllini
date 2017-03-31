@@ -66,10 +66,12 @@ import qualified KZC.Core.Syntax as C
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
+import KZC.Globals
 import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Monomorphize
 import KZC.Name
 import KZC.Optimize.Autolut
 import KZC.Optimize.Coalesce
@@ -163,10 +165,17 @@ compileRecursive ([modinfo] : sccs) = do
 getStructIds :: C KZC [Symbol]
 getStructIds = do
     decls <- askDecls
-    return [nameSym n | E.LetStructD (E.Struct n) _ _ <- decls]
+    return [nameSym n | E.StructD (E.Struct n) _ _ _ <- decls]
+
+setFileDialect :: MonadIO m => FilePath -> m ()
+setFileDialect filepath = do
+    dialect <- moduleDialect filepath
+    when (dialect == Z.Classic) $
+        setClassicDialect True
 
 loadDependencies :: FilePath -> C KZC a -> C KZC a
 loadDependencies filepath k = do
+    setFileDialect filepath
     maybe_prog <- runMaybeT $ pipeline filepath
     case maybe_prog of
       Nothing                  -> k
@@ -213,7 +222,8 @@ loadDependencies filepath k = do
         return x
 
 compileExprProgram :: FilePath -> E.Program -> C KZC ()
-compileExprProgram filepath prog =
+compileExprProgram filepath prog =  do
+    setFileDialect filepath
     void $ runMaybeT $ pipeline prog
   where
     pipeline :: E.Program -> MaybeT (C KZC) ()
@@ -247,6 +257,7 @@ compileExprProgram filepath prog =
         traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
+        tracePhase "monomorphize" monomorphizePhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
       where
@@ -347,6 +358,11 @@ compileExprProgram filepath prog =
     needDefaultPhase =
         lift . lift . C.liftTc . needDefaultProgram >=>
         dumpPass DumpEval "core" "needdefault"
+
+    monomorphizePhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
+    monomorphizePhase =
+        lift . lift . C.liftTc . monomorphizeProgram >=>
+        dumpPass DumpMono "core" "mono"
 
     compilePhase :: C.LProgram -> MaybeT (C KZC) ()
     compilePhase =

@@ -16,6 +16,10 @@ import KZC.Util.Uniq
 deriving instance Typeable a; \
 deriving instance Data a
 
+#define DERIVE1(f) \
+deriving instance Typeable f; \
+deriving instance Data a => Data (f a)
+
 DERIVE(Uniq)
 DERIVE(Name)
 DERIVE(NameSort)
@@ -29,6 +33,7 @@ DERIVE(FP)
 DERIVE(Const)
 DERIVE(Decl)
 DERIVE(Exp)
+DERIVE1(GenInterval)
 DERIVE(UnrollAnn)
 DERIVE(InlineAnn)
 DERIVE(PipelineAnn)
@@ -51,6 +56,7 @@ main = do
     DERIVE(TyVar)
     DERIVE(Decl)
     DERIVE(Exp)
+    DERIVE(GenInterval ())
     DERIVE(StructDef)
     DERIVE(Type)
     DERIVE(Omega)

@@ -2,7 +2,7 @@
 
 -- |
 -- Module      : KZC.Core.Smart
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -39,14 +39,17 @@ module KZC.Core.Smart (
     whileE,
     forE,
     arrayE,
-    structE,
     idxE,
     sliceE,
+    structE,
     projE,
     returnE,
     bindE,
     seqE,
     genE,
+
+    startLenGenInt,
+    toStartLenGenInt,
 
     genG,
     genrefG,
@@ -116,7 +119,6 @@ import KZC.Expr.Smart (qualK,
                        isUnitT,
                        isBitT,
                        isBitArrT,
-                       isComplexT,
                        isFunT,
                        isArrT,
                        isArrOrRefArrT,
@@ -142,7 +144,8 @@ import KZC.Expr.Smart (qualK,
 
                        fromIntC,
 
-                       mkVar)
+                       mkVar,
+                       mkStruct)
 
 letD :: Var -> Type -> Exp -> LocalDecl
 letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
@@ -169,9 +172,9 @@ unConstE (ArrayE es _) = do
     cs <- mapM unConstE es
     return $ ArrayC $ V.fromList cs
 
-unConstE (StructE s flds _) = do
+unConstE (StructE s taus flds _) = do
     cs <- mapM unConstE es
-    return $ StructC s (fs `zip` cs)
+    return $ StructC s taus (fs `zip` cs)
   where
     fs :: [Field]
     es :: [Exp]
@@ -256,19 +259,21 @@ whileE :: Exp -> Exp -> Exp
 whileE e1 e2 = WhileE e1 e2 (e1 `srcspan` e2)
 
 forE :: UnrollAnn -> Var -> Type -> Exp -> Exp -> Exp -> Exp
-forE ann v tau e1 e2 e3 = ForE ann v tau e1 e2 e3 (e1 `srcspan` e2 `srcspan` e3)
+forE ann v tau e1 e2 e3 = ForE ann v tau (startLenGenInt e1 e2) e3 l
+  where
+    l = e1 `srcspan` e2 `srcspan` e3
 
 arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
-
-structE :: Struct -> [(Field, Exp)] -> Exp
-structE s fs = StructE s fs (srclocOf (map snd fs))
 
 idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 (castE uintT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
 sliceE e1 e2 len = IdxE e1 (castE uintT e2) (Just len) (e1 `srcspan` e2)
+
+structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
+structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
 
 projE :: Exp -> Field -> Exp
 projE e f = ProjE e f (e `srcspan` f)
@@ -285,6 +290,14 @@ seqE (ReturnE _ (ConstE UnitC _) _) e2 =
 
 seqE e1 e2 =
     BindE WildV unitT e1 e2 (e1 `srcspan` e2)
+
+startLenGenInt :: Exp -> Exp -> GenInterval Exp
+startLenGenInt e1 e2 = StartLen e1 e2 (e1 `srcspan` e2)
+
+toStartLenGenInt :: GenInterval Exp -> (Exp, Exp)
+toStartLenGenInt (FromToInclusive from to _) = (from, to - from + 1)
+toStartLenGenInt (FromToExclusive from to _) = (from, to - from)
+toStartLenGenInt (StartLen start len _)      = (start, len)
 
 genE :: Exp -> [Gen] -> Exp
 genE e gs = GenE e gs (e `srcspan` gs)
@@ -309,7 +322,7 @@ m1 .>>. m2 = do
     return $ m1' <> m2'
 
 isStructD :: Decl l -> Bool
-isStructD LetStructD{} = True
+isStructD StructD{} = True
 isStructD _            = False
 
 isConstE :: Exp -> Bool

@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.Util.Trace
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -28,7 +28,8 @@ module KZC.Util.Trace (
     traceNeedDefault,
     traceRate,
     traceCoalesce,
-    traceViews
+    traceViews,
+    traceMono
   ) where
 
 import Control.Monad (when)
@@ -167,3 +168,6 @@ traceCoalesce = traceIfSet TraceCoalesce "traceCoalesce:"
 
 traceViews :: MonadTrace m => Doc -> m ()
 traceViews = traceIfSet TraceViews "traceViews:"
+
+traceMono :: MonadTrace m => Doc -> m ()
+traceMono = traceIfSet TraceMono "traceMono:"

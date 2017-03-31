@@ -4,7 +4,7 @@
 
 -- |
 -- Module      : KZC.Expr.Smart
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -50,10 +50,10 @@ module KZC.Expr.Smart (
     isNatK,
 
     isBaseT,
+    isNumT,
     isUnitT,
     isBitT,
     isBitArrT,
-    isComplexT,
     isFunT,
     isArrT,
     isArrOrRefArrT,
@@ -80,6 +80,7 @@ module KZC.Expr.Smart (
     fromIntC,
 
     mkVar,
+    mkStruct,
 
     notE,
     castE,
@@ -91,6 +92,8 @@ module KZC.Expr.Smart (
     letE,
     callE,
     derefE,
+    structE,
+    projE,
     returnE,
     bindE,
     seqE,
@@ -113,7 +116,6 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Expr.Syntax
 import KZC.Name
-import KZC.Platform
 
 qualK :: [Trait] -> Kind
 qualK ts = TauK (traits ts)
@@ -155,7 +157,7 @@ bitT :: Type
 bitT = FixT (U 1) noLoc
 
 intT :: Type
-intT = FixT (I dEFAULT_INT_WIDTH) noLoc
+intT = FixT IDefault noLoc
 
 int8T :: Type
 int8T = FixT (I 8) noLoc
@@ -170,7 +172,7 @@ int64T :: Type
 int64T = FixT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT (U dEFAULT_INT_WIDTH) noLoc
+uintT = FixT UDefault noLoc
 
 uint8T :: Type
 uint8T = FixT (U 8) noLoc
@@ -204,7 +206,7 @@ arrKnownT i tau = ArrT (NatT i l) tau l
     l = srclocOf tau
 
 structT :: Struct -> Type
-structT struct = StructT struct (srclocOf struct)
+structT struct = StructT struct [] (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
 stT omega s a b = ST omega s a b (omega `srcspan` s `srcspan` a `srcspan` b)
@@ -221,16 +223,16 @@ unSTC (ForallT _ tau@ST{} _) = unSTC tau
 unSTC (ST (C tau) _ _ _ _)   = tau
 unSTC tau                    = tau
 
-funT :: [(TyVar, Kind)] -> [Type] -> Type -> SrcLoc -> Type
+funT :: [Tvk] -> [Type] -> Type -> SrcLoc -> Type
 funT []   taus tau l = FunT taus tau l
 funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
-unFunT :: Monad m => Type -> m ([(TyVar, Kind)], [Type], Type)
+unFunT :: Monad m => Type -> m ([Tvk], [Type], Type)
 unFunT (ForallT tvks (FunT taus tau _) _) = return (tvks, taus, tau)
 unFunT (FunT taus tau _)                  = return ([], taus, tau)
 unFunT _                                  = fail "unFunT: not a function"
 
-forallT :: [(TyVar, Kind)] -> Type -> Type
+forallT :: [Tvk] -> Type -> Type
 forallT []   tau = tau
 forallT tvks tau = ForallT tvks tau (map fst tvks `srcspan` tau)
 
@@ -247,6 +249,12 @@ isBaseT FixT{}   = True
 isBaseT FloatT{} = True
 isBaseT _        = False
 
+-- | Return 'True' if a type is a numeric type.
+isNumT :: Type -> Bool
+isNumT FixT{}   = True
+isNumT FloatT{} = True
+isNumT _        = False
+
 isUnitT :: Type -> Bool
 isUnitT UnitT{} = True
 isUnitT _       = False
@@ -258,10 +266,6 @@ isBitT _              = False
 isBitArrT :: Type -> Bool
 isBitArrT (ArrT _ tau _) = isBitT tau
 isBitArrT _              = False
-
-isComplexT :: Type -> Bool
-isComplexT (StructT s _) = isComplexStruct s
-isComplexT _             = False
 
 isFunT :: Type -> Bool
 isFunT FunT{} = True
@@ -318,7 +322,7 @@ isPureishT _ =
     True
 
 structName :: StructDef -> Struct
-structName (StructDef s _ _) = s
+structName (StructDef s _ _ _) = s
 
 splitArrT :: Monad m => Type -> m (Type, Type)
 splitArrT (ArrT nat tau _) =
@@ -334,10 +338,10 @@ bitC :: Bool -> Const
 bitC b = FixC (U 1) (if b then 1 else 0)
 
 intC :: Integral i => i -> Const
-intC i = FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)
+intC i = FixC IDefault (fromIntegral i)
 
 uintC :: Integral i => i -> Const
-uintC i = FixC (U dEFAULT_INT_WIDTH) (fromIntegral i)
+uintC i = FixC UDefault (fromIntegral i)
 
 arrayC :: Vector Const -> Const
 arrayC cs
@@ -347,7 +351,7 @@ arrayC cs
     n :: Int
     n = V.length cs
 
-structC :: Struct -> [(Field, Const)] -> Const
+structC :: Struct -> [Type] -> [(Field, Const)] -> Const
 structC = StructC
 
 isArrC :: Const -> Bool
@@ -365,6 +369,9 @@ fromIntC _ =
 
 mkVar :: String -> Var
 mkVar s = Var (mkName s noLoc)
+
+mkStruct :: String -> Struct
+mkStruct s = Struct (mkName s noLoc)
 
 notE :: Exp -> Exp
 notE e = UnopE Lnot e (srclocOf e)
@@ -392,14 +399,23 @@ asintE tau         _ = errordoc $ text "Expected integer type but got:" <+> ppr 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)
 
-letE :: Decl -> Exp -> Exp
-letE d e = LetE d e (d `srcspan` e)
+letE :: Var -> Type -> Exp -> Exp -> Exp
+letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
+  where
+    d :: Decl
+    d = LetD v tau e1 (v `srcspan` e1)
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
+
+structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
+structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
+
+projE :: Exp -> Field -> Exp
+projE e f = ProjE e f (e `srcspan` f)
 
 returnE :: Exp -> Exp
 returnE e = ReturnE AutoInline e (srclocOf e)

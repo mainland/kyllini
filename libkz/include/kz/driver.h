@@ -89,6 +89,13 @@ void         kz_cleanup_output_bit(const kz_params_t*, kz_buf_t*);
 const bit_t* kz_input_bit(kz_buf_t*, size_t);
 void         kz_output_bit(kz_buf_t*, const bit_t*, size_t);
 
+void       kz_init_input_int(const kz_params_t*, kz_buf_t*);
+void       kz_init_output_int(const kz_params_t*, kz_buf_t*);
+void       kz_cleanup_input_int(const kz_params_t*, kz_buf_t*);
+void       kz_cleanup_output_int(const kz_params_t*, kz_buf_t*);
+const int* kz_input_int(kz_buf_t*, size_t);
+void       kz_output_int(kz_buf_t*, const int*, size_t);
+
 void          kz_init_input_int8(const kz_params_t*, kz_buf_t*);
 void          kz_init_output_int8(const kz_params_t*, kz_buf_t*);
 void          kz_cleanup_input_int8(const kz_params_t*, kz_buf_t*);
@@ -109,6 +116,13 @@ void           kz_cleanup_input_int32(const kz_params_t*, kz_buf_t*);
 void           kz_cleanup_output_int32(const kz_params_t*, kz_buf_t*);
 const int32_t* kz_input_int32(kz_buf_t*, size_t);
 void           kz_output_int32(kz_buf_t*, const int32_t*, size_t);
+
+void            kz_init_input_uint(const kz_params_t*, kz_buf_t*);
+void            kz_init_output_uint(const kz_params_t*, kz_buf_t*);
+void            kz_cleanup_input_uint(const kz_params_t*, kz_buf_t*);
+void            kz_cleanup_output_uint(const kz_params_t*, kz_buf_t*);
+const unsigned* kz_input_uint(kz_buf_t*, size_t);
+void            kz_output_uint(kz_buf_t*, const unsigned*, size_t);
 
 void           kz_init_input_uint8(const kz_params_t*, kz_buf_t*);
 void           kz_init_output_uint8(const kz_params_t*, kz_buf_t*);

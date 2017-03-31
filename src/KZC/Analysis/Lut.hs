@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.Lut
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -49,6 +49,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Name
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -328,6 +329,7 @@ newtype L m a = L { unL :: StateT LUTStats m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -425,11 +427,14 @@ lutStats e =
         go e1
         go e2
 
-    go (ForE _ _ _ e1 e2 e3 _) = do
+    go (ForE _ _ _ gint e3 _) = do
         hasLoop
         go e1
         go e2
         go e3
+      where
+        e1, e2 :: Exp
+        (e1, e2) = toStartLenGenInt gint
 
     go (ArrayE es _) =
         mapM_ go es
@@ -438,7 +443,7 @@ lutStats e =
         go e1
         go e2
 
-    go (StructE _ flds _) =
+    go (StructE _ _ flds _) =
         mapM_ (go . snd) flds
 
     go (ProjE e _ _) =

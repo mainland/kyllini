@@ -8,7 +8,7 @@
 
 -- |
 -- Module      :  KZC.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -42,6 +42,7 @@ import KZC.Config
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
 import KZC.Name
+import KZC.Platform
 import KZC.Rename.State (RnEnv,
                          defaultRnEnv)
 import KZC.Util.Error
@@ -53,6 +54,7 @@ data KZCEnv = KZCEnv
     , tracedepth :: !Int
     , errctx     :: ![ErrorContext]
     , flags      :: !Config
+    , platform   :: !Platform
     , rnenvref   :: !(IORef RnEnv)
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
@@ -74,6 +76,7 @@ defaultKZCEnv fs = do
                   , tracedepth = 0
                   , errctx     = []
                   , flags      = fs
+                  , platform   = Platform { platformIntWidth = 32 }
                   , rnenvref   = rneref
                   , tienvref   = tieref
                   , tistateref = tisref
@@ -133,6 +136,10 @@ instance MonadErr KZC where
 instance MonadConfig KZC where
     askConfig     = asks flags
     localConfig f = local (\env -> env { flags = f (flags env) })
+
+instance MonadPlatform KZC where
+    askPlatform     = asks platform
+    localPlatform f = local (\env -> env { platform = f (platform env) })
 
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth

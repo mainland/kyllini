@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Backend.C
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -24,6 +24,7 @@ import Control.Monad (forM_,
                       unless,
                       when)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Bits
 import Data.Foldable (toList)
 import Data.Loc
@@ -51,17 +52,13 @@ import KZC.Label
 import KZC.Monad (KZC)
 import KZC.Name
 import KZC.Optimize.LutToGen (lutGenToExp)
-import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Error
-import KZC.Util.Memoize
-import KZC.Util.Pretty
 import KZC.Util.Staged
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
 import KZC.Util.ZEncode
-import KZC.Vars
 
 -- | Create a oneshot continuation.
 oneshot :: Type -> (CExp l -> Cg l a) -> Kont l a
@@ -283,26 +280,34 @@ void kz_main(const typename kz_params_t* $id:params)
     cgBufferCleanup = cgBufferConfig appendThreadCleanupStm
 
     cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferConfig appStm f tau cp cbuf =
-        go tau
+    cgBufferConfig appStm f tau cp cbuf = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT _ tau _)          = go tau
-        go tau | isBitT tau        = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT (I 8)  _)         = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT (I 16) _)         = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT (I 32) _)         = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT (U 8)  _)         = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT (U 16) _)         = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT (U 32) _)         = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP32 _)         = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
-        go (FloatT FP64 _)         = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
-        go (StructT "complex16" _) = appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
-        go (StructT "complex32" _) = appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
-        go _                       = appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+        go (ArrT _ tau _)     = go tau
+        go tau | isBitT tau   = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
+        go (FixT IDefault  _) = appStm [cstm|$id:(fname "int")($cp, &$cbuf);|]
+        go (FixT (I 8)  _)    = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (FixT (I 16) _)    = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (FixT (I 32) _)    = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (FixT UDefault  _) = appStm [cstm|$id:(fname "uint")($cp, &$cbuf);|]
+        go (FixT (U 8)  _)    = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (FixT (U 16) _)    = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (FixT (U 32) _)    = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go tau@FixT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                          text "are not supported."
+        go (FloatT FP16 _)    = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP32 _)    = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
+        go (FloatT FP64 _)    = appStm [cstm|$id:(fname "double")($cp, &$cbuf);|]
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+                       | tau == int32T -> appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
+              _                        -> appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
+
+        go _ =
+            appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
         fname :: String -> C.Id
         fname t = fromString (f ++ "_" ++ t)
@@ -311,49 +316,69 @@ void kz_main(const typename kz_params_t* $id:params)
     cgInput tau cbuf cn = go tau
       where
         go :: Type -> Cg l (CExp l)
-        go (ArrT n tau _)          = do ci <- cgNatType n
-                                        cgInput tau cbuf (cn*ci)
-        go tau | isBitT tau        = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
-        go (FixT (I 8)  _)         = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
-        go (FixT (I 16) _)         = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
-        go (FixT (I 32) _)         = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
-        go (FixT (U 8)  _)         = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
-        go (FixT (U 16) _)         = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
-        go (FixT (U 32) _)         = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP32 _)         = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
-        go (FloatT FP64 _)         = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
-        go (StructT "complex16" _) = return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
-        go (StructT "complex32" _) = return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
-        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
-        go tau                     = do ctau <- cgType tau
-                                        return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+        go (ArrT n tau _)    = do ci <- cgNatType n
+                                  cgInput tau cbuf (cn*ci)
+        go tau | isBitT tau  = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
+        go (FixT IDefault _) = return $ CExp [cexp|kz_input_int(&$cbuf, $cn)|]
+        go (FixT (I 8)  _)   = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (FixT (I 16) _)   = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (FixT (I 32) _)   = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (FixT UDefault _) = return $ CExp [cexp|kz_input_uint(&$cbuf, $cn)|]
+        go (FixT (U 8)  _)   = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (FixT (U 16) _)   = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (FixT (U 32) _)   = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go tau@FixT{}        = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                         text "are not supported."
+        go (FloatT FP16 _)   = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP32 _)   = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
+        go (FloatT FP64 _)   = return $ CExp [cexp|kz_input_double(&$cbuf, $cn)|]
+        go (TyVarT alpha _)  = lookupTyVarType alpha >>= go
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
+                       | tau == int32T -> return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
+              _                        -> do ctau <- cgType tau
+                                             return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
+
+        go tau = do
+            ctau <- cgType tau
+            return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
     cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
     cgOutput tau cbuf cn cval = go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT n tau _)          = do ci <- cgNatType n
-                                        cgOutput tau cbuf (cn*ci) cval
-        go tau | isBitT tau        = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
-        go (FixT (I 8)  _)         = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
-        go (FixT (I 16) _)         = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
-        go (FixT (I 32) _)         = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
-        go (FixT (U 8)  _)         = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
-        go (FixT (U 16) _)         = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
-        go (FixT (U 32) _)         = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
-        go tau@FixT{}              = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
-                                     text "are not supported."
-        go (FloatT FP16 _)         = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP32 _)         = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
-        go (FloatT FP64 _)         = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
-        go (StructT "complex16" _) = appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
-        go (StructT "complex32" _) = appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
-        go (TyVarT alpha _)        = lookupTyVarType alpha >>= go
-        go tau                     = do ctau <- cgType tau
-                                        appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+        go (ArrT n tau _)     = do ci <- cgNatType n
+                                   cgOutput tau cbuf (cn*ci) cval
+        go tau | isBitT tau   = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
+        go (FixT IDefault  _) = appendStm [cstm|kz_output_int(&$cbuf, $cval, $cn);|]
+        go (FixT (I 8)  _)    = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (FixT (I 16) _)    = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (FixT (I 32) _)    = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (FixT UDefault  _) = appendStm [cstm|kz_output_uint(&$cbuf, $cval, $cn);|]
+        go (FixT (U 8)  _)    = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (FixT (U 16) _)    = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (FixT (U 32) _)    = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go tau@FixT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+                                          text "are not supported."
+        go (FloatT FP16 _)    = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP32 _)    = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
+        go (FloatT FP64 _)    = appendStm [cstm|kz_output_double(&$cbuf, $cval, $cn);|]
+        go (TyVarT alpha _)   = lookupTyVarType alpha >>= go
+
+        go tau_struct@StructT{} = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just tau | tau == int16T -> appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
+                       | tau == int32T -> appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
+              _                        -> do ctau <- cgType tau
+                                             appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
+
+        go tau = do
+            ctau <- cgType tau
+            appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
 
 cgInitThreads :: Located a => a -> Cg l ()
 cgInitThreads x =
@@ -450,59 +475,57 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
+cgDecl decl@(StructD s [] flds l) k = do
+    withSummaryContext decl $ do
+        cflds <- mapM cgField flds
+        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
+    extendStructs [StructDef s [] flds l] k
+  where
+    cgField :: (Field, Type) -> Cg l C.FieldGroup
+    cgField (fld, tau) = do
+        ctau <- cgType tau
+        return [csdecl|$ty:ctau $id:(cfield fld);|]
+
+cgDecl decl@StructD{} _k =
+    withSummaryContext decl $
+    faildoc $ text "Cannot compile polymorphic structs."
+
 cgDecl (LetD decl _) k = do
     flags <- askConfig
     cgLocalDecl flags decl k
 
 cgDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
     extendVars [(bVar f, tau)] $ do
-    func' <- memoize func
-    extendVarCExps [(bVar f, CFun func')] k
+    cf <- cvar f
+    extendVarCExps [(bVar f, CExp [cexp|$id:cf|])] $ do
+      appendTopComment (ppr f <+> colon <+> align (ppr tau))
+      withSummaryContext decl $
+          extendLetFun f tvks vbs tau_ret $ do
+          let nats          =  map fst tvks
+          (cnats, cparams1) <- unzip <$> mapM cgNatTyVar nats
+          (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
+          cres_ident        <- gensym "let_res"
+          cblock <- inNewCodeBlock_ $
+                    extendTyVarCExps (nats `zip` cnats) $
+                    extendVarCExps  (map fst vbs `zip` cvbs) $ do
+                    cres <- if isReturnedByRef tau_res
+                            then return $ CExp [cexp|$id:cres_ident|]
+                            else cgTemp "let_res" tau_res
+                    cgExp e $ multishotBind tau_res cres
+                    when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
+                        appendStm $ rl l [cstm|return $cres;|]
+          if isReturnedByRef tau_res
+            then do cretparam <- cgRetParam tau_res (Just cres_ident)
+                    appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
+            else do ctau_res <- cgType tau_res
+                    appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
+      k
   where
     tau_res :: Type
     tau_res = resultType tau_ret
 
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
-
-    -- Compile a bound function given its arguments. This will be called in some
-    -- future context. It may be called with different type arguments---we need
-    -- to specialize the function at each distinct type.
-    func :: FunC l
-    func taus = do
-        appendTopComment (ppr f <+> colon <+> align (ppr tau))
-        withSummaryContext decl $
-          extendLetFun f tvks vbs tau_ret $
-          splitNats tvks taus $ \nats nonNats -> do
-            cf                <- funName (bVar f) nonNats
-            (cnats, cparams1) <- unzip <$> mapM cgNatTyVar nats
-            (cvbs,  cparams2) <- unzip <$> mapM cgVarBind vbs
-            cres_ident        <- gensym "let_res"
-            cblock <- inNewCodeBlock_ $
-                      extendTyVarCExps (nats `zip` cnats) $
-                      extendVarCExps  (map fst vbs `zip` cvbs) $ do
-                      cres <- if isReturnedByRef tau_res
-                              then return $ CExp [cexp|$id:cres_ident|]
-                              else cgTemp "let_res" tau_res
-                      cgExp e $ multishotBind tau_res cres
-                      when (not (isUnitT tau_res) && not (isReturnedByRef tau_res)) $
-                          appendStm $ rl l [cstm|return $cres;|]
-            if isReturnedByRef tau_res
-              then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                      appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
-              else do ctau_res <- cgType tau_res
-                      appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
-            return $ CExp [cexp|$id:cf|]
-      where
-        -- Generate a name for the monomorphized function.
-        funName :: Var -> [Type] -> Cg l C.Id
-        funName f taus = do
-            theta     <- askTyVarTypeSubst
-            let taus' = subst theta mempty taus
-            reloc (f <--> taus') <$> gensym (zencode (fname taus'))
-          where
-            fname :: [Type] -> Doc
-            fname taus = cat $ punctuate (char '_') $ ppr f : map (pprPrec appPrec1) taus
 
 cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
     extendExtFuns [(bVar f, tau)] $
@@ -518,9 +541,7 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
                   appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
           else do ctau_ret <- cgType tau_res
                   appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
-    let func :: FunC l
-        func _taus = return $ CExp [cexp|$id:cf|]
-    extendVarCExps [(bVar f, CFun func)] k
+    k
   where
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
@@ -530,17 +551,6 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
 
     cf :: C.Id
     cf = C.Id ("__kz_" ++ namedString f) l
-
-cgDecl decl@(LetStructD s flds l) k = do
-    withSummaryContext decl $ do
-        cflds <- mapM cgField flds
-        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
-    extendStructs [StructDef s flds l] k
-  where
-    cgField :: (Field, Type) -> Cg l C.FieldGroup
-    cgField (fld, tau) = do
-        ctau <- cgType tau
-        return [csdecl|$ty:ctau $id:(cfield fld);|]
 
 cgDecl (LetCompD v tau comp _) k =
     extendVars [(bVar v, tau)] $
@@ -568,18 +578,18 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
     -- need to create a copy of the body of the computation function with fresh
     -- labels before we compile it.
     funcompc :: forall a . FunCompC l a
-    funcompc taus es klbl k =
-        withInstantiatedTyVars tau_ret $
-          splitNats tvks taus $ \nats _ -> do
-          comp' <- traverse uniquify comp
-          cnats <- mapM (cgNatType . tyVarT) nats
-          ces   <- mapM cgArg es
-          extendTyVars tvks $
-            extendVars  vbs $
-            extendTyVarCExps (nats `zip` cnats) $
-            extendVarCExps   (map fst vbs `zip` ces) $ do
-            useLabels (compUsedLabels comp')
-            cgComp comp' klbl k
+    funcompc _taus es klbl k =
+        withInstantiatedTyVars tau_ret $ do
+        comp'      <- traverse uniquify comp
+        let nats   =  map fst tvks
+        (cnats, _) <- unzip <$> mapM cgNatTyVar (map fst tvks)
+        ces        <- mapM cgArg es
+        extendTyVars tvks $
+          extendVars  vbs $
+          extendTyVarCExps (nats `zip` cnats) $
+          extendVarCExps   (map fst vbs `zip` ces) $ do
+          useLabels (compUsedLabels comp')
+          cgComp comp' klbl k
       where
         cgArg :: Arg l -> Cg l (CExp l)
         cgArg (ExpA e) =
@@ -591,22 +601,6 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
           where
             compc :: forall a . CompC l a
             compc = cgComp comp
-
--- Perform type application and return type variables of kind Nat, which become
--- function arguments, and the non-Nat types to which the function was applied.
-splitNats :: forall l a . [(TyVar, Kind)]
-          -> [Type]
-          -> ([TyVar] -> [Type] -> Cg l a)
-          -> Cg l a
-splitNats tvks taus k =
-    extendTyVarTypes nonNats $ k nats (map snd nonNats)
-  where
-    nats :: [TyVar]
-    nats = [alpha | (alpha, kappa) <- tvks, isNatK kappa]
-
-    nonNats :: [(TyVar, Type)]
-    nonNats = [(alpha, tau) | ((alpha, kappa), tau) <- tvks `zip` taus,
-                              not (isNatK kappa)]
 
 cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
@@ -640,12 +634,14 @@ cgLocalDecl _flags LetViewLD{} _k =
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.
 cgConst :: forall l . Const -> Cg l (CExp l)
-cgConst UnitC        = return CVoid
-cgConst (BoolC b)    = return $ CBool b
-cgConst (FixC I{} x) = return $ CInt (fromIntegral x)
-cgConst (FixC U{} x) = return $ CInt (fromIntegral x)
-cgConst (FloatC _ f) = return $ CFloat (toRational f)
-cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
+cgConst UnitC             = return CVoid
+cgConst (BoolC b)         = return $ CBool b
+cgConst (FixC IDefault x) = return $ CInt (fromIntegral x)
+cgConst (FixC I{} x)      = return $ CInt (fromIntegral x)
+cgConst (FixC UDefault x) = return $ CInt (fromIntegral x)
+cgConst (FixC U{} x)      = return $ CInt (fromIntegral x)
+cgConst (FloatC _ f)      = return $ CFloat (toRational f)
+cgConst (StringC s)       = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
@@ -664,8 +660,8 @@ cgConst (ReplicateC n c) = do
 cgConst (EnumC tau) =
     cgConst =<< ArrayC <$> enumType tau
 
-cgConst (StructC s flds) = do
-    StructDef _ fldDefs _ <- lookupStruct s
+cgConst (StructC struct taus flds) = do
+    fldDefs <- lookupStructFields struct taus
     -- We must be careful to generate initializers in the same order as the
     -- struct's fields are declared, which is why we map 'cgField' over the
     -- struct's field definitions rather than mapping it over the values as
@@ -921,58 +917,98 @@ cgExp e k =
     go (VarE v _) k =
         lookupVarCExp v >>= runKont k
 
-    go (UnopE op e l) k = do
-        tau <- inferExp e
-        ce  <- cgExpOneshot e
-        cgUnop tau ce op >>= runKont k
+    go e0@(UnopE op e l) k = withSummaryContext e0 $ do
+        tau       <- inferExp e
+        ce        <- cgExpOneshot e
+        maybe_tau <- runMaybeT $ checkComplexT tau
+        case maybe_tau of
+          Just{}  -> cgUnopComplex op ce >>= runKont k
+          Nothing -> cgUnop op tau ce  >>= runKont k
       where
-        cgUnop :: Type -> CExp l -> Unop -> Cg l (CExp l)
-        cgUnop tau_from ce (Cast tau_to) =
+        cgUnop ::  Unop -> Type -> CExp l -> Cg l (CExp l)
+        cgUnop (Cast tau_to) tau_from ce =
             cgCast ce tau_from tau_to
 
-        cgUnop tau_from ce (Bitcast tau_to) =
+        cgUnop (Bitcast tau_to) tau_from ce =
             cgBitcast ce tau_from tau_to
 
-        cgUnop (RefT (ArrT n _ _) _) _ Len =
+        cgUnop Len (RefT (ArrT n _ _) _) _ =
             cgNatType n
 
-        cgUnop (ArrT n _ _) _ Len =
+        cgUnop Len (ArrT n _ _) _ =
             cgNatType n
 
-        cgUnop _ _ Len =
+        cgUnop Len _ _ =
             panicdoc $
             text "cgUnop: tried to take the length of a non-array type!"
 
-        cgUnop tau ce op | isComplexT tau =
-            go op
-          where
-            go :: Unop -> Cg l (CExp l)
-            go Neg = do
-                (a, b) <- unComplex ce
-                cgComplex (-a) (-b)
+        cgUnop Lnot _ ce = return $ CExp [cexp|!$ce|]
 
-            go op =
-                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
+        cgUnop Bnot tau ce
+          | isBitT tau = return $ CExp [cexp|!$ce|]
+          | otherwise  = return $ CExp [cexp|~$ce|]
 
-        cgUnop _   ce Lnot              = return $ CExp [cexp|!$ce|]
-        cgUnop tau ce Bnot | isBitT tau = return $ CExp [cexp|!$ce|]
-                           | otherwise  = return $ CExp [cexp|~$ce|]
-        cgUnop _   ce Neg               = return $ CExp [cexp|-$ce|]
+        cgUnop Neg _ ce = return $ CExp [cexp|-$ce|]
+
+        cgUnop Abs FixT{}          ce = return $ CExp [cexp|abs($ce)|]
+        cgUnop Abs (FloatT FP32 _) ce = return $ CExp [cexp|fabsf($ce)|]
+        cgUnop Abs (FloatT FP64 _) ce = return $ CExp [cexp|fabs($ce)|]
+
+        cgUnop Exp   (FloatT FP32 _) ce = return $ CExp [cexp|expf($ce)|]
+        cgUnop Exp   (FloatT FP64 _) ce = return $ CExp [cexp|exp($ce)|]
+        cgUnop Exp2  (FloatT FP32 _) ce = return $ CExp [cexp|exp2f($ce)|]
+        cgUnop Exp2  (FloatT FP64 _) ce = return $ CExp [cexp|exp2($ce)|]
+        cgUnop Expm1 (FloatT FP32 _) ce = return $ CExp [cexp|expm1f($ce)|]
+        cgUnop Expm1 (FloatT FP64 _) ce = return $ CExp [cexp|expm1($ce)|]
+
+        cgUnop Log   (FloatT FP32 _) ce = return $ CExp [cexp|logf($ce)|]
+        cgUnop Log   (FloatT FP64 _) ce = return $ CExp [cexp|log($ce)|]
+        cgUnop Log2  (FloatT FP32 _) ce = return $ CExp [cexp|log2f($ce)|]
+        cgUnop Log2  (FloatT FP64 _) ce = return $ CExp [cexp|log2($ce)|]
+        cgUnop Log1p (FloatT FP32 _) ce = return $ CExp [cexp|log1pf($ce)|]
+        cgUnop Log1p (FloatT FP64 _) ce = return $ CExp [cexp|log1p($ce)|]
+
+        cgUnop Sqrt (FloatT FP32 _) ce = return $ CExp [cexp|sqrtf($ce)|]
+        cgUnop Sqrt (FloatT FP64 _) ce = return $ CExp [cexp|sqrt($ce)|]
+
+        cgUnop Sin  (FloatT FP32 _) ce = return $ CExp [cexp|sinf($ce)|]
+        cgUnop Sin  (FloatT FP64 _) ce = return $ CExp [cexp|sin($ce)|]
+        cgUnop Cos  (FloatT FP32 _) ce = return $ CExp [cexp|cosf($ce)|]
+        cgUnop Cos  (FloatT FP64 _) ce = return $ CExp [cexp|cos($ce)|]
+        cgUnop Tan  (FloatT FP32 _) ce = return $ CExp [cexp|tanf($ce)|]
+        cgUnop Tan  (FloatT FP64 _) ce = return $ CExp [cexp|tan($ce)|]
+        cgUnop Asin (FloatT FP32 _) ce = return $ CExp [cexp|asinf($ce)|]
+        cgUnop Asin (FloatT FP64 _) ce = return $ CExp [cexp|asin($ce)|]
+        cgUnop Acos (FloatT FP32 _) ce = return $ CExp [cexp|acosf($ce)|]
+        cgUnop Acos (FloatT FP64 _) ce = return $ CExp [cexp|acos($ce)|]
+        cgUnop Atan (FloatT FP32 _) ce = return $ CExp [cexp|atanf($ce)|]
+        cgUnop Atan (FloatT FP64 _) ce = return $ CExp [cexp|atan($ce)|]
+
+        cgUnop Sinh  (FloatT FP32 _) ce = return $ CExp [cexp|sinhf($ce)|]
+        cgUnop Sinh  (FloatT FP64 _) ce = return $ CExp [cexp|sinh($ce)|]
+        cgUnop Cosh  (FloatT FP32 _) ce = return $ CExp [cexp|coshf($ce)|]
+        cgUnop Cosh  (FloatT FP64 _) ce = return $ CExp [cexp|cosh($ce)|]
+        cgUnop Tanh  (FloatT FP32 _) ce = return $ CExp [cexp|tanhf($ce)|]
+        cgUnop Tanh  (FloatT FP64 _) ce = return $ CExp [cexp|tanh($ce)|]
+        cgUnop Asinh (FloatT FP32 _) ce = return $ CExp [cexp|asinhf($ce)|]
+        cgUnop Asinh (FloatT FP64 _) ce = return $ CExp [cexp|asinh($ce)|]
+        cgUnop Acosh (FloatT FP32 _) ce = return $ CExp [cexp|acoshf($ce)|]
+        cgUnop Acosh (FloatT FP64 _) ce = return $ CExp [cexp|acosh($ce)|]
+        cgUnop Atanh (FloatT FP32 _) ce = return $ CExp [cexp|atanhf($ce)|]
+        cgUnop Atanh (FloatT FP64 _) ce = return $ CExp [cexp|atanh($ce)|]
+
+        cgUnop _ _ _ =
+            faildoc $ text "Cannot compile operator."
+
+        cgUnopComplex :: Unop ->  CExp l -> Cg l (CExp l)
+        cgUnopComplex Neg ce = do
+            (a, b) <- unComplex ce
+            cgComplex (-a) (-b)
+
+        cgUnopComplex op _ce =
+            panicdoc $ text "Illegal operation on complex value:" <+> ppr op
 
         cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
-        cgCast ce tau_from tau_to | isComplexT tau_from && isComplexT tau_to = do
-            (a, b) <- unComplex ce
-            ctemp  <- cgTemp "cast_complex" tau_to
-            appendStm $ rl l [cstm|$ctemp.re = $a;|]
-            appendStm $ rl l [cstm|$ctemp.im = $b;|]
-            return ctemp
-
-        cgCast ce _ tau_to | isComplexT tau_to = do
-            ctemp <- cgTemp "cast_complex" tau_to
-            appendStm $ rl l [cstm|$ctemp.re = $ce;|]
-            appendStm $ rl l [cstm|$ctemp.im = $ce;|]
-            return ctemp
-
         cgCast ce _ tau_to | isBitT tau_to =
             return $ CExp $ rl l [cexp|$ce > 0 ? 1 : 0|]
 
@@ -1005,50 +1041,16 @@ cgExp e k =
             caddr   <- cgAddrOf tau_from ce
             return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
-    go (BinopE op e1 e2 l) k = do
+    go e0@(BinopE op e1 e2 l) k = withSummaryContext e0 $ do
         tau <- inferExp e1
         ce1 <- cgExpOneshot e1
         ce2 <- cgExpOneshot e2
-        cgBinop tau ce1 ce2 op >>= runKont k
+        maybe_tau <- runMaybeT $ checkComplexT tau
+        case maybe_tau of
+          Just{}  -> cgBinopComplex ce1 ce2 op >>= runKont k
+          Nothing -> cgBinop tau ce1 ce2 op >>= runKont k
       where
         cgBinop :: Type -> CExp l -> CExp l -> Binop -> Cg l (CExp l)
-        cgBinop tau ce1 ce2 op | isComplexT tau =
-            go op
-          where
-            go :: Binop -> Cg l (CExp l)
-            go Eq = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                return $ CExp $ rl l [cexp|$a == $c && $b == $d|]
-
-            go Ne = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                return $ CExp $ rl l [cexp|$a != $c || $b != $d|]
-
-            go Add = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a+c) (b+d)
-
-            go Sub = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a-c) (b-d)
-
-            go Mul = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex (a*c - b*d) (b*c + a*d)
-
-            go Div = do
-                (a, b) <- unComplex ce1
-                (c, d) <- unComplex ce2
-                cgComplex ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
-
-            go op =
-                panicdoc $ text "Illegal operation on complex values:" <+> ppr op
-
         cgBinop _ ce1 ce2 Lt   = return $ CExp $ rl l [cexp|$ce1 <  $ce2|]
         cgBinop _ ce1 ce2 Ne   = return $ CExp $ rl l [cexp|$ce1 != $ce2|]
         cgBinop _ ce1 ce2 Le   = return $ CExp $ rl l [cexp|$ce1 <= $ce2|]
@@ -1115,6 +1117,40 @@ cgExp e k =
                     cbits <- cgExpOneshot e >>= cgBits (arrKnownT w bitT)
                     return (CBits $ CExp $ rl (locOf l) cbits, w)
 
+        cgBinopComplex :: CExp l -> CExp l -> Binop -> Cg l (CExp l)
+        cgBinopComplex ce1 ce2 Eq = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            return $ CExp $ rl l [cexp|$a == $c && $b == $d|]
+
+        cgBinopComplex ce1 ce2 Ne = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            return $ CExp $ rl l [cexp|$a != $c || $b != $d|]
+
+        cgBinopComplex ce1 ce2 Add = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a+c) (b+d)
+
+        cgBinopComplex ce1 ce2 Sub = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a-c) (b-d)
+
+        cgBinopComplex ce1 ce2 Mul = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex (a*c - b*d) (b*c + a*d)
+
+        cgBinopComplex ce1 ce2 Div = do
+            (a, b) <- unComplex ce1
+            (c, d) <- unComplex ce2
+            cgComplex ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
+
+        cgBinopComplex _ce1 _ce2 op =
+            panicdoc $ text "Illegal operation on complex values:" <+> ppr op
+
     go (IfE e1 e2 e3 _) k = do
         tau <- inferExp e2
         cgIf tau e1 (cgExp e2) (cgExp e3) k
@@ -1127,10 +1163,9 @@ cgExp e k =
     go (CallE f taus es l) k = do
         (tvks, _, tau_ret) <- lookupVar f >>= unFunT
         let tau_res        =  resultType tau_ret
-        func               <- lookupVarCExp f >>= unCFun
-        cf                 <- func taus
-        let (nats, ntaus)  =  unzip $ tyApplyNats tvks taus
-        cnats              <- mapM cgNatType ntaus
+        cf                 <- lookupVarCExp f
+        let nats           =  map fst tvks
+        cnats              <- mapM cgNatType taus
         ces                <- mapM cgArg es
         if isReturnedByRef tau_res
           then extendTyVarCExps (nats `zip` cnats) $ do
@@ -1139,13 +1174,6 @@ cgExp e k =
                k'
           else runKont k $ CExp [cexp|$cf($args:cnats, $args:ces)|]
       where
-        -- Perform type application and return the type variables that are of
-        -- kind Nat along with the types to which they are bound.
-        tyApplyNats :: [(TyVar, Kind)] -> [Type] -> [(TyVar, Type)]
-        tyApplyNats tvks taus =
-            [(alpha, tau) | ((alpha, kappa), tau) <- tvks `zip` taus,
-                            isNatK kappa]
-
         cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
             tau <- inferExp e
@@ -1189,7 +1217,7 @@ cgExp e k =
             cgExpOneshot e_body
         runKont k CVoid
 
-    go (ForE _ v v_tau e_start e_len e_body l) k = do
+    go (ForE _ v v_tau gint e_body l) k = do
         cv     <- cvar v
         cv_tau <- cgType v_tau
         extendVars [(v, v_tau)] $
@@ -1197,11 +1225,10 @@ cgExp e k =
             appendDecl $ rl l [cdecl|$ty:cv_tau $id:cv;|]
             cgLoop Nothing $ do
                 useCId cv
-                ce_start <- cgExpOneshot e_start
-                ce_len   <- cgExpOneshot e_len
-                citems   <- inNewBlock_ $ cgExpVoid e_body
+                (ce_start, ce_test) <- cgGenInterval gint
+                citems              <- inNewBlock_ $ cgExpVoid e_body
                 appendStm $ rl l [cstm|for ($id:cv = $ce_start;
-                                            $id:cv < $(ce_start + ce_len);
+                                            $(ce_test cv);
                                             $id:cv++) {
                                          $items:citems
                                        }|]
@@ -1232,7 +1259,7 @@ cgExp e k =
           Nothing  -> calias e <$> cgIdx tau ce1 cn ce2 >>= runKont k
           Just len -> calias e <$> cgSlice tau ce1 cn ce2 len >>= runKont k
 
-    go e@(StructE _ flds l) k =
+    go e@(StructE _ _ flds l) k =
         case unConstE e of
           Nothing -> CStruct <$> mapM cgField flds >>= runKont k
           Just c  -> cgExp (ConstE c l) k
@@ -1263,9 +1290,11 @@ cgExp e k =
         cgPrintScalar UnitT{}           _  = appendStm $ rl l [cstm|printf("()");|]
         cgPrintScalar BoolT{}           ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
         cgPrintScalar (FixT (U 1)  _)   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
+        cgPrintScalar (FixT IDefault _) ce = appendStm $ rl l [cstm|printf("%d", (int) $ce);|]
         cgPrintScalar (FixT (I w) _)    ce
           | w <= 32                        = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
           | otherwise                      = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
+        cgPrintScalar (FixT UDefault _) ce = appendStm $ rl l [cstm|printf("%u", (unsigned) $ce);|]
         cgPrintScalar (FixT (U w) _)    ce
           | w <= 32                        = appendStm $ rl l [cstm|printf("%lu", (long) $ce);|]
           | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (long long) $ce);|]
@@ -1273,8 +1302,15 @@ cgExp e k =
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
         cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
 
-        cgPrintScalar (StructT s _) ce | isComplexStruct s =
-            appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+        cgPrintScalar tau_struct@StructT{} ce = do
+            maybe_tau <- runMaybeT $ checkComplexT tau_struct
+            case maybe_tau of
+              Just (FixT IDefault _) -> appendStm $ rl l [cstm|printf("(%d,%d)", (int) $ce.re, (int) $ce.im);|]
+              Just (FixT I{} _)      -> appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+              Just (FixT UDefault _) -> appendStm $ rl l [cstm|printf("(%u,%u)", (unsigned) $ce.re, (unsigned) $ce.im);|]
+              Just (FixT U{} _)      -> appendStm $ rl l [cstm|printf("(%lu,%lu)", (unsigned long) $ce.re, (unsigned long) $ce.im);|]
+              Just FloatT{}          -> appendStm $ rl l [cstm|printf("(%Lf,%Lf)", (long double) $ce.re, (long double) $ce.im);|]
+              _                      -> faildoc $ text "Cannot print type:" <+> ppr tau_struct
 
         cgPrintScalar tau _ =
             faildoc $ text "Cannot print type:" <+> ppr tau
@@ -1329,6 +1365,25 @@ cgConstExp e (CInit cinit) k = do
 
 cgConstExp _ ce k =
     runKont k ce
+
+-- | Generate loop initialization and loop test for a 'GenInterval Exp'.
+cgGenInterval :: IsLabel l
+              => GenInterval Exp
+              -> Cg l (CExp l, C.Id -> CExp l)
+cgGenInterval (FromToInclusive e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i <= $ce2|])
+
+cgGenInterval (FromToExclusive e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i < $ce2|])
+
+cgGenInterval (StartLen e1 e2 _) = do
+    ce1 <- cgExpOneshot e1
+    ce2 <- cgExpOneshot e2
+    return (ce1, \i -> CExp [cexp|$id:i < $(ce1 + ce2)|])
 
 -- | Generate code for a looping construct. Any identifiers used in the body of
 -- the loop are marked as used again after code for the body has been generated
@@ -1395,13 +1450,6 @@ cgComplex cre cim =
 -- and imaginary parts.
 unComplex :: CExp l -> Cg l (CExp l, CExp l)
 unComplex ce = (,) <$> cgProj ce "re" <*> cgProj ce "im"
-
-unCFun :: CExp l -> Cg l (FunC l)
-unCFun (CFun func) =
-    return func
-
-unCFun ce =
-    panicdoc $ nest 2 $ text "unCFunC: not a CFun:" </> ppr ce
 
 unCComp :: CExp l -> Cg l (CompC l a)
 unCComp (CComp compc) =
@@ -1476,7 +1524,10 @@ cgType BoolT{} =
     return [cty|typename uint8_t|]
 
 cgType tau | isBitT tau =
-    return bIT_ARRAY_ELEM_TYPE
+    cgBitElemType
+
+cgType (FixT IDefault _) =
+    return [cty|int|]
 
 cgType tau@(FixT (I w) _)
     | w <= 8    = return [cty|typename int8_t|]
@@ -1484,6 +1535,9 @@ cgType tau@(FixT (I w) _)
     | w <= 32   = return [cty|typename int32_t|]
     | w <= 64   = return [cty|typename int64_t|]
     | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
+
+cgType (FixT UDefault _) =
+    return [cty|unsigned|]
 
 cgType tau@(FixT (U w) _)
     | w <= 8    = return [cty|typename uint8_t|]
@@ -1504,11 +1558,22 @@ cgType (FloatT FP64 _) =
 cgType StringT{} =
     return [cty|char*|]
 
-cgType (StructT s l) =
-    return [cty|typename $id:(cstruct s l)|]
+cgType tau_struct@(StructT struct [] l) = do
+    maybe_tau <- runMaybeT $ checkComplexT tau_struct
+    case maybe_tau of
+      Just tau | tau == int8T  -> return [cty|typename complex8_t|]
+               | tau == int16T -> return [cty|typename complex16_t|]
+               | tau == int32T -> return [cty|typename complex32_t|]
+               | tau == int64T -> return [cty|typename complex64_t|]
+      _ -> return [cty|typename $id:(cstruct struct l)|]
 
-cgType (ArrT (NatT n _) tau _) | isBitT tau =
-    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+cgType tau@StructT{} =
+    withSummaryContext tau $
+    faildoc $ text "Cannot compile polymorphic struct types."
+
+cgType (ArrT (NatT n _) tau _) | isBitT tau = do
+    cbitElemType <- cgBitElemType
+    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
 cgType (ArrT (NatT n _) tau _) = do
     ctau <- cgType tau
@@ -1523,8 +1588,9 @@ cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
 cgType tau@ST{} =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
-cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
-    return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$int:(bitArrayLen n)]|]
+cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
+    cbitElemType <- cgBitElemType
+    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
 cgType (RefT (ArrT (NatT n _) tau _) _) = do
     ctau <- cgType tau
@@ -1552,6 +1618,10 @@ cgType tau@ForallT{} =
 
 cgType (TyVarT alpha _) =
     lookupTyVarType alpha >>= cgType
+
+-- | Compute the type of array elements in a bit array.
+cgBitElemType :: Cg l C.Type
+cgBitElemType = cgType (FixT (U bIT_ARRAY_ELEM_BITS) noLoc)
 
 cgFunType :: [TyVar] -> [Type] -> Type -> Cg l C.Type
 cgFunType nats args ret = do
@@ -1582,8 +1652,9 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg l C.Type
-    cgParamType (ArrT (NatT n _) tau _) | isBitT tau =
-        return [cty|const $ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgParamType (ArrT (NatT n _) tau _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|const $ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
@@ -1593,8 +1664,9 @@ cgParam tau maybe_cv = do
         ctau <- cgType tau
         return [cty|const $ty:ctau*|]
 
-    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgParamType (RefT (ArrT (NatT n _) tau _) _) = do
         ctau <- cgType tau
@@ -1619,8 +1691,9 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg l C.Type
-    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau =
-        return [cty|$ty:bIT_ARRAY_ELEM_TYPE[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau = do
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
     cgRetParamType (ArrT (NatT n _) tau _) = do
         ctau <- cgType tau
@@ -1805,20 +1878,20 @@ cgStorage cv (ArrT n tau _) init | isBitT tau =
   where
     go :: CExp l -> Cg l (C.InitGroup, CExp l)
     go (CInt n) | init = do
-        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)] = {0};|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:cbitElemType $id:cv[$int:(bitArrayLen n)] = {0};|]
         return (cinit, ce)
 
     go (CInt n) = do
-        let cinit = rl cv [cdecl|$tyqual:calign $ty:ctau $id:cv[$int:(bitArrayLen n)];|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$tyqual:calign $ty:cbitElemType $id:cv[$int:(bitArrayLen n)];|]
         return (cinit, ce)
 
     go cn = do
-        let cinit = rl cv [cdecl|$ty:ctau* $id:cv = ($ty:ctau*) alloca($(bitArrayLen cn) * sizeof($ty:ctau));|]
-        appendStm [cstm|memset($id:cv, 0, $(bitArrayLen cn)*sizeof($ty:ctau));|]
+        cbitElemType <- cgBitElemType
+        let cinit = rl cv [cdecl|$ty:cbitElemType* $id:cv = ($ty:cbitElemType*) alloca($(bitArrayLen cn) * sizeof($ty:cbitElemType));|]
+        appendStm [cstm|memset($id:cv, 0, $(bitArrayLen cn)*sizeof($ty:cbitElemType));|]
         return (cinit, ce)
-
-    ctau :: C.Type
-    ctau = bIT_ARRAY_ELEM_TYPE
 
     ce :: CExp l
     ce = CExp $ rl cv [cexp|$id:cv|]
@@ -2052,23 +2125,22 @@ cgComp comp klbl = cgSteps (unComp comp)
             cgLabel l_inner
         newScope $ runKont k CVoid
 
-    cgStep (ForC l _ v v_tau e_start e_len c_body sloc) _ k = do
+    cgStep (ForC l _ v v_tau gint c_body sloc) _ k = do
         cv     <- cvar v
         cv_tau <- cgType v_tau
-        extendVars     [(v, v_tau)] $
+        extendVars [(v, v_tau)] $
             extendVarCExps [(v, CExp [cexp|$id:cv|])] $ do
             appendDecl $ rl sloc [cdecl|$ty:cv_tau $id:cv;|]
             cgLoop (Just l) $ do
                 useCId cv
-                ce_start <- cgExpOneshot e_start
-                ce_len   <- cgExpOneshot e_len
-                citems   <- inNewBlock_ $ do
-                            l_inner <- gensym "inner_fork"
-                            cgCompVoid c_body l_inner
-                            cgLabel l_inner
+                (ce_start, ce_test) <- cgGenInterval gint
+                citems              <- inNewBlock_ $ do
+                                       l_inner <- gensym "inner_fork"
+                                       cgCompVoid c_body l_inner
+                                       cgLabel l_inner
                 appendStm $
                   rl sloc [cstm|for ($id:cv = $ce_start;
-                                     $id:cv < $(ce_start + ce_len);
+                                     $(ce_test cv);
                                      $id:cv++) {
                                   $items:citems
                                 }|]
@@ -2867,12 +2939,13 @@ cgAssign tau ce1 ce2 = do
                 return ce
 
     assign _ tau cv (CStruct flds) = do
-        structdef <- checkStructOrRefStructT tau >>= lookupStruct
-        mapM_ (cgAssignField structdef) flds
+        (struct, taus) <- checkStructOrRefStructT tau
+        structdef      <- lookupStruct struct
+        mapM_ (cgAssignField structdef taus) flds
       where
-        cgAssignField :: StructDef -> (Field, CExp l) -> Cg l ()
-        cgAssignField structdef (fld, ce) = do
-            tau <- checkStructFieldT structdef fld
+        cgAssignField :: StructDef -> [Type] -> (Field, CExp l) -> Cg l ()
+        cgAssignField structdef taus (fld, ce) = do
+            tau <- checkStructFieldT structdef taus fld
             cgAssign tau (CExp [cexp|$cv.$id:(cfield fld)|]) ce
 
     -- We call 'cgDeref' on @cv@ because the lhs of an assignment is a ref type and
@@ -3055,10 +3128,11 @@ cgLower tau = go
         return cv
 
     go ce@CBits{} = do
-        ctau <- cgBitcastType tau
-        cv   <- cgCTemp ce "bits" ctau Nothing
+        cbitElemType <- cgBitElemType
+        ctau         <- cgBitcastType tau
+        cv           <- cgCTemp ce "bits" ctau Nothing
         appendStm [cstm|$cv = $ce;|]
-        return $ CExp [cexp|($ty:bIT_ARRAY_ELEM_TYPE *) &$cv|]
+        return $ CExp [cexp|($ty:cbitElemType *) &$cv|]
 
     go (CAlias _ ce) =
         go ce

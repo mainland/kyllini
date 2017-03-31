@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Check.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -27,6 +27,7 @@ module KZC.Check.Monad (
     extendStructs,
     lookupStruct,
     maybeLookupStruct,
+    tyAppStruct,
 
     extendVars,
     lookupVar,
@@ -70,8 +71,8 @@ import Control.Monad.State
 import Data.Foldable (toList)
 import Data.IORef
 import Data.Loc
+import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
 import qualified Data.Set as Set
 #if !MIN_VERSION_base(4,8,0)
 import Data.Traversable (Traversable, traverse)
@@ -86,6 +87,7 @@ import KZC.Check.Types
 import KZC.Config
 import qualified KZC.Expr.Syntax as E
 import KZC.Monad
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.SetLike
@@ -103,6 +105,7 @@ newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)
@@ -175,6 +178,33 @@ maybeLookupStruct :: Z.Struct -> Ti (Maybe StructDef)
 maybeLookupStruct s =
     asks (Map.lookup s . structs)
 
+-- | Perform type application of a struct to type arguments and return the
+-- resulting type and its fields.
+tyAppStruct :: StructDef -> [Type] -> Ti (Type, [(Z.Field, Type)])
+tyAppStruct sdef taus = go sdef
+  where
+    theta :: Map TyVar Type
+    theta = Map.fromList (map fst tvks `zip` taus)
+
+    tvks :: [Tvk]
+    tvks = case sdef of
+             StructDef _ tvks _ _ -> tvks
+             TypeDef _ tvks _ _   -> tvks
+
+    go (StructDef s _ flds _) =
+        return (structT s taus, map fst flds `zip` subst theta mempty (map snd flds))
+
+    go (TypeDef s tvks (SynT _ tau' _) l) =
+        go (TypeDef s tvks tau' l)
+
+    go (TypeDef s _ (StructT s' taus' _) _) = do
+        sdef'        <- lookupStruct s'
+        (tau', flds) <- tyAppStruct sdef' taus'
+        return (synT (structT s taus) tau', flds)
+
+    go (TypeDef s _ tau' _) =
+        return (synT (structT s taus) tau', [])
+
 extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do
     mtvs <- fvs <$> compress (map snd vtaus)
@@ -198,7 +228,7 @@ askEnvMtvs =
           Just tau  -> (Set.toList . fvs) <$> compress tau
           Nothing   -> return [mtv]
 
-extendTyVars :: [(TyVar, Kind)] -> Ti a -> Ti a
+extendTyVars :: [Tvk] -> Ti a -> Ti a
 extendTyVars = extendEnv tyVars (\env x -> env { tyVars = x })
 
 lookupTyVar :: TyVar -> Ti Kind
@@ -271,9 +301,9 @@ relevantBindings =
     go :: Maybe [Z.Var] -> Ti Doc
     go (Just vs@(_:_)) = do
         taus <- mapM lookupVar vs >>= sanitizeTypes
-        return $ line <>
-            nest 2 (text "Relevant bindings:" </>
-                    stack (zipWith pprBinding vs taus))
+        return $ nest 2 $
+          text "Relevant bindings:" </>
+          stack (zipWith pprBinding vs taus)
     go _ =
         return Text.PrettyPrint.Mainland.empty
 
@@ -340,8 +370,11 @@ instance Compress Type where
     compress tau@StringT{} =
         pure tau
 
-    compress tau@StructT{} =
-        pure tau
+    compress (StructT s taus l) =
+        StructT s <$> compress taus <*> pure l
+
+    compress (SynT tau1 tau2 l) =
+        SynT <$> compress tau1 <*> compress tau2 <*> pure l
 
     compress (ArrT tau1 tau2 l) =
         ArrT <$> compress tau1 <*> compress tau2 <*> pure l

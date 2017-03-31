@@ -78,6 +78,7 @@ library
     KZC.Monad.SEFKT
     KZC.Label
     KZC.LambdaLift
+    KZC.Monomorphize
     KZC.Name
     KZC.Optimize.Autolut
     KZC.Optimize.Coalesce
@@ -102,7 +103,6 @@ library
     KZC.Util.EnumSet
     KZC.Util.Error
     KZC.Util.Logic
-    KZC.Util.Memoize
     KZC.Util.Pretty
     KZC.Util.SetLike
     KZC.Util.Staged
@@ -158,6 +158,8 @@ library
 
   ghc-options:
     -Wall -fno-warn-name-shadowing
+    -- XXX Ugh! Needed for unifyCompiledExpTypes in src/KZC/Check.hs
+    -fmax-pmcheck-iterations=5000000
 
   hs-source-dirs:
     src

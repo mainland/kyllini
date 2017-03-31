@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.LambdaLift
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -39,6 +39,7 @@ import KZC.Config
 import KZC.Expr.Lint
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.SetLike
@@ -69,6 +70,7 @@ newtype LiftM m a = LiftM { unLiftM:: ReaderT LiftEnv (StateT LiftState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -129,6 +131,11 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: MonadTc m => Decl -> (Maybe Decl -> LiftM m a) -> LiftM m a
+liftDecl (StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $ do
+    appendTopDecl $ StructD s taus flds l
+    k Nothing
+
 liftDecl decl@(LetD v tau e l) k | isPureT tau =
     extendFunFvs [(v, (v, []))] $ do
     e' <- extendLet v tau $
@@ -184,11 +191,6 @@ liftDecl (LetExtFunD f ns vbs tau_ret l) k =
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-liftDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $ do
-    appendTopDecl $ LetStructD s flds l
-    k Nothing
-
 nonFunFvs :: MonadTc m => Decl -> LiftM m [(Var, Type)]
 nonFunFvs decl = do
     vs        <- (fvs decl <\\>) <$> askTopVars
@@ -243,10 +245,9 @@ liftExp (AssignE e1 e2 l) =
 liftExp (WhileE e1 e2 l) =
     WhileE <$> liftExp e1 <*> liftExp e2 <*> pure l
 
-liftExp (ForE ann v tau e1 e2 e3 l) =
-    ForE ann v tau <$> liftExp e1
-                   <*> liftExp e2
-                   <*> extendVars [(v, tau)] (liftExp e3)
+liftExp (ForE ann v tau int e l) =
+    ForE ann v tau <$> traverse liftExp int
+                   <*> extendVars [(v, tau)] (liftExp e)
                    <*> pure l
 
 liftExp (ArrayE es l) =
@@ -255,8 +256,8 @@ liftExp (ArrayE es l) =
 liftExp (IdxE e1 e2 len l) =
     IdxE <$> liftExp e1 <*> liftExp e2 <*> pure len <*> pure l
 
-liftExp (StructE s flds l) =
-    StructE s <$> mapM liftField flds <*> pure l
+liftExp (StructE s taus flds l) =
+    StructE s taus <$> mapM liftField flds <*> pure l
   where
     liftField :: (Field, Exp) -> LiftM m (Field, Exp)
     liftField (f, e) = (,) <$> pure f <*> liftExp e

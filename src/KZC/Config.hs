@@ -3,7 +3,7 @@
 
 -- |
 -- Module      :  KZC.Config
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -139,6 +139,7 @@ data DumpFlag = DumpCPP
               | DumpRate
               | DumpCoalesce
               | DumpViews
+              | DumpMono
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 data TraceFlag = TracePhase
@@ -160,6 +161,7 @@ data TraceFlag = TracePhase
                | TraceRate
                | TraceCoalesce
                | TraceViews
+               | TraceMono
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 type FlagSet a = ES.Set a

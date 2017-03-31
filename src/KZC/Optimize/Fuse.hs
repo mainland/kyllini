@@ -8,7 +8,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Fuse
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -67,6 +67,7 @@ import KZC.Name
 import KZC.Optimize.Autolut (autolutComp)
 import KZC.Optimize.FloatViews (floatViewsComp)
 import KZC.Optimize.Simplify (simplComp)
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Logic
 import KZC.Util.SetLike
@@ -169,6 +170,7 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -656,8 +658,8 @@ runRight lss rss = do
             mzero
 
     -- See Note [Fusing For Loops]
-    run (ls@(ForC _ _ v_l tau_l ei_l elen_l c_l _):lss)
-        (rs@(ForC _ _ v_r tau_r ei_r elen_r c_r s):rss)
+    run (ls@(ForC _ _ v_l tau_l gint_l c_l _):lss)
+        (rs@(ForC _ _ v_r tau_r gint_r c_r s):rss)
       | Just i_l   <- fromIntE ei_l
       , Just len_l <- fromIntE elen_l
       , Just i_r   <- fromIntE ei_r
@@ -677,12 +679,15 @@ runRight lss rss = do
         guard (null lss')
         l_joint <- joint (ls:lss) (rs:rss)
         traceFusion $ text "runRight: merged for loops"
-        let step = ForC l_joint AutoUnroll v_r tau_r ei_r elen_r
+        let step = ForC l_joint AutoUnroll v_r tau_r (startLenGenInt ei_r elen_r)
                    (subst1 (v_l /-> varE v_r + asintE tau_r (i_l - i_r)) c)
                    s
         jointStep step $ runRight lss rss
+      where
+        (ei_l, elen_l) = toStartLenGenInt gint_l
+        (ei_r, elen_r) = toStartLenGenInt gint_r
 
-    run lss@(RepeatC _ _ c_l _:_) rss@(ForC _ _ _ _ _ elen c_r _:_)
+    run lss@(RepeatC _ _ c_l _:_) rss@(ForC _ _ _ _ gint c_r _:_)
       | Just m   <- compOutP c_l
       , Just len <- fromIntE elen
       , Just n   <- compInP c_r
@@ -693,13 +698,17 @@ runRight lss rss = do
       -- Repeat loop needs to produce at least as fast as for loop consumes
       , m >= n*len
       = runLeftUnroll lss rss
+      where
+        (_, elen) = toStartLenGenInt gint
 
-    run lss (rs@(ForC l ann v tau e1 e2 c s) : rss) =
+    run lss (rs@(ForC l ann v tau gint c s) : rss) =
         ifte splitRight (\steps -> runRight lss (steps ++ rss)) $
         ifte splitLeft  (\steps -> runRight (steps ++ tail lss) (rs:rss)) $
         ifte join       (\step -> jointStep step $ runRight lss rss)
         diverge `mplus` stepLeft lss
       where
+        (e1, e2) = toStartLenGenInt gint
+
         splitRight :: F l m [Step l]
         splitRight =
             unComp <$> trySplitFor rs lss compInP compOutP
@@ -720,7 +729,7 @@ runRight lss rss = do
             guardLeftConvergence lss lss'
             traceFusion $ text "runRight: joined right for"
             l' <- joint lss (rs:rss)
-            return $ ForC l' ann v tau e1 e2 c' s
+            return $ ForC l' ann v tau (startLenGenInt e1 e2) c' s
 
         diverge :: F l m [Step l]
         diverge = do
@@ -753,11 +762,13 @@ runRight lss rss = do
                 m <- rateComp (mkComp [step]) >>= compOutM
                 return $ m == N 0
 
-    run (ls@(ForC l ann v tau e1 e2 c s) : lss) rss =
+    run (ls@(ForC l ann v tau gint c s) : lss) rss =
         ifte split (\steps -> runRight (steps ++ lss) rss) $
         ifte join  (\step -> jointStep step $ runRight lss rss)
         diverge
       where
+        (e1, e2) = toStartLenGenInt gint
+
         split :: F l m [Step l]
         split =
             unComp <$> trySplitFor ls rss compOutP compInP
@@ -772,7 +783,7 @@ runRight lss rss = do
             guardRightConvergence rss rss'
             traceFusion $ text "runRight: joined left for"
             l' <- joint (ls:lss) rss
-            return $ ForC l' AutoUnroll v tau e1 e2 c' s
+            return $ ForC l' AutoUnroll v tau (startLenGenInt e1 e2) c' s
 
         diverge :: F l m [Step l]
         diverge = do
@@ -904,7 +915,7 @@ trySplitFor :: forall l m . (IsLabel l, MonadTc m)
             -> (Comp l -> F l m Int)
             -> (Comp l -> F l m Int)
             -> F l m (Comp l)
-trySplitFor (ForC l _ann v tau ei elen c_for _) ss_loop fromP_for fromP_loop = do
+trySplitFor (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
     i       <- tryFromIntE ei
     len_for <- tryFromIntE elen
     -- Extract loop body and iteration count
@@ -934,6 +945,9 @@ trySplitFor (ForC l _ann v tau ei elen c_for _) ss_loop fromP_for fromP_loop = d
       text "Split for loop:" </> indent 2 (ppr c_for')
     return c_for'
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     loopBody :: [Step l] -> F l m (Int, Comp l)
     loopBody [] =
         mzero
@@ -941,9 +955,11 @@ trySplitFor (ForC l _ann v tau ei elen c_for _) ss_loop fromP_for fromP_loop = d
     loopBody (RepeatC _ _ c _:_) =
         return (1, c)
 
-    loopBody (ForC _ _ _ _ _ e c _:_) = do
+    loopBody (ForC _ _ _ _ gint c _:_) = do
         len <- tryFromIntE e
         return (len, c)
+      where
+        (_, e) = toStartLenGenInt gint
 
     loopBody ss = do
         c <- rateComp (mkComp ss)
@@ -1249,6 +1265,7 @@ newtype UT m a = UT { runUT :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 
@@ -1280,6 +1297,7 @@ newtype UE m a = UE { runUE :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 

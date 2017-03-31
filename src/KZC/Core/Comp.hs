@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Core.Comp
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -19,6 +19,7 @@ module KZC.Core.Comp (
     localdeclsC,
     whileC,
     forC,
+    forGenC,
     liftC,
     returnC,
     bindC,
@@ -74,9 +75,16 @@ whileC e c  = do
     return $ mkComp [WhileC l e c (e `srcspan` c)]
 
 forC :: (IsLabel l, MonadUnique m) => UnrollAnn -> Var -> Type -> Exp -> Exp -> Comp l -> m (Comp l)
-forC ann v tau e1 e2 c = do
+forC ann v tau e1 e2 c =
+    forGenC ann v tau gint c
+  where
+    gint :: GenInterval Exp
+    gint = StartLen e1 e2 (e1 `srcspan` e2)
+
+forGenC :: (IsLabel l, MonadUnique m) => UnrollAnn -> Var -> Type -> GenInterval Exp -> Comp l -> m (Comp l)
+forGenC ann v tau gint c = do
     l <- gensym "fork"
-    return $ mkComp [ForC l ann v tau e1 e2 c (v `srcspan` tau `srcspan` e1 `srcspan` e2 `srcspan` c)]
+    return $ mkComp [ForC l ann v tau gint c (v `srcspan` tau `srcspan` gint `srcspan` c)]
 
 liftC :: (IsLabel l, MonadUnique m)  => Exp -> m (Comp l)
 liftC e = do

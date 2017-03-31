@@ -8,14 +8,13 @@
 
 -- |
 -- Module      :  KZC.Backend.C.CExp
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Backend.C.CExp (
     Kont(..),
 
-    FunC,
     CompC,
     FunCompC,
 
@@ -27,7 +26,14 @@ module KZC.Backend.C.CExp (
     unCInt,
     unCIdx,
     unCSlice,
-    unBitCSliceBase
+    unBitCSliceBase,
+
+    bIT_ARRAY_ELEM_BITS,
+
+    bitArrayLen,
+    bitArrayIdxOff,
+    bitArrayIdx,
+    bitArrayOff
   ) where
 
 import Prelude hiding (elem)
@@ -43,7 +49,6 @@ import KZC.Backend.C.Util
 import KZC.Core.Lint (refPath)
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Platform
 import KZC.Quote.C
 import KZC.Util.Pretty
 import KZC.Util.Staged
@@ -73,14 +78,6 @@ data Kont l a -- | A continuation that may only be called once because calling
               -- to place the result. The result will have been placed in the
               -- destination before the continuation is called.
               | MultishotBindK Type (CExp l) (CExp l -> Cg l a)
-
--- | A  function compiler, which produces a compiled call to a function when
--- given the appropriate arguments.
-type FunC l =  [Type] -- Type arguments
-            -> Cg l (CExp l)
-
-instance Show (FunC l) where
-    show _ = "<fun>"
 
 -- | A computation compiler, which produces a compiled computation when given
 -- the appropriate arguments.
@@ -131,8 +128,6 @@ data CExp l = CVoid
             -- | The 'CAlias' data constructor indicates a 'CExp' that aliases
             -- an expression. See Note [Aliasing].
             | CAlias Exp (CExp l)
-            -- | A function.
-            | CFun (FunC l)
             -- | A computation.
             | CComp (forall a . CompC l a)
             -- | A computation function.
@@ -154,7 +149,6 @@ instance Located (CExp l) where
     locOf (CStruct flds)      = locOf (map snd flds)
     locOf (CBits ce)          = locOf ce
     locOf (CAlias _ ce)       = locOf ce
-    locOf CFun{}              = NoLoc
     locOf CComp{}             = NoLoc
     locOf CFunComp{}          = NoLoc
 
@@ -172,7 +166,6 @@ instance Relocatable (CExp l) where
     reloc l (CStruct flds)             = CStruct [(f, reloc l ce) | (f, ce) <- flds]
     reloc l (CBits ce)                 = CBits (reloc l ce)
     reloc l (CAlias e ce)              = CAlias e (reloc l ce)
-    reloc _ ce@CFun{}                  = ce
     reloc _ ce@CComp{}                 = ce
     reloc _ ce@CFunComp{}              = ce
 
@@ -418,8 +411,6 @@ instance C.ToExp (CExp l) where
                                        text "toExp: cannot convert CStruct to a C expression" </> ppr ce
     toExp (CBits ce)                 = C.toExp ce
     toExp (CAlias _ ce)              = C.toExp ce
-    toExp ce@CFun{}                   = locatedError $
-                                       text "toExp: cannot convert CFun to a C expression" </> ppr ce
     toExp ce@CComp{}                 = locatedError $
                                        text "toExp: cannot convert CComp to a C expression" </> ppr ce
     toExp ce@CFunComp{}              = locatedError $
@@ -444,7 +435,6 @@ instance Pretty (CExp l) where
     ppr (CStruct flds)           = pprStruct comma equals flds
     ppr (CBits e)                = ppr e
     ppr (CAlias _ e)             = ppr e
-    ppr CFun{}                   = text "<fun>"
     ppr CComp{}                  = text "<comp>"
     ppr CFunComp{}               = text "<fun comp>"
 
@@ -595,3 +585,27 @@ lowerSlice tau carr cidx len | isBitT tau =
 
 lowerSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]
+
+-- | Number of bits per bit array element.
+bIT_ARRAY_ELEM_BITS :: Num a => a
+bIT_ARRAY_ELEM_BITS = 8
+
+-- | Given the length of a bit array, return the number of bit array elements in
+-- the array's representation.
+bitArrayLen :: Integral a => a -> a
+bitArrayLen n = (n + (bIT_ARRAY_ELEM_BITS-1)) `quot` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit array
+-- element holding the bit and the index of the bit within that element.
+bitArrayIdxOff :: Integral a => a -> (a, a)
+bitArrayIdxOff i = i `quotRem` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit array
+-- element holding the bit.
+bitArrayIdx :: Integral a => a -> a
+bitArrayIdx i = i `quot` bIT_ARRAY_ELEM_BITS
+
+-- | Given the index of a bit in a bit array, return the index of the bit within
+-- the bit array element holding the bit.
+bitArrayOff :: Integral a => a -> a
+bitArrayOff i = i `rem` bIT_ARRAY_ELEM_BITS

@@ -1,6 +1,6 @@
 -- |
 -- Module      : KZC.Globals
--- Copyright   : (c) 2015 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -16,7 +16,10 @@ module KZC.Globals (
     expertTypes,
 
     setStrictClassic,
-    strictClassic
+    strictClassic,
+
+    setClassicDialect,
+    classicDialect
   ) where
 
 import Control.Monad.Trans (MonadIO(..))
@@ -66,3 +69,16 @@ setStrictClassic flag = liftIO $ writeIORef gStrictClassic flag
 strictClassic :: Bool
 {-# NOINLINE strictClassic #-}
 strictClassic = unsafePerformIO $ readIORef gStrictClassic
+
+gClassicDialect :: IORef Bool
+{-# NOINLINE gClassicDialect #-}
+gClassicDialect = unsafePerformIO $ newIORef False
+
+setClassicDialect :: MonadIO m => Bool -> m ()
+setClassicDialect flag = liftIO $ writeIORef gClassicDialect flag
+
+-- | A 'Bool' flag indicating whether we are currently using the classic Ziria
+-- dialect. This should only be used for pretty-printing.
+classicDialect :: Bool
+{-# NOINLINE classicDialect #-}
+classicDialect = unsafePerformIO $ readIORef gClassicDialect

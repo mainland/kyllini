@@ -2,7 +2,7 @@
 
 -- |
 -- Module      : KZC.Expr.Enum
--- Copyright   : (c) 2016 Drexel University
+-- Copyright   : (c) 2016-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -120,14 +120,14 @@ streamTypeValues (FloatT FP64 _) = return $ Stream f 0
     hi :: Word64
     hi = 2^(64::Int) - 1
 
-streamTypeValues (StructT sname _) = do
-    StructDef _ flds _ <- lookupStruct sname
+streamTypeValues (StructT struct taus _) = do
+    flds <- lookupStructFields struct taus
     let fs :: [Field]
         taus :: [Type]
         (fs, taus) = unzip flds
 
         mkStruct :: Vector Const -> Const
-        mkStruct cs = StructC sname (fs `zip` V.toList cs)
+        mkStruct cs = StructC struct taus (fs `zip` V.toList cs)
     ss0 <- V.fromList <$> mapM streamTypeValues taus
     return $ Stream.map mkStruct $ streamProduct ss0
 

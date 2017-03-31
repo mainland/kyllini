@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Check.Types
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -21,8 +21,10 @@ module KZC.Check.Types (
     ipIsIntegral,
     FP(..),
     StructDef(..),
+    structDefTvks,
     Type(..),
     Kind(..),
+    Tvk,
     MetaTv(..),
     MetaKv(..),
     R(..),
@@ -57,7 +59,6 @@ import KZC.Expr.Syntax (IP(..),
                         FP(..))
 import KZC.Globals
 import KZC.Name
-import KZC.Platform
 import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -67,8 +68,13 @@ import KZC.Vars
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Show)
 
-data StructDef = StructDef Z.Struct [(Z.Field, Type)] !SrcLoc
+data StructDef = StructDef Z.Struct [Tvk] [(Z.Field, Type)] !SrcLoc
+               | TypeDef Z.Struct [Tvk] Type !SrcLoc
   deriving (Eq, Ord, Show)
+
+structDefTvks :: StructDef -> [Tvk]
+structDefTvks (StructDef _ tvks _ _) = tvks
+structDefTvks (TypeDef _ tvks _ _)   = tvks
 
 data Type -- Base Types
           = UnitT !SrcLoc
@@ -76,7 +82,8 @@ data Type -- Base Types
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
-          | StructT Z.Struct !SrcLoc
+          | StructT Z.Struct [Type] !SrcLoc
+          | SynT Type Type !SrcLoc
           | ArrT Type Type !SrcLoc
 
           -- omega types
@@ -96,7 +103,7 @@ data Type -- Base Types
           | NatT Int !SrcLoc
 
           -- forall type
-          | ForallT [(TyVar, Kind)] Type !SrcLoc
+          | ForallT [Tvk] Type !SrcLoc
 
           -- Type variables
           | TyVarT TyVar !SrcLoc
@@ -128,6 +135,8 @@ data Kind = TauK R -- ^ Base types, including arrays of base types
 data R = R Traits
        | MetaR MetaRv
   deriving (Eq, Ord, Show)
+
+type Tvk = (TyVar, Kind)
 
 -- | Traits meta-variable
 data MetaRv = MetaRv Uniq Traits TraitsRef
@@ -183,8 +192,14 @@ instance Pretty TyVar where
     ppr (TyVar n) = ppr n
 
 instance Pretty StructDef where
-    ppr (StructDef s fields _) =
+    ppr (StructDef s [] fields _) | classicDialect =
         text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
+
+    ppr (StructDef s tvks fields _) =
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct semi colon fields
+
+    ppr (TypeDef s tvks tau _) =
+        text "type" <+> ppr s <> pprForall tvks <+> text "=" <+> ppr tau
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -196,13 +211,17 @@ instance Pretty Type where
     pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I w) _)
-      | w == dEFAULT_INT_WIDTH = text "int"
-      | otherwise              = text "int" <> ppr w
+    pprPrec _ (FixT IDefault _) =
+        text "int"
 
-    pprPrec _ (FixT (U w) _)
-      | w == dEFAULT_INT_WIDTH = text "uint"
-      | otherwise              = text "uint" <> ppr w
+    pprPrec _ (FixT (I w) _) =
+        text "int" <> ppr w
+
+    pprPrec _ (FixT UDefault _) =
+        text "uint"
+
+    pprPrec _ (FixT (U w) _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
@@ -216,9 +235,12 @@ instance Pretty Type where
     pprPrec _ (StringT _) =
         text "string"
 
-    pprPrec p (StructT s _) =
+    pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s
+        text "struct" <+> ppr s <> pprTyApp taus
+
+    pprPrec p (SynT _ tau' _) =
+        pprPrec p tau'
 
     pprPrec p (ArrT ind tau@StructT{} _) =
         parensIf (p > tyappPrec) $
@@ -303,9 +325,14 @@ instance Pretty R where
     pprPrec p (MetaR mrv) = text (showsPrec p mrv "")
 
 -- | Pretty-print a forall quantifier
-pprForall :: [(TyVar, Kind)] -> Doc
+pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
+
+-- | Pretty-print a type application. This is used for struct instantiation.
+pprTyApp :: [Type] -> Doc
+pprTyApp []   = empty
+pprTyApp taus = angles $ commasep (map ppr taus)
 
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
@@ -313,10 +340,10 @@ pprKindSig (tau, TauK (R ts)) | nullTraits ts =
     ppr tau
 
 pprKindSig (tau, TauK traits) =
-    parens (ppr tau <+> colon <+> ppr traits)
+    ppr tau <+> colon <+> ppr traits
 
 pprKindSig (tau, kappa) =
-    parens (ppr tau <+> colon <+> ppr kappa)
+    ppr tau <+> colon <+> ppr kappa
 
 {------------------------------------------------------------------------------
  -
@@ -330,7 +357,8 @@ instance Fvs Type TyVar where
     fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
-    fvs (StructT _ _)               = mempty
+    fvs (StructT _ taus _)          = fvs taus
+    fvs (SynT _ tau' _)             = fvs tau'
     fvs (ArrT tau1 tau2 _)          = fvs tau1 <> fvs tau2
     fvs (C tau _)                   = fvs tau
     fvs (T _)                       = mempty
@@ -349,7 +377,8 @@ instance Fvs Type MetaTv where
     fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
-    fvs (StructT _ _)               = mempty
+    fvs (StructT _ taus _)          = fvs taus
+    fvs (SynT _ tau' _)             = fvs tau'
     fvs (ArrT tau1 tau2 _)          = fvs tau1 <> fvs tau2
     fvs (C tau _)                   = fvs tau
     fvs (T _)                       = mempty
@@ -378,7 +407,8 @@ instance HasVars Type TyVar where
     allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
-    allVars (StructT _ _)               = mempty
+    allVars (StructT _ taus _)          = allVars taus
+    allVars (SynT _ tau' _)             = allVars tau'
     allVars (ArrT tau1 tau2 _)          = allVars tau1 <> allVars tau2
     allVars (C tau _)                   = allVars tau
     allVars (T _)                       = mempty
@@ -399,7 +429,8 @@ instance HasVars Type MetaTv where
     allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
-    allVars (StructT _ _)               = mempty
+    allVars (StructT _ taus _)          = allVars taus
+    allVars (SynT _ tau' _)             = allVars tau'
     allVars (ArrT tau1 tau2 _)          = allVars tau1 <> allVars tau2
     allVars (C tau _)                   = allVars tau
     allVars (T _)                       = mempty
@@ -429,8 +460,11 @@ instance Subst Type MetaTv Type where
     substM tau@StringT{} =
         pure tau
 
-    substM tau@StructT{} =
-        pure tau
+    substM (StructT s taus l) =
+        StructT s <$> substM taus <*> pure l
+
+    substM (SynT tau tau' l) =
+        SynT <$> substM tau <*> substM tau' <*> pure l
 
     substM (ArrT tau1 tau2 l) =
         ArrT <$> substM tau1 <*> substM tau2 <*> pure l
@@ -479,8 +513,11 @@ instance Subst Type TyVar Type where
     substM tau@StringT{} =
         pure tau
 
-    substM tau@StructT{} =
-        pure tau
+    substM (StructT s taus l) =
+        StructT s <$> substM taus <*> pure l
+
+    substM (SynT tau tau' l) =
+        SynT <$> substM tau <*> substM tau' <*> pure l
 
     substM (ArrT tau1 tau2 l) =
         ArrT <$> substM  tau1 <*> substM tau2 <*> pure l

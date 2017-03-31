@@ -1,6 +1,6 @@
 -- |
 -- Module      : Language.Ziria.Parser.Monad
--- Copyright   : (c) 2014-2016 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -15,7 +15,7 @@ module Language.Ziria.Parser.Monad (
     runP,
     evalP,
 
-    PState,
+    PState(..),
     emptyPState,
 
     addStructIdentifier,
@@ -29,6 +29,8 @@ module Language.Ziria.Parser.Monad (
     getLexState,
     getCurToken,
     setCurToken,
+
+    getDialect,
 
     alexGetCharOrFail,
     peekChar,
@@ -61,6 +63,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Tokens
 import Language.Ziria.Parser.Exceptions
+import Language.Ziria.Syntax (Dialect(..))
 
 import KZC.Util.Pretty
 
@@ -68,16 +71,19 @@ data PState = PState
     { input             :: !AlexInput
     , curToken          :: L Token
     , lexState          :: ![Int]
+    , dialect           :: !Dialect
     , structIdentifiers :: !(Set Symbol)
     }
 
-emptyPState :: T.Text
+emptyPState :: Dialect
+            -> T.Text
             -> Pos
             -> PState
-emptyPState buf pos = PState
+emptyPState d buf pos = PState
     { input             = alexInput buf pos
     , curToken          = error "no token"
     , lexState          = [0]
+    , dialect           = d
     , structIdentifiers = Set.fromList ["complex", "complex8", "complex16", "complex32", "complex64"]
     }
 
@@ -167,6 +173,9 @@ getCurToken = gets curToken
 
 setCurToken :: L Token -> P ()
 setCurToken tok = modify $ \s -> s { curToken = tok }
+
+getDialect :: P Dialect
+getDialect = gets dialect
 
 alexGetCharOrFail :: AlexInput -> P (Char, AlexInput)
 alexGetCharOrFail inp =

@@ -7,13 +7,16 @@
 
 -- |
 -- Module      : Language.Ziria.Syntax
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Syntax (
+    Dialect(..),
+
     Var(..),
+    TyVar(..),
     Field(..),
     Struct(..),
 
@@ -29,6 +32,7 @@ module Language.Ziria.Syntax (
     Decl(..),
     Const(..),
     Exp(..),
+    GenInterval(..),
     Stm(..),
 
     VarBind(..),
@@ -41,9 +45,12 @@ module Language.Ziria.Syntax (
     Unop(..),
     Binop(..),
 
-    StructDef(..),
     Type(..),
-    Ind(..),
+    Kind,
+    Tvk,
+    Trait(..),
+    Traits,
+    traits,
 
     isComplexStruct
   ) where
@@ -56,12 +63,35 @@ import Data.Monoid
 import Data.String
 import Text.PrettyPrint.Mainland
 
+import KZC.Globals
 import KZC.Name
+import KZC.Platform
+import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
 import KZC.Util.Summary
 import KZC.Util.Uniq
 import KZC.Vars
+
+data Dialect = Classic
+             | Kyllini
+  deriving (Eq, Ord, Read, Show, Enum, Bounded)
+
+newtype TyVar = TyVar Name
+  deriving (Eq, Ord, Read, Show)
+
+instance IsString TyVar where
+    fromString s = TyVar $ fromString s
+
+instance Named TyVar where
+    namedSymbol (TyVar n) = namedSymbol n
+
+    mapName f (TyVar n) = TyVar (f n)
+
+instance Gensym TyVar where
+    gensymAt s l = TyVar <$> gensymAt s (locOf l)
+
+    uniquify (TyVar n) = TyVar <$> uniquify n
 
 newtype Var = Var Name
   deriving (Eq, Ord, Read, Show)
@@ -102,21 +132,29 @@ instance Named Struct where
     mapName f (Struct n) = Struct (f n)
 
 -- | Fixed-point format.
-data IP = I (Maybe Int)
-        | U (Maybe Int)
+data IP = IDefault
+        | I Int
+        | UDefault
+        | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: IP -> Maybe Int
-ipWidth (I w) = w
-ipWidth (U w) = w
+ipWidth :: MonadPlatform m => IP -> m Int
+ipWidth IDefault = asksPlatform platformIntWidth
+ipWidth (I w)    = return w
+ipWidth UDefault = asksPlatform platformIntWidth
+ipWidth (U w)    = return w
 
 ipIsSigned :: IP -> Bool
-ipIsSigned I{} = True
-ipIsSigned U{} = False
+ipIsSigned IDefault{} = True
+ipIsSigned I{}        = True
+ipIsSigned UDefault{} = False
+ipIsSigned U{}        = False
 
 ipIsIntegral :: IP -> Bool
-ipIsIntegral I{} = True
-ipIsIntegral U{} = True
+ipIsIntegral IDefault{} = True
+ipIsIntegral I{}        = True
+ipIsIntegral UDefault{} = True
+ipIsIntegral U{}        = True
 
 -- | Floating-point width
 data FP = FP16
@@ -130,13 +168,14 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = LetD Var (Maybe Type) Exp !SrcLoc
-          | LetRefD Var Type (Maybe Exp) !SrcLoc
-          | LetFunD Var [VarBind] Exp !SrcLoc
+data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          | TypeD Struct [Tvk] Type !SrcLoc
+          | LetD Var (Maybe Type) Exp !SrcLoc
+          | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
+          | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
-          | LetStructD StructDef !SrcLoc
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [VarBind] Exp !SrcLoc
+          | LetFunCompD Var (Maybe (Int, Int)) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -152,7 +191,7 @@ data Exp = ConstE Const !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
-         | LetRefE Var Type (Maybe Exp) Exp !SrcLoc
+         | LetRefE Var (Maybe Type) (Maybe Exp) Exp !SrcLoc
          | LetDeclE Decl Exp !SrcLoc
          -- Functions
          | CallE Var [Exp] !SrcLoc
@@ -162,12 +201,12 @@ data Exp = ConstE Const !SrcLoc
          | WhileE Exp Exp !SrcLoc
          | UntilE Exp Exp !SrcLoc
          | TimesE UnrollAnn Exp Exp !SrcLoc
-         | ForE UnrollAnn Var (Maybe Type) Exp Exp Exp !SrcLoc
+         | ForE UnrollAnn Var (Maybe Type) GenInterval Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | StructE Struct [(Field, Exp)] !SrcLoc
+         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -187,6 +226,14 @@ data Exp = ConstE Const !SrcLoc
          | MapE VectAnn Var (Maybe Type) !SrcLoc
          | FilterE Var (Maybe Type) !SrcLoc
          | StmE [Stm] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data GenInterval -- | The interval @e1..e2@, /inclusive/ of @e2@.
+                 = FromToInclusive Exp Exp !SrcLoc
+                 -- | The interval @e1..e2@, /exclusive/ of @e2@.
+                 | FromToExclusive Exp Exp !SrcLoc
+                 -- | The interval that starts at @e1@ and has length @e2@.
+                 | StartLen Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Stm = LetS Decl !SrcLoc
@@ -223,9 +270,55 @@ data VectAnn = AutoVect
 data Unop = Lnot      -- ^ Logical not
           | Bnot      -- ^ Bitwise not
           | Neg       -- ^ Negation
+          | Abs       -- ^ Absolute value
+          | Exp       -- ^ e^x
+          | Exp2      -- ^ 2^x
+          | Expm1     -- ^ e^x - 1
+          | Log       -- ^ Log base e
+          | Log2      -- ^ Log base 2
+          | Log1p     -- ^ Log base e of (1 + x)
+          | Sqrt      -- ^ Square root
+          | Sin
+          | Cos
+          | Tan
+          | Asin
+          | Acos
+          | Atan
+          | Sinh
+          | Cosh
+          | Tanh
+          | Asinh
+          | Acosh
+          | Atanh
           | Cast Type -- ^ Type case
           | Len       -- ^ Array length
   deriving (Eq, Ord, Read, Show)
+
+-- | Returns 'True' if 'Unop' application should be pretty-printed as a function
+-- call.
+isFunUnop :: Unop -> Bool
+isFunUnop Abs   = True
+isFunUnop Exp   = True
+isFunUnop Exp2  = True
+isFunUnop Expm1 = True
+isFunUnop Log   = True
+isFunUnop Log2  = True
+isFunUnop Log1p = True
+isFunUnop Sqrt  = True
+isFunUnop Sin   = True
+isFunUnop Cos   = True
+isFunUnop Tan   = True
+isFunUnop Asin  = True
+isFunUnop Acos  = True
+isFunUnop Atan  = True
+isFunUnop Sinh  = True
+isFunUnop Cosh  = True
+isFunUnop Tanh  = True
+isFunUnop Asinh = True
+isFunUnop Acosh = True
+isFunUnop Atanh = True
+isFunUnop Len   = True
+isFunUnop _     = False
 
 data Binop = Eq   -- ^ Equal
            | Ne   -- ^ Not-equal
@@ -249,33 +342,37 @@ data Binop = Eq   -- ^ Equal
            | Pow  -- ^ Power
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
-          | ArrT Ind Type !SrcLoc
-          | StructT Struct !SrcLoc
+          | ArrT Type Type !SrcLoc
+          | StructT Struct [Type] !SrcLoc
           | C Type !SrcLoc
           | T !SrcLoc
           | ST Type Type Type !SrcLoc
+
+          -- | Natural number types
+          | NatT Int !SrcLoc
+
+          -- | Reference to array length
+          | LenT Var !SrcLoc
+
+          -- | Elided type
+          | UnknownT !SrcLoc
+
+          | ForallT [Tvk] Type !SrcLoc
+          | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Ind = NatT Int !SrcLoc
-         | ArrI Var !SrcLoc
-         | NoneI !SrcLoc
-  deriving (Eq, Ord, Read, Show)
+type Kind = Traits
+
+type Tvk = (TyVar, Maybe Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
+isComplexStruct "Complex" = True
+isComplexStruct _         = False
 
 {------------------------------------------------------------------------------
  -
@@ -284,51 +381,57 @@ isComplexStruct _           = False
  ------------------------------------------------------------------------------}
 
 instance Fvs Decl Var where
-    fvs d@(LetD _ _ e _)           = fvs e <\\> binders d
-    fvs d@(LetRefD _ _ e _)        = fvs e <\\> binders d
-    fvs d@(LetFunD _ _ e _)        = fvs e <\\> binders d
-    fvs LetFunExternalD{}          = mempty
-    fvs LetStructD{}               = mempty
-    fvs d@(LetCompD _ _ _ e _)     = fvs e <\\> binders d
-    fvs d@(LetFunCompD  _ _ _ e _) = fvs e <\\> binders d
+    fvs StructD{}                      = mempty
+    fvs TypeD  {}                      = mempty
+    fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
+    fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
+    fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
+    fvs LetFunExternalD{}              = mempty
+    fvs d@(LetCompD _ _ _ e _)         = fvs e <\\> binders d
+    fvs d@(LetFunCompD  _ _ _ _ _ e _) = fvs e <\\> binders d
 
 instance Fvs Exp Var where
-    fvs ConstE{}                = mempty
-    fvs (VarE v _)              = singleton v
-    fvs (UnopE _ e _)           = fvs e
-    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE v _ e1 e2 _)      = delete v (fvs e1 <> fvs e2)
-    fvs (LetRefE v _ e1 e2 _)   = delete v (fvs e1 <> fvs e2)
-    fvs (LetDeclE decl e _)     = fvs decl <> (fvs e <\\> binders decl)
-    fvs (CallE v es _)          = singleton v <> fvs es
-    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (UntilE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (TimesE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)           = fvs es
-    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)      = fvs (map snd flds)
-    fvs (ProjE e _ _)           = fvs e
-    fvs (PrintE _ es _)         = fvs es
-    fvs ErrorE{}                = mempty
-    fvs (ReturnE _ e _)         = fvs e
-    fvs TakeE{}                 = mempty
-    fvs TakesE{}                = mempty
-    fvs (EmitE e _)             = fvs e
-    fvs (EmitsE e _)            = fvs e
-    fvs (RepeatE _ e _)         = fvs e
-    fvs (ParE _ e1 e2 _)        = fvs e1 <> fvs e2
-    fvs ReadE{}                 = mempty
-    fvs WriteE{}                = mempty
-    fvs (StandaloneE e _)       = fvs e
-    fvs (MapE _ v _ _)          = singleton v
-    fvs (FilterE v _ _)         = singleton v
-    fvs (StmE stms _)           = fvs stms
+    fvs ConstE{}              = mempty
+    fvs (VarE v _)            = singleton v
+    fvs (UnopE _ e _)         = fvs e
+    fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE v _ e1 e2 _)    = delete v (fvs e1 <> fvs e2)
+    fvs (LetRefE v _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (LetDeclE decl e _)   = fvs decl <> (fvs e <\\> binders decl)
+    fvs (CallE v es _)        = singleton v <> fvs es
+    fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (UntilE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (TimesE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
+    fvs (ArrayE es _)         = fvs es
+    fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
+    fvs (StructE _ _ flds _)  = fvs (map snd flds)
+    fvs (ProjE e _ _)         = fvs e
+    fvs (PrintE _ es _)       = fvs es
+    fvs ErrorE{}              = mempty
+    fvs (ReturnE _ e _)       = fvs e
+    fvs TakeE{}               = mempty
+    fvs TakesE{}              = mempty
+    fvs (EmitE e _)           = fvs e
+    fvs (EmitsE e _)          = fvs e
+    fvs (RepeatE _ e _)       = fvs e
+    fvs (ParE _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs ReadE{}               = mempty
+    fvs WriteE{}              = mempty
+    fvs (StandaloneE e _)     = fvs e
+    fvs (MapE _ v _ _)        = singleton v
+    fvs (FilterE v _ _)       = singleton v
+    fvs (StmE stms _)         = fvs stms
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
+
+instance Fvs GenInterval Var where
+    fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (FromToExclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 instance Fvs [Stm] Var where
     fvs []                     = mempty
@@ -337,13 +440,14 @@ instance Fvs [Stm] Var where
     fvs (ExpS e _      : cmds) = fvs e <> fvs cmds
 
 instance Binders Decl Var where
-    binders (LetD v _ _ _)               = singleton v
-    binders (LetRefD v _ _ _)            = singleton v
-    binders (LetFunD v ps _ _)           = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders (LetFunExternalD v ps _ _ _) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
-    binders LetStructD{}                 = mempty
-    binders (LetCompD v _ _ _ _)         = singleton v
-    binders (LetFunCompD v _ ps _ _ )    = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders StructD{}                     = mempty
+    binders TypeD{}                       = mempty
+    binders (LetD v _ _ _)                = singleton v
+    binders (LetRefD v _ _ _)             = singleton v
+    binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetFunExternalD v ps _ _ _)  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
+    binders (LetCompD v _ _ _ _)          = singleton v
+    binders (LetFunCompD v _ _ ps _ _ _ ) = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
 
 {------------------------------------------------------------------------------
  -
@@ -352,13 +456,14 @@ instance Binders Decl Var where
  ------------------------------------------------------------------------------}
 
 instance Summary Decl where
+    summary (StructD s _ _ _)           = text "definition of" <+> ppr s
+    summary (TypeD s _ _ _)             = text "definition of" <+> ppr s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
-    summary (LetFunD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructD s _)            = text "definition of" <+> summary s
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
-    summary (LetFunCompD v _ _ _ _)     = text "definition of" <+> ppr v
+    summary (LetFunCompD v _ _ _ _ _ _) = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -368,9 +473,6 @@ instance Summary Stm where
     summary (BindS v _ _ _) = text "definition of" <+> ppr v
     summary (ExpS e _)      = summary e
 
-instance Summary StructDef where
-    summary (StructDef s _ _) = text "struct" <+> ppr s
-
 {------------------------------------------------------------------------------
  -
  - Pretty printing
@@ -379,6 +481,9 @@ instance Summary StructDef where
 
 instance Pretty Var where
     ppr (Var n) = ppr n
+
+instance Pretty TyVar where
+    ppr (TyVar n) = ppr n
 
 instance Pretty Field where
     ppr (Field n) = ppr n
@@ -402,16 +507,44 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
+    pprPrec _ (StructD s _ fields _) | classicDialect =
+        align $ nest 2 $
+        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
+
+    pprPrec _ (StructD s tvks fields _)=
+        align $ nest 2 $
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon fields
+
+    pprPrec _ (TypeD s tvks tau _) =
+        text "type" <+> ppr s <> pprForall tvks <+> text "=" <+> ppr tau
+
+    pprPrec p (LetD v tau e _) | classicDialect =
+        parensIf (p > appPrec) $
+        text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e
+
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
-        text "let" <+> pprSig v tau <+> text "=" <+/> ppr e
+        text "let" <+> pprTypeSig v tau <+> text "=" <+/> ppr e <> semi
 
-    pprPrec p (LetRefD v tau e _) =
+    pprPrec p (LetRefD v tau e _) | classicDialect =
         parensIf (p > appPrec) $
         text "var" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e
 
-    pprPrec _ (LetFunD f ps e _) =
+    pprPrec p (LetRefD v tau e _) =
+        parensIf (p > appPrec) $
+        text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e <> semi
+
+    pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+
+    pprPrec _ (LetFunD f tvks ps _tau e _) =
+        text "fun" <+> ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
+
+    pprPrec _ (LetFunExternalD f ps tau isPure _) | classicDialect =
+        text "fun" <+> text "external" <+> pureDoc <+>
+        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+      where
+        pureDoc = if isPure then empty else text "impure"
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) =
         text "fun" <+> text "external" <+> pureDoc <+>
@@ -419,29 +552,33 @@ instance Pretty Decl where
       where
         pureDoc = if isPure then empty else text "impure"
 
-    pprPrec _ (LetStructD def _) =
-        ppr def
+    pprPrec _ (LetCompD v tau range e _) | classicDialect =
+        text "let" <+> text "comp" <+> pprRange range <+>
+        pprTypeSig v tau <+> text "=" <+/> ppr e
 
     pprPrec _ (LetCompD v tau range e _) =
         text "let" <+> text "comp" <+> pprRange range <+>
-        pprSig v tau <+> text "=" <+/> ppr e
+        pprTypeSig v tau <+> text "=" <+/> ppr e <> semi
 
-    pprPrec _ (LetFunCompD f range ps e _) =
+    -- We never see this form in the new dialect.
+    pprPrec _ (LetFunCompD f range tvks ps _tau e _) =
         text "fun" <+> text "comp" <+> pprRange range <+>
-        ppr f <> parens (commasep (map ppr ps)) <+> ppr e
+        ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
 
     pprList cls = stack (map ppr cls)
 
 instance Pretty Const where
-    pprPrec _ UnitC                 = text "()"
-    pprPrec _ (BoolC False)         = text "false"
-    pprPrec _ (BoolC True)          = text "true"
-    pprPrec _ (FixC (U (Just 1)) 0) = text "'0"
-    pprPrec _ (FixC (U (Just 1)) 1) = text "'1"
-    pprPrec _ (FixC I{} x)          = ppr x
-    pprPrec _ (FixC U{} x)          = ppr x <> char 'u'
-    pprPrec _ (FloatC _ f)          = ppr f
-    pprPrec _ (StringC s)           = text (show s)
+    pprPrec _ UnitC             = text "()"
+    pprPrec _ (BoolC False)     = text "false"
+    pprPrec _ (BoolC True)      = text "true"
+    pprPrec _ (FixC (U 1) 0)    = text "'0"
+    pprPrec _ (FixC (U 1) 1)    = text "'1"
+    pprPrec _ (FixC IDefault x) = ppr x
+    pprPrec _ (FixC I{} x)      = ppr x
+    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)      = ppr f
+    pprPrec _ (StringC s)       = text (show s)
 
 instance Pretty Exp where
     pprPrec _ (ConstE c _) =
@@ -449,6 +586,9 @@ instance Pretty Exp where
 
     pprPrec _ (VarE v _) =
         ppr v
+
+    pprPrec _ (UnopE op e _) | isFunUnop op =
+        ppr op <> parens (ppr e)
 
     pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
@@ -472,15 +612,21 @@ instance Pretty Exp where
     pprPrec p (LetE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
         nest 2 $
-        text "let" <+> pprSig v tau <+>
+        text "let" <+> pprTypeSig v tau <+>
         text "="   <+>
         ppr e1 <+/> text "in" <+> ppr e2
 
+    pprPrec p (LetRefE v tau e1 e2 _) | classicDialect =
+        parensIf (p >= appPrec) $
+        text "var" <+> pprTypeSig v tau <+>
+        pprInitializer e1 <+/>
+        text "in" <+> pprPrec appPrec1 e2
+
     pprPrec p (LetRefE v tau e1 e2 _) =
         parensIf (p >= appPrec) $
-        text "var" <+> ppr v <+> colon <+> ppr tau <+>
+        text "let mut" <+> pprTypeSig v tau <+>
         pprInitializer e1 <+/>
-        text "in"  <+> pprPrec appPrec1 e2
+        text "in" <+> pprPrec appPrec1 e2
 
     pprPrec p (LetDeclE decl e _) =
         parensIf (p >= appPrec) $
@@ -504,13 +650,16 @@ instance Pretty Exp where
         ppr ann <+> text "times" <+> ppr e1 <+/>
         ppr e2
 
-    pprPrec _ (ForE ann v tau e1 e2 e3 _) =
-        ppr ann <+> text "for" <+> pprSig v tau <+>
-        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <+/>
+    pprPrec _ (ForE ann v tau gint e3 _) =
+        ppr ann <+> text "for" <+> pprTypeSig v tau <+>
+        text "in" <+> ppr gint <+/>
         ppr e3
 
-    pprPrec _ (ArrayE es _) =
+    pprPrec _ (ArrayE es _) | classicDialect =
         text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
+
+    pprPrec _ (ArrayE es _) =
+        list (map ppr es)
 
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
@@ -518,8 +667,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct comma equals fields
+    pprPrec _ (StructE s taus fields _) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -577,14 +726,24 @@ instance Pretty Exp where
 
     pprPrec p (MapE ann v tau _) =
         parensIf (p > appPrec) $
-        text "map" <+> ppr ann <+> pprSig v tau
+        text "map" <+> ppr ann <+> pprTypeSig v tau
 
     pprPrec p (FilterE v tau _) =
         parensIf (p > appPrec) $
-        text "filter" <+> pprSig v tau
+        text "filter" <+> pprTypeSig v tau
 
     pprPrec _ (StmE stms _) =
         ppr stms
+
+instance Pretty GenInterval where
+    ppr (FromToInclusive e1 e2 _) =
+        brackets $ ppr e1 <> colon <> ppr e2
+
+    ppr (FromToExclusive e1 e2 _) =
+        ppr e1 <> text ".." <> ppr e2
+
+    ppr (StartLen e1 e2 _) =
+        brackets $ ppr e1 <> comma <+> ppr e2
 
 instance Pretty VarBind where
     pprPrec p (VarBind v isRef maybe_tau) =
@@ -594,8 +753,9 @@ instance Pretty VarBind where
                       vdoc <+> colon <+> ppr tau
       where
         vdoc :: Doc
-        vdoc | isRef     = text "var" <+> ppr v
-             | otherwise = ppr v
+        vdoc | isRef && classicDialect = text "var" <+> ppr v
+             | isRef                   = text "mut" <+> ppr v
+             | otherwise               = ppr v
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
@@ -617,7 +777,27 @@ instance Pretty Unop where
     ppr Lnot       = text "!"
     ppr Bnot       = text "~"
     ppr Neg        = text "-"
-    ppr Len        = text "length" <> space
+    ppr Abs        = text "abs"
+    ppr Exp        = text "exp"
+    ppr Exp2       = text "exp2"
+    ppr Expm1      = text "expm1"
+    ppr Log        = text "log"
+    ppr Log2       = text "log2"
+    ppr Log1p      = text "log1p"
+    ppr Sqrt       = text "sqrt"
+    ppr Sin        = text "sin"
+    ppr Cos        = text "cos"
+    ppr Tan        = text "tan"
+    ppr Asin       = text "asin"
+    ppr Acos       = text "acos"
+    ppr Atan       = text "atan"
+    ppr Sinh       = text "sinh"
+    ppr Cosh       = text "cosh"
+    ppr Tanh       = text "tanh"
+    ppr Asinh      = text "asinh"
+    ppr Acosh      = text "acosh"
+    ppr Atanh      = text "atanh"
+    ppr Len        = text "length"
     ppr (Cast tau) = parens (ppr tau)
 
 instance Pretty Binop where
@@ -647,18 +827,13 @@ instance Pretty Stm where
         ppr l
 
     ppr (BindS v tau e _) =
-        pprSig v tau <+> text "<-" <+> ppr e
+        pprTypeSig v tau <+> text "<-" <+> ppr e
 
     ppr (ExpS e _) =
         ppr e
 
     pprList cmds =
         embrace (map ppr cmds)
-
-instance Pretty StructDef where
-    ppr (StructDef s fields _) =
-        align $ nest 2 $
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon fields
 
 instance Pretty Type where
     pprPrec _ (UnitT _) =
@@ -667,19 +842,19 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U (Just 1)) _) =
+    pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I Nothing) _) =
+    pprPrec _ (FixT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I (Just w)) _) =
+    pprPrec _ (FixT (I w) _) =
         text "int" <> ppr w
 
-    pprPrec _ (FixT (U Nothing) _) =
+    pprPrec _ (FixT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U (Just w)) _) =
+    pprPrec _ (FixT (U w) _) =
         text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
@@ -691,13 +866,19 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec p (ArrT ind tau _) =
+    pprPrec p (ArrT ind tau _) | classicDialect =
         parensIf (p > tyappPrec) $
         text "arr" <> brackets (ppr ind) <+> ppr tau
 
-    pprPrec p (StructT s _) =
+    pprPrec _ (ArrT UnknownT{} tau _) =
+        brackets (ppr tau)
+
+    pprPrec _ (ArrT ind tau _) =
+        brackets (pprPrec appPrec1 tau <+> semi <+> ppr ind)
+
+    pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s
+        text "struct" <+> ppr s <> pprTyApp taus
 
     pprPrec p (C tau _) =
         parensIf (p > tyappPrec) $
@@ -712,14 +893,28 @@ instance Pretty Type where
                   <+> pprPrec tyappPrec1 tau1
                   <+> pprPrec tyappPrec1 tau2
 
-instance Pretty Ind where
-    ppr (NatT i _) = ppr i
-    ppr (ArrI v _)   = ppr v
-    ppr (NoneI _)    = empty
+    pprPrec _ (NatT i _) =
+        ppr i
 
-pprSig :: Var -> Maybe Type -> Doc
-pprSig v Nothing    = ppr v
-pprSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
+    pprPrec _ (LenT v _) =
+        text "length" <> parens (ppr v)
+
+    pprPrec _ UnknownT{} =
+        empty
+
+    pprPrec _ (ForallT tvks tau _) =
+        pprForall tvks <> ppr tau
+
+    pprPrec _ (TyVarT alpha _) =
+        ppr alpha
+
+pprTypeSig :: Pretty a => a -> Maybe Type -> Doc
+pprTypeSig v Nothing    = ppr v
+pprTypeSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
+
+pprKindSig :: Pretty a => (a, Maybe Kind)-> Doc
+pprKindSig (v, Just ts) | not (nullTraits ts) = ppr v <+> colon <+> ppr ts
+pprKindSig (v, _)                             = ppr v
 
 pprInitializer :: Maybe Exp -> Doc
 pprInitializer Nothing  = empty
@@ -732,6 +927,15 @@ pprTypeAnn (Just tau) = brackets (ppr tau)
 pprRange :: Maybe (Int, Int) -> Doc
 pprRange Nothing           = empty
 pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
+
+pprForall :: [Tvk] -> Doc
+pprForall []   = empty
+pprForall tvks = angles $ commasep (map pprKindSig tvks)
+
+-- | Pretty-print a type application. This is used for struct instantiation.
+pprTyApp :: [Type] -> Doc
+pprTyApp []   = empty
+pprTyApp taus = angles $ commasep (map ppr taus)
 
 -- %left '&&' '||'
 -- %left '==' '!='
@@ -772,6 +976,26 @@ instance HasFixity Unop where
     fixity Lnot        = infixr_ 12
     fixity Bnot        = infixr_ 12
     fixity Neg         = infixr_ 12
+    fixity Abs         = infixr_ 11
+    fixity Exp         = infixr_ 11
+    fixity Exp2        = infixr_ 11
+    fixity Expm1       = infixr_ 11
+    fixity Log         = infixr_ 11
+    fixity Log2        = infixr_ 11
+    fixity Log1p       = infixr_ 11
+    fixity Sqrt        = infixr_ 11
+    fixity Sin         = infixr_ 11
+    fixity Cos         = infixr_ 11
+    fixity Tan         = infixr_ 11
+    fixity Asin        = infixr_ 11
+    fixity Acos        = infixr_ 11
+    fixity Atan        = infixr_ 11
+    fixity Sinh        = infixr_ 11
+    fixity Cosh        = infixr_ 11
+    fixity Tanh        = infixr_ 11
+    fixity Asinh       = infixr_ 11
+    fixity Acosh       = infixr_ 11
+    fixity Atanh       = infixr_ 11
     fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
 

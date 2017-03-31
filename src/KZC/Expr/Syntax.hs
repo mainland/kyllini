@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -9,7 +11,7 @@
 
 -- |
 -- Module      : KZC.Expr.Syntax
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -35,6 +37,7 @@ module KZC.Expr.Syntax (
     Decl(..),
     Const(..),
     Exp(..),
+    GenInterval(..),
     Stm(..),
 
     UnrollAnn(..),
@@ -44,12 +47,14 @@ module KZC.Expr.Syntax (
     VectAnn(..),
 
     Unop(..),
+    isFunUnop,
     Binop(..),
 
     StructDef(..),
     Type(..),
     Omega(..),
     Kind(..),
+    Tvk,
 
     isComplexStruct,
 
@@ -59,11 +64,14 @@ module KZC.Expr.Syntax (
     LiftedOrd(..),
     LiftedNum(..),
     LiftedIntegral(..),
+    LiftedFloating(..),
     LiftedBits(..),
     LiftedCast(..),
 
     renormalize,
 
+    pprForall,
+    pprTyApp,
     pprTypeSig,
     pprKindSig,
     pprFunDecl
@@ -168,21 +176,29 @@ instance Gensym TyVar where
     uniquify (TyVar n) = TyVar <$> uniquify n
 
 -- | Fixed-point format.
-data IP = I {-# UNPACK #-} !Int
-        | U {-# UNPACK #-} !Int
+data IP = IDefault
+        | I Int
+        | UDefault
+        | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: IP -> Int
-ipWidth (I w) = w
-ipWidth (U w) = w
+ipWidth :: MonadPlatform m => IP -> m Int
+ipWidth IDefault = asksPlatform platformIntWidth
+ipWidth (I w)    = return w
+ipWidth UDefault = asksPlatform platformIntWidth
+ipWidth (U w)    = return w
 
 ipIsSigned :: IP -> Bool
-ipIsSigned I{} = True
-ipIsSigned U{} = False
+ipIsSigned IDefault{} = True
+ipIsSigned I{}        = True
+ipIsSigned UDefault{} = False
+ipIsSigned U{}        = False
 
 ipIsIntegral :: IP -> Bool
-ipIsIntegral I{} = True
-ipIsIntegral U{} = True
+ipIsIntegral IDefault{} = True
+ipIsIntegral I{}        = True
+ipIsIntegral UDefault{} = True
+ipIsIntegral U{}        = True
 
 -- | Floating-point format.
 data FP = FP16
@@ -201,11 +217,11 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = LetD Var Type Exp !SrcLoc
+data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          | LetD Var Type Exp !SrcLoc
           | LetRefD Var Type (Maybe Exp) !SrcLoc
-          | LetFunD Var [(TyVar, Kind)] [(Var, Type)] Type Exp !SrcLoc
-          | LetExtFunD Var [(TyVar, Kind)] [(Var, Type)] Type !SrcLoc
-          | LetStructD Struct [(Field, Type)] !SrcLoc
+          | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
+          | LetExtFunD Var [Tvk] [(Var, Type)] Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -216,7 +232,7 @@ data Const = UnitC
            | ArrayC !(Vector Const)
            | ReplicateC Int Const
            | EnumC Type
-           | StructC Struct [(Field, Const)]
+           | StructC Struct [Type] [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -232,12 +248,12 @@ data Exp = ConstE Const !SrcLoc
          | AssignE Exp Exp !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
-         | ForE UnrollAnn Var Type Exp Exp Exp !SrcLoc
+         | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Int) !SrcLoc
          -- Structs Struct
-         | StructE Struct [(Field, Exp)] !SrcLoc
+         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
@@ -252,6 +268,14 @@ data Exp = ConstE Const !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+data GenInterval a -- | The interval @e1..e2@, /inclusive/ of @e2@.
+                   = FromToInclusive a a !SrcLoc
+                   -- | The interval @e1..e2@, /exclusive/ of @e2@.
+                   | FromToExclusive a a !SrcLoc
+                   -- | The interval that starts at @e1@ and has length @e2@.
+                   | StartLen a a !SrcLoc
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Stm d v e = ReturnS InlineAnn e !SrcLoc
                | LetS d !SrcLoc
@@ -286,13 +310,59 @@ data VectAnn = AutoVect
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
-data Unop = Lnot
-          | Bnot
-          | Neg
-          | Cast Type
-          | Bitcast Type
-          | Len
+data Unop = Lnot         -- ^ Logical not
+          | Bnot         -- ^ Bitwise not
+          | Neg          -- ^ Negation
+          | Abs          -- ^ Absolute value
+          | Exp          -- ^ e^x
+          | Exp2         -- ^ 2^x
+          | Expm1        -- ^ e^x - 1
+          | Log          -- ^ Log base e
+          | Log2         -- ^ Log base 2
+          | Log1p        -- ^ Log base e of (1 + x)
+          | Sqrt         -- ^ Square root
+          | Sin
+          | Cos
+          | Tan
+          | Asin
+          | Acos
+          | Atan
+          | Sinh
+          | Cosh
+          | Tanh
+          | Asinh
+          | Acosh
+          | Atanh
+          | Cast Type    -- ^ Type case
+          | Bitcast Type -- ^ Bit-wise type case
+          | Len          -- ^ Array length
   deriving (Eq, Ord, Read, Show)
+
+-- | Returns 'True' if 'Unop' application should be pretty-printed as a function
+-- call.
+isFunUnop :: Unop -> Bool
+isFunUnop Abs   = True
+isFunUnop Exp   = True
+isFunUnop Exp2  = True
+isFunUnop Expm1 = True
+isFunUnop Log   = True
+isFunUnop Log2  = True
+isFunUnop Log1p = True
+isFunUnop Sqrt  = True
+isFunUnop Sin   = True
+isFunUnop Cos   = True
+isFunUnop Tan   = True
+isFunUnop Asin  = True
+isFunUnop Acos  = True
+isFunUnop Atan  = True
+isFunUnop Sinh  = True
+isFunUnop Cosh  = True
+isFunUnop Tanh  = True
+isFunUnop Asinh = True
+isFunUnop Acosh = True
+isFunUnop Atanh = True
+isFunUnop Len   = True
+isFunUnop _     = False
 
 data Binop = Eq
            | Ne
@@ -317,7 +387,7 @@ data Binop = Eq
            | Cat -- ^ Array concatenation.
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [(Field, Type)] !SrcLoc
+data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Type = UnitT !SrcLoc
@@ -325,13 +395,13 @@ data Type = UnitT !SrcLoc
           | FixT IP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
-          | StructT Struct !SrcLoc
+          | StructT Struct [Type] !SrcLoc
           | ArrT Type Type !SrcLoc
           | ST Omega Type Type Type !SrcLoc
           | RefT Type !SrcLoc
           | FunT [Type] Type !SrcLoc
           | NatT Int !SrcLoc
-          | ForallT [(TyVar, Kind)] Type !SrcLoc
+          | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -347,14 +417,12 @@ data Kind = TauK Traits -- ^ Base types, including arrays of base types
           | NatK        -- ^ Type-level natural number
   deriving (Eq, Ord, Read, Show)
 
+type Tvk = (TyVar, Kind)
+
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
 isComplexStruct :: Struct -> Bool
-isComplexStruct "complex"   = True
-isComplexStruct "complex8"  = True
-isComplexStruct "complex16" = True
-isComplexStruct "complex32" = True
-isComplexStruct "complex64" = True
-isComplexStruct _           = False
+isComplexStruct "Complex" = True
+isComplexStruct _         = False
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -380,7 +448,7 @@ instance Num Const where
       where
         err = error "Num Const: negate did not result in a constant"
 
-    fromInteger i = FixC (I dEFAULT_INT_WIDTH) (fromIntegral i)
+    fromInteger i = FixC IDefault (fromIntegral i)
 
     abs _    = error "Num Const: abs not implemented"
     signum _ = error "Num Const: signum not implemented"
@@ -406,6 +474,11 @@ class LiftedNum a b | a -> b where
 -- | A type to which operations on 'Integral' types can be lifted.
 class LiftedIntegral a b | a -> b where
     liftIntegral2 :: Binop -> (forall a . Integral a => a -> a -> a) -> a -> a -> b
+
+-- | A type to which operations on 'Floating' types can be lifted.
+class LiftedFloating a b | a -> b where
+    liftFloating  :: Unop  -> (forall a . Floating a => a -> a)      -> a -> b
+    liftFloating2 :: Binop -> (forall a . Floating a => a -> a -> a) -> a -> a -> b
 
 -- | A type to which operations on 'Bits' types can be lifted.
 class LiftedBits a b | a -> b where
@@ -474,20 +547,20 @@ instance LiftedNum Const (Maybe Const) where
     liftNum2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
 
-    liftNum2 Add _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a+c) (b+d)
+    liftNum2 Add _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a+c) (b+d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Sub _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a-c) (b-d)
+    liftNum2 Sub _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a-c) (b-d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
 
-    liftNum2 Mul _f x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn =
-        Just $ complexC sn (a*c - b*d) (b*c + a*d)
+    liftNum2 Mul _f x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s =
+        Just $ complexC s (a*c - b*d) (b*c + a*d)
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
@@ -505,10 +578,10 @@ instance LiftedIntegral Const (Maybe Const) where
     liftIntegral2 Rem _ (FixC ip x) (FixC _ y) =
         Just $ FixC ip (fromIntegral (x `rem` y))
 
-    liftIntegral2 Div _ x@(StructC sn _) y@(StructC sn' _) | isComplexStruct sn && sn' == sn = do
+    liftIntegral2 Div _ x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s = do
         re <- (a*c + b*d)/(c*c + d*d)
         im <- (b*c - a*d)/(c*c + d*d)
-        return $ complexC sn re im
+        return $ complexC s re im
       where
         (a, b) = uncomplexC x
         (c, d) = uncomplexC y
@@ -519,16 +592,35 @@ instance LiftedIntegral Const (Maybe Const) where
     liftIntegral2 _ _ _ _ =
         Nothing
 
+instance LiftedFloating Const (Maybe Const) where
+    liftFloating _op f (FloatC fp x) =
+        Just $ FloatC fp (f x)
+
+    liftFloating _op _f _c =
+        Nothing
+
+    liftFloating2 _op f (FloatC fp x) (FloatC _ y) =
+        Just $ FloatC fp (f x y)
+
+    liftFloating2 _ _ _ _ =
+        Nothing
+
 instance LiftedCast Const (Maybe Const) where
     -- Cast to a bit type
     liftCast (FixT (U 1) _) (FixC _ x) =
         Just $ FixC (U 1) (if x == 0 then 0 else 1)
 
     -- Cast int to unsigned int
+    liftCast (FixT UDefault _) (FixC _ x) =
+        Just $ renormalize $ FixC UDefault x
+
     liftCast (FixT (U w) _) (FixC _ x) =
         Just $ renormalize $ FixC (U w) x
 
     -- Cast int to signed int
+    liftCast (FixT IDefault _) (FixC _ x) =
+        Just $ renormalize $ FixC IDefault x
+
     liftCast (FixT (I w) _) (FixC _ x) =
         Just $ renormalize $ FixC (I w) x
 
@@ -537,10 +629,16 @@ instance LiftedCast Const (Maybe Const) where
         Just $ FixC ip (fromIntegral (truncate x :: Integer))
 
     -- Cast signed int to float
+    liftCast (FloatT fp _) (FixC IDefault x) =
+        Just $ FloatC fp (fromIntegral x)
+
     liftCast (FloatT fp _) (FixC I{} x) =
         Just $ FloatC fp (fromIntegral x)
 
     -- Cast unsigned int to float
+    liftCast (FloatT fp _) (FixC UDefault x) =
+        Just $ FloatC fp (fromIntegral x)
+
     liftCast (FloatT fp _) (FixC U{} x) =
         Just $ FloatC fp (fromIntegral x)
 
@@ -549,10 +647,10 @@ instance LiftedCast Const (Maybe Const) where
 
 complexC :: Struct -> Const -> Const -> Const
 complexC sname a b =
-    StructC sname [("re", a), ("im", b)]
+    StructC sname [] [("re", a), ("im", b)]
 
 uncomplexC :: Const -> (Const, Const)
-uncomplexC c@(StructC sname x) | isComplexStruct sname =
+uncomplexC c@(StructC struct _ x) | isComplexStruct struct =
     fromMaybe err $ do
       re <- lookup "re" x
       im <- lookup "im" x
@@ -608,17 +706,20 @@ instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
 instance Summary Decl where
-    summary (LetD v _ _ _)         = text "definition of" <+> ppr v
-    summary (LetRefD v _ _ _)      = text "definition of" <+> ppr v
-    summary (LetFunD v _ _ _ _ _)  = text "definition of" <+> ppr v
-    summary (LetExtFunD v _ _ _ _) = text "definition of" <+> ppr v
-    summary (LetStructD s _ _)     = text "definition of" <+> ppr s
+    summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
+    summary (LetD v _ _ _)            = text "definition of" <+> ppr v
+    summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
+    summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
 
 instance Summary StructDef where
-    summary (StructDef s _ _) = text "struct" <+> ppr s
+    summary (StructDef s _ _ _) = text "struct" <+> ppr s
+
+instance Summary Type where
+    summary tau = text "type:" <+> align (ppr tau)
 
 {------------------------------------------------------------------------------
  -
@@ -655,6 +756,10 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
+    pprPrec p (StructD s tvks flds _) =
+        parensIf (p > appPrec) $
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
+
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
         text "let" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
@@ -675,23 +780,24 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "fun external" <+> pprFunDecl f tvks vbs tau
 
-    pprPrec p (LetStructD s flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <+> text "=" <+> pprStruct semi colon flds
-
     pprList decls = stack (map ppr decls)
 
 instance Pretty Const where
-    pprPrec _ UnitC            = text "()"
-    pprPrec _ (BoolC False)    = text "false"
-    pprPrec _ (BoolC True)     = text "true"
-    pprPrec _ (FixC (U 1) 0)   = text "'0"
-    pprPrec _ (FixC (U 1) 1)   = text "'1"
-    pprPrec _ (FixC I{} x)     = ppr x
-    pprPrec _ (FixC U{} x)     = ppr x <> char 'u'
-    pprPrec _ (FloatC _ f)     = ppr f
-    pprPrec _ (StringC s)      = text (show s)
-    pprPrec _ (StructC s flds) = ppr s <+> pprStruct comma equals flds
+    pprPrec _ UnitC             = text "()"
+    pprPrec _ (BoolC False)     = text "false"
+    pprPrec _ (BoolC True)      = text "true"
+    pprPrec _ (FixC (U 1) 0)    = text "'0"
+    pprPrec _ (FixC (U 1) 1)    = text "'1"
+    pprPrec _ (FixC IDefault x) = ppr x
+    pprPrec _ (FixC I{} x)      = ppr x
+    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FloatC _ f)      = ppr f
+    pprPrec _ (StringC s)       = text (show s)
+
+    pprPrec _ (StructC s taus flds) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals flds
+
     pprPrec _ (ArrayC cs)
         | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
         | otherwise                         = text "arr" <+> enclosesep lbrace rbrace comma (map ppr (V.toList cs))
@@ -719,6 +825,9 @@ instance Pretty Exp where
 
     pprPrec _ (VarE v _) =
         ppr v
+
+    pprPrec _ (UnopE op e _) | isFunUnop op =
+        ppr op <> parens (ppr e)
 
     pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
@@ -748,7 +857,7 @@ instance Pretty Exp where
           _      -> ppr decl </> text "in" <> pprBody body
 
     pprPrec _ (CallE f taus es _) =
-        ppr f <> parens (commasep (map ppr taus ++ map ppr es))
+        ppr f <> pprTyApp taus <> parens (commasep (map ppr es))
 
     pprPrec _ (DerefE v _) =
         text "!" <> pprPrec appPrec1 v
@@ -762,10 +871,10 @@ instance Pretty Exp where
         group (pprPrec appPrec1 e1) <>
         pprBody e2
 
-    pprPrec _ (ForE ann v tau e1 e2 e3 _) =
+    pprPrec _ (ForE ann v tau gint e _) =
         ppr ann <+> text "for" <+> pprTypeSig v tau <+>
-        text "in" <+> brackets (commasep [ppr e1, ppr e2]) <>
-        pprBody e3
+        text "in" <+> ppr gint <>
+        pprBody e
 
     pprPrec _ (ArrayE es _) =
         text "arr" <+> enclosesep lbrace rbrace comma (map ppr es)
@@ -776,8 +885,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just i) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
 
-    pprPrec _ (StructE s fields _) =
-        ppr s <+> pprStruct comma equals fields
+    pprPrec _ (StructE s taus fields _) =
+        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -822,6 +931,16 @@ instance Pretty Exp where
         pprPrec parrPrec e1 <+>
         ppr ann <> text "@" <> pprPrec tyappPrec1 tau <+>
         pprPrec parrPrec1 e2
+
+instance Pretty a => Pretty (GenInterval a) where
+    ppr (FromToInclusive e1 e2 _) =
+        brackets $ ppr e1 <> colon <> ppr e2
+
+    ppr (FromToExclusive e1 e2 _) =
+        ppr e1 <> text ".." <> ppr e2
+
+    ppr (StartLen e1 e2 _) =
+        brackets $ ppr e1 <> comma <+> ppr e2
 
 instance Pretty PipelineAnn where
     ppr AlwaysPipeline = text "|>>>|"
@@ -872,7 +991,27 @@ instance Pretty Unop where
     ppr Lnot          = text "not" <> space
     ppr Bnot          = text "~"
     ppr Neg           = text "-"
-    ppr Len           = text "length" <> space
+    ppr Abs           = text "abs"
+    ppr Exp           = text "exp"
+    ppr Exp2          = text "exp2"
+    ppr Expm1         = text "expm1"
+    ppr Log           = text "log"
+    ppr Log2          = text "log2"
+    ppr Log1p         = text "Log1p"
+    ppr Sqrt          = text "sqrt"
+    ppr Sin           = text "sin"
+    ppr Cos           = text "cos"
+    ppr Tan           = text "tan"
+    ppr Asin          = text "asin"
+    ppr Acos          = text "acos"
+    ppr Atan          = text "atan"
+    ppr Sinh          = text "sinh"
+    ppr Cosh          = text "cosh"
+    ppr Tanh          = text "tanh"
+    ppr Asinh         = text "asinh"
+    ppr Acosh         = text "acosh"
+    ppr Atanh         = text "atanh"
+    ppr Len           = text "length"
     ppr (Cast tau)    = text "cast" <> langle <> ppr tau <> rangle
     ppr (Bitcast tau) = text "bitcast" <> langle <> ppr tau <> rangle
 
@@ -909,13 +1048,17 @@ instance Pretty Type where
     pprPrec _ (FixT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT (I w) _)
-      | w == dEFAULT_INT_WIDTH = text "int"
-      | otherwise              = text "int" <> ppr w
+    pprPrec _ (FixT IDefault _) =
+        text "int"
 
-    pprPrec _ (FixT (U w) _)
-      | w == dEFAULT_INT_WIDTH = text "uint"
-      | otherwise              = text "uint" <> ppr w
+    pprPrec _ (FixT (I w) _) =
+        text "int" <> ppr w
+
+    pprPrec _ (FixT UDefault _) =
+        text "uint"
+
+    pprPrec _ (FixT (U w) _) =
+        text "uint" <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
@@ -933,9 +1076,9 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "ref" <+> pprPrec tyappPrec1 tau
 
-    pprPrec p (StructT s _) =
+    pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s
+        text "struct" <+> ppr s <> pprTyApp taus
 
     pprPrec p (ArrT ind tau@StructT{} _) =
         parensIf (p > tyappPrec) $
@@ -994,9 +1137,14 @@ instance Pretty Kind where
     ppr NatK   = text "N"
 
 -- | Pretty-print a forall quantifier
-pprForall :: [(TyVar, Kind)] -> Doc
+pprForall :: [Tvk] -> Doc
 pprForall []   = empty
 pprForall tvks = angles $ commasep (map pprKindSig tvks)
+
+-- | Pretty-print a type application.
+pprTyApp :: [Type] -> Doc
+pprTyApp []   = empty
+pprTyApp taus = angles $ commasep (map ppr taus)
 
 -- | Pretty-print a thing with a type signature
 pprTypeSig :: Pretty a => a -> Type -> Doc
@@ -1006,13 +1154,13 @@ pprTypeSig v tau = parens (ppr v <+> colon <+> ppr tau)
 pprKindSig :: Pretty a => (a, Kind) -> Doc
 pprKindSig (tau, TauK traits)
     | Set.null traits = ppr tau
-    | otherwise       = parens (ppr tau <+> colon <+> ppr traits)
+    | otherwise       = ppr tau <+> colon <+> ppr traits
 
 pprKindSig (tau, kappa) =
     parens (ppr tau <+> colon <+> ppr kappa)
 
 -- | Pretty-print a function declaration.
-pprFunDecl :: Var -> [(TyVar, Kind)] -> [(Var, Type)] -> Type -> Doc
+pprFunDecl :: Var -> [Tvk] -> [(Var, Type)] -> Type -> Doc
 pprFunDecl f tvks vbs tau_ret =
     group $
     nest 2 $
@@ -1068,6 +1216,26 @@ instance HasFixity Unop where
     fixity Lnot        = infixr_ 12
     fixity Bnot        = infixr_ 12
     fixity Neg         = infixr_ 12
+    fixity Abs         = infixr_ 11
+    fixity Exp         = infixr_ 11
+    fixity Exp2        = infixr_ 11
+    fixity Expm1       = infixr_ 11
+    fixity Log         = infixr_ 11
+    fixity Log2        = infixr_ 11
+    fixity Log1p       = infixr_ 11
+    fixity Sqrt        = infixr_ 11
+    fixity Sin         = infixr_ 11
+    fixity Cos         = infixr_ 11
+    fixity Tan         = infixr_ 11
+    fixity Asin        = infixr_ 11
+    fixity Acos        = infixr_ 11
+    fixity Atan        = infixr_ 11
+    fixity Sinh        = infixr_ 11
+    fixity Cosh        = infixr_ 11
+    fixity Tanh        = infixr_ 11
+    fixity Asinh       = infixr_ 11
+    fixity Acosh       = infixr_ 11
+    fixity Atanh       = infixr_ 11
     fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
     fixity (Bitcast _) = infixr_ 10
@@ -1084,7 +1252,7 @@ instance Fvs Type TyVar where
     fvs FixT{}                       = mempty
     fvs FloatT{}                     = mempty
     fvs StringT{}                    = mempty
-    fvs (StructT _ _)                = mempty
+    fvs (StructT _ taus _)           = fvs taus
     fvs (ArrT _ tau _)               = fvs tau
     fvs (ST  omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
     fvs (RefT tau _)                 = fvs tau
@@ -1111,48 +1279,53 @@ instance Binders WildVar Var where
     binders (TameV v) = singleton v
 
 instance Fvs Decl Var where
+    fvs StructD{}               = mempty
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetRefD v _ e _)       = delete v (fvs e)
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs LetExtFunD{}            = mempty
-    fvs LetStructD{}            = mempty
 
 instance Binders Decl Var where
+    binders StructD{}              = mempty
     binders (LetD v _ _ _)         = singleton v
     binders (LetRefD v _ _ _)      = singleton v
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
-    binders LetStructD{}           = mempty
 
 instance Fvs Exp Var where
-    fvs ConstE{}                = mempty
-    fvs (VarE v _)              = singleton v
-    fvs (UnopE _ e _)           = fvs e
-    fvs (BinopE _ e1 e2 _)      = fvs e1 <> fvs e2
-    fvs (IfE e1 e2 e3 _)        = fvs e1 <> fvs e2 <> fvs e3
-    fvs (LetE decl body _)      = fvs decl <> (fvs body <\\> binders decl)
-    fvs (CallE f _ es _)        = singleton f <> fvs es
-    fvs (DerefE e _)            = fvs e
-    fvs (AssignE e1 e2 _)       = fvs e1 <> fvs e2
-    fvs (WhileE e1 e2 _)        = fvs e1 <> fvs e2
-    fvs (ForE _ v _ e1 e2 e3 _) = fvs e1 <> fvs e2 <> delete v (fvs e3)
-    fvs (ArrayE es _)           = fvs es
-    fvs (IdxE e1 e2 _ _)        = fvs e1 <> fvs e2
-    fvs (StructE _ flds _)      = fvs (map snd flds)
-    fvs (ProjE e _ _)           = fvs e
-    fvs (PrintE _ es _)         = fvs es
-    fvs ErrorE{}                = mempty
-    fvs (ReturnE _ e _)         = fvs e
-    fvs (BindE wv _ e1 e2 _)    = fvs e1 <> (fvs e2 <\\> binders wv)
-    fvs TakeE{}                 = mempty
-    fvs TakesE{}                = mempty
-    fvs (EmitE e _)             = fvs e
-    fvs (EmitsE e _)            = fvs e
-    fvs (RepeatE _ e _)         = fvs e
-    fvs (ParE _ _ e1 e2 _)      = fvs e1 <> fvs e2
+    fvs ConstE{}              = mempty
+    fvs (VarE v _)            = singleton v
+    fvs (UnopE _ e _)         = fvs e
+    fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
+    fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
+    fvs (LetE decl body _)    = fvs decl <> (fvs body <\\> binders decl)
+    fvs (CallE f _ es _)      = singleton f <> fvs es
+    fvs (DerefE e _)          = fvs e
+    fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
+    fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
+    fvs (ArrayE es _)         = fvs es
+    fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
+    fvs (StructE _ _ flds _)  = fvs (map snd flds)
+    fvs (ProjE e _ _)         = fvs e
+    fvs (PrintE _ es _)       = fvs es
+    fvs ErrorE{}              = mempty
+    fvs (ReturnE _ e _)       = fvs e
+    fvs (BindE wv _ e1 e2 _)  = fvs e1 <> (fvs e2 <\\> binders wv)
+    fvs TakeE{}               = mempty
+    fvs TakesE{}              = mempty
+    fvs (EmitE e _)           = fvs e
+    fvs (EmitsE e _)          = fvs e
+    fvs (RepeatE _ e _)       = fvs e
+    fvs (ParE _ _ e1 e2 _)    = fvs e1 <> fvs e2
 
 instance Fvs Exp v => Fvs [Exp] v where
     fvs = foldMap fvs
+
+instance Fvs e v => Fvs (GenInterval e) v where
+    fvs (FromToInclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (FromToExclusive e1 e2 _) = fvs e1 <> fvs e2
+    fvs (StartLen e1 e2 _)        = fvs e1 <> fvs e2
 
 {------------------------------------------------------------------------------
  -
@@ -1165,38 +1338,43 @@ instance HasVars WildVar Var where
     allVars (TameV v) = singleton v
 
 instance HasVars Decl Var where
+    allVars StructD{}                = mempty
     allVars (LetD v _ e _)           = singleton v <> allVars e
     allVars (LetRefD v _ e _)        = singleton v <> allVars e
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
-    allVars LetStructD{}             = mempty
 
 instance HasVars Exp Var where
-    allVars ConstE{}                = mempty
-    allVars (VarE v _)              = singleton v
-    allVars (UnopE _ e _)           = allVars e
-    allVars (BinopE _ e1 e2 _)      = allVars e1 <> allVars e2
-    allVars (IfE e1 e2 e3 _)        = allVars e1 <> allVars e2 <> allVars e3
-    allVars (LetE decl body _)      = allVars decl <> allVars body
-    allVars (CallE f _ es _)        = singleton f <> allVars es
-    allVars (DerefE e _)            = allVars e
-    allVars (AssignE e1 e2 _)       = allVars e1 <> allVars e2
-    allVars (WhileE e1 e2 _)        = allVars e1 <> allVars e2
-    allVars (ForE _ v _ e1 e2 e3 _) = singleton v <> allVars e1 <> allVars e2 <> allVars e3
-    allVars (ArrayE es _)           = allVars es
-    allVars (IdxE e1 e2 _ _)        = allVars e1 <> allVars e2
-    allVars (StructE _ flds _)      = allVars (map snd flds)
-    allVars (ProjE e _ _)           = allVars e
-    allVars (PrintE _ es _)         = allVars es
-    allVars ErrorE{}                = mempty
-    allVars (ReturnE _ e _)         = allVars e
-    allVars (BindE wv _ e1 e2 _)    = allVars wv <> allVars e1 <> allVars e2
-    allVars TakeE{}                 = mempty
-    allVars TakesE{}                = mempty
-    allVars (EmitE e _)             = allVars e
-    allVars (EmitsE e _)            = allVars e
-    allVars (RepeatE _ e _)         = allVars e
-    allVars (ParE _ _ e1 e2 _)      = allVars e1 <> allVars e2
+    allVars ConstE{}              = mempty
+    allVars (VarE v _)            = singleton v
+    allVars (UnopE _ e _)         = allVars e
+    allVars (BinopE _ e1 e2 _)    = allVars e1 <> allVars e2
+    allVars (IfE e1 e2 e3 _)      = allVars e1 <> allVars e2 <> allVars e3
+    allVars (LetE decl body _)    = allVars decl <> allVars body
+    allVars (CallE f _ es _)      = singleton f <> allVars es
+    allVars (DerefE e _)          = allVars e
+    allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
+    allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
+    allVars (ArrayE es _)         = allVars es
+    allVars (IdxE e1 e2 _ _)      = allVars e1 <> allVars e2
+    allVars (StructE _ _ flds _)  = allVars (map snd flds)
+    allVars (ProjE e _ _)         = allVars e
+    allVars (PrintE _ es _)       = allVars es
+    allVars ErrorE{}              = mempty
+    allVars (ReturnE _ e _)       = allVars e
+    allVars (BindE wv _ e1 e2 _)  = allVars wv <> allVars e1 <> allVars e2
+    allVars TakeE{}               = mempty
+    allVars TakesE{}              = mempty
+    allVars (EmitE e _)           = allVars e
+    allVars (EmitsE e _)          = allVars e
+    allVars (RepeatE _ e _)       = allVars e
+    allVars (ParE _ _ e1 e2 _)    = allVars e1 <> allVars e2
+
+instance HasVars e v => HasVars (GenInterval e) v where
+    allVars (FromToInclusive e1 e2 _) = allVars e1 <> allVars e2
+    allVars (FromToExclusive e1 e2 _) = allVars e1 <> allVars e2
+    allVars (StartLen e1 e2 _)        = allVars e1 <> allVars e2
 
 {------------------------------------------------------------------------------
  -
@@ -1265,6 +1443,9 @@ instance Subst Type TyVar Omega where
     substM T       = pure T
 
 instance Subst Type TyVar Decl where
+    substM decl@StructD{} =
+        pure decl
+
     substM (LetD v tau e l) =
         LetD v <$> substM tau <*> substM e <*> pure l
 
@@ -1276,9 +1457,6 @@ instance Subst Type TyVar Decl where
 
     substM (LetExtFunD v alphas vbs tau l) =
         LetExtFunD v alphas <$> substM vbs <*> substM tau <*> pure l
-
-    substM decl@LetStructD{} =
-        pure decl
 
 instance Subst Type TyVar Exp where
     substM e@ConstE{} =
@@ -1311,8 +1489,8 @@ instance Subst Type TyVar Exp where
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
-    substM (ForE ann v tau e1 e2 e3 l) =
-        ForE ann v <$> substM tau <*> substM e1 <*> substM e2 <*> substM e3 <*> pure l
+    substM (ForE ann v tau gint e l) =
+        ForE ann v <$> substM tau <*> substM gint <*> substM e <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
@@ -1320,8 +1498,8 @@ instance Subst Type TyVar Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s <$> substM taus <*> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
@@ -1355,6 +1533,16 @@ instance Subst Type TyVar Exp where
 
     substM (ParE ann tau e1 e2 l) =
         ParE ann tau <$> substM e1 <*> substM e2 <*> pure l
+
+instance Subst e v a => Subst e v (GenInterval a) where
+    substM (FromToInclusive e1 e2 l) =
+        FromToInclusive <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (FromToExclusive e1 e2 l) =
+        FromToExclusive <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (StartLen e1 e2 l) =
+        StartLen <$> substM e1 <*> substM e2 <*> pure l
 
 {------------------------------------------------------------------------------
  -
@@ -1402,11 +1590,10 @@ instance Subst Exp Var Exp where
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
-    substM (ForE ann v tau e1 e2 e3 l) = do
-        e1' <- substM e1
-        e2' <- substM e2
+    substM (ForE ann v tau gint e l) = do
+        gint' <- substM gint
         freshen v $ \v' ->
-          ForE ann v' tau e1' e2' <$> substM e3 <*> pure l
+          ForE ann v' tau gint' <$> substM e <*> pure l
 
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
@@ -1414,8 +1601,8 @@ instance Subst Exp Var Exp where
     substM (IdxE e1 e2 i l) =
         IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
 
-    substM (StructE s flds l) =
-        StructE s <$> substM flds <*> pure l
+    substM (StructE s taus flds l) =
+        StructE s taus <$> substM flds <*> pure l
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
@@ -1479,6 +1666,9 @@ instance Freshen (TyVar, Kind) Type TyVar where
  ------------------------------------------------------------------------------}
 
 instance Freshen Decl Exp Var where
+    freshen decl@StructD{} k =
+        k decl
+
     freshen (LetD v tau e l) k = do
         e' <- substM e
         freshen v $ \v' ->
@@ -1500,9 +1690,6 @@ instance Freshen Decl Exp Var where
         freshen vbs $ \vbs' -> do
         decl' <- LetExtFunD v' alphas vbs' tau <$> pure l
         k decl'
-
-    freshen decl@LetStructD{} k =
-        k decl
 
 instance Freshen Var Exp Var where
     freshen v@(Var n) =

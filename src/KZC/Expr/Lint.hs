@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Expr.Lint
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -31,9 +31,13 @@ module KZC.Expr.Lint (
 
     refPath,
 
+    checkStructDecl,
+    checkStructUse,
+
     inferKind,
     checkKind,
     checkTauOrRhoKind,
+    checkTyApp,
 
     checkCast,
     checkBitcast,
@@ -43,6 +47,7 @@ module KZC.Expr.Lint (
 
     joinOmega,
 
+    checkComplexT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -72,7 +77,8 @@ import Control.Monad (unless,
                       when,
                       zipWithM_,
                       void)
-import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Exception (MonadException(..),
+                                SomeException)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -81,6 +87,8 @@ import Control.Monad.Reader (MonadReader(..),
                              asks)
 import Control.Monad.Ref (MonadRef(..),
                           MonadAtomicRef(..))
+import Control.Monad.Trans.Maybe (runMaybeT)
+import Data.Foldable (traverse_)
 import Data.IORef
 import Data.List (nub)
 import Data.Loc
@@ -98,6 +106,7 @@ import KZC.Expr.Lint.Monad
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Monad
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -112,6 +121,7 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace)
 
 instance MonadTc Tc where
@@ -144,6 +154,11 @@ checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
+checkDecl decl@(StructD s tvks flds l) k = do
+    alwaysWithSummaryContext decl $
+        checkStructDecl s tvks flds
+    extendStructs [StructDef s tvks flds l] k
+
 checkDecl decl@(LetD v tau e _) k = do
     alwaysWithSummaryContext decl $ do
         void $ inferKind tau
@@ -188,37 +203,20 @@ checkDecl decl@(LetExtFunD f tvks vbs tau_ret l) k = do
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
 
-checkDecl decl@(LetStructD s flds l) k = do
-    alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (`checkKind` tauK) taus
-    extendStructs [StructDef s flds l] k
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> m ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
-
 -- | Check that we quantify only over type variables of kind Nat.
-checkNatPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatPoly :: forall m . MonadTc m => [Tvk] -> m ()
 checkNatPoly tvks =
     extendTyVars tvks $
     mapM_ check tvks
   where
-    check :: (TyVar, Kind) -> m ()
+    check :: Tvk -> m ()
     check (alpha, kappa) = checkKind (tyVarT alpha) kappa
 
 -- | Check that we quantify only over type variables of kind Tau or Nat.
-checkNatTauPoly :: forall m . MonadTc m => [(TyVar, Kind)] -> m ()
+checkNatTauPoly :: forall m . MonadTc m => [Tvk] -> m ()
 checkNatTauPoly = mapM_ check
   where
-    check :: (TyVar, Kind) -> m ()
+    check :: Tvk -> m ()
     check (_alpha, TauK{}) =
         return ()
 
@@ -255,10 +253,10 @@ inferConst _ (EnumC tau) = do
     w <- typeSize tau
     return $ arrKnownT (2^w) tau
 
-inferConst l (StructC s flds) = do
-    fldDefs <- checkStructFields s (map fst flds)
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+inferConst l (StructC s taus flds) = do
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Const) -> m ()
     checkField fldDefs (f, c) = do
@@ -294,6 +292,27 @@ inferExp (UnopE op e1 l) = do
         mkSigned (FixT (U w) l) = FixT (I w) l
         mkSigned tau            = tau
 
+    unop Abs   tau = inferOp [(a, numK)] aT aT tau
+    unop Exp   tau = inferOp [(a, fracK)] aT aT tau
+    unop Exp2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Expm1 tau = inferOp [(a, fracK)] aT aT tau
+    unop Log   tau = inferOp [(a, fracK)] aT aT tau
+    unop Log2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Log1p tau = inferOp [(a, fracK)] aT aT tau
+    unop Sqrt  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sin   tau = inferOp [(a, fracK)] aT aT tau
+    unop Cos   tau = inferOp [(a, fracK)] aT aT tau
+    unop Tan   tau = inferOp [(a, fracK)] aT aT tau
+    unop Asin  tau = inferOp [(a, fracK)] aT aT tau
+    unop Acos  tau = inferOp [(a, fracK)] aT aT tau
+    unop Atan  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sinh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Cosh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Tanh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Asinh tau = inferOp [(a, fracK)] aT aT tau
+    unop Acosh tau = inferOp [(a, fracK)] aT aT tau
+    unop Atanh tau = inferOp [(a, fracK)] aT aT tau
+
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
         return tau2
@@ -312,7 +331,7 @@ inferExp (UnopE op e1 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -367,7 +386,7 @@ inferExp (BinopE op e1 e2 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -443,15 +462,12 @@ inferExp (WhileE e1 e2 _) = do
         void $ checkForallSTCUnit tau
         return tau
 
-inferExp (ForE _ v tau e1 e2 e3 _) = do
+inferExp (ForE _ v tau int e _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) int
     extendVars [(v, tau)] $
-        withFvContext e3 $ do
-        tau_body <- inferExp e3
+        withFvContext e $ do
+        tau_body <- inferExp e
         void $ checkForallSTCUnit tau_body
         return tau_body
 
@@ -497,23 +513,25 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        tau_f     <- checkStructFieldT sdef taus f
         return $ RefT tau_f l
 
     go tau = do
-        sdef <- checkStructT tau >>= lookupStruct
-        checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        checkStructFieldT sdef taus f
 
-inferExp e0@(StructE s flds l) =
+inferExp e0@(StructE s taus flds l) =
     withFvContext e0 $ do
-    fldDefs <- checkStructFields s (map fst flds)
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
-    checkField fldDefs (f, e) = do
-      tau <- case lookup f fldDefs of
+    checkField fdefs (f, e) = do
+      tau <- case lookup f fdefs of
                Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
@@ -619,8 +637,8 @@ inferExp e0@(ParE _ b e1 e2 l) = do
 inferCall :: forall m . MonadTc m => Type -> [Type] -> [Exp] -> m Type
 inferCall tau_f taus es = do
     (tvks, taus_args, tau_ret) <- checkFunT tau_f
-    checkNumTypeArgs (length taus) (length tvks)
-    checkNumArgs     (length es)   (length taus_args)
+    checkTyApp tvks taus
+    checkNumArgs (length es) (length taus_args)
     extendTyVars tvks $ do
       zipWithM_ checkKind taus (map snd tvks)
       let theta      = Map.fromList (map fst tvks `zip` taus)
@@ -640,13 +658,6 @@ inferCall tau_f taus es = do
         | otherwise      = withFvContext e $ do
                            tau' <- inferExp e >>= instST
                            checkTypeEquality tau tau'
-
-    checkNumTypeArgs :: Int -> Int -> m ()
-    checkNumTypeArgs n ntaus =
-        when (n /= ntaus) $
-             faildoc $
-             text "Expected" <+> ppr ntaus <+>
-             text "type arguments but got" <+> ppr n
 
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
@@ -696,16 +707,38 @@ refPath e =
     go e _ =
         faildoc $ text "refPath: Not a reference:" <+> ppr e
 
+-- | Check that a struct is not being re-defined.
+checkStructNotRedefined :: MonadTc m => Struct -> m ()
+checkStructNotRedefined s = do
+    maybe_sdef <- maybeLookupStruct s
+    case maybe_sdef of
+      Nothing   -> return ()
+      Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                   parens (text "original definition at" <+> ppr (locOf sdef))
+
+-- | Check a struct declaration.
+checkStructDecl :: MonadTc m => Struct -> [Tvk] -> [(Field, Type)] -> m ()
+checkStructDecl s tvks flds = do
+    checkStructNotRedefined s
+    checkDuplicates "field names" fnames
+    extendTyVars tvks $
+      mapM_ (`checkKind` tauK) taus
+  where
+    (fnames, taus) = unzip flds
+
 -- | Check that a struct has no missing and no extra fields.
-checkStructFields :: forall m . MonadTc m
-                  => Struct
-                  -> [Field]
-                  -> m [(Field, Type)]
-checkStructFields s flds = do
-    StructDef _ fldDefs _ <- lookupStruct s
-    checkMissingFields flds fldDefs
-    checkExtraFields flds fldDefs
-    return fldDefs
+checkStructUse :: forall m . MonadTc m
+               => Struct
+               -> [Type]
+               -> [Field]
+               -> m [(Field, Type)]
+checkStructUse struct taus flds = do
+    sdef  <- lookupStruct struct
+    checkStructTyApp sdef taus
+    fdefs <- lookupStructFields struct taus
+    checkMissingFields flds fdefs
+    checkExtraFields flds fdefs
+    return fdefs
   where
     checkMissingFields :: [Field] -> [(Field, Type)] -> m ()
     checkMissingFields flds fldDefs =
@@ -731,29 +764,57 @@ checkStructFields s flds = do
         fs' = Set.fromList [f | (f,_) <- fldDefs]
         extra = fs' Set.\\ fs
 
+-- | Check a struct type application.
+checkStructTyApp :: MonadTc m => StructDef -> [Type] -> m ()
+checkStructTyApp (StructDef _ tvks _ _) taus =
+    checkTyApp tvks taus
+
 -- | @checkCast tau1 tau2@ checks that a value of type @tau1@ can be cast to a
 -- value of type @tau2@.
-checkCast :: MonadTc m => Type -> Type -> m ()
-checkCast tau1 tau2 | tau1 == tau2 =
-    return ()
+checkCast :: forall m . MonadTc m => Type -> Type -> m ()
+checkCast = go
+  where
+    go tau1 tau2 | tau1 == tau2 =
+        return ()
 
-checkCast FixT{} FixT{} =
-    return ()
+    go FixT{} FixT{} =
+        return ()
 
-checkCast FixT{} FloatT{} =
-    return ()
+    go FixT{} FloatT{} =
+        return ()
 
-checkCast FloatT{} FixT{} =
-    return ()
+    go FloatT{} FixT{} =
+        return ()
 
-checkCast FloatT{} FloatT{} =
-    return ()
+    go FloatT{} FloatT{} =
+        return ()
 
-checkCast tau1 tau2 | isComplexT tau1 && isComplexT tau2 =
-    return ()
+    go tau1@FixT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
 
-checkCast tau1 tau2 =
-    faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
+    go tau1@FloatT{} tau2@TyVarT{} =
+        polyUpcast tau1 tau2
+
+    go tau1 tau2 =
+        cannotCast tau1 tau2
+
+    -- | Polymorphic up-cast from type @tau1@ to type @tau2@. We use this to
+    -- cast a constant to a polymorphic type.
+    polyUpcast :: Type -> Type -> m ()
+    polyUpcast tau1 tau2 = do
+        kappa <- constKind tau1
+        checkKind tau2 kappa `catch` \(_ :: SomeException) -> cannotCast tau1 tau2
+
+    -- | Return the kind of constants of the given type. We use this to cast
+    -- constants "polymorphically."
+    constKind :: Type -> m Kind
+    constKind FixT{}   = return numK
+    constKind FloatT{} = return fracK
+    constKind tau      = inferKind tau
+
+    cannotCast :: Type -> Type -> m ()
+    cannotCast tau1 tau2 =
+        faildoc $ text "Cannot cast" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
 -- | @checkBitcast tau1 tau2@ checks that a value of type @tau1@ can be bitcast
 -- to a value of type @tau2@.
@@ -792,8 +853,8 @@ checkTypeEquality tau1 tau2 =
         checkT theta nat1 nat2
         checkT theta tau1 tau2
 
-    checkT _ (StructT s1 _) (StructT s2 _) | s1 == s2 =
-        return ()
+    checkT theta (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
+        zipWithM_ (checkT theta) taus1 taus2
 
     checkT theta (ST omega_a tau1_a tau2_a tau3_a _)
                  (ST omega_b tau1_b tau2_b tau3_b _) = do
@@ -869,8 +930,14 @@ inferKind = inferType
     inferType (FixT (U 1) _) =
         return $ qualK [EqR, OrdR, BoolR, BitsR]
 
+    inferType (FixT UDefault _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
+
     inferType (FixT U{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR, BitsR]
+
+    inferType (FixT IDefault _) =
+        return $ qualK [EqR, OrdR, NumR, IntegralR]
 
     inferType (FixT I{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR]
@@ -881,9 +948,17 @@ inferKind = inferType
     inferType StringT{} =
         return tauK
 
-    inferType (StructT s _)
-      | isComplexStruct s = return $ qualK [EqR, OrdR, NumR]
-      | otherwise         = return tauK
+    inferType tau_struct@(StructT s taus _) = do
+        StructDef _ tvks _ _ <- lookupStruct s
+        checkTyApp tvks taus
+        maybe_tau <- runMaybeT $ checkComplexT tau_struct
+        case maybe_tau of
+          -- A struct has traits Eq, Ord, and Num if its elements do.
+          Just tau -> do kappa <- inferKind tau
+                         case kappa of
+                           TauK ts -> return $ TauK (ts `intersectTraits` traits [EqR, OrdR, NumR])
+                           _       -> return tauK
+          Nothing  -> return tauK
 
     inferType (ArrT n tau _) = do
         checkKind n NatK
@@ -961,6 +1036,18 @@ checkTauOrRhoKind tau =
     go RhoK   = return ()
     go kappa  = faildoc $ text "Expected tau or rho kind but got:" <+> ppr kappa
 
+checkTyApp :: forall m . MonadTc m => [Tvk] -> [Type] -> m ()
+checkTyApp tvks taus = do
+    checkNumTypeArgs (length taus) (length tvks)
+    zipWithM_ (\(_alpha, kappa) tau -> checkKind tau kappa) tvks taus
+  where
+    checkNumTypeArgs :: Int -> Int -> m ()
+    checkNumTypeArgs ntaus ntvks =
+        when (ntaus /= ntvks) $
+        faildoc $
+        text "Expected" <+> ppr ntvks <+>
+        text "type arguments but got" <+> ppr ntaus </> ppr tvks </> ppr taus
+
 checkKindEquality :: MonadTc m => Kind -> Kind -> m ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
     return ()
@@ -994,6 +1081,19 @@ joinOmega omega1@T{} T{}        = return omega1
 
 joinOmega omega1 omega2 =
     faildoc $ text "Cannot join" <+> ppr omega1 <+> text "and" <+> ppr omega2
+
+-- | Check that a type is a complex type, returning the type of its constituent
+-- fields. A complex type has two fields named "re" and "im", in that order, and
+-- both fields must have the same type.
+checkComplexT :: MonadTc m => Type -> m Type
+checkComplexT (StructT struct taus _) = do
+    flds <- lookupStructFields struct taus
+    case flds of
+      [("re", tau), ("im", tau')] | tau' == tau -> return tau
+      _                                         -> fail "Not a complex type"
+
+checkComplexT _ =
+    fail "Not a complex type"
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
 -- @\alpha@.
@@ -1034,9 +1134,11 @@ checkArrOrRefArrT tau =
     text "Expected array type but got:" <+/> ppr tau
 
 -- | Check that a type is a struct type, returning the name of the struct.
-checkStructT :: MonadTc m => Type -> m Struct
-checkStructT (StructT s _) =
-    return s
+checkStructT :: MonadTc m => Type -> m (Struct, [Type])
+checkStructT (StructT s taus _) = do
+    sdef <- lookupStruct s
+    checkStructTyApp sdef taus
+    return (s, taus)
 
 checkStructT tau =
     faildoc $ nest 2 $
@@ -1044,15 +1146,16 @@ checkStructT tau =
 
 -- | Check that a type is a struct or struct reference type, returning the name
 -- of the struct.
-checkStructOrRefStructT :: MonadTc m => Type -> m Struct
-checkStructOrRefStructT (StructT s _)          = return s
-checkStructOrRefStructT (RefT (StructT s _) _) = return s
+checkStructOrRefStructT :: MonadTc m => Type -> m (Struct, [Type])
+checkStructOrRefStructT (StructT s taus _)          = return (s, taus)
+checkStructOrRefStructT (RefT (StructT s taus _) _) = return (s, taus)
 checkStructOrRefStructT tau =
     faildoc $ nest 2 $
     text "Expected struct type, but got:" <+/> ppr tau
 
-checkStructFieldT :: MonadTc m => StructDef -> Field -> m Type
-checkStructFieldT (StructDef s flds _) f =
+checkStructFieldT :: MonadTc m => StructDef -> [Type] -> Field -> m Type
+checkStructFieldT sdef@(StructDef s _ _ _) taus f = do
+    flds <- tyAppStruct sdef taus
     case lookup f flds of
       Just tau -> return tau
       Nothing ->
@@ -1068,7 +1171,7 @@ checkRefT tau =
     faildoc $ nest 2 $ group $
     text "Expected ref type but got:" <+/> ppr tau
 
-checkFunT :: MonadTc m => Type -> m ([(TyVar, Kind)], [Type], Type)
+checkFunT :: MonadTc m => Type -> m ([Tvk], [Type], Type)
 checkFunT (ForallT tvks (FunT taus tau_ret _) _) =
     return (tvks, taus, tau_ret)
 
@@ -1118,9 +1221,12 @@ computation.
 -- | Figure out the type substitution necessary for transforming the given type
 -- to the ST type of the current computational context.
 withInstantiatedTyVars :: MonadTc m => Type -> m a -> m a
-withInstantiatedTyVars tau@(ForallT _ (ST _ s a b _) _) k = do
+withInstantiatedTyVars tau@(ForallT tvks (ST _ s a b _) _) k = do
     ST _ s' a' b' _ <- instST tau
-    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b']] k
+    extendTyVarTypes [(alpha, tau) | (TyVarT alpha _, tau) <- [s,a,b] `zip` [s',a',b'], alpha `elem` alphas] k
+  where
+    alphas :: [TyVar]
+    alphas = map fst tvks
 
 withInstantiatedTyVars _tau k =
     k

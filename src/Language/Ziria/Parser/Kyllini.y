@@ -1,6 +1,7 @@
 -- -*- mode: haskell -*-
 
 {
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS -w #-}
 
 -- |
@@ -44,6 +45,10 @@ import KZC.Util.Pretty
   ID          { L _ (T.Tidentifier _) }
   STRUCTID    { L _ (T.TstructIdentifier _) }
 
+  INT_TYPE   { L _ (T.Ti _) }
+  UINT_TYPE  { L _ (T.Tu _) }
+  FLOAT_TYPE { L _ (T.Tf _) }
+
   "'0"          { L _ T.TzeroBit }
   "'1"          { L _ T.ToneBit }
   'C'           { L _ T.TC }
@@ -54,7 +59,6 @@ import KZC.Util.Pretty
   'bit'         { L _ T.Tbit }
   'bool'        { L _ T.Tbool }
   'comp'        { L _ T.Tcomp }
-  'do'          { L _ T.Tdo }
   'double'      { L _ T.Tdouble }
   'else'        { L _ T.Telse }
   'emit'        { L _ T.Temit }
@@ -84,10 +88,8 @@ import KZC.Util.Pretty
   'nounroll'    { L _ T.Tnounroll }
   'print'       { L _ T.Tprint }
   'println'     { L _ T.Tprintln }
-  'read'        { L _ T.Tread }
   'repeat'      { L _ T.Trepeat }
   'return'      { L _ T.Treturn }
-  'seq'         { L _ T.Tseq }
   'standalone'  { L _ T.Tstandalone }
   'struct'      { L _ T.Tstruct }
   'take'        { L _ T.Ttake }
@@ -102,16 +104,14 @@ import KZC.Util.Pretty
   'uint64'      { L _ T.Tuint64 }
   'unroll'      { L _ T.Tunroll }
   'until'       { L _ T.Tuntil }
-  'var'         { L _ T.Tvar }
   'while'       { L _ T.Twhile }
-  'write'       { L _ T.Twrite }
 
   '+'  { L _ T.Tplus }
   '-'  { L _ T.Tminus }
   '*'  { L _ T.Tstar }
   '/'  { L _ T.Tdiv }
   '%'  { L _ T.Trem }
-  '**' { L _ T.Texp }
+  '**' { L _ T.Tpow }
   '<<' { L _ T.Tshiftl }
   '>>' { L _ T.Tshiftr }
 
@@ -131,7 +131,6 @@ import KZC.Util.Pretty
   '||' { L _ T.Tlor }
 
   '='     { L _ T.Tdef }
-  ':='    { L _ T.Tassign }
   '<-'    { L _ T.Tbind }
   '>>>'   { L _ T.Tcompose }
   '|>>>|' { L _ T.Tpcompose }
@@ -148,6 +147,21 @@ import KZC.Util.Pretty
   ','  { L _ T.Tcomma }
   ';'  { L _ T.Tsemi }
   ':'  { L _ T.Tcolon }
+
+  -- For the kyllini dialect
+  'mut'  { L _ T.Tmut }
+  'type' { L _ T.Ttype }
+
+  'Eq'         { L _ T.TEq }
+  'Ord'        { L _ T.TOrd }
+  'Bool'       { L _ T.TBool }
+  'Num'        { L _ T.TNum }
+  'Integral'   { L _ T.TIntegral }
+  'Fractional' { L _ T.TFractional }
+  'Bits'       { L _ T.TBits }
+
+  '->' { L _ T.Tarrow }
+  '..' { L _ T.Tdotdot }
 
 -- We give 'if'...'else' a higher precedence than an 'if' without an 'else'
 -- clause.
@@ -221,12 +235,15 @@ modid :
 
 identifier :: { Var }
 identifier :
-    ID       { mkVar $ mkSymName (getID $1) (locOf $1) }
-  | STRUCTID { mkVar $ mkSymName (getSTRUCTID $1) (locOf $1) }
-  | 'arr'    { mkVar $ mkName "arr" (locOf $1) }
-  | 'fun'    { mkVar $ mkName "fun" (locOf $1) }
-  | 'impure' { mkVar $ mkName "impure" (locOf $1) }
-  | 'length' { mkVar $ mkName "length" (locOf $1) }
+    ID         { mkVar $ mkSymName (getID $1) (locOf $1) }
+  | STRUCTID   { mkVar $ mkSymName (getSTRUCTID $1) (locOf $1) }
+  | 'arr'      { mkVar $ mkName "arr" (locOf $1) }
+  | 'fun'      { mkVar $ mkName "fun" (locOf $1) }
+  | 'impure'   { mkVar $ mkName "impure" (locOf $1) }
+  | 'length'   { mkVar $ mkName "length" (locOf $1) }
+  | INT_TYPE   { mkVar $ mkTypeName "i" (getINT_TYPE $1) (locOf $1) }
+  | UINT_TYPE  { mkVar $ mkTypeName "u" (getUINT_TYPE $1) (locOf $1) }
+  | FLOAT_TYPE { mkVar $ mkTypeName "f" (getFLOAT_TYPE $1) (locOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -239,10 +256,10 @@ scalar_value :
     '(' ')' { L (locOf $1) UnitC }
   | 'true'  { L (locOf $1) $ BoolC True }
   | 'false' { L (locOf $1) $ BoolC False }
-  | "'0"    { L (locOf $1) $ FixC (U (Just 1)) 0 }
-  | "'1"    { L (locOf $1) $ FixC (U (Just 1)) 1 }
-  | INT     { L (locOf $1) $ FixC (I Nothing) (fromIntegral (snd (getINT $1))) }
-  | UINT    { L (locOf $1) $ FixC (U Nothing) (fromIntegral (snd (getUINT $1))) }
+  | "'0"    { L (locOf $1) $ FixC (U 1) 0 }
+  | "'1"    { L (locOf $1) $ FixC (U 1) 1 }
+  | INT     { L (locOf $1) $ FixC IDefault (fromIntegral (snd (getINT $1))) }
+  | UINT    { L (locOf $1) $ FixC UDefault (fromIntegral (snd (getUINT $1))) }
   | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -251,11 +268,6 @@ scalar_value :
  - Expressions
  -
  ------------------------------------------------------------------------------}
-
-exp :: { Exp }
-exp :
-    bexp             { $1 }
-  | '{' exp_list '}' { ArrayE $2 ($1 `srcspan` $2) }
 
 const_exp :: { Exp }
 const_exp :
@@ -319,6 +331,8 @@ pexp :
       { varE (mkVar (varid $1)) }
   | pexp '.' ID
       { ProjE $1 (mkField (fieldid $3)) ($1 `srcspan` $3) }
+  | pexp '[' exp ']'
+      { IdxE $1 $3 Nothing ($1 `srcspan` $4) }
   | pexp '[' exp ':' const_int_exp ']'
       {% do { from      <- constIntExp $3
             ; let to    =  unLoc $5
@@ -327,19 +341,15 @@ pexp :
             ; return $ IdxE $1 efrom (Just len) ($1 `srcspan` $6)
             }
       }
-  | pexp '[' exp ',' const_int_exp ']'
-      { IdxE $1 $3 (Just (unLoc $5)) ($1 `srcspan` $6) }
-  | pexp '[' exp ']'
-      { IdxE $1 $3 Nothing ($1 `srcspan` $4) }
 
 aexp :: { Exp }
 aexp :
-    pexp
-      { $1 }
-  | scalar_value
+    scalar_value
       { ConstE (unLoc $1) (srclocOf $1) }
-  | 'arr' '{' exp_list '}'
-      { ArrayE $3 ($1 `srcspan` $4) }
+  | '[' exp_list ']'
+      { ArrayE $2 ($1 `srcspan` $3) }
+  | pexp
+      { $1 }
 
   | aexp '+' aexp
       { BinopE Add $1 $3 ($1 `srcspan` $3)}
@@ -389,49 +399,54 @@ aexp :
 
   | 'length' aexp
       { UnopE Len $2 ($1 `srcspan` $2)}
-  | cast_type '(' exp ')'
+  | simple_type '(' exp ')'
       { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
 
-  | structid '{' struct_init_list1 '}'
-      { StructE $1 $3 ($1 `srcspan` $4) }
+  | structid type_application '{' struct_init_list1 '}'
+      { StructE $1 $2 $4 ($1 `srcspan` $5) }
+  | 'struct' structid type_application '{' struct_init_list1 '}'
+      { StructE $2 $3 $5 ($1 `srcspan` $6) }
 
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
   | '(' exp error
       {% unclosed ($1 <--> $2) "(" }
 
-bexp :: { Exp }
-bexp :
+exp :: { Exp }
+exp :
     aexp
       { $1 }
 
-  | 'if' bexp 'then' bexp 'else' bexp
+  | 'if' exp 'then' exp 'else' exp
       { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
-  | 'if' bexp 'then' bexp 'else' error
+  | 'if' exp 'then' exp 'else' error
       {% expected ["expression"] Nothing }
-  | 'if' bexp 'then' bexp error
+  | 'if' exp 'then' exp error
       {% expected ["else clause"] Nothing }
-  | 'if' bexp 'then' error
+  | 'if' exp 'then' error
       {% expected ["expression"] Nothing }
-  | 'if' bexp error
+  | 'if' exp error
       {% expected ["then clause"] Nothing }
   | 'if' error
       {% expected ["expression"] Nothing }
 
-  | 'let' var_bind '=' exp 'in' bexp_or_stms
+  | 'let' var_bind '=' exp 'in' exp_or_stms
       { let { (v, tau) = $2 }
         in
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
-  | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (mkVar (varid $2)) $4 $5 $7 ($1 `srcspan` $7) }
+  | 'let' 'mut' var_bind maybe_initializer 'in' exp_or_stms
+      { let { (v, tau) = $3 }
+        in
+          LetRefE v tau $4 $6 ($1 `srcspan` $6)
+      }
 
-bexp_or_stms :: { Exp }
-bexp_or_stms :
-    bexp         { $1 }
+exp_or_stms :: { Exp }
+exp_or_stms :
+    exp         { $1 }
   | '{' stms '}' { StmE $2 ($1 `srcspan` $3) }
 
 -- Variable binding
@@ -439,14 +454,14 @@ var_bind :: { (Var, Maybe Type) }
 var_bind :
     identifier
       { ($1, Nothing) }
-  | '(' identifier ':' base_type ')'
-      { ($2, Just $4) }
+  | identifier ':' base_type
+      { ($1, Just $3) }
 
 -- Mutable variable initializer
 maybe_initializer :: { Maybe Exp }
 maybe_initializer :
     {- empty -} { Nothing }
-  | ':=' exp    { Just $2 }
+  | '=' exp     { Just $2 }
 
 -- Constant integer expressions
 const_int_exp :: { L Int }
@@ -486,24 +501,16 @@ struct_init_list1 :
 struct_init1_rlist :: { RevList (Field, Exp) }
 struct_init1_rlist :
     struct_init                        { rsingleton $1 }
-  | struct_init1_rlist ';' struct_init { rcons $3 $1 }
+  | struct_init1_rlist ',' struct_init { rcons $3 $1 }
 
 struct_init :: { (Field, Exp) }
 struct_init :
     ID '=' exp { (mkField (fieldid $1), $3) }
 
-gen_interval :: { L (Exp, Exp) }
+gen_interval :: { GenInterval }
 gen_interval :
-    '[' exp ':' const_int_exp ']'
-      {% do { from     <- constIntExp $2
-            ; let to   =  unLoc $4
-            ; let len  =  to - from + 1
-            ; return $ L ($1 <--> $5)
-                (intC from (srclocOf $2), intC len (srclocOf $4))
-            }
-      }
-  | '[' exp ',' exp ']'
-      {L ($1 <--> $5) ($2, $4) }
+    exp '..' exp
+      { FromToExclusive $1 $3 ($1 `srcspan` $3) }
 
 {------------------------------------------------------------------------------
  -
@@ -511,47 +518,50 @@ gen_interval :
  -
  ------------------------------------------------------------------------------}
 
+tyvar :: { TyVar }
+tyvar :
+    ID  { mkTyVar $ mkSymName (getID $1) (locOf $1) }
+  | 'T' { mkTyVar $ mkSymName "T" (locOf $1) }
+  | 'C' { mkTyVar $ mkSymName "C" (locOf $1) }
+
 simple_type :: { Type }
 simple_type :
-    'bit'             { FixT (U (Just 1))  (srclocOf $1) }
-  | 'int8'            { FixT (I (Just 8))  (srclocOf $1) }
-  | 'int16'           { FixT (I (Just 16)) (srclocOf $1) }
-  | 'int32'           { FixT (I (Just 32)) (srclocOf $1) }
-  | 'int64'           { FixT (I (Just 64)) (srclocOf $1) }
-  | 'int'             { FixT (I Nothing)   (srclocOf $1) }
-  | 'uint8'           { FixT (U (Just 8))  (srclocOf $1) }
-  | 'uint16'          { FixT (U (Just 16)) (srclocOf $1) }
-  | 'uint32'          { FixT (U (Just 32)) (srclocOf $1) }
-  | 'uint64'          { FixT (U (Just 64)) (srclocOf $1) }
-  | 'uint'            { FixT (U Nothing)   (srclocOf $1) }
-  | 'float'           { FloatT FP32 (srclocOf $1) }
-  | 'double'          { FloatT FP64 (srclocOf $1) }
-  | structid          { StructT $1 (srclocOf $1) }
-  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
+    'bit'                              { FixT (U 1)    (srclocOf $1) }
+  | 'int'                              { FixT IDefault (srclocOf $1) }
+  | 'int8'                             { FixT (I 8)    (srclocOf $1) }
+  | 'int16'                            { FixT (I 16)   (srclocOf $1) }
+  | 'int32'                            { FixT (I 32)   (srclocOf $1) }
+  | 'int64'                            { FixT (I 64)   (srclocOf $1) }
+  | 'uint'                             { FixT UDefault (srclocOf $1) }
+  | 'uint8'                            { FixT (U 8)    (srclocOf $1) }
+  | 'uint16'                           { FixT (U 16)   (srclocOf $1) }
+  | 'uint32'                           { FixT (U 32)   (srclocOf $1) }
+  | 'uint64'                           { FixT (U 64)   (srclocOf $1) }
+  | INT_TYPE                           { FixT (I (getINT_TYPE $1)) (srclocOf $1) }
+  | UINT_TYPE                          { FixT (U (getUINT_TYPE $1)) (srclocOf $1) }
+  | FLOAT_TYPE                         {% mkFloatT (getFLOAT_TYPE $1) (srclocOf $1) }
+  | 'float'                            { FloatT FP32 (srclocOf $1) }
+  | 'double'                           { FloatT FP64 (srclocOf $1) }
+  | structid type_application          { StructT $1 $2 ($1 `srcspan` $1) }
+  | 'struct' structid type_application { StructT $2 $3 ($1 `srcspan` $3) }
 
 base_type :: { Type }
 base_type :
     simple_type       { $1 }
   | '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
-  | 'arr' arr_length  { let { (ind, tau) = $2 }
-                        in
-                          ArrT ind tau ($1 `srcspan` tau)
-                      }
+  | array_type        { $1 }
+  | tyvar             { TyVarT $1 (srclocOf $1) }
   | '(' base_type ')' { $2 }
 
-cast_type :: { Type }
-cast_type :
-    simple_type { $1 }
-
-arr_length :: { (Ind, Type) }
-arr_length :
-    '[' 'length' '(' ID ')' ']' base_type
-      { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
-  | '[' const_int_exp ']' base_type
-      { (NatT (unLoc $2) (srclocOf $2), $4) }
-  | base_type
-      { (NoneI (srclocOf $1), $1) }
+array_type :: { Type }
+array_type :
+    '[' base_type ';' 'length' '(' ID ')' ']'
+      { ArrT (LenT (mkVar (varid $6)) ($4 `srcspan` $7)) $2 ($1 `srcspan` $8) }
+  | '[' base_type ';' const_int_exp ']'
+      { ArrT (NatT (unLoc $4) (srclocOf $4)) $2 ($1 `srcspan` $5) }
+  | '[' base_type ']'
+      { ArrT (UnknownT (srclocOf $2)) $2 ($1 `srcspan` $3) }
 
 comp_base_type :: { Type }
 comp_base_type :
@@ -566,6 +576,58 @@ index_type :
   | 'C' base_type      { C $2 ($1 `srcspan` $2) }
   | '(' index_type ')' { $2 }
 
+type_application :: { [Type] }
+type_application :
+    {- empty -}             { [] }
+  | '<' base_type_rlist '>' { rev $2 }
+
+base_type_rlist :: { RevList Type }
+base_type_rlist :
+    base_type                     { rsingleton $1 }
+  | base_type_rlist ',' base_type { rcons $3 $1 }
+
+{------------------------------------------------------------------------------
+ -
+ - Traits and kinds
+ -
+ ------------------------------------------------------------------------------}
+
+trait :: { Trait }
+trait :
+    'Eq'         { EqR }
+  | 'Ord'        { OrdR }
+  | 'Bool'       { BoolR }
+  | 'Num'        { NumR }
+  | 'Integral'   { IntegralR }
+  | 'Fractional' { FractionalR }
+  | 'Bits'       { BitsR }
+
+traits :: { Traits }
+traits : trait_rlist { traits (rev $1) }
+
+trait_rlist :: { RevList Trait }
+trait_rlist :
+    trait                 { rsingleton $1 }
+  | trait_rlist '+' trait { rcons $3 $1 }
+
+opt_kind :: { Maybe Kind }
+opt_kind :
+    {- empty -} { Nothing }
+  | ':' traits  { Just $2 }
+
+tvk :: { Tvk }
+tvk : tyvar opt_kind { ($1, $2) }
+
+tvks :: { [Tvk] }
+tvks :
+    {- empty -}        { [] }
+  | '<' tvks_rlist '>' { rev $2 }
+
+tvks_rlist :: { RevList Tvk }
+tvks_rlist :
+    tvk                { rsingleton $1 }
+  | tvks_rlist ',' tvk { rcons $3 $1 }
+
 {------------------------------------------------------------------------------
  -
  - Statements
@@ -577,42 +639,39 @@ stm :
     decl
       { LetS $1 (srclocOf $1) }
   | var_bind '<-' stm_exp
-      { let { (v, tau) = $1
-            ; body     = $3
-            }
+      { let (v, tau) = $1
         in
-          BindS v tau body (v `srcspan` $3)
+          BindS v tau $3 (v `srcspan` $3)
       }
   | stm_exp
       { ExpS $1 (srclocOf $1) }
 
 stms :: { [Stm] }
 stms :
-    stm_rlist opt_semi { rev $1 }
+    stm_rlist { rev $1 }
 
 stm_rlist :: { RevList Stm }
 stm_rlist :
-    stm                    { rsingleton $1 }
-  | stm_rlist opt_semi stm { rcons $3 $1 }
+    {- empty -}   { rnil }
+  | stm_rlist stm { rcons $2 $1 }
 
 stm_exp :: { Exp }
 stm_exp :
-    ID
-      { varE (mkVar (varid $1)) }
-
-  | decl 'in' stm_exp
+    decl 'in' stm_exp
       { LetDeclE $1 $3 ($1 `srcspan` $3) }
   | decl 'in' error
       {% expected ["statement"] Nothing }
   | decl error
       {% expected ["'in'"] Nothing }
 
-  | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
-  | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
+  | ID ';'
+      { varE (mkVar (varid $1)) }
+  | ID '(' exp_list ')' ';'
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
+  | STRUCTID '(' exp_list ')' ';'
+      { mkCall (structid $1) $3 ($1 `srcspan` $4) }
 
-  | pexp ':=' exp
+  | pexp '=' exp ';'
       { AssignE $1 $3 ($1 `srcspan` $3) }
 
   | 'if' exp 'then' stm_exp 'else' stm_exp
@@ -639,52 +698,41 @@ stm_exp :
   | unroll_info 'times' exp stm_exp %prec STANDALONE
       { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
   | unroll_info 'for' var_bind 'in' gen_interval stm_exp %prec STANDALONE
-      { let { (v, tau)     = $3
-            ; (start, len) = unLoc $5
-            }
+      { let (v, tau) = $3
         in
-          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
+          ForE (unLoc $1) v tau $5 $6 ($1 `srcspan` $6)
       }
 
-  | inline_ann 'return' exp
+  | inline_ann 'return' exp ';'
      { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
 
-  | 'print' exp_list1
+  | 'print' exp_list1 ';'
       { PrintE False $2 ($1 `srcspan` $2) }
-  | 'println' exp_list1
+  | 'println' exp_list1 ';'
       { PrintE True $2 ($1 `srcspan` $2) }
-  | 'error' STRING
+  | 'error' STRING ';'
       { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
 
-  | 'emit' exp
+  | 'emit' exp ';'
       { EmitE $2 ($1 `srcspan` $2) }
-  | 'emits' exp
+  | 'emits' exp ';'
       { EmitsE $2 ($1 `srcspan` $2) }
-  | 'take'
+  | 'take' ';'
       { TakeE (srclocOf $1) }
-  | 'takes' const_int_exp
+  | 'takes' const_int_exp ';'
       { TakesE (unLoc $2) ($1 `srcspan` $2) }
 
-  | 'read' type_ann
-      { ReadE (unLoc $2) ($1 `srcspan` $2) }
-  | 'write' type_ann
-      { WriteE (unLoc $2) ($1 `srcspan` $2) }
-
-  | 'filter' var_bind
+  | 'filter' var_bind ';'
       { let { (v, tau) = $2 }
         in
           FilterE v tau ($1 `srcspan` tau)
       }
-  | 'map' vect_ann var_bind
+  | 'map' vect_ann var_bind ';'
       { let { (v, tau) = $3 }
         in
           MapE $2 v tau ($1 `srcspan` tau)
       }
 
-  | 'do' '{' stms '}'
-      { stmsE $3 }
-  | 'seq' '{' stms '}'
-      { stmsE $3 }
   | '{' stms '}'
       { stmsE $2 }
 
@@ -710,30 +758,53 @@ unroll_info :
 
 decl :: { Decl }
 decl :
-    'let' var_bind '=' exp
+    'let' var_bind '=' exp ';'
       { let { (v, tau) = $2 }
         in
           LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
-  | 'var' ID ':' base_type maybe_initializer
-      { LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
-  | struct
-      { LetStructD $1 (srclocOf $1) }
-  | 'fun' 'external' ID params ':' base_type
-      { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
-  | 'fun' 'external' 'impure' ID params ':' base_type
-      { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
-  | 'fun' 'comp' maybe_comp_range identifier comp_params '{' stms '}'
-      { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
-  | 'fun' identifier params '{' stms '}'
-      { LetFunD $2 $3 (stmsE $5) ($1 `srcspan` $6) }
+  | 'let' var_bind '=' exp error
+      {% expected ["';'"] Nothing }
+  | 'let' 'mut' var_bind maybe_initializer ';'
+      { let { (v, tau) = $3 }
+        in
+          LetRefD v tau $4 ($1 `srcspan` $4)
+      }
+  | 'let' 'mut' var_bind error
+      {% expected ["initializer", "';'"] Nothing }
+
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp
       { let { (v, tau) = $4 }
         in
           LetCompD v tau $3 $6 ($1 `srcspan` $6)
       }
+  | 'struct' ID tvks '{' field_list '}'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ StructD (mkStruct (varid $2)) $3 $5 ($1 `srcspan` $6)
+            }
+      }
+  | 'type' ID tvks '=' base_type ';'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ TypeD (mkStruct (varid $2)) $3 $5 ($1 `srcspan` $6)
+            }
+      }
+  | 'type' ID tvks '=' base_type error
+      {% expected ["';'"] Nothing }
+  | 'fun' 'external' ID params '->' base_type
+      { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
+  | 'fun' 'external' 'impure' ID params '->' base_type
+      { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
+  | 'fun' identifier tvks params fun_sig '{' stms '}'
+      { LetFunD $2 $3 $4 $5 (stmsE $7) ($1 `srcspan` $8) }
+
+fun_sig :: { Maybe Type }
+fun_sig :
+    {- empty -}         { Nothing }
+  | '->' base_type      { Just $2 }
+  | '->' comp_base_type { Just $2 }
+  | '->' error          {% expected ["base type"] Nothing }
 
 inline_ann :: { L InlineAnn }
 inline_ann :
@@ -741,11 +812,6 @@ inline_ann :
   | 'noinline'    { L (locOf $1) NoInline }
   | 'forceinline' { L (locOf $1) Inline }
   | 'autoinline'  { L (locOf $1) AutoInline }
-
-type_ann :: { L (Maybe Type) }
-type_ann :
-    {- empty -}       { L NoLoc        Nothing }
-  | '[' base_type ']' { L ($1 <--> $3) (Just $2) }
 
 vect_ann :: { VectAnn }
 vect_ann :
@@ -785,20 +851,13 @@ comp_var_bind :
             ; return ($1, Nothing)
             }
       }
-  | '(' identifier ':' comp_base_type ')'
+  | identifier ':' comp_base_type
       {% do { -- addCompIdentifier (symbol $2)
-            ; return ($2, Just $4)
+            ; return ($1, Just $3)
             }
       }
-
--- structs
-struct :: { StructDef }
-struct :
-    'struct' ID '=' '{' field_list '}'
-      {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
-            }
-      }
+  | identifier ':' error
+      {% expected ["ST type"] Nothing }
 
 field_list :: { [(Field, Type)] }
 field_list :
@@ -808,8 +867,8 @@ field_rlist :: { RevList (Field, Type) }
 field_rlist :
     {- empty -}           { rnil }
   | field                 { rsingleton $1 }
-  | field_rlist ';'       { $1 }
-  | field_rlist ';' field { rcons $3 $1 }
+  | field_rlist ','       { $1 }
+  | field_rlist ',' field { rcons $3 $1 }
 
 field :: { (Field, Type) }
 field :
@@ -828,35 +887,7 @@ param_rlist :
 
 param :: { VarBind  }
 param :
-    'var' ID
-      { VarBind (mkVar (varid $2)) True Nothing }
-  | 'var' ID ':' base_type
-      { VarBind (mkVar (varid $2)) True (Just $4) }
-  | identifier
-      { VarBind $1 False Nothing }
-  | identifier ':' base_type
-      { VarBind $1 False (Just $3) }
-
--- Parameters to a comp function
-comp_params :: { [VarBind] }
-comp_params :
-    '(' comp_param_rlist ')' { rev $2 }
-
-comp_param_rlist :: { RevList VarBind }
-comp_param_rlist :
-    {- empty -}                     { rnil }
-  | comp_param                      { rsingleton $1 }
-  | comp_param_rlist ',' comp_param { rcons $3 $1 }
-
-comp_param :: { VarBind }
-comp_param :
-    'var' ID
-      { VarBind (mkVar (varid $2)) True Nothing }
-  | 'var' ID ':' base_type
-      { VarBind (mkVar (varid $2)) True (Just $4) }
-  | 'var' ID ':' comp_base_type
-      {% fail "Computation parameter cannot be mutable" }
-  | ID
+    ID
       { VarBind (mkVar (varid $1)) False Nothing }
   | ID ':' base_type
       { VarBind (mkVar (varid $1)) False (Just $3) }
@@ -864,6 +895,12 @@ comp_param :
       { VarBind (mkVar (varid $1)) False (Just $3) }
   | ID ':' error
       {% expected ["'ST' or base type"] Nothing }
+  | 'mut' ID
+      { VarBind (mkVar (varid $2)) True Nothing }
+  | 'mut' ID ':' base_type
+      { VarBind (mkVar (varid $2)) True (Just $4) }
+  | 'mut' ID ':' comp_base_type
+      {% fail "Computation parameter cannot be mutable" }
 
 {------------------------------------------------------------------------------
  -
@@ -873,7 +910,7 @@ comp_param :
 
 program :: { Program }
 program :
-    imports decl_rlist opt_semi { Program $1 (rev $2) }
+    imports decl_rlist { Program $1 (rev $2) }
 
 import :: { Import }
 import :
@@ -883,23 +920,12 @@ import :
 imports :: { [Import] }
 imports :
     {- empty -}             { [] }
-  | import opt_semi imports { $1 : $3 }
+  | import ';' imports { $1 : $3 }
 
 decl_rlist :: { RevList Decl }
 decl_rlist :
-    decl                     { rsingleton $1 }
-  | decl_rlist opt_semi decl { rcons $3 $1 }
-
-{------------------------------------------------------------------------------
- -
- - Miscellaneous
- -
- ------------------------------------------------------------------------------}
-
-opt_semi :: { () }
-opt_semi :
-    {- empty -} { () }
-  | ';'         { () }
+    decl            { rsingleton $1 }
+  | decl_rlist decl { rcons $2 $1 }
 
 {
 happyError :: L T.Token -> P a
@@ -913,6 +939,10 @@ getCHAR        (L _ (T.TcharConst x))            = x
 getSTRING      (L _ (T.TstringConst x))          = x
 getID          (L _ (T.Tidentifier ident))       = ident
 getSTRUCTID    (L _ (T.TstructIdentifier ident)) = ident
+
+getINT_TYPE   (L _ (T.Ti w)) = w
+getUINT_TYPE  (L _ (T.Tu w)) = w
+getFLOAT_TYPE (L _ (T.Tf w)) = w
 
 lexer :: (L T.Token -> P a) -> P a
 lexer cont = do
@@ -936,7 +966,13 @@ constIntExp :: Exp -> P Int
 constIntExp e = go e
   where
     go :: Exp -> P Int
+    go (ConstE (FixC IDefault i) _) =
+        return i
+
     go (ConstE (FixC I{} i) _) =
+        return i
+
+    go (ConstE (FixC UDefault i) _) =
         return i
 
     go (ConstE (FixC U{} i) _) =
@@ -958,7 +994,15 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Int -> SrcLoc -> Exp
-intC i l = ConstE (FixC (I Nothing) i) l
+intC i l = ConstE (FixC IDefault i) l
+
+mkFloatT :: Monad m => Int -> SrcLoc -> m Type
+mkFloatT 32 s = return $ FloatT FP32 s
+mkFloatT 64 s = return $ FloatT FP64 s
+mkFloatT w  _ = faildoc $ text "Cannot handle float width" <+> ppr w
+
+mkTypeName :: String -> Int -> Loc -> Name
+mkTypeName s w l = mkName (s ++ show w) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

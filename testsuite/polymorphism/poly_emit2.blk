@@ -1,0 +1,15 @@
+fun comp poly_emit(x) {
+  emit x;
+}
+
+fun comp ident() {
+  x <- take;
+  poly_emit(x);
+}
+
+fun comp convert() {
+  (x : int) <- take;
+  emit double(x);
+}
+
+let comp main = read[int] >>> repeat ident() >>> repeat convert() >>> repeat ident() >>>  write[double]

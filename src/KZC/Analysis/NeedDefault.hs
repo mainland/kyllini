@@ -6,7 +6,7 @@
 
 {-|
 Module      :  KZC.Analysis.NeedDefault
-Copyright   :  (c) 2016 Drexel University
+Copyright   :  (c) 2016-2017 Drexel University
 License     :  BSD-style
 Maintainer  :  mainland@drexel.edu
 
@@ -53,6 +53,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Pretty
 import KZC.Util.Trace
@@ -313,6 +314,7 @@ newtype ND m a = ND { unND :: StateT NDState m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -443,9 +445,9 @@ useDecl (LetExtFunD f ns vbs tau_ret l) m = do
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-useDecl (LetStructD s flds l) m = do
-    x <- extendStructs [StructDef s flds l] m
-    return (LetStructD s flds l, x)
+useDecl decl@(StructD s tvks flds l) m = do
+    x <- extendStructs [StructDef s tvks flds l] m
+    return (decl, x)
 
 useDecl (LetCompD v tau comp l) m = do
     comp' <- extendLet v tau $
@@ -543,12 +545,14 @@ useStep LetC{} =
 useStep (WhileC l e c s) =
     WhileC l <$> (fst <$> useExp e) <*> useComp c <*> pure s
 
-useStep (ForC l ann v tau e1 e2 c s) = do
+useStep (ForC l ann v tau gint c s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
     c'          <- extendVars [(v, tau)] $
                    useFor v val1 val2 (useComp c)
-    return $ ForC l ann v tau e1' e2' c' s
+    return $ ForC l ann v tau (startLenGenInt e1' e2') c' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
 useStep (LiftC l e s) =
     LiftC l <$> (fst <$> useExp e) <*> pure s
@@ -692,10 +696,8 @@ useExp (AssignE e1 e2 s) = do
       where
         go :: Val -> ND m (Exp, Val)
         go val | val == bot = do
-            StructDef _ flds _ <- lookupVar v >>=
-                                  checkRefT >>=
-                                  checkStructT >>=
-                                  lookupStruct
+            (struct, taus) <- lookupVar v >>= checkRefT >>= checkStructT
+            flds           <- lookupStructFields struct taus
             putVal v $ StructV $
                 Map.insert f val2 $
                 Map.fromList (map fst flds `zip` repeat bot)
@@ -714,12 +716,14 @@ useExp (AssignE e1 e2 s) = do
 useExp (WhileE e1 e2 s) =
     topA $ WhileE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure s
 
-useExp (ForE ann v tau e1 e2 e3 s) = do
+useExp (ForE ann v tau gint e3 s) = do
     (e1', val1) <- useExp e1
     (e2', val2) <- useExp e2
     e3'         <- extendVars [(v, tau)] $
                    useFor v val1 val2 (fst <$> useExp e3)
-    topA $ return $ ForE ann v tau e1' e2' e3' s
+    topA $ return $ ForE ann v tau (startLenGenInt e1' e2') e3' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
 useExp (ArrayE es s) = do
     es' <- map fst <$> mapM useExp es
@@ -746,8 +750,8 @@ useExp (IdxE e1@(VarE v _) e2 len s) = do
 useExp (IdxE e1 e2 len s) =
     topA $ IdxE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure len <*> pure s
 
-useExp (StructE struct flds s) =
-    topA $ StructE struct <$> (zip fs <$> mapM (fmap fst . useExp) es) <*> pure s
+useExp (StructE struct taus flds s) =
+    topA $ StructE struct taus <$> (zip fs <$> mapM (fmap fst . useExp) es) <*> pure s
   where
     fs :: [Field]
     es :: [Exp]

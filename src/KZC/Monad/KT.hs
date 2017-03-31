@@ -1,6 +1,6 @@
 {-
 Module      :  KZC.Monad.KT
-Copyright   :  (c) 2016 Drexel University
+Copyright   :  (c) 2016-2017 Drexel University
 License     :  BSD-style
 Maintainer  :  mainland@drexel.edu
 
@@ -26,6 +26,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Core.Lint
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -113,6 +114,10 @@ instance (MonadErr m, MonadUnique m) => MonadUnique (KT r m) where
 instance (MonadErr m, MonadConfig m) => MonadConfig (KT r m) where
     askConfig   = lift askConfig
     localConfig = liftLocal askConfig localConfig
+
+instance (MonadErr m, MonadPlatform m) => MonadPlatform (KT r m) where
+    askPlatform   = lift askPlatform
+    localPlatform = liftLocal askPlatform localPlatform
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (KT r m) where
     askTraceDepth   = lift askTraceDepth

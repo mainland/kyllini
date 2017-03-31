@@ -2,7 +2,7 @@
 
 -- |
 -- Module      :  KZC.Core.Embed
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -175,7 +175,7 @@ forC' ann i len f = do
             extendVars [(v, intT)] $
             f (varE v)
       c2 <- k ()
-      return $ mkComp $ ForC l ann v intT (intE i) (intE len) c1 (srclocOf c1) : unComp c2
+      return $ mkComp $ ForC l ann v intT (startLenGenInt (intE i) (intE len)) c1 (srclocOf c1) : unComp c2
 
 timesC :: (Integral a, IsLabel l, MonadTc m)
        => a

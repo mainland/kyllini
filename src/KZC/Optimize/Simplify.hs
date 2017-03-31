@@ -5,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.Simplify
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -45,12 +45,13 @@ import Data.Traversable (traverse)
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 
+import KZC.Analysis.Occ
 import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Label
-import KZC.Analysis.Occ
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -68,22 +69,22 @@ type OutComp l = Comp l
 type Theta l = Map InVar (SubstRng l)
 
 data SubstRng l = SuspExp     (Theta l) InExp
-                | SuspFun     (Theta l) [(TyVar, Kind)] [(Var, Type)] Type InExp
+                | SuspFun     (Theta l) [Tvk] [(Var, Type)] Type InExp
                 | SuspComp    (Theta l) (InComp l)
-                | SuspFunComp (Theta l) [(TyVar, Kind)] [(Var, Type)] Type (InComp l)
+                | SuspFunComp (Theta l) [Tvk] [(Var, Type)] Type (InComp l)
                 | DoneExp     OutExp
-                | DoneFun     [(TyVar, Kind)] [(Var, Type)] Type OutExp
+                | DoneFun     [Tvk] [(Var, Type)] Type OutExp
                 | DoneComp    (OutComp l)
-                | DoneFunComp [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
+                | DoneFunComp [Tvk] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 type VarDefs l = Map OutVar (Definition l)
 
 data Definition l = Unknown
                   | BoundToExp     (Maybe OccInfo) Level OutExp
-                  | BoundToFun     (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type OutExp
+                  | BoundToFun     (Maybe OccInfo) [Tvk] [(Var, Type)] Type OutExp
                   | BoundToComp    (Maybe OccInfo) (OutComp l)
-                  | BoundToFunComp (Maybe OccInfo) [(TyVar, Kind)] [(Var, Type)] Type (OutComp l)
+                  | BoundToFunComp (Maybe OccInfo) [Tvk] [(Var, Type)] Type (OutComp l)
   deriving (Eq, Ord, Read, Show)
 
 data Level = Top | Nested
@@ -139,6 +140,7 @@ newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -347,6 +349,9 @@ simplDecl decl m = do
     -- | Drop a dead binding and unconditionally inline a binding that occurs only
     -- once.
     preInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    preInlineUnconditionally flags decl@StructD{} =
+        postInlineUnconditionally flags decl
+
     preInlineUnconditionally _flags LetD{} =
         faildoc $ text "preInlineUnconditionally: can't happen"
 
@@ -367,9 +372,6 @@ simplDecl decl m = do
         | otherwise = postInlineUnconditionally flags decl
       where
         isDead = bOccInfo f == Just Dead
-
-    preInlineUnconditionally flags decl@LetStructD{} =
-        postInlineUnconditionally flags decl
 
     preInlineUnconditionally flags decl@(LetCompD v _ comp _)
         | isDead = dropBinding v >> withoutBinding m
@@ -401,6 +403,10 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
+    postInlineUnconditionally _flags decl@(StructD s taus flds l) =
+        extendStructs [StructDef s taus flds l] $
+        withBinding decl m
+
     postInlineUnconditionally _flags LetD{} =
         faildoc $ text "postInlineUnconditionally: can't happen"
 
@@ -431,10 +437,6 @@ simplDecl decl m = do
         withBinding (LetExtFunD f tvks vbs tau_ret l) m
       where
         tau = funT tvks (map snd vbs) tau_ret l
-
-    postInlineUnconditionally _flags decl@(LetStructD s flds l) =
-        extendStructs [StructDef s flds l] $
-        withBinding decl m
 
     postInlineUnconditionally _flags (LetCompD v tau comp l) = do
         comp' <- extendLet v tau $
@@ -829,9 +831,9 @@ simplLift (WhileC l e1 Comp{unComp=[LiftC _ e2 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (WhileE e1 e2 s) s : steps
 
-simplLift (ForC l ann v tau e1 e2 Comp{unComp=[LiftC _ e3 _]} s : steps) = do
+simplLift (ForC l ann v tau gint Comp{unComp=[LiftC _ e _]} s : steps) = do
     rewrite
-    simplLift $ LiftC l (ForE ann v tau e1 e2 e3 s) s : steps
+    simplLift $ LiftC l (ForE ann v tau gint e s) s : steps
 
 simplLift (LiftC l e1 _ : LiftC _ e2 _ : steps) = do
     rewrite
@@ -964,7 +966,7 @@ simplStep (CallC l f0 taus0 args0 s) = do
 
     inlineFunCompRhs :: [Type]
                      -> [Arg l]
-                     -> [(TyVar, Kind)]
+                     -> [Tvk]
                      -> [(Var, Type)]
                      -> Type
                      -> Comp l
@@ -1007,11 +1009,14 @@ simplStep LetC{} =
 simplStep (WhileC l e c s) =
     WhileC l <$> simplE e <*> simplC c <*> pure s >>= return1
 
-simplStep (ForC l ann v tau ei elen c s) = do
+simplStep (ForC l ann v tau gint c s) = do
     ei'   <- simplE ei
     elen' <- simplE elen
     unroll ann ei' elen'
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unroll :: UnrollAnn
            -> Exp
            -> Exp
@@ -1043,7 +1048,7 @@ simplStep (ForC l ann v tau ei elen c s) = do
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         c' <- simplC c
-        return1 $ ForC l ann v' tau ei' elen' c' s
+        return1 $ ForC l ann v' tau (startLenGenInt ei' elen') c' s
 
 simplStep (LiftC l e s) =
     simplE e >>= go
@@ -1158,8 +1163,9 @@ simplE e0@(VarE v _) =
         simplE rhs
 
 simplE (UnopE op e s) = do
-    e' <- simplE e
-    unop op e'
+    op' <- simplOp op
+    e'  <- simplE e
+    unop op' e'
   where
     unop :: Unop -> Exp -> SimplM l m Exp
     unop Lnot (ConstE c _) | Just c' <- liftBool op not c =
@@ -1171,18 +1177,18 @@ simplE (UnopE op e s) = do
     unop Neg (ConstE c _) | Just c' <- liftNum op negate c =
         return $ ConstE c' s
 
-    unop (Cast (StructT sn' _)) (ConstE (StructC sn flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+    unop (Cast (StructT sn' taus' _)) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
         flds' <- castStruct cast sn' flds
-        return $ ConstE (StructC sn' flds') s
+        return $ ConstE (StructC sn' taus' flds') s
       where
         cast :: Type -> Const -> SimplM l m Const
         cast tau c = do
             ConstE c' _ <- unop (Cast tau) (ConstE c s)
             return c'
 
-    unop (Cast (StructT sn' _)) (StructE sn flds s) | isComplexStruct sn && isComplexStruct sn' = do
+    unop (Cast (StructT sn' taus' _)) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
         flds' <- castStruct cast sn' flds
-        return $ StructE sn' flds' s
+        return $ StructE sn' taus' flds' s
       where
         cast :: Type -> Exp -> SimplM l m Exp
         cast tau = unop (Cast tau)
@@ -1204,6 +1210,11 @@ simplE (UnopE op e s) = do
 
     unop op e' =
         return $ UnopE op e' s
+
+    simplOp :: Unop -> SimplM l m Unop
+    simplOp (Cast tau)    = Cast <$> simplType tau
+    simplOp (Bitcast tau) = Bitcast <$> simplType tau
+    simplOp op            = pure op
 
 simplE (BinopE op e1 e2 s) = do
     e1' <- simplE e1
@@ -1346,7 +1357,7 @@ simplE (CallE f0 taus0 es0 s) = do
 
     inlineFunRhs :: [Type]
                  -> [Exp]
-                 -> [(TyVar, Kind)]
+                 -> [Tvk]
                  -> [(Var, Type)]
                  -> Type
                  -> Exp
@@ -1390,7 +1401,7 @@ simplE (WhileE e1 e2 s) =
 -- ->
 --   return ()
 
-simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
+simplE (ForE _ann _v _tau _gint e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
     rewrite
     return e
 
@@ -1404,7 +1415,7 @@ simplE (ForE _ann _v _tau _ei _elen e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
 --
 -- This loop form shows up regularly in fused code.
 --
-simplE (ForE _ann v _tau ei elen
+simplE (ForE _ann v _tau gint
              (AssignE (IdxE (VarE xs _) (VarE v' _)  Nothing _) e_rhs _)
              s)
   | Just len <- fromIntE elen
@@ -1417,6 +1428,9 @@ simplE (ForE _ann v _tau ei elen
                         (IdxE e_ys (f ei) (Just len) s)
                         s
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
     unIdx (IdxE e1 (VarE v _) Nothing _) =
         Just (e1, v, id)
@@ -1430,11 +1444,14 @@ simplE (ForE _ann v _tau ei elen
     unIdx _ =
         Nothing
 
-simplE (ForE ann v tau ei elen e3 s) = do
+simplE (ForE ann v tau gint e3 s) = do
     ei'   <- simplE ei
     elen' <- simplE elen
     unroll ann ei' elen'
   where
+    ei, elen :: Exp
+    (ei, elen) = toStartLenGenInt gint
+
     unroll :: UnrollAnn
            -> Exp
            -> Exp
@@ -1466,7 +1483,7 @@ simplE (ForE ann v tau ei elen e3 s) = do
         extendVars [(v', tau)] $
         extendDefinitions [(v', Unknown)] $ do
         e3' <- simplE e3
-        return $ ForE ann v' tau ei' elen' e3' s
+        return $ ForE ann v' tau (startLenGenInt ei' elen') e3' s
 
 simplE (ArrayE es s) =
     mapM simplE es >>= go
@@ -1535,12 +1552,12 @@ simplE (IdxE e1 e2 len0 s) = do
     go e1' e2' len =
         return $ IdxE e1' e2' len s
 
-simplE (StructE struct flds s) = do
+simplE (StructE struct taus flds s) = do
     es <- mapM simplE es
     if all isConstE es
       then do cs <- mapM unConstE es
-              return $ ConstE (StructC struct (fs `zip` cs)) s
-      else return $ StructE struct (fs `zip` es) s
+              return $ ConstE (StructC struct taus (fs `zip` cs)) s
+      else return $ StructE struct taus (fs `zip` es) s
   where
     fs :: [Field]
     es :: [Exp]
@@ -1550,12 +1567,12 @@ simplE (ProjE e f s) =
     simplE e >>= go
   where
     go :: Exp -> SimplM l m Exp
-    go (StructE _ flds _) =
+    go (StructE _ _ flds _) =
         case lookup f flds of
           Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
           Just e' -> return e'
 
-    go (ConstE (StructC _ flds) _) =
+    go (ConstE (StructC _ _ flds) _) =
         case lookup f flds of
           Nothing -> faildoc $ text "Unknown struct field" <+> ppr f
           Just c  -> return $ ConstE c s
@@ -1769,7 +1786,7 @@ shouldInlineExpUnconditionally _ =
     return False
 
 shouldInlineFunUnconditionally :: MonadTc m
-                               => [(TyVar, Kind)]
+                               => [Tvk]
                                -> [(Var, Type)]
                                -> Type
                                -> OutExp
@@ -1786,7 +1803,7 @@ shouldInlineCompUnconditionally _ =
     asksConfig (testDynFlag AlwaysInlineComp)
 
 shouldInlineCompFunUnconditionally :: MonadTc m
-                                   => [(TyVar, Kind)]
+                                   => [Tvk]
                                    -> [(Var, Type)]
                                    -> Type
                                    -> OutComp l

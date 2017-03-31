@@ -17,14 +17,16 @@ import qualified Data.Map as Map
 import Language.Ziria.Syntax
 
 data RnEnv = RnEnv
-    { vars      :: Map Var Var
+    { tyVars    :: Map TyVar TyVar
+    , vars      :: Map Var Var
     , compVars  :: Map Var Var
     , compScope :: Bool
     }
 
 defaultRnEnv :: RnEnv
 defaultRnEnv = RnEnv
-    { vars       = Map.empty
+    { tyVars     = Map.empty
+    , vars       = Map.empty
     , compVars   = Map.empty
     , compScope  = False
     }

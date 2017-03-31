@@ -10,7 +10,7 @@
 
 -- |
 -- Module      :  KZC.Interp
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -54,6 +54,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax hiding (I)
 import qualified KZC.Core.Syntax as S
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -77,9 +78,11 @@ intV ~(FixT ip _) i = FixC ip (fromIntegral i)
 
 -- | Convert a 'Val' to an 'Integral' value.
 fromIntV :: (Integral a, Monad m) => Val -> m a
-fromIntV (FixC S.I{} x) = return $ fromIntegral x
-fromIntV (FixC U{} x)   = return $ fromIntegral x
-fromIntV val            = faildoc $ text "Not an integer:" <+> ppr val
+fromIntV (FixC IDefault x) = return $ fromIntegral x
+fromIntV (FixC S.I{} x)    = return $ fromIntegral x
+fromIntV (FixC UDefault x) = return $ fromIntegral x
+fromIntV (FixC U{} x)      = return $ fromIntegral x
+fromIntV val               = faildoc $ text "Not an integer:" <+> ppr val
 
 idxV :: Monad m => Val -> Int -> Maybe Int -> m Val
 idxV (ArrayC v) i Nothing =
@@ -94,7 +97,7 @@ idxV val _ _ =
     faildoc $ text "Cannot index into non-array:" <+> ppr val
 
 projV :: Monad m => Val -> Field -> m Val
-projV (StructC _ flds) f =
+projV (StructC _ _ flds) f =
     maybe err return $ lookup f flds
   where
     err = faildoc $ text "Unknown struct field" <+> ppr f
@@ -106,7 +109,7 @@ projV val _ =
 data Ref s -- | A reference to a value
            = ValR !(IORef Val)
            -- | A struct reference
-           | StructR Struct ![(Field, Ref s)]
+           | StructR Struct [Type] ![(Field, Ref s)]
            -- | A reference to an array of values of base type
            | ArrayR !(MVector s Val)
            -- | A reference to an element of base type in a mutable array.
@@ -126,8 +129,8 @@ fromRef :: (PrimMonad m, MonadRef IORef m) => Ref (PrimState m) -> m Val
 fromRef (ValR ref) =
     readRef ref
 
-fromRef (StructR struct flds) =
-    StructC struct <$> (zip fs <$> mapM fromRef rs)
+fromRef (StructR struct taus flds) =
+    StructC struct taus <$> (zip fs <$> mapM fromRef rs)
   where
     (fs, rs) = unzip flds
 
@@ -147,8 +150,8 @@ toRef (ArrayC vs) | isBaseV (V.head vs) =
 toRef (ArrayC vs) =
     ArrayRefR <$> (V.mapM toRef vs >>= V.thaw)
 
-toRef (StructC struct flds) =
-    StructR struct <$> (zip fs <$> mapM toRef cs)
+toRef (StructC struct taus flds) =
+    StructR struct taus <$> (zip fs <$> mapM toRef cs)
   where
     (fs, cs) = unzip flds
 
@@ -160,11 +163,10 @@ defaultRef :: (MonadTcRef m, s ~ PrimState m) => Type -> I s m (Ref s)
 defaultRef (RefT tau _) =
     defaultRef tau
 
-defaultRef (StructT struct _) = do
-    StructDef _ flds _ <- lookupStruct struct
-    let (fs, taus)     =  unzip flds
-    refs               <- mapM defaultRef taus
-    return $ StructR struct (fs `zip` refs)
+defaultRef (StructT struct taus _) = do
+    (fs, ftaus) <- unzip <$> lookupStructFields struct taus
+    refs        <- mapM defaultRef ftaus
+    return $ StructR struct taus (fs `zip` refs)
 
 defaultRef (ArrT (NatT n _) tau _) | isBaseT tau = do
     val <- defaultVal tau
@@ -200,7 +202,7 @@ projR :: PrimMonad m
       => Ref (PrimState m)
       -> Field
       -> m (Ref (PrimState m))
-projR (StructR _ flds) f =
+projR (StructR _ _ flds) f =
     maybe err return $ lookup f flds
   where
     err = faildoc $ text "Unknown struct field" <+> ppr f
@@ -221,6 +223,7 @@ newtype I s m a = I { unI :: ReaderT (IEnv s) m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadPlatform,
             MonadTrace,
             MonadTc)
 
@@ -266,7 +269,7 @@ assign :: forall s m . (s ~ PrimState m, PrimMonad m, MonadRef IORef m)
 assign (ValR ref) val =
     val `seq` writeRef ref val
 
-assign (StructR _ flds) (StructC _ flds') =
+assign (StructR _ _ flds) (StructC _ _ flds') =
     mapM_ (assignField flds') flds
   where
     assignField :: [(Field, Val)] -> (Field, Ref s) -> m ()
@@ -473,7 +476,7 @@ evalExp (WhileE e1 e2 _) =
     go val =
         faildoc $ text "Bad conditional:" <+> ppr val
 
-evalExp (ForE _ v tau e1 e2 e3 _) = do
+evalExp (ForE _ v tau gint e3 _) = do
     i   <- evalExp e1 >>= fromIntV
     len <- evalExp e2 >>= fromIntV
     ref <- newRef $ intV tau i
@@ -481,6 +484,9 @@ evalExp (ForE _ v tau e1 e2 e3 _) = do
       loop ref i (i+len)
     return UnitC
   where
+    e1, e2 :: Exp
+    (e1, e2) = toStartLenGenInt gint
+
     loop :: IORef Val -> Int -> Int -> I s m ()
     loop !ref !i !end | i < end = do
         void $ evalExp e3
@@ -499,9 +505,9 @@ evalExp (IdxE e1 e2 len _) = do
     val2 <- evalExp e2 >>= fromIntV
     idxV val1 val2 len
 
-evalExp (StructE struct flds _) = do
+evalExp (StructE struct taus flds _) = do
     vals <- mapM evalExp es
-    return $ StructC struct (fs `zip` vals)
+    return $ StructC struct taus (fs `zip` vals)
   where
     fs :: [Field]
     es :: [Exp]
@@ -725,7 +731,7 @@ compileExp (WhileE e1 e2 _) = do
             faildoc $ text "Bad conditional:" <+> ppr val
     return $ mval1 >>= go
 
-compileExp (ForE _ v tau e1 e2 e3 _) = do
+compileExp (ForE _ v tau gint e3 _) = do
     mi    <- compileExp e1
     mlen  <- compileExp e2
     ref   <- newRef $ error "naughty"
@@ -743,6 +749,9 @@ compileExp (ForE _ v tau e1 e2 e3 _) = do
                 len <- mlen >>= fromIntV
                 writeRef ref $ intV tau i
                 loop i (i+len)
+  where
+    e1, e2 :: Exp
+    (e1, e2) = toStartLenGenInt gint
 
 compileExp (ArrayE es _) = do
     mvals <- mapM compileExp es
@@ -760,10 +769,10 @@ compileExp (IdxE e1 e2 len _) = do
                 i   <- mval2 >>= fromIntV
                 idxV arr i len
 
-compileExp (StructE struct flds _) = do
+compileExp (StructE struct taus flds _) = do
     mvals <- mapM compileExp es
     return $ do vals <- sequence mvals
-                return $ StructC struct $ fs `zip` vals
+                return $ StructC struct taus $ fs `zip` vals
   where
     (fs, es) = unzip flds
 

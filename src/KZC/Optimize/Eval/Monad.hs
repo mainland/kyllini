@@ -119,6 +119,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Label
 import KZC.Optimize.Eval.Val
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.SetLike
@@ -174,6 +175,7 @@ newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalStat
               MonadException,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadUnique,
               MonadTc)
@@ -516,47 +518,47 @@ instance ModifiedVars x n => ModifiedVars (Maybe x) n where
     mvs = foldMap mvs
 
 instance ModifiedVars Exp Var where
-    mvs ConstE{}              = mempty
-    mvs VarE{}                = mempty
-    mvs UnopE{}               = mempty
-    mvs BinopE{}              = mempty
-    mvs (IfE _ e2 e3 _)       = mvs e2 <> mvs e3
-    mvs (LetE decl body _)    = mvs body <\\> binders decl
-    mvs (CallE _ _ es _)      = fvs es
-    mvs DerefE{}              = mempty
-    mvs (AssignE e1 _ _)      = fvs e1
-    mvs (WhileE e1 e2 _)      = mvs e1 <> mvs e2
-    mvs (ForE _ _ _ _ _ e3 _) = mvs e3
-    mvs ArrayE{}              = mempty
-    mvs IdxE{}                = mempty
-    mvs StructE{}             = mempty
-    mvs ProjE{}               = mempty
-    mvs PrintE{}              = mempty
-    mvs ErrorE{}              = mempty
-    mvs ReturnE{}             = mempty
-    mvs (BindE wv _ e1 e2 _)  = mvs e1 <> (mvs e2 <\\> binders wv)
-    mvs (LutE _ e)            = mvs e
-    mvs GenE{}                = mempty
+    mvs ConstE{}             = mempty
+    mvs VarE{}               = mempty
+    mvs UnopE{}              = mempty
+    mvs BinopE{}             = mempty
+    mvs (IfE _ e2 e3 _)      = mvs e2 <> mvs e3
+    mvs (LetE decl body _)   = mvs body <\\> binders decl
+    mvs (CallE _ _ es _)     = fvs es
+    mvs DerefE{}             = mempty
+    mvs (AssignE e1 _ _)     = fvs e1
+    mvs (WhileE e1 e2 _)     = mvs e1 <> mvs e2
+    mvs (ForE _ _ _ _ e _)   = mvs e
+    mvs ArrayE{}             = mempty
+    mvs IdxE{}               = mempty
+    mvs StructE{}            = mempty
+    mvs ProjE{}              = mempty
+    mvs PrintE{}             = mempty
+    mvs ErrorE{}             = mempty
+    mvs ReturnE{}            = mempty
+    mvs (BindE wv _ e1 e2 _) = mvs e1 <> (mvs e2 <\\> binders wv)
+    mvs (LutE _ e)           = mvs e
+    mvs GenE{}               = mempty
 
 instance ModifiedVars Exp v => ModifiedVars [Exp] v where
     mvs = foldMap mvs
 
 instance ModifiedVars (Step l) Var where
-    mvs VarC{}                 = mempty
-    mvs (CallC _ _ _ es _)     = fvs es
-    mvs (IfC _ _ e2 e3 _)      = mvs e2 <> mvs e3
-    mvs LetC{}                 = mempty
-    mvs (WhileC _ e c _)       = mvs e <> mvs c
-    mvs (ForC _ _ _ _ _ _ c _) = mvs c
-    mvs (LiftC _ e _)          = mvs e
-    mvs ReturnC{}              = mempty
-    mvs BindC{}                = mempty
-    mvs TakeC{}                = mempty
-    mvs TakesC{}               = mempty
-    mvs EmitC{}                = mempty
-    mvs EmitsC{}               = mempty
-    mvs (RepeatC _ _ c _)      = mvs c
-    mvs (ParC _ _ e1 e2 _)     = mvs e1 <> mvs e2
+    mvs VarC{}               = mempty
+    mvs (CallC _ _ _ es _)   = fvs es
+    mvs (IfC _ _ e2 e3 _)    = mvs e2 <> mvs e3
+    mvs LetC{}               = mempty
+    mvs (WhileC _ e c _)     = mvs e <> mvs c
+    mvs (ForC _ _ _ _ _ c _) = mvs c
+    mvs (LiftC _ e _)        = mvs e
+    mvs ReturnC{}            = mempty
+    mvs BindC{}              = mempty
+    mvs TakeC{}              = mempty
+    mvs TakesC{}             = mempty
+    mvs EmitC{}              = mempty
+    mvs EmitsC{}             = mempty
+    mvs (RepeatC _ _ c _)    = mvs c
+    mvs (ParC _ _ e1 e2 _)   = mvs e1 <> mvs e2
 
 instance ModifiedVars (Comp l) Var where
     mvs comp = go (unComp comp)

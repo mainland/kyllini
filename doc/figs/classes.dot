@@ -1,0 +1,11 @@
+digraph classes {
+  rankdir="TB";
+  node [fontname = "sans"];
+
+  Eq -> Ord;
+  Eq -> Bits;
+  Eq -> Bool;
+  Ord -> Num;
+  Num -> Integral;
+  Num -> Fractional;
+}

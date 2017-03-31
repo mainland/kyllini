@@ -108,6 +108,10 @@ evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
+evalDecl decl@(StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $
+    k $ const . return $ decl
+
 evalDecl (LetD decl s) k =
     evalLocalDecl decl go
   where
@@ -137,7 +141,6 @@ evalDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
 
     eval :: EvalM l m (Val l m Exp)
     eval =
-        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         withSummaryContext e $
@@ -150,10 +153,6 @@ evalDecl (LetExtFunD f tvks vbs tau_ret l) k =
   where
     tau :: Type
     tau = funT tvks (map snd vbs) tau_ret l
-
-evalDecl (LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ const . return $ LetStructD s flds l
 
 evalDecl decl@(LetCompD v tau comp s) k =
     withSummaryContext decl $
@@ -191,7 +190,6 @@ evalDecl decl@(LetFunCompD f tvks vbs tau_ret comp l) k =
     eval :: EvalM l m (Val l m (Comp l))
     eval =
         withSummaryContext comp $
-        extendTyVars tvks $
         extendVars vbs $
         withInstantiatedTyVars tau_ret $
         traverse uniquify comp >>= evalComp
@@ -368,15 +366,21 @@ evalStep step@(CallC _ f taus args _) =
     go v_f taus' v_args
   where
     go :: Val l m a -> [Type] -> [ArgVal l m] -> EvalM l m (Val l m (Comp l))
-    go (FunCompClosV theta tvks vbs _tau_ret k) taus' v_args =
+    go (FunCompClosV theta tvks vbs tau_ret k) taus' v_args =
         withSubst theta $
         withUniqVars vs $ \vs' ->
+        extendTyVars tvks $
         extendTyVarTypes (map fst tvks `zip` taus') $
-        extendArgBinds  (vs' `zip` v_args) $ do
+        extendSTTyVars tau_ret $
+        withInstantiatedTyVars tau_ret $
+        extendArgBinds (vs' `zip` v_args) $ do
         taus' <- mapM simplType taus
         k >>= wrapLetArgs vs' taus'
       where
         (vs, taus) = unzip vbs
+
+        extendSTTyVars (ForallT tvks ST{} _) k = extendTyVars tvks k
+        extendSTTyVars _                     k = k
 
         -- If @val@ uses any of the function's parameter bindings, we need to
         -- keep them around. This is exactly what we need to do in the @CallE@
@@ -442,8 +446,8 @@ evalStep LetC{} =
 evalStep (WhileC _ e c _) =
     evalWhileC e c
 
-evalStep (ForC _ ann v tau e1 e2 c _) =
-    evalForC ann v tau e1 e2 c
+evalStep (ForC _ ann v tau gint c _) =
+    evalForC ann v tau gint c
 
 evalStep (LiftC l e s) = do
     val <- withSummaryContext e $ evalExp e
@@ -489,13 +493,18 @@ evalStep (RepeatC l ann c s) = do
     steps' <- toSteps val
     partial $ CompV h [RepeatC l ann (mkComp  steps') s]
 
-evalStep (ParC ann tau c1 c2 s) = do
-    h      <- freezeHeap
-    val1   <- withSummaryContext c1 $ evalComp c1
-    val2   <- withSummaryContext c2 $ evalComp c2
-    steps1 <- toSteps val1
-    steps2 <- toSteps val2
-    partial $ CompV h [ParC ann tau (mkComp  steps1) (mkComp  steps2) s]
+evalStep (ParC ann b c1 c2 l) = do
+    h         <- freezeHeap
+    (s, a, c) <- askSTIndices
+    val1      <- withSummaryContext c1 $
+                 localSTIndices (Just (s, a, b)) $
+                 evalComp c1
+    val2      <- withSummaryContext c2 $
+                 localSTIndices (Just (b, b, c)) $
+                 evalComp c2
+    steps1    <- toSteps val1
+    steps2    <- toSteps val2
+    partial $ CompV h [ParC ann b (mkComp  steps1) (mkComp  steps2) l]
 
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
@@ -539,9 +548,9 @@ evalConst (ReplicateC n c) = do
 evalConst (EnumC tau) =
     evalConst =<< ArrayC <$> enumType tau
 
-evalConst (StructC s flds) = do
+evalConst (StructC s taus flds) = do
     vals <- mapM evalConst cs
-    return $ StructV s (Map.fromList (fs `zip` vals))
+    return $ StructV s taus (Map.fromList (fs `zip` vals))
   where
     fs :: [Field]
     cs :: [Const]
@@ -589,22 +598,38 @@ evalExp e =
           else partialExp $ VarE v' s
 
     eval flags (UnopE op e s) | peval flags = do
+        op' <- evalUnop op
         val <- eval flags e
-        unop op val
+        unop op' val
       where
         unop :: Unop -> Val l m Exp -> EvalM l m (Val l m Exp)
-        unop Lnot val =
-            maybePartialVal $ liftBool op not val
+        unop Lnot  val = maybePartialVal $ liftBool op not val
+        unop Bnot  val = maybePartialVal $ liftBits op complement val
+        unop Neg   val = maybePartialVal $ liftNum op negate val
+        unop Abs   val = maybePartialVal $ liftNum op abs val
+        unop Exp   val = maybePartialVal $ liftFloating op exp val
+        unop Exp2  val = maybePartialVal $ liftFloating op (\x -> exp (log 2 * x)) val
+        unop Expm1 val = maybePartialVal $ liftFloating op (\x -> exp x - 1) val
+        unop Log   val = maybePartialVal $ liftFloating op log val
+        unop Log2  val = maybePartialVal $ liftFloating op (\x -> log x / log 2) val
+        unop Log1p val = maybePartialVal $ liftFloating op (\x -> log (x + 1)) val
+        unop Sqrt  val = maybePartialVal $ liftFloating op sqrt val
+        unop Sin   val = maybePartialVal $ liftFloating op sin val
+        unop Cos   val = maybePartialVal $ liftFloating op cos val
+        unop Tan   val = maybePartialVal $ liftFloating op tan val
+        unop Asin  val = maybePartialVal $ liftFloating op asin val
+        unop Acos  val = maybePartialVal $ liftFloating op acos val
+        unop Atan  val = maybePartialVal $ liftFloating op atan val
+        unop Sinh  val = maybePartialVal $ liftFloating op sinh val
+        unop Cosh  val = maybePartialVal $ liftFloating op cosh val
+        unop Tanh  val = maybePartialVal $ liftFloating op tanh val
+        unop Asinh val = maybePartialVal $ liftFloating op asinh val
+        unop Acosh val = maybePartialVal $ liftFloating op acosh val
+        unop Atanh val = maybePartialVal $ liftFloating op atanh val
 
-        unop Bnot val =
-            maybePartialVal $ liftBits op complement val
-
-        unop Neg val =
-            maybePartialVal $ liftNum op negate val
-
-        unop (Cast (StructT sn' _)) (StructV sn flds) | isComplexStruct sn && isComplexStruct sn' = do
-            flds' <- castStruct cast sn' (Map.toList flds)
-            return $ StructV sn' (Map.fromList flds')
+        unop (Cast (StructT s [_tau] _)) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
+            flds' <- castStruct cast s' (Map.toList flds)
+            return $ StructV s' [tau'] (Map.fromList flds')
           where
             cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
             cast tau = unop (Cast tau)
@@ -621,6 +646,13 @@ evalExp e =
 
         unop op val =
             partialExp $ UnopE op (toExp val) s
+
+        evalUnop :: Unop -> EvalM l m Unop
+        evalUnop (Cast tau)    = do phi <- askTyVarTypeSubst
+                                    return $ Cast (subst phi mempty tau)
+        evalUnop (Bitcast tau) = do phi <- askTyVarTypeSubst
+                                    return $ Bitcast (subst phi mempty tau)
+        evalUnop op            = pure op
 
     eval flags (UnopE op e s) = do
         val <- eval flags e
@@ -768,10 +800,11 @@ evalExp e =
         go tau v_f taus' v_es
       where
         go :: Type -> Val l m Exp -> [Type] -> [Val l m Exp] -> EvalM l m (Val l m Exp)
-        go _tau (FunClosV theta tvks vbs _tau_ret k) tau' v_es =
+        go _tau (FunClosV theta tvks vbs _tau_ret k) taus' v_es =
             withSubst theta $
             withUniqVars vs $ \vs' ->
-            extendTyVarTypes (map fst tvks `zip` tau') $
+            extendTyVars tvks $
+            extendTyVarTypes (map fst tvks `zip` taus') $
             extendVarBinds   (vs' `zip` v_es) $ do
             taus' <- mapM simplType taus
             k >>= wrapLetArgs vs' taus'
@@ -801,9 +834,6 @@ evalExp e =
 
                 isFree :: (Var, Type, Val l m Exp) -> Bool
                 isFree (v, _, _) = v `member` (fvs (toExp val) :: Set Var)
-
-        go _tau (ExpV (VarE (Var "sqrt") _)) [] [ConstV (FloatC fp x)] =
-            return $ ConstV $ FloatC fp (sqrt x)
 
         -- Note that the heap cannot change as the result of evaluating function
         -- arguments, so we can call 'partialCmd' here instead of saving the heap
@@ -864,8 +894,8 @@ evalExp e =
     eval _flags (WhileE e1 e2 _) =
         evalWhileE e1 e2
 
-    eval _flags (ForE ann v tau e1 e2 e3 _) =
-        evalForE ann v tau e1 e2 e3
+    eval _flags (ForE ann v tau gint e _) =
+        evalForE ann v tau gint e
 
     eval flags e@(ArrayE es _) = do
         (_, tau)   <- inferExp e >>= checkArrT
@@ -882,13 +912,13 @@ evalExp e =
           then evalIdx v_arr v_start len
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
 
-    eval flags (StructE s flds _) = do
+    eval flags (StructE s taus flds _) = do
         vals <- mapM (eval flags) es
-        return $ StructV s (Map.fromList (fs `zip` vals))
+        return $ StructV s taus (Map.fromList (fs `zip` vals))
       where
         fs :: [Field]
         es :: [Exp]
-        (fs, es) = unzip  flds
+        (fs, es) = unzip flds
 
     eval flags (ProjE e f s) = do
         val <- eval flags e
@@ -1026,8 +1056,8 @@ refUpdate (ProjR r f) old new = do
     go f old' new
   where
     --go :: Field -> Val l m Exp -> Val l m Exp -> t m (Val l m Exp)
-    go f (StructV s flds) new = do
-        let new' = StructV s (Map.insert f new flds)
+    go f (StructV s tau flds) new = do
+        let new' = StructV s tau (Map.insert f new flds)
         refUpdate r old new'
 
     go _ _ _ =
@@ -1138,11 +1168,10 @@ evalForE :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type
-         -> Exp
-         -> Exp
+         -> GenInterval Exp
          -> Exp
          -> EvalM l m (Val l m Exp)
-evalForE ann v tau e1 e2 e3 = do
+evalForE ann v tau gint e3 = do
     start <- evalExp e1
     len   <- evalExp e2
     withUniqVar v $ \v' ->
@@ -1150,6 +1179,8 @@ evalForE ann v tau e1 e2 e3 = do
         extendVars [(v, tau)] $
         go v' start len
   where
+    (e1, e2) = toStartLenGenInt gint
+
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m Exp)
     go v' start len | Just i_start <- fromIntV start,
                       Just i_len   <- fromIntV len =
@@ -1181,11 +1212,10 @@ evalForC :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
          -> Var
          -> Type
-         -> Exp
-         -> Exp
+         -> GenInterval Exp
          -> Comp l
          -> EvalM l m (Val l m (Comp l))
-evalForC ann v tau e1 e2 c3 = do
+evalForC ann v tau gint c3 = do
     start <- evalExp e1
     len   <- evalExp e2
     withUniqVar v $ \v' ->
@@ -1193,6 +1223,8 @@ evalForC ann v tau e1 e2 c3 = do
         extendVars [(v, tau)] $
         go v' start len
   where
+    (e1, e2) = toStartLenGenInt gint
+
     go :: Var -> Val l m Exp -> Val l m Exp -> EvalM l m (Val l m (Comp l))
     go v' start len | Just i_start <- fromIntV start,
                       Just i_len   <- fromIntV len =
@@ -1259,7 +1291,7 @@ evalProj :: (IsLabel l, MonadTc m)
 evalProj (RefV r) f =
     return $ RefV $ ProjR r f
 
-evalProj (StructV _ kvs) f =
+evalProj (StructV _ _ kvs) f =
     case Map.lookup f kvs of
       Nothing  -> faildoc $ text "Unknown struct field" <+> ppr f
       Just val -> return val

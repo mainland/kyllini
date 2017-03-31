@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Core.Lint
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -46,6 +46,7 @@ module KZC.Core.Lint (
 
     joinOmega,
 
+    checkComplexT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -79,8 +80,6 @@ import Control.Monad (unless,
 import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 
 import KZC.Check.Path
@@ -93,9 +92,13 @@ import KZC.Expr.Lint (Tc(..),
                       checkConst,
                       inferConst,
 
+                      checkStructDecl,
+                      checkStructUse,
+
                       inferKind,
                       checkKind,
                       checkTauOrRhoKind,
+                      checkTyApp,
 
                       checkCast,
                       checkBitcast,
@@ -104,6 +107,7 @@ import KZC.Expr.Lint (Tc(..),
 
                       joinOmega,
 
+                      checkComplexT,
                       checkArrT,
                       checkKnownArrT,
                       checkArrOrRefArrT,
@@ -157,6 +161,11 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
+checkDecl decl@(StructD s tvks flds l) k = do
+    alwaysWithSummaryContext decl $
+        checkStructDecl s tvks flds
+    extendStructs [StructDef s tvks flds l] k
+
 checkDecl (LetD decl _) k =
     checkLocalDecl decl k
 
@@ -181,23 +190,6 @@ checkDecl decl@(LetExtFunD f ns vbs tau_ret l) k = do
   where
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
-
-checkDecl decl@(LetStructD s flds l) k = do
-    alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined s
-        checkDuplicates "field names" fnames
-        mapM_ (`checkKind` tauK) taus
-    extendStructs [StructDef s flds l] k
-  where
-    (fnames, taus) = unzip flds
-
-    checkStructNotRedefined :: Struct -> m ()
-    checkStructNotRedefined s = do
-      maybe_sdef <- maybeLookupStruct s
-      case maybe_sdef of
-        Nothing   -> return ()
-        Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                     parens (text "original definition at" <+> ppr (locOf sdef))
 
 checkDecl decl@(LetCompD v tau comp _) k = do
     alwaysWithSummaryContext decl $ do
@@ -295,6 +287,27 @@ inferExp (UnopE op e1 l) = do
         mkSigned (FixT (U w) l) = FixT (I w) l
         mkSigned tau            = tau
 
+    unop Abs   tau = inferOp [(a, numK)] aT aT tau
+    unop Exp   tau = inferOp [(a, fracK)] aT aT tau
+    unop Exp2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Expm1 tau = inferOp [(a, fracK)] aT aT tau
+    unop Log   tau = inferOp [(a, fracK)] aT aT tau
+    unop Log2  tau = inferOp [(a, fracK)] aT aT tau
+    unop Log1p tau = inferOp [(a, fracK)] aT aT tau
+    unop Sqrt  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sin   tau = inferOp [(a, fracK)] aT aT tau
+    unop Cos   tau = inferOp [(a, fracK)] aT aT tau
+    unop Tan   tau = inferOp [(a, fracK)] aT aT tau
+    unop Asin  tau = inferOp [(a, fracK)] aT aT tau
+    unop Acos  tau = inferOp [(a, fracK)] aT aT tau
+    unop Atan  tau = inferOp [(a, fracK)] aT aT tau
+    unop Sinh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Cosh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Tanh  tau = inferOp [(a, fracK)] aT aT tau
+    unop Asinh tau = inferOp [(a, fracK)] aT aT tau
+    unop Acosh tau = inferOp [(a, fracK)] aT aT tau
+    unop Atanh tau = inferOp [(a, fracK)] aT aT tau
+
     unop (Cast tau2) tau1 = do
         checkCast tau1 tau2
         return tau2
@@ -313,7 +326,7 @@ inferExp (UnopE op e1 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -368,7 +381,7 @@ inferExp (BinopE op e1 e2 l) = do
     aT :: Type
     aT = tyVarT a
 
-    inferOp :: [(TyVar, Kind)]
+    inferOp :: [Tvk]
             -> Type
             -> Type
             -> Type
@@ -442,15 +455,12 @@ inferExp (WhileE e1 e2 _) = do
         void $ checkPureishSTCUnit tau
         return tau
 
-inferExp (ForE _ v tau e1 e2 e3 _) = do
+inferExp (ForE _ v tau gint e _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) gint
     extendVars [(v, tau)] $
-        withFvContext e3 $ do
-        tau_body <- inferExp e3
+        withFvContext e $ do
+        tau_body <- inferExp e
         void $ checkPureishSTCUnit tau_body
         return tau_body
 
@@ -496,21 +506,21 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        tau_f <- checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        tau_f     <- checkStructFieldT sdef taus f
         return $ RefT tau_f l
 
     go tau = do
-        sdef  <- checkStructT tau >>= lookupStruct
-        checkStructFieldT sdef f
+        (s, taus) <- checkStructT tau
+        sdef      <- lookupStruct s
+        checkStructFieldT sdef taus f
 
-inferExp e0@(StructE s flds l) =
+inferExp e0@(StructE s taus flds l) =
     withFvContext e0 $ do
-    StructDef _ fldDefs _ <- lookupStruct s
-    checkMissingFields flds fldDefs
-    checkExtraFields flds fldDefs
-    mapM_ (checkField fldDefs) flds
-    return $ StructT s l
+    fdefs <- checkStructUse s taus (map fst flds)
+    mapM_ (checkField fdefs) flds
+    return $ StructT s taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do
@@ -518,30 +528,6 @@ inferExp e0@(StructE s flds l) =
                Nothing  -> panicdoc "checkField: missing field!"
                Just tau -> return tau
       checkExp e tau
-
-    checkMissingFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkMissingFields flds fldDefs =
-        unless (Set.null missing) $
-          faildoc $
-            text "Struct definition has missing fields:" <+>
-            (commasep . map ppr . Set.toList) missing
-      where
-        fs, fs', missing :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        missing = fs Set.\\ fs'
-
-    checkExtraFields :: [(Field, Exp)] -> [(Field, Type)] -> m ()
-    checkExtraFields flds fldDefs =
-        unless (Set.null extra) $
-          faildoc $
-            text "Struct definition has extra fields:" <+>
-            (commasep . map ppr . Set.toList) extra
-      where
-        fs, fs', extra :: Set Field
-        fs  = Set.fromList [f | (f,_) <- flds]
-        fs' = Set.fromList [f | (f,_) <- fldDefs]
-        extra = fs' Set.\\ fs
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
@@ -617,20 +603,13 @@ inferCall :: forall m e . MonadTc m
           => Type -> [Type] -> [e] -> m ([Type], Type)
 inferCall tau_f taus args = do
     (tvks, taus_args, tau_ret) <- checkFunT tau_f
-    checkNumTypeArgs (length taus) (length tvks)
-    checkNumArgs     (length args) (length taus_args)
+    checkTyApp tvks taus
+    checkNumArgs (length args) (length taus_args)
     extendTyVars tvks $ do
       let theta = Map.fromList (map fst tvks `zip` taus)
       let phi   = fvs taus_args <> fvs tau_ret
       return (subst theta phi taus_args, subst theta phi tau_ret)
   where
-    checkNumTypeArgs :: Int -> Int -> m ()
-    checkNumTypeArgs n ntaus =
-        when (n /= ntaus) $
-             faildoc $
-             text "Expected" <+> ppr ntaus <+>
-             text "type arguments but got" <+> ppr n
-
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
         when (n /= nexp) $
@@ -807,12 +786,9 @@ inferStep (WhileC _ e c _) = do
         void $ checkSTCUnit tau
         return tau
 
-inferStep (ForC _ _ v tau e1 e2 c _) = do
+inferStep (ForC _ _ v tau gint c _) = do
     checkKind tau intK
-    withFvContext e1 $
-        checkExp e1 tau
-    withFvContext e2 $
-        checkExp e2 tau
+    traverse_ (\e -> withFvContext e $ checkExp e tau) gint
     extendVars [(v, tau)] $
         withFvContext c $ do
         tau_body <- inferComp c
@@ -944,8 +920,8 @@ compToExp comp =
     stepToExp (WhileC _ e1 c2 l) =
         WhileE e1 <$> compToExp c2 <*> pure l
 
-    stepToExp (ForC _ ann v tau e1 e2 c3 l) =
-        ForE ann v tau e1 e2 <$> compToExp c3 <*> pure l
+    stepToExp (ForC _ ann v tau gint c3 l) =
+        ForE ann v tau gint <$> compToExp c3 <*> pure l
 
     stepToExp (LiftC _ e _) =
         pure e

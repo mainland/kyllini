@@ -7,7 +7,7 @@
 
 -- |
 -- Module      :  KZC.Analysis.ReadWriteSet
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -54,6 +54,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
 import KZC.Util.Pretty
@@ -338,6 +339,7 @@ newtype RW m a = RW { unRW :: ReaderT REnv (StateT RState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -499,7 +501,8 @@ readRef (Ref v path) = do
         return $ ArrayRW top ws
 
     go ref@(StructRW _rs ws) [] = do
-        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
+        flds           <- lookupStructFields struct taus
         let rs :: BoundedFields
             rs = fields (map fst flds)
         if rs `inPrecise` ws
@@ -553,7 +556,8 @@ writeRef (Ref v path) = do
         return $ ArrayRW rs top
 
     go (StructRW rs _) [] = do
-        StructDef _ flds _ <- lookupVar v >>= checkStructOrRefStructT >>= lookupStruct
+        (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
+        flds           <- lookupStructFields struct taus
         let ws :: PreciseFields
             ws  = fields (map fst flds)
         return $ StructRW rs ws
@@ -607,6 +611,7 @@ evalExp e =
         unop (Bitcast FixT{}) _    = IntV top
         unop Bitcast{} _           = top
         unop Len _                 = IntV top
+        unop _ _                   = top
 
     go (BinopE op e1 e2 _) =
         binop op <$> go e1 <*> go e2
@@ -732,11 +737,14 @@ evalExp e =
         evalWhile val $
           evalExp e2
 
-    go (ForE _ v tau e_start e_len e_body _) = do
+    go (ForE _ v tau gint e_body _) = do
         v_start <- evalExp e_start
         v_len   <- evalExp e_len
         extendVars [(v, tau)] $
           evalFor v v_start v_len (evalExp e_body)
+      where
+        e_start, e_len :: Exp
+        (e_start, e_len) = toStartLenGenInt gint
 
     go (ArrayE es _) = do
         mapM_ evalExp es
@@ -751,7 +759,7 @@ evalExp e =
         void $ evalExp e2
         return top
 
-    go (StructE _ flds _) = do
+    go (StructE _ _ flds _) = do
         mapM_ (go . snd) flds
         return top
 

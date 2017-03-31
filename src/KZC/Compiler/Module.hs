@@ -62,7 +62,7 @@ locateModuleSource mod = do
           Nothing   -> searchPaths paths
           Just file -> return $ Just file
 
-    searchExts :: FilePath -> [(String, P.Dialect)] -> m (Maybe FilePath)
+    searchExts :: FilePath -> [(String, Z.Dialect)] -> m (Maybe FilePath)
     searchExts _path [] =
         return Nothing
 

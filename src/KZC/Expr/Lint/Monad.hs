@@ -8,13 +8,14 @@
 
 -- |
 -- Module      :  KZC.Expr.Lint.Monad
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
 module KZC.Expr.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
+    complexStructDef,
 
     MonadTc(..),
     MonadTcRef,
@@ -28,6 +29,8 @@ module KZC.Expr.Lint.Monad (
     extendStructs,
     lookupStruct,
     maybeLookupStruct,
+    lookupStructFields,
+    tyAppStruct,
 
     inLocalScope,
     isInTopScope,
@@ -139,18 +142,18 @@ defaultTcEnv = TcEnv
     }
   where
     builtinStructs :: [StructDef]
-    builtinStructs =
-        [ complexStruct "complex"   intT
-        , complexStruct "complex8"  int8T
-        , complexStruct "complex16" int16T
-        , complexStruct "complex32" int32T
-        , complexStruct "complex64" int64T ]
+    builtinStructs = [complexStructDef]
 
-    complexStruct :: Struct -> Type -> StructDef
-    complexStruct s tau =
-        StructDef s [("re", tau), ("im", tau)] noLoc
+complexStructDef :: StructDef
+complexStructDef = StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVarT a)] noLoc
+  where
+    a :: TyVar
+    a = "a"
 
-class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadTrace m, MonadUnique m) => MonadTc m where
+    num :: Kind
+    num = TauK (traits [NumR])
+
+class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 
@@ -247,11 +250,11 @@ defaultValueC (FixT ip _)   = return $ FixC ip 0
 defaultValueC (FloatT fp _) = return $ FloatC fp 0
 defaultValueC StringT{}     = return $ StringC ""
 
-defaultValueC (StructT s _) = do
-    StructDef s flds _ <- lookupStruct s
-    let (fs, taus)     =  unzip flds
-    cs                 <- mapM defaultValueC taus
-    return $ StructC s (fs `zip` cs)
+defaultValueC (StructT s taus _) = do
+    sdef        <- lookupStruct s
+    (fs, ftaus) <- unzip <$> tyAppStruct sdef taus
+    cs          <- mapM defaultValueC ftaus
+    return $ StructC s taus (fs `zip` cs)
 
 defaultValueC (ArrT (NatT n _) tau _) = do
     c <- defaultValueC tau
@@ -283,6 +286,20 @@ lookupStruct s =
 maybeLookupStruct :: MonadTc m => Struct -> m (Maybe StructDef)
 maybeLookupStruct s =
     asksTc (Map.lookup s . structs)
+
+lookupStructFields :: MonadTc m => Struct -> [Type] -> m [(Field, Type)]
+lookupStructFields struct taus = do
+    sdef <- lookupStruct struct
+    tyAppStruct sdef taus
+
+-- | Perform type application of a struct to type arguments and return the
+-- resulting fields and their types.
+tyAppStruct :: forall m . MonadTc m => StructDef -> [Type] -> m [(Field, Type)]
+tyAppStruct (StructDef _ tvks flds _) taus =
+    return (map fst flds `zip` subst theta mempty (map snd flds))
+  where
+    theta :: Map TyVar Type
+    theta = Map.fromList (map fst tvks `zip` taus)
 
 inLocalScope :: MonadTc m => m a -> m a
 inLocalScope = localTc $ \env -> env { topScope = False }
@@ -332,8 +349,18 @@ lookupVar v =
   where
     onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
 
-extendTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
-extendTyVars = extendTcEnv tyVars (\env x -> env { tyVars = x })
+extendTyVars :: MonadTc m => [Tvk] -> m a -> m a
+extendTyVars tvks =
+    localTc $ \env -> env
+      { tyVars     = foldl' insert (tyVars env) tvks
+      , tyVarTypes = foldl' delete (tyVarTypes env) (map fst tvks)
+      }
+  where
+    insert :: Ord k => Map k v -> (k, v) -> Map k v
+    insert m (k, v) = Map.insert k v m
+
+    delete :: Ord k => Map k v -> k -> Map k v
+    delete m k = Map.delete k m
 
 lookupTyVar :: MonadTc m => TyVar -> m Kind
 lookupTyVar tv =
@@ -366,7 +393,7 @@ askTyVarTypeSubst = asksTc tyVarTypes
 -- | Record the set of type variables quantified over an ST type inside the term
 -- of that type. For example, inside a term of type @forall a b . ST (C c) a a
 -- b@, we mark @a@ and @b@ as locally quantified.
-localSTTyVars :: MonadTc m => [(TyVar, Kind)] -> m a -> m a
+localSTTyVars :: MonadTc m => [Tvk] -> m a -> m a
 localSTTyVars tvks =
     localTc (\env -> env { stTyVars = Set.fromList (map fst tvks) })
 
@@ -412,7 +439,7 @@ extendLet _v tau k =
 
 extendLetFun :: MonadTc m
              => v
-             -> [(TyVar, Kind)]
+             -> [Tvk]
              -> [(Var, Type)]
              -> Type
              -> m a
@@ -430,19 +457,18 @@ typeSize = go
     go :: Type -> m Int
     go UnitT{}                 = pure 0
     go BoolT{}                 = pure 1
-    go (FixT ip _)             = pure $ ipWidth ip
+    go (FixT IDefault _)       = asksPlatform platformIntWidth
+    go (FixT (I w) _)          = pure w
+    go (FixT UDefault _)       = asksPlatform platformIntWidth
+    go (FixT (U w) _)          = pure w
     go (FloatT fp _)           = pure $ fpWidth fp
-    go (StructT "complex" _)   = pure $ 2 * dEFAULT_INT_WIDTH
-    go (StructT "complex8" _)  = pure 16
-    go (StructT "complex16" _) = pure 32
-    go (StructT "complex32" _) = pure 64
-    go (StructT "complex64" _) = pure 128
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
     go (ST (C tau) _ _ _ _)    = go tau
     go (RefT tau _)            = go tau
 
-    go (StructT s _) = do
-        StructDef _ flds _ <- lookupStruct s
+    go (StructT s taus _) = do
+        sdef <- lookupStruct s
+        flds <- tyAppStruct sdef taus
         sum <$> mapM (typeSize . snd) flds
 
     go (ForallT _ (ST (C tau) _ _ _ _) _) =
@@ -476,9 +502,9 @@ relevantBindings =
     go :: Maybe [Var] -> m Doc
     go (Just vs@(_:_)) = do
         taus <- mapM lookupVar vs
-        return $ line <>
-            nest 2 (text "Relevant bindings:" </>
-                    stack (zipWith pprBinding vs taus))
+        return $ nest 2 $
+          text "Relevant bindings:" </>
+          stack (zipWith pprBinding vs taus)
 
     go _ =
         return Text.PrettyPrint.Mainland.empty
@@ -498,7 +524,7 @@ castStruct :: forall a m . MonadTc m
            -> [(Field, a)]
            -> m [(Field, a)]
 castStruct cast sn flds = do
-    StructDef _ fldtaus _ <- lookupStruct sn
+    StructDef _ _ fldtaus _ <- lookupStruct sn
     mapM (castField fldtaus) flds
   where
     castField :: [(Field, Type)] -> (Field, a) -> m (Field, a)

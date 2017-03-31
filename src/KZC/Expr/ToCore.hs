@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Expr.ToCore
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -40,6 +40,7 @@ import KZC.Core.Syntax
 import KZC.Expr.Lint
 import qualified KZC.Expr.Syntax as E
 import KZC.Label
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -57,6 +58,7 @@ newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 
@@ -116,6 +118,10 @@ transDecl :: (IsLabel l, MonadTc m)
           => E.Decl
           -> (Decl l -> TC m a)
           -> TC m a
+transDecl (E.StructD s taus flds l) k =
+    extendStructs [StructDef s taus flds l] $
+    k $ StructD s taus flds l
+
 transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =
     transLocalDecl decl $ \decl' ->
@@ -161,10 +167,6 @@ transDecl (E.LetExtFunD f ns vbs tau_ret l) k =
     tau :: Type
     tau = funT ns (map snd vbs) tau_ret l
 
-transDecl (E.LetStructD s flds l) k =
-    extendStructs [StructDef s flds l] $
-    k $ LetStructD s flds l
-
 transLocalDecl :: MonadTc m
                => E.Decl
                -> (LocalDecl -> TC m a)
@@ -193,13 +195,13 @@ transLocalDecl decl _ =
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
   where
     pprDeclType :: E.Decl -> Doc
+    pprDeclType E.StructD{}    = text "letstruct"
     pprDeclType (E.LetD _ tau _ _)
         | isPureishT tau       = text "let"
         | otherwise            = text "letcomp"
     pprDeclType E.LetFunD{}    = text "letfun"
     pprDeclType E.LetExtFunD{} = text "letextfun"
     pprDeclType E.LetRefD{}    = text "letref"
-    pprDeclType E.LetStructD{} = text "letstruct"
 
 transExp :: forall m . MonadTc m
          => E.Exp
@@ -237,14 +239,13 @@ transExp (E.AssignE e1 e2 l) =
 transExp (E.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l
 
-transExp (E.ForE ann v tau e1 e2 e3 l) =
+transExp (E.ForE ann v tau gint e l) =
     ensureUnique v $ \v' -> do
-    e1' <- withFvContext e1 $ transExp e1
-    e2' <- withFvContext e2 $ transExp e2
-    e3' <- withFvContext e3 $
-           extendVars [(v, tau)] $
-           transExp e3
-    return $ ForE ann v' tau e1' e2' e3' l
+    gint' <- traverse (\e -> withFvContext e $ transExp e) gint
+    e'    <- withFvContext e $
+             extendVars [(v, tau)] $
+             transExp e
+    return $ ForE ann v' tau gint' e' l
 
 transExp (E.ArrayE es l) =
     ArrayE <$> mapM transExp es <*> pure l
@@ -252,8 +253,8 @@ transExp (E.ArrayE es l) =
 transExp (E.IdxE e1 e2 i l) =
     IdxE <$> transExp e1 <*> transExp e2 <*> pure i <*> pure l
 
-transExp (E.StructE s flds l) =
-    StructE s <$> mapM transField flds <*> pure l
+transExp (E.StructE s taus flds l) =
+    StructE s taus <$> mapM transField flds <*> pure l
   where
     transField :: (Field, E.Exp) -> TC m (Field, Exp)
     transField (f, e) = (,) <$> pure f <*> transExp e
@@ -356,14 +357,13 @@ transComp (E.WhileE e c _) = do
     c' <- transComp c
     whileC e' c'
 
-transComp (E.ForE ann v tau e1 e2 e3 _) =
+transComp (E.ForE ann v tau gint e _) =
     ensureUnique v $ \v' -> do
-    e1' <- withFvContext e1 $ transExp e1
-    e2' <- withFvContext e2 $ transExp e2
-    c'  <- withFvContext e3 $
-           extendVars [(v, tau)] $
-           transComp e3
-    forC ann v' tau e1' e2' c'
+    gint' <- traverse (\e -> withFvContext e $ transExp e) gint
+    c'    <- withFvContext e $
+             extendVars [(v, tau)] $
+             transComp e
+    forGenC ann v' tau gint' c'
 
 transComp (E.ReturnE _ e _) = do
     e <- transExp e

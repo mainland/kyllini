@@ -100,7 +100,7 @@ data Val l m a where
     UnknownV :: Val l m Exp
 
     ConstV  :: !Const -> Val l m Exp
-    StructV :: !Struct -> !(Map Field (Val l m Exp)) -> Val l m Exp
+    StructV :: !Struct -> [Type] -> !(Map Field (Val l m Exp)) -> Val l m Exp
     ArrayV  :: !(P.PArray (Val l m Exp)) -> Val l m Exp
 
     -- An element of an array
@@ -218,11 +218,11 @@ isOne _                     = False
 -- | Return 'True' if a 'Val l m Exp' is actually a value and 'False'
 -- otherwise.
 isValue :: Eq l => Val l m Exp -> Bool
-isValue ConstV{}         = True
-isValue (StructV _ flds) = all isValue (Map.elems flds)
-isValue (ArrayV vals)    = isValue (P.defaultValue vals) &&
-                           all (isValue . snd) (P.nonDefaultValues vals)
-isValue _                = False
+isValue ConstV{}           = True
+isValue (StructV _ _ flds) = all isValue (Map.elems flds)
+isValue (ArrayV vals)      = isValue (P.defaultValue vals) &&
+                             all (isValue . snd) (P.nonDefaultValues vals)
+isValue _                  = False
 
 -- | Produce a default value of the given type.
 defaultValue :: forall l m m' . MonadTc m'
@@ -237,11 +237,10 @@ defaultValue = go
     go (FloatT fp _) = return $ ConstV $ FloatC fp 0
     go StringT{}     = return $ ConstV $ StringC ""
 
-    go (StructT s _) = do
-        StructDef s flds _ <- lookupStruct s
-        let (fs, taus)     =  unzip flds
-        vals               <- mapM go taus
-        return $ StructV s (Map.fromList (fs `zip` vals))
+    go (StructT struct taus _) = do
+        (fs, ftaus) <- unzip <$> lookupStructFields struct taus
+        vals        <- mapM go ftaus
+        return $ StructV struct taus (Map.fromList (fs `zip` vals))
 
     go (ArrT (NatT n _) tau _) = do
         val <- go tau
@@ -258,30 +257,30 @@ isDefaultValue (ConstV (BoolC False)) = True
 isDefaultValue (ConstV (FixC _ 0))    = True
 isDefaultValue (ConstV (FloatC _ 0))  = True
 isDefaultValue (ConstV (StringC ""))  = True
-isDefaultValue (StructV _ flds)       = all isDefaultValue (Map.elems flds)
+isDefaultValue (StructV _ _ flds)     = all isDefaultValue (Map.elems flds)
 isDefaultValue (ArrayV vals)          = all isDefaultValue (P.toList vals)
 isDefaultValue _                      = False
 
 -- | Return 'True' if a 'Val' is completely known, even if it is a residual,
 -- 'False' otherwise.
 isKnown :: Eq l => Val l m Exp -> Bool
-isKnown UnknownV         = False
-isKnown ConstV{}         = True
-isKnown (StructV _ flds) = all isKnown (Map.elems flds)
-isKnown (ArrayV vals)    = isKnown (P.defaultValue vals) &&
-                           all (isKnown . snd) (P.nonDefaultValues vals)
-isKnown (IdxV arr i)     = isKnown arr && isKnown i
-isKnown (SliceV arr i _) = isKnown arr && isKnown i
-isKnown ExpV{}           = True
-isKnown _                = False
+isKnown UnknownV           = False
+isKnown ConstV{}           = True
+isKnown (StructV _ _ flds) = all isKnown (Map.elems flds)
+isKnown (ArrayV vals)      = isKnown (P.defaultValue vals) &&
+                             all (isKnown . snd) (P.nonDefaultValues vals)
+isKnown (IdxV arr i)       = isKnown arr && isKnown i
+isKnown (SliceV arr i _)   = isKnown arr && isKnown i
+isKnown ExpV{}             = True
+isKnown _                  = False
 
 -- | Return 'True' is a 'Val' is completely unknown.
 isUnknown :: Eq l => Val l m Exp -> Bool
-isUnknown UnknownV         = True
-isUnknown (StructV _ flds) = all isUnknown (Map.elems flds)
-isUnknown (ArrayV vals)    = isUnknown (P.defaultValue vals) &&
-                             all (isUnknown . snd) (P.nonDefaultValues vals)
-isUnknown _                = False
+isUnknown UnknownV           = True
+isUnknown (StructV _ _ flds) = all isUnknown (Map.elems flds)
+isUnknown (ArrayV vals)      = isUnknown (P.defaultValue vals) &&
+                               all (isUnknown . snd) (P.nonDefaultValues vals)
+isUnknown _                  = False
 
 catV :: IsLabel l => Val l m Exp -> Val l m Exp -> Val l m Exp
 catV (ArrayV vs1) (ArrayV vs2) =
@@ -338,8 +337,8 @@ toBitsV = go
     go(ConstV  (FloatC FP64 f)) _ =
         toBitArr (fromIntegral (doubleToWord f)) 64
 
-    go (StructV _ m) (StructT sname _) = do
-        StructDef _ flds _ <- lookupStruct sname
+    go (StructV _ _ m) (StructT struct taus _) = do
+        flds <- lookupStructFields struct taus
         packValues [(m Map.! f, tau) | (f, tau) <- flds]
 
     go (ArrayV arr) (ArrT _ tau _) =
@@ -405,10 +404,10 @@ fromBitsV (ArrayV vs) tau =
     go vs (RefT tau _) =
         go vs tau
 
-    go vs (StructT sname _) = do
-        StructDef _ flds _ <- lookupStruct sname
+    go vs (StructT struct taus _) = do
+        flds <- lookupStructFields struct taus
         vals <- unpackValues (ArrayV vs) (map snd flds)
-        return $ StructV sname (Map.fromList (map fst flds `zip` vals))
+        return $ StructV struct taus (Map.fromList (map fst flds `zip` vals))
 
     go vs (ArrT (NatT n _) tau _) = do
         vals <- unpackValues (ArrayV vs) (replicate n tau)
@@ -487,13 +486,10 @@ enumVals (FloatT FP64 _) =
 enumVals (RefT tau _) =
     enumVals tau
 
-enumVals (StructT sname _) = do
-    StructDef _ flds _ <- lookupStruct sname
-    let fs :: [Field]
-        taus :: [Type]
-        (fs, taus) = unzip flds
-    valss <- enumValsList taus
-    return [StructV sname (Map.fromList (fs `zip` vs)) | vs <- valss]
+enumVals (StructT struct taus _) = do
+    (fs, ftaus) <- unzip <$> lookupStructFields struct taus
+    valss      <- enumValsList ftaus
+    return [StructV struct taus (Map.fromList (fs `zip` vs)) | vs <- valss]
 
 enumVals (ArrT (NatT n _) tau _) = do
     valss <- enumValsList (replicate n tau)
@@ -539,12 +535,12 @@ bitcastV val (ArrT (NatT n _) tau_elem _) tau_to | isBitT tau_elem = do
 bitcastV val _ tau_to =
     return $ ExpV $ bitcastE tau_to (toExp val)
 
-complexV :: Struct -> Val l m Exp -> Val l m Exp -> Val l m Exp
-complexV sname a b =
-    StructV sname (Map.fromList [("re", a), ("im", b)])
+complexV :: Struct -> Type -> Val l m Exp -> Val l m Exp -> Val l m Exp
+complexV struct tau a b =
+    StructV struct [tau] (Map.fromList [("re", a), ("im", b)])
 
 uncomplexV :: IsLabel l => Val l m Exp -> (Val l m Exp, Val l m Exp)
-uncomplexV (StructV sname x) | isComplexStruct sname =
+uncomplexV (StructV struct _tau x) | isComplexStruct struct =
     (x Map.! "re", x Map.! "im")
 
 uncomplexV val =
@@ -598,20 +594,20 @@ instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
     liftNum2 op f (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op f c1 c2 =
         ConstV c'
 
-    liftNum2 Add _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-        complexV sn (a+c) (b+d)
+    liftNum2 Add _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
+        complexV s tau (a+c) (b+d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
-    liftNum2 Sub _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-        complexV sn (a-c) (b-d)
+    liftNum2 Sub _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
+        complexV s tau (a-c) (b-d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
-    liftNum2 Mul _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-        complexV sn (a*c - b*d) (b*c + a*d)
+    liftNum2 Mul _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
+        complexV s tau (a*c - b*d) (b*c + a*d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
@@ -623,8 +619,8 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
     liftIntegral2 op f (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op f c1 c2 =
         ConstV c'
 
-    liftIntegral2 Div _ x@(StructV sn _) y@(StructV sn' _) | isComplexStruct sn && sn' == sn =
-        complexV sn ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
+    liftIntegral2 Div _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
+        complexV s tau ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
@@ -633,6 +629,19 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
         x / y = liftIntegral2 Div quot x y
 
     liftIntegral2 op _f val1 val2 =
+        ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
+
+instance IsLabel l => LiftedFloating (Val l m Exp) (Val l m Exp) where
+    liftFloating op f (ConstV c) | Just c' <- liftFloating op f c =
+        ConstV c'
+
+    liftFloating op _f val =
+        ExpV $ UnopE op (toExp val) noLoc
+
+    liftFloating2 op f (ConstV c1) (ConstV c2) | Just c' <- liftFloating2 op f c1 c2 =
+        ConstV c'
+
+    liftFloating2 op _f val1 val2 =
         ExpV $ BinopE op (toExp val1) (toExp val2) noLoc
 
 instance IsLabel l => LiftedBits (Val l m Exp) (Val l m Exp) where
@@ -671,8 +680,8 @@ toConst :: forall l m . IsLabel l => Val l m Exp -> Const
 toConst (ConstV c) =
     c
 
-toConst (StructV s flds) =
-    structC s (fs `zip` map toConst vals)
+toConst (StructV s taus flds) =
+    structC s taus (fs `zip` map toConst vals)
   where
     (fs, vals) = unzip $ Map.assocs flds
 
@@ -692,10 +701,10 @@ instance IsLabel l => ToExp (Val l m Exp) where
     toExp (ConstV c) =
         constE c
 
-    toExp (StructV s flds) =
-        fromMaybe (structE s (fs `zip` es)) $ do
+    toExp (StructV s taus flds) =
+        fromMaybe (structE s taus (fs `zip` es)) $ do
             cs <- mapM unConstE es
-            return $ constE $ structC s (fs `zip` cs)
+            return $ constE $ structC s taus (fs `zip` cs)
       where
         fs :: [Field]
         vals :: [Val l m Exp]

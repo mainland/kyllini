@@ -6,7 +6,7 @@
 
 -- |
 -- Module      :  KZC.Optimize.HashConsConsts
--- Copyright   :  (c) 2016 Drexel University
+-- Copyright   :  (c) 2016-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -41,6 +41,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Label
+import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -63,6 +64,7 @@ newtype HC l m a = HC { unHC :: StateT (HCState l) m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadPlatform,
               MonadTrace,
               MonadTc)
 

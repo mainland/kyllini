@@ -14,7 +14,8 @@ module KZC.Traits (
     traits,
     nullTraits,
     impliesTraits,
-    reduceTraits
+    reduceTraits,
+    intersectTraits
   ) where
 
 import Text.PrettyPrint.Mainland
@@ -69,6 +70,8 @@ reduceTraits = fixpoint (reduce implications)
 
     implications :: [(Trait, Traits)]
     implications = [ (OrdR,        Set.fromList [EqR])
+                   , (BitsR,       Set.fromList [EqR])
+                   , (BoolR,       Set.fromList [EqR])
                    , (NumR,        Set.fromList [OrdR])
                    , (IntegralR,   Set.fromList [NumR])
                    , (FractionalR, Set.fromList [NumR])
@@ -79,3 +82,6 @@ fixpoint f x | x' == x   = x
              | otherwise = fixpoint f (f x)
   where
     x' = f x
+
+intersectTraits :: Traits -> Traits -> Traits
+intersectTraits = Set.intersection

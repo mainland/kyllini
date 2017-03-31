@@ -111,7 +111,7 @@ import KZC.Util.Pretty
   '*'  { L _ T.Tstar }
   '/'  { L _ T.Tdiv }
   '%'  { L _ T.Trem }
-  '**' { L _ T.Texp }
+  '**' { L _ T.Tpow }
   '<<' { L _ T.Tshiftl }
   '>>' { L _ T.Tshiftr }
 
@@ -239,10 +239,10 @@ scalar_value :
     '(' ')' { L (locOf $1) UnitC }
   | 'true'  { L (locOf $1) $ BoolC True }
   | 'false' { L (locOf $1) $ BoolC False }
-  | "'0"    { L (locOf $1) $ FixC (U (Just 1)) 0 }
-  | "'1"    { L (locOf $1) $ FixC (U (Just 1)) 1 }
-  | INT     { L (locOf $1) $ FixC (I Nothing) (fromIntegral (snd (getINT $1))) }
-  | UINT    { L (locOf $1) $ FixC (U Nothing) (fromIntegral (snd (getUINT $1))) }
+  | "'0"    { L (locOf $1) $ FixC (U 1) 0 }
+  | "'1"    { L (locOf $1) $ FixC (U 1) 1 }
+  | INT     { L (locOf $1) $ FixC IDefault (fromIntegral (snd (getINT $1))) }
+  | UINT    { L (locOf $1) $ FixC UDefault (fromIntegral (snd (getUINT $1))) }
   | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -393,10 +393,10 @@ aexp :
       { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
 
   | structid '{' struct_init_list1 '}'
-      { StructE $1 $3 ($1 `srcspan` $4) }
+      { StructE $1 [] $3 ($1 `srcspan` $4) }
 
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
@@ -425,7 +425,7 @@ bexp :
           LetE v tau $4 $6 ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' bexp_or_stms
-      { LetRefE (mkVar (varid $2)) $4 $5 $7 ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) (Just $4) $5 $7 ($1 `srcspan` $7) }
 
 bexp_or_stms :: { Exp }
 bexp_or_stms :
@@ -490,18 +490,15 @@ struct_init :: { (Field, Exp) }
 struct_init :
     ID '=' exp { (mkField (fieldid $1), $3) }
 
-gen_interval :: { L (Exp, Exp) }
+gen_interval :: { GenInterval }
 gen_interval :
     '[' exp ':' const_int_exp ']'
-      {% do { from     <- constIntExp $2
-            ; let to   =  unLoc $4
-            ; let len  =  to - from + 1
-            ; return $ L ($1 <--> $5)
-                (intC from (srclocOf $2), intC len (srclocOf $4))
-            }
+      { let to = intC (unLoc $4) (srclocOf $4)
+        in
+          FromToInclusive $2 to ($1 `srcspan` $5)
       }
   | '[' exp ',' exp ']'
-      {L ($1 <--> $5) ($2, $4) }
+      { StartLen $2 $4 ($1 `srcspan` $5) }
 
 {------------------------------------------------------------------------------
  -
@@ -511,21 +508,21 @@ gen_interval :
 
 simple_type :: { Type }
 simple_type :
-    'bit'             { FixT (U (Just 1))  (srclocOf $1) }
-  | 'int8'            { FixT (I (Just 8))  (srclocOf $1) }
-  | 'int16'           { FixT (I (Just 16)) (srclocOf $1) }
-  | 'int32'           { FixT (I (Just 32)) (srclocOf $1) }
-  | 'int64'           { FixT (I (Just 64)) (srclocOf $1) }
-  | 'int'             { FixT (I Nothing)   (srclocOf $1) }
-  | 'uint8'           { FixT (U (Just 8))  (srclocOf $1) }
-  | 'uint16'          { FixT (U (Just 16)) (srclocOf $1) }
-  | 'uint32'          { FixT (U (Just 32)) (srclocOf $1) }
-  | 'uint64'          { FixT (U (Just 64)) (srclocOf $1) }
-  | 'uint'            { FixT (U Nothing)   (srclocOf $1) }
+    'bit'             { FixT (U 1)    (srclocOf $1) }
+  | 'int8'            { FixT (I 8)    (srclocOf $1) }
+  | 'int16'           { FixT (I 16)   (srclocOf $1) }
+  | 'int32'           { FixT (I 32)   (srclocOf $1) }
+  | 'int64'           { FixT (I 64)   (srclocOf $1) }
+  | 'int'             { FixT IDefault (srclocOf $1) }
+  | 'uint8'           { FixT (U 8)    (srclocOf $1) }
+  | 'uint16'          { FixT (U 16)   (srclocOf $1) }
+  | 'uint32'          { FixT (U 32)   (srclocOf $1) }
+  | 'uint64'          { FixT (U 64)   (srclocOf $1) }
+  | 'uint'            { FixT UDefault (srclocOf $1) }
   | 'float'           { FloatT FP32 (srclocOf $1) }
   | 'double'          { FloatT FP64 (srclocOf $1) }
-  | structid          { StructT $1 (srclocOf $1) }
-  | 'struct' structid { StructT $2 ($1 `srcspan` $2) }
+  | structid          { StructT $1 [] (srclocOf $1) }
+  | 'struct' structid { StructT $2 [] ($1 `srcspan` $2) }
 
 base_type :: { Type }
 base_type :
@@ -542,14 +539,14 @@ cast_type :: { Type }
 cast_type :
     simple_type { $1 }
 
-arr_length :: { (Ind, Type) }
+arr_length :: { (Type, Type) }
 arr_length :
     '[' 'length' '(' ID ')' ']' base_type
-      { (ArrI (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
+      { (LenT (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
   | '[' const_int_exp ']' base_type
       { (NatT (unLoc $2) (srclocOf $2), $4) }
   | base_type
-      { (NoneI (srclocOf $1), $1) }
+      { (UnknownT (srclocOf $1), $1) }
 
 comp_base_type :: { Type }
 comp_base_type :
@@ -592,19 +589,15 @@ stm :
           letS $ LetD v tau $4 ($1 `srcspan` $4)
       }
   | 'var' ID ':' base_type maybe_initializer
-      { letS $ LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
+      { letS $ LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
   | stm_exp { ExpS $1 (srclocOf $1) }
 
 stm_exp :: { Exp }
 stm_exp :
     unroll_info 'for' var_bind 'in' gen_interval stm_block
-      { let { uann        = unLoc $1
-            ; (v, tau)    = $3
-            ; (from, len) = unLoc $5
-            ; body        = $6
-            }
+      { let (v, tau) = $3
         in
-          ForE uann v tau from len (stmsE body) ($1 `srcspan` $6)
+          ForE (unLoc $1) v tau $5 (stmsE $6) ($1 `srcspan` $6)
       }
   | 'while' '(' exp ')' stm_block
       { WhileE $3 (stmsE $5) ($1 `srcspan` $5) }
@@ -620,9 +613,9 @@ stm_exp :
       { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
 
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (structid $1) $3 ($1 `srcspan` $4) }
 
   | pexp ':=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }
@@ -645,7 +638,7 @@ stm_exp :
           LetE v tau $4 (stmsE $6) ($1 `srcspan` $6)
       }
   | 'var' ID ':' base_type maybe_initializer 'in' stm_block
-      { LetRefE (mkVar (varid $2)) $4 $5 (stmsE $7) ($1 `srcspan` $7) }
+      { LetRefE (mkVar (varid $2)) (Just $4) $5 (stmsE $7) ($1 `srcspan` $7) }
 
 unroll_info :: { L UnrollAnn }
 unroll_info :
@@ -685,17 +678,20 @@ decl :
   | 'let' var_bind error
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
-      { LetRefD (mkVar (varid $2)) $4 $5 ($1 `srcspan` $5) }
-  | struct
-      { LetStructD $1 (srclocOf $1) }
+      { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
+  | 'struct' ID '=' '{' field_list '}'
+      {% do { addStructIdentifier (getID $2)
+            ; return $ StructD (mkStruct (varid $2)) [] $5 ($1 `srcspan` $6)
+            }
+      }
   | 'fun' 'external' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $3)) $4 $6 True ($1 `srcspan` $6) }
   | 'fun' 'external' 'impure' ID params ':' base_type
       { LetFunExternalD (mkVar (varid $4)) $5 $7 False ($1 `srcspan` $7) }
   | 'fun' 'comp' maybe_comp_range identifier comp_params '{' commands '}'
-      { LetFunCompD $4 $3 $5 (stmsE $7) ($1 `srcspan` $8) }
+      { LetFunCompD $4 $3 [] $5 Nothing (stmsE $7) ($1 `srcspan` $8) }
   | 'fun' identifier params stm_block
-      { LetFunD $2 $3 (stmsE $4) ($1 `srcspan` $4) }
+      { LetFunD $2 [] $3 Nothing (stmsE $4) ($1 `srcspan` $4) }
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' comp
       { let { (v, tau) = $4 }
         in
@@ -753,9 +749,9 @@ acomp :
   | ID
       { varE (mkVar (varid $1)) }
   | ID '(' exp_list ')'
-      { CallE (mkVar (varid $1)) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { CallE (mkVar (structid $1)) $3 ($1 `srcspan` $4) }
+      {mkCall (structid $1) $3 ($1 `srcspan` $4) }
 
   | '(' comp ')'
       { $2 }
@@ -776,11 +772,9 @@ comp :
   | unroll_info 'times' exp comp %prec STANDALONE
       { TimesE (unLoc $1) $3 $4 ($1 `srcspan` $4) }
   | unroll_info 'for' var_bind 'in' gen_interval comp %prec STANDALONE
-      { let { (v, tau)     = $3
-            ; (start, len) = unLoc $5
-            }
+      { let (v, tau) = $3
         in
-          ForE (unLoc $1) v tau start len $6 ($1 `srcspan` $6)
+          ForE (unLoc $1) v tau $5 $6 ($1 `srcspan` $6)
       }
 
   | comp '>>>' comp
@@ -841,15 +835,6 @@ comp_var_bind :
   | '(' identifier ':' comp_base_type ')'
       {% do { -- addCompIdentifier (symbol $2)
             ; return ($2, Just $4)
-            }
-      }
-
--- structs
-struct :: { StructDef }
-struct :
-    'struct' ID '=' '{' field_list '}'
-      {% do { addStructIdentifier (getID $2)
-            ; return $ StructDef (mkStruct (varid $2)) $5 ($1 `srcspan` $6)
             }
       }
 
@@ -981,7 +966,13 @@ constIntExp :: Exp -> P Int
 constIntExp e = go e
   where
     go :: Exp -> P Int
+    go (ConstE (FixC IDefault i) _) =
+        return i
+
     go (ConstE (FixC I{} i) _) =
+        return i
+
+    go (ConstE (FixC UDefault i) _) =
         return i
 
     go (ConstE (FixC U{} i) _) =
@@ -1003,7 +994,7 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Int -> SrcLoc -> Exp
-intC i l = ConstE (FixC (I Nothing) i) l
+intC i l = ConstE (FixC IDefault i) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

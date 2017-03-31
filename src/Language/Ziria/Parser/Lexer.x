@@ -7,7 +7,7 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      : Language.Ziria.Parser.Lexer
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -39,6 +39,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Parser.Tokens
+import Language.Ziria.Syntax (Dialect(..))
 
 -- import Debug.Trace (trace)
 }
@@ -75,15 +76,20 @@ $hexit    = [$digit A-F a-f]
 
 $graphic  = [$small $large $symbol $digit $special \:\"\']
 
+-- Identifiers
 $idchar = [$small $large $digit \']
 @id     = $alpha $idchar*
 
+-- Types
+@width = [1-9] [0-9]*
+
+-- Numerical constants
 @decimal     = $digit+
 @octal       = $octit+
 @hexadecimal = $hexit+
 @exponent    = [eE] [\-\+] @decimal | [eE] @decimal
 
--- For strings
+-- String and characters constants
 $charesc  = [abfnrtv\\\"\'\&]
 $cntrl    = [$ascLarge\@\[\\\]\^\_]
 @ascii    = \^ $cntrl | NUL | SOH | STX | ETX | EOT | ENQ | ACK
@@ -111,6 +117,11 @@ ziria :-
   "//".*      ;
 
   "{-" { lexNestedComment }
+
+  "i" @width / { ifKyllini } { lexTypeWidth Ti }
+  "u" @width / { ifKyllini } { lexTypeWidth Tu }
+  "f32"      / { ifKyllini } { token $ Tf 32 }
+  "f64"      / { ifKyllini } { token $ Tf 64 }
 
   @id { identifier }
 
@@ -145,7 +156,7 @@ ziria :-
   "*"   { token Tstar }
   "/"   { token Tdiv }
   "%"   { token Trem }
-  "**"  { token Texp }
+  "**"  { token Tpow }
   "<<"  { token Tshiftl }
   ">>"  { token Tshiftr }
 
@@ -165,91 +176,56 @@ ziria :-
   "||"   { token Tlor }
 
   "="     { token Tdef }
-  ":="    { token Tassign }
+  ":="    / { ifClassic } { token Tassign }
   "<-"    { token Tbind }
   ">>>"   { token Tcompose }
   "|>>>|" { token Tpcompose }
 
   "'0" { token TzeroBit }
   "'1" { token ToneBit }
+
+  -- For the new dialect
+  "->" / { ifKyllini } { token Tarrow }
+  ".." / { ifKyllini } { token Tdotdot }
 }
 
 {
-keywords :: Map Symbol Token
-keywords = Map.fromList kws
-  where
-    kws :: [(Symbol, Token)]
-    kws = [ ("C",           TC)
-          , ("ST",          TST)
-          , ("T",           TT)
-          , ("arr",         Tarr)
-          , ("bit",         Tbit)
-          , ("bool",        Tbool)
-          , ("autoinline",  Tautoinline)
-          , ("comp",        Tcomp)
-          , ("do",          Tdo)
-          , ("double",      Tdouble)
-          , ("else",        Telse)
-          , ("emit",        Temit)
-          , ("emits",       Temits)
-          , ("error",       Terror)
-          , ("external",    Texternal)
-          , ("false",       Tfalse)
-          , ("filter",      Tfilter)
-          , ("for",         Tfor)
-          , ("forceinline", Tforceinline)
-          , ("fun",         Tfun)
-          , ("if",          Tif)
-          , ("import",      Timport)
-          , ("impure",      Timpure)
-          , ("in",          Tin)
-          , ("int",         Tint)
-          , ("int8",        Tint8)
-          , ("int16",       Tint16)
-          , ("int32",       Tint32)
-          , ("int64",       Tint64)
-          , ("length",      Tlength)
-          , ("let",         Tlet)
-          , ("map",         Tmap)
-          , ("not",         Tnot)
-          , ("noinline",    Tnoinline)
-          , ("nounroll",    Tnounroll)
-          , ("print",       Tprint)
-          , ("println",     Tprintln)
-          , ("read",        Tread)
-          , ("repeat",      Trepeat)
-          , ("return",      Treturn)
-          , ("seq",         Tseq)
-          , ("standalone",  Tstandalone)
-          , ("struct",      Tstruct)
-          , ("take",        Ttake)
-          , ("takes",       Ttakes)
-          , ("then",        Tthen)
-          , ("times",       Ttimes)
-          , ("true",        Ttrue)
-          , ("uint",        Tuint)
-          , ("uint8",       Tuint8)
-          , ("uint16",      Tuint16)
-          , ("uint32",      Tuint32)
-          , ("uint64",      Tuint64)
-          , ("unroll",      Tunroll)
-          , ("until",       Tuntil)
-          , ("var",         Tvar)
-          , ("while",       Twhile)
-          , ("write",       Twrite)
-          ]
+-- | The components of an 'AlexPredicate' are the predicate state, input stream
+-- before the token, length of the token, input stream after the token.
+type AlexPredicate =  PState
+                   -> AlexInput
+                   -> Int
+                   -> AlexInput
+                   -> Bool
+
+ifDialect :: Dialect -> AlexPredicate
+ifDialect d s _ _ _ = dialect s == d
+
+ifClassic :: AlexPredicate
+ifClassic = ifDialect Classic
+
+ifKyllini :: AlexPredicate
+ifKyllini = ifDialect Kyllini
 
 identifier :: Action P Token
 identifier beg end =
-    case Map.lookup ident keywords of
+    case Map.lookup ident keywordMap of
       Nothing  -> do isStruct <- isStructIdentifier ident
                      if isStruct
                         then token (TstructIdentifier ident) beg end
                         else token (Tidentifier ident) beg end
-      Just tok -> token tok beg end
+      Just (tok, Nothing) -> token tok beg end
+      Just (tok, Just d') -> do d <- getDialect
+                                if d == d'
+                                  then token tok beg end
+                                  else token (Tidentifier ident) beg end
   where
     ident :: Symbol
     ident = intern (inputString beg end)
+
+lexTypeWidth :: (Int -> Token) -> Action P Token
+lexTypeWidth k beg end =
+    token (k ((read . T.unpack . T.drop 1) (inputText beg end))) beg end
 
 lexConst :: Read a => ((String, a) -> Token) -> Action P Token
 lexConst tok beg end = do
@@ -345,12 +321,13 @@ lexToken = do
              return $! trace (show x) x
 -}
 
-lexTokens  ::  MonadException m
-           =>  T.Text
-           ->  Pos
-           ->  m [L Token]
-lexTokens buf start =
-    liftException (evalP tokens (emptyPState buf start))
+lexTokens :: MonadException m
+          => Dialect
+          -> T.Text
+          -> Pos
+          -> m [L Token]
+lexTokens dialect buf start =
+    liftException (evalP tokens (emptyPState dialect buf start))
   where
     tokens :: P [L Token]
     tokens = do

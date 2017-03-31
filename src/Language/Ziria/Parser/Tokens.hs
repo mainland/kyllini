@@ -1,17 +1,26 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- |
 -- Module      : Language.Ziria.Parser.Tokens
--- Copyright   : (c) 2014-2015 Drexel University
+-- Copyright   : (c) 2014-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
 module Language.Ziria.Parser.Tokens (
     Signedness(..),
-    Token(..)
+    Token(..),
+    keywords,
+    keywordMap,
+    unopFuns,
+    unopFunMap
   ) where
 
+import qualified Data.Map as Map
 import Data.Symbol
 import Text.PrettyPrint.Mainland
+
+import Language.Ziria.Syntax
 
 data Signedness = S
                 | U
@@ -92,7 +101,7 @@ data Token = Teof
            | Tstar   -- ^ Multiplication
            | Tdiv    -- ^ Division
            | Trem    -- ^ Remainder
-           | Texp    -- ^ Exponentiation
+           | Tpow    -- ^ Raise to power
            | Tshiftl -- ^ Shift right
            | Tshiftr -- ^ Shift left
 
@@ -129,6 +138,25 @@ data Token = Teof
            | Tcomma
            | Tsemi
            | Tcolon
+
+           -- Tokens for the new dialect
+           | Tmut
+           | Ttype
+
+           | TEq
+           | TOrd
+           | TBool
+           | TNum
+           | TIntegral
+           | TFractional
+           | TBits
+
+           | Ti Int -- ^ General-width signed integer type
+           | Tu Int -- ^ General-width unsigned integer type
+           | Tf Int -- ^ General-width float type
+
+           | Tarrow  -- ^ Right arrow (->)
+           | Tdotdot -- ^ Range (..)
   deriving (Eq, Ord, Read, Show)
 
 instance Pretty Token where
@@ -208,7 +236,7 @@ instance Pretty Token where
     ppr Tstar   = text "*"
     ppr Tdiv    = text "/"
     ppr Trem    = text "%"
-    ppr Texp    = text "**"
+    ppr Tpow    = text "**"
     ppr Tshiftl = text "<<"
     ppr Tshiftr = text ">>"
 
@@ -245,3 +273,128 @@ instance Pretty Token where
     ppr Tcomma = text ","
     ppr Tsemi  = text ";"
     ppr Tcolon = text ":"
+
+    -- Tokens for the new dialect
+    ppr Tmut  = text "mut"
+    ppr Ttype = text "type"
+
+    ppr TEq         = text "Eq"
+    ppr TOrd        = text "Ord"
+    ppr TBool       = text "Bool"
+    ppr TNum        = text "Num"
+    ppr TIntegral   = text "Integral"
+    ppr TFractional = text "Fractional"
+    ppr TBits       = text "Bits"
+
+    ppr (Ti n) = text "i" <> ppr n
+    ppr (Tu n) = text "u" <> ppr n
+    ppr (Tf n) = text "f" <> ppr n
+
+    ppr Tarrow  = text "->"
+    ppr Tdotdot = text ".."
+
+keywords :: [(Symbol, Token, Maybe Dialect)]
+keywords = [ ("C",           TC,           Nothing)
+           , ("ST",          TST,          Nothing)
+           , ("T",           TT,           Nothing)
+           , ("arr",         Tarr,         Nothing)
+           , ("bit",         Tbit,         Nothing)
+           , ("bool",        Tbool,        Nothing)
+           , ("autoinline",  Tautoinline,  Nothing)
+           , ("comp",        Tcomp,        Nothing)
+           , ("do",          Tdo,          Just Classic)
+           , ("double",      Tdouble,      Nothing)
+           , ("else",        Telse,        Nothing)
+           , ("emit",        Temit,        Nothing)
+           , ("emits",       Temits,       Nothing)
+           , ("error",       Terror,       Nothing)
+           , ("external",    Texternal,    Nothing)
+           , ("false",       Tfalse,       Nothing)
+           , ("filter",      Tfilter,      Nothing)
+           , ("float",       Tfloat,       Nothing)
+           , ("for",         Tfor,         Nothing)
+           , ("forceinline", Tforceinline, Nothing)
+           , ("fun",         Tfun,         Nothing)
+           , ("if",          Tif,          Nothing)
+           , ("import",      Timport,      Nothing)
+           , ("impure",      Timpure,      Nothing)
+           , ("in",          Tin,          Nothing)
+           , ("int",         Tint,         Nothing)
+           , ("int8",        Tint8,        Nothing)
+           , ("int16",       Tint16,       Nothing)
+           , ("int32",       Tint32,       Nothing)
+           , ("int64",       Tint64,       Nothing)
+           , ("length",      Tlength,      Nothing)
+           , ("let",         Tlet,         Nothing)
+           , ("map",         Tmap,         Nothing)
+           , ("not",         Tnot,         Nothing)
+           , ("noinline",    Tnoinline,    Nothing)
+           , ("nounroll",    Tnounroll,    Nothing)
+           , ("print",       Tprint,       Nothing)
+           , ("println",     Tprintln,     Nothing)
+           , ("read",        Tread,        Nothing)
+           , ("repeat",      Trepeat,      Nothing)
+           , ("return",      Treturn,      Nothing)
+           , ("seq",         Tseq,         Just Classic)
+           , ("standalone",  Tstandalone,  Nothing)
+           , ("struct",      Tstruct,      Nothing)
+           , ("take",        Ttake,        Nothing)
+           , ("takes",       Ttakes,       Nothing)
+           , ("then",        Tthen,        Nothing)
+           , ("times",       Ttimes,       Nothing)
+           , ("true",        Ttrue,        Nothing)
+           , ("uint",        Tuint,        Nothing)
+           , ("uint8",       Tuint8,       Nothing)
+           , ("uint16",      Tuint16,      Nothing)
+           , ("uint32",      Tuint32,      Nothing)
+           , ("uint64",      Tuint64,      Nothing)
+           , ("unroll",      Tunroll,      Nothing)
+           , ("until",       Tuntil,       Nothing)
+           , ("var",         Tvar,         Just Classic)
+           , ("while",       Twhile,       Nothing)
+           , ("write",       Twrite,       Nothing)
+
+           -- Tokens for the new dialect
+           , ("mut",  Tmut,  Just Kyllini)
+           , ("type", Ttype, Just Kyllini)
+
+           , ("Eq",         TEq,         Just Kyllini)
+           , ("Ord",        TOrd,        Just Kyllini)
+           , ("Bool",       TBool,       Just Kyllini)
+           , ("Num",        TNum,        Just Kyllini)
+           , ("Integral",   TIntegral,   Just Kyllini)
+           , ("Fractional", TFractional, Just Kyllini)
+           , ("Bits",       TBits,       Just Kyllini)
+           ]
+
+keywordMap :: Map.Map Symbol (Token, Maybe Dialect)
+keywordMap = Map.fromList (map f keywords)
+  where
+    f  ::  (Symbol, Token, Maybe Dialect)
+       ->  (Symbol, (Token, Maybe Dialect))
+    f (s, t, d) = (s, (t, d))
+
+-- | Unary functions that are written using function call syntax.
+unopFuns :: [(Symbol, Unop)]
+unopFuns = [ ("abs",   Abs)
+           , ("exp",   Exp)
+           , ("log",   Log)
+           , ("sqrt",  Sqrt)
+           , ("sin",   Sin)
+           , ("cos",   Cos)
+           , ("tan",   Tan)
+           , ("asin",  Asin)
+           , ("acos",  Acos)
+           , ("atan",  Atan)
+           , ("sinh",  Sinh)
+           , ("cosh",  Cosh)
+           , ("tanh",  Tanh)
+           , ("asinh", Asinh)
+           , ("acosh", Acosh)
+           , ("atanh", Atanh)
+           ]
+
+-- | Map unary functions that are written using function call syntax to the
+-- appropriate 'Unop'.
+unopFunMap :: Map.Map Symbol Unop
+unopFunMap = Map.fromList unopFuns
