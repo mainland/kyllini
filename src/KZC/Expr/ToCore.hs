@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -16,9 +15,6 @@ module KZC.Expr.ToCore (
     exprToCore
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -28,9 +24,6 @@ import Control.Monad.Reader (MonadReader(..),
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
 import KZC.Config

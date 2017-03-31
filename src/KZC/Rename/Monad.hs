@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -31,9 +30,6 @@ module KZC.Rename.Monad (
     inPureScope
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref

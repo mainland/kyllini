@@ -31,14 +31,8 @@ module KZC.Check.Types (
     MetaRv(..)
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader
 import Control.Monad.Ref
-#if !MIN_VERSION_base(4,8,0)
-import Data.Foldable
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.IORef
 import Data.Loc
 import Data.List ((\\), sort)

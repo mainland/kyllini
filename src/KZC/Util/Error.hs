@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
@@ -6,7 +5,7 @@
 
 -- |
 -- Module      :  KZC.Util.Error
--- Copyright   :  (c) 2014-2016 Drexel University
+-- Copyright   :  (c) 2014-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -37,9 +36,6 @@ module KZC.Util.Error (
     checkDuplicates
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Monad.Error (Error, ErrorT(..))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Exception (Exception(..),
                                 MonadException,
@@ -55,9 +51,6 @@ import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid (Monoid)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
@@ -119,18 +112,6 @@ instance MonadErr m => MonadErr (MaybeT m) where
     panic = lift . panic
     err   = lift . err
     warn  = lift . warn
-
-#if !MIN_VERSION_base(4,8,0)
-instance (Error e, MonadErr m) => MonadErr (ErrorT e m) where
-    askErrCtx         = lift askErrCtx
-    localErrCtx ctx m = ErrorT $ localErrCtx ctx (runErrorT m)
-
-    displayWarning = lift . displayWarning
-
-    panic = lift . panic
-    err   = lift . err
-    warn  = lift . warn
-#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance (MonadErr m) => MonadErr (ExceptT e m) where
     askErrCtx         = lift askErrCtx

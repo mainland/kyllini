@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -22,9 +21,6 @@ module KZC.Analysis.ReadWriteSet (
 import qualified Prelude as P
 import Prelude hiding ((<=))
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
@@ -41,9 +37,6 @@ import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (empty)

@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -29,9 +28,6 @@ module KZC.Check (
     refPath
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative hiding ((<|>))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (filterM,
                       replicateM,
                       unless,

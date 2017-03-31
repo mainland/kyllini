@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -61,9 +60,6 @@ module KZC.Check.Monad (
     Compress(..)
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -74,9 +70,6 @@ import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-#if !MIN_VERSION_base(4,8,0)
-import Data.Traversable (Traversable, traverse)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
 import qualified Language.Ziria.Syntax as Z

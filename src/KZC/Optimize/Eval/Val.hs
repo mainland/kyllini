@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -61,9 +60,6 @@ module KZC.Optimize.Eval.Val (
     toConst
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (foldM)
 import Data.Binary.IEEE754 (floatToWord,
                             wordToFloat,

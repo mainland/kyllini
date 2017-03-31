@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -31,9 +30,6 @@ module KZC.Core.Comp (
     parC
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Loc
 
 import KZC.Core.Syntax

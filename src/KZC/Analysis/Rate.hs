@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -26,9 +25,6 @@ module KZC.Analysis.Rate (
 
 import Prelude hiding ((<=))
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (MonadPlus(..),
                       when)
 import Control.Monad.Exception (MonadException(..))

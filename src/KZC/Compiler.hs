@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,9 +14,6 @@ module KZC.Compiler (
     compileFiles
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -27,9 +23,6 @@ import qualified Data.ByteString.Lazy as B
 import Data.Foldable (toList)
 import Data.IORef
 import Data.Maybe (fromMaybe)
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set

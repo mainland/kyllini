@@ -78,14 +78,8 @@ module KZC.Expr.Syntax (
 #endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Reader
 import Data.Bits
-#if !MIN_VERSION_base(4,8,0)
-import Data.Foldable (foldMap)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)

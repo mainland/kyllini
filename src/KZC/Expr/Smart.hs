@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -105,9 +104,6 @@ module KZC.Expr.Smart (
     repeatAnnE
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.List (sort)
 import Data.Loc
 import Data.Vector (Vector)

@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,11 +12,7 @@
 
 module KZC.Optimize.Coalesce where
 
-#if MIN_VERSION_base(4,8,0)
 import Control.Applicative (Alternative)
-#else /* !MIN_VERSION_base(4,8,0) */
-import Control.Applicative (Alternative, Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (MonadPlus(..),
                       guard,
                       when)

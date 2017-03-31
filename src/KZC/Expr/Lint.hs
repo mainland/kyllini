@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -70,9 +69,6 @@ module KZC.Expr.Lint (
     checkPureishSTCUnit
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (unless,
                       when,
                       zipWithM_,

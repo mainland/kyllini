@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-
 -- |
 -- Module      :  KZC.Platform
 -- Copyright   :  (c) 2015-2017 Drexel University
@@ -13,9 +11,6 @@ module KZC.Platform (
     asksPlatform
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Monad.Error (Error, ErrorT(..))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Exception (ExceptionT(..), runExceptionT)
 import Control.Monad.Reader (ReaderT(..))
@@ -45,12 +40,6 @@ instance MonadPlatform m => MonadPlatform (MaybeT m) where
 instance MonadPlatform m => MonadPlatform (ContT r m) where
     askPlatform   = lift askPlatform
     localPlatform = Cont.liftLocal askPlatform localPlatform
-
-#if !MIN_VERSION_base(4,8,0)
-instance (Error e, MonadPlatform m) => MonadPlatform (ErrorT e m) where
-    askPlatform       = lift askPlatform
-    localPlatform f m = ErrorT $ localPlatform f (runErrorT m)
-#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance (MonadPlatform m) => MonadPlatform (ExceptT e m) where
     askPlatform       = lift askPlatform

@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,9 +18,6 @@ module KZC.Optimize.Simplify (
 import Prelude hiding ((<=))
 import qualified Prelude
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -39,9 +35,6 @@ import qualified Data.Map as Map
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
-#if !MIN_VERSION_base(4,8,0)
-import Data.Traversable (traverse)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 

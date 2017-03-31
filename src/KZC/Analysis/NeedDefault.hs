@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -23,9 +22,6 @@ module KZC.Analysis.NeedDefault (
 
 import Prelude hiding ((<=))
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (void,
                       when)
 import Control.Monad.Exception (MonadException(..))
@@ -42,10 +38,6 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-import Data.Traversable (traverse)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Text.PrettyPrint.Mainland
 
 import KZC.Analysis.Lattice

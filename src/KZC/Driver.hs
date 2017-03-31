@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-
 -- |
 -- Module      : KZC.Driver
 -- Copyright   : (c) 2015-2017 Drexel University
@@ -15,13 +13,7 @@ module KZC.Driver (
     kzcUsage
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif /* !MIN_VERSION_base(4,8,0) */
 import System.Environment
 import System.Exit (exitFailure)
 import System.IO (hPrint,

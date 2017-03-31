@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -14,9 +13,6 @@ module KZC.Optimize.HashConsConsts (
     hashConsConsts
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
@@ -31,9 +27,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Sequence ((|>)
                      ,Seq)
-#if !MIN_VERSION_base(4,8,0)
-import Data.Traversable (traverse)
-#endif /* !MIN_VERSION_base(4,8,0) */
 
 import KZC.Config
 import KZC.Core.Lint

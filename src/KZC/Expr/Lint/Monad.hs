@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -73,12 +72,6 @@ module KZC.Expr.Lint.Monad (
     castStruct
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<$>))
-#endif /* !MIN_VERSION_base(4,8,0) */
-#if !MIN_VERSION_base(4,8,0)
-import Control.Monad.Error (Error, ErrorT(..))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
@@ -96,9 +89,6 @@ import Data.List (foldl')
 import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid (Monoid, mempty)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -169,12 +159,6 @@ instance MonadTc m => MonadTc (MaybeT m) where
     askTc       = lift askTc
     localTc f m = MaybeT $ localTc f (runMaybeT m)
 
-#if !MIN_VERSION_base(4,8,0)
-instance (Error e, MonadTc m) => MonadTc (ErrorT e m) where
-    askTc       = lift askTc
-    localTc f m = ErrorT $ localTc f (runErrorT m)
-#endif /* !MIN_VERSION_base(4,8,0) */
-
 instance MonadTc m => MonadTc (ExceptT e m) where
     askTc       = lift askTc
     localTc f m = ExceptT $ localTc f (runExceptT m)
@@ -200,10 +184,6 @@ instance (Monoid w, MonadTc m) => MonadTc (S.WriterT w m) where
     localTc f m = S.WriterT $ localTc f (S.runWriterT m)
 
 instance MonadTcRef m => MonadTcRef (MaybeT m) where
-
-#if !MIN_VERSION_base(4,8,0)
-instance (Error e, MonadTcRef m) => MonadTcRef (ErrorT e m) where
-#endif /* !MIN_VERSION_base(4,8,0) */
 
 instance MonadTcRef m => MonadTcRef (ExceptT e m) where
 

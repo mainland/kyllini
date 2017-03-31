@@ -55,9 +55,6 @@ module Language.Ziria.Syntax (
     isComplexStruct
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Data.Foldable
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Loc
 import Data.Monoid
 import Data.String

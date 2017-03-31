@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
@@ -17,9 +16,6 @@ module KZC.Backend.C (
 
 import Prelude
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>), (<*>))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (forM_,
                       unless,
                       when)

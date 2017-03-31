@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -69,9 +68,6 @@ module KZC.Core.Lint (
     checkPureishSTCUnit
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (unless,
                       void,
                       when,

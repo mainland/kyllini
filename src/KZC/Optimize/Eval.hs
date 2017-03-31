@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -20,9 +19,6 @@ module KZC.Optimize.Eval (
     toExp
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>), (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad (filterM)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Class (MonadTrans)
@@ -32,9 +28,6 @@ import Data.List (partition)
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Vector as V

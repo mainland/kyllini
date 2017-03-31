@@ -1,11 +1,10 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 --------------------------------------------------------------------------------
 -- |
 -- Module      : KZC.Util.SetLike
--- Copyright   : (c) 2015-2016 Drexel University
+-- Copyright   : (c) 2015-2017 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
@@ -18,9 +17,6 @@ module KZC.Util.SetLike (
     OrderedSet
   ) where
 
-#if !MIN_VERSION_base(4,8,0)
-import Data.Foldable
-#endif /* !MIN_VERSION_base(4,8,0) */
 import qualified Data.List as List
 import Data.Monoid
 import Data.Set (Set)

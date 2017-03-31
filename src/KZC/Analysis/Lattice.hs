@@ -1,11 +1,10 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      :  KZC.Analysis.Lattice
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -29,9 +28,6 @@ module KZC.Analysis.Lattice (
 import qualified Prelude
 import Prelude hiding ((<=))
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (Applicative, (<*>), pure)
-#endif /* !MIN_VERSION_base(4,8,0) */
 import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
