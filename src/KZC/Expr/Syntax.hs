@@ -1046,13 +1046,13 @@ instance Pretty Type where
         text "int"
 
     pprPrec _ (FixT (I w) _) =
-        text "int" <> ppr w
+        char 'i' <> ppr w
 
     pprPrec _ (FixT UDefault _) =
         text "uint"
 
     pprPrec _ (FixT (U w) _) =
-        text "uint" <> ppr w
+        char 'u' <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

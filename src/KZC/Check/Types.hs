@@ -208,14 +208,16 @@ instance Pretty Type where
     pprPrec _ (FixT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _) =
-        text "int" <> ppr w
+    pprPrec _ (FixT (I w) _)
+      | classicDialect = text "int" <> ppr w
+      | otherwise      = char 'i' <> ppr w
 
     pprPrec _ (FixT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _) =
-        text "uint" <> ppr w
+    pprPrec _ (FixT (U w) _)
+      | classicDialect = text "uint" <> ppr w
+      | otherwise      = char 'u' <> ppr w
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
