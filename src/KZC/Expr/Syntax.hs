@@ -482,7 +482,7 @@ class LiftedBits a b | a -> b where
 
 -- | A type which can be cast.
 class LiftedCast a b | a -> b where
-    liftCast  :: Type -> a -> b
+    liftCast :: Type -> a -> b
 
 -- | Renormalize a constant, ensuring that integral constants are within their
 -- bounds. We assume two's complement arithmetic.
