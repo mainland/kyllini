@@ -78,6 +78,7 @@ library
     KZC.Monad.SEFKT
     KZC.Label
     KZC.LambdaLift
+    KZC.Monomorphize
     KZC.Name
     KZC.Optimize.Autolut
     KZC.Optimize.Coalesce

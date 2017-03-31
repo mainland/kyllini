@@ -4,7 +4,7 @@
 
 -- |
 -- Module      :  KZC.Driver.Opts
--- Copyright   :  (c) 2015-2016 Drexel University
+-- Copyright   :  (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
@@ -359,6 +359,7 @@ dDumpFlags =
     , (DumpRate,       "rate",       "dump result of rate analysis")
     , (DumpCoalesce,   "coalesce",   "dump result of pipeline coalescing")
     , (DumpViews,      "views",      "dump result of using views")
+    , (DumpMono,       "mono",       "dump result of monomorphization")
     ]
 
 dTraceFlags :: [(TraceFlag, String, String)]
@@ -382,6 +383,7 @@ dTraceFlags =
     , (TraceRate,        "rate",         "trace rate analysis")
     , (TraceCoalesce,    "coalesce",     "trace pipeline coalescing")
     , (TraceViews,       "views",        "trace use of views")
+    , (TraceMono,        "mono",         "trace monomorphization")
     ]
 
 dOpts :: forall m . Monad m => [FlagOptDescr (Config -> m Config)]

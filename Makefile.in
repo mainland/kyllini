@@ -101,6 +101,7 @@ SOURCE = \
 	KZC/Monad/SEFKT.hs \
 	KZC/Label.hs \
 	KZC/LambdaLift.hs \
+	KZC/Monomorphize.hs \
 	KZC/Name.hs \
 	KZC/Optimize/Autolut.hs \
 	KZC/Optimize/Coalesce.hs \

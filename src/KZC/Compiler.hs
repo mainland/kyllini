@@ -71,6 +71,7 @@ import KZC.Label
 import KZC.LambdaLift
 import KZC.Monad
 import KZC.Monad.SEFKT as SEFKT
+import KZC.Monomorphize
 import KZC.Name
 import KZC.Optimize.Autolut
 import KZC.Optimize.Coalesce
@@ -256,6 +257,7 @@ compileExprProgram filepath prog =  do
         traceCorePhase "hashcons" hashconsPhase >=>
         tracePhase "refFlow" refFlowPhase >=>
         tracePhase "needDefault" needDefaultPhase >=>
+        tracePhase "monomorphize" monomorphizePhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
       where
@@ -356,6 +358,11 @@ compileExprProgram filepath prog =  do
     needDefaultPhase =
         lift . lift . C.liftTc . needDefaultProgram >=>
         dumpPass DumpEval "core" "needdefault"
+
+    monomorphizePhase :: IsLabel l => C.Program l -> MaybeT (C KZC) (C.Program l)
+    monomorphizePhase =
+        lift . lift . C.liftTc . monomorphizeProgram >=>
+        dumpPass DumpMono "core" "mono"
 
     compilePhase :: C.LProgram -> MaybeT (C KZC) ()
     compilePhase =
