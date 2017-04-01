@@ -17,6 +17,7 @@ module KZC.Check.Types (
     IP(..),
     ipBitSize,
     ipIsSigned,
+    ipRange,
 
     FP(..),
     fpBitSize,
@@ -57,6 +58,7 @@ import qualified Language.Ziria.Syntax as Z
 import KZC.Expr.Syntax (IP(..),
                         ipBitSize,
                         ipIsSigned,
+                        ipRange,
 
                         FP(..),
                         fpBitSize)

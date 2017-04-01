@@ -27,6 +27,7 @@ module KZC.Expr.Syntax (
     IP(..),
     ipBitSize,
     ipIsSigned,
+    ipRange,
 
     FP(..),
     fpBitSize,
@@ -156,6 +157,12 @@ ipIsSigned IDefault{} = True
 ipIsSigned I{}        = True
 ipIsSigned UDefault{} = False
 ipIsSigned U{}        = False
+
+-- | Smallest representable value.
+ipRange :: MonadPlatform m => IP -> m (Int, Int)
+ipRange ip = do
+    w <- ipBitSize ip
+    return $ if ipIsSigned ip then (-2^(w-1), 2^(w-1)-1) else (0, 2^w)
 
 -- | Floating-point precision.
 data FP = FP16

@@ -25,6 +25,7 @@ module KZC.Core.Syntax (
     IP(..),
     ipBitSize,
     ipIsSigned,
+    ipRange,
 
     FP(..),
     fpBitSize,
@@ -118,6 +119,7 @@ import KZC.Expr.Syntax (Var(..),
                         IP(..),
                         ipBitSize,
                         ipIsSigned,
+                        ipRange,
 
                         FP(..),
                         fpBitSize,
