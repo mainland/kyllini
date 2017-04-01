@@ -2081,7 +2081,7 @@ checkSafeCast _f (Just e@(Z.ConstE (Z.IntC zip x) l)) tau1 tau2@(IntT ip _) =
 checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) = do
     w1 <- ipBitSize ip1
     w2 <- ipBitSize ip2
-    when (w1 < w2) $
+    when (w1 > w2) $
         maybeWithSummaryContext e $
         warndocWhen f $ align $
         text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
