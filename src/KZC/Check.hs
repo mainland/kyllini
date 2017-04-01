@@ -2064,39 +2064,19 @@ checkLegalBitcast tau1 tau2 = do
 -- If it is definitely unsafe, signal an error; if it may be unsafe, signal a
 -- warning if the specified warning flag is set. We assume the cast is legal.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
-checkSafeCast _f (Just e@(Z.ConstE (Z.IntC ip x) l)) tau1 tau2 =
+checkSafeCast _f (Just e@(Z.ConstE (Z.IntC zip x) l)) tau1 tau2@(IntT ip _) =
     withSummaryContext e $ do
-    tau1' <- fromZ $ Z.IntT ip l
+    tau1' <- fromZ $ Z.IntT zip l
     when (tau1' /= tau1) $
         withSummaryContext e $
         faildoc $ align $
         text "Expected type:" <+> ppr tau1' </>
         text "     Got type:" <+> ppr tau1
-    go tau2
-  where
-    go :: Type -> Ti ()
-    go (IntT U{} _) | x < 0 =
-        faildoc $ align $
-        text "Integer constant" <+> ppr x <+>
-        text "cannot be represented as type" <+> ppr tau2
-
-    go (IntT (U w) _) | x > 2^w-1 =
-        faildoc $ align $
-        text "Integer constant" <+> ppr x <+>
-        text "cannot be represented as type" <+> ppr tau2
-
-    go (IntT (I w) _) | x > 2^(w-1)-1 =
-        faildoc $ align $
-        text "Integer constant" <+> ppr x <+>
-        text "cannot be represented as type" <+> ppr tau2
-
-    go (IntT (I w) _) | x < -2^(w-1) =
-        faildoc $ align $
-        text "Integer constant" <+> ppr x <+>
-        text "cannot be represented as type" <+> ppr tau2
-
-    go _ =
-        return ()
+    (i_min, i_max) <- ipRange ip
+    when (x < i_min || x > i_max) $
+      faildoc $ align $
+      text "Integer constant" <+> ppr x <+>
+      text "cannot be represented as type" <+> ppr tau2
 
 checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) = do
     w1 <- ipBitSize ip1
