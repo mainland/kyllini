@@ -1843,8 +1843,9 @@ castVal tau2 e0 = do
     co <- case (e, tau1, tau2) of
             (Z.ArrayE es _, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
                 unifyTypes iota1 iota2
+                co <- mkArrayCast etau1 etau2
                 mapM_ (\e -> checkSafeCast WarnUnsafeAutoCast (Just e) etau1 etau2) es
-                mkArrayCast etau1 etau2
+                return co
             _ -> mkCheckedSafeCast e tau1 tau2
     return $ co mce
   where
