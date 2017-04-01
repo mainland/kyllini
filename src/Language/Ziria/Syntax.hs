@@ -21,8 +21,6 @@ module Language.Ziria.Syntax (
     Struct(..),
 
     IP(..),
-    ipBitSize,
-    ipIsSigned,
 
     FP(..),
 
@@ -61,7 +59,6 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Name
-import KZC.Platform
 import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -101,19 +98,6 @@ data IP = IDefault
         | UDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
-
--- | Number of bits needed to represent integers with the given precision.
-ipBitSize :: MonadPlatform m => IP -> m Int
-ipBitSize IDefault = asksPlatform platformIntWidth
-ipBitSize (I w)    = return w
-ipBitSize UDefault = asksPlatform platformIntWidth
-ipBitSize (U w)    = return w
-
-ipIsSigned :: IP -> Bool
-ipIsSigned IDefault{} = True
-ipIsSigned I{}        = True
-ipIsSigned UDefault{} = False
-ipIsSigned U{}        = False
 
 -- | Floating-point precision.
 data FP = FP16
