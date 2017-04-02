@@ -630,14 +630,11 @@ cgLocalDecl _flags LetViewLD{} _k =
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.
 cgConst :: forall l . Const -> Cg l (CExp l)
-cgConst UnitC             = return CVoid
-cgConst (BoolC b)         = return $ CBool b
-cgConst (IntC IDefault x) = return $ CInt (fromIntegral x)
-cgConst (IntC I{} x)      = return $ CInt (fromIntegral x)
-cgConst (IntC UDefault x) = return $ CInt (fromIntegral x)
-cgConst (IntC U{} x)      = return $ CInt (fromIntegral x)
-cgConst (FloatC _ f)      = return $ CFloat (toRational f)
-cgConst (StringC s)       = return $ CExp [cexp|$string:s|]
+cgConst UnitC        = return CVoid
+cgConst (BoolC b)    = return $ CBool b
+cgConst (IntC _ x)   = return $ CInt (fromIntegral x)
+cgConst (FloatC _ f) = return $ CFloat (toRational f)
+cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
