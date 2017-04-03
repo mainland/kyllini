@@ -236,9 +236,9 @@ rnDecl decl@(LetRefD v tau e l) k =
     k decl'
 
 rnDecl decl@(LetFunD v tvks vbs tau_ret e l) k =
-    extendVars (text "function") [v] $
-    extendTyVars (text "type variable") (map fst tvks) $ do
+    extendVars (text "function") [v] $ do
     decl' <- withSummaryContext decl $
+             extendTyVars (text "type variable") (map fst tvks) $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunD <$> rn v <*> rn tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
     k decl'
@@ -257,9 +257,9 @@ rnDecl decl@(LetCompD v tau range e l) k =
     k decl'
 
 rnDecl decl@(LetFunCompD f range tvks vbs tau_ret e l) k =
-    extendCompVars (text "computation function") [f] $
-    extendTyVars (text "type variable") (map fst tvks) $ do
+    extendCompVars (text "computation function") [f] $ do
     decl' <- withSummaryContext decl $
+             extendTyVars (text "type variable") (map fst tvks) $
              extendVars (text "parameters") [v | VarBind v _ _ <- vbs] $
              LetFunCompD <$> inCompScope (lookupMaybeCompVar f) <*>
                  pure range <*> rn tvks <*> rn vbs <*> rn tau_ret <*> rn e <*> pure l
