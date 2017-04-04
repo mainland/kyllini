@@ -20,6 +20,7 @@ module KZC.Check.Types (
     ipIsSigned,
     ipIsIntegral,
     FP(..),
+    fpWidth,
     StructDef(..),
     structDefTvks,
     Type(..),
@@ -50,7 +51,8 @@ import KZC.Expr.Syntax (IP(..),
                         ipWidth,
                         ipIsSigned,
                         ipIsIntegral,
-                        FP(..))
+                        FP(..),
+                        fpWidth)
 import KZC.Globals
 import KZC.Name
 import KZC.Traits

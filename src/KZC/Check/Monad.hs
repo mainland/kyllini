@@ -36,6 +36,8 @@ module KZC.Check.Monad (
     extendTyVars,
     lookupTyVar,
 
+    typeSize,
+
     withExpContext,
 
     readTv,
@@ -229,6 +231,30 @@ lookupTyVar tv =
     lookupEnv tyVars onerr tv
   where
     onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
+
+-- | Compute the size of a type in bits.
+typeSize :: Type -> Ti Int
+typeSize = go
+  where
+    go :: Type -> Ti Int
+    go UnitT{}                 = pure 0
+    go BoolT{}                 = pure 1
+    go (FixT ip _)             = ipWidth ip
+    go (FloatT fp _)           = pure $ fpWidth fp
+    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
+    go (ST (C tau _) _ _ _ _)  = go tau
+    go (RefT tau _)            = go tau
+
+    go (StructT s taus _) = do
+        sdef      <- lookupStruct s
+        (_, flds) <- tyAppStruct sdef taus
+        sum <$> mapM (typeSize . snd) flds
+
+    go (ForallT _ (ST (C tau _) _ _ _ _) _) =
+        go tau
+
+    go tau =
+        faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
 
 withExpContext :: Z.Exp -> Ti a -> Ti a
 withExpContext e m =
