@@ -2205,7 +2205,7 @@ unifyTypes tau1 tau2 = do
        -> Type
        -> Type
        -> Ti ()
-    go _ (MetaT mtv1 _) (MetaT mtv2 _) | mtv1 == mtv2 =
+    go _ tau1 tau2 | tau1 == tau2 =
         return ()
 
     go _ tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2@(MetaT (MetaTv _ kappa2 _) _) = do
