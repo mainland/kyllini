@@ -2011,19 +2011,25 @@ checkLegalCast tau1 tau2 = do
         zipWithM_ go taus taus'
 
     go tau1@FixT{} tau2@TyVarT{} =
-        polyUpcast tau1 tau2
+        polyCast tau1 tau2
 
     go tau1@FloatT{} tau2@TyVarT{} =
-        polyUpcast tau1 tau2
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FixT{} =
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FloatT{} =
+        polyCast tau1 tau2
 
     go tau1 tau2 =
         unifyTypes tau1 tau2
       `catch` \(_ :: UnificationException) -> cannotCast tau1 tau2
 
-    -- | Polymorphic up-cast from type @tau1@ to type @tau2@. We use this to
-    -- cast a constant to a polymorphic type.
-    polyUpcast :: Type -> Type -> Ti ()
-    polyUpcast tau1 tau2 = do
+    -- | Polymorphic cast from type @tau1@ to type @tau2@. We use this to cast a
+    -- constant to a polymorphic type.
+    polyCast :: Type -> Type -> Ti ()
+    polyCast tau1 tau2 = do
         kappa <- constKind tau1
         checkKind tau2 kappa `catch` \(_ :: SomeException) -> cannotCast tau1 tau2
 

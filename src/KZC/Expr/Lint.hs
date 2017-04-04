@@ -786,18 +786,24 @@ checkCast = go
         return ()
 
     go tau1@FixT{} tau2@TyVarT{} =
-        polyUpcast tau1 tau2
+        polyCast tau1 tau2
 
     go tau1@FloatT{} tau2@TyVarT{} =
-        polyUpcast tau1 tau2
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FixT{} =
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FloatT{} =
+        polyCast tau1 tau2
 
     go tau1 tau2 =
         cannotCast tau1 tau2
 
-    -- | Polymorphic up-cast from type @tau1@ to type @tau2@. We use this to
-    -- cast a constant to a polymorphic type.
-    polyUpcast :: Type -> Type -> m ()
-    polyUpcast tau1 tau2 = do
+    -- | Polymorphic cast from type @tau1@ to type @tau2@. We use this to cast a
+    -- constant to a polymorphic type.
+    polyCast :: Type -> Type -> m ()
+    polyCast tau1 tau2 = do
         kappa <- constKind tau1
         checkKind tau2 kappa `catch` \(_ :: SomeException) -> cannotCast tau1 tau2
 
