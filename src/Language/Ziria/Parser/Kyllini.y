@@ -671,24 +671,58 @@ stm_rlist :
     {- empty -}   { rnil }
   | stm_rlist stm { rcons $2 $1 }
 
-stm_exp :: { Exp }
-stm_exp :
+-- Statement expressions that need to be terminated with a semicolon.
+semi_stm_exp :: { Exp }
+semi_stm_exp :
+    ID
+      { varE (mkVar (varid $1)) }
+  | ID maybe_type_application '(' exp_list ')'
+      { mkCall (varid $1) $2 $4 ($1 `srcspan` $5) }
+  | STRUCTID maybe_type_application '(' exp_list ')'
+      { mkCall (structid $1) $2 $4 ($1 `srcspan` $5) }
+
+  | pexp '=' exp
+      { AssignE $1 $3 ($1 `srcspan` $3) }
+
+  | inline_ann 'return' exp
+     { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
+
+  | 'print' exp_list1
+      { PrintE False $2 ($1 `srcspan` $2) }
+  | 'println' exp_list1
+      { PrintE True $2 ($1 `srcspan` $2) }
+  | 'error' STRING
+      { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
+
+  | 'emit' exp
+      { EmitE $2 ($1 `srcspan` $2) }
+  | 'emits' exp
+      { EmitsE $2 ($1 `srcspan` $2) }
+  | 'take'
+      { TakeE (srclocOf $1) }
+  | 'takes' const_int_exp
+      { TakesE (unLoc $2) ($1 `srcspan` $2) }
+
+  | 'filter' var_bind
+      { let { (v, tau) = $2 }
+        in
+          FilterE v tau ($1 `srcspan` tau)
+      }
+  | 'map' vect_ann var_bind
+      { let { (v, tau) = $3 }
+        in
+          MapE $2 v tau ($1 `srcspan` tau)
+      }
+
+-- Statement expressions that /do not/ need to be terminated with a semicolon.
+nosemi_stm_exp :: { Exp }
+nosemi_stm_exp :
     decl 'in' stm_exp
       { LetDeclE $1 $3 ($1 `srcspan` $3) }
   | decl 'in' error
       {% expected ["statement"] Nothing }
   | decl error
       {% expected ["'in'"] Nothing }
-
-  | ID ';'
-      { varE (mkVar (varid $1)) }
-  | ID maybe_type_application '(' exp_list ')' ';'
-      { mkCall (varid $1) $2 $4 ($1 `srcspan` $5) }
-  | STRUCTID maybe_type_application '(' exp_list ')' ';'
-      { mkCall (structid $1) $2 $4 ($1 `srcspan` $5) }
-
-  | pexp '=' exp ';'
-      { AssignE $1 $3 ($1 `srcspan` $3) }
 
   | 'if' exp 'then' stm_exp 'else' stm_exp
       { IfE $2 $4 (Just $6) ($1 `srcspan` $6) }
@@ -719,42 +753,28 @@ stm_exp :
           ForE (unLoc $1) v tau $5 $6 ($1 `srcspan` $6)
       }
 
-  | inline_ann 'return' exp ';'
-     { ReturnE (unLoc $1) $3 ($1 `srcspan` $3) }
-
-  | 'print' exp_list1 ';'
-      { PrintE False $2 ($1 `srcspan` $2) }
-  | 'println' exp_list1 ';'
-      { PrintE True $2 ($1 `srcspan` $2) }
-  | 'error' STRING ';'
-      { ErrorE (snd (getSTRING $2)) ($1 `srcspan` $2) }
-
-  | 'emit' exp ';'
-      { EmitE $2 ($1 `srcspan` $2) }
-  | 'emits' exp ';'
-      { EmitsE $2 ($1 `srcspan` $2) }
-  | 'take' ';'
-      { TakeE (srclocOf $1) }
-  | 'takes' const_int_exp ';'
-      { TakesE (unLoc $2) ($1 `srcspan` $2) }
-
-  | 'filter' var_bind ';'
-      { let { (v, tau) = $2 }
-        in
-          FilterE v tau ($1 `srcspan` tau)
-      }
-  | 'map' vect_ann var_bind ';'
-      { let { (v, tau) = $3 }
-        in
-          MapE $2 v tau ($1 `srcspan` tau)
-      }
-
   | '{' stms '}'
       { stmsE $2 }
 
+stm_exp :: { Exp }
+stm_exp :
+    nosemi_stm_exp
+      { $1 }
+
+  | semi_stm_exp ';'
+      { $1 }
+
+  | semi_stm_exp error
+      {% expected ["';'"] (Just "statement") }
+
   | stm_exp '>>>' stm_exp
       { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
+  | semi_stm_exp '>>>' stm_exp
+      { ParE AutoPipeline $1 $3 ($1 `srcspan` $3) }
+
   | stm_exp '|>>>|' stm_exp
+      { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
+  | semi_stm_exp '|>>>|' stm_exp
       { ParE Pipeline $1 $3 ($1 `srcspan` $3) }
 
   | '(' stm_exp ')'
