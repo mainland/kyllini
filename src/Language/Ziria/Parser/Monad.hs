@@ -239,7 +239,7 @@ expected alts after = do
 
 expectedAt :: L Token -> [String] -> Maybe String -> P b
 expectedAt tok@(L loc _) alts after =
-    parserError (locStart loc) (text "expected" <+> pprAlts alts <+> pprGot tok <> pprAfter after)
+    parserError (locStart loc) (text "expected" <+> pprAlts alts <+> pprGot tok <+> pprAfter after)
   where
     pprAlts :: [String] -> Doc
     pprAlts []        = empty
@@ -253,4 +253,4 @@ expectedAt tok@(L loc _) alts after =
 
     pprAfter :: Maybe String -> Doc
     pprAfter Nothing     = empty
-    pprAfter (Just what) = text " after" <+> text what
+    pprAfter (Just what) = text "after" <+> text what
