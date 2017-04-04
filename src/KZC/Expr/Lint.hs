@@ -658,9 +658,9 @@ inferCall tau_f taus es = do
     checkNumArgs :: Int -> Int -> m ()
     checkNumArgs n nexp =
         when (n /= nexp) $
-             faildoc $
-             text "Expected" <+> ppr nexp <+>
-             text "arguments but got" <+> ppr n
+            faildoc $
+            text "Expected" <+> ppr nexp <+>
+            text "arguments but got" <+> ppr n
 
 checkExp :: MonadTc m => Exp -> Type -> m ()
 checkExp e tau = do
