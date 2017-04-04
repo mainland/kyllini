@@ -534,8 +534,14 @@ instance Pretty Decl where
     pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
-    pprPrec _ (LetFunD f tvks ps _tau e _) =
-        text "fun" <+> ppr f <> pprForall tvks <> parens (commasep (map ppr ps)) <+> ppr e
+    pprPrec _ (LetFunD f tvks ps maybe_tau e _) =
+        text "fun" <+> ppr f <> pprForall tvks <>
+        parens (commasep (map ppr ps)) <+> sig <+> ppr e
+      where
+        sig :: Doc
+        sig = case maybe_tau of
+                Nothing  -> empty
+                Just tau -> text "->" <+> ppr tau
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) | classicDialect =
         text "fun" <+> text "external" <+> pureDoc <+>
@@ -545,7 +551,7 @@ instance Pretty Decl where
 
     pprPrec _ (LetFunExternalD f ps tau isPure _) =
         text "fun" <+> text "external" <+> pureDoc <+>
-        ppr f <+> parens (commasep (map ppr ps)) <+> colon <+> ppr tau
+        ppr f <+> parens (commasep (map ppr ps)) <+> text "->" <+> ppr tau
       where
         pureDoc = if isPure then empty else text "impure"
 
