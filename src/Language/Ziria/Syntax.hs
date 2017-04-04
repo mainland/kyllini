@@ -191,7 +191,7 @@ data Exp = ConstE Const !SrcLoc
          | LetRefE Var (Maybe Type) (Maybe Exp) Exp !SrcLoc
          | LetDeclE Decl Exp !SrcLoc
          -- Functions
-         | CallE Var [Exp] !SrcLoc
+         | CallE Var (Maybe [Type]) [Exp] !SrcLoc
          -- References
          | AssignE Exp Exp !SrcLoc
          -- Loops
@@ -397,7 +397,7 @@ instance Fvs Exp Var where
     fvs (LetE v _ e1 e2 _)    = delete v (fvs e1 <> fvs e2)
     fvs (LetRefE v _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
     fvs (LetDeclE decl e _)   = fvs decl <> (fvs e <\\> binders decl)
-    fvs (CallE v es _)        = singleton v <> fvs es
+    fvs (CallE v _ es _)      = singleton v <> fvs es
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
     fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
     fvs (UntilE e1 e2 _)      = fvs e1 <> fvs e2
@@ -644,8 +644,12 @@ instance Pretty Exp where
         parensIf (p >= appPrec) $
         ppr decl <+/> text "in" <+/> ppr e
 
-    pprPrec _ (CallE f vs _) =
-        ppr f <> parens (commasep (map ppr vs))
+    pprPrec _ (CallE f taus vs _) =
+        ppr f <> pprMaybeTyApp taus <> parens (commasep (map ppr vs))
+      where
+        pprMaybeTyApp :: Maybe [Type] -> Doc
+        pprMaybeTyApp Nothing     = empty
+        pprMaybeTyApp (Just taus) = pprTyApp taus
 
     pprPrec _ (AssignE v e _) =
         ppr v <+> text ":=" <+> ppr e

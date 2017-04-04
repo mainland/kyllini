@@ -24,7 +24,7 @@ instance Located Exp where
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetRefE _ _ _ _ l) = locOf l
   locOf (LetDeclE _ _ l) = locOf l
-  locOf (CallE _ _ l) = locOf l
+  locOf (CallE _ _ _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
   locOf (UntilE _ _ l) = locOf l

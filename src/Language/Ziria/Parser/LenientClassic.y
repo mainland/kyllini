@@ -396,7 +396,7 @@ aexp :
       { StructE $1 [] $3 ($1 `srcspan` $4) }
 
   | ID '(' exp_list ')'
-      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) Nothing $3 ($1 `srcspan` $4) }
 
   | '(' exp ')'
       { $2 }
@@ -605,9 +605,9 @@ stm_exp :
       {% expected ["'in'"] Nothing }
 
   | ID '(' exp_list ')'
-      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) Nothing $3 ($1 `srcspan` $4) }
   | STRUCTID '(' exp_list ')'
-      { mkCall (structid $1) $3 ($1 `srcspan` $4) }
+      { mkCall (structid $1) Nothing $3 ($1 `srcspan` $4) }
 
   | pexp ':=' exp
       { AssignE $1 $3 ($1 `srcspan` $3) }

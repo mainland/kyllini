@@ -38,12 +38,12 @@ mkField = Field
 mkStruct :: Name -> Struct
 mkStruct = Struct
 
-mkCall :: Name -> [Exp] -> SrcLoc -> Exp
-mkCall f [e] l | Just op <- Map.lookup (nameSym f) unopFunMap =
+mkCall :: Name -> Maybe [Type] -> [Exp] -> SrcLoc -> Exp
+mkCall f Nothing [e] l | Just op <- Map.lookup (nameSym f) unopFunMap =
     UnopE op e l
 
-mkCall f es l =
-    CallE (mkVar f) es l
+mkCall f taus es l =
+    CallE (mkVar f) taus es l
 
 varE :: Var -> Exp
 varE v = VarE v (srclocOf v)

@@ -650,25 +650,33 @@ tcExp (Z.LetDeclE decl e l) exp_ty =
     mce <- collectCheckValCtx tau $ checkExp e tau
     return $ E.LetE <$> mcdecl <*> mce <*> pure l
 
-tcExp e@(Z.CallE f es l) exp_ty =
+tcExp e@(Z.CallE f maybe_ztaus es l) exp_ty =
     withCallContext f e $ do
-    (taus, tau_ret, co1) <- lookupVar f >>= checkFunT f nargs
-    when (length taus /= nargs) $
-        faildoc $
-          text "Expected" <+> ppr (length taus) <+>
-          text "arguments but got" <+> ppr nargs
+    maybe_taus <- traverse (mapM fromZ) maybe_ztaus
+    (taus_args, tau_ret, co1) <- lookupVar f >>= checkFunT f maybe_taus nargs
+    checkNumArgs (length taus_args) nargs
     (tau_ret', co2) <- instantiate tau_ret
     instType tau_ret' exp_ty
-    mces <- zipWithM checkArg es taus
+    mces <- zipWithM checkArg es taus_args
     unless (isPureishT tau_ret) $
-        checkNoAliasing (es `zip` taus)
+        checkNoAliasing (es `zip` taus_args)
     return $ co2 $ co1 $ do
-        cf  <- trans f
-        ces <- sequence mces
-        return $ E.CallE cf [] ces l
+        cf    <- trans f
+        ctaus <- case maybe_taus of
+                   Nothing   -> return []
+                   Just taus -> mapM trans taus
+        ces   <- sequence mces
+        return $ E.CallE cf ctaus ces l
   where
     nargs :: Int
     nargs = length es
+
+    checkNumArgs :: Int -> Int -> Ti ()
+    checkNumArgs n nexp =
+        when (n /= nexp) $
+            faildoc $
+            text "Expected" <+> ppr nexp <+>
+            text "arguments but got" <+> ppr n
 
     -- If a parameter is a ref type, then we do not want to implicitly
     -- dereference the corresponding argument, since it should be passed by
@@ -1684,9 +1692,9 @@ checkSTCUnit tau =
         unifyTypes tau (stT (cT unitT) sigma alpha beta)
         return (sigma, alpha, beta)
 
-checkFunT :: Z.Var -> Int -> Type
+checkFunT :: Z.Var -> Maybe [Type] -> Int -> Type
           -> Ti ([Type], Type, Co)
-checkFunT f nargs tau =
+checkFunT f Nothing nargs tau =
     instantiate tau >>= go
   where
     go :: (Type, Co) -> Ti ([Type], Type, Co)
@@ -1698,6 +1706,18 @@ checkFunT f nargs tau =
         tau_ret <- newMetaTvT tauK tau
         unifyTypes tau_f (funT [] taus tau_ret (srclocOf f))
         return (taus, tau_ret, co)
+
+checkFunT _f (Just taus) _nargs (ForallT tvks (FunT taus_params tau_ret _) _) = do
+    checkTyApp tvks taus
+    let theta :: Map TyVar Type
+        theta = Map.fromList (map fst tvks `zip` taus)
+    return (subst theta mempty taus_params, subst theta mempty tau_ret, id)
+
+checkFunT _f Just{} _ tau =
+    faildoc $
+    align $ nest 2 $
+    text "Illegal explicit type application for unquanitifed type:" <+>
+    enquote (ppr tau)
 
 -- | Check that a function type is appropriate for a @map@. The function result
 -- must have type @forall s a b . ST (C c) s a b@. This guarantees that although

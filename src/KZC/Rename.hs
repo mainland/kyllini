@@ -115,8 +115,8 @@ instance Rename Exp where
         e' <- rn e
         return $ LetDeclE decl' e' l
 
-    rn (CallE f es l) =
-        CallE <$> lookupMaybeCompVar f <*> rn es <*> pure l
+    rn (CallE f taus es l) =
+        CallE <$> lookupMaybeCompVar f <*> traverse rn taus <*> rn es <*> pure l
 
     rn (AssignE e1 e2 l) =
         AssignE <$> rn e1 <*> rn e2 <*> pure l

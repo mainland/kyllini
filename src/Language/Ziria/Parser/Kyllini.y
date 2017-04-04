@@ -417,7 +417,9 @@ aexp :
       { StructE $2 $3 $5 ($1 `srcspan` $6) }
 
   | ID '(' exp_list ')'
-      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
+      { mkCall (varid $1) Nothing $3 ($1 `srcspan` $4) }
+  | ID '<' base_type_rlist '>' '(' exp_list ')'
+      { mkCall (varid $1) (Just (rev $3)) $6 ($1 `srcspan` $7) }
 
   | '(' exp ')'
       { $2 }
@@ -590,6 +592,11 @@ type_application :
     {- empty -}             { [] }
   | '<' base_type_rlist '>' { rev $2 }
 
+maybe_type_application :: { Maybe [Type] }
+maybe_type_application :
+    {- empty -}             { Nothing }
+  | '<' base_type_rlist '>' { Just (rev $2) }
+
 base_type_rlist :: { RevList Type }
 base_type_rlist :
     base_type                     { rsingleton $1 }
@@ -675,10 +682,10 @@ stm_exp :
 
   | ID ';'
       { varE (mkVar (varid $1)) }
-  | ID '(' exp_list ')' ';'
-      { mkCall (varid $1) $3 ($1 `srcspan` $4) }
-  | STRUCTID '(' exp_list ')' ';'
-      { mkCall (structid $1) $3 ($1 `srcspan` $4) }
+  | ID maybe_type_application '(' exp_list ')' ';'
+      { mkCall (varid $1) $2 $4 ($1 `srcspan` $5) }
+  | STRUCTID maybe_type_application '(' exp_list ')' ';'
+      { mkCall (structid $1) $2 $4 ($1 `srcspan` $5) }
 
   | pexp '=' exp ';'
       { AssignE $1 $3 ($1 `srcspan` $3) }
