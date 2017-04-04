@@ -503,7 +503,7 @@ tcExp (Z.UnopE op e l) exp_ty =
     checkBitsUnop :: E.Unop -> Ti (Ti E.Exp)
     checkBitsUnop cop = do
         (tau, mce) <- inferVal e
-        (tau', co) <- mkBitCast e tau
+        (tau', co) <- mkBits e tau
         checkKind tau' bitsK
         instType tau' exp_ty
         return $ E.UnopE cop <$> co mce <*> pure l
@@ -587,7 +587,7 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitBinop cop = do
         (tau, mce1, mce2) <- unifyValTypes e1 e2
-        (tau', co)        <- mkBitCast e1 tau
+        (tau', co)        <- mkBits e1 tau
         checkKind tau' bitsK
         instType tau' exp_ty
         return $ E.BinopE cop <$> co mce1 <*> co mce2 <*> pure l
@@ -595,7 +595,7 @@ tcExp e@(Z.BinopE op e1 e2 l) exp_ty =
     checkBitShiftBinop :: E.Binop -> Ti (Ti E.Exp)
     checkBitShiftBinop cop = do
         (tau1, mce1) <- inferVal e1
-        (tau1', co1) <- mkBitCast e1 tau1
+        (tau1', co1) <- mkBits e1 tau1
         checkKind tau1' bitsK
         (tau2, mce2) <- inferVal e2
         co2          <- mkCheckedSafeCast e2 tau2 uintT
@@ -1888,8 +1888,10 @@ mkCheckedSafeCast e tau1 tau2 = do
     checkSafeCast WarnUnsafeAutoCast (Just e) tau1 tau2
     return co
 
-mkBitCast :: Z.Exp -> Type -> Ti (Type, Co)
-mkBitCast e tau = do
+-- | Cast an expression of the given type to a type on which we can perform but
+-- operations.
+mkBits :: Z.Exp -> Type -> Ti (Type, Co)
+mkBits e tau = do
     tau' <- mkUnsigned tau
     co   <- mkCheckedSafeCast e tau tau'
     return (tau', co)
