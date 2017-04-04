@@ -327,8 +327,8 @@ data Unop = Lnot         -- ^ Logical not
           | Asinh
           | Acosh
           | Atanh
-          | Cast Type    -- ^ Type case
-          | Bitcast Type -- ^ Bit-wise type case
+          | Cast Type    -- ^ Type cast
+          | Bitcast Type -- ^ Bit-wise type cast
           | Len          -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 

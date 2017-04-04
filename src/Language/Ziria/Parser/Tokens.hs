@@ -140,6 +140,8 @@ data Token = Teof
            | Tcolon
 
            -- Tokens for the new dialect
+           | Tbitcast
+           | Tcast
            | Tmut
            | Ttype
 
@@ -275,8 +277,10 @@ instance Pretty Token where
     ppr Tcolon = text ":"
 
     -- Tokens for the new dialect
-    ppr Tmut  = text "mut"
-    ppr Ttype = text "type"
+    ppr Tbitcast = text "bitcast"
+    ppr Tcast    = text "cast"
+    ppr Tmut     = text "mut"
+    ppr Ttype    = text "type"
 
     ppr TEq         = text "Eq"
     ppr TOrd        = text "Ord"
@@ -355,8 +359,10 @@ keywords = [ ("C",           TC,           Nothing)
            , ("write",       Twrite,       Nothing)
 
            -- Tokens for the new dialect
-           , ("mut",  Tmut,  Just Kyllini)
-           , ("type", Ttype, Just Kyllini)
+           , ("bitcast", Tbitcast, Just Kyllini)
+           , ("cast",    Tcast,    Just Kyllini)
+           , ("mut",     Tmut,     Just Kyllini)
+           , ("type",    Ttype,    Just Kyllini)
 
            , ("Eq",         TEq,         Just Kyllini)
            , ("Ord",        TOrd,        Just Kyllini)

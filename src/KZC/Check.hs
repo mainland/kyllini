@@ -487,6 +487,15 @@ tcExp (Z.UnopE op e l) exp_ty =
         instType tau2 exp_ty
         return $ co mce
 
+    unop (Z.Bitcast ztau2) = do
+        (tau1, mce) <- inferVal e
+        tau2        <- fromZ ztau2
+        checkLegalBitcast tau1 tau2
+        instType tau2 exp_ty
+        return $ do ce    <- mce
+                    ctau2 <- trans tau2
+                    return $ E.UnopE (E.Bitcast ctau2) ce (srclocOf e)
+
     unop Z.Len = do
         (tau, mce) <- inferExp e
         _          <- checkArrT tau
@@ -2010,9 +2019,26 @@ checkLegalCast tau1 tau2 = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
 
--- | Check whether casting the given expression from @tau1@ to @tau2@ is
--- safe. If it is definitely unsafe, signal an error; if it may be unsafe,
--- signal a warning if the specified warning flag is set.
+checkLegalBitcast :: Type -> Type -> Ti ()
+checkLegalBitcast tau1 tau2 = do
+    tau1' <- compress tau1
+    tau2' <- compress tau2
+    go tau1' tau2'
+  where
+    go :: Type -> Type -> Ti ()
+    go tau1 tau2 = do
+        checkKind tau1 tauK
+        checkKind tau2 tauK
+        w1 <- typeSize tau1
+        w2 <- typeSize tau2
+        when (w2 /= w1) $
+            faildoc $
+            text "Cannot bitcast between types with differing widths" <+>
+            ppr w1 <+> text "and" <+> ppr w2
+
+-- | Check whether casting the given expression from @tau1@ to @tau2@ is safe.
+-- If it is definitely unsafe, signal an error; if it may be unsafe, signal a
+-- warning if the specified warning flag is set. We assume the cast is legal.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
 checkSafeCast _f (Just e@(Z.ConstE (Z.FixC ip x) l)) tau1 tau2 =
     withSummaryContext e $ do

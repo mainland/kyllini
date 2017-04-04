@@ -287,8 +287,9 @@ data Unop = Lnot      -- ^ Logical not
           | Asinh
           | Acosh
           | Atanh
-          | Cast Type -- ^ Type case
-          | Len       -- ^ Array length
+          | Cast Type    -- ^ Type cast
+          | Bitcast Type -- ^ Bit-wise type cast
+          | Len          -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 
 -- | Returns 'True' if 'Unop' application should be pretty-printed as a function
@@ -593,9 +594,17 @@ instance Pretty Exp where
     pprPrec _ (UnopE op e _) | isFunUnop op =
         ppr op <> parens (ppr e)
 
-    pprPrec p (UnopE op@Cast{} e _) =
+    pprPrec p (UnopE op@(Bitcast tau) e _) =
         parensIf (p > precOf op) $
-        ppr op <+> pprPrec (precOf op) e
+        text "bitcast" <> angles (ppr tau) <> parens (pprPrec (precOf op) e)
+
+    pprPrec p (UnopE op@(Cast tau) e _) | classicDialect =
+        parensIf (p > precOf op) $
+        ppr tau <> parens (ppr e)
+
+    pprPrec p (UnopE op@(Cast tau) e _) =
+        parensIf (p > precOf op) $
+        text "cast" <> angles (ppr tau) <> parens (ppr e)
 
     pprPrec p (UnopE op e _) =
         parensIf (p > precOf op) $
@@ -777,31 +786,32 @@ instance Pretty VectAnn where
     ppr AutoVect              = empty
 
 instance Pretty Unop where
-    ppr Lnot       = text "!"
-    ppr Bnot       = text "~"
-    ppr Neg        = text "-"
-    ppr Abs        = text "abs"
-    ppr Exp        = text "exp"
-    ppr Exp2       = text "exp2"
-    ppr Expm1      = text "expm1"
-    ppr Log        = text "log"
-    ppr Log2       = text "log2"
-    ppr Log1p      = text "log1p"
-    ppr Sqrt       = text "sqrt"
-    ppr Sin        = text "sin"
-    ppr Cos        = text "cos"
-    ppr Tan        = text "tan"
-    ppr Asin       = text "asin"
-    ppr Acos       = text "acos"
-    ppr Atan       = text "atan"
-    ppr Sinh       = text "sinh"
-    ppr Cosh       = text "cosh"
-    ppr Tanh       = text "tanh"
-    ppr Asinh      = text "asinh"
-    ppr Acosh      = text "acosh"
-    ppr Atanh      = text "atanh"
-    ppr Len        = text "length"
-    ppr (Cast tau) = parens (ppr tau)
+    ppr Lnot          = text "!"
+    ppr Bnot          = text "~"
+    ppr Neg           = text "-"
+    ppr Abs           = text "abs"
+    ppr Exp           = text "exp"
+    ppr Exp2          = text "exp2"
+    ppr Expm1         = text "expm1"
+    ppr Log           = text "log"
+    ppr Log2          = text "log2"
+    ppr Log1p         = text "log1p"
+    ppr Sqrt          = text "sqrt"
+    ppr Sin           = text "sin"
+    ppr Cos           = text "cos"
+    ppr Tan           = text "tan"
+    ppr Asin          = text "asin"
+    ppr Acos          = text "acos"
+    ppr Atan          = text "atan"
+    ppr Sinh          = text "sinh"
+    ppr Cosh          = text "cosh"
+    ppr Tanh          = text "tanh"
+    ppr Asinh         = text "asinh"
+    ppr Acosh         = text "acosh"
+    ppr Atanh         = text "atanh"
+    ppr Len           = text "length"
+    ppr (Cast tau)    = parens (ppr tau)
+    ppr (Bitcast tau) = parens (ppr tau)
 
 instance Pretty Binop where
     ppr Eq   = text "=="
@@ -1003,6 +1013,7 @@ instance HasFixity Unop where
     fixity Atanh       = infixr_ 11
     fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
+    fixity (Bitcast _) = infixr_ 10
 
 #if !defined(ONLY_TYPEDEFS)
 

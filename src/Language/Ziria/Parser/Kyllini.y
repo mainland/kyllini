@@ -149,8 +149,10 @@ import KZC.Util.Pretty
   ':'  { L _ T.Tcolon }
 
   -- For the kyllini dialect
-  'mut'  { L _ T.Tmut }
-  'type' { L _ T.Ttype }
+  'bitcast' { L _ T.Tbitcast }
+  'cast'    { L _ T.Tcast }
+  'mut'     { L _ T.Tmut }
+  'type'    { L _ T.Ttype }
 
   'Eq'         { L _ T.TEq }
   'Ord'        { L _ T.TOrd }
@@ -238,6 +240,8 @@ identifier :
     ID         { mkVar $ mkSymName (getID $1) (locOf $1) }
   | STRUCTID   { mkVar $ mkSymName (getSTRUCTID $1) (locOf $1) }
   | 'arr'      { mkVar $ mkName "arr" (locOf $1) }
+  | 'bitcast'  { mkVar $ mkName "bitcast" (locOf $1) }
+  | 'cast'     { mkVar $ mkName "cast" (locOf $1) }
   | 'fun'      { mkVar $ mkName "fun" (locOf $1) }
   | 'impure'   { mkVar $ mkName "impure" (locOf $1) }
   | 'length'   { mkVar $ mkName "length" (locOf $1) }
@@ -401,6 +405,11 @@ aexp :
       { UnopE Len $2 ($1 `srcspan` $2)}
   | simple_type '(' exp ')'
       { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
+
+  | 'bitcast' '<' base_type '>' '(' exp ')'
+      { UnopE (Bitcast $3) $6 ($1 `srcspan` $7)}
+  | 'cast' '<' base_type '>' '(' exp ')'
+      { UnopE (Cast $3) $6 ($1 `srcspan` $7)}
 
   | structid type_application '{' struct_init_list1 '}'
       { StructE $1 $2 $4 ($1 `srcspan` $5) }
