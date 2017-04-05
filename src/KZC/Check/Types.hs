@@ -558,11 +558,25 @@ instance FreshVars TyVar where
 
         allTvs :: [String]
         allTvs =  [[x] | x <- simpleTvs] ++
-                  [x : show i |  i <- [1 :: Integer ..],
-                                 x <- simpleTvs]
+                  [x : show i | i <- [1 :: Integer ..],
+                                x <- simpleTvs]
 
         simpleTvs :: [Char]
         simpleTvs = ['a'..'z']
+
+    freshenVars tvs used =
+        return $ map (\a -> TyVar (mkName a noLoc)) freshTvs
+      where
+        freshTvs :: [String]
+        freshTvs = take (length tvs) (allTvs \\ map namedString used)
+
+        allTvs :: [String]
+        allTvs =  [x | x <- simpleTvs] ++
+                  [x ++ show i | i <- [1 :: Integer ..],
+                                 x <- simpleTvs]
+
+        simpleTvs :: [String]
+        simpleTvs = map namedString tvs
 
 instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) =
