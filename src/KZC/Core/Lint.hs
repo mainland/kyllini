@@ -425,22 +425,16 @@ inferExp (CallE f ies es _) = do
         checkPure tau
 
 inferExp (DerefE e l) = do
-    tau <- withFvContext e $ inferExp e >>= checkRefT
+    tau     <- withFvContext e $ inferExp e >>= checkRefT
+    [s,a,b] <- freshenVars ["s", "a", "b"] (fvs tau)
     return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp e@(AssignE e1 e2 l) = do
     tau  <- withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- withFvContext e2 $ inferExp e2
     withFvContext e $ checkTypeEquality tau' tau
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
@@ -527,26 +521,17 @@ inferExp e0@(StructE s taus flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
-inferExp (ErrorE nu _ l) =
+inferExp (ErrorE nu _ l) = do
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (ReturnE _ e l) = do
-    tau <- inferExp e
+    tau     <- inferExp e
+    [s,a,b] <- freshenVars ["s", "a", "b"] (fvs tau)
     return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (BindE wv tau e1 e2 _) = do
     (alphas, tau', s,  a,  b) <- withFvContext e1 $
@@ -695,12 +680,9 @@ inferComp comp =
             void $ checkST tau
         return tau
 
-    inferBind step [BindC{}] _ =
+    inferBind step [BindC{}] _ = do
+        [s,a,b] <- freshenVars ["s", "a", "b"] mempty
         instST $ forallST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
-      where
-        s = "s"
-        a = "a"
-        b = "b"
 
     inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $
@@ -804,42 +786,31 @@ inferStep (ReturnC _ e _) =
     tau <- inferExp e
     unless (isPureT tau) $
         faildoc $ text "Returned expression must be pure but has type" <+> ppr tau
+    [s,a,b] <- freshenVars ["s", "a", "b"] (fvs tau)
     instST $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf e)
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferStep BindC{} =
     faildoc $ text "Bind computation step does not have a type."
 
 inferStep (TakeC _ tau l) = do
     checkKind tau tauK
+    [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
-  where
-    b :: TyVar
-    b = "b"
 
 inferStep (TakesC _ i tau l) = do
     checkKind tau tauK
+    [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
-  where
-    b :: TyVar
-    b = "b"
 
 inferStep (EmitC _ e l) = do
-    tau <- withFvContext e $ inferExp e
+    tau   <- withFvContext e $ inferExp e
+    [s,a] <- freshenVars ["s", "a"] (fvs tau)
     instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
-  where
-    s = "s"
-    a = "a"
 
 inferStep (EmitsC _ e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
+    [s,a]    <- freshenVars ["s", "a"] (fvs tau)
     instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
-  where
-    s = "s"
-    a = "a"
 
 inferStep (RepeatC _ _ c l) = do
     (s, a, b) <- withFvContext c $ inferComp c >>= checkSTCUnit

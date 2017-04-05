@@ -432,22 +432,16 @@ inferExp (CallE f taus es _) = do
     inferCall tau_f taus es
 
 inferExp (DerefE e l) = do
-    tau <- withFvContext e $ inferExp e >>= checkRefT
+    tau     <- withFvContext e $ inferExp e >>= checkRefT
+    [s,a,b] <- freshenVars ["s", "a", "b"] (fvs tau)
     return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (AssignE e1 e2 l) = do
     tau  <- withSummaryContext e1 $ withFvContext e1 $ inferExp e1 >>= checkRefT
     tau' <- withSummaryContext e2 $ inferExp e2
     withFvContext e2 $ checkTypeEquality tau' tau
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
@@ -534,26 +528,17 @@ inferExp e0@(StructE s taus flds l) =
 
 inferExp (PrintE _ es l) = do
     mapM_ inferExp es
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     instST $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
-inferExp (ErrorE nu _ l) =
+inferExp (ErrorE nu _ l) = do
+    [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     instST $ forallST [s,a,b] (C nu) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp (ReturnE _ e l) = do
-    tau <- inferExp e
+    tau     <- inferExp e
+    [s,a,b] <- freshenVars ["s", "a", "b"] (fvs tau)
     return $ forallST [s,a,b] (C tau) (tyVarT s) (tyVarT a) (tyVarT b) l
-  where
-    s = "s"
-    a = "a"
-    b = "b"
 
 inferExp e@(BindE wv tau e1 e2 _) = do
     tau1 <- withFvContext e1 $ inferExp e1
@@ -586,31 +571,23 @@ inferExp e@(BindE wv tau e1 e2 _) = do
 
 inferExp (TakeE tau l) = do
     checkKind tau tauK
+    [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
-  where
-    b :: TyVar
-    b = "b"
 
 inferExp (TakesE i tau l) = do
     checkKind tau tauK
+    [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
-  where
-    b :: TyVar
-    b = "b"
 
 inferExp (EmitE e l) = do
-    tau <- withFvContext e $ inferExp e
+    tau    <- withFvContext e $ inferExp e
+    [s, a] <- freshenVars ["s", "a"] (fvs tau)
     instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
-  where
-    s = "s"
-    a = "a"
 
 inferExp (EmitsE e l) = do
     (_, tau) <- withFvContext e $ inferExp e >>= checkArrT
+    [s, a]   <- freshenVars ["s", "a"] (fvs tau)
     instST $ forallST [s,a] (C (UnitT l)) (tyVarT s) (tyVarT a) tau l
-  where
-    s = "s"
-    a = "a"
 
 inferExp (RepeatE _ e l) = do
     (s, a, b) <- withFvContext e $ inferExp e >>= instST >>= checkSTCUnit

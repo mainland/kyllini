@@ -264,14 +264,10 @@ checkLetFun f ztvks ps ztau_ret e l = do
     -- If we are givne a base type, turn it into an ST type.
     instantiateFunRetType (Just ztau) = do
         tau         <- fromZ ztau
+        [s,a,b]     <- freshenVars ["s", "a", "b"] (fvs tau)
         (tau', _cp) <- instantiate $ forallST [s,a,b] (C tau l) (tyVarT s) (tyVarT a) (tyVarT b) l
         return tau'
       where
-        s, a, b :: TyVar
-        s = TyVar "s"
-        a = TyVar "a"
-        b = TyVar "b"
-
         l :: SrcLoc
         l = srclocOf ztau
 

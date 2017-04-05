@@ -80,6 +80,7 @@ module KZC.Expr.Syntax (
 
 import Control.Monad.Reader
 import Data.Bits
+import Data.List ((\\))
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -1632,6 +1633,41 @@ instance Subst Exp Var Exp where
 
     substM (ParE ann tau e1 e2 l) =
         ParE ann tau <$> substM e1 <*> substM e2 <*> pure l
+
+{------------------------------------------------------------------------------
+ -
+ - Fresh type variables
+ -
+ ------------------------------------------------------------------------------}
+
+instance FreshVars TyVar where
+    freshVars n used =
+        return $ map (\a -> TyVar (mkName a noLoc)) freshTvs
+      where
+        freshTvs :: [String]
+        freshTvs = take n (allTvs \\ map namedString used)
+
+        allTvs :: [String]
+        allTvs =  [[x] | x <- simpleTvs] ++
+                  [x : show i | i <- [1 :: Integer ..],
+                                x <- simpleTvs]
+
+        simpleTvs :: [Char]
+        simpleTvs = ['a'..'z']
+
+    freshenVars tvs used =
+        return $ map (\a -> TyVar (mkName a noLoc)) freshTvs
+      where
+        freshTvs :: [String]
+        freshTvs = take (length tvs) (allTvs \\ map namedString used)
+
+        allTvs :: [String]
+        allTvs =  [x | x <- simpleTvs] ++
+                  [x ++ show i | i <- [1 :: Integer ..],
+                                 x <- simpleTvs]
+
+        simpleTvs :: [String]
+        simpleTvs = map namedString tvs
 
 {------------------------------------------------------------------------------
  -
