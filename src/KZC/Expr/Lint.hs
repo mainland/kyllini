@@ -573,10 +573,13 @@ inferExp e@(BindE wv tau e1 e2 _) = do
 
     go tau1 tau2 = do
         tau1' <- withFvContext e1 $ instST tau1
-        tau2' <- withFvContext e2 $ instST tau2
+        tau2' <- extendWildVars [(wv, tau)] $
+                 withFvContext e2 $
+                 instST tau2
         (_, s,  a,  b) <- withFvContext e1 $
                           checkSTC tau1'
-        withFvContext e2 $ do
+        extendWildVars [(wv, tau)] $
+            withFvContext e2 $ do
             (omega, _, _, _) <- checkST tau2'
             checkTypeEquality tau2' (stT omega s a b)
         return tau2'
