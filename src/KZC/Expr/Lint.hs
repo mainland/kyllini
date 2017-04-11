@@ -895,7 +895,7 @@ expectedTypeErr tau1 tau2 = do
     msg <- relevantBindings
     faildoc $ align $
       text "Expected type:" <+> ppr tau2 </>
-      text "but got:      " <+> ppr tau1 <>
+      text "but got:      " <+> ppr tau1 </>
       msg
 
 -- Must be kept in sync with 'KZC.Check.kcType'

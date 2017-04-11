@@ -2216,7 +2216,7 @@ instance Show KindUnificationException where
         pretty 80 $
         text "Expected:" <+> friendly kappa2 </>
         text "but got: " <+> ppr tau1 </>
-        text "which is a" <+> friendly kappa1 <>
+        text "which is a" <+> friendly kappa1 </>
         msg
       where
         friendly :: Kind -> Doc
