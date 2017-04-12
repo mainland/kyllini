@@ -1375,8 +1375,8 @@ instance Subst Type TyVar Type where
     substM tau@StringT{} =
         pure tau
 
-    substM tau@StructT{} =
-        pure tau
+    substM (StructT struct taus l) =
+        StructT struct <$> substM taus <*> pure l
 
     substM (ArrT nat tau l) =
         ArrT <$> substM nat <*> substM tau <*> pure l
