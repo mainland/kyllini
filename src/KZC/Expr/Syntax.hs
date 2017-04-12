@@ -605,6 +605,11 @@ instance LiftedCast Const (Maybe Const) where
     liftCast (FloatT fp _) (FixC U{} x) =
         Just $ FloatC fp (fromIntegral x)
 
+    -- Cast float to float
+    liftCast (FloatT fp _) (FloatC _ x) =
+        Just $ FloatC fp x
+
+    -- Fall-through
     liftCast _ _ =
         Nothing
 
