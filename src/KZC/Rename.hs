@@ -12,6 +12,8 @@ module KZC.Rename (
     renameProgram
   ) where
 
+import Data.Loc (locOf,
+                 reloc)
 import Text.PrettyPrint.Mainland
 
 import Language.Ziria.Syntax
@@ -41,10 +43,10 @@ instance Rename a => Rename (Maybe a) where
     rn = mapM rn
 
 instance Rename TyVar where
-    rn = lookupTyVar
+    rn alpha = reloc (locOf alpha) <$> lookupTyVar alpha
 
 instance Rename Var where
-    rn = lookupVar
+    rn v = reloc (locOf v) <$> lookupVar v
 
 instance Rename VarBind where
     rn (VarBind v tau isRef) = VarBind <$> rn v <*> pure tau <*> pure isRef
