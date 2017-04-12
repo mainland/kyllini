@@ -719,7 +719,7 @@ kz_input_bytes(kz_buf_t* buf, size_t n)
 }
 
 void
-kz_output_bytes(kz_buf_t* buf, void* data, size_t n)
+kz_output_bytes(kz_buf_t* buf, const void* data, size_t n)
 {
     output<uint8_t>(buf, (uint8_t*) data, n);
 }

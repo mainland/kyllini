@@ -178,7 +178,7 @@ void        kz_init_output_bytes(const kz_params_t*, kz_buf_t*);
 void        kz_cleanup_input_bytes(const kz_params_t*, kz_buf_t*);
 void        kz_cleanup_output_bytes(const kz_params_t*, kz_buf_t*);
 const void* kz_input_bytes(kz_buf_t*, size_t);
-void        kz_output_bytes(kz_buf_t*, void*, size_t);
+void        kz_output_bytes(kz_buf_t*, const void*, size_t);
 
 #ifdef __cplusplus
 }
