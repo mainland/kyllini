@@ -2465,13 +2465,13 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     go tau1 _ mce1 tau2 _ mce2 | tau1 == tau2 =
         return (tau1, mce1, mce2)
 
-    -- Always cast numeric constants to whatever the other type is. This lets
+    -- Always cast integer constants to whatever the other type is. This lets
     -- us, for example, treat @1@ as an @int8@.
-    go tau1 e@Z.ConstE{} mce1 tau2 _ mce2 | isNumT tau1 = do
+    go tau1@FixT{} e@Z.ConstE{} mce1 tau2 _ mce2 = do
         co <- mkCheckedSafeCast e tau1 tau2
         return (tau2, co mce1, mce2)
 
-    go tau1 _ mce1 tau2 e@Z.ConstE{} mce2 | isNumT tau2 = do
+    go tau1 _ mce1 tau2@FixT{} e@Z.ConstE{} mce2 = do
         co <- mkCheckedSafeCast e tau2 tau1
         return (tau1, mce1, co mce2)
 
