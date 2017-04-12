@@ -562,8 +562,13 @@ base_type :
   | '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
   | array_type        { $1 }
+  | nat_type          { $1 }
   | tyvar             { TyVarT $1 (srclocOf $1) }
   | '(' base_type ')' { $2 }
+
+nat_type :: { Type }
+nat_type :
+    INT { NatT ((fromIntegral . snd . getINT) $1) (srclocOf $1) }
 
 array_type :: { Type }
 array_type :
