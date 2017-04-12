@@ -29,7 +29,11 @@ module KZC.Check.Types (
     MetaTv(..),
     MetaKv(..),
     R(..),
-    MetaRv(..)
+    MetaRv(..),
+
+#if !defined(ONLY_TYPEDEFS)
+    pprForall
+#endif /* !defined(ONLY_TYPEDEFS) */
   ) where
 
 import Control.Monad.Reader

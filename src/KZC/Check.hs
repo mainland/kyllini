@@ -1470,7 +1470,9 @@ checkTyApp tvks taus = do
         when (ntaus /= ntvks) $
         faildoc $
         text "Expected" <+> ppr ntvks <+>
-        text "type arguments but got" <+> ppr ntaus </> ppr tvks </> ppr taus
+        text "type arguments matching" <+> pprForall tvks </>
+        text "but got" <+> ppr ntaus <> colon <+>
+        commasep (map ppr taus)
 
 generalize :: Type -> Ti (Type, CoDecl)
 generalize tau0 =

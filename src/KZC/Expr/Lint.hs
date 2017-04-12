@@ -1028,7 +1028,9 @@ checkTyApp tvks taus = do
         when (ntaus /= ntvks) $
         faildoc $
         text "Expected" <+> ppr ntvks <+>
-        text "type arguments but got" <+> ppr ntaus </> ppr tvks </> ppr taus
+        text "type arguments matching" <+> pprForall tvks </>
+        text "but got" <+> ppr ntaus <> colon <+>
+        commasep (map ppr taus)
 
 checkKindEquality :: MonadTc m => Kind -> Kind -> m ()
 checkKindEquality kappa1 kappa2 | kappa1 == kappa2 =
