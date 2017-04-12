@@ -103,15 +103,7 @@ import KZC.Util.Uniq
 import KZC.Vars
 
 newtype Var = Var Name
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString Var where
-    fromString s = Var (fromString s)
-
-instance Named Var where
-    namedSymbol (Var n) = namedSymbol n
-
-    mapName f (Var n) = Var (f n)
+  deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
 instance Gensym Var where
     gensymAt s l = Var <$> gensymAt s (locOf l)
@@ -123,15 +115,7 @@ data WildVar = WildV
   deriving (Eq, Ord, Read, Show)
 
 newtype Field = Field Name
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString Field where
-    fromString s = Field (fromString s)
-
-instance Named Field where
-    namedSymbol (Field n) = namedSymbol n
-
-    mapName f (Field n) = Field (f n)
+  deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
 instance Gensym Field where
     gensymAt s l = Field <$> gensymAt s (locOf l)
@@ -139,15 +123,7 @@ instance Gensym Field where
     uniquify (Field n) = Field <$> uniquify n
 
 newtype Struct = Struct Name
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString Struct where
-    fromString s = Struct (fromString s)
-
-instance Named Struct where
-    namedSymbol (Struct n) = namedSymbol n
-
-    mapName f (Struct n) = Struct (f n)
+  deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
 instance Gensym Struct where
     gensymAt s l = Struct <$> gensymAt s (locOf l)
@@ -155,15 +131,7 @@ instance Gensym Struct where
     uniquify (Struct n) = Struct <$> uniquify n
 
 newtype TyVar = TyVar Name
-  deriving (Eq, Ord, Read, Show)
-
-instance IsString TyVar where
-    fromString s = TyVar (fromString s)
-
-instance Named TyVar where
-    namedSymbol (TyVar n) = namedSymbol n
-
-    mapName f (TyVar n) = TyVar (f n)
+  deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
 instance Gensym TyVar where
     gensymAt s l = TyVar <$> gensymAt s (locOf l)

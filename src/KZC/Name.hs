@@ -53,6 +53,9 @@ instance Ord Name where
 instance Located Name where
     locOf (Name _ _ loc) = locOf loc
 
+instance Relocatable Name where
+    reloc loc n = n { nameLoc = SrcLoc loc }
+
 instance Pretty Name where
     ppr (Name sort sym _)
         | printUniques = text (unintern sym) <> pprSort sort
