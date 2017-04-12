@@ -267,13 +267,13 @@ instance Pretty Type where
                   <+> pprPrec tyappPrec1 tau2
                   <+> pprPrec tyappPrec1 tau3
 
-    pprPrec p (RefT tau _) | expertTypes =
+    pprPrec p (RefT tau _) | classicDialect =
         parensIf (p > tyappPrec) $
-        text "ref" <+> pprPrec tyappPrec1 tau
+        text "var" <+> pprPrec tyappPrec1 tau
 
     pprPrec p (RefT tau _) =
         parensIf (p > tyappPrec) $
-        text "var" <+> pprPrec tyappPrec1 tau
+        text "mut" <+> pprPrec tyappPrec1 tau
 
     pprPrec p (FunT taus tau _) =
         parensIf (p > tyappPrec) $

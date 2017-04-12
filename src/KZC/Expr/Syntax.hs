@@ -1069,7 +1069,7 @@ instance Pretty Type where
 
     pprPrec p (RefT tau _) =
         parensIf (p > tyappPrec) $
-        text "ref" <+> pprPrec tyappPrec1 tau
+        text "mut" <+> pprPrec tyappPrec1 tau
 
     pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
