@@ -142,13 +142,34 @@ The following numeric types are available:
  * `uint32`
  * `uint16`
  * `uN`
+ * `qM_N`
+ * `qN`
+ * `uqM_N`
+ * `uqN`
  * `float`
  * `double`
  * `f32`
  * `f64`
 
+The type `bit` is equivalent to the type `u1`.
+
 The `iN` and `uN` types allow for arbitrarily-sized signed and unsigned integral
-types. Floating-point values are IEEE-754. The type `bit` is equivalent to the type `u1`.
+types.
+
+The `qM_N`, `qN`, `uqM_N`, and `uqN` types are fixed-point types.
+
+Floating-point values are IEEE-754.
+
+### Fixed-point types
+
+The type `qM_N` is a signed fixed-point type with an `M`-bit integral part and
+`N`-bit fractional part. The type `qM_N` therefore requirs M+N+1 bits to
+represent, since a sign bit is also needed. The type `qN` is a signed
+fixed-point number with `N` fractional bits. The `uqM_N` and `uqN` types are the
+corresponding *unsigned* fixed-point types. Note that `uqM_N` requires only M+N
+bits to represent since it does not need a sign bit. The numbers `M` and `N`
+must be positive integers—it is not possible to write `q8_0` as a synonym for
+`i8`.
 
 ### Other base types
 
@@ -239,10 +260,33 @@ let y = struct Point { x = 0, y = 0 };
 | `length` | 11 | left |
 | `~` `not` (unary) `-` | 12 | left |
 
-TODO:
+### Casting
 
- * Casting with `<type>(<exp>)`.
- * Auto-casting between types.
+There are two forms of casts: coercion casts, and bit casts. Bit casts can only
+casts between types with the same bit size. Coercion casts take one of
+two equivalent forms:
+
+```
+<simple-type> '(' <exp> ')'
+'cast' '<' <base-type> '>' '(' exp ')'
+```
+
+Bit casts take the form
+
+```
+'bitcast' '<' <base-type> '>' '(' exp ')'
+```
+
+#### Auto-casting
+
+Coercion casts between types are automatically inserted to, e.g., ensure that
+the arguments to binary operators have the same type. The following rules govern
+automatic casts inserted by the front end:
+
+ * Integer constants are always cast to match the other types.
+ * Floating-point constants are always cast to match the other type *if* it has the `Fractional` trait, i.e., if it is a floating-point or fixed-point type.
+ * Integer and fractional types are always widened and made signed if necessary.
+ * Types crawl up the lattice from integral to fixed-point to floating point. That is, integer types are cast up to fractional types, which are cast up to floating-point types.
 
 ## Stream processors
 

@@ -87,6 +87,8 @@ aexp ::=
  | '~' <aexp>
  | 'length' <aexp>
  | <simple-type> '(' <exp> ')'
+ | 'bitcast' '<' <base-type> '>' '(' exp ')'
+ | 'cast' '<' <base-type> '>' '(' exp ')'
  | STRUCT <type-application> '{' (ID '=' <exp> ',' ...)+ '}'
  | 'struct' STRUCT <type-application> '{' (ID '=' <exp> ',' ...)+ '}'
  | ID '(' (<exp> ',' ...)* ')'
@@ -158,6 +160,7 @@ simple-type ::=
    'bit'
  | 'int' | 'int8' | 'int16' | 'int32' | 'int64' | 'iN'
  | 'uint' | 'uint8' | 'uint16' | 'uint32' | 'uint64' | 'uN'
+ | 'qN_M' | 'qN' | 'uqM_N' | 'uqN'
  | 'float' | 'double' | 'f32' | 'f64'
  | STRUCT <type-application>
  | 'struct' STRUCT <type-application>
