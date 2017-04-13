@@ -54,6 +54,7 @@ instance Rename VarBind where
 instance Rename Type where
     rn tau@UnitT{}  = pure tau
     rn tau@BoolT{}  = pure tau
+    rn tau@IntT{}   = pure tau
     rn tau@FixT{}   = pure tau
     rn tau@FloatT{} = pure tau
 

@@ -281,15 +281,15 @@ void kz_main(const typename kz_params_t* $id:params)
         go :: Type -> Cg l ()
         go (ArrT _ tau _)     = go tau
         go tau | isBitT tau   = appStm [cstm|$id:(fname "bit")($cp, &$cbuf);|]
-        go (FixT IDefault  _) = appStm [cstm|$id:(fname "int")($cp, &$cbuf);|]
-        go (FixT (I 8)  _)    = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
-        go (FixT (I 16) _)    = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
-        go (FixT (I 32) _)    = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
-        go (FixT UDefault  _) = appStm [cstm|$id:(fname "uint")($cp, &$cbuf);|]
-        go (FixT (U 8)  _)    = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
-        go (FixT (U 16) _)    = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
-        go (FixT (U 32) _)    = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
-        go tau@FixT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (IntT IDefault  _) = appStm [cstm|$id:(fname "int")($cp, &$cbuf);|]
+        go (IntT (I 8)  _)    = appStm [cstm|$id:(fname "int8")($cp, &$cbuf);|]
+        go (IntT (I 16) _)    = appStm [cstm|$id:(fname "int16")($cp, &$cbuf);|]
+        go (IntT (I 32) _)    = appStm [cstm|$id:(fname "int32")($cp, &$cbuf);|]
+        go (IntT UDefault  _) = appStm [cstm|$id:(fname "uint")($cp, &$cbuf);|]
+        go (IntT (U 8)  _)    = appStm [cstm|$id:(fname "uint8")($cp, &$cbuf);|]
+        go (IntT (U 16) _)    = appStm [cstm|$id:(fname "uint16")($cp, &$cbuf);|]
+        go (IntT (U 32) _)    = appStm [cstm|$id:(fname "uint32")($cp, &$cbuf);|]
+        go tau@IntT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                           text "are not supported."
         go (FloatT FP16 _)    = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
         go (FloatT FP32 _)    = appStm [cstm|$id:(fname "float")($cp, &$cbuf);|]
@@ -315,15 +315,15 @@ void kz_main(const typename kz_params_t* $id:params)
         go (ArrT n tau _)    = do ci <- cgNatType n
                                   cgInput tau cbuf (cn*ci)
         go tau | isBitT tau  = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
-        go (FixT IDefault _) = return $ CExp [cexp|kz_input_int(&$cbuf, $cn)|]
-        go (FixT (I 8)  _)   = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
-        go (FixT (I 16) _)   = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
-        go (FixT (I 32) _)   = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
-        go (FixT UDefault _) = return $ CExp [cexp|kz_input_uint(&$cbuf, $cn)|]
-        go (FixT (U 8)  _)   = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
-        go (FixT (U 16) _)   = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
-        go (FixT (U 32) _)   = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
-        go tau@FixT{}        = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (IntT IDefault _) = return $ CExp [cexp|kz_input_int(&$cbuf, $cn)|]
+        go (IntT (I 8)  _)   = return $ CExp [cexp|kz_input_int8(&$cbuf, $cn)|]
+        go (IntT (I 16) _)   = return $ CExp [cexp|kz_input_int16(&$cbuf, $cn)|]
+        go (IntT (I 32) _)   = return $ CExp [cexp|kz_input_int32(&$cbuf, $cn)|]
+        go (IntT UDefault _) = return $ CExp [cexp|kz_input_uint(&$cbuf, $cn)|]
+        go (IntT (U 8)  _)   = return $ CExp [cexp|kz_input_uint8(&$cbuf, $cn)|]
+        go (IntT (U 16) _)   = return $ CExp [cexp|kz_input_uint16(&$cbuf, $cn)|]
+        go (IntT (U 32) _)   = return $ CExp [cexp|kz_input_uint32(&$cbuf, $cn)|]
+        go tau@IntT{}        = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                          text "are not supported."
         go (FloatT FP16 _)   = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
         go (FloatT FP32 _)   = return $ CExp [cexp|kz_input_float(&$cbuf, $cn)|]
@@ -349,15 +349,15 @@ void kz_main(const typename kz_params_t* $id:params)
         go (ArrT n tau _)     = do ci <- cgNatType n
                                    cgOutput tau cbuf (cn*ci) cval
         go tau | isBitT tau   = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
-        go (FixT IDefault  _) = appendStm [cstm|kz_output_int(&$cbuf, $cval, $cn);|]
-        go (FixT (I 8)  _)    = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
-        go (FixT (I 16) _)    = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
-        go (FixT (I 32) _)    = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
-        go (FixT UDefault  _) = appendStm [cstm|kz_output_uint(&$cbuf, $cval, $cn);|]
-        go (FixT (U 8)  _)    = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
-        go (FixT (U 16) _)    = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
-        go (FixT (U 32) _)    = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
-        go tau@FixT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
+        go (IntT IDefault  _) = appendStm [cstm|kz_output_int(&$cbuf, $cval, $cn);|]
+        go (IntT (I 8)  _)    = appendStm [cstm|kz_output_int8(&$cbuf, $cval, $cn);|]
+        go (IntT (I 16) _)    = appendStm [cstm|kz_output_int16(&$cbuf, $cval, $cn);|]
+        go (IntT (I 32) _)    = appendStm [cstm|kz_output_int32(&$cbuf, $cval, $cn);|]
+        go (IntT UDefault  _) = appendStm [cstm|kz_output_uint(&$cbuf, $cval, $cn);|]
+        go (IntT (U 8)  _)    = appendStm [cstm|kz_output_uint8(&$cbuf, $cval, $cn);|]
+        go (IntT (U 16) _)    = appendStm [cstm|kz_output_uint16(&$cbuf, $cval, $cn);|]
+        go (IntT (U 32) _)    = appendStm [cstm|kz_output_uint32(&$cbuf, $cval, $cn);|]
+        go tau@IntT{}         = faildoc $ text "Buffers with values of type" <+> ppr tau <+>
                                           text "are not supported."
         go (FloatT FP16 _)    = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
         go (FloatT FP32 _)    = appendStm [cstm|kz_output_float(&$cbuf, $cval, $cn);|]
@@ -630,14 +630,12 @@ cgLocalDecl _flags LetViewLD{} _k =
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.
 cgConst :: forall l . Const -> Cg l (CExp l)
-cgConst UnitC             = return CVoid
-cgConst (BoolC b)         = return $ CBool b
-cgConst (FixC IDefault x) = return $ CInt (fromIntegral x)
-cgConst (FixC I{} x)      = return $ CInt (fromIntegral x)
-cgConst (FixC UDefault x) = return $ CInt (fromIntegral x)
-cgConst (FixC U{} x)      = return $ CInt (fromIntegral x)
-cgConst (FloatC _ f)      = return $ CFloat (toRational f)
-cgConst (StringC s)       = return $ CExp [cexp|$string:s|]
+cgConst UnitC        = return CVoid
+cgConst (BoolC b)    = return $ CBool b
+cgConst (IntC _ x)   = return $ CInt (fromIntegral x)
+cgConst (FixC _ x)   = return $ CInt (fromIntegral x)
+cgConst (FloatC _ f) = return $ CFloat (toRational f)
+cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
@@ -946,7 +944,7 @@ cgExp e k =
 
         cgUnop Neg _ ce = return $ CExp [cexp|-$ce|]
 
-        cgUnop Abs FixT{}          ce = return $ CExp [cexp|abs($ce)|]
+        cgUnop Abs IntT{}          ce = return $ CExp [cexp|abs($ce)|]
         cgUnop Abs (FloatT FP32 _) ce = return $ CExp [cexp|fabsf($ce)|]
         cgUnop Abs (FloatT FP64 _) ce = return $ CExp [cexp|fabs($ce)|]
 
@@ -1016,12 +1014,12 @@ cgExp e k =
         cgBitcast ce tau_from tau_to | tau_to == tau_from =
             return ce
 
-        cgBitcast ce tau_from tau_to@(FixT U{} _) | isBitArrT tau_from = do
+        cgBitcast ce tau_from tau_to@(IntT U{} _) | isBitArrT tau_from = do
             cbits   <- cgBits tau_from ce
             ctau_to <- cgType tau_to
             return $ CExp $ rl l [cexp|($ty:ctau_to) $cbits|]
 
-        cgBitcast ce tau_from@(FixT U{} _) tau_to | isBitArrT tau_to = do
+        cgBitcast ce tau_from@(IntT U{} _) tau_to | isBitArrT tau_to = do
             ctau_to <- cgBitcastType tau_from
             return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
 
@@ -1061,10 +1059,10 @@ cgExp e k =
         cgBinop _ ce1 ce2 LshL = return $ CExp $ rl l [cexp|$ce1 << $ce2|]
         cgBinop _ ce1 ce2 LshR = return $ CExp $ rl l [cexp|$ce1 >> $ce2|]
         cgBinop _ ce1 ce2 AshR = return $ CExp $ rl l [cexp|((unsigned int) $ce1) >> $ce2|]
-        cgBinop _ ce1 ce2 Add  = return $ CExp $ rl l [cexp|$ce1 + $ce2|]
-        cgBinop _ ce1 ce2 Sub  = return $ CExp $ rl l [cexp|$ce1 - $ce2|]
-        cgBinop _ ce1 ce2 Mul  = return $ CExp $ rl l [cexp|$ce1 * $ce2|]
-        cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$ce1 / $ce2|]
+        cgBinop _ ce1 ce2 Add  = return $ CExp $ rl l [cexp|$(ce1 + ce2)|]
+        cgBinop _ ce1 ce2 Sub  = return $ CExp $ rl l [cexp|$(ce1 - ce2)|]
+        cgBinop _ ce1 ce2 Mul  = return $ CExp $ rl l [cexp|$(ce1 * ce2)|]
+        cgBinop _ ce1 ce2 Div  = return $ CExp $ rl l [cexp|$(ce1 / ce2)|]
         cgBinop _ ce1 ce2 Rem  = return $ CExp $ rl l [cexp|$ce1 % $ce2|]
         cgBinop _ ce1 ce2 Pow  = return $ CExp $ rl l [cexp|pow($ce1, $ce2)|]
 
@@ -1285,13 +1283,13 @@ cgExp e k =
         cgPrintScalar :: Type -> CExp l -> Cg l ()
         cgPrintScalar UnitT{}           _  = appendStm $ rl l [cstm|printf("()");|]
         cgPrintScalar BoolT{}           ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "true" : "false");|]
-        cgPrintScalar (FixT (U 1)  _)   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
-        cgPrintScalar (FixT IDefault _) ce = appendStm $ rl l [cstm|printf("%d", (int) $ce);|]
-        cgPrintScalar (FixT (I w) _)    ce
+        cgPrintScalar (IntT (U 1)  _)   ce = appendStm $ rl l [cstm|printf("%s",  $ce ? "'1" : "'0");|]
+        cgPrintScalar (IntT IDefault _) ce = appendStm $ rl l [cstm|printf("%d", (int) $ce);|]
+        cgPrintScalar (IntT (I w) _)    ce
           | w <= 32                        = appendStm $ rl l [cstm|printf("%ld", (long) $ce);|]
           | otherwise                      = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
-        cgPrintScalar (FixT UDefault _) ce = appendStm $ rl l [cstm|printf("%u", (unsigned) $ce);|]
-        cgPrintScalar (FixT (U w) _)    ce
+        cgPrintScalar (IntT UDefault _) ce = appendStm $ rl l [cstm|printf("%u", (unsigned) $ce);|]
+        cgPrintScalar (IntT (U w) _)    ce
           | w <= 32                        = appendStm $ rl l [cstm|printf("%lu", (long) $ce);|]
           | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (long long) $ce);|]
         cgPrintScalar FloatT{}          ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
@@ -1301,10 +1299,10 @@ cgExp e k =
         cgPrintScalar tau_struct@StructT{} ce = do
             maybe_tau <- runMaybeT $ checkComplexT tau_struct
             case maybe_tau of
-              Just (FixT IDefault _) -> appendStm $ rl l [cstm|printf("(%d,%d)", (int) $ce.re, (int) $ce.im);|]
-              Just (FixT I{} _)      -> appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
-              Just (FixT UDefault _) -> appendStm $ rl l [cstm|printf("(%u,%u)", (unsigned) $ce.re, (unsigned) $ce.im);|]
-              Just (FixT U{} _)      -> appendStm $ rl l [cstm|printf("(%lu,%lu)", (unsigned long) $ce.re, (unsigned long) $ce.im);|]
+              Just (IntT IDefault _) -> appendStm $ rl l [cstm|printf("(%d,%d)", (int) $ce.re, (int) $ce.im);|]
+              Just (IntT I{} _)      -> appendStm $ rl l [cstm|printf("(%ld,%ld)", (long) $ce.re, (long) $ce.im);|]
+              Just (IntT UDefault _) -> appendStm $ rl l [cstm|printf("(%u,%u)", (unsigned) $ce.re, (unsigned) $ce.im);|]
+              Just (IntT U{} _)      -> appendStm $ rl l [cstm|printf("(%lu,%lu)", (unsigned long) $ce.re, (unsigned long) $ce.im);|]
               Just FloatT{}          -> appendStm $ rl l [cstm|printf("(%Lf,%Lf)", (long double) $ce.re, (long double) $ce.im);|]
               _                      -> faildoc $ text "Cannot print type:" <+> ppr tau_struct
 
@@ -1481,7 +1479,7 @@ cgBits tau@(ArrT n _ _) ce | isBitArrT tau = do
       then return [cexp|*(($ty:ctau*) $caddr)|]
       else return [cexp|*(($ty:ctau*) $caddr) & $(chexconst (2^w - 1))|]
 
-cgBits tau@FixT{} ce = do
+cgBits tau@IntT{} ce = do
     ctau <- cgBitcastType tau
     return [cexp|($ty:ctau) $ce|]
 
@@ -1522,25 +1520,35 @@ cgType BoolT{} =
 cgType tau | isBitT tau =
     cgBitElemType
 
-cgType (FixT IDefault _) =
+cgType (IntT IDefault _) =
     return [cty|int|]
 
-cgType tau@(FixT (I w) _)
+cgType tau@(IntT (I w) _)
     | w <= 8    = return [cty|typename int8_t|]
     | w <= 16   = return [cty|typename int16_t|]
     | w <= 32   = return [cty|typename int32_t|]
     | w <= 64   = return [cty|typename int64_t|]
     | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
 
-cgType (FixT UDefault _) =
+cgType (IntT UDefault _) =
     return [cty|unsigned|]
 
-cgType tau@(FixT (U w) _)
+cgType tau@(IntT (U w) _)
     | w <= 8    = return [cty|typename uint8_t|]
     | w <= 16   = return [cty|typename uint16_t|]
     | w <= 32   = return [cty|typename uint32_t|]
     | w <= 64   = return [cty|typename uint64_t|]
     | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
+
+cgType (FixT (Q i f) _) =
+    return [cty|typename $id:q|]
+  where
+    q = "QTY(" ++ show i ++ "," ++ show f ++ ")"
+
+cgType (FixT (UQ i f) _) =
+    return [cty|typename $id:uq|]
+  where
+    uq = "UQTY(" ++ show i ++ "," ++ show f ++ ")"
 
 cgType (FloatT FP16 _) =
     return [cty|float|]
@@ -1617,7 +1625,7 @@ cgType (TyVarT alpha _) =
 
 -- | Compute the type of array elements in a bit array.
 cgBitElemType :: Cg l C.Type
-cgBitElemType = cgType (FixT (U bIT_ARRAY_ELEM_BITS) noLoc)
+cgBitElemType = cgType (IntT (U bIT_ARRAY_ELEM_BITS) noLoc)
 
 cgFunType :: [TyVar] -> [Type] -> Type -> Cg l C.Type
 cgFunType nats args ret = do

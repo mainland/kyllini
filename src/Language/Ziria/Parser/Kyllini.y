@@ -48,6 +48,8 @@ import KZC.Util.Pretty
   INT_TYPE   { L _ (T.Ti _) }
   UINT_TYPE  { L _ (T.Tu _) }
   FLOAT_TYPE { L _ (T.Tf _) }
+  Q_TYPE     { L _ (T.Tq _ _) }
+  UQ_TYPE    { L _ (T.Tq _ _) }
 
   "'0"          { L _ T.TzeroBit }
   "'1"          { L _ T.ToneBit }
@@ -248,6 +250,8 @@ identifier :
   | INT_TYPE   { mkVar $ mkTypeName "i" (getINT_TYPE $1) (locOf $1) }
   | UINT_TYPE  { mkVar $ mkTypeName "u" (getUINT_TYPE $1) (locOf $1) }
   | FLOAT_TYPE { mkVar $ mkTypeName "f" (getFLOAT_TYPE $1) (locOf $1) }
+  | Q_TYPE     { mkVar $ mkType2Name "q" (getQ_TYPE $1) (locOf $1) }
+  | UQ_TYPE    { mkVar $ mkType2Name "uq" (getUQ_TYPE $1) (locOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -260,10 +264,10 @@ scalar_value :
     '(' ')' { L (locOf $1) UnitC }
   | 'true'  { L (locOf $1) $ BoolC True }
   | 'false' { L (locOf $1) $ BoolC False }
-  | "'0"    { L (locOf $1) $ FixC (U 1) 0 }
-  | "'1"    { L (locOf $1) $ FixC (U 1) 1 }
-  | INT     { L (locOf $1) $ FixC IDefault (fromIntegral (snd (getINT $1))) }
-  | UINT    { L (locOf $1) $ FixC UDefault (fromIntegral (snd (getUINT $1))) }
+  | "'0"    { L (locOf $1) $ IntC (U 1) 0 }
+  | "'1"    { L (locOf $1) $ IntC (U 1) 1 }
+  | INT     { L (locOf $1) $ IntC IDefault (fromIntegral (snd (getINT $1))) }
+  | UINT    { L (locOf $1) $ IntC UDefault (fromIntegral (snd (getUINT $1))) }
   | FLOAT   { L (locOf $1) $ FloatC FP64 (snd (getFLOAT $1)) }
   | STRING  { L (locOf $1) $ StringC (snd (getSTRING $1)) }
 
@@ -537,20 +541,22 @@ tyvar :
 
 simple_type :: { Type }
 simple_type :
-    'bit'                              { FixT (U 1)    (srclocOf $1) }
-  | 'int'                              { FixT IDefault (srclocOf $1) }
-  | 'int8'                             { FixT (I 8)    (srclocOf $1) }
-  | 'int16'                            { FixT (I 16)   (srclocOf $1) }
-  | 'int32'                            { FixT (I 32)   (srclocOf $1) }
-  | 'int64'                            { FixT (I 64)   (srclocOf $1) }
-  | 'uint'                             { FixT UDefault (srclocOf $1) }
-  | 'uint8'                            { FixT (U 8)    (srclocOf $1) }
-  | 'uint16'                           { FixT (U 16)   (srclocOf $1) }
-  | 'uint32'                           { FixT (U 32)   (srclocOf $1) }
-  | 'uint64'                           { FixT (U 64)   (srclocOf $1) }
-  | INT_TYPE                           { FixT (I (getINT_TYPE $1)) (srclocOf $1) }
-  | UINT_TYPE                          { FixT (U (getUINT_TYPE $1)) (srclocOf $1) }
+    'bit'                              { IntT (U 1)    (srclocOf $1) }
+  | 'int'                              { IntT IDefault (srclocOf $1) }
+  | 'int8'                             { IntT (I 8)    (srclocOf $1) }
+  | 'int16'                            { IntT (I 16)   (srclocOf $1) }
+  | 'int32'                            { IntT (I 32)   (srclocOf $1) }
+  | 'int64'                            { IntT (I 64)   (srclocOf $1) }
+  | 'uint'                             { IntT UDefault (srclocOf $1) }
+  | 'uint8'                            { IntT (U 8)    (srclocOf $1) }
+  | 'uint16'                           { IntT (U 16)   (srclocOf $1) }
+  | 'uint32'                           { IntT (U 32)   (srclocOf $1) }
+  | 'uint64'                           { IntT (U 64)   (srclocOf $1) }
+  | INT_TYPE                           { IntT (I (getINT_TYPE $1)) (srclocOf $1) }
+  | UINT_TYPE                          { IntT (U (getUINT_TYPE $1)) (srclocOf $1) }
   | FLOAT_TYPE                         {% mkFloatT (getFLOAT_TYPE $1) (srclocOf $1) }
+  | Q_TYPE                             { FixT (uncurry Q  (getQ_TYPE $1)) (srclocOf $1) }
+  | UQ_TYPE                            { FixT (uncurry UQ (getQ_TYPE $1)) (srclocOf $1) }
   | 'float'                            { FloatT FP32 (srclocOf $1) }
   | 'double'                           { FloatT FP64 (srclocOf $1) }
   | structid type_application          { StructT $1 $2 ($1 `srcspan` $1) }
@@ -985,6 +991,9 @@ getINT_TYPE   (L _ (T.Ti w)) = w
 getUINT_TYPE  (L _ (T.Tu w)) = w
 getFLOAT_TYPE (L _ (T.Tf w)) = w
 
+getQ_TYPE     (L _ (T.Tq i f))  = (i, f)
+getUQ_TYPE    (L _ (T.Tuq i f)) = (i, f)
+
 lexer :: (L T.Token -> P a) -> P a
 lexer cont = do
     t <- lexToken
@@ -1007,16 +1016,16 @@ constIntExp :: Exp -> P Int
 constIntExp e = go e
   where
     go :: Exp -> P Int
-    go (ConstE (FixC IDefault i) _) =
+    go (ConstE (IntC IDefault i) _) =
         return i
 
-    go (ConstE (FixC I{} i) _) =
+    go (ConstE (IntC I{} i) _) =
         return i
 
-    go (ConstE (FixC UDefault i) _) =
+    go (ConstE (IntC UDefault i) _) =
         return i
 
-    go (ConstE (FixC U{} i) _) =
+    go (ConstE (IntC U{} i) _) =
         return i
 
     go (BinopE op e1 e2 _) = do
@@ -1035,7 +1044,7 @@ constIntExp e = go e
     binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
 
 intC :: Int -> SrcLoc -> Exp
-intC i l = ConstE (FixC IDefault i) l
+intC i l = ConstE (IntC IDefault i) l
 
 mkFloatT :: Monad m => Int -> SrcLoc -> m Type
 mkFloatT 32 s = return $ FloatT FP32 s
@@ -1044,6 +1053,9 @@ mkFloatT w  _ = faildoc $ text "Cannot handle float width" <+> ppr w
 
 mkTypeName :: String -> Int -> Loc -> Name
 mkTypeName s w l = mkName (s ++ show w) l
+
+mkType2Name :: String -> (Int, Int) -> Loc -> Name
+mkType2Name s (i, f) l = mkName (s ++ show i ++ "_" ++ show f) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

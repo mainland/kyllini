@@ -226,7 +226,8 @@ lookupTcEnv proj onerr k = do
 defaultValueC :: MonadTc m => Type -> m Const
 defaultValueC UnitT{}       = return UnitC
 defaultValueC BoolT{}       = return $ BoolC False
-defaultValueC (FixT ip _)   = return $ FixC ip 0
+defaultValueC (IntT ip _)   = return $ IntC ip 0
+defaultValueC (FixT qp _)   = return $ FixC qp 0
 defaultValueC (FloatT fp _) = return $ FloatC fp 0
 defaultValueC StringT{}     = return $ StringC ""
 
@@ -437,11 +438,9 @@ typeSize = go
     go :: Type -> m Int
     go UnitT{}                 = pure 0
     go BoolT{}                 = pure 1
-    go (FixT IDefault _)       = asksPlatform platformIntWidth
-    go (FixT (I w) _)          = pure w
-    go (FixT UDefault _)       = asksPlatform platformIntWidth
-    go (FixT (U w) _)          = pure w
-    go (FloatT fp _)           = pure $ fpWidth fp
+    go (IntT ip _)             = ipBitSize ip
+    go (FixT qp _)             = pure $ qpBitSize qp
+    go (FloatT fp _)           = pure $ fpBitSize fp
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
     go (ST (C tau) _ _ _ _)    = go tau
     go (RefT tau _)            = go tau

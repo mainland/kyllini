@@ -21,9 +21,10 @@ module Language.Ziria.Syntax (
     Struct(..),
 
     IP(..),
-    ipWidth,
-    ipIsSigned,
-    ipIsIntegral,
+
+    QP(..),
+    qpToFractional,
+    qpFromFractional,
 
     FP(..),
 
@@ -62,7 +63,6 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Globals
 import KZC.Name
-import KZC.Platform
 import KZC.Traits
 import KZC.Util.Pretty
 import KZC.Util.SetLike
@@ -96,32 +96,32 @@ newtype Field = Field Name
 newtype Struct = Struct Name
   deriving (Eq, Ord, Read, Show, IsString, Relocatable, Named)
 
--- | Fixed-point format.
+-- | Integer precision.
 data IP = IDefault
         | I Int
         | UDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: MonadPlatform m => IP -> m Int
-ipWidth IDefault = asksPlatform platformIntWidth
-ipWidth (I w)    = return w
-ipWidth UDefault = asksPlatform platformIntWidth
-ipWidth (U w)    = return w
+-- | Fixed-point precision.
+data QP = Q Int Int  -- ^ Signed Q format. Sign bit is not counted.
+        | UQ Int Int -- ^ Unsigned Q format
+  deriving (Eq, Ord, Read, Show)
 
-ipIsSigned :: IP -> Bool
-ipIsSigned IDefault{} = True
-ipIsSigned I{}        = True
-ipIsSigned UDefault{} = False
-ipIsSigned U{}        = False
+-- | The number of bits in the fractional part of a fixed-point number.
+qpFracBits :: QP -> Int
+qpFracBits (Q _ w)  = w
+qpFracBits (UQ _ w) = w
 
-ipIsIntegral :: IP -> Bool
-ipIsIntegral IDefault{} = True
-ipIsIntegral I{}        = True
-ipIsIntegral UDefault{} = True
-ipIsIntegral U{}        = True
+-- | Convert a fixed-point number to a floating-point number.
+qpToFractional :: Fractional a => QP -> Int -> a
+qpToFractional qp x = realToFrac x / 2^qpFracBits qp
 
--- | Floating-point width
+-- | Convert a floating-point number to a fixed-point number.
+qpFromFractional :: RealFrac a => QP -> a -> Int
+qpFromFractional qp x = round (x * 2^qpFracBits qp)
+
+-- | Floating-point precision.
 data FP = FP16
         | FP32
         | FP64
@@ -145,7 +145,8 @@ data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Const = UnitC
            | BoolC Bool
-           | FixC IP Int
+           | IntC IP Int
+           | FixC QP Int
            | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
@@ -310,7 +311,8 @@ data Binop = Eq   -- ^ Equal
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
+          | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Type Type !SrcLoc
           | StructT Struct [Type] !SrcLoc
@@ -457,6 +459,12 @@ instance Pretty Field where
 instance Pretty Struct where
     ppr (Struct n) = ppr n
 
+instance Pretty QP where
+    ppr (Q 0 f)  = text "q" <> ppr f
+    ppr (Q i f)  = text "q" <> ppr i <> char '_' <> ppr f
+    ppr (UQ 0 f) = text "uq" <> ppr f
+    ppr (UQ i f) = text "uq" <> ppr i <> char '_' <> ppr f
+
 instance Pretty FP where
     ppr FP16 = text "16"
     ppr FP32 = text "32"
@@ -543,12 +551,13 @@ instance Pretty Const where
     pprPrec _ UnitC             = text "()"
     pprPrec _ (BoolC False)     = text "false"
     pprPrec _ (BoolC True)      = text "true"
-    pprPrec _ (FixC (U 1) 0)    = text "'0"
-    pprPrec _ (FixC (U 1) 1)    = text "'1"
-    pprPrec _ (FixC IDefault x) = ppr x
-    pprPrec _ (FixC I{} x)      = ppr x
-    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
-    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (IntC (U 1) 0)    = text "'0"
+    pprPrec _ (IntC (U 1) 1)    = text "'1"
+    pprPrec _ (IntC IDefault x) = ppr x
+    pprPrec _ (IntC I{} x)      = ppr x
+    pprPrec _ (IntC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (IntC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FixC qp x)       = ppr (qpToFractional qp x :: Double) <> ppr qp
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
@@ -827,22 +836,25 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _)
+    pprPrec _ (IntT (I w) _)
       | classicDialect = text "int" <> ppr w
       | otherwise      = char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _)
+    pprPrec _ (IntT (U w) _)
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
+
+    pprPrec _ (FixT qp _) =
+        ppr qp
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

@@ -14,15 +14,29 @@
 module KZC.Check.Types (
     module KZC.Traits,
 
-    TyVar(..),
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
-    ipIsIntegral,
+    ipRange,
+
+    QP(..),
+    qpBitSize,
+    qpIsSigned,
+    qpIntBits,
+    qpFracBits,
+    qpRange,
+    qpResolution,
+    qpToFractional,
+    qpFromFractional,
+
     FP(..),
-    fpWidth,
+    fpBitSize,
+
+    TyVar(..),
+
     StructDef(..),
     structDefTvks,
+
     Type(..),
     Kind(..),
     Tvk,
@@ -52,11 +66,22 @@ import Text.PrettyPrint.Mainland
 import qualified Language.Ziria.Syntax as Z
 
 import KZC.Expr.Syntax (IP(..),
-                        ipWidth,
+                        ipBitSize,
                         ipIsSigned,
-                        ipIsIntegral,
+                        ipRange,
+
+                        QP(..),
+                        qpBitSize,
+                        qpIsSigned,
+                        qpIntBits,
+                        qpFracBits,
+                        qpRange,
+                        qpResolution,
+                        qpToFractional,
+                        qpFromFractional,
+
                         FP(..),
-                        fpWidth)
+                        fpBitSize)
 import KZC.Globals
 import KZC.Name
 import KZC.Traits
@@ -79,7 +104,8 @@ structDefTvks (TypeDef _ tvks _ _)   = tvks
 data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
+          | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct [Type] !SrcLoc
@@ -208,22 +234,25 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _)
+    pprPrec _ (IntT (I w) _)
       | classicDialect = text "int" <> ppr w
       | otherwise      = char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _)
+    pprPrec _ (IntT (U w) _)
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
+
+    pprPrec _ (FixT qp _) =
+        ppr qp
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
@@ -356,6 +385,7 @@ pprKindSig (tau, kappa) =
 instance Fvs Type TyVar where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
+    fvs IntT{}                      = mempty
     fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
@@ -376,6 +406,7 @@ instance Fvs Type TyVar where
 instance Fvs Type MetaTv where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
+    fvs IntT{}                      = mempty
     fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
@@ -406,6 +437,7 @@ instance Fvs Kind n => Fvs [Kind] n where
 instance HasVars Type TyVar where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
+    allVars IntT{}                      = mempty
     allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
@@ -428,6 +460,7 @@ instance HasVars Type TyVar where
 instance HasVars Type MetaTv where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
+    allVars IntT{}                      = mempty
     allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
@@ -451,6 +484,9 @@ instance Subst Type MetaTv Type where
         pure tau
 
     substM tau@BoolT{} =
+        pure tau
+
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FixT{} =
@@ -504,6 +540,9 @@ instance Subst Type TyVar Type where
         pure tau
 
     substM tau@BoolT{} =
+        pure tau
+
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FixT{} =

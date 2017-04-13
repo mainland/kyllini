@@ -280,7 +280,7 @@ inferExp (UnopE op e1 l) = do
         mkSigned <$> inferOp [(a, numK)] aT aT tau
       where
         mkSigned :: Type -> Type
-        mkSigned (FixT (U w) l) = FixT (I w) l
+        mkSigned (IntT (U w) l) = IntT (I w) l
         mkSigned tau            = tau
 
     unop Abs   tau = inferOp [(a, numK)] aT aT tau
@@ -640,10 +640,10 @@ refPath e =
     go (VarE v _) path =
         return $ RefP v (reverse path)
 
-    go (IdxE e (ConstE (FixC _ i) _) Nothing _) path =
+    go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (FixC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =

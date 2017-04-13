@@ -159,7 +159,7 @@ library
   ghc-options:
     -Wall -fno-warn-name-shadowing
     -- XXX Ugh! Needed for unifyCompiledExpTypes in src/KZC/Check.hs
-    -fmax-pmcheck-iterations=5000000
+    -fmax-pmcheck-iterations=10000000
 
   hs-source-dirs:
     src

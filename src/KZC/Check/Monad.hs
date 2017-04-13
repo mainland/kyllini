@@ -239,8 +239,8 @@ typeSize = go
     go :: Type -> Ti Int
     go UnitT{}                 = pure 0
     go BoolT{}                 = pure 1
-    go (FixT ip _)             = ipWidth ip
-    go (FloatT fp _)           = pure $ fpWidth fp
+    go (IntT ip _)             = ipBitSize ip
+    go (FloatT fp _)           = pure $ fpBitSize fp
     go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
     go (ST (C tau _) _ _ _ _)  = go tau
     go (RefT tau _)            = go tau
@@ -378,6 +378,9 @@ instance Compress Type where
         pure tau
 
     compress tau@BoolT{} =
+        pure tau
+
+    compress tau@IntT{} =
         pure tau
 
     compress tau@FixT{} =

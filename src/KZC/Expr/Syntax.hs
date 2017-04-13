@@ -25,12 +25,22 @@ module KZC.Expr.Syntax (
     TyVar(..),
 
     IP(..),
-    ipWidth,
+    ipBitSize,
     ipIsSigned,
-    ipIsIntegral,
+    ipRange,
+
+    QP(..),
+    qpBitSize,
+    qpIsSigned,
+    qpIntBits,
+    qpFracBits,
+    qpRange,
+    qpResolution,
+    qpToFractional,
+    qpFromFractional,
 
     FP(..),
-    fpWidth,
+    fpBitSize,
 
     Program(..),
     Import(..),
@@ -138,18 +148,19 @@ instance Gensym TyVar where
 
     uniquify (TyVar n) = TyVar <$> uniquify n
 
--- | Fixed-point format.
+-- | Integer precision.
 data IP = IDefault
         | I Int
         | UDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
-ipWidth :: MonadPlatform m => IP -> m Int
-ipWidth IDefault = asksPlatform platformIntWidth
-ipWidth (I w)    = return w
-ipWidth UDefault = asksPlatform platformIntWidth
-ipWidth (U w)    = return w
+-- | Number of bits needed to represent integers with the given precision.
+ipBitSize :: MonadPlatform m => IP -> m Int
+ipBitSize IDefault = asksPlatform platformIntWidth
+ipBitSize (I w)    = return w
+ipBitSize UDefault = asksPlatform platformIntWidth
+ipBitSize (U w)    = return w
 
 ipIsSigned :: IP -> Bool
 ipIsSigned IDefault{} = True
@@ -157,22 +168,69 @@ ipIsSigned I{}        = True
 ipIsSigned UDefault{} = False
 ipIsSigned U{}        = False
 
-ipIsIntegral :: IP -> Bool
-ipIsIntegral IDefault{} = True
-ipIsIntegral I{}        = True
-ipIsIntegral UDefault{} = True
-ipIsIntegral U{}        = True
+-- | Smallest representable value.
+ipRange :: MonadPlatform m => IP -> m (Int, Int)
+ipRange ip = do
+    w <- ipBitSize ip
+    return $ if ipIsSigned ip then (-2^(w-1), 2^(w-1)-1) else (0, 2^w)
 
--- | Floating-point format.
+-- | Fixed-point precision.
+data QP = Q Int Int  -- ^ Signed Q format. Sign bit is not counted.
+        | UQ Int Int -- ^ Unsigned Q format
+  deriving (Eq, Ord, Read, Show)
+
+qpBitSize :: QP -> Int
+qpBitSize (Q i f)  = 1 + i + f
+qpBitSize (UQ i f) = i + f
+
+qpIsSigned :: QP -> Bool
+qpIsSigned Q{}  = True
+qpIsSigned UQ{} = False
+
+-- | The number of bits in the integral part of a fixed-point number.
+qpIntBits :: QP -> Int
+qpIntBits (Q w _)  = w
+qpIntBits (UQ w _ ) = w
+
+-- | The number of bits in the fractional part of a fixed-point number.
+qpFracBits :: QP -> Int
+qpFracBits (Q _ w)  = w
+qpFracBits (UQ _ w) = w
+
+-- | Smallest representable value.
+qpRange :: Fractional a => QP -> (a, a)
+qpRange qp
+    | qpIsSigned qp = (-2^m, 2^m-2^^(-n))
+    | otherwise     = (0, 2^m-2^^(-n))
+  where
+    (m, n) = (qpIntBits qp, qpFracBits qp)
+
+-- | The resolution of a fixed-point number.
+qpResolution :: Fractional a => QP -> a
+qpResolution qp = 2^^(-n)
+  where
+    n = qpFracBits qp
+
+-- | Convert a fixed-point number to a floating-point number.
+qpToFractional :: Fractional a => QP -> Int -> a
+qpToFractional qp x = realToFrac x / 2^qpFracBits qp
+
+-- | Convert a floating-point number to a fixed-point number.
+qpFromFractional :: RealFrac a => QP -> a -> Int
+qpFromFractional qp x = round (x * 2^qpFracBits qp)
+
+-- | Floating-point precision.
 data FP = FP16
         | FP32
         | FP64
   deriving (Eq, Ord, Read, Show)
 
-fpWidth :: FP -> Int
-fpWidth FP16 = 16
-fpWidth FP32 = 32
-fpWidth FP64 = 64
+-- | Number of bits needed to represent floating-point values with the given
+-- precision.
+fpBitSize :: FP -> Int
+fpBitSize FP16 = 16
+fpBitSize FP32 = 32
+fpBitSize FP64 = 64
 
 data Program = Program [Import] [Decl]
   deriving (Eq, Ord, Read, Show)
@@ -189,7 +247,8 @@ data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Const = UnitC
            | BoolC !Bool
-           | FixC !IP {-# UNPACK #-} !Int
+           | IntC !IP {-# UNPACK #-} !Int
+           | FixC !QP {-# UNPACK #-} !Int
            | FloatC !FP {-# UNPACK #-} !Double
            | StringC String
            | ArrayC !(Vector Const)
@@ -355,7 +414,8 @@ data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
 
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
-          | FixT IP !SrcLoc
+          | IntT IP !SrcLoc
+          | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Struct [Type] !SrcLoc
@@ -411,7 +471,7 @@ instance Num Const where
       where
         err = error "Num Const: negate did not result in a constant"
 
-    fromInteger i = FixC IDefault (fromIntegral i)
+    fromInteger i = IntC IDefault (fromIntegral i)
 
     abs _    = error "Num Const: abs not implemented"
     signum _ = error "Num Const: signum not implemented"
@@ -456,18 +516,18 @@ class LiftedCast a b | a -> b where
 -- | Renormalize a constant, ensuring that integral constants are within their
 -- bounds. We assume two's complement arithmetic.
 renormalize :: Const -> Const
-renormalize c@(FixC (I w) x)
-    | x > max   = renormalize (FixC (I w) (x - 2^w))
-    | x < min   = renormalize (FixC (I w) (x + 2^w))
+renormalize c@(IntC (I w) x)
+    | x > max   = renormalize (IntC (I w) (x - 2^w))
+    | x < min   = renormalize (IntC (I w) (x + 2^w))
     | otherwise = c
   where
     max, min :: Int
     max = 2^(w-1)-1
     min = -2^(w-1)
 
-renormalize c@(FixC (U w) x)
-    | x > max   = renormalize (FixC (U w) (x - 2^w))
-    | x < 0     = renormalize (FixC (U w) (x + 2^w))
+renormalize c@(IntC (U w) x)
+    | x > max   = renormalize (IntC (U w) (x - 2^w))
+    | x < 0     = renormalize (IntC (U w) (x + 2^w))
     | otherwise = c
   where
     max :: Int
@@ -495,8 +555,14 @@ instance LiftedOrd Const Const where
     liftOrd _ f x y = BoolC (f x y)
 
 instance LiftedNum Const (Maybe Const) where
-    liftNum _op f (FixC ip x) =
-        Just $ FixC ip (f x)
+    liftNum _op f (IntC ip x) =
+        Just $ IntC ip (f x)
+
+    liftNum _op f (FixC qp x) =
+        Just $ renormalize $ FixC qp (qpFromFractional qp (g (qpToFractional qp x)))
+      where
+        g :: Double -> Double
+        g = f
 
     liftNum _op f (FloatC fp x) =
         Just $ FloatC fp (f x)
@@ -504,8 +570,17 @@ instance LiftedNum Const (Maybe Const) where
     liftNum _op _f _c =
         Nothing
 
-    liftNum2 _op f (FixC ip x) (FixC _ y) =
-        Just $ renormalize $ FixC ip (f x y)
+    liftNum2 _op f (IntC ip x) (IntC _ y) =
+        Just $ renormalize $ IntC ip (f x y)
+
+    liftNum2 Mul _ (FixC qp x) (FixC _ y) =
+        Just $ renormalize $ FixC qp ((x * y) `quot` (2^qpFracBits qp))
+
+    liftNum2 _op f (FixC qp x) (FixC _ y) =
+        Just $ renormalize $ FixC qp (qpFromFractional qp (g (qpToFractional qp x) (qpToFractional qp y)))
+      where
+        g :: Double -> Double -> Double
+        g = f
 
     liftNum2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
@@ -532,14 +607,17 @@ instance LiftedNum Const (Maybe Const) where
         Nothing
 
 instance LiftedIntegral Const (Maybe Const) where
-    liftIntegral2 Div _ (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (fromIntegral (x `quot` y))
+    liftIntegral2 Div _ (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (fromIntegral (x `quot` y))
+
+    liftIntegral2 Div _ (FixC qp x) (FixC _ y) =
+        Just $ renormalize $ FixC qp ((x * 2^qpFracBits qp) `quot` y)
 
     liftIntegral2 Div _ (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (x / y)
 
-    liftIntegral2 Rem _ (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (fromIntegral (x `rem` y))
+    liftIntegral2 Rem _ (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (fromIntegral (x `rem` y))
 
     liftIntegral2 Div _ x@(StructC s _ _) y@(StructC s' _ _) | isComplexStruct s && s' == s = do
         re <- (a*c + b*d)/(c*c + d*d)
@@ -556,11 +634,23 @@ instance LiftedIntegral Const (Maybe Const) where
         Nothing
 
 instance LiftedFloating Const (Maybe Const) where
+    liftFloating _op f (FixC qp x) =
+        Just $ FixC qp ((qpFromFractional qp . g . qpToFractional qp) x)
+      where
+        g :: Double -> Double
+        g = f
+
     liftFloating _op f (FloatC fp x) =
         Just $ FloatC fp (f x)
 
     liftFloating _op _f _c =
         Nothing
+
+    liftFloating2 _op f (FixC qp x) (FixC _ y) =
+        Just $ renormalize $ FixC qp (qpFromFractional qp (g (qpToFractional qp x) (qpToFractional qp y)))
+      where
+        g :: Double -> Double -> Double
+        g = f
 
     liftFloating2 _op f (FloatC fp x) (FloatC _ y) =
         Just $ FloatC fp (f x y)
@@ -569,43 +659,53 @@ instance LiftedFloating Const (Maybe Const) where
         Nothing
 
 instance LiftedCast Const (Maybe Const) where
-    -- Cast to a bit type
-    liftCast (FixT (U 1) _) (FixC _ x) =
-        Just $ FixC (U 1) (if x == 0 then 0 else 1)
+    -- Cast to bit
+    liftCast (IntT (U 1) _) (IntC _ x) =
+        Just $ IntC (U 1) (if x == 0 then 0 else 1)
 
-    -- Cast int to unsigned int
-    liftCast (FixT UDefault _) (FixC _ x) =
-        Just $ renormalize $ FixC UDefault x
+    liftCast (IntT (U 1) _) (FixC _ x) =
+        Just $ IntC (U 1) (if x == 0 then 0 else 1)
 
-    liftCast (FixT (U w) _) (FixC _ x) =
-        Just $ renormalize $ FixC (U w) x
+    liftCast (IntT (U 1) _) (FloatC _ x) =
+        Just $ IntC (U 1) (if x == 0 then 0 else 1)
 
-    -- Cast int to signed int
-    liftCast (FixT IDefault _) (FixC _ x) =
-        Just $ renormalize $ FixC IDefault x
+    -- Cast to int
+    liftCast (IntT ip _) (IntC _ x) =
+        Just $ renormalize $ IntC ip x
 
-    liftCast (FixT (I w) _) (FixC _ x) =
-        Just $ renormalize $ FixC (I w) x
+    liftCast (IntT ip _) (FixC qp x) =
+        Just $ renormalize $ IntC ip (x `shiftR` f)
+      where
+        f :: Int
+        f = qpFracBits qp
 
-    -- Cast float to int
-    liftCast (FixT ip _) (FloatC _ x) =
-        Just $ FixC ip (fromIntegral (truncate x :: Integer))
+    liftCast (IntT ip _) (FloatC _ x) =
+        Just $ renormalize $ IntC ip (fromIntegral (truncate x :: Integer))
 
-    -- Cast signed int to float
-    liftCast (FloatT fp _) (FixC IDefault x) =
+    -- Cast to Fix
+    liftCast (FixT qp _) (IntC _ x) =
+        Just $ renormalize $ FixC qp (x `shiftL` f)
+      where
+        f :: Int
+        f = qpFracBits qp
+
+    liftCast (FixT qp' _) (FixC qp x) =
+        Just $ renormalize $ FixC qp' (x `shift` (f' - f))
+      where
+        f, f' :: Int
+        f  = qpFracBits qp
+        f' = qpFracBits qp'
+
+    liftCast (FixT qp _) (FloatC _ x) =
+        Just $ FixC qp (qpFromFractional qp x)
+
+    -- Cast to float
+    liftCast (FloatT fp _) (IntC _ x) =
         Just $ FloatC fp (fromIntegral x)
 
-    liftCast (FloatT fp _) (FixC I{} x) =
-        Just $ FloatC fp (fromIntegral x)
+    liftCast (FloatT fp _) (FixC qp x) =
+        Just $ FloatC fp (qpToFractional qp x)
 
-    -- Cast unsigned int to float
-    liftCast (FloatT fp _) (FixC UDefault x) =
-        Just $ FloatC fp (fromIntegral x)
-
-    liftCast (FloatT fp _) (FixC U{} x) =
-        Just $ FloatC fp (fromIntegral x)
-
-    -- Cast float to float
     liftCast (FloatT fp _) (FloatC _ x) =
         Just $ FloatC fp x
 
@@ -630,20 +730,20 @@ uncomplexC c =
     errordoc $ text "Not a complex value:" <+> ppr c
 
 instance LiftedBits Const (Maybe Const) where
-    liftBits _ f (FixC ip x) =
-        Just $ FixC ip (f x)
+    liftBits _ f (IntC ip x) =
+        Just $ IntC ip (f x)
 
     liftBits _ _ _ =
         Nothing
 
-    liftBits2 _ f (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (f x y)
+    liftBits2 _ f (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (f x y)
 
     liftBits2 _ _ _ _ =
         Nothing
 
-    liftShift _ f (FixC ip x) (FixC _ y) =
-        Just $ FixC ip (f x (fromIntegral y))
+    liftShift _ f (IntC ip x) (IntC _ y) =
+        Just $ IntC ip (f x (fromIntegral y))
 
     liftShift _ _ _ _ =
         Nothing
@@ -707,6 +807,12 @@ instance Pretty Struct where
 instance Pretty TyVar where
     ppr (TyVar n) = ppr n
 
+instance Pretty QP where
+    ppr (Q 0 f)  = text "q" <> ppr f
+    ppr (Q i f)  = text "q" <> ppr i <> char '_' <> ppr f
+    ppr (UQ 0 f) = text "uq" <> ppr f
+    ppr (UQ i f) = text "uq" <> ppr i <> char '_' <> ppr f
+
 instance Pretty FP where
     ppr FP16 = text "16"
     ppr FP32 = text "32"
@@ -754,12 +860,13 @@ instance Pretty Const where
     pprPrec _ UnitC             = text "()"
     pprPrec _ (BoolC False)     = text "false"
     pprPrec _ (BoolC True)      = text "true"
-    pprPrec _ (FixC (U 1) 0)    = text "'0"
-    pprPrec _ (FixC (U 1) 1)    = text "'1"
-    pprPrec _ (FixC IDefault x) = ppr x
-    pprPrec _ (FixC I{} x)      = ppr x
-    pprPrec _ (FixC UDefault x) = ppr x <> char 'u'
-    pprPrec _ (FixC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (IntC (U 1) 0)    = text "'0"
+    pprPrec _ (IntC (U 1) 1)    = text "'1"
+    pprPrec _ (IntC IDefault x) = ppr x
+    pprPrec _ (IntC I{} x)      = ppr x
+    pprPrec _ (IntC UDefault x) = ppr x <> char 'u'
+    pprPrec _ (IntC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FixC qp x)       = ppr (qpToFractional qp x :: Double) <> ppr qp
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
@@ -771,12 +878,12 @@ instance Pretty Const where
         | otherwise                         = text "arr" <+> enclosesep lbrace rbrace comma (map ppr (V.toList cs))
       where
         isBit :: Const -> Bool
-        isBit (FixC (U 1) _) = True
+        isBit (IntC (U 1) _) = True
         isBit _              = False
 
         bitDoc :: Const -> Doc
-        bitDoc (FixC (U 1) 0) = char '0'
-        bitDoc (FixC (U 1) 1) = char '1'
+        bitDoc (IntC (U 1) 0) = char '0'
+        bitDoc (IntC (U 1) 1) = char '1'
         bitDoc _              = error "Not a bit"
 
     pprPrec _ (ReplicateC n c) =
@@ -1013,20 +1120,23 @@ instance Pretty Type where
     pprPrec _ (BoolT _) =
         text "bool"
 
-    pprPrec _ (FixT (U 1) _) =
+    pprPrec _ (IntT (U 1) _) =
         text "bit"
 
-    pprPrec _ (FixT IDefault _) =
+    pprPrec _ (IntT IDefault _) =
         text "int"
 
-    pprPrec _ (FixT (I w) _) =
+    pprPrec _ (IntT (I w) _) =
         char 'i' <> ppr w
 
-    pprPrec _ (FixT UDefault _) =
+    pprPrec _ (IntT UDefault _) =
         text "uint"
 
-    pprPrec _ (FixT (U w) _) =
+    pprPrec _ (IntT (U w) _) =
         char 'u' <> ppr w
+
+    pprPrec _ (FixT qp _) =
+        ppr qp
 
     pprPrec _ (FloatT FP32 _) =
         text "float"
@@ -1217,6 +1327,7 @@ instance HasFixity Unop where
 instance Fvs Type TyVar where
     fvs UnitT{}                      = mempty
     fvs BoolT{}                      = mempty
+    fvs IntT{}                       = mempty
     fvs FixT{}                       = mempty
     fvs FloatT{}                     = mempty
     fvs StringT{}                    = mempty
@@ -1369,6 +1480,9 @@ instance Subst Type TyVar Type where
         pure tau
 
     substM tau@BoolT{} =
+        pure tau
+
+    substM tau@IntT{} =
         pure tau
 
     substM tau@FixT{} =

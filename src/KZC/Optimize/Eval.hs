@@ -715,10 +715,10 @@ evalExp e =
         binop Rem val1 val2 =
             maybePartialVal $ liftIntegral2 op rem val1 val2
 
-        binop Pow (ConstV (FixC ip x)) (ConstV (FixC _ y)) =
-            return $ ConstV (FixC ip (x ^ y))
+        binop Pow (ConstV (IntC ip x)) (ConstV (IntC _ y)) =
+            return $ ConstV (IntC ip (x ^ y))
 
-        binop Pow (ConstV (FloatC fp x)) (ConstV (FixC _ y)) =
+        binop Pow (ConstV (FloatC fp x)) (ConstV (IntC _ y)) =
             return $ ConstV (FloatC fp (x ^ y))
 
         binop op val1 val2 =
@@ -1152,10 +1152,10 @@ evalWhileC e1 c2 =
         c2' <- evalFullComp c2
         whileC e1' c2' >>= partialComp
 
--- | Convert an integral value to a 'Val Exp' of the given (fixpoint) type.
-toFixVal :: Integral i => Type -> i -> Val l m Exp
-toFixVal ~(FixT ip _) i =
-    ConstV $ FixC ip (fromIntegral i)
+-- | Convert an integral value to a 'Val Exp' of the given (integral) type.
+toIntVal :: Integral i => Type -> i -> Val l m Exp
+toIntVal ~(IntT ip _) i =
+    ConstV $ IntC ip (fromIntegral i)
 
 evalForE :: forall l m . (IsLabel l, MonadTcRef m)
          => UnrollAnn
@@ -1181,7 +1181,7 @@ evalForE ann v tau gint e3 = do
       where
         loop :: Int -> Int -> EvalM l m (Val l m Exp)
         loop !i !end | i < end = do
-            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalExp e3
+            val3 <- extendVarBinds [(v', toIntVal tau i)] $ evalExp e3
             case val3 of
               ReturnV {} -> loop (i+1) end
               CmdV {}    -> residualFor v' (toExp start) (toExp len)
@@ -1225,7 +1225,7 @@ evalForC ann v tau gint c3 = do
       where
         loop :: Int -> Int -> EvalM l m (Val l m (Comp l))
         loop !i !end | i < end = do
-            val3 <- extendVarBinds [(v', toFixVal tau i)] $ evalComp c3
+            val3 <- extendVarBinds [(v', toIntVal tau i)] $ evalComp c3
             case val3 of
               CompReturnV {} -> loop (i+1) end
               CompV {}       -> residualFor v' (toExp start) (toExp len)

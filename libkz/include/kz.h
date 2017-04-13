@@ -44,6 +44,13 @@ SUCH DAMAGE.
 #include <kz/ext.h>
 #include <kz/threads.h>
 
+#ifdef __cplusplus
+#define QTY(M,N)  Q<M,N>
+#define UQTY(M,N) UQ<M,N>
+
+#include <fixed.hpp>
+#endif
+
 #if defined(WHOLEPROGRAM)
 #include <bits.c>
 #include <driver.c>

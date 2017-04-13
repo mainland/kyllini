@@ -47,6 +47,7 @@ module KZC.Check.Smart (
     structName,
 
     isNumT,
+    isFracT,
     isUnitT,
     isRefT,
     isPureT,
@@ -100,37 +101,37 @@ boolT :: Type
 boolT = BoolT noLoc
 
 bitT :: Type
-bitT = FixT (U 1) noLoc
+bitT = IntT (U 1) noLoc
 
 intT :: Type
-intT = FixT IDefault noLoc
+intT = IntT IDefault noLoc
 
 int8T :: Type
-int8T = FixT (I 8) noLoc
+int8T = IntT (I 8) noLoc
 
 int16T :: Type
-int16T = FixT (I 16) noLoc
+int16T = IntT (I 16) noLoc
 
 int32T :: Type
-int32T = FixT (I 32) noLoc
+int32T = IntT (I 32) noLoc
 
 int64T :: Type
-int64T = FixT (I 64) noLoc
+int64T = IntT (I 64) noLoc
 
 uintT :: Type
-uintT = FixT UDefault noLoc
+uintT = IntT UDefault noLoc
 
 uint8T :: Type
-uint8T = FixT (U 8) noLoc
+uint8T = IntT (U 8) noLoc
 
 uint16T :: Type
-uint16T = FixT (U 16) noLoc
+uint16T = IntT (U 16) noLoc
 
 uint32T :: Type
-uint32T = FixT (U 32) noLoc
+uint32T = IntT (U 32) noLoc
 
 uint64T :: Type
-uint64T = FixT (U 64) noLoc
+uint64T = IntT (U 64) noLoc
 
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
@@ -178,9 +179,16 @@ structName (TypeDef s _ _ _)   = s
 
 -- | Return 'True' if a type is a numeric type.
 isNumT :: Type -> Bool
+isNumT IntT{}   = True
 isNumT FixT{}   = True
 isNumT FloatT{} = True
 isNumT _        = False
+
+-- | Return 'True' if a type is a fractional type.
+isFracT :: Type -> Bool
+isFracT FixT{}   = True
+isFracT FloatT{} = True
+isFracT _        = False
 
 isUnitT :: Type -> Bool
 isUnitT UnitT{} = True

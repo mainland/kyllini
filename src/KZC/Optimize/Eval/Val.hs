@@ -183,15 +183,15 @@ intV :: Integral a => a -> Val l m Exp
 intV i = ConstV $ intC i
 
 fromIntV :: Val l m Exp -> Maybe Int
-fromIntV (ConstV (FixC _ x)) =
+fromIntV (ConstV (IntC _ x)) =
     Just x
 
 fromIntV _ =
     Nothing
 
 zeroBitV, oneBitV :: Val l m Exp
-zeroBitV = ConstV $ FixC (U 1) 0
-oneBitV  = ConstV $ FixC (U 1) 1
+zeroBitV = ConstV $ IntC (U 1) 0
+oneBitV  = ConstV $ IntC (U 1) 1
 
 isTrue :: Val l m Exp -> Bool
 isTrue (ConstV (BoolC b)) = b
@@ -202,12 +202,12 @@ isFalse (ConstV (BoolC b)) = not b
 isFalse _                  = False
 
 isZero :: Val l m Exp -> Bool
-isZero (ConstV (FixC _ 0))   = True
+isZero (ConstV (IntC _ 0))   = True
 isZero (ConstV (FloatC _ 0)) = True
 isZero _                     = False
 
 isOne :: Val l m Exp -> Bool
-isOne (ConstV (FixC _ 1))   = True
+isOne (ConstV (IntC _ 1))   = True
 isOne (ConstV (FloatC _ 1)) = True
 isOne _                     = False
 
@@ -229,7 +229,8 @@ defaultValue = go
     go :: Type -> m' (Val l m Exp)
     go UnitT{}       = return $ ConstV UnitC
     go BoolT{}       = return $ ConstV $ BoolC False
-    go (FixT ip _)   = return $ ConstV $ FixC ip 0
+    go (IntT ip _)   = return $ ConstV $ IntC ip 0
+    go (FixT qp _)   = return $ ConstV $ FixC qp 0
     go (FloatT fp _) = return $ ConstV $ FloatC fp 0
     go StringT{}     = return $ ConstV $ StringC ""
 
@@ -250,6 +251,7 @@ defaultValue = go
 isDefaultValue :: Val l m Exp -> Bool
 isDefaultValue (ConstV UnitC)         = True
 isDefaultValue (ConstV (BoolC False)) = True
+isDefaultValue (ConstV (IntC _ 0))    = True
 isDefaultValue (ConstV (FixC _ 0))    = True
 isDefaultValue (ConstV (FloatC _ 0))  = True
 isDefaultValue (ConstV (StringC ""))  = True
@@ -320,12 +322,23 @@ toBitsV = go
     go (ConstV (BoolC f)) _ =
         toBitArr (fromIntegral (fromEnum f)) 1
 
-    go (ConstV (FixC (U w) x)) _ =
+    go (ConstV (IntC (U w) x)) _ =
         toBitArr x w
 
-    go (ConstV (FixC (I w) x)) _
+    go (ConstV (IntC (I w) x)) _
         | x >= 0    = toBitArr x w
         | otherwise = toBitArr (x + 2^w) w
+
+    go (ConstV (FixC (UQ i f) x)) _ =
+        toBitArr x w
+      where        
+        w = i+f
+
+    go (ConstV (FixC (Q i f) x)) _
+        | x >= 0    = toBitArr x w
+        | otherwise = toBitArr (x + 2^w) w
+      where
+        w = 1+i+f
 
     go (ConstV (FloatC FP32 f)) _ =
         toBitArr (fromIntegral (floatToWord (double2Float f))) 32
@@ -381,15 +394,15 @@ fromBitsV (ArrayV vs) tau =
     go vs BoolT{} =
         ConstV . BoolC . toEnum . fromIntegral <$> fromBitArr vs
 
-    go vs (FixT ip@(U _) _) =
-        ConstV . FixC ip . fromIntegral <$> fromBitArr vs
+    go vs (IntT ip@(U _) _) =
+        ConstV . IntC ip . fromIntegral <$> fromBitArr vs
 
-    go vs (FixT ip@(I w) _) = do
+    go vs (IntT ip@(I w) _) = do
         i <- fromBitArr vs
         return $ ConstV $
             if i < 2^(w-1)
-            then FixC ip (fromIntegral i)
-            else FixC ip (fromIntegral (i - 2^w))
+            then IntC ip (fromIntegral i)
+            else IntC ip (fromIntegral (i - 2^w))
 
     go vs (FloatT FP32 _) =
         ConstV . FloatC FP32 . float2Double . wordToFloat . fromIntegral <$> fromBitArr vs
@@ -417,8 +430,8 @@ fromBitsV (ArrayV vs) tau =
     fromBitArr vs = foldM set 0 $ reverse $ P.toList vs
       where
         set :: Int -> Val l m Exp -> m' Int
-        set i (ConstV (FixC (U 1) 0)) = return $ i `shiftL` 1
-        set i (ConstV (FixC (U 1) 1)) = return $ i `shiftL` 1 .|. 1
+        set i (ConstV (IntC (U 1) 0)) = return $ i `shiftL` 1
+        set i (ConstV (IntC (U 1) 1)) = return $ i `shiftL` 1 .|. 1
         set _ val                     = faildoc $ text "Not a bit:" <+> ppr val
 
 fromBitsV val tau = do
@@ -456,15 +469,15 @@ enumVals UnitT{} =
 enumVals BoolT{} =
     return $ map (ConstV    . BoolC) [(minBound :: Bool)..]
 
-enumVals (FixT ip@(U w) _) =
-    return $ map (ConstV . FixC ip . fromInteger)
+enumVals (IntT ip@(U w) _) =
+    return $ map (ConstV . IntC ip . fromInteger)
                  [0..hi]
   where
     hi :: Integer
     hi = 2^w-1
 
-enumVals (FixT ip@(I w) _) =
-    return $ map (ConstV . FixC ip . fromInteger) $
+enumVals (IntT ip@(I w) _) =
+    return $ map (ConstV . IntC ip . fromInteger) $
                  [0..hi] ++ [lo..0]
   where
     hi, lo :: Integer

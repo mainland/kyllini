@@ -153,9 +153,11 @@ data Token = Teof
            | TFractional
            | TBits
 
-           | Ti Int -- ^ General-width signed integer type
-           | Tu Int -- ^ General-width unsigned integer type
-           | Tf Int -- ^ General-width float type
+           | Ti Int      -- ^ General-width signed integer type
+           | Tu Int      -- ^ General-width unsigned integer type
+           | Tf Int      -- ^ General-width float type
+           | Tq Int Int  -- ^ Signed fixed-point type
+           | Tuq Int Int -- ^ Unsigned fixed-point type
 
            | Tarrow  -- ^ Right arrow (->)
            | Tdotdot -- ^ Range (..)
@@ -290,9 +292,13 @@ instance Pretty Token where
     ppr TFractional = text "Fractional"
     ppr TBits       = text "Bits"
 
-    ppr (Ti n) = text "i" <> ppr n
-    ppr (Tu n) = text "u" <> ppr n
-    ppr (Tf n) = text "f" <> ppr n
+    ppr (Ti n)    = text "i" <> ppr n
+    ppr (Tu n)    = text "u" <> ppr n
+    ppr (Tf n)    = text "f" <> ppr n
+    ppr (Tq 0 f)  = text "q" <> ppr f
+    ppr (Tq i f)  = text "q" <> ppr i <> char '_' <> ppr f
+    ppr (Tuq 0 f) = text "uq" <> ppr f
+    ppr (Tuq i f) = text "uq" <> ppr i <> char '_' <> ppr f
 
     ppr Tarrow  = text "->"
     ppr Tdotdot = text ".."

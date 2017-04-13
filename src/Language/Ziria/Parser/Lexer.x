@@ -83,6 +83,8 @@ $idchar = [$small $large $digit \']
 -- Types
 @width = [1-9] [0-9]*
 
+@frac = @width "_" @width
+
 -- Numerical constants
 @decimal     = $digit+
 @octal       = $octit+
@@ -118,10 +120,15 @@ ziria :-
 
   "{-" { lexNestedComment }
 
-  "i" @width / { ifKyllini } { lexTypeWidth Ti }
-  "u" @width / { ifKyllini } { lexTypeWidth Tu }
+  "i" @width / { ifKyllini } { lexTypeWidth 1 Ti }
+  "u" @width / { ifKyllini } { lexTypeWidth 1 Tu }
   "f32"      / { ifKyllini } { token $ Tf 32 }
   "f64"      / { ifKyllini } { token $ Tf 64 }
+
+  "q"  @width / { ifKyllini } { lexTypeWidth 1 (Tq 0) }
+  "q"  @frac  / { ifKyllini } { lexTypeFrac 1 Tq }
+  "uq" @width / { ifKyllini } { lexTypeWidth 2 (Tuq 0) }
+  "uq" @frac  / { ifKyllini } { lexTypeFrac 2 Tuq }
 
   @id { identifier }
 
@@ -223,9 +230,24 @@ identifier beg end =
     ident :: Symbol
     ident = intern (inputString beg end)
 
-lexTypeWidth :: (Int -> Token) -> Action P Token
-lexTypeWidth k beg end =
-    token (k ((read . T.unpack . T.drop 1) (inputText beg end))) beg end
+lexTypeWidth :: Int -> (Int -> Token) -> Action P Token
+lexTypeWidth n k beg end = token (k i) beg end
+  where
+    it :: T.Text
+    it = T.drop (fromIntegral n) (inputText beg end)
+
+    i :: Int
+    i = (read . T.unpack) it
+
+lexTypeFrac :: Int -> (Int -> Int -> Token) -> Action P Token
+lexTypeFrac n k beg end = token (k i f) beg end
+  where
+    it, ft :: T.Text
+    [it, ft] = (T.split (== '_') . T.drop (fromIntegral n)) (inputText beg end)
+
+    i, f :: Int
+    i = (read . T.unpack) it
+    f = (read . T.unpack) ft
 
 lexConst :: Read a => ((String, a) -> Token) -> Action P Token
 lexConst tok beg end = do

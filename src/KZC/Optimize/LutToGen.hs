@@ -188,7 +188,7 @@ lutExp e info = do
         taus_in     <- mapM lookupLUTVar lvs_in
         w_in        <- sum <$> mapM typeSize taus_in
         v_idx       <- gensym "lutidx"
-        let tau_idx =  FixT (U w_in) noLoc
+        let tau_idx =  IntT (U w_in) noLoc
         packLUTIdx (lvs_in `zip` taus_in) $ \e_bits -> do
           let e_idx   =  bitcastE tau_idx e_bits
           let e_lut   =  idxE (varE v_lut) (varE v_idx)

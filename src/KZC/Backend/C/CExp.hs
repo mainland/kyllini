@@ -22,6 +22,10 @@ module KZC.Backend.C.CExp (
 
     calias,
     cdiv,
+    ctruncate,
+    cround,
+    cceiling,
+    cfloor,
 
     unCInt,
     unCIdx,
@@ -489,6 +493,22 @@ cdiv ce n = go (C.toExp ce noLoc)
     go _ =
         faildoc $
         text "cdiv:" <+> ppr ce <+> text "not divisible by" <+> ppr n
+
+ctruncate :: CExp l -> CExp l
+ctruncate (CFloat x) = CInt (truncate x)
+ctruncate ce         = CExp [cexp|truncate($ce)|]
+
+cround :: CExp l -> CExp l
+cround (CFloat x) = CInt (round x)
+cround ce         = CExp [cexp|round($ce)|]
+
+cceiling :: CExp l -> CExp l
+cceiling (CFloat x) = CInt (ceiling x)
+cceiling ce         = CExp [cexp|ceiling($ce)|]
+
+cfloor :: CExp l -> CExp l
+cfloor (CFloat x) = CInt (floor x)
+cfloor ce         = CExp [cexp|floor($ce)|]
 
 -- | Return the 'Integer' value of a 'CExp'. This is necessarily a partial
 -- operation.
