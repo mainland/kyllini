@@ -47,6 +47,7 @@ module KZC.Check.Smart (
     structName,
 
     isNumT,
+    isFracT,
     isUnitT,
     isRefT,
     isPureT,
@@ -179,8 +180,15 @@ structName (TypeDef s _ _ _)   = s
 -- | Return 'True' if a type is a numeric type.
 isNumT :: Type -> Bool
 isNumT IntT{}   = True
+isNumT FixT{}   = True
 isNumT FloatT{} = True
 isNumT _        = False
+
+-- | Return 'True' if a type is a fractional type.
+isFracT :: Type -> Bool
+isFracT FixT{}   = True
+isFracT FloatT{} = True
+isFracT _        = False
 
 isUnitT :: Type -> Bool
 isUnitT UnitT{} = True

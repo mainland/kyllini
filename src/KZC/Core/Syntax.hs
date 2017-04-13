@@ -27,6 +27,16 @@ module KZC.Core.Syntax (
     ipIsSigned,
     ipRange,
 
+    QP(..),
+    qpBitSize,
+    qpIsSigned,
+    qpIntBits,
+    qpFracBits,
+    qpRange,
+    qpResolution,
+    qpToFractional,
+    qpFromFractional,
+
     FP(..),
     fpBitSize,
 
@@ -120,6 +130,16 @@ import KZC.Expr.Syntax (Var(..),
                         ipBitSize,
                         ipIsSigned,
                         ipRange,
+
+                        QP(..),
+                        qpBitSize,
+                        qpIsSigned,
+                        qpIntBits,
+                        qpFracBits,
+                        qpRange,
+                        qpResolution,
+                        qpToFractional,
+                        qpFromFractional,
 
                         FP(..),
                         fpBitSize,
@@ -489,6 +509,7 @@ instance Size Const where
     size UnitC{}            = 0
     size BoolC{}            = 1
     size IntC{}             = 1
+    size FixC{}             = 1
     size FloatC{}           = 1
     size StringC{}          = 1
     size (ArrayC cs)        = if V.null cs then 0 else V.length cs * size (V.head cs)

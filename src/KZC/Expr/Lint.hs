@@ -228,6 +228,7 @@ inferConst :: forall m . MonadTc m => SrcLoc -> Const -> m Type
 inferConst l UnitC         = return (UnitT l)
 inferConst l BoolC{}       = return (BoolT l)
 inferConst l (IntC ip _)   = return (IntT ip l)
+inferConst l (FixC qp _)   = return (FixT qp l)
 inferConst l (FloatC fp _) = return (FloatT fp l)
 inferConst l (StringC _)   = return (StringT l)
 
@@ -756,10 +757,25 @@ checkCast = go
     go IntT{} IntT{} =
         return ()
 
+    go IntT{} FixT{} =
+        return ()
+
     go IntT{} FloatT{} =
         return ()
 
+    go FixT{} IntT{} =
+        return ()
+
+    go FixT{} FixT{} =
+        return ()
+
+    go FixT{} FloatT{} =
+        return ()
+
     go FloatT{} IntT{} =
+        return ()
+
+    go FloatT{} FixT{} =
         return ()
 
     go FloatT{} FloatT{} =
@@ -768,10 +784,16 @@ checkCast = go
     go tau1@IntT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
+    go tau1@FixT{} tau2@TyVarT{} =
+        polyCast tau1 tau2
+
     go tau1@FloatT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@IntT{} =
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FixT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@FloatT{} =
@@ -791,6 +813,7 @@ checkCast = go
     -- constants "polymorphically."
     constKind :: Type -> m Kind
     constKind IntT{}   = return numK
+    constKind FixT{}   = return fracK
     constKind FloatT{} = return fracK
     constKind tau      = inferKind tau
 
@@ -824,6 +847,9 @@ checkTypeEquality tau1 tau2 =
     checkT _ BoolT{} BoolT{} = return ()
 
     checkT _ (IntT ip _) (IntT ip' _) | ip' == ip =
+        return ()
+
+    checkT _ (FixT qp _)  (FixT qp' _) | qp' == qp =
         return ()
 
     checkT _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
@@ -923,6 +949,9 @@ inferKind = inferType
 
     inferType (IntT I{} _) =
         return $ qualK [EqR, OrdR, NumR, IntegralR]
+
+    inferType FixT{} =
+        return $ qualK [EqR, OrdR, NumR, FractionalR]
 
     inferType FloatT{} =
         return $ qualK [EqR, OrdR, NumR, FractionalR]

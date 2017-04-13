@@ -43,7 +43,7 @@ GHCFLAGS += $(GHCFLAGS_OPT)
 endif
 
 # XXX Ugh! Needed for unifyCompiledExpTypes in src/KZC/Check.hs
-GHCFLAGS += -fmax-pmcheck-iterations=5000000
+GHCFLAGS += -fmax-pmcheck-iterations=10000000
 
 #
 # Source locations

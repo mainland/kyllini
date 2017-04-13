@@ -48,6 +48,8 @@ import KZC.Util.Pretty
   INT_TYPE   { L _ (T.Ti _) }
   UINT_TYPE  { L _ (T.Tu _) }
   FLOAT_TYPE { L _ (T.Tf _) }
+  Q_TYPE     { L _ (T.Tq _ _) }
+  UQ_TYPE    { L _ (T.Tq _ _) }
 
   "'0"          { L _ T.TzeroBit }
   "'1"          { L _ T.ToneBit }
@@ -248,6 +250,8 @@ identifier :
   | INT_TYPE   { mkVar $ mkTypeName "i" (getINT_TYPE $1) (locOf $1) }
   | UINT_TYPE  { mkVar $ mkTypeName "u" (getUINT_TYPE $1) (locOf $1) }
   | FLOAT_TYPE { mkVar $ mkTypeName "f" (getFLOAT_TYPE $1) (locOf $1) }
+  | Q_TYPE     { mkVar $ mkType2Name "q" (getQ_TYPE $1) (locOf $1) }
+  | UQ_TYPE    { mkVar $ mkType2Name "uq" (getUQ_TYPE $1) (locOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -551,6 +555,8 @@ simple_type :
   | INT_TYPE                           { IntT (I (getINT_TYPE $1)) (srclocOf $1) }
   | UINT_TYPE                          { IntT (U (getUINT_TYPE $1)) (srclocOf $1) }
   | FLOAT_TYPE                         {% mkFloatT (getFLOAT_TYPE $1) (srclocOf $1) }
+  | Q_TYPE                             { FixT (uncurry Q  (getQ_TYPE $1)) (srclocOf $1) }
+  | UQ_TYPE                            { FixT (uncurry UQ (getQ_TYPE $1)) (srclocOf $1) }
   | 'float'                            { FloatT FP32 (srclocOf $1) }
   | 'double'                           { FloatT FP64 (srclocOf $1) }
   | structid type_application          { StructT $1 $2 ($1 `srcspan` $1) }
@@ -985,6 +991,9 @@ getINT_TYPE   (L _ (T.Ti w)) = w
 getUINT_TYPE  (L _ (T.Tu w)) = w
 getFLOAT_TYPE (L _ (T.Tf w)) = w
 
+getQ_TYPE     (L _ (T.Tq i f))  = (i, f)
+getUQ_TYPE    (L _ (T.Tuq i f)) = (i, f)
+
 lexer :: (L T.Token -> P a) -> P a
 lexer cont = do
     t <- lexToken
@@ -1044,6 +1053,9 @@ mkFloatT w  _ = faildoc $ text "Cannot handle float width" <+> ppr w
 
 mkTypeName :: String -> Int -> Loc -> Name
 mkTypeName s w l = mkName (s ++ show w) l
+
+mkType2Name :: String -> (Int, Int) -> Loc -> Name
+mkType2Name s (i, f) l = mkName (s ++ show i ++ "_" ++ show f) l
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)

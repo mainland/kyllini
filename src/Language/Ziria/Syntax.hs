@@ -22,6 +22,10 @@ module Language.Ziria.Syntax (
 
     IP(..),
 
+    QP(..),
+    qpToFractional,
+    qpFromFractional,
+
     FP(..),
 
     Program(..),
@@ -99,6 +103,24 @@ data IP = IDefault
         | U Int
   deriving (Eq, Ord, Read, Show)
 
+-- | Fixed-point precision.
+data QP = Q Int Int  -- ^ Signed Q format. Sign bit is not counted.
+        | UQ Int Int -- ^ Unsigned Q format
+  deriving (Eq, Ord, Read, Show)
+
+-- | The number of bits in the fractional part of a fixed-point number.
+qpFracBits :: QP -> Int
+qpFracBits (Q _ w)  = w
+qpFracBits (UQ _ w) = w
+
+-- | Convert a fixed-point number to a floating-point number.
+qpToFractional :: Fractional a => QP -> Int -> a
+qpToFractional qp x = realToFrac x / 2^qpFracBits qp
+
+-- | Convert a floating-point number to a fixed-point number.
+qpFromFractional :: RealFrac a => QP -> a -> Int
+qpFromFractional qp x = round (x * 2^qpFracBits qp)
+
 -- | Floating-point precision.
 data FP = FP16
         | FP32
@@ -124,6 +146,7 @@ data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 data Const = UnitC
            | BoolC Bool
            | IntC IP Int
+           | FixC QP Int
            | FloatC FP Double
            | StringC String
   deriving (Eq, Ord, Read, Show)
@@ -289,6 +312,7 @@ data Binop = Eq   -- ^ Equal
 data Type = UnitT !SrcLoc
           | BoolT !SrcLoc
           | IntT IP !SrcLoc
+          | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | ArrT Type Type !SrcLoc
           | StructT Struct [Type] !SrcLoc
@@ -435,6 +459,12 @@ instance Pretty Field where
 instance Pretty Struct where
     ppr (Struct n) = ppr n
 
+instance Pretty QP where
+    ppr (Q 0 f)  = text "q" <> ppr f
+    ppr (Q i f)  = text "q" <> ppr i <> char '_' <> ppr f
+    ppr (UQ 0 f) = text "uq" <> ppr f
+    ppr (UQ i f) = text "uq" <> ppr i <> char '_' <> ppr f
+
 instance Pretty FP where
     ppr FP16 = text "16"
     ppr FP32 = text "32"
@@ -527,6 +557,7 @@ instance Pretty Const where
     pprPrec _ (IntC I{} x)      = ppr x
     pprPrec _ (IntC UDefault x) = ppr x <> char 'u'
     pprPrec _ (IntC U{} x)      = ppr x <> char 'u'
+    pprPrec _ (FixC qp x)       = ppr (qpToFractional qp x :: Double) <> ppr qp
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
@@ -821,6 +852,9 @@ instance Pretty Type where
     pprPrec _ (IntT (U w) _)
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
+
+    pprPrec _ (FixT qp _) =
+        ppr qp
 
     pprPrec _ (FloatT FP32 _) =
         text "float"

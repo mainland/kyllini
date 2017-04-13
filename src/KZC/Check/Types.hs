@@ -19,6 +19,16 @@ module KZC.Check.Types (
     ipIsSigned,
     ipRange,
 
+    QP(..),
+    qpBitSize,
+    qpIsSigned,
+    qpIntBits,
+    qpFracBits,
+    qpRange,
+    qpResolution,
+    qpToFractional,
+    qpFromFractional,
+
     FP(..),
     fpBitSize,
 
@@ -60,6 +70,16 @@ import KZC.Expr.Syntax (IP(..),
                         ipIsSigned,
                         ipRange,
 
+                        QP(..),
+                        qpBitSize,
+                        qpIsSigned,
+                        qpIntBits,
+                        qpFracBits,
+                        qpRange,
+                        qpResolution,
+                        qpToFractional,
+                        qpFromFractional,
+
                         FP(..),
                         fpBitSize)
 import KZC.Globals
@@ -85,6 +105,7 @@ data Type -- Base Types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
           | IntT IP !SrcLoc
+          | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
           | StructT Z.Struct [Type] !SrcLoc
@@ -230,6 +251,9 @@ instance Pretty Type where
       | classicDialect = text "uint" <> ppr w
       | otherwise      = char 'u' <> ppr w
 
+    pprPrec _ (FixT qp _) =
+        ppr qp
+
     pprPrec _ (FloatT FP32 _) =
         text "float"
 
@@ -362,6 +386,7 @@ instance Fvs Type TyVar where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
     fvs IntT{}                      = mempty
+    fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
     fvs (StructT _ taus _)          = fvs taus
@@ -382,6 +407,7 @@ instance Fvs Type MetaTv where
     fvs UnitT{}                     = mempty
     fvs BoolT{}                     = mempty
     fvs IntT{}                      = mempty
+    fvs FixT{}                      = mempty
     fvs FloatT{}                    = mempty
     fvs StringT{}                   = mempty
     fvs (StructT _ taus _)          = fvs taus
@@ -412,6 +438,7 @@ instance HasVars Type TyVar where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
     allVars IntT{}                      = mempty
+    allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
     allVars (StructT _ taus _)          = allVars taus
@@ -434,6 +461,7 @@ instance HasVars Type MetaTv where
     allVars UnitT{}                     = mempty
     allVars BoolT{}                     = mempty
     allVars IntT{}                      = mempty
+    allVars FixT{}                      = mempty
     allVars FloatT{}                    = mempty
     allVars StringT{}                   = mempty
     allVars (StructT _ taus _)          = allVars taus
@@ -459,6 +487,9 @@ instance Subst Type MetaTv Type where
         pure tau
 
     substM tau@IntT{} =
+        pure tau
+
+    substM tau@FixT{} =
         pure tau
 
     substM tau@FloatT{} =
@@ -512,6 +543,9 @@ instance Subst Type TyVar Type where
         pure tau
 
     substM tau@IntT{} =
+        pure tau
+
+    substM tau@FixT{} =
         pure tau
 
     substM tau@FloatT{} =

@@ -432,6 +432,12 @@ tcExp (Z.ConstE zc l) exp_ty = do
         instType (IntT ip l) exp_ty
         return $ E.IntC cip x
 
+    tcConst (Z.FixC zqp x) = do
+        qp  <- fromZ zqp
+        cqp <- trans qp
+        instType (FixT qp l) exp_ty
+        return $ E.FixC cqp x
+
     tcConst (Z.FloatC zw f) = do
         w  <- fromZ zw
         cw <- trans w
@@ -1355,6 +1361,9 @@ kcType tau@(IntT IDefault _) kappa_exp =
 kcType tau@(IntT I{} _) kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, IntegralR]) kappa_exp
 
+kcType tau@FixT{} kappa_exp =
+    instKind tau (qualK [EqR, OrdR, NumR, FractionalR]) kappa_exp
+
 kcType tau@FloatT{} kappa_exp =
     instKind tau (qualK [EqR, OrdR, NumR, FractionalR]) kappa_exp
 
@@ -1997,10 +2006,25 @@ checkLegalCast tau1 tau2 = do
     go IntT{} IntT{} =
         return ()
 
+    go IntT{} FixT{} =
+        return ()
+
     go IntT{} FloatT{} =
         return ()
 
+    go FixT{} IntT{} =
+        return ()
+
+    go FixT{} FixT{} =
+        return ()
+
+    go FixT{} FloatT{} =
+        return ()
+
     go FloatT{} IntT{} =
+        return ()
+
+    go FloatT{} FixT{} =
         return ()
 
     go FloatT{} FloatT{} =
@@ -2012,10 +2036,16 @@ checkLegalCast tau1 tau2 = do
     go tau1@IntT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
+    go tau1@FixT{} tau2@TyVarT{} =
+        polyCast tau1 tau2
+
     go tau1@FloatT{} tau2@TyVarT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@IntT{} =
+        polyCast tau1 tau2
+
+    go tau1@TyVarT{} tau2@FixT{} =
         polyCast tau1 tau2
 
     go tau1@TyVarT{} tau2@FloatT{} =
@@ -2036,6 +2066,7 @@ checkLegalCast tau1 tau2 = do
     -- constants "polymorphically."
     constKind :: Type -> Ti Kind
     constKind IntT{}   = return numK
+    constKind FixT{}   = return fracK
     constKind FloatT{} = return fracK
     constKind tau      = inferKind tau
 
@@ -2065,34 +2096,51 @@ checkLegalBitcast tau1 tau2 = do
 -- If it is definitely unsafe, signal an error; if it may be unsafe, signal a
 -- warning if the specified warning flag is set. We assume the cast is legal.
 checkSafeCast :: WarnFlag -> Maybe Z.Exp -> Type -> Type -> Ti ()
-checkSafeCast _f (Just e@(Z.ConstE (Z.IntC zip x) l)) tau1 tau2@(IntT ip _) =
-    withSummaryContext e $ do
-    tau1' <- fromZ $ Z.IntT zip l
-    when (tau1' /= tau1) $
-        withSummaryContext e $
-        faildoc $ align $
-        text "Expected type:" <+> ppr tau1' </>
-        text "     Got type:" <+> ppr tau1
-    (i_min, i_max) <- ipRange ip
-    when (x < i_min || x > i_max) $
-      faildoc $ align $
-      text "Integer constant" <+> ppr x <+>
-      text "cannot be represented as type" <+> ppr tau2
+checkSafeCast _f (Just e@(Z.ConstE (Z.IntC _ x) _)) _tau1 (IntT ip _) =
+    withSummaryContext e $ checkSafeIntCast x ip
 
-checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) = do
+checkSafeCast f e tau1@(IntT ip1 _) tau2@(IntT ip2 _) =
+    maybeWithSummaryContext e $ do
     w1 <- ipBitSize ip1
     w2 <- ipBitSize ip2
     when (w1 > w2) $
-        maybeWithSummaryContext e $
         warndocWhen f $ align $
         text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
     when (ipIsSigned ip2 /= ipIsSigned ip1) $
-        maybeWithSummaryContext e $
         warndocWhen f $ align $
         text "Potentially unsafe auto cast from" <+> ppr tau1 <+> text "to" <+> ppr tau2
 
+checkSafeCast _f (Just e@(Z.ConstE (Z.IntC _ x) _)) _tau1 (FixT qp _) =
+    withSummaryContext e $ checkSafeFixCast (realToFrac x) qp
+
+checkSafeCast _f (Just e@(Z.ConstE (Z.FixC zqp x) _)) _tau1 (FixT qp' _) = do
+    qp <- fromZ zqp
+    withSummaryContext e $ checkSafeFixCast (qpToFractional qp x) qp'
+
+checkSafeCast _f (Just e@(Z.ConstE (Z.FloatC _ x) _)) _tau1 (FixT qp _) =
+    withSummaryContext e $ checkSafeFixCast x qp
+
 checkSafeCast _f _e _tau1 _tau2 =
     return ()
+
+checkSafeIntCast :: Int -> IP -> Ti ()
+checkSafeIntCast x ip = do
+    (i_min, i_max) <- ipRange ip
+    when (x < i_min || x > i_max) $
+      faildoc $ align $
+      text "Constant" <+> ppr x <+>
+      text "cannot be represented as type" <+> ppr (IntT ip noLoc)
+
+checkSafeFixCast :: Double -> QP -> Ti ()
+checkSafeFixCast x qp = do
+    when (x < q_min || x > q_max) $
+      faildoc $ align $
+      text "Constant" <+> ppr x <+>
+      text "cannot be represented as type" <+> ppr (FixT qp noLoc) </> ppr q_max </> ppr (qpResolution qp :: Double) </> ppr (q_max + qpResolution qp)
+  where
+    q_min, q_max0, q_max :: Double
+    (q_min, q_max0) = qpRange qp
+    q_max = q_max0 + qpResolution qp
 
 -- | Perform constant folding. This does a very limited amount of
 -- "optimization," mainly so that we can give decent errors during implicit
@@ -2263,6 +2311,7 @@ unifyTypes tau1 tau2 = do
     go _ BoolT{} BoolT{} = return ()
 
     go _ (IntT ip _)    (IntT ip' _)   | ip' == ip = return ()
+    go _ (FixT qp _)    (FixT qp' _)   | qp' == qp = return ()
     go _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
     go _ StringT{}      StringT{}                  = return ()
 
@@ -2458,6 +2507,16 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         co <- mkCheckedSafeCast e tau2 tau1
         return (tau1, mce1, co mce2)
 
+    -- Always cast floating-point constants to fractional types. This lets us,
+    -- for example, treat @1.0@ as a @q1.14@.
+    go tau1@FloatT{} e@Z.ConstE{} mce1 tau2 _ mce2 | isFracT tau2 = do
+        co <- mkCheckedSafeCast e tau1 tau2
+        return (tau2, co mce1, mce2)
+
+    go tau1 _ mce1 tau2@FloatT{} e@Z.ConstE{} mce2 | isFracT tau1 = do
+        co <- mkCheckedSafeCast e tau2 tau1
+        return (tau1, mce1, co mce2)
+
     go tau1 e1 mce1 tau2 e2 mce2 = do
         tau <- lubType tau1 tau2
         co1 <- mkCheckedSafeCast e1 tau1 tau
@@ -2469,14 +2528,30 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
         ip'' <- lubIP ip ip'
         return $ IntT ip'' l
 
+    lubType (FixT qp l) (FixT qp' _) = do
+        qp'' <- lubQP qp qp'
+        return $ FixT qp'' l
+
     lubType (FloatT fp l) (FloatT fp' _) =
         return $ FloatT (max fp fp') l
 
-    lubType (IntT _ l) (FloatT w _) =
-        return $ FloatT w l
+    lubType IntT{} tau@FixT{} =
+        return tau
 
-    lubType (FloatT w _) (IntT _ l) =
-        return $ FloatT w l
+    lubType tau@FixT{} IntT{}  =
+        return tau
+
+    lubType IntT{} tau@FloatT{} =
+        return tau
+
+    lubType tau@FloatT{} IntT{} =
+        return tau
+
+    lubType FixT{} tau@FloatT{} =
+        return tau
+
+    lubType tau@FloatT{} FixT{} =
+        return tau
 
     lubType (StructT s taus l) (StructT s' taus' _) | s' == s && length taus' == length taus = do
         taus'' <- zipWithM lubType taus taus'
@@ -2502,6 +2577,15 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
           then return $ I (max w w')
           else return $ U (max w w')
 
+    lubQP :: QP -> QP -> Ti QP
+    lubQP qp qp' = do
+        if qpIsSigned qp || qpIsSigned qp'
+          then return $ Q  (max m m') (max n n')
+          else return $ UQ (max m m') (max n n')
+      where
+        (m, n)   = (qpIntBits qp, qpFracBits qp)
+        (m', n') = (qpIntBits qp', qpFracBits qp')
+
 traceVar :: Z.Var -> Type -> Ti ()
 traceVar v tau = do
     [tau'] <- sanitizeTypes [tau]
@@ -2519,6 +2603,10 @@ instance FromZ Z.IP IP where
     fromZ Z.UDefault = pure UDefault
     fromZ (Z.U w)    = pure $ U w
 
+instance FromZ Z.QP QP where
+    fromZ (Z.Q i f)  = pure $ Q i f
+    fromZ (Z.UQ i f) = pure $ UQ i f
+
 instance FromZ Z.FP FP where
     fromZ Z.FP16 = pure FP16
     fromZ Z.FP32 = pure FP32
@@ -2528,6 +2616,7 @@ instance FromZ Z.Type Type where
     fromZ (Z.UnitT l)          = pure $ UnitT l
     fromZ (Z.BoolT l)          = pure $ BoolT l
     fromZ (Z.IntT ip l)        = IntT <$> fromZ ip <*> pure l
+    fromZ (Z.FixT qp l)        = FixT <$> fromZ qp <*> pure l
     fromZ (Z.FloatT fp l)      = FloatT <$> fromZ fp <*> pure l
     fromZ (Z.ArrT i tau l)     = ArrT <$> fromZ i <*> fromZ tau <*> pure l
     fromZ (Z.C tau l)          = C <$> fromZ tau <*> pure l
@@ -2614,6 +2703,9 @@ instance Trans TyVar E.TyVar where
 instance Trans IP E.IP where
     trans = pure
 
+instance Trans QP E.QP where
+    trans = pure
+
 instance Trans FP E.FP where
     trans = pure
 
@@ -2624,6 +2716,7 @@ instance Trans Type E.Type where
         go (UnitT l)          = E.UnitT <$> pure l
         go (BoolT l)          = E.BoolT <$> pure l
         go (IntT ip l)        = E.IntT <$> trans ip <*> pure l
+        go (FixT qp l)        = E.FixT <$> trans qp <*> pure l
         go (FloatT fp l)      = E.FloatT <$> trans fp <*> pure l
         go (StringT l)        = pure $ E.StringT l
         go (SynT _ tau _)     = go tau

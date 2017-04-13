@@ -230,6 +230,7 @@ defaultValue = go
     go UnitT{}       = return $ ConstV UnitC
     go BoolT{}       = return $ ConstV $ BoolC False
     go (IntT ip _)   = return $ ConstV $ IntC ip 0
+    go (FixT qp _)   = return $ ConstV $ FixC qp 0
     go (FloatT fp _) = return $ ConstV $ FloatC fp 0
     go StringT{}     = return $ ConstV $ StringC ""
 
@@ -251,6 +252,7 @@ isDefaultValue :: Val l m Exp -> Bool
 isDefaultValue (ConstV UnitC)         = True
 isDefaultValue (ConstV (BoolC False)) = True
 isDefaultValue (ConstV (IntC _ 0))    = True
+isDefaultValue (ConstV (FixC _ 0))    = True
 isDefaultValue (ConstV (FloatC _ 0))  = True
 isDefaultValue (ConstV (StringC ""))  = True
 isDefaultValue (StructV _ _ flds)     = all isDefaultValue (Map.elems flds)
@@ -326,6 +328,17 @@ toBitsV = go
     go (ConstV (IntC (I w) x)) _
         | x >= 0    = toBitArr x w
         | otherwise = toBitArr (x + 2^w) w
+
+    go (ConstV (FixC (UQ i f) x)) _ =
+        toBitArr x w
+      where        
+        w = i+f
+
+    go (ConstV (FixC (Q i f) x)) _
+        | x >= 0    = toBitArr x w
+        | otherwise = toBitArr (x + 2^w) w
+      where
+        w = 1+i+f
 
     go (ConstV (FloatC FP32 f)) _ =
         toBitArr (fromIntegral (floatToWord (double2Float f))) 32

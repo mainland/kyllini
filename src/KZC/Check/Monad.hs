@@ -383,6 +383,9 @@ instance Compress Type where
     compress tau@IntT{} =
         pure tau
 
+    compress tau@FixT{} =
+        pure tau
+
     compress tau@FloatT{} =
         pure tau
 

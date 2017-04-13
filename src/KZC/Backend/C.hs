@@ -633,6 +633,7 @@ cgConst :: forall l . Const -> Cg l (CExp l)
 cgConst UnitC        = return CVoid
 cgConst (BoolC b)    = return $ CBool b
 cgConst (IntC _ x)   = return $ CInt (fromIntegral x)
+cgConst (FixC _ x)   = return $ CInt (fromIntegral x)
 cgConst (FloatC _ f) = return $ CFloat (toRational f)
 cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 
@@ -1538,6 +1539,16 @@ cgType tau@(IntT (U w) _)
     | w <= 32   = return [cty|typename uint32_t|]
     | w <= 64   = return [cty|typename uint64_t|]
     | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
+
+cgType (FixT (Q i f) _) =
+    return [cty|typename $id:q|]
+  where
+    q = "QTY(" ++ show i ++ "," ++ show f ++ ")"
+
+cgType (FixT (UQ i f) _) =
+    return [cty|typename $id:uq|]
+  where
+    uq = "UQTY(" ++ show i ++ "," ++ show f ++ ")"
 
 cgType (FloatT FP16 _) =
     return [cty|float|]
