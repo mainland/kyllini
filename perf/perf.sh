@@ -2,7 +2,7 @@
 set -e
 
 # Number of runs per benchmark
-N=100
+: ${N=100}
 
 githash() {
     DIR=$1
