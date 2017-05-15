@@ -1,7 +1,6 @@
 [submodule "examples/wifi"]
 	path = examples/wifi
-	url = git@lambda.cs.drexel.edu:ziria/wifi.git
-[submodule "examples/wifi-sid"]
-	path = examples/wifi-sid
-	url = git@lambda.cs.drexel.edu:ziria/wifi.git
-	branch = pepm-peval
+	url = https://github.com/mainland/kyllini-wifi.git
+[submodule "ziria"]
+	path = ziria
+	url = https://github.com/dimitriv/Ziria.git
