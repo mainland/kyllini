@@ -36,8 +36,7 @@ run_perf_test() {
     (cd "$WIFIDIR/$SUBDIR" && make clean && KZCFLAGS="$KZCFLAGS" CFLAGS="$CFLAGS" COMPILER=gcc make -B "$TESTBIN.$EXE") >/dev/null 2>&1
 
     for i in `seq 1 $NRUNS`; do
-        perf stat -x ' ' -e branch-instructions,branch-misses,cache-misses,cpu-cycles,instructions,context-switches,cpu-migrations,page-faults \
-             "$WIFIDIR/$SUBDIR/$TESTBIN.$EXE" $ARGS 2>&1 | \
+        "$WIFIDIR/$SUBDIR/$TESTBIN.$EXE" $ARGS 2>&1 | \
             awk -v platform="$PLATFORM" -v gitRev="$GITREV" -v test="$TESTNAME" -v nsamples="$NSAMPLES" -f perf.awk
     done
     
