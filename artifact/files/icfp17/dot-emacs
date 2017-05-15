@@ -1,0 +1,23 @@
+(require 'package)
+(package-initialize)
+(setq package-archives
+      '(("gnu" . "http://elpa.gnu.org/packages/")
+	("melpa" . "http://melpa.milkbox.net/packages/")))
+
+;;
+;; Haskell mode
+;;
+(defun csicfp17-haskell-mode-hook ()
+  (haskell-indent-mode)
+  (inf-haskell-mode)
+
+  (setq tab-width 4
+	haskell-indent-offset 4
+	haskell-indentation-layout-offset 4
+	haskell-indentation-left-offset 4
+	haskell-indentation-ifte-offset 2))
+
+(add-hook 'haskell-mode-hook 'csicfp17-haskell-mode-hook)
+
+(custom-set-variables
+ '(inhibit-startup-screen t))
