@@ -1258,7 +1258,7 @@ simplE (BinopE op e1 e2 s) = do
     binop Rem (ConstE x _) (ConstE y _) | Just c' <- liftIntegral2 op rem x y =
         return $ ConstE c' s
 
-    binop op  e1' e2' =
+    binop op e1' e2' =
         return $ BinopE op e1' e2' s
 
 simplE (IfE e1 e2 e3 s) = do
