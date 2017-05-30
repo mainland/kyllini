@@ -90,7 +90,7 @@ instance MonadTc m => TransformExp (L l m) where
         maybe_view <- lookupView v
         case maybe_view of
           Nothing                -> IdxE <$> pure e1 <*> expT e2 <*> pure len <*> pure s
-          Just (IdxVW v' e3 _ _) -> expT $ IdxE (VarE v' s1) (e2 + e3) len s
+          Just (IdxVW v' off _ _) -> expT $ IdxE (VarE v' s1) (off + e2) len s
 
     expT (LetE (LetViewLD v tau view _) e _) = do
         view' <- viewT view
