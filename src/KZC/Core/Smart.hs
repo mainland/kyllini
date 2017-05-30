@@ -18,6 +18,7 @@ module KZC.Core.Smart (
     constE,
 
     fromIntE,
+    fromIdxVarE,
 
     unitE,
     intE,
@@ -191,6 +192,12 @@ constE c = ConstE c noLoc
 fromIntE :: Monad m => Exp -> m Int
 fromIntE (ConstE c _) = fromIntC c
 fromIntE _            = fail "fromIntE: not an integer"
+
+-- | Return the index variable from an array indexing expression.
+fromIdxVarE :: Monad m => Exp -> m Var
+fromIdxVarE (VarE v _)                  = return v
+fromIdxVarE (UnopE Cast{} (VarE v _) _) = return v
+fromIdxVarE _                           = fail "Not an index variable"
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
