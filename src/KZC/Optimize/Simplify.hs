@@ -1191,6 +1191,7 @@ simplE (UnopE op e s) = do
         cast :: Type -> Exp -> SimplM l m Exp
         cast tau = unop (Cast tau)
 
+    -- Eliminate casts of constants
     unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c = do
         rewrite
         return $ ConstE c' s
