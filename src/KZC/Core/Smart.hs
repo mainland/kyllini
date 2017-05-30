@@ -101,6 +101,7 @@ import KZC.Expr.Smart (qualK,
                        uint16T,
                        uint32T,
                        uint64T,
+                       idxT,
                        refT,
                        unRefT,
                        arrT,
@@ -137,6 +138,7 @@ import KZC.Expr.Smart (qualK,
                        bitC,
                        intC,
                        uintC,
+                       idxC,
                        arrayC,
                        structC,
 
@@ -267,10 +269,10 @@ arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
 
 idxE :: Exp -> Exp -> Exp
-idxE e1 e2 = IdxE e1 (castE uintT e2) Nothing (e1 `srcspan` e2)
+idxE e1 e2 = IdxE e1 (castE idxT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
-sliceE e1 e2 len = IdxE e1 (castE uintT e2) (Just len) (e1 `srcspan` e2)
+sliceE e1 e2 len = IdxE e1 (castE idxT e2) (Just len) (e1 `srcspan` e2)
 
 structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
 structE s taus fs = StructE s taus fs (srclocOf (map snd fs))

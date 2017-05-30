@@ -634,7 +634,7 @@ evalExp e =
             (n, _) <- inferExp e >>= checkArrOrRefArrT
             phi    <- askTyVarTypeSubst
             case subst phi mempty n of
-              NatT n _ -> evalConst $ intC n
+              NatT n _ -> evalConst $ idxC n
               _ -> partialExp $ UnopE op (toExp val) s
 
         unop op val =

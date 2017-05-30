@@ -1206,7 +1206,7 @@ simplE (UnopE op e s) = do
         tau'     <- simplType tau
         case tau' of
           NatT n _ -> do rewrite
-                         return $ ConstE (uintC n) s
+                         return $ ConstE (idxC n) s
           _        -> return $ UnopE op e' s
 
     unop op e' =

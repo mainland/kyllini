@@ -34,6 +34,7 @@ module KZC.Check.Smart (
     uint16T,
     uint32T,
     uint64T,
+    idxT,
     refT,
     structT,
     synT,
@@ -132,6 +133,10 @@ uint32T = IntT (U 32) noLoc
 
 uint64T :: Type
 uint64T = IntT (U 64) noLoc
+
+-- | Type of array indices.
+idxT :: Type
+idxT = uintT
 
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)

@@ -501,7 +501,7 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop Z.Len = do
         (tau, mce) <- inferExp e
         _          <- checkArrT tau
-        instType intT exp_ty
+        instType idxT exp_ty
         return $ E.UnopE E.Len <$> mce <*> pure l
 
     checkBoolUnop :: E.Unop -> Ti (Ti E.Exp)
@@ -819,8 +819,7 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
-                   checkIntT tau2
-                   co <- mkCast tau2 uintT
+                   co <- mkCast tau2 idxT
                    return $ co mce2
     checkLen len
     checkIdxE tau mce1 mce2
