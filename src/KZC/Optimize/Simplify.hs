@@ -1196,6 +1196,14 @@ simplE (UnopE op e s) = do
         rewrite
         return $ ConstE c' s
 
+    -- Avoid double cast
+    unop (Cast tau) e = do
+        tau' <- inferExp e
+        if tau' == tau
+          then do rewrite
+                  return e
+          else return $ UnopE op e s
+
     -- Remove duplicate bitcast operations.
     unop op@Bitcast{} (UnopE Bitcast{} e s) = do
         rewrite
