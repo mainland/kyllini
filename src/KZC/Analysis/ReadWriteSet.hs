@@ -592,19 +592,21 @@ evalExp e =
         unop op <$> go e
       where
         unop :: Unop -> Val -> Val
-        unop Lnot (BoolV b)        = BoolV $ not <$> b
-        unop Lnot _                = BoolV top
-        unop Bnot (IntV _)         = IntV top
-        unop Bnot _                = top
+        unop Lnot (BoolV b)         = BoolV $ not <$> b
+        unop Lnot _                 = BoolV top
+        unop Bnot (IntV _)          = IntV top
+        unop Bnot _                 = top
         unop Neg (IntV i)
-            | Just x <- fromUnit i = IntV $ unit (negate x :: Integer)
-        unop Neg _                 = top
-        unop (Cast IntT{}) _       = IntV top
-        unop Cast{} _              = top
-        unop (Bitcast IntT{}) _    = IntV top
-        unop Bitcast{} _           = top
-        unop Len _                 = IntV top
-        unop _ _                   = top
+            | Just x <- fromUnit i  = IntV $ unit (negate x :: Integer)
+        unop Neg _                  = top
+        -- XXX not quite correct since we don't actually cast.
+        unop (Cast IntT{}) v@IntV{} = v
+        unop (Cast IntT{}) _        = IntV top
+        unop Cast{} _               = top
+        unop (Bitcast IntT{}) _     = IntV top
+        unop Bitcast{} _            = top
+        unop Len _                  = IntV top
+        unop _ _                    = top
 
     go (BinopE op e1 e2 _) =
         binop op <$> go e1 <*> go e2
