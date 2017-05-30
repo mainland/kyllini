@@ -187,7 +187,7 @@ uint64T = IntT (U 64) noLoc
 
 -- | Type of array indices.
 idxT :: Type
-idxT = uintT
+idxT = intT
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
@@ -356,7 +356,7 @@ uintC i = IntC UDefault (fromIntegral i)
 -- | Convert an 'Integral' value into a constant suitable for use as an array
 -- index.
 idxC :: Integral i => i -> Const
-idxC = uintC
+idxC = intC
 
 arrayC :: Vector Const -> Const
 arrayC cs

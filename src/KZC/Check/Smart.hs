@@ -136,7 +136,7 @@ uint64T = IntT (U 64) noLoc
 
 -- | Type of array indices.
 idxT :: Type
-idxT = uintT
+idxT = intT
 
 refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
