@@ -1161,16 +1161,20 @@ simplE (UnopE op e s) = do
     unop op' e'
   where
     unop :: Unop -> Exp -> SimplM l m Exp
-    unop Lnot (ConstE c _) | Just c' <- liftBool op not c =
+    unop Lnot (ConstE c _) | Just c' <- liftBool op not c = do
+        rewrite
         return $ ConstE c' s
 
-    unop Bnot (ConstE c _) | Just c' <- liftBits op complement c =
+    unop Bnot (ConstE c _) | Just c' <- liftBits op complement c = do
+        rewrite
         return $ ConstE c' s
 
-    unop Neg (ConstE c _) | Just c' <- liftNum op negate c =
+    unop Neg (ConstE c _) | Just c' <- liftNum op negate c = do
+        rewrite
         return $ ConstE c' s
 
     unop (Cast (StructT sn' taus' _)) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+        rewrite
         flds' <- castStruct cast sn' flds
         return $ ConstE (StructC sn' taus' flds') s
       where
@@ -1180,13 +1184,15 @@ simplE (UnopE op e s) = do
             return c'
 
     unop (Cast (StructT sn' taus' _)) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
+        rewrite
         flds' <- castStruct cast sn' flds
         return $ StructE sn' taus' flds' s
       where
         cast :: Type -> Exp -> SimplM l m Exp
         cast tau = unop (Cast tau)
 
-    unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c =
+    unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c = do
+        rewrite
         return $ ConstE c' s
 
     -- Remove duplicate bitcast operations.
@@ -1198,8 +1204,9 @@ simplE (UnopE op e s) = do
         (tau, _) <- inferExp e' >>= checkArrOrRefArrT
         tau'     <- simplType tau
         case tau' of
-          NatT n _ -> return $ ConstE (intC n) s
-          _          -> return $ UnopE op e' s
+          NatT n _ -> do rewrite
+                         return $ ConstE (uintC n) s
+          _        -> return $ UnopE op e' s
 
     unop op e' =
         return $ UnopE op e' s
