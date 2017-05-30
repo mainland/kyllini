@@ -755,7 +755,7 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
 
 tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
-    checkIntT tau1
+    checkLoopIndexVarT tau1
     tau  <- mkSTC (UnitT l)
     mce2 <- collectCheckValCtx tau $
             checkExp e2 tau
@@ -768,7 +768,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
 
 tcExp (Z.ForE ann i ztau_i gint e l) exp_ty = do
     tau_i <- fromZ (ztau_i, tauK)
-    checkIntT tau_i
+    checkLoopIndexVarT tau_i
     mcgint <- tcGenInterval tau_i gint
     tau    <- mkSTC (UnitT l)
     mce    <- extendVars [(i, tau_i)] $
@@ -1606,9 +1606,10 @@ isRefVar v = do
       RefT {} -> return True
       _       -> return False
 
--- | Check that a type is an integral type
-checkIntT :: Type -> Ti ()
-checkIntT tau =
+-- | Check that a type is an integral type, defaulting it to unsigned int if it
+-- is not. We use this when inferring the type of a loop index variable.
+checkLoopIndexVarT :: Type -> Ti ()
+checkLoopIndexVarT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
