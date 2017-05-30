@@ -2486,6 +2486,12 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     go :: Type -> Z.Exp -> Ti E.Exp
        -> Type -> Z.Exp -> Ti E.Exp
        -> Ti (Type, Ti E.Exp, Ti E.Exp)
+    go (SynT _ tau1 _) e1 mce1 tau2 e2 mce2 =
+        go tau1 e1 mce1 tau2 e2 mce2
+
+    go tau1 e1 mce1 (SynT _ tau2 _) e2 mce2 =
+        go tau1 e1 mce1 tau2 e2 mce2
+
     go tau1@MetaT{} _ mce1 tau2 _ mce2 = do
         unifyTypes tau1 tau2
         return (tau2, mce1, mce2)
