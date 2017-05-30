@@ -1599,8 +1599,9 @@ simplE e@ErrorE{} =
 simplE (ReturnE ann e s) =
     ReturnE ann <$> simplE e <*> pure s
 
-simplE (BindE wv tau e1 e2 s) =
-    simplBind wv tau e1 e2 s
+simplE (BindE wv tau e1 e2 s) = do
+    tau' <- simplType tau
+    simplBind wv tau' e1 e2 s
   where
     simplBind :: WildVar
               -> Type
