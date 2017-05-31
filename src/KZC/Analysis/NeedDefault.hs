@@ -576,10 +576,7 @@ useStep (ParC ann tau c1 c2 s) =
 useExp :: forall m . MonadTc m
        => Exp
        -> ND m (Exp, Val)
-useExp e@(ConstE (IntC I{} x) _) =
-    return (e, intV x)
-
-useExp e@(ConstE (IntC U{} x) _) =
+useExp e@(ConstE (IntC _ x) _) =
     return (e, intV x)
 
 useExp e@(ConstE (ArrayC cs) _) =

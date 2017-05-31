@@ -34,6 +34,7 @@ module KZC.Expr.Smart (
     uint16T,
     uint32T,
     uint64T,
+    idxT,
     refT,
     unRefT,
     arrT,
@@ -72,6 +73,7 @@ module KZC.Expr.Smart (
     bitC,
     intC,
     uintC,
+    idxC,
     arrayC,
     structC,
 
@@ -182,6 +184,10 @@ uint32T = IntT (U 32) noLoc
 
 uint64T :: Type
 uint64T = IntT (U 64) noLoc
+
+-- | Type of array indices.
+idxT :: Type
+idxT = intT
 
 refT :: Type -> Type
 refT tau = RefT tau noLoc
@@ -346,6 +352,11 @@ intC i = IntC IDefault (fromIntegral i)
 
 uintC :: Integral i => i -> Const
 uintC i = IntC UDefault (fromIntegral i)
+
+-- | Convert an 'Integral' value into a constant suitable for use as an array
+-- index.
+idxC :: Integral i => i -> Const
+idxC = intC
 
 arrayC :: Vector Const -> Const
 arrayC cs

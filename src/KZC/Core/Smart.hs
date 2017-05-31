@@ -18,6 +18,7 @@ module KZC.Core.Smart (
     constE,
 
     fromIntE,
+    fromIdxVarE,
 
     unitE,
     intE,
@@ -101,6 +102,7 @@ import KZC.Expr.Smart (qualK,
                        uint16T,
                        uint32T,
                        uint64T,
+                       idxT,
                        refT,
                        unRefT,
                        arrT,
@@ -137,6 +139,7 @@ import KZC.Expr.Smart (qualK,
                        bitC,
                        intC,
                        uintC,
+                       idxC,
                        arrayC,
                        structC,
 
@@ -189,6 +192,12 @@ constE c = ConstE c noLoc
 fromIntE :: Monad m => Exp -> m Int
 fromIntE (ConstE c _) = fromIntC c
 fromIntE _            = fail "fromIntE: not an integer"
+
+-- | Return the index variable from an array indexing expression.
+fromIdxVarE :: Monad m => Exp -> m Var
+fromIdxVarE (VarE v _)                  = return v
+fromIdxVarE (UnopE Cast{} (VarE v _) _) = return v
+fromIdxVarE _                           = fail "Not an index variable"
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
@@ -267,10 +276,10 @@ arrayE :: [Exp] -> Exp
 arrayE es = ArrayE es (srclocOf es)
 
 idxE :: Exp -> Exp -> Exp
-idxE e1 e2 = IdxE e1 (castE uintT e2) Nothing (e1 `srcspan` e2)
+idxE e1 e2 = IdxE e1 (castE idxT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
-sliceE e1 e2 len = IdxE e1 (castE uintT e2) (Just len) (e1 `srcspan` e2)
+sliceE e1 e2 len = IdxE e1 (castE idxT e2) (Just len) (e1 `srcspan` e2)
 
 structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
 structE s taus fs = StructE s taus fs (srclocOf (map snd fs))

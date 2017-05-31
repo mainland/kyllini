@@ -475,10 +475,10 @@ instance MonadTc m => TransformExp (L m) where
             return $ varE v
 
         go (Just (IdxL _ off _)) | Just e_len <- maybe_len =
-            return $ sliceE (varE v) (e_i - uintE off) e_len
+            return $ sliceE (varE v) (e_i - fromIntegral off) e_len
 
         go (Just (IdxL _ off _)) =
-            return $ idxE (varE v) (e_i - uintE off)
+            return $ idxE (varE v) (e_i - fromIntegral off)
 
         go _ =
             return e

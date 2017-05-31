@@ -214,7 +214,7 @@ checkDecl decl@(LetFunCompD f ns vbs tau_ret comp l) k =
 inferView :: forall m . MonadTc m => View -> m Type
 inferView (IdxVW v e len l) = do
     tau_v <- lookupVar v
-    withFvContext e $ checkExp e uintT
+    withFvContext e $ checkExp e idxT
     go tau_v
   where
     go :: Type -> m Type
@@ -314,7 +314,7 @@ inferExp (UnopE op e1 l) = do
 
     unop Len tau = do
         _ <- checkArrOrRefArrT tau
-        return intT
+        return idxT
 
     a :: TyVar
     a = "a"
@@ -463,7 +463,7 @@ inferExp (ArrayE es l) = do
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
-    withFvContext e2 $ checkExp e2 uintT
+    withFvContext e2 $ checkExp e2 idxT
     checkLen len
     go tau
   where

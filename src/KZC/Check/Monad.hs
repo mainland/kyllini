@@ -395,8 +395,8 @@ instance Compress Type where
     compress (StructT s taus l) =
         StructT s <$> compress taus <*> pure l
 
-    compress (SynT tau1 tau2 l) =
-        SynT <$> compress tau1 <*> compress tau2 <*> pure l
+    compress (SynT _tau1 tau2 _l) =
+        compress tau2
 
     compress (ArrT tau1 tau2 l) =
         ArrT <$> compress tau1 <*> compress tau2 <*> pure l

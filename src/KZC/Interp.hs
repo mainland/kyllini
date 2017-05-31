@@ -366,7 +366,7 @@ evalExp e0@(UnopE op e _) = do
         return c'
 
     unop Len (ArrayC v) =
-        return $ intC $ V.length v
+        return $ idxC $ V.length v
 
     unop _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
@@ -613,7 +613,7 @@ compileExp e0@(UnopE op e _) = do
         return c'
 
     unop Len (ArrayC v) =
-        return $ intC $ V.length v
+        return $ idxC $ V.length v
 
     unop _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0

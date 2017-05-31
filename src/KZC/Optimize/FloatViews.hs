@@ -185,11 +185,17 @@ withSlices vs k = do
             return (view, es_goOutOfScope)
 
         loopFactor :: Exp -> MaybeT (F m) Int
-        loopFactor (VarE v _) =
+        loopFactor e | Just v <- fromIdxVarE e =
             MaybeT $ lookupLoopVar v
 
-        loopFactor (BinopE Mul (VarE v _) e _) | Just j <- fromIntE e = do
+        loopFactor (BinopE Mul e1 e2 _) | Just v <- fromIdxVarE e1
+                                        , Just j <- fromIntE e2 = do
             i <- MaybeT $ lookupLoopVar v
+            return (i*j)
+
+        loopFactor (BinopE Mul e1 e2 _) | Just i <- fromIntE e1
+                                        , Just v <- fromIdxVarE e2 = do
+            j <- MaybeT $ lookupLoopVar v
             return (i*j)
 
         loopFactor _ =
@@ -264,7 +270,7 @@ instance MonadTc m => TransformExp (F m) where
         maybe_v'     <- lookupView (Slice v es isRef tau) (i + fromMaybe 1 len)
         case maybe_v' of
           Nothing -> return e
-          Just v' -> return $ IdxE (varE v') (uintE i) len s
+          Just v' -> return $ IdxE (varE v') (castE idxT (fromIntegral i)) len s
       where
         viewType :: Type -> F m (Bool, Type)
         viewType (ArrT _ tau _) =

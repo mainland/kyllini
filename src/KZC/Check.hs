@@ -501,7 +501,7 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop Z.Len = do
         (tau, mce) <- inferExp e
         _          <- checkArrT tau
-        instType intT exp_ty
+        instType idxT exp_ty
         return $ E.UnopE E.Len <$> mce <*> pure l
 
     checkBoolUnop :: E.Unop -> Ti (Ti E.Exp)
@@ -755,7 +755,7 @@ tcExp (Z.UntilE e1 e2 l) exp_ty = do
 
 tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
     (tau1, mce1) <- inferVal e1
-    checkIntT tau1
+    checkLoopIndexVarT tau1
     tau  <- mkSTC (UnitT l)
     mce2 <- collectCheckValCtx tau $
             checkExp e2 tau
@@ -768,7 +768,7 @@ tcExp (Z.TimesE ann e1 e2 l) exp_ty = do
 
 tcExp (Z.ForE ann i ztau_i gint e l) exp_ty = do
     tau_i <- fromZ (ztau_i, tauK)
-    checkIntT tau_i
+    checkLoopIndexVarT tau_i
     mcgint <- tcGenInterval tau_i gint
     tau    <- mkSTC (UnitT l)
     mce    <- extendVars [(i, tau_i)] $
@@ -819,8 +819,7 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
-                   checkIntT tau2
-                   co <- mkCast tau2 uintT
+                   co <- mkCast tau2 idxT
                    return $ co mce2
     checkLen len
     checkIdxE tau mce1 mce2
@@ -1606,9 +1605,10 @@ isRefVar v = do
       RefT {} -> return True
       _       -> return False
 
--- | Check that a type is an integral type
-checkIntT :: Type -> Ti ()
-checkIntT tau =
+-- | Check that a type is an integral type, defaulting it to unsigned int if it
+-- is not. We use this when inferring the type of a loop index variable.
+checkLoopIndexVarT :: Type -> Ti ()
+checkLoopIndexVarT tau =
     compress tau >>= go
   where
     go :: Type -> Ti ()
@@ -2486,6 +2486,12 @@ unifyCompiledExpTypes tau1 e1 mce1 tau2 e2 mce2 = do
     go :: Type -> Z.Exp -> Ti E.Exp
        -> Type -> Z.Exp -> Ti E.Exp
        -> Ti (Type, Ti E.Exp, Ti E.Exp)
+    go (SynT _ tau1 _) e1 mce1 tau2 e2 mce2 =
+        go tau1 e1 mce1 tau2 e2 mce2
+
+    go tau1 e1 mce1 (SynT _ tau2 _) e2 mce2 =
+        go tau1 e1 mce1 tau2 e2 mce2
+
     go tau1@MetaT{} _ mce1 tau2 _ mce2 = do
         unifyTypes tau1 tau2
         return (tau2, mce1, mce2)

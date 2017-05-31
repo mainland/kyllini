@@ -1196,6 +1196,14 @@ simplE (UnopE op e s) = do
         rewrite
         return $ ConstE c' s
 
+    -- Avoid double cast
+    unop (Cast tau) e = do
+        tau' <- inferExp e
+        if tau' == tau
+          then do rewrite
+                  return e
+          else return $ UnopE op e s
+
     -- Remove duplicate bitcast operations.
     unop op@Bitcast{} (UnopE Bitcast{} e s) = do
         rewrite
@@ -1206,7 +1214,7 @@ simplE (UnopE op e s) = do
         tau'     <- simplType tau
         case tau' of
           NatT n _ -> do rewrite
-                         return $ ConstE (uintC n) s
+                         return $ ConstE (idxC n) s
           _        -> return $ UnopE op e' s
 
     unop op e' =
@@ -1417,9 +1425,10 @@ simplE (ForE _ann _v _tau _gint e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
 -- This loop form shows up regularly in fused code.
 --
 simplE (ForE _ann v _tau gint
-             (AssignE (IdxE (VarE xs _) (VarE v' _)  Nothing _) e_rhs _)
+             (AssignE (IdxE (VarE xs _) eidx  Nothing _) e_rhs _)
              s)
-  | Just len <- fromIntE elen
+  | Just len            <- fromIntE elen
+  , Just v'             <- fromIdxVarE eidx
   , Just (e_ys, v'', f) <- unIdx e_rhs
   , v' == v, v'' == v
   = do rewrite
@@ -1433,17 +1442,17 @@ simplE (ForE _ann v _tau gint
     (ei, elen) = toStartLenGenInt gint
 
     unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
-    unIdx (IdxE e1 (VarE v _) Nothing _) =
-        Just (e1, v, id)
+    unIdx (IdxE e1 e2 Nothing _) | Just v <- fromIdxVarE e2 =
+        return (e1, v, id)
 
-    unIdx (IdxE e1 (BinopE Add (VarE v _) e2 s) Nothing _) =
-        Just (e1, v, \e -> BinopE Add e e2 s)
+    unIdx (IdxE e1 (BinopE Add e2 e3 s) Nothing _) | Just v <- fromIdxVarE e2 =
+        return (e1, v, \e -> BinopE Add e e3 s)
 
-    unIdx (IdxE e1 (BinopE Add e2 (VarE v _) s) Nothing _) =
-        Just (e1, v, \e -> BinopE Add e e2 s)
+    unIdx (IdxE e1 (BinopE Add e2 e3 s) Nothing _) | Just v <- fromIdxVarE e3 =
+        return (e1, v, \e -> BinopE Add e e2 s)
 
     unIdx _ =
-        Nothing
+        fail "Not an index expression"
 
 simplE (ForE ann v tau gint e3 s) = do
     ei'   <- simplE ei
@@ -1590,8 +1599,9 @@ simplE e@ErrorE{} =
 simplE (ReturnE ann e s) =
     ReturnE ann <$> simplE e <*> pure s
 
-simplE (BindE wv tau e1 e2 s) =
-    simplBind wv tau e1 e2 s
+simplE (BindE wv tau e1 e2 s) = do
+    tau' <- simplType tau
+    simplBind wv tau' e1 e2 s
   where
     simplBind :: WildVar
               -> Type
