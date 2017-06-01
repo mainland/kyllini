@@ -22,6 +22,10 @@ record_perf_tests() {
     PLATFORM="peval" run_perf_test "IFFT" transmitter/perf test_ifft 100000000 $N
     PLATFORM="peval" run_perf_test "FFT" receiver/perf testFFT 100000000 $N
     PLATFORM="peval" run_perf_test "Viterbi" receiver/perf testViterbi 100000000 $N
+    
+    PLATFORM="peval-pure-ziria" run_perf_test "IFFT" transmitter/perf test_ifft 100000000 $N "-DPURE_ZIRIA"
+    PLATFORM="peval-pure-ziria" run_perf_test "FFT" receiver/perf testFFT 100000000 $N "-DPURE_ZIRIA"
+    PLATFORM="peval-pure-ziria" run_perf_test "Viterbi" receiver/perf testViterbi 100000000 $N "-DPURE_ZIRIA"
 }
 
 (record_perf_tests wifi "$GITREV" "$WIFIDIR") >>"$FILE"
