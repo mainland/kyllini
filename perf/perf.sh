@@ -23,7 +23,7 @@ run_perf_test() {
     NSAMPLES=$4
     NRUNS=$5
     KZCFLAGS=$6
-    CCFLAGS=$7
+    CFLAGS=$7
 
     if [ "$PLATFORM" = "ziria" ] ; then
         EXE=out
