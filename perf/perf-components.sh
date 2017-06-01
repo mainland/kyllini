@@ -4,7 +4,7 @@
 WIFIDIR=../examples/wifi-sid
 
 GITREV=$(githash .)
-FILE="pepm-component-$(date '+%Y-%m-%d')-$GITREV.csv"
+FILE="components-$(date '+%Y-%m-%d')-$GITREV.csv"
 
 truncate -s 0 "$FILE"
 
