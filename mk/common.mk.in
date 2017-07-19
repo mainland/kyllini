@@ -2,6 +2,8 @@ MAKEFLAGS:=--no-print-directory
 
 _QUIET=@
 
+EXEEXT=@EXEEXT@
+
 include $(TOP)/mk/virtual.mk
 
 #
@@ -139,7 +141,7 @@ $(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
 #
 TESTDIR = $(TOP)/testsuite
 
-KZC?=$(TOP)/kzc
+KZC?=$(TOP)/kzc$(EXEEXT)
 KZCLIB?=$(TESTDIR)/lib
 
 KZCFLAGS := -I$(KZCLIB) -dlint -dprint-uniques -fno-line-pragmas $(KZCFLAGS)
