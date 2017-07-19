@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015-2016
+Copyright (c) 2015-2017
         Drexel University.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,13 +30,35 @@ SUCH DAMAGE.
 #if !defined(KZ_H)
 #define KZ_H
 
-#include <alloca.h>
 #include <limits.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+/*
+ * See:
+ *   https://www.gnu.org/software/autoconf/manual/autoconf-2.69/html_node/Particular-Functions.html
+ */
+
+#ifdef HAVE_ALLOCA_H
+# include <alloca.h>
+#elif !defined alloca
+# ifdef __GNUC__
+#  define alloca __builtin_alloca
+# elif defined _AIX
+#  define alloca __alloca
+# elif defined _MSC_VER
+#  include <malloc.h>
+#  define alloca _alloca
+# elif !defined HAVE_ALLOCA
+#  ifdef  __cplusplus
+extern "C"
+#  endif
+void *alloca (size_t);
+# endif
+#endif
 
 #include <kz/types.h>
 #include <kz/bits.h>

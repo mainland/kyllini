@@ -50,6 +50,11 @@ AC_CHECK_FUNCS([clock clock_gettime mach_timebase_info])
 AC_CHECK_HEADERS([dispatch/dispatch.h])
 
 #
+# Function checks
+#
+AC_FUNC_ALLOCA()
+
+#
 # Finish up
 #
 
