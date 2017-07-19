@@ -34,10 +34,10 @@ SUCH DAMAGE.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#if HAVE_SYS_TIME_H
 #include <time.h>
-#include <unistd.h>
-#include <sys/resource.h>
-#include <sys/times.h>
+#endif /* HAVE_SYS_TIME_H */
 
 #if HAVE_MACH_MACH_H
 #include <mach/mach.h>

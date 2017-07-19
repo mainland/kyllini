@@ -37,6 +37,8 @@ AC_SUBST(CPP_STRING)
 #
 # Look for clock bits
 #
+AC_CHECK_HEADERS(sys/resource.h)
+AC_CHECK_HEADERS(sys/time.h)
 AC_CHECK_HEADERS([mach/mach.h])
 AC_CHECK_HEADERS([mach/mach_time.h])
 AC_SEARCH_LIBS([clock_gettime],[rt posix4])
