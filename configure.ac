@@ -15,6 +15,9 @@ AC_ARG_WITH([gcc],
             [CC=$withval],
             [AC_PATH_PROG(CC, gcc)])
 
+CC_STRING=$(echo $CC | sed -e 's/[[\\]]/\\&/g')
+AC_SUBST(CC_STRING)
+
 #
 # Find the Haskell compiler
 #
@@ -27,6 +30,9 @@ AC_ARG_WITH([compiler],
 # Find the C preprocessor
 #
 AC_PROG_CPP()
+
+CPP_STRING=$(echo $CPP | sed -e 's/[[\\]]/\\&/g')
+AC_SUBST(CPP_STRING)
 
 #
 # Look for clock bits
