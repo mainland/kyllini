@@ -34,10 +34,10 @@ SUCH DAMAGE.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#if HAVE_SYS_TIME_H
 #include <time.h>
-#include <unistd.h>
-#include <sys/resource.h>
-#include <sys/times.h>
+#endif /* HAVE_SYS_TIME_H */
 
 #if HAVE_MACH_MACH_H
 #include <mach/mach.h>
@@ -46,6 +46,10 @@ SUCH DAMAGE.
 #if HAVE_MACH_MACH_TIME_H
 #include <mach/mach_time.h>
 #endif /* HAVE_MACH_MACH_TIME_H */
+
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
 
 #include <kz.h>
 
@@ -96,9 +100,29 @@ void kz_error(const char* s)
     exit(EXIT_FAILURE);
 }
 
+/*
+ * See:
+ *  http://nadeausoftware.com/articles/2012/03/c_c_tip_how_measure_cpu_time_benchmarking
+ */
+
 long double kz_get_cpu_time(void)
 {
-#if HAVE_CLOCK_GETTIME
+#if defined(_WIN32)
+    FILETIME createTime;
+    FILETIME exitTime;
+    FILETIME kernelTime;
+    FILETIME userTime;
+
+    if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &kernelTime, &userTime) != -1) {
+    	SYSTEMTIME userSystemTime;
+
+    	if (FileTimeToSystemTime(&userTime, &userSystemTime) != -1)
+    		return (double) userSystemTime.wHour * 3600.0 +
+    			     (double) userSystemTime.wMinute * 60.0 +
+    			     (double) userSystemTime.wSecond +
+    			     (double) userSystemTime.wMilliseconds / 1000.0;
+    }
+#elif HAVE_CLOCK_GETTIME
     clockid_t clk_id = -1;
     struct timespec ts;
 
@@ -121,9 +145,26 @@ long double kz_get_cpu_time(void)
   return -1;
 }
 
+/*
+ * See:
+ *  http://nadeausoftware.com/articles/2012/04/c_c_tip_how_measure_elapsed_real_time_benchmarking
+ */
+
 long double kz_get_real_time(void)
 {
-#if HAVE_CLOCK_GETTIME
+#if defined(_WIN32)
+    FILETIME tm;
+	  ULONGLONG t;
+#if defined(NTDDI_WIN8) && NTDDI_VERSION >= NTDDI_WIN8
+	  /* Windows 8, Windows Server 2012 and later. */
+	  GetSystemTimePreciseAsFileTime(&tm);
+#else
+	  /* Windows 2000 and later. */
+	  GetSystemTimeAsFileTime(&tm);
+#endif
+    t = ((ULONGLONG) tm.dwHighDateTime << 32) | (ULONGLONG) tm.dwLowDateTime;
+	  return (double)t / 10000000.0;
+#elif HAVE_CLOCK_GETTIME
     clockid_t clk_id = -1;
     struct timespec ts;
 

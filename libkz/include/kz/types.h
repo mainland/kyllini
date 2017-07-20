@@ -81,9 +81,11 @@ typedef struct complex64_t {
 #if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
 #define FORCEINLINE inline __attribute__((always_inline))
 #else
+#undef FORCEINLINE
 #define FORCEINLINE
 #endif
 #else /* !defined(WHOLEPROGRAM) */
+#undef FORCEINLINE
 #define FORCEINLINE
 #endif /* !defined(WHOLEPROGRAM) */
 

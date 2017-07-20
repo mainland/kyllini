@@ -57,11 +57,11 @@ static void *read_file(const char* file, const char* mode, size_t* len);
 static void free_buf(kz_buf_t* buf);
 
 template<typename T>
-typename std::enable_if<std::is_signed<T>::value && std::is_integral<T>::value,int>::type
+typename std::enable_if<std::is_signed<T>::value && std::is_integral<T>::value,long>::type
 parse(const char* s, bool* success)
 {
     char* endptr;
-    int x;
+    long x;
 
     x = strtol(s, &endptr, 10);
     if (endptr == s && x == 0)
@@ -75,11 +75,11 @@ parse(const char* s, bool* success)
 }
 
 template<typename T>
-typename std::enable_if<std::is_unsigned<T>::value && std::is_integral<T>::value,int>::type
+typename std::enable_if<std::is_unsigned<T>::value && std::is_integral<T>::value,unsigned long>::type
 parse(const char* s, bool* success)
 {
     char* endptr;
-    int x;
+    unsigned long x;
 
     x = strtoul(s, &endptr, 10);
     if (endptr == s && x == 0)
@@ -132,13 +132,23 @@ bit_t parse_bit(const char* s, bool* success)
 }
 
 template<typename T>
-typename std::enable_if<std::is_integral<T>::value,void>::type
+typename std::enable_if<std::is_signed<T>::value && std::is_integral<T>::value,void>::type
 print(FILE* fp, T x, bool comma)
 {
     if (comma)
         fprintf(fp, "%ld,", (long) x);
     else
         fprintf(fp, "%ld", (long) x);
+}
+
+template<typename T>
+typename std::enable_if<std::is_unsigned<T>::value && std::is_integral<T>::value,void>::type
+print(FILE* fp, T x, bool comma)
+{
+    if (comma)
+        fprintf(fp, "%lu,", (unsigned long) x);
+    else
+        fprintf(fp, "%lu", (unsigned long) x);
 }
 
 template<typename T>
@@ -183,7 +193,8 @@ template<typename T> void init_input(const kz_params_t* params, kz_buf_t* buf)
             T       x;
             bool    success;
 
-            text = (char*) read_file(params->src, "r", &text_len);
+            // Always open file in binary mode. If we don't, we fail on MinGW.
+            text = (char*) read_file(params->src, "rb", &text_len);
             assert(text != NULL);
 
             buf->buf = malloc(size*sizeof(T));
@@ -389,7 +400,7 @@ const T* kz_input_##D(kz_buf_t* buf, size_t n) \
 FORCEINLINE \
 void kz_output_##D(kz_buf_t* buf, const T* data, size_t n) \
 { \
-    output(buf, data, n); \
+    output<T>(buf, data, n); \
 }
 
 DECLARE_IO(int,int)
@@ -431,7 +442,8 @@ void kz_init_input_bit(const kz_params_t* params, kz_buf_t* buf)
             bit_t   x;
             bool    success;
 
-            text = (char*) read_file(params->src, "r", &text_len);
+            // Always open file in binary mode. If we don't, we fail on MinGW.
+            text = (char*) read_file(params->src, "rb", &text_len);
             assert(text != NULL);
 
             buf->buf = malloc((size + BIT_ARRAY_ELEM_BITS - 1)/BIT_ARRAY_ELEM_BITS);

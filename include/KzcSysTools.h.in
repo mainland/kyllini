@@ -1,2 +1,2 @@
-#define CC  "@CC@"
-#define CPP "@CPP@"
+#define CC  "@CC_STRING@"
+#define CPP "@CPP_STRING@"
