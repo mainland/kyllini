@@ -1290,8 +1290,8 @@ cgExp e k =
           | otherwise                      = appendStm $ rl l [cstm|printf("%lld", (long long) $ce);|]
         cgPrintScalar (IntT UDefault _) ce = appendStm $ rl l [cstm|printf("%u", (unsigned) $ce);|]
         cgPrintScalar (IntT (U w) _)    ce
-          | w <= 32                        = appendStm $ rl l [cstm|printf("%lu", (long) $ce);|]
-          | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (long long) $ce);|]
+          | w <= 32                        = appendStm $ rl l [cstm|printf("%lu", (unsigned long) $ce);|]
+          | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
         cgPrintScalar FloatT{}          ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
         cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
