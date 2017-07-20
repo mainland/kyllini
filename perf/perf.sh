@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+PERF=/usr/bin/perf
+
 # Number of runs per benchmark
 N=100
 
@@ -37,9 +39,14 @@ run_perf_test() {
     (cd "$WIFIDIR/$SUBDIR" && make clean && KZCFLAGS="$KZCFLAGS" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" COMPILER=gcc make -B "$TESTBIN.$EXE") >/dev/null 2>&1
 
     for i in `seq 1 $NRUNS`; do
-        perf stat -x ' ' -e branch-instructions,branch-misses,cache-misses,cpu-cycles,instructions,context-switches,cpu-migrations,page-faults \
-             "$WIFIDIR/$SUBDIR/$TESTBIN.$EXE" $ARGS 2>&1 | \
-            awk -v platform="$PLATFORM" -v gitRev="$GITREV" -v test="$TESTNAME" -v nsamples="$NSAMPLES" -f perf.awk
+        if [ -f "$PERF" ]; then
+            perf stat -x ' ' -e branch-instructions,branch-misses,cache-misses,cpu-cycles,instructions,context-switches,cpu-migrations,page-faults \
+                 "$WIFIDIR/$SUBDIR/$TESTBIN.$EXE" $ARGS 2>&1 | \
+                awk -v platform="$PLATFORM" -v gitRev="$GITREV" -v test="$TESTNAME" -v nsamples="$NSAMPLES" -f perf.awk
+        else
+            "$WIFIDIR/$SUBDIR/$TESTBIN.$EXE" $ARGS 2>&1 | \
+                awk -v platform="$PLATFORM" -v gitRev="$GITREV" -v test="$TESTNAME" -v nsamples="$NSAMPLES" -f perf.awk
+        fi
     done
     
     (cd "$WIFIDIR/$SUBDIR" && make clean) >/dev/null 2>&1
