@@ -297,7 +297,8 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
         (tvks, _, tau_ret) <- lookupVar f >>= unFunT
         taus' <- mapM typeT taus
         splitNatArgs tvks taus' $ \nonNatTaus natTaus -> do
-          stTaus <- typeT tau_ret >>= instSTTypes
+          stTaus <- extendTyVarTypes (map fst tvks `zip` taus') $
+                    typeT tau_ret >>= instSTTypes
           f'     <- lookupMonoFun f (nonNatTaus ++ stTaus)
           CallC l f' natTaus <$> mapM argT args <*> pure s
 
