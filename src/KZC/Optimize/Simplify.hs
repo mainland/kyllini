@@ -1197,7 +1197,7 @@ simplE (UnopE op e s) = do
         return $ ConstE c' s
 
     -- Avoid double cast
-    unop (Cast tau) e = do
+    unop op@(Cast tau) e = do
         tau' <- inferExp e
         if tau' == tau
           then do rewrite
