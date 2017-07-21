@@ -104,7 +104,6 @@ import Text.PrettyPrint.Mainland
 import KZC.Name
 import KZC.Platform
 import KZC.Traits
-import qualified KZC.Util.EnumSet as Set
 import KZC.Util.Pretty
 import KZC.Util.SetLike
 import KZC.Util.Staged
@@ -1231,8 +1230,8 @@ pprTypeSig v tau = parens (ppr v <+> colon <+> ppr tau)
 -- | Pretty-print a thing with a kind signature
 pprKindSig :: Pretty a => (a, Kind) -> Doc
 pprKindSig (tau, TauK traits)
-    | Set.null traits = ppr tau
-    | otherwise       = ppr tau <+> colon <+> ppr traits
+    | nullTraits traits = ppr tau
+    | otherwise         = ppr tau <+> colon <+> ppr traits
 
 pprKindSig (tau, kappa) =
     parens (ppr tau <+> colon <+> ppr kappa)
