@@ -47,7 +47,7 @@ module Language.Ziria.Syntax (
     Binop(..),
 
     Type(..),
-    Kind,
+    Kind(..),
     Tvk,
     Trait(..),
     Traits,
@@ -333,7 +333,10 @@ data Type = UnitT !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-type Kind = Traits
+-- | Kinds
+data Kind = TauK Traits -- ^ Base types, including arrays of base types
+          | NatK        -- ^ Type-level natural number
+  deriving (Eq, Ord, Read, Show)
 
 type Tvk = (TyVar, Maybe Kind)
 
@@ -907,13 +910,26 @@ instance Pretty Type where
     pprPrec _ (TyVarT alpha _) =
         ppr alpha
 
+instance Pretty Kind where
+    pprPrec p (TauK ts) = pprPrec p ts
+    pprPrec _ NatK      = text "N"
+
+-- | Pretty-print a thing with a type signature
 pprTypeSig :: Pretty a => a -> Maybe Type -> Doc
 pprTypeSig v Nothing    = ppr v
 pprTypeSig v (Just tau) = parens (ppr v <+> colon <+> ppr tau)
 
-pprKindSig :: Pretty a => (a, Maybe Kind)-> Doc
-pprKindSig (v, Just ts) | not (nullTraits ts) = ppr v <+> colon <+> ppr ts
-pprKindSig (v, _)                             = ppr v
+-- | Pretty-print a thing with a kind signature
+pprKindSig :: Pretty a => (a, Maybe Kind) -> Doc
+pprKindSig (tau, Nothing) =
+    ppr tau
+
+pprKindSig (tau, Just (TauK traits))
+    | nullTraits traits = ppr tau
+    | otherwise         = ppr tau <+> colon <+> ppr traits
+
+pprKindSig (tau, Just kappa) =
+    parens (ppr tau <+> colon <+> ppr kappa)
 
 pprInitializer :: Maybe Exp -> Doc
 pprInitializer Nothing  = empty

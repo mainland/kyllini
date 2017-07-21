@@ -2652,15 +2652,20 @@ instance FromZ Z.Type Type where
     fromZ (Z.ForallT tvks tau l) =
         ForallT <$> mapM fromZ tvks <*> fromZ tau <*> pure l
 
+instance FromZ Z.Kind Kind where
+    fromZ (Z.TauK ts) = return $ TauK (R ts)
+    fromZ Z.NatK      = return NatK
+
 instance FromZ (Z.TyVar, Maybe Z.Kind) Tvk where
     fromZ (zalpha, Nothing) = do
         alpha <- fromZ zalpha
         kappa <- newMetaKvK NoLoc
         return (alpha, kappa)
 
-    fromZ (zalpha, Just ts) = do
+    fromZ (zalpha, Just zkappa) = do
         alpha <- fromZ zalpha
-        return (alpha, TauK (R ts))
+        kappa <- fromZ zkappa
+        return (alpha, kappa)
 
 instance FromZ (Maybe Z.Type, Kind) Type where
     fromZ (Just tau, _)    = fromZ tau

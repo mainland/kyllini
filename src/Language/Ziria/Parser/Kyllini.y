@@ -640,7 +640,7 @@ trait_rlist :
 opt_kind :: { Maybe Kind }
 opt_kind :
     {- empty -} { Nothing }
-  | ':' traits  { Just $2 }
+  | ':' traits  { Just (TauK $2) }
 
 tvk :: { Tvk }
 tvk : tyvar opt_kind { ($1, $2) }

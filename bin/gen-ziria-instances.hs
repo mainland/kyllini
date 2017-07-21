@@ -41,6 +41,7 @@ DERIVE(Binop)
 DERIVE(Stm)
 DERIVE(Type)
 DERIVE(Trait)
+DERIVE(Kind)
 
 main :: IO ()
 main = do
