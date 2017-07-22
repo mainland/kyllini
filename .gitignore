@@ -12,6 +12,7 @@
 /include/KzcSysTools.h
 /kzc
 /kyllini.buildinfo
+/mk/common.mk
 /libkz/src/*.o
 /libkz/src/sora/*.o
 /obj/
