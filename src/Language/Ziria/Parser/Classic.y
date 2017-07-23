@@ -482,7 +482,7 @@ cast_type :
 arr_length :: { (Type, Type) }
 arr_length :
     '[' exp ']' base_type
-      {% do { n <- natExp $2
+      {% do { n <- constNatExp $2
             ; return (n, $4)
             }
       }
