@@ -120,6 +120,7 @@ library
     Language.Ziria.Parser.Lexer
     Language.Ziria.Parser.Monad
     Language.Ziria.Parser.Tokens
+    Language.Ziria.Parser.Util
     Language.Ziria.Parser
     Language.Ziria.Smart
     Language.Ziria.Syntax

@@ -30,6 +30,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Parser.Lexer
 import Language.Ziria.Parser.Monad
 import qualified Language.Ziria.Parser.Tokens as T
+import Language.Ziria.Parser.Util
 import Language.Ziria.Smart
 import Language.Ziria.Syntax
 
@@ -1012,40 +1013,6 @@ structid t = mkSymName (getSTRUCTID t) (locOf t)
 fieldid :: L T.Token -> Name
 fieldid t = mkSymName (getID t) (locOf t)
 
-constIntExp :: Exp -> P Int
-constIntExp e = go e
-  where
-    go :: Exp -> P Int
-    go (ConstE (IntC IDefault i) _) =
-        return i
-
-    go (ConstE (IntC I{} i) _) =
-        return i
-
-    go (ConstE (IntC UDefault i) _) =
-        return i
-
-    go (ConstE (IntC U{} i) _) =
-        return i
-
-    go (BinopE op e1 e2 _) = do
-        x <- go e1
-        y <- go e2
-        binop op x y
-
-    go _ =
-        fail $ "non-constant integer expression: " ++ show e
-
-    binop :: Binop -> Int -> Int -> P Int
-    binop Add x y = return $ x + y
-    binop Sub x y = return $ x - y
-    binop Mul x y = return $ x * y
-    binop Div x y = return $ x `div` y
-    binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
-
-intC :: Int -> SrcLoc -> Exp
-intC i l = ConstE (IntC IDefault i) l
-
 mkFloatT :: Monad m => Int -> SrcLoc -> m Type
 mkFloatT 32 s = return $ FloatT FP32 s
 mkFloatT 64 s = return $ FloatT FP64 s
@@ -1056,40 +1023,4 @@ mkTypeName s w l = mkName (s ++ show w) l
 
 mkType2Name :: String -> (Int, Int) -> Loc -> Name
 mkType2Name s (i, f) l = mkName (s ++ show i ++ "_" ++ show f) l
-
-data RevList a  =  RNil
-                |  RCons a (RevList a)
-                |  RApp [a] (RevList a)
-
-rnil :: RevList a
-rnil = RNil
-
-rsingleton :: a -> RevList a
-rsingleton x = RCons x RNil
-
-infixr 5 `rcons`
-
-rcons :: a -> RevList a -> RevList a
-rcons x xs  = RCons x xs
-
-rapp :: [a] -> RevList a -> RevList a
-rapp xs ys  = RApp xs ys
-
-rlist :: [a] -> RevList a
-rlist xs = rlist' xs rnil
-  where
-    rlist' []     acc = acc
-    rlist' (x:xs) acc = rlist' xs (rcons x acc)
-
-rev :: RevList a -> [a]
-rev xs = go [] xs
-  where
-    go  l  RNil          = l
-    go  l  (RCons x xs)  = go (x : l) xs
-    go  l  (RApp xs ys)  = go (xs ++ l) ys
-
-instance Located a => Located (RevList a) where
-    locOf RNil         = mempty
-    locOf (RCons x xs) = locOf x `mappend` locOf xs
-    locOf (RApp xs ys) = locOf xs `mappend` locOf ys
 }

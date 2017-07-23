@@ -144,6 +144,7 @@ SOURCE = \
 	Language/Ziria/Parser/Lexer.hs \
 	Language/Ziria/Parser/Monad.hs \
 	Language/Ziria/Parser/Tokens.hs \
+	Language/Ziria/Parser/Util.hs \
 	Language/Ziria/Parser.hs \
 	Language/Ziria/Smart.hs \
 	Language/Ziria/Syntax.hs
