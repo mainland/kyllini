@@ -155,6 +155,7 @@ import KZC.Util.Pretty
   'bitcast' { L _ T.Tbitcast }
   'cast'    { L _ T.Tcast }
   'mut'     { L _ T.Tmut }
+  'nat'     { L _ T.Tnat }
   'type'    { L _ T.Ttype }
 
   'Eq'         { L _ T.TEq }
@@ -581,7 +582,10 @@ trait_rlist :
 opt_kind :: { Maybe Kind }
 opt_kind :
     {- empty -} { Nothing }
+  | ':' 'nat'   { Just NatK }
   | ':' traits  { Just (TauK $2) }
+  | ':' error
+    {% expected ["`nat'", "a list of traits"] Nothing }
 
 tvk :: { Tvk }
 tvk : tyvar opt_kind { ($1, $2) }

@@ -143,6 +143,7 @@ data Token = Teof
            | Tbitcast
            | Tcast
            | Tmut
+           | Tnat
            | Ttype
 
            | TEq
@@ -282,6 +283,7 @@ instance Pretty Token where
     ppr Tbitcast = text "bitcast"
     ppr Tcast    = text "cast"
     ppr Tmut     = text "mut"
+    ppr Tnat     = text "nat"
     ppr Ttype    = text "type"
 
     ppr TEq         = text "Eq"
@@ -368,6 +370,7 @@ keywords = [ ("C",           TC,           Nothing)
            , ("bitcast", Tbitcast, Just Kyllini)
            , ("cast",    Tcast,    Just Kyllini)
            , ("mut",     Tmut,     Just Kyllini)
+           , ("nat",     Tnat,     Just Kyllini)
            , ("type",    Ttype,    Just Kyllini)
 
            , ("Eq",         TEq,         Just Kyllini)
