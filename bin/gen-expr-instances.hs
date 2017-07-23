@@ -43,9 +43,9 @@ DERIVE(Unop)
 DERIVE(Binop)
 DERIVE(StructDef)
 DERIVE(Type)
+DERIVE(Omega)
 DERIVE(Trait)
 DERIVE(Kind)
-DERIVE(Omega)
 
 main :: IO ()
 main = do
