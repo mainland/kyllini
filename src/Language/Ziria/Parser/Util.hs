@@ -20,6 +20,7 @@ module Language.Ziria.Parser.Util (
   ) where
 
 import Data.Loc
+import Text.PrettyPrint.Mainland
 
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax
@@ -43,20 +44,22 @@ constIntExp e = go e
     go (ConstE (IntC U{} i) _) =
         return i
 
-    go (BinopE op e1 e2 _) = do
+    go e@(BinopE op e1 e2 _) = do
         x <- go e1
         y <- go e2
         binop op x y
+      where
+        binop :: Binop -> Int -> Int -> P Int
+        binop Add x y = return $ x + y
+        binop Sub x y = return $ x - y
+        binop Mul x y = return $ x * y
+        binop Div x y = return $ x `div` y
+        binop _   _ _ = parserError (locOf e) $
+                        text "Non-constant integer expression:" <+> ppr e
 
-    go _ =
-        fail $ "non-constant integer expression: " ++ show e
-
-    binop :: Binop -> Int -> Int -> P Int
-    binop Add x y = return $ x + y
-    binop Sub x y = return $ x - y
-    binop Mul x y = return $ x * y
-    binop Div x y = return $ x `div` y
-    binop _ _ _   = fail $ "non-constant integer expression: " ++ show e
+    go e =
+        parserError (locOf e) $
+        text "Non-constant integer expression:" <+> ppr e
 
 data RevList a  =  RNil
                 |  RCons a (RevList a)
