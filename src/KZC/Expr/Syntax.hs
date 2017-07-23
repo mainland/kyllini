@@ -411,18 +411,31 @@ data Binop = Eq
 data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data Type = UnitT !SrcLoc
+data Type -- | Base types
+          = UnitT !SrcLoc
           | BoolT !SrcLoc
           | IntT IP !SrcLoc
           | FixT QP !SrcLoc
           | FloatT FP !SrcLoc
           | StringT !SrcLoc
+
+          -- | Structs and arrays
           | StructT Struct [Type] !SrcLoc
           | ArrT Type Type !SrcLoc
+
+          -- | Monadic type
           | ST Omega Type Type Type !SrcLoc
+
+          -- | References
           | RefT Type !SrcLoc
+
+          -- | Functions
           | FunT [Type] Type !SrcLoc
+
+          -- | Types of kind Nat
           | NatT Int !SrcLoc
+
+          -- | Type variables and quantification
           | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
