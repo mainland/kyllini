@@ -331,7 +331,7 @@ toBitsV = go
 
     go (ConstV (FixC (UQ i f) x)) _ =
         toBitArr x w
-      where        
+      where
         w = i+f
 
     go (ConstV (FixC (Q i f) x)) _
