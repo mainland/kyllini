@@ -8,6 +8,7 @@
 module Language.Ziria.Parser.Util (
     intC,
 
+    natExp,
     constIntExp,
 
     RevList(..),
@@ -28,6 +29,35 @@ import Language.Ziria.Syntax
 intC :: Int -> SrcLoc -> Exp
 intC i l = ConstE (IntC IDefault i) l
 
+-- | Parse an expression as a type of kind 'Nat'.
+natExp :: Exp -> P Type
+natExp e = go e
+  where
+    go :: Exp -> P Type
+    go (ConstE (IntC _ i) l) =
+        return $ NatT i l
+
+    go (UnopE Len (VarE v _) l) =
+        return $ LenT v l
+
+    go e@(BinopE op e1 e2 l) = do
+        x <- go e1
+        y <- go e2
+        binop op x y
+      where
+        binop :: Binop -> Type -> Type -> P Type
+        binop Add (NatT x _) (NatT y _) = return $ NatT (x + y) l
+        binop Sub (NatT x _) (NatT y _) = return $ NatT (x - y) l
+        binop Mul (NatT x _) (NatT y _) = return $ NatT (x * y) l
+        binop Div (NatT x _) (NatT y _) = return $ NatT (x `div` y) l
+        binop _   _          _          = parserError (locOf e) $
+                                          text "Non-constant nat:" <+> ppr e
+
+    go e =
+        parserError (locOf e) $
+        text "Illegal nat:" <+> ppr e
+
+-- | Parse an expression as an integer constant.
 constIntExp :: Exp -> P Int
 constIntExp e = go e
   where
