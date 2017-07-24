@@ -1187,7 +1187,7 @@ instance HasVars Exp Var where
     allVars (UnopE _ e _)         = allVars e
     allVars (BinopE _ e1 e2 _)    = allVars e1 <> allVars e2
     allVars (IfE e1 e2 e3 _)      = allVars e1 <> allVars e2 <> allVars e3
-    allVars (LetE decl body _)    = allVars decl <> allVars decl <> allVars body
+    allVars (LetE decl body _)    = allVars decl <> allVars body
     allVars (CallE f _ es _)      = singleton f <> allVars es
     allVars (DerefE e _)          = allVars e
     allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
