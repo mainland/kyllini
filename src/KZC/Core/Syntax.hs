@@ -246,8 +246,11 @@ data Decl l = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
 data View = IdxVW Var Exp (Maybe Int) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data LocalDecl = LetLD BoundVar Type Exp !SrcLoc
+data LocalDecl -- | Standard let binding
+               = LetLD BoundVar Type Exp !SrcLoc
+               -- | Ref binding
                | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+               -- | An array view binding
                | LetViewLD BoundVar Type View !SrcLoc
   deriving (Eq, Ord, Read, Show)
 

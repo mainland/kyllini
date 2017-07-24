@@ -133,12 +133,19 @@ data Program = Program [Import] [Decl]
 data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
-data Decl = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+data Decl -- | Struct declaration
+          = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          -- | Type alias
           | TypeD Struct [Tvk] Type !SrcLoc
+          -- | Standard let binding
           | LetD Var (Maybe Type) Exp !SrcLoc
+          -- | Reference binding
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
+          -- | Function binding
           | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
+          -- | External function binding
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
+          -- | Computation bindings
           | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
           | LetFunCompD Var (Maybe (Int, Int)) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
