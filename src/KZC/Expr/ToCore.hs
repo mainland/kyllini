@@ -188,13 +188,11 @@ transLocalDecl decl _ =
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
   where
     pprDeclType :: E.Decl -> Doc
-    pprDeclType E.StructD{}    = text "letstruct"
-    pprDeclType (E.LetD _ tau _ _)
-        | isPureishT tau       = text "let"
-        | otherwise            = text "letcomp"
-    pprDeclType E.LetFunD{}    = text "letfun"
-    pprDeclType E.LetExtFunD{} = text "letextfun"
-    pprDeclType E.LetRefD{}    = text "letref"
+    pprDeclType E.StructD{}    = text "struct"
+    pprDeclType E.LetD{}       = text "let"
+    pprDeclType E.LetRefD{}    = text "let ref"
+    pprDeclType E.LetFunD{}    = text "fun"
+    pprDeclType E.LetExtFunD{} = text "fun external"
 
 transExp :: forall m . MonadTc m
          => E.Exp
