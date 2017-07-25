@@ -262,7 +262,7 @@ lookupStruct :: MonadTc m => Struct -> m StructDef
 lookupStruct s =
     lookupTcEnv structs onerr s
   where
-    onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
+    onerr = notInScope (text "Struct") s
 
 maybeLookupStruct :: MonadTc m => Struct -> m (Maybe StructDef)
 maybeLookupStruct s =
@@ -328,7 +328,7 @@ lookupVar :: MonadTc m => Var -> m Type
 lookupVar v =
     lookupTcEnv varTypes onerr v
   where
-    onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    onerr = notInScope (text "Variable") v
 
 extendTyVars :: MonadTc m => [Tvk] -> m a -> m a
 extendTyVars tvks =
@@ -347,7 +347,7 @@ lookupTyVar :: MonadTc m => TyVar -> m Kind
 lookupTyVar tv =
     lookupTcEnv tyVars onerr tv
   where
-    onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
+    onerr = notInScope (text "Type variable") tv
 
 -- | Return currently in scope type variables.
 inScopeTyVars :: MonadTc m => m (Set TyVar)
@@ -363,9 +363,7 @@ lookupTyVarType :: MonadTc m => TyVar -> m Type
 lookupTyVarType alpha =
     lookupTcEnv tyVarTypes onerr alpha
   where
-    onerr = faildoc $
-            text "Instantiated type variable" <+> ppr alpha <+>
-            text "not in scope"
+    onerr = notInScope (text "Instantiated type variable") alpha
 
 -- | Return the current substitution from type variables to types.
 askTyVarTypeSubst :: MonadTc m => m (Map TyVar Type)

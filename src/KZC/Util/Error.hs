@@ -33,6 +33,7 @@ module KZC.Util.Error (
     FailException(..),
     WarnException(..),
 
+    notInScope,
     checkDuplicates
   ) where
 
@@ -307,6 +308,10 @@ instance Pretty WarnException where
 
 instance Show WarnException where
     show = pretty 80 . ppr
+
+notInScope :: (Pretty a, MonadErr m) => Doc -> a -> m b
+notInScope desc v =
+    faildoc $ desc <+> enquote (ppr v) <+> text "not in scope"
 
 checkDuplicates :: forall m a . (Ord a, Located a, Pretty a, MonadErr m)
                 => Doc -> [a] -> m ()

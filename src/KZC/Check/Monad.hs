@@ -167,7 +167,7 @@ lookupStruct :: Z.Struct -> Ti StructDef
 lookupStruct s =
     lookupEnv structs onerr s
   where
-    onerr = faildoc $ text "Struct" <+> ppr s <+> text "not in scope"
+    onerr = notInScope (text "Struct") s
 
 maybeLookupStruct :: Z.Struct -> Ti (Maybe StructDef)
 maybeLookupStruct s =
@@ -210,7 +210,7 @@ lookupVar :: Z.Var -> Ti Type
 lookupVar v =
     lookupEnv varTypes onerr v
   where
-    onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    onerr = notInScope (text "Variable") v
 
 askEnvMtvs :: Ti [MetaTv]
 askEnvMtvs =
@@ -230,7 +230,7 @@ lookupTyVar :: TyVar -> Ti Kind
 lookupTyVar tv =
     lookupEnv tyVars onerr tv
   where
-    onerr = faildoc $ text "Type variable" <+> ppr tv <+> text "not in scope"
+    onerr = notInScope (text "Type variable") tv
 
 -- | Compute the size of a type in bits.
 typeSize :: Type -> Ti Int

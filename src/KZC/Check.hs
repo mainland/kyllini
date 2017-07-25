@@ -402,7 +402,7 @@ mkSigned (IntT (U w) l)        = return $ IntT (I w) l
 mkSigned tau@(IntT IDefault _) = return tau
 mkSigned tau@(IntT I{} _)      = return tau
 mkSigned tau =
-    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to unsigned."
+    faildoc $ text "Cannot cast type" <+> enquote (ppr tau) <+> text "to unsigned."
 
 mkUnsigned :: Monad m => Type -> m Type
 mkUnsigned (IntT IDefault l)     = return $ IntT UDefault l
@@ -410,7 +410,7 @@ mkUnsigned (IntT (I w) l)        = return $ IntT (U w) l
 mkUnsigned tau@(IntT UDefault _) = return tau
 mkUnsigned tau@(IntT U{} _)      = return tau
 mkUnsigned tau =
-    faildoc $ text "Cannot cast type" <+> ppr tau <+> text "to signed."
+    faildoc $ text "Cannot cast type" <+> enquote (ppr tau) <+> text "to signed."
 
 tcExp :: Z.Exp -> Expected Type -> Ti (Ti E.Exp)
 tcExp (Z.ConstE zc l) exp_ty = do
@@ -1199,7 +1199,7 @@ checkStructNotRedefined s = do
     maybe_sdef <- maybeLookupStruct s
     case maybe_sdef of
       Nothing   -> return ()
-      Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+      Just sdef -> faildoc $ text "Struct" <+> enquote (ppr s) <+> text "redefined" <+>
                    parens (text "original definition at" <+> ppr (locOf sdef))
 
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti E.Exp)
@@ -1673,7 +1673,7 @@ checkStructT tau =
 
     go tau =
         faildoc $ nest 2 $
-        text "Expected struct type, but got:" <+/> ppr tau
+        text "Expected struct type, but got" <+/> ppr tau
 
 checkStructFieldT :: StructDef -> [Type] -> Z.Field -> Ti Type
 checkStructFieldT sdef taus f = do
@@ -1723,7 +1723,7 @@ checkFunT _f (Just taus) _nargs (ForallT tvks (FunT taus_params tau_ret _) _) = 
 checkFunT _f Just{} _ tau =
     faildoc $
     align $ nest 2 $
-    text "Illegal explicit type application for unquanitifed type:" <+>
+    text "Illegal explicit type application for unquantified type" <+>
     enquote (ppr tau)
 
 -- | Check that a function type is appropriate for a @map@. The function result
@@ -2073,7 +2073,8 @@ checkLegalCast tau1 tau2 = do
     cannotCast :: Type -> Type -> Ti ()
     cannotCast tau1 tau2 = do
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
-        faildoc $ text "Cannot cast" <+> ppr tau1' <+> text "to" <+> ppr tau2'
+        faildoc $ text "Cannot cast" <+> enquote (ppr tau1') <+>
+                  text "to" <+> enquote (ppr tau2')
 
 checkLegalBitcast :: Type -> Type -> Ti ()
 checkLegalBitcast tau1 tau2 = do
@@ -2128,15 +2129,17 @@ checkSafeIntCast x ip = do
     (i_min, i_max) <- ipRange ip
     when (x < i_min || x > i_max) $
       faildoc $ align $
-      text "Constant" <+> ppr x <+>
-      text "cannot be represented as type" <+> ppr (IntT ip noLoc)
+      text "Constant" <+> enquote (ppr x) <+>
+      text "cannot be represented as type" <+> enquote (ppr (IntT ip noLoc))
 
 checkSafeFixCast :: Double -> QP -> Ti ()
 checkSafeFixCast x qp = do
     when (x < q_min || x > q_max) $
       faildoc $ align $
-      text "Constant" <+> ppr x <+>
-      text "cannot be represented as type" <+> ppr (FixT qp noLoc) </> ppr q_max </> ppr (qpResolution qp :: Double) </> ppr (q_max + qpResolution qp)
+      text "Constant" <+> enquote (ppr x) <+>
+      text "cannot be represented as type" <+> enquote (ppr (FixT qp noLoc)) <>
+      comma <+> text "which has range" <+>
+      text "[" <> ppr q_min <> comma <+> ppr q_max <> text ")"
   where
     q_min, q_max0, q_max :: Double
     (q_min, q_max0) = qpRange qp
@@ -2189,7 +2192,8 @@ joinOmega tau1 tau2 = do
     go tau1@T{} T{}      = return tau1
 
     go tau1 tau2 =
-        faildoc $ text "Cannot join" <+> ppr tau1 <+> text "and" <+> ppr tau2
+        faildoc $ text "Cannot join" <+> enquote (ppr tau1) <+>
+                  text "and" <+> enquote (ppr tau2)
 
 instType :: Type -> Expected Type -> Ti ()
 instType tau1 (Infer ref)  = writeRef ref tau1
@@ -2202,8 +2206,8 @@ expectedTypeErr tau1 tau2 = do
     msg            <- relevantBindings
     [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
     faildoc $
-      text "Expected type:" <+> ppr tau2' </>
-      text "but got:      " <+> ppr tau1' </>
+      text "Expected type:" <+> enquote (ppr tau2') </>
+      text "but got:      " <+> enquote (ppr tau1') </>
       msg
 
 -- | Generic unification exception
@@ -2751,12 +2755,14 @@ instance Trans Type E.Type where
             E.TyVarT <$> trans alpha <*> pure l
 
         go tau =
-            faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core type"
+            faildoc $ text "Cannot translate" <+> enquote (ppr tau) <+>
+                      text "to Core type"
 
 instance Trans Type E.Omega where
     trans (C omega _) = E.C <$> trans omega
     trans (T _)       = pure E.T
-    trans tau         = faildoc $ text "Cannot translate" <+> ppr tau <+> text "to Core omega"
+    trans tau         = faildoc $ text "Cannot translate" <+>
+                                  enquote (ppr tau) <+> text "to Core omega"
 
 instance Trans Kind E.Kind where
     trans tau = compress tau >>= go
@@ -2770,7 +2776,8 @@ instance Trans Kind E.Kind where
         go NatK     = pure E.NatK
 
         go kappa =
-            faildoc $ text "Cannot translate" <+> ppr kappa <+> text "to Core kind"
+            faildoc $ text "Cannot translate" <+> enquote (ppr kappa) <+>
+                      text "to Core kind"
 
 instance Trans R E.Traits where
     trans r = compress r >>= go

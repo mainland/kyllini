@@ -396,8 +396,7 @@ lookupVarCExp v = do
     useCExp ce
     return ce
   where
-    onerr = faildoc $
-            text "Compiled variable" <+> ppr v <+> text "not in scope"
+    onerr = notInScope (text "Compiled variable") v
 
 extendTyVarCExps :: [(TyVar, CExp l)] -> Cg l a -> Cg l a
 extendTyVarCExps = extendEnv tyvarCExps (\env x -> env { tyvarCExps = x })
@@ -406,9 +405,7 @@ lookupTyVarCExp :: TyVar -> Cg l (CExp l)
 lookupTyVarCExp v =
     lookupEnv tyvarCExps onerr v
   where
-    onerr = faildoc $
-            text "Compiled array size variable" <+> ppr v <+>
-            text "not in scope"
+    onerr = notInScope (text "Compiled array size variable") v
 
 addThread :: Thread l -> Cg l ()
 addThread t = modify $ \s -> s { threads = t : threads s }

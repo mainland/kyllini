@@ -274,7 +274,7 @@ lookupVarBind :: MonadTc m => Var -> EvalM l m (Val l m Exp)
 lookupVarBind v = do
   maybe_val <- asks (Map.lookup v . varBinds)
   case maybe_val of
-    Nothing       -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    Nothing       -> notInScope (text "Variable") v
     Just UnknownV -> partialExp $ varE v
     Just val      -> return val
 
@@ -340,7 +340,7 @@ lookupCVarBind :: MonadTc m => Var -> EvalM l m (Val l m (Comp l))
 lookupCVarBind v = do
   maybe_val <- asks (Map.lookup v . cvarBinds)
   case maybe_val of
-    Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    Nothing  -> notInScope (text "Variable") v
     Just val -> return val
 
 extendCVarBinds :: MonadTc m => [(Var, Val l m (Comp l))] -> EvalM l m a -> EvalM l m a

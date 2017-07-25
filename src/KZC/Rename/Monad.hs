@@ -106,7 +106,7 @@ lookupTyVar :: TyVar -> Rn TyVar
 lookupTyVar alpha =
     lookupEnv tyVars onerr alpha
   where
-    onerr = faildoc $ text "Type variable" <+> ppr alpha <+> text "not in scope"
+    onerr = notInScope (text "Type variable") alpha
 
 extendVars :: Doc -> [Var] -> Rn a -> Rn a
 extendVars desc vs m = do
@@ -118,7 +118,7 @@ lookupVar :: Var -> Rn Var
 lookupVar v =
     lookupEnv vars onerr v
   where
-    onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    onerr = notInScope (text "Variable") v
 
 extendCompVars :: Doc -> [Var] -> Rn a -> Rn a
 extendCompVars desc vs m = do
@@ -139,7 +139,7 @@ lookupMaybeCompVar v = do
                       Nothing -> onerr
                       Just v' -> return v'
   where
-    onerr = faildoc $ text "Variable" <+> ppr v <+> text "not in scope"
+    onerr = notInScope (text "Variable") v
 
 inCompScope :: Rn a -> Rn a
 inCompScope = local $ \env -> env { compScope = True }

@@ -373,7 +373,7 @@ useField v f = do
         needDefault v
   where
     err :: Monad m => m a
-    err = faildoc $ text "Struct does not have field" <+> ppr f
+    err = faildoc $ text "Struct does not have field" <+> enquote (ppr f)
 
 defaultsUsedExp :: MonadTc m => Exp -> m (Set Var)
 defaultsUsedExp e =

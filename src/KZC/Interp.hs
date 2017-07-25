@@ -257,7 +257,7 @@ lookupRef :: MonadTcRef m => Var -> I s m (Ref s)
 lookupRef v = do
     maybe_ref <- asks (Map.lookup v . refs)
     case maybe_ref of
-        Nothing  -> faildoc $ text "Variable" <+> ppr v <+> text "not in scope."
+        Nothing  -> notInScope (text "Variable") v
         Just ref -> return ref
 
 extendRefs :: MonadTcRef m => [(Var, Ref s)] -> I s m a -> I s m a
