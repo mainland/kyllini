@@ -60,6 +60,7 @@ module KZC.Core.Syntax (
     PipelineAnn(..),
     VectAnn(..),
     Unop(..),
+    isFunUnop,
     Binop(..),
     StructDef(..),
     Type(..),
@@ -153,6 +154,7 @@ import KZC.Expr.Syntax (Var(..),
                         PipelineAnn(..),
                         VectAnn(..),
                         Unop(..),
+                        isFunUnop,
                         Binop(..),
                         StructDef(..),
                         Type(..),
@@ -806,9 +808,16 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
+    pprPrec _ (UnopE op e _) | isFunUnop op =
+        ppr op <> parens (ppr e)
+
     pprPrec p (UnopE op@Cast{} e _) =
         parensIf (p > precOf op) $
-        ppr op <+> pprPrec (precOf op) e
+        ppr op <> parens (ppr e)
+
+    pprPrec p (UnopE op@Bitcast{} e _) =
+        parensIf (p > precOf op) $
+        ppr op <> parens (ppr e)
 
     pprPrec p (UnopE op e _) =
         parensIf (p > precOf op) $
