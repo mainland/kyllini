@@ -594,8 +594,7 @@ instance Pretty Exp where
         text "cast" <> angles (ppr tau) <> parens (ppr e)
 
     pprPrec p (UnopE op e _) =
-        parensIf (p > precOf op) $
-        ppr op <> pprPrec (precOf op) e
+        unop p op e
 
     pprPrec p (BinopE op e1 e2 _) =
         infixop p op e1 e2

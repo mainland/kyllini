@@ -34,6 +34,7 @@ module KZC.Util.Pretty (
     infixr_,
     HasFixity(..),
     precOf,
+    unop,
     infixop
   ) where
 
@@ -138,6 +139,15 @@ precOf op =
     p
   where
     Fixity _ p = fixity op
+
+unop :: (Pretty a, Pretty op, HasFixity op)
+     => Int -- ^ precedence of context
+     -> op  -- ^ operator
+     -> a
+     -> Doc
+unop prec op x =
+    parensIf (prec > precOf op) $
+    ppr op <> pprPrec (precOf op) x
 
 infixop :: (Pretty a, Pretty b, Pretty op, HasFixity op)
         => Int -- ^ precedence of context
