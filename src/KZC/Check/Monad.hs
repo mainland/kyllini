@@ -36,6 +36,10 @@ module KZC.Check.Monad (
     extendTyVars,
     lookupTyVar,
 
+    extendTyVarTypes,
+    maybeLookupTyVarType,
+    lookupTyVarType,
+
     typeSize,
 
     withExpContext,
@@ -231,6 +235,18 @@ lookupTyVar tv =
     lookupEnv tyVars onerr tv
   where
     onerr = notInScope (text "Type variable") tv
+
+extendTyVarTypes :: [(TyVar, Type)] -> Ti a -> Ti a
+extendTyVarTypes = extendEnv tyVarTypes (\env x -> env { tyVarTypes = x })
+
+maybeLookupTyVarType :: TyVar -> Ti (Maybe Type)
+maybeLookupTyVarType alpha = asks (Map.lookup alpha . tyVarTypes)
+
+lookupTyVarType :: TyVar -> Ti Type
+lookupTyVarType alpha =
+    lookupEnv tyVarTypes onerr alpha
+  where
+    onerr = notInScope (text "Instantiated type variable") alpha
 
 -- | Compute the size of a type in bits.
 typeSize :: Type -> Ti Int

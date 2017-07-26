@@ -482,6 +482,11 @@ useLocalDecl (LetRefLD v tau (Just e) s) m = do
                  updateNeedDefault v m
     return (LetRefLD v' tau (Just e') s, x)
 
+useLocalDecl (LetTypeLD alpha kappa tau s) m = do
+    x <- extendTyVars [(alpha, kappa)] $
+         extendTyVarTypes [(alpha, tau)] m
+    return (LetTypeLD alpha kappa tau s, x)
+
 useLocalDecl LetViewLD{} _ =
     faildoc $ text "Views not supported."
 
@@ -701,6 +706,9 @@ useExp (AssignE e1 e2 s) = do
 
     go e1 e2' _  =
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
+
+useExp (LowerE tau s) =
+    topA $ pure $ LowerE tau s
 
 useExp (WhileE e1 e2 s) =
     topA $ WhileE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure s

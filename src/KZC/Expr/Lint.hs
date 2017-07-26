@@ -167,6 +167,11 @@ checkDecl decl@(LetRefD v tau Nothing _) k = do
     alwaysWithSummaryContext decl $ checkKind tau tauK
     extendVars [(v, refT tau)] k
 
+checkDecl decl@(LetTypeD alpha kappa tau _) k = do
+    alwaysWithSummaryContext decl $ checkKind tau kappa
+    extendTyVars [(alpha, kappa)] $
+      extendTyVarTypes [(alpha, tau)] k
+
 checkDecl decl@(LetRefD v tau (Just e) _) k = do
     alwaysWithSummaryContext decl $
         inLocalScope $ do
@@ -434,6 +439,10 @@ inferExp (AssignE e1 e2 l) = do
     withFvContext e2 $ checkTypeEquality tau' tau
     [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
+
+inferExp e@(LowerE tau _) = do
+    withSummaryContext e $ checkKind tau NatK
+    return intT
 
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do

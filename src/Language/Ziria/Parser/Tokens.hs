@@ -370,7 +370,9 @@ keywords = [ ("C",           TC,           Nothing)
            , ("bitcast", Tbitcast, Just Kyllini)
            , ("cast",    Tcast,    Just Kyllini)
            , ("mut",     Tmut,     Just Kyllini)
-           , ("nat",     Tnat,     Just Kyllini)
+           -- We allow the 'nat' keyword in the classic dialect, but it's only
+           -- legal in the lenient parser.
+           , ("nat",     Tnat,     Nothing)
            , ("type",    Ttype,    Just Kyllini)
 
            , ("Eq",         TEq,         Just Kyllini)

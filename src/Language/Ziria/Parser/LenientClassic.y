@@ -80,6 +80,7 @@ import KZC.Util.Pretty
   'length'      { L _ T.Tlength }
   'let'         { L _ T.Tlet }
   'map'         { L _ T.Tmap }
+  'nat'         { L _ T.Tnat }
   'not'         { L _ T.Tnot }
   'noinline'    { L _ T.Tnoinline }
   'nounroll'    { L _ T.Tnounroll }
@@ -659,6 +660,11 @@ decl :
       {% expected ["'='"] Nothing }
   | 'var' ID ':' base_type maybe_initializer
       { LetRefD (mkVar (varid $2)) (Just $4) $5 ($1 `srcspan` $5) }
+  | 'nat' ID '=' exp
+      {% do { n <- natExp $4
+            ; return $ LetTypeD (mkTyVar (varid $2)) (Just NatK) n ($1 `srcspan` $4)
+            }
+      }
   | 'struct' ID '=' '{' field_list '}'
       {% do { addStructIdentifier (getID $2)
             ; return $ StructD (mkStruct (varid $2)) [] $5 ($1 `srcspan` $6)

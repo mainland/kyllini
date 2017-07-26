@@ -520,6 +520,7 @@ instance ModifiedVars Exp Var where
     mvs (CallE _ _ es _)     = fvs es
     mvs DerefE{}             = mempty
     mvs (AssignE e1 _ _)     = fvs e1
+    mvs LowerE{}             = mempty
     mvs (WhileE e1 e2 _)     = mvs e1 <> mvs e2
     mvs (ForE _ _ _ _ e _)   = mvs e
     mvs ArrayE{}             = mempty

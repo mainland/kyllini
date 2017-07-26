@@ -189,6 +189,11 @@ instance MonadTc m => TransformExp (RF m) where
                    delimitScope (bVar v) k
       return (LetRefLD v tau maybe_e1' s, x)
 
+    localDeclT decl@(LetTypeLD alpha kappa tau _) k = do
+      x <- extendTyVars [(alpha, kappa)] $
+           extendTyVarTypes [(alpha, tau)] k
+      return (decl, x)
+
     localDeclT LetViewLD{} _ =
         faildoc $ text "Views not supported."
 

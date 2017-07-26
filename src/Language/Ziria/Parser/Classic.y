@@ -80,6 +80,7 @@ import KZC.Util.Pretty
   'length'      { L _ T.Tlength }
   'let'         { L _ T.Tlet }
   'map'         { L _ T.Tmap }
+  'nat'         { L _ T.Tnat }
   'not'         { L _ T.Tnot }
   'noinline'    { L _ T.Tnoinline }
   'nounroll'    { L _ T.Tnounroll }
@@ -228,6 +229,7 @@ identifier :
   | 'fun'    { mkVar $ mkName "fun" (locOf $1) }
   | 'impure' { mkVar $ mkName "impure" (locOf $1) }
   | 'length' { mkVar $ mkName "length" (locOf $1) }
+  | 'nat'    { mkVar $ mkName "nat" (locOf $1) }
 
 {------------------------------------------------------------------------------
  -

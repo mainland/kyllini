@@ -400,6 +400,9 @@ lutStats e =
         go e1
         go e2
 
+    go (LetE LetTypeLD{} e2 _) =
+        go e2
+
     go (LetE (LetViewLD _ _ (IdxVW _ e1 _ _) _) e2 _) = do
         go e1
         go e2
@@ -414,6 +417,9 @@ lutStats e =
     go (AssignE e1 e2 _) = do
         go e1
         go e2
+
+    go LowerE{} =
+        return ()
 
     go (WhileE e1 e2 _) = do
         hasLoop

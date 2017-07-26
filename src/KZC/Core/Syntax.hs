@@ -252,6 +252,8 @@ data LocalDecl -- | Standard let binding
                = LetLD BoundVar Type Exp !SrcLoc
                -- | Ref binding
                | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+               -- | Type variable binding
+               | LetTypeLD TyVar Kind Type !SrcLoc
                -- | An array view binding
                | LetViewLD BoundVar Type View !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -274,6 +276,9 @@ data Exp = ConstE Const !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
+         -- Lower a (singleton) type to a term. Right now this only works for
+         -- types of kind nat.
+         | LowerE Type !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
@@ -529,6 +534,7 @@ instance Size LocalDecl where
     size (LetLD _ _ e _)           = 1 + size e
     size (LetRefLD _ _ Nothing _)  = 1
     size (LetRefLD _ _ (Just e) _) = 1 + size e
+    size LetTypeLD{}               = 0
     size LetViewLD{}               = 0
 
 instance Size Exp where
@@ -544,6 +550,7 @@ instance Size Exp where
     size (WhileE e1 e2 _)       = 1 + size e1 + size e2
     size (ForE _ _ _ gint e3 _) = 1 + size gint + size e3
     size (ArrayE es _)          = 1 + size es
+    size LowerE{}               = 1
     size (IdxE e1 e2 _ _)       = 1 + size e1 + size e2
     size (StructE _ _ flds _)   = size (map snd flds)
     size (ProjE e _ _)          = 1 + size e
@@ -602,6 +609,7 @@ instance LUTSize LocalDecl where
     lutSize (LetLD _ _ e _)           = lutSize e
     lutSize (LetRefLD _ _ Nothing _)  = 0
     lutSize (LetRefLD _ _ (Just e) _) = lutSize e
+    lutSize LetTypeLD{}               = 0
     lutSize LetViewLD{}               = 0
 
 instance LUTSize Exp where
@@ -617,6 +625,7 @@ instance LUTSize Exp where
     lutSize (WhileE e1 e2 _)      = lutSize e1 + lutSize e2
     lutSize (ForE _ _ _ gint e _) = lutSize gint + lutSize e
     lutSize (ArrayE es _)         = lutSize es
+    lutSize LowerE{}              = 0
     lutSize (IdxE e1 e2 _ _)      = lutSize e1 + lutSize e2
     lutSize (StructE _ _ flds _)  = lutSize (map snd flds)
     lutSize (ProjE e _ _)         = lutSize e
@@ -684,9 +693,10 @@ instance Summary (Decl l) where
     summary (LetFunCompD f tvks _ _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
 instance Summary LocalDecl where
-    summary (LetLD v _ _ _)     = text "definition of" <+> ppr v
-    summary (LetRefLD v _ _ _)  = text "definition of" <+> ppr v
-    summary (LetViewLD v _ _ _) = text "definition of" <+> ppr v
+    summary (LetLD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetRefLD v _ _ _)      = text "definition of" <+> ppr v
+    summary (LetTypeLD alpha _ _ _) = text "definition of" <+> ppr alpha
+    summary (LetViewLD v _ _ _)     = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -802,6 +812,10 @@ instance Pretty LocalDecl where
         parensIf (p > appPrec) $
         text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
+    pprPrec p (LetTypeLD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let type" <+> ppr alpha <+> colon <+> ppr kappa <+> text "=" <+/> ppr tau
+
     pprPrec p (LetViewLD v tau vw _) =
         parensIf (p > appPrec) $
         text "let view" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr vw
@@ -845,6 +859,9 @@ instance Pretty Exp where
     pprPrec p (AssignE v e _) =
         parensIf (p > appPrec) $
         nest 2 $ ppr v <+> text ":=" <+/> pprPrec appPrec1 e
+
+    pprPrec p (LowerE tau _) =
+        pprPrec p tau
 
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+>
@@ -1087,11 +1104,13 @@ instance Fvs View Var where
 instance Fvs LocalDecl Var where
     fvs (LetLD v _ e _)      = delete (bVar v) (fvs e)
     fvs (LetRefLD v _ e _)   = delete (bVar v) (fvs e)
+    fvs LetTypeLD{}          = mempty
     fvs (LetViewLD v _ vw _) = delete (bVar v) (fvs vw)
 
 instance Binders LocalDecl Var where
     binders (LetLD v _ _ _)     =  singleton (bVar v)
     binders (LetRefLD v _ _ _)  = singleton (bVar v)
+    binders LetTypeLD{}         = mempty
     binders (LetViewLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
@@ -1104,6 +1123,7 @@ instance Fvs Exp Var where
     fvs (CallE f _ es _)      = singleton f <> fvs es
     fvs (DerefE e _)          = fvs e
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs LowerE{}              = mempty
     fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
@@ -1194,6 +1214,7 @@ instance HasVars View Var where
 instance HasVars LocalDecl Var where
     allVars (LetLD v _ e _)      = singleton (bVar v) <> allVars e
     allVars (LetRefLD v _ e _)   = singleton (bVar v) <> allVars e
+    allVars LetTypeLD{}          = mempty
     allVars (LetViewLD v _ vw _) = singleton (bVar v) <> allVars vw
 
 instance HasVars Exp Var where
@@ -1206,6 +1227,7 @@ instance HasVars Exp Var where
     allVars (CallE f _ es _)      = singleton f <> allVars es
     allVars (DerefE e _)          = allVars e
     allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars LowerE{}              = mempty
     allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
@@ -1333,6 +1355,10 @@ instance Subst Type TyVar LocalDecl where
     substM (LetRefLD v tau e l) =
         LetRefLD v <$> substM tau <*> substM e <*> pure l
 
+    substM (LetTypeLD alpha kappa tau l) =
+        freshen alpha $ \alpha' ->
+        LetTypeLD alpha' kappa <$> substM tau <*> pure l
+
     substM (LetViewLD v tau vw s) =
         LetViewLD v <$> substM tau <*> substM vw <*> pure s
 
@@ -1363,6 +1389,9 @@ instance Subst Type TyVar Exp where
 
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (LowerE tau l) =
+        LowerE <$> substM tau <*> pure l
 
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
@@ -1507,6 +1536,9 @@ instance Subst Exp Var Exp where
 
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM e@LowerE{} =
+        pure e
 
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
@@ -1689,6 +1721,9 @@ instance Freshen LocalDecl Exp Var where
         e' <- substM e
         freshen v $ \v' ->
           k (LetRefLD v' tau e' l)
+
+    freshen (LetTypeLD alpha kappa tau l) k =
+        k (LetTypeLD alpha kappa tau l)
 
     freshen (LetViewLD v tau (IdxVW v_view e len _) l) k =
         ask (Map.lookup v_view . fst) >>= go

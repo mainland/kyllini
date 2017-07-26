@@ -535,6 +535,9 @@ simplLocalDecl decl m = do
         isDead :: Bool
         isDead = bOccInfo v == Just Dead
 
+    preInlineUnconditionally flags decl@LetTypeLD{} =
+        postInlineUnconditionally flags decl
+
     preInlineUnconditionally _flags LetViewLD{} =
         faildoc $ text "Views not supported"
 
@@ -560,6 +563,12 @@ simplLocalDecl decl m = do
             extendDefinitions [(bVar v', Unknown)] $
             keepRef (bVar v) $
             withRefBinding v' tau' e' s m
+
+    postInlineUnconditionally _flags (LetTypeLD alpha kappa tau s) = do
+        tau' <- simplType tau
+        extendTyVars [(alpha, kappa)] $
+          extendTyVarTypes [(alpha, tau')] $
+          withBinding (LetTypeLD alpha kappa tau' s) m
 
     postInlineUnconditionally _flags LetViewLD{} =
         faildoc $ text "Views not supported"
@@ -1384,6 +1393,11 @@ simplE (AssignE e1 e2 s) = do
       then do rewrite
               return $ returnE unitE
       else return $ AssignE e1' e2' s
+
+simplE (LowerE tau _) = do
+    tau' <- simplType tau
+    n    <- evalNat tau'
+    return $ intE n
 
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s

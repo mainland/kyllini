@@ -236,6 +236,12 @@ evalLocalDecl decl@(LetRefLD v tau maybe_e1 s1) k =
         new' :: Val l m Exp
         new' = if isKnown new then new else old
 
+evalLocalDecl (LetTypeLD alpha kappa tau s) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] $ do
+    tau' <- simplType tau
+    k $ DeclVal $ LetTypeLD alpha kappa tau' s
+
 evalLocalDecl LetViewLD{} _k =
     faildoc $ text "Views not supported"
 
@@ -862,6 +868,10 @@ evalExp e =
 
         go val1 val2 =
             partialCmd $ AssignE (toExp val1) (toExp val2) s
+
+    eval _flags (LowerE tau _) = do
+        n <- evalNat tau
+        return $ ConstV $ intC n
 
     eval _flags (WhileE e1 e2 _) =
         evalWhileE e1 e2

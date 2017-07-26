@@ -62,6 +62,8 @@ module KZC.Expr.Lint.Monad (
     extendLet,
     extendLetFun,
 
+    evalNat,
+
     typeSize,
     typeSizeInBytes,
 
@@ -98,6 +100,7 @@ import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Platform
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -429,19 +432,30 @@ extendLetFun _f tvks vbs tau_ret k =
     inSTScope tau_ret $
     inLocalScope k
 
+-- | Evaluate a type of kind nat.
+evalNat :: forall m . MonadTc m => Type -> m Int
+evalNat (NatT n _) =
+    return n
+
+evalNat (TyVarT alpha _) = do
+    lookupTyVarType alpha >>= evalNat
+
+evalNat tau =
+    faildoc $ text "Expected a type of kind nat, but got" <+> enquote (ppr tau)
+
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                 = pure 0
-    go BoolT{}                 = pure 1
-    go (IntT ip _)             = ipBitSize ip
-    go (FixT qp _)             = pure $ qpBitSize qp
-    go (FloatT fp _)           = pure $ fpBitSize fp
-    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)            = go tau
+    go UnitT{}              = pure 0
+    go BoolT{}              = pure 1
+    go (IntT ip _)          = ipBitSize ip
+    go (FixT qp _)          = pure $ qpBitSize qp
+    go (FloatT fp _)        = pure $ fpBitSize fp
+    go (ArrT n tau _)       = (*) <$> evalNat n <*> go tau
+    go (ST (C tau) _ _ _ _) = go tau
+    go (RefT tau _)         = go tau
 
     go (StructT s taus _) = do
         sdef <- lookupStruct s

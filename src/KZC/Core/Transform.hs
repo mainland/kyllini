@@ -295,6 +295,12 @@ transLocalDecl (LetRefLD v tau e s) m = do
     x    <- extendVars [(bVar v, refT tau)] m
     return (LetRefLD v tau' e' s, x)
 
+transLocalDecl (LetTypeLD alpha kappa tau s) m = do
+    tau' <- typeT tau
+    x    <- extendTyVars [(alpha, kappa)] $
+            extendTyVarTypes [(alpha, tau)] m
+    return (LetTypeLD alpha kappa tau' s, x)
+
 transLocalDecl (LetViewLD v tau vw s) m = do
     vw'  <- viewT vw
     tau' <- typeT tau
@@ -347,6 +353,9 @@ transExp (DerefE e s) =
 
 transExp (AssignE e1 e2 s) =
     AssignE <$> expT e1 <*> expT e2 <*> pure s
+
+transExp (LowerE tau s) =
+    LowerE <$> typeT tau <*> pure s
 
 transExp (WhileE e1 e2 s) =
     WhileE <$> expT e1 <*> expT e2 <*> pure s

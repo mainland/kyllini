@@ -26,6 +26,7 @@ instance Located View where
 instance Located LocalDecl where
   locOf (LetLD _ _ _ l) = locOf l
   locOf (LetRefLD _ _ _ l) = locOf l
+  locOf (LetTypeLD _ _ _ l) = locOf l
   locOf (LetViewLD _ _ _ l) = locOf l
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
@@ -37,6 +38,7 @@ instance Located Exp where
   locOf (CallE _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
+  locOf (LowerE _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
   locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l

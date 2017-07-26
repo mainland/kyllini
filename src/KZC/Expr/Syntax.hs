@@ -243,6 +243,8 @@ data Decl -- | Struct declaration
           | LetD Var Type Exp !SrcLoc
           -- | Ref binding
           | LetRefD Var Type (Maybe Exp) !SrcLoc
+          -- | Type variable binding
+          | LetTypeD TyVar Kind Type !SrcLoc
           -- | Function binding
           | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
           -- | External function binding
@@ -272,6 +274,9 @@ data Exp = ConstE Const !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
+         -- Lower a (singleton) type to a term. Right now this only works for
+         -- types of kind nat.
+         | LowerE Type !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
@@ -795,6 +800,7 @@ instance Summary Decl where
     summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
     summary (LetD v _ _ _)            = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetTypeD alpha _ _ _)    = text "definition of" <+> ppr alpha
     summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
     summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
@@ -863,6 +869,10 @@ instance Pretty Decl where
     pprPrec p (LetRefD v tau (Just e) _) =
         parensIf (p > appPrec) $
         text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
+
+    pprPrec p (LetTypeD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let type" <+> ppr alpha <+> colon <+> ppr kappa <+> text "=" <+/> ppr tau
 
     pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
@@ -949,6 +959,9 @@ instance Pretty Exp where
     pprPrec p (AssignE v e _) =
         parensIf (p > appPrec) $
         ppr v <+> text ":=" <+/> pprPrec appPrec1 e
+
+    pprPrec p (LowerE tau _) =
+        pprPrec p tau
 
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+>
@@ -1372,6 +1385,7 @@ instance Fvs Decl Var where
     fvs StructD{}               = mempty
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetRefD v _ e _)       = delete v (fvs e)
+    fvs LetTypeD{}              = mempty
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs LetExtFunD{}            = mempty
 
@@ -1379,6 +1393,7 @@ instance Binders Decl Var where
     binders StructD{}              = mempty
     binders (LetD v _ _ _)         = singleton v
     binders (LetRefD v _ _ _)      = singleton v
+    binders LetTypeD{}             = mempty
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
 
@@ -1392,6 +1407,7 @@ instance Fvs Exp Var where
     fvs (CallE f _ es _)      = singleton f <> fvs es
     fvs (DerefE e _)          = fvs e
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs LowerE{}              = mempty
     fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
@@ -1433,6 +1449,7 @@ instance HasVars Decl Var where
     allVars StructD{}                = mempty
     allVars (LetD v _ e _)           = singleton v <> allVars e
     allVars (LetRefD v _ e _)        = singleton v <> allVars e
+    allVars LetTypeD{}               = mempty
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
 
@@ -1446,6 +1463,7 @@ instance HasVars Exp Var where
     allVars (CallE f _ es _)      = singleton f <> allVars es
     allVars (DerefE e _)          = allVars e
     allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars LowerE{}              = mempty
     allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
@@ -1549,6 +1567,10 @@ instance Subst Type TyVar Decl where
     substM (LetRefD v tau e l) =
         LetRefD v <$> substM tau <*> substM e <*> pure l
 
+    substM (LetTypeD alpha kappa tau l) =
+        freshen alpha $ \alpha' ->
+        LetTypeD alpha' kappa <$> substM tau <*> pure l
+
     substM (LetFunD v alphas vbs tau e l) =
         LetFunD v alphas <$> substM vbs <*> substM tau <*> substM e <*> pure l
 
@@ -1582,6 +1604,9 @@ instance Subst Type TyVar Exp where
 
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (LowerE tau l) =
+        LowerE <$> substM tau <*> pure l
 
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
@@ -1690,6 +1715,9 @@ instance Subst Exp Var Exp where
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
 
+    substM e@LowerE{} =
+        pure e
+
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
@@ -1789,6 +1817,27 @@ instance FreshVars TyVar where
  -
  ------------------------------------------------------------------------------}
 
+instance Freshen Decl Type TyVar where
+    freshen decl@StructD{} k =
+        k decl
+
+    freshen decl@LetD{} k =
+        k decl
+
+    freshen decl@LetRefD{} k =
+        k decl
+
+    freshen (LetTypeD alpha kappa tau l) k = do
+        tau' <- substM tau
+        freshen alpha $ \alpha' ->
+          k (LetTypeD alpha' kappa tau' l)
+
+    freshen decl@LetFunD{} k =
+        k decl
+
+    freshen decl@LetExtFunD{} k =
+        k decl
+
 instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) =
         freshenV (namedString n) mkV mkE alpha
@@ -1822,6 +1871,9 @@ instance Freshen Decl Exp Var where
         e' <- substM e
         freshen v $ \v' ->
           k (LetRefD v' tau e' l)
+
+    freshen (LetTypeD alpha kappa tau l) k =
+        k (LetTypeD alpha kappa tau l)
 
     freshen (LetFunD v alphas vbs tau e l) k =
         freshen v   $ \v'   ->

@@ -684,6 +684,11 @@ evalExp e =
             extendVals [(bVar v, val1)] $
             evalExp e2
 
+    go (LetE (LetTypeLD alpha kappa tau _) e _) =
+        extendTyVars [(alpha, kappa)] $
+        extendTyVarTypes [(alpha, tau)] $
+        evalExp e
+
     go (LetE (LetViewLD v tau view _) e2 _) =
         extendVars [(bVar v, tau)] $
         extendViews [(bVar v, view)] $
@@ -720,6 +725,10 @@ evalExp e =
           VarE v _ -> putVal v val
           _        -> return ()
         return top
+
+    go (LowerE tau _) = do
+        n <- evalNat tau
+        return $ IntV $ unit n
 
     go (WhileE e1 e2 _) = do
         val <- evalExp e1

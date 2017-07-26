@@ -623,6 +623,11 @@ cgLocalDecl _flags decl@(LetRefLD v tau maybe_e _) k =
     extendVars [(bVar v, refT tau)] $
     extendVarCExps [(bVar v, cve)] k
 
+cgLocalDecl _flags decl@(LetTypeLD alpha kappa tau _) k =
+    withSummaryContext decl $
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
+
 cgLocalDecl _flags LetViewLD{} _k =
     faildoc $ text "Views not supported."
 
@@ -1153,6 +1158,10 @@ cgExp e k =
         ce1 <- cgExpOneshot e1
         cgExp e2 $ multishotBind tau ce1
         runKont k CVoid
+
+    go (LowerE tau _) k = do
+        ce <- cgNatType tau
+        runKont k ce
 
     {- Note [Compiling While Loops]
 

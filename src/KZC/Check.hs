@@ -362,6 +362,20 @@ checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k [mcdecl]
 
+checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
+    alpha <- fromZ zalpha
+    kappa <- maybe (return NatK) fromZ zkappa
+    tau   <- fromZ ztau
+    -- We only allow type variables of kind nat to be specified this way
+    alwaysWithSummaryContext decl $ checkKind tau kappa
+    let mcdecl = do calpha <- trans alpha
+                    ckappa <- trans kappa
+                    ctau   <- trans tau
+                    return $ E.LetTypeD calpha ckappa ctau l
+    extendTyVars [(alpha, kappa)] $
+      extendTyVarTypes [(alpha, tau)] $
+      k [mcdecl]
+
 checkDecl decl@(Z.LetFunD f tvks ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
                        checkLetFun f tvks ps tau e l
@@ -452,6 +466,13 @@ tcExp (Z.VarE v _) exp_ty = do
     (tau, co) <- lookupVar v >>= instantiate
     instType tau exp_ty
     return $ co $ E.varE <$> trans v
+
+tcExp (Z.TyVarE zalpha _) exp_ty = do
+    alpha <- fromZ zalpha
+    kappa <- lookupTyVar alpha
+    unifyKinds intT kappa NatK
+    instType intT exp_ty
+    return $ E.lowerTyVarE <$> trans alpha
 
 tcExp (Z.UnopE op e l) exp_ty =
     withExpContext e $

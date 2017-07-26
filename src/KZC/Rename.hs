@@ -19,6 +19,7 @@ import Text.PrettyPrint.Mainland
 import Language.Ziria.Syntax
 
 import KZC.Rename.Monad
+import KZC.Util.Error
 import KZC.Util.Summary
 
 renameProgram :: Program -> (Program -> Rn a) -> Rn a
@@ -93,8 +94,17 @@ instance Rename Exp where
     rn e@ConstE{} =
         pure e
 
-    rn (VarE v l) =
-        VarE <$> rn v <*> pure l
+    rn (VarE v@(Var n) l) = do
+        maybe_v' <- maybeLookupVar v
+        case maybe_v' of
+          Just v' -> return $ VarE v' l
+          Nothing -> do maybe_alpha <- maybeLookupTyVar (TyVar n)
+                        case maybe_alpha of
+                          Just alpha -> return $ TyVarE alpha l
+                          Nothing    -> notInScope (text "Variable") v
+
+    rn (TyVarE alpha l) =
+        TyVarE <$> rn alpha <*> pure l
 
     rn (UnopE op e l) =
         UnopE op <$> rn e <*> pure l
@@ -112,6 +122,10 @@ instance Rename Exp where
     rn (LetRefE v tau e1 e2 l) =
         extendVars (text "definition") [v] $
         LetRefE <$> rn v <*> rn tau <*> rn e1 <*> rn e2 <*> pure l
+
+    rn (LetTypeE alpha tau e l) =
+        extendTyVars (text "definition") [alpha] $
+        LetTypeE <$> rn alpha <*> rn tau <*> rn e <*> pure l
 
     rn (LetDeclE decl e l) =
         rnDecl decl $ \decl' -> do
@@ -242,6 +256,12 @@ rnDecl decl@(LetRefD v tau e l) k =
     extendVars (text "mutable variable") [v] $ do
     decl' <- withSummaryContext decl $
              LetRefD <$> rn v <*> rn tau <*> inPureScope (rn e) <*> pure l
+    k decl'
+
+rnDecl decl@(LetTypeD alpha kappa tau l) k =
+    extendTyVars (text "nat variable") [alpha] $ do
+    decl' <- withSummaryContext decl $
+             LetTypeD <$> rn alpha <*> pure kappa <*> rn tau <*> pure l
     k decl'
 
 rnDecl decl@(LetFunD v tvks vbs tau_ret e l) k =

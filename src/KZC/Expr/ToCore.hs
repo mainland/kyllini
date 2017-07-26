@@ -128,6 +128,10 @@ transDecl decl@(E.LetD v tau e l) k
     extendVars [(v,tau)] $
       k $ LetCompD (mkBoundVar v') tau c l
 
+transDecl decl@(E.LetTypeD _ _ _ l) k =
+    transLocalDecl decl $ \decl' ->
+    k $ LetD decl' l
+
 transDecl decl@(E.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
@@ -183,6 +187,10 @@ transLocalDecl decl@(E.LetRefD v tau (Just e) l) k =
     extendVars [(v, refT tau)] $
       k $ LetRefLD (mkBoundVar v') tau (Just e') l
 
+transLocalDecl (E.LetTypeD alpha kappa tau l) k =
+    extendTyVars [(alpha, kappa)] $
+      k $ LetTypeLD alpha kappa tau l
+
 transLocalDecl decl _ =
     withSummaryContext decl $
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
@@ -191,6 +199,7 @@ transLocalDecl decl _ =
     pprDeclType E.StructD{}    = text "struct"
     pprDeclType E.LetD{}       = text "let"
     pprDeclType E.LetRefD{}    = text "let ref"
+    pprDeclType E.LetTypeD{}   = text "let type"
     pprDeclType E.LetFunD{}    = text "fun"
     pprDeclType E.LetExtFunD{} = text "fun external"
 
@@ -226,6 +235,9 @@ transExp (E.DerefE e l) =
 
 transExp (E.AssignE e1 e2 l) =
     AssignE <$> transExp e1 <*> transExp e2 <*> pure l
+
+transExp (E.LowerE tau l) =
+    pure $ LowerE tau l
 
 transExp (E.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l

@@ -315,6 +315,10 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit Nothing  = defaultRef tau
     evalInit (Just e) = evalExp e >>= toRef
 
+evalDecl (LetTypeLD alpha kappa tau _) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
+
 evalDecl LetViewLD{} _ =
      faildoc $ text "Views not supported"
 
@@ -560,6 +564,10 @@ compileDecl (LetRefLD v tau e _) k = do
     compileInit Nothing  = do val <- defaultVal tau
                               return $ return val
     compileInit (Just e) = compileExp e
+
+compileDecl (LetTypeLD alpha kappa tau _) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
 
 compileDecl LetViewLD{} _k =
     faildoc $ text "Views not supported."

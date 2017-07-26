@@ -141,6 +141,8 @@ data Decl -- | Struct declaration
           | LetD Var (Maybe Type) Exp !SrcLoc
           -- | Reference binding
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
+          -- | Type variable binding
+          | LetTypeD TyVar (Maybe Kind) Type !SrcLoc
           -- | Function binding
           | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
           -- | External function binding
@@ -160,11 +162,13 @@ data Const = UnitC
 
 data Exp = ConstE Const !SrcLoc
          | VarE Var !SrcLoc
+         | TyVarE TyVar !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
          | LetRefE Var (Maybe Type) (Maybe Exp) Exp !SrcLoc
+         | LetTypeE TyVar Type Exp !SrcLoc
          | LetDeclE Decl Exp !SrcLoc
          -- Functions
          | CallE Var (Maybe [Type]) [Exp] !SrcLoc
@@ -364,6 +368,7 @@ instance Fvs Decl Var where
     fvs TypeD  {}                      = mempty
     fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
     fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
+    fvs LetTypeD{}                     = mempty
     fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
     fvs LetFunExternalD{}              = mempty
     fvs d@(LetCompD _ _ _ e _)         = fvs e <\\> binders d
@@ -372,11 +377,13 @@ instance Fvs Decl Var where
 instance Fvs Exp Var where
     fvs ConstE{}              = mempty
     fvs (VarE v _)            = singleton v
+    fvs TyVarE{}              = mempty
     fvs (UnopE _ e _)         = fvs e
     fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
     fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
     fvs (LetE v _ e1 e2 _)    = delete v (fvs e1 <> fvs e2)
     fvs (LetRefE v _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (LetTypeE _ _ e _)    = fvs e
     fvs (LetDeclE decl e _)   = fvs decl <> (fvs e <\\> binders decl)
     fvs (CallE v _ es _)      = singleton v <> fvs es
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
@@ -425,6 +432,7 @@ instance Binders Decl Var where
     binders TypeD{}                       = mempty
     binders (LetD v _ _ _)                = singleton v
     binders (LetRefD v _ _ _)             = singleton v
+    binders LetTypeD{}                    = mempty
     binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetFunExternalD v ps _ _ _)  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetCompD v _ _ _ _)          = singleton v
@@ -441,6 +449,7 @@ instance Summary Decl where
     summary (TypeD s _ _ _)             = text "definition of" <+> ppr s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetTypeD alpha _ _ _)      = text "definition of" <+> ppr alpha
     summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
@@ -521,6 +530,14 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e <> semi
 
+    pprPrec p (LetTypeD alpha kappa tau _) | classicDialect =
+        parensIf (p > appPrec) $
+        text "nat" <+> pprKindSig (alpha, kappa) <+> char '=' <+> ppr tau
+
+    pprPrec p (LetTypeD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let nat" <+> pprKindSig (alpha, kappa) <+> char '=' <+> ppr tau <+> semi
+
     pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
@@ -581,6 +598,9 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
+    pprPrec _ (TyVarE alpha _) =
+        ppr alpha
+
     pprPrec _ (UnopE op e _) | isFunUnop op =
         ppr op <> parens (ppr e)
 
@@ -616,6 +636,16 @@ instance Pretty Exp where
         text "let mut" <+> pprTypeSig v tau <+>
         pprInitializer e1 <+/>
         text "in" <+> pprPrec appPrec1 e2
+
+    pprPrec p (LetTypeE alpha tau e _) | classicDialect =
+        parensIf (p >= appPrec) $
+        text "nat" <+> ppr alpha <+> char '=' <+> ppr tau <+>
+        text "in" <+> pprPrec appPrec1 e
+
+    pprPrec p (LetTypeE alpha tau e _) =
+        parensIf (p >= appPrec) $
+        text "let nat" <+> ppr alpha <+> char '=' <+> ppr tau <+>
+        text "in" <+> pprPrec appPrec1 e
 
     pprPrec p (LetDeclE decl e _) =
         parensIf (p >= appPrec) $

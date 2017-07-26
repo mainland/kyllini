@@ -93,6 +93,7 @@ module KZC.Expr.Smart (
     varE,
     letE,
     callE,
+    lowerTyVarE,
     derefE,
     structE,
     projE,
@@ -422,6 +423,11 @@ letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
 
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
+
+lowerTyVarE :: TyVar -> Exp
+lowerTyVarE alpha = LowerE (TyVarT alpha l) l
+  where
+    l = srclocOf alpha
 
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)

@@ -762,6 +762,7 @@ decl :
       {% expected ["'='"] Nothing }
   | 'let' var_bind '=' exp error
       {% expected ["';'"] Nothing }
+
   | 'let' 'mut' var_bind maybe_initializer ';'
       { let { (v, tau) = $3 }
         in
@@ -769,6 +770,16 @@ decl :
       }
   | 'let' 'mut' var_bind error
       {% expected ["initializer", "';'"] Nothing }
+
+  | 'let' 'nat' ID '=' exp ';'
+    {% do { n <- natExp $5
+          ; return $ LetTypeD (mkTyVar (varid $3)) (Just NatK) n ($1 `srcspan` $5)
+          }
+    }
+  | 'let' 'nat' ID '=' exp error
+      {% expected ["';'"] Nothing }
+  | 'let' 'nat' ID '=' error
+      {% expected ["type of kind nat"] Nothing }
 
   | 'let' 'comp' maybe_comp_range comp_var_bind '=' stm_exp
       { let { (v, tau) = $4 }
