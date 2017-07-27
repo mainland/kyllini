@@ -1283,29 +1283,6 @@ pprBody e = softline <> ppr (expToStms e)
 -- %left 'length'
 -- %left '~' 'not' NEG
 
-instance HasFixity Binop where
-    fixity Eq   = infixl_ 2
-    fixity Ne   = infixl_ 2
-    fixity Lt   = infixl_ 6
-    fixity Le   = infixl_ 6
-    fixity Ge   = infixl_ 6
-    fixity Gt   = infixl_ 6
-    fixity Land = infixl_ 1
-    fixity Lor  = infixl_ 1
-    fixity Band = infixl_ 5
-    fixity Bor  = infixl_ 3
-    fixity Bxor = infixl_ 4
-    fixity LshL = infixl_ 7
-    fixity LshR = infixl_ 7
-    fixity AshR = infixl_ 7
-    fixity Add  = infixl_ 8
-    fixity Sub  = infixl_ 8
-    fixity Mul  = infixl_ 9
-    fixity Div  = infixl_ 9
-    fixity Rem  = infixl_ 9
-    fixity Pow  = infixl_ 10
-    fixity Cat  = infixr_ 2
-
 instance HasFixity Unop where
     fixity Lnot        = infixr_ 12
     fixity Bnot        = infixr_ 12
@@ -1333,6 +1310,29 @@ instance HasFixity Unop where
     fixity Len         = infixr_ 11
     fixity (Cast _)    = infixr_ 10
     fixity (Bitcast _) = infixr_ 10
+
+instance HasFixity Binop where
+    fixity Eq   = infixl_ 2
+    fixity Ne   = infixl_ 2
+    fixity Lt   = infixl_ 6
+    fixity Le   = infixl_ 6
+    fixity Ge   = infixl_ 6
+    fixity Gt   = infixl_ 6
+    fixity Land = infixl_ 1
+    fixity Lor  = infixl_ 1
+    fixity Band = infixl_ 5
+    fixity Bor  = infixl_ 3
+    fixity Bxor = infixl_ 4
+    fixity LshL = infixl_ 7
+    fixity LshR = infixl_ 7
+    fixity AshR = infixl_ 7
+    fixity Add  = infixl_ 8
+    fixity Sub  = infixl_ 8
+    fixity Mul  = infixl_ 9
+    fixity Div  = infixl_ 9
+    fixity Rem  = infixl_ 9
+    fixity Pow  = infixl_ 10
+    fixity Cat  = infixr_ 2
 
 {------------------------------------------------------------------------------
  -
