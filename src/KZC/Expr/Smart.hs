@@ -395,7 +395,7 @@ castE :: Type -> Exp -> Exp
 castE tau (ConstE c l) | Just c' <- liftCast tau c =
     ConstE c' l
 
-castE tau e = UnopE (Cast tau) e (srclocOf e)
+castE tau e = CastE tau e (srclocOf e)
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc

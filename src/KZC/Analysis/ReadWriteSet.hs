@@ -599,12 +599,6 @@ evalExp e =
         unop Neg (IntV i)
             | Just x <- fromUnit i  = IntV $ unit (negate x :: Integer)
         unop Neg _                  = top
-        -- XXX not quite correct since we don't actually cast.
-        unop (Cast IntT{}) v@IntV{} = v
-        unop (Cast IntT{}) _        = IntV top
-        unop Cast{} _               = top
-        unop (Bitcast IntT{}) _     = IntV top
-        unop Bitcast{} _            = top
         unop Len _                  = IntV top
         unop _ _                    = top
 
@@ -765,6 +759,22 @@ evalExp e =
     go (ProjE e _ _) = do
         void $ evalExp e
         return top
+
+    go (CastE tau e _) =
+        cast tau <$> evalExp e
+      where
+        cast :: Type -> Val -> Val
+        -- XXX not quite correct since we don't actually cast.
+        cast IntT{} v@IntV{} = v
+        cast IntT{} _        = IntV top
+        cast _      _        = top
+
+    go (BitcastE tau e _) =
+        bitcast tau <$> evalExp e
+      where
+        bitcast :: Type -> Val -> Val
+        bitcast IntT{} _ = IntV top
+        bitcast _      _ = top
 
     go (PrintE _ es _) = do
         mapM_ evalExp es

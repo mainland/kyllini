@@ -326,12 +326,6 @@ transExp (ConstE c s) =
 transExp e@VarE{} =
     pure e
 
-transExp (UnopE (Cast tau) e s) =
-    UnopE <$> (Cast <$> typeT tau) <*> expT e <*> pure s
-
-transExp (UnopE (Bitcast tau) e s) =
-    UnopE <$> (Bitcast <$> typeT tau) <*> expT e <*> pure s
-
 transExp (UnopE op e s) =
     UnopE op <$> expT e <*> pure s
 
@@ -376,6 +370,12 @@ transExp (StructE struct taus flds s) =
 
 transExp (ProjE e f s) =
     ProjE <$> expT e <*> pure f <*> pure s
+
+transExp (CastE tau e s) =
+    CastE <$> typeT tau <*> expT e <*> pure s
+
+transExp (BitcastE tau e s) =
+    BitcastE <$> typeT tau <*> expT e <*> pure s
 
 transExp (PrintE nl es s) =
     PrintE nl <$> mapM expT es <*> pure s

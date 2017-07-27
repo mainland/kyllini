@@ -391,7 +391,7 @@ aexp :
   | 'length' aexp
       { UnopE Len $2 ($1 `srcspan` $2)}
   | cast_type '(' exp ')'
-      { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
+      { CastE $1 $3 ($1 `srcspan` $4)}
 
   | structid '{' struct_init_list1 '}'
       { StructE $1 [] $3 ($1 `srcspan` $4) }

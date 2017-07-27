@@ -283,6 +283,9 @@ data Exp = ConstE Const !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
+         -- Casts
+         | CastE Type Exp !SrcLoc
+         | BitcastE Type Exp !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
          | ErrorE Type String !SrcLoc
@@ -544,6 +547,8 @@ instance Size Exp where
     size (IdxE e1 e2 _ _)       = 1 + size e1 + size e2
     size (StructE _ _ flds _)   = size (map snd flds)
     size (ProjE e _ _)          = 1 + size e
+    size (CastE _ e _)          = size e
+    size (BitcastE _ e _)       = size e
     size (PrintE _ es _)        = 1 + size es
     size ErrorE{}               = 1
     size (ReturnE _ e _)        = size e
@@ -615,6 +620,8 @@ instance LUTSize Exp where
     lutSize (IdxE e1 e2 _ _)      = lutSize e1 + lutSize e2
     lutSize (StructE _ _ flds _)  = lutSize (map snd flds)
     lutSize (ProjE e _ _)         = lutSize e
+    lutSize (CastE _ e _)         = lutSize e
+    lutSize (BitcastE _ e _)      = lutSize e
     lutSize (PrintE _ es _)       = lutSize es
     lutSize ErrorE{}              = 0
     lutSize (ReturnE _ e _)       = lutSize e
@@ -811,14 +818,6 @@ instance Pretty Exp where
     pprPrec _ (UnopE op e _) | isFunUnop op =
         ppr op <> parens (ppr e)
 
-    pprPrec p (UnopE op@Cast{} e _) =
-        parensIf (p > precOf op) $
-        ppr op <> parens (ppr e)
-
-    pprPrec p (UnopE op@Bitcast{} e _) =
-        parensIf (p > precOf op) $
-        ppr op <> parens (ppr e)
-
     pprPrec p (UnopE op e _) =
         unop p op e
 
@@ -871,6 +870,12 @@ instance Pretty Exp where
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
+
+    pprPrec _ (CastE tau e _) =
+        text "cast" <> angles (ppr tau) <> parens (ppr e)
+
+    pprPrec _ (BitcastE tau e _) =
+        text "bitcast" <> angles (ppr tau) <> parens (ppr e)
 
     pprPrec _ (PrintE True es _) =
         text "println" <> parens (commasep (map (pprPrec appPrec1) es))
@@ -1105,6 +1110,8 @@ instance Fvs Exp Var where
     fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
     fvs (StructE _ _ flds _)  = fvs (map snd flds)
     fvs (ProjE e _ _)         = fvs e
+    fvs (CastE _ e _)         = fvs e
+    fvs (BitcastE _ e _)      = fvs e
     fvs (PrintE _ es _)       = fvs es
     fvs ErrorE{}              = mempty
     fvs (ReturnE _ e _)       = fvs e
@@ -1205,6 +1212,8 @@ instance HasVars Exp Var where
     allVars (IdxE e1 e2 _ _)      = allVars e1 <> allVars e2
     allVars (StructE _ _ flds _)  = allVars (map snd flds)
     allVars (ProjE e _ _)         = allVars e
+    allVars (CastE _ e _)         = allVars e
+    allVars (BitcastE _ e _)      = allVars e
     allVars (PrintE _ es _)       = allVars es
     allVars ErrorE{}              = mempty
     allVars (ReturnE _ e _)       = allVars e
@@ -1373,6 +1382,12 @@ instance Subst Type TyVar Exp where
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
 
+    substM (CastE tau e l) =
+        CastE <$> substM tau <*> substM e <*> pure l
+
+    substM (BitcastE tau e l) =
+        BitcastE <$> substM tau <*> substM e <*> pure l
+
     substM (PrintE nl es l) =
         PrintE nl <$> substM es <*> pure l
 
@@ -1512,6 +1527,12 @@ instance Subst Exp Var Exp where
 
     substM (ProjE e fld l) =
         ProjE <$> substM e <*> pure fld <*> pure l
+
+    substM (CastE tau e l) =
+        CastE tau <$> substM e <*> pure l
+
+    substM (BitcastE tau e l) =
+        BitcastE tau <$> substM e <*> pure l
 
     substM (PrintE nl es l) =
         PrintE nl <$> substM es <*> pure l

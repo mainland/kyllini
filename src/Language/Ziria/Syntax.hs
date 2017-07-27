@@ -181,6 +181,9 @@ data Exp = ConstE Const !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
+         -- Casts
+         | CastE Type Exp !SrcLoc
+         | BitcastE Type Exp !SrcLoc
          -- Print
          | PrintE Bool [Exp] !SrcLoc
          | ErrorE String !SrcLoc
@@ -240,17 +243,17 @@ data VectAnn = AutoVect
              | UpTo  Bool Int Int
   deriving (Eq, Ord, Read, Show)
 
-data Unop = Lnot      -- ^ Logical not
-          | Bnot      -- ^ Bitwise not
-          | Neg       -- ^ Negation
-          | Abs       -- ^ Absolute value
-          | Exp       -- ^ e^x
-          | Exp2      -- ^ 2^x
-          | Expm1     -- ^ e^x - 1
-          | Log       -- ^ Log base e
-          | Log2      -- ^ Log base 2
-          | Log1p     -- ^ Log base e of (1 + x)
-          | Sqrt      -- ^ Square root
+data Unop = Lnot  -- ^ Logical not
+          | Bnot  -- ^ Bitwise not
+          | Neg   -- ^ Negation
+          | Abs   -- ^ Absolute value
+          | Exp   -- ^ e^x
+          | Exp2  -- ^ 2^x
+          | Expm1 -- ^ e^x - 1
+          | Log   -- ^ Log base e
+          | Log2  -- ^ Log base 2
+          | Log1p -- ^ Log base e of (1 + x)
+          | Sqrt  -- ^ Square root
           | Sin
           | Cos
           | Tan
@@ -263,9 +266,7 @@ data Unop = Lnot      -- ^ Logical not
           | Asinh
           | Acosh
           | Atanh
-          | Cast Type    -- ^ Type cast
-          | Bitcast Type -- ^ Bit-wise type cast
-          | Len          -- ^ Array length
+          | Len    -- ^ Array length
   deriving (Eq, Ord, Read, Show)
 
 -- | Returns 'True' if 'Unop' application should be pretty-printed as a function
@@ -387,6 +388,8 @@ instance Fvs Exp Var where
     fvs (IdxE e1 e2 _ _)      = fvs e1 <> fvs e2
     fvs (StructE _ _ flds _)  = fvs (map snd flds)
     fvs (ProjE e _ _)         = fvs e
+    fvs (CastE _ e _)         = fvs e
+    fvs (BitcastE _ e _)      = fvs e
     fvs (PrintE _ es _)       = fvs es
     fvs ErrorE{}              = mempty
     fvs (ReturnE _ e _)       = fvs e
@@ -581,18 +584,6 @@ instance Pretty Exp where
     pprPrec _ (UnopE op e _) | isFunUnop op =
         ppr op <> parens (ppr e)
 
-    pprPrec p (UnopE op@(Bitcast tau) e _) =
-        parensIf (p > precOf op) $
-        text "bitcast" <> angles (ppr tau) <> parens (pprPrec (precOf op) e)
-
-    pprPrec p (UnopE op@(Cast tau) e _) | classicDialect =
-        parensIf (p > precOf op) $
-        ppr tau <> parens (ppr e)
-
-    pprPrec p (UnopE op@(Cast tau) e _) =
-        parensIf (p > precOf op) $
-        text "cast" <> angles (ppr tau) <> parens (ppr e)
-
     pprPrec p (UnopE op e _) =
         unop p op e
 
@@ -674,6 +665,15 @@ instance Pretty Exp where
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
+
+    pprPrec _ (CastE tau e _) | classicDialect =
+        pprPrec appPrec1 tau <> parens (ppr e)
+
+    pprPrec _ (CastE tau e _) =
+        text "cast" <> angles (ppr tau) <> parens (ppr e)
+
+    pprPrec _ (BitcastE tau e _) =
+        text "bitcast" <> angles (ppr tau) <> parens (ppr e)
 
     pprPrec p (PrintE True es _) =
         parensIf (p > appPrec) $
@@ -776,32 +776,30 @@ instance Pretty VectAnn where
     ppr AutoVect              = empty
 
 instance Pretty Unop where
-    ppr Lnot          = text "!"
-    ppr Bnot          = text "~"
-    ppr Neg           = text "-"
-    ppr Abs           = text "abs"
-    ppr Exp           = text "exp"
-    ppr Exp2          = text "exp2"
-    ppr Expm1         = text "expm1"
-    ppr Log           = text "log"
-    ppr Log2          = text "log2"
-    ppr Log1p         = text "log1p"
-    ppr Sqrt          = text "sqrt"
-    ppr Sin           = text "sin"
-    ppr Cos           = text "cos"
-    ppr Tan           = text "tan"
-    ppr Asin          = text "asin"
-    ppr Acos          = text "acos"
-    ppr Atan          = text "atan"
-    ppr Sinh          = text "sinh"
-    ppr Cosh          = text "cosh"
-    ppr Tanh          = text "tanh"
-    ppr Asinh         = text "asinh"
-    ppr Acosh         = text "acosh"
-    ppr Atanh         = text "atanh"
-    ppr Len           = text "length"
-    ppr (Cast tau)    = parens (ppr tau)
-    ppr (Bitcast tau) = parens (ppr tau)
+    ppr Lnot  = text "!"
+    ppr Bnot  = text "~"
+    ppr Neg   = text "-"
+    ppr Abs   = text "abs"
+    ppr Exp   = text "exp"
+    ppr Exp2  = text "exp2"
+    ppr Expm1 = text "expm1"
+    ppr Log   = text "log"
+    ppr Log2  = text "log2"
+    ppr Log1p = text "log1p"
+    ppr Sqrt  = text "sqrt"
+    ppr Sin   = text "sin"
+    ppr Cos   = text "cos"
+    ppr Tan   = text "tan"
+    ppr Asin  = text "asin"
+    ppr Acos  = text "acos"
+    ppr Atan  = text "atan"
+    ppr Sinh  = text "sinh"
+    ppr Cosh  = text "cosh"
+    ppr Tanh  = text "tanh"
+    ppr Asinh = text "asinh"
+    ppr Acosh = text "acosh"
+    ppr Atanh = text "atanh"
+    ppr Len   = text "length"
 
 instance Pretty Binop where
     ppr Eq   = text "=="
@@ -972,32 +970,30 @@ pprTyApp taus = angles $ commasep (map ppr taus)
 -- %left '~' 'not' NEG
 
 instance HasFixity Unop where
-    fixity Lnot        = infixr_ 12
-    fixity Bnot        = infixr_ 12
-    fixity Neg         = infixr_ 12
-    fixity Abs         = infixr_ 11
-    fixity Exp         = infixr_ 11
-    fixity Exp2        = infixr_ 11
-    fixity Expm1       = infixr_ 11
-    fixity Log         = infixr_ 11
-    fixity Log2        = infixr_ 11
-    fixity Log1p       = infixr_ 11
-    fixity Sqrt        = infixr_ 11
-    fixity Sin         = infixr_ 11
-    fixity Cos         = infixr_ 11
-    fixity Tan         = infixr_ 11
-    fixity Asin        = infixr_ 11
-    fixity Acos        = infixr_ 11
-    fixity Atan        = infixr_ 11
-    fixity Sinh        = infixr_ 11
-    fixity Cosh        = infixr_ 11
-    fixity Tanh        = infixr_ 11
-    fixity Asinh       = infixr_ 11
-    fixity Acosh       = infixr_ 11
-    fixity Atanh       = infixr_ 11
-    fixity Len         = infixr_ 11
-    fixity (Cast _)    = infixr_ 10
-    fixity (Bitcast _) = infixr_ 10
+    fixity Lnot  = infixr_ 12
+    fixity Bnot  = infixr_ 12
+    fixity Neg   = infixr_ 12
+    fixity Abs   = infixr_ 11
+    fixity Exp   = infixr_ 11
+    fixity Exp2  = infixr_ 11
+    fixity Expm1 = infixr_ 11
+    fixity Log   = infixr_ 11
+    fixity Log2  = infixr_ 11
+    fixity Log1p = infixr_ 11
+    fixity Sqrt  = infixr_ 11
+    fixity Sin   = infixr_ 11
+    fixity Cos   = infixr_ 11
+    fixity Tan   = infixr_ 11
+    fixity Asin  = infixr_ 11
+    fixity Acos  = infixr_ 11
+    fixity Atan  = infixr_ 11
+    fixity Sinh  = infixr_ 11
+    fixity Cosh  = infixr_ 11
+    fixity Tanh  = infixr_ 11
+    fixity Asinh = infixr_ 11
+    fixity Acosh = infixr_ 11
+    fixity Atanh = infixr_ 11
+    fixity Len   = infixr_ 11
 
 instance HasFixity Binop where
     fixity Eq   = infixl_ 2

@@ -591,9 +591,8 @@ evalExp e =
           else partialExp $ VarE v' s
 
     eval flags (UnopE op e s) | peval flags = do
-        op' <- evalUnop op
         val <- eval flags e
-        unop op' val
+        unop op val
       where
         unop :: Unop -> Val l m Exp -> EvalM l m (Val l m Exp)
         unop Lnot  val = maybePartialVal $ liftBool op not val
@@ -620,32 +619,12 @@ evalExp e =
         unop Acosh val = maybePartialVal $ liftFloating op acosh val
         unop Atanh val = maybePartialVal $ liftFloating op atanh val
 
-        unop (Cast (StructT s [_tau] _)) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
-            flds' <- castStruct cast s' (Map.toList flds)
-            return $ StructV s' [tau'] (Map.fromList flds')
-          where
-            cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
-            cast tau = unop (Cast tau)
-
-        unop (Cast tau) val =
-            maybePartialVal $ liftCast tau val
-
         unop Len val = do
             (n, _) <- inferExp e >>= checkArrOrRefArrT
             phi    <- askTyVarTypeSubst
             case subst phi mempty n of
               NatT n _ -> evalConst $ idxC n
               _ -> partialExp $ UnopE op (toExp val) s
-
-        unop op val =
-            partialExp $ UnopE op (toExp val) s
-
-        evalUnop :: Unop -> EvalM l m Unop
-        evalUnop (Cast tau)    = do phi <- askTyVarTypeSubst
-                                    return $ Cast (subst phi mempty tau)
-        evalUnop (Bitcast tau) = do phi <- askTyVarTypeSubst
-                                    return $ Bitcast (subst phi mempty tau)
-        evalUnop op            = pure op
 
     eval flags (UnopE op e s) = do
         val <- eval flags e
@@ -918,6 +897,23 @@ evalExp e =
         if peval flags
           then evalProj val f
           else partialExp $ ProjE (toExp val) f s
+
+    eval flags (CastE tau e _) = do
+        phi <- askTyVarTypeSubst
+        val <- eval flags e
+        cast (subst phi mempty tau) val
+      where
+        cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
+        cast (StructT s [_tau] _) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
+            flds' <- castStruct cast s' (Map.toList flds)
+            return $ StructV s' [tau'] (Map.fromList flds')
+
+        cast tau val =
+            maybePartialVal $ liftCast tau val
+
+    eval flags (BitcastE tau e s) = do
+        val <- eval flags e
+        partialExp $ BitcastE tau (toExp val) s
 
     eval flags (PrintE nl es s) = do
         vals <- mapM (eval flags) es

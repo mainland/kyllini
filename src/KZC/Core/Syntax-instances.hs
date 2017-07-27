@@ -43,6 +43,8 @@ instance Located Exp where
   locOf (IdxE _ _ _ l) = locOf l
   locOf (StructE _ _ _ l) = locOf l
   locOf (ProjE _ _ l) = locOf l
+  locOf (CastE _ _ l) = locOf l
+  locOf (BitcastE _ _ l) = locOf l
   locOf (PrintE _ _ l) = locOf l
   locOf (ErrorE _ _ l) = locOf l
   locOf (ReturnE _ _ l) = locOf l

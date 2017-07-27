@@ -911,7 +911,7 @@ cgExp e k =
     go (VarE v _) k =
         lookupVarCExp v >>= runKont k
 
-    go e0@(UnopE op e l) k = withSummaryContext e0 $ do
+    go e0@(UnopE op e _) k = withSummaryContext e0 $ do
         tau       <- inferExp e
         ce        <- cgExpOneshot e
         maybe_tau <- runMaybeT $ checkComplexT tau
@@ -920,12 +920,6 @@ cgExp e k =
           Nothing -> cgUnop op tau ce  >>= runKont k
       where
         cgUnop ::  Unop -> Type -> CExp l -> Cg l (CExp l)
-        cgUnop (Cast tau_to) tau_from ce =
-            cgCast ce tau_from tau_to
-
-        cgUnop (Bitcast tau_to) tau_from ce =
-            cgBitcast ce tau_from tau_to
-
         cgUnop Len (RefT (ArrT n _ _) _) _ =
             cgNatType n
 
@@ -1001,39 +995,6 @@ cgExp e k =
 
         cgUnopComplex op _ce =
             panicdoc $ text "Illegal operation on complex value:" <+> ppr op
-
-        cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
-        cgCast ce _ tau_to | isBitT tau_to =
-            return $ CExp $ rl l [cexp|$ce > 0 ? 1 : 0|]
-
-        cgCast ce _ tau_to = do
-            ctau_to <- cgType tau_to
-            return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
-
-        cgBitcast :: CExp l -> Type -> Type -> Cg l (CExp l)
-        cgBitcast ce tau_from tau_to | tau_to == tau_from =
-            return ce
-
-        cgBitcast ce tau_from tau_to@(IntT ip _) | not (ipIsSigned ip) && isBitArrT tau_from = do
-            cbits   <- cgBits tau_from ce
-            ctau_to <- cgType tau_to
-            return $ CExp $ rl l [cexp|($ty:ctau_to) $cbits|]
-
-        cgBitcast ce tau_from@(IntT ip _) tau_to | not (ipIsSigned ip) && isBitArrT tau_to = do
-            ctau_to <- cgBitcastType tau_from
-            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
-
-        -- When casting a bit array to a Bool, we need to mask off the high
-        -- bits, which are left undefined!
-        cgBitcast ce tau_from tau_to@BoolT{} | isBitArrT tau_from = do
-            ctau_to   <- cgType tau_to
-            caddr     <- cgAddrOf tau_from ce
-            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr) & 0x1|]
-
-        cgBitcast ce tau_from tau_to = do
-            ctau_to <- cgType tau_to
-            caddr   <- cgAddrOf tau_from ce
-            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
     go e0@(BinopE op e1 e2 l) k = withSummaryContext e0 $ do
         tau <- inferExp e1
@@ -1267,6 +1228,49 @@ cgExp e k =
         ce1  <- cgExpOneshot e1
         ce1' <- rl l <$> cgProj ce1 fld
         runKont k $ calias e ce1'
+
+    go (CastE tau_to e l) k = do
+        tau_from <- inferExp e
+        ce       <- cgExpOneshot e
+        cgCast ce tau_from tau_to >>= runKont k
+      where
+        cgCast :: CExp l -> Type -> Type -> Cg l (CExp l)
+        cgCast ce _ tau_to | isBitT tau_to =
+            return $ CExp $ rl l [cexp|$ce > 0 ? 1 : 0|]
+
+        cgCast ce _ tau_to = do
+            ctau_to <- cgType tau_to
+            return $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
+    go (BitcastE tau_to e l) k = do
+        tau_from <- inferExp e
+        ce       <- cgExpOneshot e
+        cgBitcast ce tau_from tau_to >>= runKont k
+      where
+        cgBitcast :: CExp l -> Type -> Type -> Cg l (CExp l)
+        cgBitcast ce tau_from tau_to | tau_to == tau_from =
+            return ce
+
+        cgBitcast ce tau_from tau_to@(IntT ip _) | not (ipIsSigned ip) && isBitArrT tau_from = do
+            cbits   <- cgBits tau_from ce
+            ctau_to <- cgType tau_to
+            return $ CExp $ rl l [cexp|($ty:ctau_to) $cbits|]
+
+        cgBitcast ce tau_from@(IntT ip _) tau_to | not (ipIsSigned ip) && isBitArrT tau_to = do
+            ctau_to <- cgBitcastType tau_from
+            return $ CBits $ CExp $ rl l [cexp|($ty:ctau_to) $ce|]
+
+        -- When casting a bit array to a Bool, we need to mask off the high
+        -- bits, which are left undefined!
+        cgBitcast ce tau_from tau_to@BoolT{} | isBitArrT tau_from = do
+            ctau_to   <- cgType tau_to
+            caddr     <- cgAddrOf tau_from ce
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr) & 0x1|]
+
+        cgBitcast ce tau_from tau_to = do
+            ctau_to <- cgType tau_to
+            caddr   <- cgAddrOf tau_from ce
+            return $ CExp $ rl l [cexp|*(($ty:ctau_to*) $caddr)|]
 
     go (PrintE nl es l) k = do
         mapM_ cgPrint es

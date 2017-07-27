@@ -526,6 +526,8 @@ instance ModifiedVars Exp Var where
     mvs IdxE{}               = mempty
     mvs StructE{}            = mempty
     mvs ProjE{}              = mempty
+    mvs CastE{}              = mempty
+    mvs BitcastE{}           = mempty
     mvs PrintE{}             = mempty
     mvs ErrorE{}             = mempty
     mvs ReturnE{}            = mempty

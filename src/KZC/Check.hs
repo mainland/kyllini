@@ -482,22 +482,6 @@ tcExp (Z.UnopE op e l) exp_ty =
     unop Z.Acosh  = checkFracUnop E.Acosh
     unop Z.Atanh  = checkFracUnop E.Atanh
 
-    unop (Z.Cast ztau2) = do
-        (tau1, mce) <- inferVal e
-        tau2        <- fromZ ztau2
-        co          <- mkCast tau1 tau2
-        instType tau2 exp_ty
-        return $ co mce
-
-    unop (Z.Bitcast ztau2) = do
-        (tau1, mce) <- inferVal e
-        tau2        <- fromZ ztau2
-        checkLegalBitcast tau1 tau2
-        instType tau2 exp_ty
-        return $ do ce    <- mce
-                    ctau2 <- trans tau2
-                    return $ E.UnopE (E.Bitcast ctau2) ce (srclocOf e)
-
     unop Z.Len = do
         (tau, mce) <- inferExp e
         _          <- checkArrT tau
@@ -943,6 +927,22 @@ tcExp (Z.ProjE e f l) exp_ty = do
             return $ do ce <- mce
                         cf <- trans f
                         return $ E.ProjE ce cf l
+
+tcExp (Z.CastE ztau2 e _) exp_ty = do
+    (tau1, mce) <- inferVal e
+    tau2        <- fromZ ztau2
+    co          <- mkCast tau1 tau2
+    instType tau2 exp_ty
+    return $ co mce
+
+tcExp (Z.BitcastE ztau2 e l) exp_ty = do
+    (tau1, mce) <- inferVal e
+    tau2        <- fromZ ztau2
+    checkLegalBitcast tau1 tau2
+    instType tau2 exp_ty
+    return $ do ce    <- mce
+                ctau2 <- trans tau2
+                return $ E.BitcastE ctau2 ce l
 
 tcExp (Z.PrintE newline es l) exp_ty = do
     tau <- mkSTC (UnitT l)

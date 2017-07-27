@@ -261,6 +261,12 @@ liftExp (StructE s taus flds l) =
 liftExp (ProjE e f l) =
     ProjE <$> liftExp e <*> pure f <*> pure l
 
+liftExp (CastE tau e l) =
+    CastE tau <$> liftExp e <*> pure l
+
+liftExp (BitcastE tau e l) =
+    BitcastE tau <$> liftExp e <*> pure l
+
 liftExp (PrintE nl es l) =
     PrintE nl <$> mapM liftExp es <*> pure l
 

@@ -168,7 +168,7 @@ unConstE :: forall m . Monad m => Exp -> m Const
 unConstE (ConstE c _) =
     return c
 
-unConstE (UnopE (Cast tau) (ConstE c _) _) | Just c' <- liftCast tau c =
+unConstE (CastE tau (ConstE c _) _) | Just c' <- liftCast tau c =
     return c'
 
 unConstE (ArrayE es _) = do
@@ -195,9 +195,9 @@ fromIntE _            = fail "fromIntE: not an integer"
 
 -- | Return the index variable from an array indexing expression.
 fromIdxVarE :: Monad m => Exp -> m Var
-fromIdxVarE (VarE v _)                  = return v
-fromIdxVarE (UnopE Cast{} (VarE v _) _) = return v
-fromIdxVarE _                           = fail "Not an index variable"
+fromIdxVarE (VarE v _)             = return v
+fromIdxVarE (CastE _ (VarE v _) _) = return v
+fromIdxVarE _                      = fail "Not an index variable"
 
 unitE :: Exp
 unitE = ConstE UnitC noLoc
@@ -226,10 +226,10 @@ castE :: Type -> Exp -> Exp
 castE tau (ConstE c l) | Just c' <- liftCast tau c =
     ConstE c' l
 
-castE tau e = UnopE (Cast tau) e (srclocOf e)
+castE tau e = CastE tau e (srclocOf e)
 
 bitcastE :: Type -> Exp -> Exp
-bitcastE tau e = UnopE (Bitcast tau) e (srclocOf e)
+bitcastE tau e = BitcastE tau e (srclocOf e)
 
 localdeclE :: LocalDecl -> Exp -> Exp
 localdeclE d e = LetE d e (d `srcspan` e)

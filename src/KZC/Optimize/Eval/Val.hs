@@ -683,7 +683,7 @@ instance IsLabel l => LiftedCast (Val l m Exp) (Val l m Exp) where
         ConstV c'
 
     liftCast tau val =
-        ExpV $ UnopE (Cast tau) (toExp val) noLoc
+        ExpV $ CastE tau (toExp val) noLoc
 
 toConst :: forall l m . IsLabel l => Val l m Exp -> Const
 toConst (ConstV c) =

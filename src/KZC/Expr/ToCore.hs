@@ -253,6 +253,12 @@ transExp (E.StructE s taus flds l) =
 transExp (E.ProjE e f l) =
     ProjE <$> transExp e <*> pure f <*> pure l
 
+transExp (E.CastE tau e l) =
+    CastE tau <$> transExp e <*> pure l
+
+transExp (E.BitcastE tau e l) =
+    BitcastE tau <$> transExp e <*> pure l
+
 transExp (E.PrintE nl es l) =
     PrintE nl <$> mapM transExp es <*> pure l
 

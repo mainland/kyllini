@@ -362,9 +362,6 @@ evalExp e0@(UnopE op e _) = do
     unop Neg c | Just c' <- liftNum op negate c =
         return c'
 
-    unop (Cast tau) c | Just c' <- liftCast tau c =
-        return c'
-
     unop Len (ArrayC v) =
         return $ idxC $ V.length v
 
@@ -516,6 +513,15 @@ evalExp (ProjE e f _) = do
     val <- evalExp e
     projV val f
 
+evalExp e0@(CastE tau e _) = do
+    c <- evalExp e
+    case liftCast tau c of
+      Just c' -> return c'
+      Nothing -> faildoc $ text "Cannot evaluate" <+> ppr e0
+
+evalExp e@BitcastE{} =
+    faildoc $ text "Cannot evaluate" <+> ppr e
+
 evalExp (ReturnE _ e _) =
     evalExp e
 
@@ -607,9 +613,6 @@ compileExp e0@(UnopE op e _) = do
         return c'
 
     unop Neg c | Just c' <- liftNum op negate c =
-        return c'
-
-    unop (Cast tau) c | Just c' <- liftCast tau c =
         return c'
 
     unop Len (ArrayC v) =
@@ -783,6 +786,17 @@ compileExp (ProjE e f _) = do
     mval <- compileExp e
     return $ do val <- mval
                 projV val f
+
+compileExp e0@(CastE tau e _) = do
+    mval <- compileExp e
+    return $ do
+      val <- mval
+      case liftCast tau val of
+        Just c' -> return c'
+        Nothing -> faildoc $ text "Cannot evaluate" <+> ppr e0
+
+compileExp e@BitcastE{} =
+    faildoc $ text "Cannot evaluate" <+> ppr e
 
 compileExp (ReturnE _ e _) =
     compileExp e

@@ -1156,9 +1156,8 @@ simplE e0@(VarE v _) =
         simplE rhs
 
 simplE (UnopE op e s) = do
-    op' <- simplOp op
-    e'  <- simplE e
-    unop op' e'
+    e' <- simplE e
+    unop op e'
   where
     unop :: Unop -> Exp -> SimplM l m Exp
     unop Lnot (ConstE c _) | Just c' <- liftBool op not c = do
@@ -1173,42 +1172,6 @@ simplE (UnopE op e s) = do
         rewrite
         return $ ConstE c' s
 
-    unop (Cast (StructT sn' taus' _)) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
-        rewrite
-        flds' <- castStruct cast sn' flds
-        return $ ConstE (StructC sn' taus' flds') s
-      where
-        cast :: Type -> Const -> SimplM l m Const
-        cast tau c = do
-            ConstE c' _ <- unop (Cast tau) (ConstE c s)
-            return c'
-
-    unop (Cast (StructT sn' taus' _)) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
-        rewrite
-        flds' <- castStruct cast sn' flds
-        return $ StructE sn' taus' flds' s
-      where
-        cast :: Type -> Exp -> SimplM l m Exp
-        cast tau = unop (Cast tau)
-
-    -- Eliminate casts of constants
-    unop (Cast tau) (ConstE c _) | Just c' <- liftCast tau c = do
-        rewrite
-        return $ ConstE c' s
-
-    -- Avoid double cast
-    unop op@(Cast tau) e = do
-        tau' <- inferExp e
-        if tau' == tau
-          then do rewrite
-                  return e
-          else return $ UnopE op e s
-
-    -- Remove duplicate bitcast operations.
-    unop op@Bitcast{} (UnopE Bitcast{} e s) = do
-        rewrite
-        return $ UnopE op e s
-
     unop Len e' = do
         (tau, _) <- inferExp e' >>= checkArrOrRefArrT
         tau'     <- simplType tau
@@ -1219,11 +1182,6 @@ simplE (UnopE op e s) = do
 
     unop op e' =
         return $ UnopE op e' s
-
-    simplOp :: Unop -> SimplM l m Unop
-    simplOp (Cast tau)    = Cast <$> simplType tau
-    simplOp (Bitcast tau) = Bitcast <$> simplType tau
-    simplOp op            = pure op
 
 simplE (BinopE op e1 e2 s) = do
     e1' <- simplE e1
@@ -1589,6 +1547,54 @@ simplE (ProjE e f s) =
 
     go e' =
         return $ ProjE e' f s
+
+simplE (CastE tau e s) = do
+    tau' <- simplType tau
+    e'   <- simplE e
+    cast tau' e'
+  where
+    cast :: Type -> Exp -> SimplM l m Exp
+    cast (StructT sn' taus' _) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+        rewrite
+        flds' <- castStruct cast' sn' flds
+        return $ ConstE (StructC sn' taus' flds') s
+      where
+        cast' :: Type -> Const -> SimplM l m Const
+        cast' tau c = do
+            ConstE c' _ <- cast tau (ConstE c s)
+            return c'
+
+    cast (StructT sn' taus' _) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
+        rewrite
+        flds' <- castStruct cast sn' flds
+        return $ StructE sn' taus' flds' s
+
+    -- Eliminate casts of constants
+    cast tau (ConstE c _) | Just c' <- liftCast tau c = do
+        rewrite
+        return $ ConstE c' s
+
+    -- Avoid double cast
+    cast tau e = do
+        tau' <- inferExp e
+        if tau' == tau
+          then do rewrite
+                  return e
+          else return $ CastE tau e s
+
+simplE (BitcastE tau e s) = do
+    tau' <- simplType tau
+    e'   <- simplE e
+    bitcast tau' e'
+  where
+    bitcast :: Type -> Exp -> SimplM l m Exp
+    -- Remove duplicate bitcast operations.
+    bitcast tau (BitcastE _ e s) = do
+        rewrite
+        return $ BitcastE tau e s
+
+    bitcast tau e =
+        return $ BitcastE tau e s
 
 simplE (PrintE nl es s) =
     PrintE nl <$> mapM simplE es <*> pure s

@@ -366,9 +366,6 @@ lutStats e =
     go VarE{} =
         return ()
 
-    go (UnopE Bitcast{} _ _) =
-        fail "Cannot LUT bitcast"
-
     go (UnopE Len{} e _) =
         go e
 
@@ -444,6 +441,13 @@ lutStats e =
 
     go (ProjE e _ _) =
         go e
+
+    go (CastE _ e _) = do
+        go e
+        incOpCount
+
+    go BitcastE{} =
+        fail "Cannot LUT bitcast"
 
     go PrintE{} =
         hasSideEffect

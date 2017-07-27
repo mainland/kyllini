@@ -753,6 +753,12 @@ useExp (ProjE e@(VarE v _) f s) = do
 useExp (ProjE e f s) =
     topA $ ProjE <$> (fst <$> useExp e) <*> pure f <*> pure s
 
+useExp (CastE tau e s) =
+    topA $ CastE tau <$> (fst <$> useExp e) <*> pure s
+
+useExp (BitcastE tau e s) =
+    topA $ BitcastE tau <$> (fst <$> useExp e) <*> pure s
+
 useExp (PrintE nl es s) =
     (,) <$> (PrintE nl <$> mapM (fmap fst . useExp) es <*> pure s)
         <*> pure top

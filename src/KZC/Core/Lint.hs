@@ -304,14 +304,6 @@ inferExp (UnopE op e1 l) = do
     unop Acosh tau = inferOp [(a, fracK)] aT aT tau
     unop Atanh tau = inferOp [(a, fracK)] aT aT tau
 
-    unop (Cast tau2) tau1 = do
-        checkCast tau1 tau2
-        return tau2
-
-    unop (Bitcast tau2) tau1 = do
-        checkBitcast tau1 tau2
-        return tau2
-
     unop Len tau = do
         _ <- checkArrOrRefArrT tau
         return idxT
@@ -505,6 +497,16 @@ inferExp (ProjE e f l) = do
         (s, taus) <- checkStructT tau
         sdef      <- lookupStruct s
         checkStructFieldT sdef taus f
+
+inferExp (CastE tau2 e _) = do
+    tau1 <- inferExp e
+    checkCast tau1 tau2
+    return tau2
+
+inferExp (BitcastE tau2 e _) = do
+    tau1 <- inferExp e
+    checkBitcast tau1 tau2
+    return tau2
 
 inferExp e0@(StructE s taus flds l) =
     withFvContext e0 $ do

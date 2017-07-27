@@ -151,6 +151,12 @@ instance Rename Exp where
     rn (ProjE e f l) =
         ProjE <$> rn e <*> pure f <*> pure l
 
+    rn (CastE tau e l) =
+        CastE <$> rn tau <*> rn e <*> pure l
+
+    rn (BitcastE tau e l) =
+        BitcastE <$> rn tau <*> rn e <*> pure l
+
     rn (PrintE nl es l) =
         PrintE nl <$> rn es <*> pure l
 

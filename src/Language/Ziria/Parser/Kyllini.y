@@ -409,12 +409,12 @@ aexp :
   | 'length' aexp
       { UnopE Len $2 ($1 `srcspan` $2)}
   | simple_type '(' exp ')'
-      { UnopE (Cast $1) $3 ($1 `srcspan` $4)}
+      { CastE $1 $3 ($1 `srcspan` $4)}
 
   | 'bitcast' '<' base_type '>' '(' exp ')'
-      { UnopE (Bitcast $3) $6 ($1 `srcspan` $7)}
+      { BitcastE $3 $6 ($1 `srcspan` $7)}
   | 'cast' '<' base_type '>' '(' exp ')'
-      { UnopE (Cast $3) $6 ($1 `srcspan` $7)}
+      { CastE $3 $6 ($1 `srcspan` $7)}
 
   | structid type_application '{' struct_init_list1 '}'
       { StructE $1 $2 $4 ($1 `srcspan` $5) }
