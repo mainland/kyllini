@@ -2270,107 +2270,90 @@ instance Exception KindUnificationException where
 -- | Unify two types. The first argument is what we got, and the second is what
 -- we expect.
 unifyTypes :: Type -> Type -> Ti ()
-unifyTypes tau1 tau2 = do
-    tau1' <- compress tau1
-    tau2' <- compress tau2
-    traceNest $ unify Map.empty tau1' tau2'
+unifyTypes tau1_0 tau2_0 = do
+    tau1' <- compress tau1_0
+    tau2' <- compress tau2_0
+    unify tau1' tau2'
   where
-    unify :: Map TyVar TyVar
-          -> Type
-          -> Type
-          -> Ti ()
-    unify theta tau1 tau2 = do
-        tau1' <- compress tau1
-        tau2' <- compress tau2
-        go theta tau1' tau2'
-
-    go :: Map TyVar TyVar
-       -> Type
-       -> Type
-       -> Ti ()
-    go _ tau1 tau2 | tau1 == tau2 =
+    -- Not that we must call 'unifyTypes' instead of 'unify' if there is a
+    -- chance we have updated a type meta-variable, which means we need to
+    -- perform path compression again.
+    unify :: Type -> Type -> Ti ()
+    unify tau1 tau2 | tau1 == tau2 =
         return ()
 
-    go _ tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2@(MetaT (MetaTv _ kappa2 _) _) = do
+    unify tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2@(MetaT (MetaTv _ kappa2 _) _) = do
         unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau1 tau2
 
-    go _ tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2 = do
+    unify tau1@(MetaT mtv@(MetaTv _ kappa1 _) _) tau2 = do
         kappa2 <- inferKind tau2
         unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau1 tau2
 
-    go _ tau1 tau2@(MetaT mtv@(MetaTv _ kappa2 _) _) = do
+    unify tau1 tau2@(MetaT mtv@(MetaTv _ kappa2 _) _) = do
         kappa1 <- inferKind tau1
         unifyKinds tau1 kappa1 kappa2
         updateMetaTv mtv tau2 tau1
 
-    go theta (SynT _ tau1 _) tau2 =
-        go theta tau1 tau2
+    unify (SynT _ tau1 _) tau2 =
+        unify tau1 tau2
 
-    go theta tau1 (SynT _ tau2 _) =
-        go theta tau1 tau2
+    unify tau1 (SynT _ tau2 _) =
+        unify tau1 tau2
 
-    go _ UnitT{} UnitT{} = return ()
-    go _ BoolT{} BoolT{} = return ()
+    unify UnitT{} UnitT{} = return ()
+    unify BoolT{} BoolT{} = return ()
 
-    go _ (IntT ip _)    (IntT ip' _)   | ip' == ip = return ()
-    go _ (FixT qp _)    (FixT qp' _)   | qp' == qp = return ()
-    go _ (FloatT fp _)  (FloatT fp' _) | fp' == fp = return ()
-    go _ StringT{}      StringT{}                  = return ()
+    unify (IntT ip _)   (IntT ip' _)   | ip' == ip = return ()
+    unify (FixT qp _)   (FixT qp' _)   | qp' == qp = return ()
+    unify (FloatT fp _) (FloatT fp' _) | fp' == fp = return ()
+    unify StringT{}     StringT{}                  = return ()
 
-    go theta (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
-        zipWithM_ (go theta) taus1 taus2
+    unify (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
+        zipWithM_ unifyTypes taus1 taus2
 
-    go theta (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
-        unify theta tau1a tau1b
-        unify theta tau2a tau2b
+    unify (ArrT tau1a tau2a _) (ArrT tau1b tau2b _) = do
+        unify tau1a tau1b
+        unifyTypes tau2a tau2b
 
-    go theta (C tau1 _) (C tau2 _) =
-        unify theta tau1 tau2
+    unify (C tau1 _) (C tau2 _) =
+        unify tau1 tau2
 
-    go _ T{} T{} =
+    unify T{} T{} =
         return ()
 
-    go theta (ForallT tvks_a (ST omega_a tau_1a tau_2a tau_3a _) _)
-             (ForallT tvks_b (ST omega_b tau_1b tau_2b tau_3b _) _)
-        | length tvks_a == length tvks_b =
-          extendTyVars tvks_b $ do
-          unify theta' omega_a omega_b
-          unify theta' tau_1a tau_1b
-          unify theta' tau_2a tau_2b
-          unify theta' tau_3a tau_3b
+    unify tau1@(ForallT tvks_a tau_a _) (ForallT tvks_b tau_b _) | length tvks_a == length tvks_b = do
+        zipWithM_ (unifyKinds tau1) (map snd tvks_a) (map snd tvks_b)
+        extendTyVars tvks_b $
+          unify tau_a' tau_b
       where
-        alphas_a, alphas_b :: [TyVar]
-        alphas_a = map fst tvks_a
-        alphas_b = map fst tvks_b
+        tau_a' :: Type
+        tau_a' = subst theta mempty tau_a
 
-        theta' :: Map TyVar TyVar
-        theta' = Map.fromList (alphas_a `zip` alphas_b) `Map.union` theta
+        theta :: Map TyVar Type
+        theta = Map.fromList [(alpha, tyVarT beta) | (alpha, beta) <- map fst tvks_a `zip` map fst tvks_b]
 
-    go theta (ST omega_a tau_1a tau_2a tau_3a _) (ST omega_b tau_1b tau_2b tau_3b _) = do
-        unify theta omega_a omega_b
-        unify theta tau_1a tau_1b
-        unify theta tau_2a tau_2b
-        unify theta tau_3a tau_3b
+    unify (ST omega_a tau_1a tau_2a tau_3a _) (ST omega_b tau_1b tau_2b tau_3b _) = do
+        unify omega_a omega_b
+        unifyTypes tau_1a tau_1b
+        unifyTypes tau_2a tau_2b
+        unifyTypes tau_3a tau_3b
 
-    go theta (RefT tau1 _) (RefT tau2 _) =
-        unify theta tau1 tau2
+    unify (RefT tau1 _) (RefT tau2 _) =
+        unify tau1 tau2
 
-    go theta (FunT taus_a tau_a _)
-             (FunT taus_b tau_b _)
-        | length taus_a == length taus_b = do
-          zipWithM_ (unify theta) taus_a taus_b
-          unify theta tau_a tau_b
+    unify (FunT taus_a tau_a _) (FunT taus_b tau_b _) | length taus_a == length taus_b = do
+          zipWithM_ unifyTypes taus_a taus_b
+          unifyTypes tau_a tau_b
 
-    go _ (NatT i1 _) (NatT i2 _)  | i1 == i2 =
+    unify (NatT i1 _) (NatT i2 _) | i1 == i2 =
         return ()
 
-    go theta (TyVarT tv1 _) (TyVarT tv2 _) | Just tv2' <- Map.lookup tv2 theta
-                                           , tv1 == tv2' =
+    unify (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
         return ()
 
-    go _ tau1 tau2 = do
+    unify tau1 tau2 = do
         msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ TypeUnificationException tau1' tau2' msg

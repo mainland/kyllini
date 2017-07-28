@@ -90,7 +90,6 @@ import Data.List (nub)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Vector as V
@@ -841,78 +840,71 @@ checkBitcast tau1 tau2 = do
 -- | Check that @tau1@ is equal to @tau2@.
 checkTypeEquality :: forall m . MonadTc m => Type -> Type -> m ()
 checkTypeEquality tau1 tau2 =
-    checkT Map.empty tau1 tau2
+    checkT tau1 tau2
   where
-    checkT :: Map TyVar TyVar
-           -> Type
-           -> Type
-           -> m ()
-    checkT _ UnitT{} UnitT{} = return ()
-    checkT _ BoolT{} BoolT{} = return ()
+    checkT :: Type -> Type -> m ()
+    checkT UnitT{} UnitT{} = return ()
+    checkT BoolT{} BoolT{} = return ()
 
-    checkT _ (IntT ip _) (IntT ip' _) | ip' == ip =
+    checkT (IntT ip _) (IntT ip' _) | ip' == ip =
         return ()
 
-    checkT _ (FixT qp _)  (FixT qp' _) | qp' == qp =
+    checkT (FixT qp _)  (FixT qp' _) | qp' == qp =
         return ()
 
-    checkT _ (FloatT fp _)  (FloatT fp' _) | fp' == fp =
+    checkT (FloatT fp _)  (FloatT fp' _) | fp' == fp =
         return ()
 
-    checkT _ StringT{} StringT{} = return ()
+    checkT StringT{} StringT{} = return ()
 
-    checkT theta (ArrT nat1 tau1 _) (ArrT nat2 tau2 _) = do
-        checkT theta nat1 nat2
-        checkT theta tau1 tau2
+    checkT (ArrT nat1 tau1 _) (ArrT nat2 tau2 _) = do
+        checkT nat1 nat2
+        checkT tau1 tau2
 
-    checkT theta (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
-        zipWithM_ (checkT theta) taus1 taus2
+    checkT (StructT s1 taus1 _) (StructT s2 taus2 _) | s1 == s2 && length taus1 == length taus2 =
+        zipWithM_ checkT taus1 taus2
 
-    checkT theta (ST omega_a tau1_a tau2_a tau3_a _)
-                 (ST omega_b tau1_b tau2_b tau3_b _) = do
-          checkO theta  omega_a omega_b
-          checkT theta tau1_a tau1_b
-          checkT theta tau2_a tau2_b
-          checkT theta tau3_a tau3_b
+    checkT (ST omega_a tau1_a tau2_a tau3_a _) (ST omega_b tau1_b tau2_b tau3_b _) = do
+          checkO omega_a omega_b
+          checkT tau1_a tau1_b
+          checkT tau2_a tau2_b
+          checkT tau3_a tau3_b
 
-    checkT theta (FunT taus_a tau_a _)
-                 (FunT taus_b tau_b _)
-        | length taus_a == length taus_b = do
-          zipWithM_ (checkT theta) taus_a taus_b
-          checkT theta tau_a tau_b
+    checkT (FunT taus_a tau_a _) (FunT taus_b tau_b _) | length taus_a == length taus_b = do
+          zipWithM_ checkT taus_a taus_b
+          checkT tau_a tau_b
 
-    checkT theta (RefT tau1 _) (RefT tau2 _) =
-        checkT theta tau1 tau2
+    checkT (RefT tau1 _) (RefT tau2 _) =
+        checkT tau1 tau2
 
-    checkT theta (TyVarT alpha _) (TyVarT beta _)
-        | fromMaybe alpha (Map.lookup alpha theta) == beta =
+    checkT (TyVarT alpha _) (TyVarT alpha' _) | alpha' == alpha =
         return ()
 
-    checkT _ (NatT n1 _) (NatT n2 _) | n2 == n1 =
+    checkT  (NatT n1 _) (NatT n2 _) | n2 == n1 =
         return ()
 
-    checkT theta (ForallT tvks1 tau1 _) (ForallT tvks2 tau2 _)
-        | length tvks1 == length tvks2 = do
-          zipWithM_ checkKindEquality (map snd tvks1) (map snd tvks2)
-          checkT theta' tau1 tau2
+    checkT (ForallT tvks1 tau1 _) (ForallT tvks2 tau2 _) | length tvks1 == length tvks2 = do
+        zipWithM_ checkKindEquality (map snd tvks1) (map snd tvks2)
+        extendTyVars tvks2 $
+          checkT tau1' tau2
       where
-        theta' :: Map TyVar TyVar
-        theta' = Map.fromList (map fst tvks1 `zip` map fst tvks2) `Map.union` theta
+        tau1' :: Type
+        tau1' = subst theta mempty tau1
 
-    checkT _ _ _ =
+        theta :: Map TyVar Type
+        theta = Map.fromList [(alpha, tyVarT beta) | (alpha, beta) <- map fst tvks1 `zip` map fst tvks2]
+
+    checkT _ _ =
         err
 
-    checkO :: Map TyVar TyVar
-           -> Omega
-           -> Omega
-           -> m ()
-    checkO theta (C tau1) (C tau2) =
-        checkT theta tau1 tau2
+    checkO :: Omega -> Omega -> m ()
+    checkO (C tau1) (C tau2) =
+        checkT tau1 tau2
 
-    checkO _ T{} T{} =
+    checkO T{} T{} =
         return ()
 
-    checkO _ _ _ =
+    checkO _ _ =
         err
 
     err :: m ()
