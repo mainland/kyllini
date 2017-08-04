@@ -50,6 +50,7 @@ import KZC.Name
 import KZC.Optimize.LutToGen (lutGenToExp)
 import KZC.Quote.C
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Staged
 import KZC.Util.Summary
 import KZC.Util.Trace
@@ -624,6 +625,9 @@ cgLocalDecl _flags decl@(LetRefLD v tau maybe_e _) k =
     extendVarCExps [(bVar v, cve)] k
 
 cgLocalDecl _flags decl@(LetTypeLD alpha kappa tau _) k =
+    -- We don't need to compile @tau@ with 'cgNatType' because all occurrences
+    -- of @alpha@ will be simplified away by the call to 'simplType' in
+    -- 'cgNatType'.
     withSummaryContext decl $
     extendTyVars [(alpha, kappa)] $
     extendTyVarTypes [(alpha, tau)] k
@@ -1430,14 +1434,48 @@ cgNatTyVar alpha = do
 
 -- | Compile a type-level Nat to a C expression.
 cgNatType :: Type -> Cg l (CExp l)
-cgNatType (NatT i _) =
-    return $ CInt (fromIntegral i)
+cgNatType tau = simplType tau >>= cgNat
+  where
+    cgNat :: Type -> Cg l (CExp l)
+    cgNat (NatT i _) =
+        return $ CInt (fromIntegral i)
 
-cgNatType (TyVarT alpha _) =
-    lookupTyVarCExp alpha
+    cgNat (UnopT op tau1 l) =
+        cgNat tau1 >>= cgNatUnop op
+      where
+        cgNatUnop :: Unop -> CExp l -> Cg l (CExp l)
+        cgNatUnop Neg ce =
+            return $ CExp $ rl l [cexp|-$ce|]
 
-cgNatType tau =
-    faildoc $ text "Cannot compile non-Nat kinded type:" <+> ppr tau
+        cgNatUnop _ _ =
+            faildoc $ text "Cannot compile nat operator" <+> enquote (ppr op)
+
+    cgNat (BinopT op tau1 tau2 l) = do
+        ce1 <- cgNat tau1
+        ce2 <- cgNat tau2
+        cgNatBinop op ce1 ce2
+      where
+        cgNatBinop :: Binop -> CExp l -> CExp l -> Cg l (CExp l)
+        cgNatBinop Add ce1 ce2 =
+            return $ CExp $ rl l [cexp|$(ce1 + ce2)|]
+
+        cgNatBinop Sub ce1 ce2 =
+            return $ CExp $ rl l [cexp|$(ce1 - ce2)|]
+
+        cgNatBinop Mul ce1 ce2 =
+            return $ CExp $ rl l [cexp|$(ce1 * ce2)|]
+
+        cgNatBinop Div ce1 ce2 =
+            return $ CExp $ rl l [cexp|$(ce1 / ce2)|]
+
+        cgNatBinop _ _ _ =
+            faildoc $ text "Cannot compile nat operator" <+> enquote (ppr op)
+
+    cgNat (TyVarT alpha _) =
+        lookupTyVarCExp alpha
+
+    cgNat tau =
+        faildoc $ text "Cannot compile non-Nat kinded type:" <+> ppr tau
 
 -- | Compile a type-level Nat to an 'Integer' constant. If the argument cannot
 -- be resolved to a constant, raise an exception.
@@ -1628,6 +1666,12 @@ cgType (FunT args ret _) =
     cgFunType [] args ret
 
 cgType NatT{} =
+    return [cty|int|]
+
+cgType UnopT{} =
+    return [cty|int|]
+
+cgType BinopT{} =
     return [cty|int|]
 
 cgType tau@ForallT{} =

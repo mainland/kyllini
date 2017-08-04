@@ -61,6 +61,8 @@ instance Located Type where
   locOf (RefT _ l) = locOf l
   locOf (FunT _ _ l) = locOf l
   locOf (NatT _ l) = locOf l
+  locOf (UnopT _ _ l) = locOf l
+  locOf (BinopT _ _ _ l) = locOf l
   locOf (ForallT _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
 instance Located Omega where

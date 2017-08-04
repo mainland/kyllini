@@ -338,6 +338,12 @@ data Type = UnitT !SrcLoc
           -- | Reference to array length
           | LenT Var !SrcLoc
 
+          -- | Unary operator applied to a type
+          | UnopT Unop Type !SrcLoc
+
+          -- | Binary operator applied to a type
+          | BinopT Binop Type Type !SrcLoc
+
           -- | Elided type
           | UnknownT !SrcLoc
 
@@ -935,6 +941,15 @@ instance Pretty Type where
     pprPrec _ (LenT v _) =
         text "length" <> parens (ppr v)
 
+    pprPrec _ (UnopT op tau _) | isFunUnop op =
+        ppr op <> parens (ppr tau)
+
+    pprPrec p (UnopT op tau _) =
+        unop p op tau
+
+    pprPrec p (BinopT op tau1 tau2 _) =
+        infixop p op tau1 tau2
+
     pprPrec _ UnknownT{} =
         empty
 
@@ -1048,6 +1063,57 @@ instance HasFixity Binop where
     fixity Pow  = infixl_ 10
 
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Types of kind nat
+ -
+ ------------------------------------------------------------------------------}
+
+instance Num Type where
+    NatT x l + NatT y l' = NatT (x+y) (l `srcspan` l')
+    tau1     + tau2      = BinopT Add tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l - NatT y l' = NatT (x-y) (l `srcspan` l')
+    tau1     - tau2      = BinopT Sub tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l * NatT y l' = NatT (x*y) (l `srcspan` l')
+    tau1     * tau2      = BinopT Mul tau1 tau2 (tau1 `srcspan` tau2)
+
+    negate (NatT x l) = NatT (-x) l
+    negate tau        = UnopT Neg tau (srclocOf tau)
+
+    abs (NatT x l) = NatT (abs x) l
+    abs tau        = UnopT Abs tau (srclocOf tau)
+
+    signum (NatT x l) = NatT (signum x) l
+    signum tau        = errordoc $ text "signum: not supported for type" <+>
+                                   enquote (ppr tau)
+
+    fromInteger i = NatT (fromInteger i) noLoc
+
+instance Real Type where
+    toRational (NatT i _) = toRational i
+    toRational tau        = errordoc $ text "toRational: not supported for type" <+>
+                                       enquote (ppr tau)
+
+instance Enum Type where
+    toEnum i = NatT i noLoc
+
+    fromEnum (NatT i _) = i
+    fromEnum tau        = errordoc $ text "fromEnum: not supported for type" <+>
+                                     enquote (ppr tau)
+
+instance Integral Type where
+    toInteger (NatT i _) = toInteger i
+    toInteger tau        = errordoc $ text "toInteger: not supported for type" <+>
+                                      enquote (ppr tau)
+
+    NatT x l `quot` NatT y l' = NatT (x `quot` y) (l `srcspan` l')
+    tau1     `quot` tau2      = BinopT Div tau1 tau1 (tau1 `srcspan` tau2)
+
+    _ `rem` _ = error "rem: not supported for types"
+
+    x `quotRem` y = (x `quot` y, x `rem` y)
 
 #include "Language/Ziria/Syntax-instances.hs"
 

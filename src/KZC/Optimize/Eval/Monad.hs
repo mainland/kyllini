@@ -498,11 +498,6 @@ killHeap m =
     loop 0
     m
 
-simplType :: MonadTc m => Type -> EvalM l m Type
-simplType tau = do
-    phi <- askTyVarTypeSubst
-    return $ subst phi mempty tau
-
 class Ord n => ModifiedVars x n where
     mvs :: SetLike m n => x -> m n
     mvs _ = mempty

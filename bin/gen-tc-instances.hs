@@ -36,6 +36,8 @@ DERIVE(R)
 DERIVE(MetaRv)
 DERIVE(MetaKv)
 DERIVE(StructDef)
+DERIVE(Unop)
+DERIVE(Binop)
 
 main :: IO ()
 main = do

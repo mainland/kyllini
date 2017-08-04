@@ -80,6 +80,12 @@ instance Rename Type where
     rn (LenT v l) =
         LenT <$> rn v <*> pure l
 
+    rn (UnopT op tau l) =
+        UnopT op <$> rn tau <*> pure l
+
+    rn (BinopT op tau1 tau2 l) =
+        BinopT op <$> rn tau1 <*> rn tau2 <*> pure l
+
     rn tau@UnknownT{} =
         pure tau
 

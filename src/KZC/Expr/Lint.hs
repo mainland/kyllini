@@ -103,6 +103,7 @@ import KZC.Expr.Syntax
 import KZC.Monad
 import KZC.Platform
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -889,8 +890,16 @@ checkTypeEquality tau1 tau2 =
     checkT (TyVarT alpha _) (TyVarT alpha' _) | alpha' == alpha =
         return ()
 
-    checkT  (NatT n1 _) (NatT n2 _) | n2 == n1 =
-        return ()
+    checkT tau1 tau2 | isNatT tau1 || isNatT tau2 = do
+        tau1' <- simplType tau1
+        tau2' <- simplType tau2
+        checkNat tau1' tau2'
+      where
+        isNatT :: Type -> Bool
+        isNatT NatT{}   = True
+        isNatT UnopT{}  = True
+        isNatT BinopT{} = True
+        isNatT _        = False
 
     checkT (ForallT tvks1 tau1 _) (ForallT tvks2 tau2 _) | length tvks1 == length tvks2 = do
         zipWithM_ checkKindEquality (map snd tvks1) (map snd tvks2)
@@ -914,6 +923,20 @@ checkTypeEquality tau1 tau2 =
         return ()
 
     checkO _ _ =
+        err
+
+    checkNat :: Type -> Type -> m ()
+    checkNat (NatT i1 _) (NatT i2 _) | i1 == i2 =
+        return ()
+
+    checkNat (UnopT op1 tau1 _) (UnopT op2 tau2 _) | op1 == op2 =
+        checkT tau1 tau2
+
+    checkNat (BinopT op1 tau1a tau1b _) (BinopT op2 tau2a tau2b _) | op1 == op2 = do
+        checkT tau1a tau2a
+        checkT tau1b tau2b
+
+    checkNat _tau1 _tau2 =
         err
 
     err :: m ()
@@ -1022,6 +1045,32 @@ inferKind = inferType
 
     inferType NatT{} =
         return NatK
+
+    inferType (UnopT op tau _) = do
+        checkNatUnop op
+        checkKind tau NatK
+        return NatK
+      where
+        checkNatUnop :: MonadTc m => Unop -> m ()
+        checkNatUnop Neg = return ()
+        checkNatUnop op  =
+            faildoc $ text "Operator" <+> enquote (ppr op) </>
+                      text "not a legal operator on types of kind nat"
+
+    inferType (BinopT op tau1 tau2 _) = do
+        checkNatBinop op
+        checkKind tau1 NatK
+        checkKind tau2 NatK
+        return NatK
+      where
+        checkNatBinop :: MonadTc m => Binop -> m ()
+        checkNatBinop Add = return ()
+        checkNatBinop Sub = return ()
+        checkNatBinop Mul = return ()
+        checkNatBinop Div = return ()
+        checkNatBinop op  =
+            faildoc $ text "Operator" <+> enquote (ppr op) </>
+                      text "not a legal operator on types of kind nat"
 
     inferType (ForallT tvks tau _) =
         extendTyVars tvks $

@@ -77,6 +77,8 @@ instance Located Type where
   locOf (ST _ _ _ l) = locOf l
   locOf (NatT _ l) = locOf l
   locOf (LenT _ l) = locOf l
+  locOf (UnopT _ _ l) = locOf l
+  locOf (BinopT _ _ _ l) = locOf l
   locOf (UnknownT l) = locOf l
   locOf (ForallT _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l

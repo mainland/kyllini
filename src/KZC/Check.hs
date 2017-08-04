@@ -1454,6 +1454,32 @@ kcType tau0@(FunT taus tau_ret _) kappa_exp = do
 kcType tau0@NatT{} kappa_exp =
     instKind tau0 NatK kappa_exp
 
+kcType (UnopT op tau _) kappa_exp = do
+    checkNatUnop op
+    checkKind tau NatK
+    instKind tau NatK kappa_exp
+  where
+    checkNatUnop :: Unop -> Ti ()
+    checkNatUnop Neg = return ()
+    checkNatUnop op  =
+        faildoc $ text "Operator" <+> enquote (ppr op) </>
+                  text "not a legal operator on types of kind nat"
+
+kcType tau@(BinopT op tau1 tau2 _) kappa_exp = do
+    checkNatBinop op
+    checkKind tau1 NatK
+    checkKind tau2 NatK
+    instKind tau NatK kappa_exp
+  where
+    checkNatBinop :: Binop -> Ti ()
+    checkNatBinop Add = return ()
+    checkNatBinop Sub = return ()
+    checkNatBinop Mul = return ()
+    checkNatBinop Div = return ()
+    checkNatBinop op  =
+        faildoc $ text "Operator" <+> enquote (ppr op) </>
+                  text "not a legal operator on types of kind nat"
+
 kcType (ForallT tvks tau _) kappa_exp =
     extendTyVars tvks $
     kcType tau kappa_exp
@@ -2368,13 +2394,37 @@ unifyTypes tau1_0 tau2_0 = do
           zipWithM_ unifyTypes taus_a taus_b
           unifyTypes tau_a tau_b
 
-    unify (NatT i1 _) (NatT i2 _) | i1 == i2 =
-        return ()
-
     unify (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
         return ()
 
+    unify tau1 tau2 | isNatT tau1 || isNatT tau2 = do
+        tau1' <- simplNat tau1
+        tau2' <- simplNat tau2
+        unifyNat tau1' tau2'
+      where
+        isNatT :: Type -> Bool
+        isNatT NatT{}   = True
+        isNatT UnopT{}  = True
+        isNatT BinopT{} = True
+        isNatT _        = False
+
     unify tau1 tau2 = do
+        msg <- relevantBindings
+        [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
+        throw $ TypeUnificationException tau1' tau2' msg
+
+    unifyNat :: Type -> Type -> Ti ()
+    unifyNat (NatT i1 _) (NatT i2 _) | i1 == i2 =
+        return ()
+
+    unifyNat (UnopT op1 tau1 _) (UnopT op2 tau2 _) | op1 == op2 =
+        unify tau1 tau2
+
+    unifyNat (BinopT op1 tau1a tau1b _) (BinopT op2 tau2a tau2b _) | op1 == op2 = do
+        unify tau1a tau2a
+        unifyTypes tau1b tau2b
+
+    unifyNat tau1 tau2 = do
         msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ TypeUnificationException tau1' tau2' msg
@@ -2654,6 +2704,12 @@ instance FromZ Z.Type Type where
         (n, _) <- lookupVar v >>= checkArrT
         return n
 
+    fromZ (Z.UnopT op tau l) =
+        UnopT <$> fromZ op <*> fromZ tau <*> pure l
+
+    fromZ (Z.BinopT op tau1 tau2 l) =
+        BinopT <$> fromZ op <*> fromZ tau1 <*> fromZ tau2 <*> pure l
+
     fromZ (Z.UnknownT l) =
         newMetaTvT NatK l
 
@@ -2704,6 +2760,54 @@ instance FromZ [Z.VarBind] [(Z.Var, Type)] where
                   fromZ vbs
           return $ (v, tau) : vbs'
 
+instance FromZ Z.Unop Unop where
+    fromZ Z.Lnot   = pure E.Lnot
+    fromZ Z.Bnot   = pure E.Bnot
+    fromZ Z.Neg    = pure E.Neg
+    fromZ Z.Abs    = pure E.Abs
+    fromZ Z.Exp    = pure E.Exp
+    fromZ Z.Exp2   = pure E.Exp2
+    fromZ Z.Expm1  = pure E.Expm1
+    fromZ Z.Log    = pure E.Log
+    fromZ Z.Log2   = pure E.Log2
+    fromZ Z.Log1p  = pure E.Log1p
+    fromZ Z.Sqrt   = pure E.Sqrt
+    fromZ Z.Sin    = pure E.Sin
+    fromZ Z.Cos    = pure E.Cos
+    fromZ Z.Tan    = pure E.Tan
+    fromZ Z.Asin   = pure E.Asin
+    fromZ Z.Acos   = pure E.Acos
+    fromZ Z.Atan   = pure E.Atan
+    fromZ Z.Sinh   = pure E.Sinh
+    fromZ Z.Cosh   = pure E.Cosh
+    fromZ Z.Tanh   = pure E.Tanh
+    fromZ Z.Asinh  = pure E.Asinh
+    fromZ Z.Acosh  = pure E.Acosh
+    fromZ Z.Atanh  = pure E.Atanh
+    fromZ Z.Len    = pure E.Len
+
+instance FromZ Z.Binop Binop where
+    fromZ Z.Eq   = pure E.Eq
+    fromZ Z.Ne   = pure E.Ne
+    fromZ Z.Lt   = pure E.Lt
+    fromZ Z.Le   = pure E.Le
+    fromZ Z.Ge   = pure E.Ge
+    fromZ Z.Gt   = pure E.Gt
+    fromZ Z.Land = pure E.Land
+    fromZ Z.Lor  = pure E.Lor
+    fromZ Z.Band = pure E.Band
+    fromZ Z.Bor  = pure E.Bor
+    fromZ Z.Bxor = pure E.Bxor
+    fromZ Z.LshL = pure E.LshL
+    fromZ Z.LshR = pure E.LshR
+    fromZ Z.AshR = pure E.AshR
+    fromZ Z.Add  = pure E.Add
+    fromZ Z.Sub  = pure E.Sub
+    fromZ Z.Mul  = pure E.Mul
+    fromZ Z.Div  = pure E.Div
+    fromZ Z.Rem  = pure E.Rem
+    fromZ Z.Pow  = pure E.Pow
+
 class Trans a b | b -> a where
     trans :: a -> Ti b
 
@@ -2729,7 +2833,7 @@ instance Trans FP E.FP where
     trans = pure
 
 instance Trans Type E.Type where
-    trans tau = compress tau >>= go
+    trans tau0 = compress tau0 >>= go
       where
         go :: Type -> Ti E.Type
         go (UnitT l)          = E.UnitT <$> pure l
@@ -2752,14 +2856,28 @@ instance Trans Type E.Type where
         go (NatT i l) =
             pure $ E.NatT i l
 
+        go (UnopT op tau l) =
+            E.UnopT op <$> trans tau <*> pure l
+
+        go (BinopT op tau1 tau2 l) =
+            E.BinopT op <$> trans tau1 <*> trans tau2 <*> pure l
+
         go (ForallT tvks tau l) =
             E.ForallT <$> mapM trans tvks <*> trans tau <*> pure l
 
         go (TyVarT alpha l) =
             E.TyVarT <$> trans alpha <*> pure l
 
-        go tau =
-            faildoc $ text "Cannot translate" <+> enquote (ppr tau) <+>
+        go tau@C{} =
+            faildoc $ text "Caught trying to translate type" <+> enquote (ppr tau) <+>
+                      text "of kind omega to Core type"
+
+        go tau@T{} =
+            faildoc $ text "Caught trying to translate type" <+> enquote (ppr tau) <+>
+                      text "of kind omega to Core type"
+
+        go tau@MetaT{} =
+            faildoc $ text "Cannot translate type meta variable" <+> enquote (ppr tau) <+>
                       text "to Core type"
 
 instance Trans Type E.Omega where

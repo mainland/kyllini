@@ -266,6 +266,12 @@ transType (FunT taus tau s) =
 transType tau@NatT{} =
     pure tau
 
+transType (UnopT op tau s) =
+    UnopT op <$> typeT tau <*> pure s
+
+transType (BinopT op tau1 tau2 s) =
+    BinopT op <$> typeT tau1 <*> typeT tau2 <*> pure s
+
 transType (ForallT tvks tau s) =
     ForallT tvks <$> extendTyVars tvks (typeT tau) <*> pure s
 

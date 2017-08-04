@@ -32,7 +32,6 @@ import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -308,38 +307,6 @@ simplComp c = do
         if stats /= mempty
           then go (i+1) n c'
           else return c
-
-simplType :: MonadTc m => Type -> m Type
-simplType tau@UnitT{}   = pure tau
-simplType tau@BoolT{}   = pure tau
-simplType tau@IntT{}    = pure tau
-simplType tau@FixT{}    = pure tau
-simplType tau@FloatT{}  = pure tau
-simplType tau@StringT{} = pure tau
-
-simplType (StructT struct taus l) =
-    StructT struct <$> mapM simplType taus <*> pure l
-
-simplType (ArrT tau1 tau2 l) =
-    ArrT <$> simplType tau1 <*> simplType tau2 <*> pure l
-
-simplType (ST omega tau1 tau2 tau3 l) =
-    ST omega <$> simplType tau1 <*> simplType tau2 <*> simplType tau3 <*> pure l
-
-simplType (RefT tau l) =
-    RefT <$> simplType tau <*> pure l
-
-simplType (FunT taus tau l) =
-    FunT <$> mapM simplType taus <*> simplType tau <*> pure l
-
-simplType tau@NatT{} =
-    pure tau
-
-simplType (ForallT tvks tau l) =
-    ForallT tvks <$> simplType tau <*> pure l
-
-simplType tau@(TyVarT alpha _) =
-    fromMaybe tau <$> maybeLookupTyVarType alpha
 
 simplDecls :: (IsLabel l, MonadTc m)
            => [Decl l]
