@@ -1157,8 +1157,8 @@ checkComplexT (StructT struct taus _) = do
 checkComplexT _ =
     fail "Not a complex type"
 
--- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
--- @\alpha@. The @\iota@ type is simplified.
+-- | Check that a type is an @arr \nat \alpha@ type, returning @\nat@ and
+-- @\alpha@. The @\nat@ type is simplified.
 checkArrT :: MonadTc m => Type -> m (Type, Type)
 checkArrT (ArrT nat alpha _) = do
     checkKind nat NatK

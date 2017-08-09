@@ -1520,8 +1520,8 @@ simplE (IdxE e1 e2 len0 s) = do
     --   x[0, n] -> n        when x is an array of size n
     --
     go e1' e2' (Just len) | Just 0 <- fromIntE e2' = do
-        (iota, _) <- inferExp e1' >>= checkArrOrRefArrT
-        case iota of
+        (nat, _) <- inferExp e1' >>= checkArrOrRefArrT
+        case nat of
           NatT n _ | len == n -> do rewrite
                                     return e1'
           _ -> return $ IdxE e1' e2' (Just len) s

@@ -232,9 +232,9 @@ liftExp (LetE d e l) =
     k Nothing     = liftExp e
     k (Just decl) = LetE decl <$> liftExp e <*> pure l
 
-liftExp (CallE f iotas args l) = do
+liftExp (CallE f taus args l) = do
     (f', fvs) <- lookupFunFvs f
-    return $ CallE f' iotas (map varE fvs ++ args) l
+    return $ CallE f' taus (map varE fvs ++ args) l
 
 liftExp (DerefE e l) =
     DerefE <$> liftExp e <*> pure l

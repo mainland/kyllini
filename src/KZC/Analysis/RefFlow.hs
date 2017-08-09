@@ -206,8 +206,8 @@ instance MonadTc m => TransformExp (RF m) where
         (e2', e3') <- rfIf (expT e2) (expT e3)
         return $ IfE e1' e2' e3' s
 
-    expT (CallE f iotas es s) = do
-        e' <- CallE f iotas <$> mapM expT es <*> pure s
+    expT (CallE f taus es s) = do
+        e' <- CallE f taus <$> mapM expT es <*> pure s
         mapM_ taintArg es
         return e'
       where
@@ -272,12 +272,12 @@ instance MonadTc m => TransformComp l (RF m) where
         useVar v
         return c
 
-    stepT (CallC l f iotas args s) = do
+    stepT (CallC l f taus args s) = do
         -- We taint arguments /before/ we call 'rfArg' so that any arguments
         -- that may be derived from a ref dereference are actually dereferenced.
         -- See Note [Aliasing] in Cg.hs.
         mapM_ taintArg args
-        CallC l f iotas <$> mapM argT args <*> pure s
+        CallC l f taus <$> mapM argT args <*> pure s
       where
         taintArg :: Arg l -> RF m ()
         taintArg CompA{} =

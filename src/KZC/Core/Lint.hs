@@ -881,8 +881,8 @@ compToExp comp =
     stepToExp (VarC _ v l) =
         pure $ VarE v l
 
-    stepToExp (CallC _ f iotas args l) =
-        CallE f iotas <$> mapM argToExp args <*> pure l
+    stepToExp (CallC _ f taus args l) =
+        CallE f taus <$> mapM argToExp args <*> pure l
 
     stepToExp (IfC _ e1 c2 c3 l) =
         IfE e1 <$> compToExp c2 <*> compToExp c3 <*> pure l

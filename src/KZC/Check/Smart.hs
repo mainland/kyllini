@@ -142,7 +142,7 @@ refT :: Type -> Type
 refT tau = RefT tau (srclocOf tau)
 
 arrT :: Type -> Type -> Type
-arrT iota tau = ArrT iota tau (iota `srcspan` tau)
+arrT nat tau = ArrT nat tau (nat `srcspan` tau)
 
 structT :: Z.Struct -> [Type] -> Type
 structT s taus = StructT s taus (srclocOf taus)

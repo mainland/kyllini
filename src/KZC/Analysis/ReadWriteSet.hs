@@ -474,8 +474,8 @@ readRef (Ref v path) = do
     -- We're reading the entire array. Rather than sending the read set to top,
     -- we send it to the interval that includes all elements.
     go ref@(ArrayRW _rs ws) [] = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        case iota of
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        case nat of
           NatT n _ -> do let rs :: BoundedInterval
                              rs = extend (unit (0::Integer)) n
                          if rs `inPrecise` ws
@@ -532,8 +532,8 @@ writeRef (Ref v path) = do
     -- We're writing the entire array. As above, rather than sending the write
     -- set to top, we send it to the interval that includes all elements.
     go (ArrayRW rs _ws) [] = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        case iota of
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        case nat of
           NatT n _ -> do let ws :: PreciseInterval
                              ws = extend (unit (0::Integer)) n
                          return $ ArrayRW rs ws
@@ -694,7 +694,7 @@ evalExp e =
         extendViews [(bVar v, view)] $
         evalExp e2
 
-    go (CallE f _iotas es _) = do
+    go (CallE f _taus es _) = do
         isExt <- isExtFun f
         mapM_ (evalArg isExt) es
         return top

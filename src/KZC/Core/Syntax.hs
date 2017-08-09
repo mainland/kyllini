@@ -488,7 +488,7 @@ stepLabel (ParC _ _ _ right _) = compLabel right
 
 setStepLabel :: l -> Step l -> Step l
 setStepLabel l (VarC _ v s)                = VarC l v s
-setStepLabel l (CallC _ v iotas es s)      = CallC l v iotas es s
+setStepLabel l (CallC _ v taus es s)       = CallC l v taus es s
 setStepLabel l (IfC _ e c1 c2 s)           = IfC l e c1 c2 s
 setStepLabel l (LetC _ decl s)             = LetC l decl s
 setStepLabel l (WhileC _ e c s)            = WhileC l e c s
@@ -1291,8 +1291,8 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
     substM (VarC l v s) =
         VarC <$> substM l <*> pure v <*> pure s
 
-    substM (CallC l v iotas es s) =
-        CallC <$> substM l <*> pure v <*> pure iotas <*> pure es <*> pure s
+    substM (CallC l v taus es s) =
+        CallC <$> substM l <*> pure v <*> pure taus <*> pure es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC <$> substM l <*> pure e <*> substM c1 <*> substM c2 <*> pure s
@@ -1381,8 +1381,8 @@ instance Subst Type TyVar Exp where
     substM (LetE decl e l) =
         LetE <$> substM decl <*> substM e <*> pure l
 
-    substM (CallE v iotas es l) =
-        CallE v iotas <$> substM es <*> pure l
+    substM (CallE v taus es l) =
+        CallE v taus <$> substM es <*> pure l
 
     substM (DerefE e l) =
         DerefE <$> substM e <*> pure l
@@ -1447,8 +1447,8 @@ instance Subst Type TyVar (Step l) where
     substM step@VarC{} =
         pure step
 
-    substM (CallC l v iotas es s) =
-        CallC l v iotas <$> substM es <*> pure s
+    substM (CallC l v taus es s) =
+        CallC l v taus <$> substM es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
@@ -1521,7 +1521,7 @@ instance Subst Exp Var Exp where
         freshen decl $ \decl' ->
         LetE decl' <$> substM e <*> pure l
 
-    substM (CallE v iotas es l) = do
+    substM (CallE v taus es l) = do
         (theta, _) <- ask
         v' <- case Map.lookup v theta of
                 Nothing          -> return v
@@ -1529,7 +1529,7 @@ instance Subst Exp Var Exp where
                 Just e           ->
                     faildoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
-        CallE v' iotas <$> substM es <*> pure l
+        CallE v' taus <$> substM es <*> pure l
 
     substM (DerefE e l) =
         DerefE <$> substM e <*> pure l
@@ -1597,7 +1597,7 @@ instance Subst Exp Var (Step l) where
           Nothing -> return step
           Just e  -> return $ LiftC l e s
 
-    substM (CallC l v iotas es s) = do
+    substM (CallC l v taus es s) = do
         (theta, _) <- ask
         v' <- case Map.lookup v theta of
                 Nothing          -> return v
@@ -1605,7 +1605,7 @@ instance Subst Exp Var (Step l) where
                 Just e           ->
                     faildoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
-        CallC l v' iotas <$> substM es <*> pure s
+        CallC l v' taus <$> substM es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s

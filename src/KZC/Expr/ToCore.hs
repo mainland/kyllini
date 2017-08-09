@@ -226,9 +226,9 @@ transExp (E.LetE cdecl e l) =
     transLocalDecl cdecl $ \decl ->
     LetE decl <$> transExp e <*> pure l
 
-transExp (E.CallE f iotas es l) = do
+transExp (E.CallE f taus es l) = do
     f' <- lookupVarSubst f
-    CallE f' iotas <$> mapM transExp es <*> pure l
+    CallE f' taus <$> mapM transExp es <*> pure l
 
 transExp (E.DerefE e l) =
     DerefE <$> transExp e <*> pure l
@@ -346,13 +346,13 @@ transComp (E.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
     localdeclC decl .>>. transComp e
 
-transComp e@(E.CallE f iotas es _) = do
+transComp e@(E.CallE f taus es _) = do
     f'              <- lookupVarSubst f
     (_, _, tau_res) <- lookupVar f >>= checkFunT
     if isPureishT tau_res
       then liftC =<< transExp e
       else do args <- mapM transArg es
-              callC f' iotas args
+              callC f' taus args
   where
     transArg :: E.Exp -> TC m (Arg l)
     transArg e = do

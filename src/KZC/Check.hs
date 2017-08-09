@@ -1676,18 +1676,18 @@ checkRefT tau =
         unifyTypes tau (refT alpha)
         return alpha
 
--- | Check that a type is an @arr \iota \alpha@ type or a reference to an @arr
--- \iota \alpha@, returning @\iota@ and @\alpha@.
+-- | Check that a type is an @arr \nat \alpha@ type or a reference to an @arr
+-- \nat \alpha@, returning @\nat@ and @\alpha@.
 checkArrT :: Type -> Ti (Type, Type)
 checkArrT tau =
     compress tau >>= go
   where
     go :: Type -> Ti (Type, Type)
-    go (ArrT iota alpha _) =
-        return (iota, alpha)
+    go (ArrT nat alpha _) =
+        return (nat, alpha)
 
-    go (RefT (ArrT iota alpha _) _) =
-        return (iota, alpha)
+    go (RefT (ArrT nat alpha _) _) =
+        return (nat, alpha)
 
     go tau = do
         nat   <- newMetaTvT NatK tau
@@ -1897,8 +1897,8 @@ castVal :: Type -> Z.Exp -> Ti (Ti E.Exp)
 castVal tau2 e0 = do
     (tau1, mce) <- inferVal e
     co <- case (e, tau1, tau2) of
-            (Z.ArrayE es _, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
-                unifyTypes iota1 iota2
+            (Z.ArrayE es _, ArrT nat1 etau1 _, ArrT nat2 etau2 _) -> do
+                unifyTypes nat1 nat2
                 co <- mkArrayCast etau1 etau2
                 mapM_ (\e -> checkSafeCast WarnUnsafeAutoCast (Just e) etau1 etau2) es
                 return co

@@ -1037,10 +1037,10 @@ alphaRename = subst (mempty :: Map Var Exp)
 -- | Return the given array type's size, which must be statically known.
 knownArraySize :: MonadTc m => Type -> m (Int, Type)
 knownArraySize tau = do
-    (iota, tau_elem) <- checkArrT tau
-    case iota of
+    (nat, tau_elem) <- checkArrT tau
+    case nat of
       NatT n _ -> return (n, tau_elem)
-      _          -> fail "Unknown emitted array size"
+      _        -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.
 tryFromIntE :: (MonadPlus m, MonadTrace m) => Exp -> m Int
