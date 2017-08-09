@@ -39,6 +39,7 @@ module KZC.Expr.Smart (
     unRefT,
     arrT,
     arrKnownT,
+    sliceT,
     structT,
     stT,
     forallST,
@@ -205,6 +206,13 @@ arrT nat tau = ArrT nat tau l
 
 arrKnownT :: Int -> Type -> Type
 arrKnownT i tau = ArrT (NatT i l) tau l
+  where
+    l :: SrcLoc
+    l = srclocOf tau
+
+sliceT :: Type -> Maybe Int -> Type
+sliceT tau Nothing  = tau
+sliceT tau (Just i) = ArrT (NatT i l) tau l
   where
     l :: SrcLoc
     l = srclocOf tau

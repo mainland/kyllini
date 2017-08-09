@@ -848,14 +848,14 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
         -- Indexing into a reference to an array returns a reference to an
         -- element of the array.
         go (RefT (ArrT _ tau _) _) = do
-            instType (RefT (mkArrSlice tau len) l) exp_ty
+            instType (RefT (sliceT tau len) l) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
                         return $ E.IdxE ce1 ce2 len l
 
         -- A plain old array gets indexed as one would expect.
         go (ArrT _ tau _) = do
-            instType (mkArrSlice tau len) exp_ty
+            instType (sliceT tau len) exp_ty
             return $ do ce1 <- mce1
                         ce2 <- mce2
                         return $ E.IdxE ce1 ce2 len l
@@ -866,10 +866,6 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
             alpha <- newMetaTvT tauK l
             unifyTypes tau (ArrT i alpha l)
             compress tau >>= go
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     withSummaryContext e0 $ do

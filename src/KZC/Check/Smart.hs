@@ -39,6 +39,7 @@ module KZC.Check.Smart (
     structT,
     synT,
     arrT,
+    sliceT,
     stT,
     forallST,
     cT,
@@ -143,6 +144,13 @@ refT tau = RefT tau (srclocOf tau)
 
 arrT :: Type -> Type -> Type
 arrT nat tau = ArrT nat tau (nat `srcspan` tau)
+
+sliceT :: Type -> Maybe Int -> Type
+sliceT tau Nothing  = tau
+sliceT tau (Just i) = ArrT (NatT i l) tau l
+  where
+    l :: SrcLoc
+    l = srclocOf tau
 
 structT :: Z.Struct -> [Type] -> Type
 structT s taus = StructT s taus (srclocOf taus)

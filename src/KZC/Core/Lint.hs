@@ -219,18 +219,14 @@ inferView (IdxVW v e len l) = do
   where
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
-        return $ RefT (mkArrSlice tau len) l
+        return $ RefT (sliceT tau len) l
 
     go (ArrT _ tau _) =
-        return $ mkArrSlice tau len
+        return $ sliceT tau len
 
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (fromIntegral i) tau l
 
 checkView :: MonadTc m => View -> Type -> m ()
 checkView vw tau = do
@@ -473,18 +469,18 @@ inferExp (IdxE e1 e2 len l) = do
 
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
-        return $ RefT (mkArrSlice tau len) l
+        return $ RefT (sliceT tau len) l
 
     go (ArrT _ tau _) =
-        return $ mkArrSlice tau len
+        return $ sliceT tau len
 
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
 
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (fromIntegral i) tau l
+    sliceT :: Type -> Maybe Int -> Type
+    sliceT tau Nothing  = tau
+    sliceT tau (Just i) = ArrT (fromIntegral i) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
