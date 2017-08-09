@@ -1626,16 +1626,15 @@ cgType tau@StructT{} =
     withSummaryContext tau $
     faildoc $ text "Cannot compile polymorphic struct types."
 
-cgType (ArrT (NatT n _) tau _) | isBitT tau = do
+cgType tau@(ArrT _ tau_elem _) | isBitT tau_elem = do
+    (n, _)       <- checkKnownArrT tau
     cbitElemType <- cgBitElemType
     return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
-cgType (ArrT (NatT n _) tau _) = do
-    ctau <- cgType tau
+cgType tau@ArrT{} = do
+    (n, tau_elem) <- checkKnownArrT tau
+    ctau          <- cgType tau_elem
     return [cty|$ty:ctau[$int:n]|]
-
-cgType tau@(ArrT _ _ _) =
-    panicdoc $ text "cgType: cannot translate array of unknown size:" <+> ppr tau
 
 cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
     cgType tau'
@@ -1643,17 +1642,15 @@ cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
 cgType tau@ST{} =
     panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
-cgType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
+cgType (RefT tau@(ArrT _ tau_elem _) _) | isBitT tau_elem = do
+    (n, _)       <- checkKnownArrT tau
     cbitElemType <- cgBitElemType
     return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
-cgType (RefT (ArrT (NatT n _) tau _) _) = do
-    ctau <- cgType tau
+cgType (RefT tau@ArrT{} _) = do
+    (n, tau_elem) <- checkKnownArrT tau
+    ctau          <- cgType tau_elem
     return [cty|$ty:ctau[$int:n]|]
-
-cgType (RefT (ArrT _ tau _) _) = do
-    ctau <- cgType tau
-    return [cty|$ty:ctau*|]
 
 cgType (RefT tau _) = do
     ctau <- cgType tau
@@ -1713,29 +1710,41 @@ cgParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg l C.Type
-    cgParamType (ArrT (NatT n _) tau _) | isBitT tau = do
-        cbitElemType <- cgBitElemType
-        return [cty|const $ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgParamType (ArrT nat tau _) =
+        simplType nat >>= go
+      where
+        go :: Type -> Cg l C.Type
+        go (NatT n _) | isBitT tau = do
+            cbitElemType <- cgBitElemType
+            return [cty|const $ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgParamType (ArrT (NatT n _) tau _) = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau[$int:n]|]
+        go (NatT n _) = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau[$int:n]|]
 
-    cgParamType (ArrT _ tau _) = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+        go _ | isBitT tau = do
+            cbitElemType <- cgBitElemType
+            return [cty|const $ty:cbitElemType*|]
 
-    cgParamType (RefT (ArrT (NatT n _) tau _) _) | isBitT tau = do
-        cbitElemType <- cgBitElemType
-        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
+        go _ = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau*|]
 
-    cgParamType (RefT (ArrT (NatT n _) tau _) _) = do
-        ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
+    cgParamType (RefT (ArrT nat tau _) _) =
+        simplType nat >>= go
+      where
+        go :: Type -> Cg l C.Type
+        go (NatT n _) | isBitT tau = do
+            cbitElemType <- cgBitElemType
+            return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgParamType (RefT (ArrT _ tau _) _) = do
-        ctau <- cgType tau
-        return [cty|$ty:ctau*|]
+        go (NatT n _) = do
+            ctau <- cgType tau
+            return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
+
+        go _ = do
+            ctau <- cgType tau
+            return [cty|$ty:ctau*|]
 
     cgParamType (RefT tau _) = do
         ctau <- cgType tau
@@ -1752,17 +1761,25 @@ cgRetParam tau maybe_cv = do
       Just cv -> return [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg l C.Type
-    cgRetParamType (ArrT (NatT n _) tau _) | isBitT tau = do
-        cbitElemType <- cgBitElemType
-        return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
+    cgRetParamType (ArrT nat tau _) =
+        simplType nat >>= go
+      where
+        go :: Type -> Cg l C.Type
+        go (NatT n _) | isBitT tau = do
+            cbitElemType <- cgBitElemType
+            return [cty|$ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
 
-    cgRetParamType (ArrT (NatT n _) tau _) = do
-        ctau <- cgType tau
-        return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
+        go (NatT n _) = do
+          ctau <- cgType tau
+          return [cty|$ty:ctau[$tyqual:cstatic $int:n]|]
 
-    cgRetParamType (ArrT _ tau _) = do
-        ctau <- cgType tau
-        return [cty|$ty:ctau*|]
+        go _ | isBitT tau = do
+            cbitElemType <- cgBitElemType
+            return [cty|$ty:cbitElemType*|]
+
+        go _ = do
+            ctau <- cgType tau
+            return [cty|$ty:ctau*|]
 
     cgRetParamType tau = cgType tau
 
@@ -2383,23 +2400,27 @@ cgParSingleThreaded _tau_res b left right klbl k = do
         k
 
     emitsk :: CExp l -> CExp l -> CExp l -> CExp l -> EmitsK l
-    emitsk cleftk crightk cbuf cbufp (NatT 1 _) tau ce klbl k = do
-        ce' <- cgIdx tau ce 1 0
-        emitk cleftk crightk cbuf cbufp tau ce' klbl k
+    emitsk cleftk crightk cbuf cbufp nat0 tau ce klbl (k :: Cg l b) =
+        simplType nat0 >>= go
+      where
+        go :: Type -> Cg l b
+        go (NatT 1 _) = do
+            ce' <- cgIdx tau ce 1 0
+            emitk cleftk crightk cbuf cbufp tau ce' klbl k
 
-    emitsk cleftk crightk cbuf cbufp n tau ce _klbl k = do
-        cn    <- cgNatType n
-        loopl <- gensym "emitsk_next"
-        useLabel loopl
-        appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
-        cgFor 0 cn $ \ci -> do
-            celem <- cgIdx tau ce cn ci
-            cgAssignBufp tau cbuf cbufp celem
-            appendStm [cstm|INDJUMP($crightk);|]
-            -- Because we need a statement to label, but the continuation is
-            -- the next loop iteration...
-            cgLabel loopl
-        newScope k
+        go nat = do
+            cn    <- cgNatType nat
+            loopl <- gensym "emitsk_next"
+            useLabel loopl
+            appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
+            cgFor 0 cn $ \ci -> do
+                celem <- cgIdx tau ce cn ci
+                cgAssignBufp tau cbuf cbufp celem
+                appendStm [cstm|INDJUMP($crightk);|]
+                -- Because we need a statement to label, but the continuation is
+                -- the next loop iteration...
+                cgLabel loopl
+            newScope k
 
     -- Assign the value @ce@ to the buffer pointer @cbufp@. If @ce@ is not
     -- an lvalue, then stash it in @cbuf@ first and set @cbufp@ to point to
@@ -2948,16 +2969,21 @@ cgAssign tau ce1 ce2 = do
                   text "Bit array copy:" </> ppr ce1 <+> text ":=" <+> ppr ce2
                 appendStm [cstm|kz_bitarray_copy($cdst, $cdstIdx, $csrc', $csrcIdx, $clen);|]
 
-    assign mayAlias tau0 ce1 ce2 | Just (nat, tau_elem) <- checkArrOrRefArrT tau0 =
-        case nat of
-          NatT n _ | not (isArrT tau_elem) -> do
-              bytes    <- typeSizeInBytes tau0
-              minBytes <- asksConfig minMemcpyBytes
-              if bytes >= minBytes
-                then cgMemcpyArray nat tau_elem
-                else cgAssignArray n tau_elem
-          _ -> cgMemcpyArray nat tau_elem
+    assign mayAlias tau0 ce1 ce2 | Just (nat0, tau_elem) <- checkArrOrRefArrT tau0 = do
+        nat <- simplType nat0
+        go nat tau_elem
       where
+        go :: Type -> Type -> Cg l ()
+        go nat@(NatT n _) tau_elem | not (isArrT tau_elem) = do
+            bytes    <- typeSizeInBytes tau0
+            minBytes <- asksConfig minMemcpyBytes
+            if bytes >= minBytes
+              then cgMemcpyArray nat tau_elem
+              else cgAssignArray n tau_elem
+
+        go nat tau_elem =
+            cgMemcpyArray nat tau_elem
+
         cgAssignArray :: Int -> Type -> Cg l ()
         cgAssignArray n tau_elem =
             forM_ [0..n-1] $ \i ->

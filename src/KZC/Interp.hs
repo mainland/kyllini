@@ -158,7 +158,9 @@ toRef val =
     ValR <$> newRef val
 
 -- | Produce a default reference of the given type.
-defaultRef :: (MonadTcRef m, s ~ PrimState m) => Type -> I s m (Ref s)
+defaultRef :: forall s m . (MonadTcRef m, s ~ PrimState m)
+           => Type
+           -> I s m (Ref s)
 defaultRef (RefT tau _) =
     defaultRef tau
 
@@ -167,12 +169,17 @@ defaultRef (StructT struct taus _) = do
     refs        <- mapM defaultRef ftaus
     return $ StructR struct taus (fs `zip` refs)
 
-defaultRef (ArrT (NatT n _) tau _) | isBaseT tau = do
-    val <- defaultVal tau
-    ArrayR <$> MV.replicate n val
+defaultRef tau@ArrT{} = do
+    (n, tau_elem) <- checkKnownArrT tau
+    go n tau_elem
+  where
+    go :: Int -> Type -> I s m (Ref s)
+    go n tau_elem | isBaseT tau_elem = do
+        val <- defaultVal tau_elem
+        ArrayR <$> MV.replicate n val
 
-defaultRef (ArrT (NatT n _) tau _) =
-    ArrayRefR <$> (V.replicateM n (defaultRef tau) >>= V.thaw)
+    go n tau_elem =
+        ArrayRefR <$> (V.replicateM n (defaultRef tau_elem) >>= V.thaw)
 
 defaultRef tau =
     ValR <$> (defaultVal tau >>= newRef)

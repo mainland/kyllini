@@ -280,7 +280,7 @@ simplNat tau =
 
 -- | Compute the size of a type in bits.
 typeSize :: Type -> Ti Int
-typeSize = go
+typeSize = simplNat >=> go
   where
     go :: Type -> Ti Int
     go UnitT{}                 = pure 0

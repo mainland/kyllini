@@ -230,7 +230,7 @@ inferView (IdxVW v e len l) = do
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
+    mkArrSlice tau (Just i) = ArrT (fromIntegral i) tau l
 
 checkView :: MonadTc m => View -> Type -> m ()
 checkView vw tau = do
@@ -358,15 +358,10 @@ inferExp (BinopE op e1 e2 l) = do
     binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
-        (iota1, tau1_elem) <- checkArrT tau1
-        (iota2, tau2_elem) <- checkArrT tau2
+        (nat1, tau1_elem) <- checkArrT tau1
+        (nat2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
-        case (iota1, iota2) of
-          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
-          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
-      where
-        s :: SrcLoc
-        s = tau1 `srcspan` tau2
+        return $ ArrT (nat1 + nat2) tau1_elem (tau1 `srcspan` tau2)
 
     a :: TyVar
     a = "a"
@@ -460,7 +455,7 @@ inferExp (ArrayE es l) = do
     case taus of
       [] -> faildoc $ text "Empty array expression"
       tau:taus -> do mapM_ (checkTypeEquality tau) taus
-                     return $ ArrT (NatT (length es) l) tau l
+                     return $ ArrT (fromIntegral (length es)) tau l
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
@@ -489,7 +484,7 @@ inferExp (IdxE e1 e2 len l) = do
 
     mkArrSlice :: Type -> Maybe Int -> Type
     mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
+    mkArrSlice tau (Just i) = ArrT (fromIntegral i) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e

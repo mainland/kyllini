@@ -364,15 +364,10 @@ inferExp (BinopE op e1 e2 l) = do
     binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
-        (iota1, tau1_elem) <- checkArrT tau1
-        (iota2, tau2_elem) <- checkArrT tau2
+        (nat1, tau1_elem) <- checkArrT tau1
+        (nat2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
-        case (iota1, iota2) of
-          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
-          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
-      where
-        s :: SrcLoc
-        s = tau1 `srcspan` tau2
+        return $ ArrT (nat1 + nat2) tau1_elem (tau1 `srcspan` tau2)
 
     a :: TyVar
     a = "a"
@@ -1163,28 +1158,29 @@ checkComplexT _ =
     fail "Not a complex type"
 
 -- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
--- @\alpha@.
+-- @\alpha@. The @\iota@ type is simplified.
 checkArrT :: MonadTc m => Type -> m (Type, Type)
 checkArrT (ArrT nat alpha _) = do
     checkKind nat NatK
-    return (nat, alpha)
+    nat' <- simplType nat
+    return (nat', alpha)
 
 checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
--- | Check that a type is an array of known length, returning the length and
---the type of the array elements
+-- | Check that a type is an array of known length, returning the length and the
+-- type of the array elements
 checkKnownArrT :: forall m . MonadTc m => Type -> m (Int, Type)
-checkKnownArrT tau =
-    checkArrT tau >>= go
+checkKnownArrT tau0 =
+    checkArrT tau0 >>= go
   where
     go :: (Type, Type) -> m (Int, Type)
     go (NatT n _, tau) =
         return (n, tau)
 
     go _ =
-         faildoc $ text "Array type" <+> ppr tau <+>
+         faildoc $ text "Array type" <+> enquote (ppr tau0) <+>
                    text "does not have known length."
 
 -- | Check that the argument is either an array or a reference to an array and
