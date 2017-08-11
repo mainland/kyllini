@@ -1004,14 +1004,16 @@ tcExp (Z.TakeE l) exp_ty = do
     b <- newMetaTvT tauK l
     instType (stT (C a l) a a b) exp_ty
     return $ do ca <- trans a
-                return $ E.takeE ca
+                return $ E.TakeE ca l
 
-tcExp (Z.TakesE i l) exp_ty = do
+tcExp (Z.TakesE zn l) exp_ty = do
+    n <- fromZ zn
     a <- newMetaTvT tauK l
     b <- newMetaTvT tauK l
-    instType (stT (C (ArrT (NatT i l) a l) l) a a b) exp_ty
-    return $ do ca <- trans a
-                return $ E.takesE (fromIntegral i) ca
+    instType (stT (C (ArrT n a l) l) a a b) exp_ty
+    return $ do cn <- trans n
+                ca <- trans a
+                return $ E.TakesE cn ca l
 
 tcExp (Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT tauK l

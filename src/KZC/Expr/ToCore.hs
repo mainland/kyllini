@@ -390,8 +390,8 @@ transComp (E.BindE (E.TameV v) tau e1 e2 _) =
 transComp (E.TakeE tau _) =
     takeC tau
 
-transComp (E.TakesE i tau _) =
-    takesC i tau
+transComp (E.TakesE n tau _) =
+    takesC n tau
 
 transComp (E.EmitE e _) = do
     e' <- transExp e

@@ -651,7 +651,7 @@ acomp :
   | 'take'
       { TakeE (srclocOf $1) }
   | 'takes' exp
-      {% do { n <- constIntExp $2;
+      {% do { n <- constNatExp $2;
             ; return $ TakesE n ($1 `srcspan` $2)
             }
       }

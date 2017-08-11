@@ -198,7 +198,7 @@ data Exp = ConstE Const !SrcLoc
          -- Computations
          | ReturnE InlineAnn Exp !SrcLoc
          | TakeE !SrcLoc
-         | TakesE Int !SrcLoc
+         | TakesE Nat !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc

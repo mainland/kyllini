@@ -609,27 +609,27 @@ simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
                   TakesC{}           : BindC _  TameV{} _ _  :
                   _) = do
     zs <- gensym "zs"
-    extendVars [(zs, arrKnownT total tau)] $
+    extendVars [(zs, arrT total tau)] $
       extendSubsts [(v, DoneExp e) | (v, i, n) <- zip3 vs offs lens,
-                                     let e = sliceE (varE zs) (uintE i) n] $ do
+                                     let e = IdxE (varE zs) (intE i) (Just n) (srclocOf n)] $ do
       steps' <- simplSteps rest
       simplSteps $ TakesC l1 total tau s1 :
-                   BindC l2 (TameV (mkBoundVar zs)) (arrKnownT total tau) s2 :
+                   BindC l2 (TameV (mkBoundVar zs)) (arrT total tau) s2 :
                    steps'
   where
     vs :: [Var]
-    lens :: [Int]
-    offs :: [Int]
-    total :: Int
+    lens :: [Nat]
+    offs :: [Nat]
+    total :: Nat
     (vs, lens) = unzip takes
     offs = scanl (+) 0 lens
     total = last offs
 
-    takes :: [(Var, Int)]
+    takes :: [(Var, Nat)]
     rest :: [Step l]
     (takes, rest) = go [] steps
 
-    go :: [(Var, Int)] -> [Step l] -> ([(Var, Int)], [Step l])
+    go :: [(Var, Nat)] -> [Step l] -> ([(Var, Nat)], [Step l])
     go takes (TakesC _ n _ _ : BindC _ (TameV xs) _ _ : steps) =
       go ((bVar xs, n) : takes) steps
 
@@ -1074,8 +1074,9 @@ simplStep (TakeC l tau s) = do
     return1 $ TakeC l tau' s
 
 simplStep (TakesC l n tau s) = do
+    n'   <- simplType n
     tau' <- simplType tau
-    return1 $ TakesC l n tau' s
+    return1 $ TakesC l n' tau' s
 
 simplStep (EmitC l e s) =
     EmitC l <$> simplE e <*> pure s >>= return1
@@ -1487,7 +1488,7 @@ simplE (ArrayE es s) =
       where
         coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
         coalesce xs i len [] =
-            return $ sliceE (varE xs) (uintE i) (fromIntegral len)
+            return $ sliceE (varE xs) (intE i) (fromIntegral len)
 
         coalesce xs i len (IdxE (VarE xs' _) ej Nothing _ : es'')
           | Just j <- fromIntE ej, j == i + len, xs' == xs =

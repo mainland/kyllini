@@ -1268,9 +1268,10 @@ instance MonadTc m => TransformExp (UT m) where
 
 instance (IsLabel l, MonadTc m) => TransformComp l (UT m) where
     stepsT (TakesC _ n tau _ : steps) = do
+        n'    <- evalNat n
         comp  <- runK $
-                 letrefC "xs_unrolltakes" (arrKnownT n tau) $ \xs -> do
-                 forC 0 n $ \i -> do
+                 letrefC "xs_unrolltakes" (arrKnownT n' tau) $ \xs -> do
+                 forC 0 n' $ \i -> do
                    x <- takeC tau
                    liftC $ assignE (idxE xs i) x
                  liftC $ derefE xs

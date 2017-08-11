@@ -581,10 +581,11 @@ inferExp (TakeE tau l) = do
     [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
 
-inferExp (TakesE i tau l) = do
+inferExp (TakesE n tau l) = do
+    checkKind n NatK
     checkKind tau tauK
     [b] <- freshenVars ["b"] (fvs tau)
-    instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    instST $ forallST [b] (C (arrT n tau)) tau tau (tyVarT b) l
 
 inferExp (EmitE e l) = do
     tau    <- withFvContext e $ inferExp e

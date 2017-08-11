@@ -297,7 +297,7 @@ data Exp = ConstE Const !SrcLoc
          | ReturnE InlineAnn Exp !SrcLoc
          | BindE WildVar Type Exp Exp !SrcLoc
          | TakeE Type !SrcLoc
-         | TakesE Int Type !SrcLoc
+         | TakesE Nat Type !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE (VectAnn Nat) Exp !SrcLoc

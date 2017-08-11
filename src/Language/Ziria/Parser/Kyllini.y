@@ -656,7 +656,7 @@ semi_stm_exp :
   | 'take'
       { TakeE (srclocOf $1) }
   | 'takes' exp
-      {% do { n <- constIntExp $2;
+      {% do { n <- natExp $2;
             ; return $ TakesE n ($1 `srcspan` $2)
             }
       }

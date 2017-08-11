@@ -340,7 +340,7 @@ data Step l = VarC l Var !SrcLoc
             | BindC l WildVar Type !SrcLoc
 
             | TakeC l Type !SrcLoc
-            | TakesC l Int Type !SrcLoc
+            | TakesC l Nat Type !SrcLoc
             | EmitC l Exp !SrcLoc
             | EmitsC l Exp !SrcLoc
             | RepeatC l (VectAnn Nat) (Comp l) !SrcLoc

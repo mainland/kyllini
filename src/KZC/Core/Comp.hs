@@ -102,10 +102,10 @@ takeC tau = do
     l <- gensym "takek"
     return $ mkComp [TakeC l tau (srclocOf tau)]
 
-takesC :: (IsLabel l, MonadUnique m) => Int -> Type -> m (Comp l)
-takesC i tau = do
+takesC :: (IsLabel l, MonadUnique m) => Nat -> Type -> m (Comp l)
+takesC n tau = do
     l <- gensym "takesk"
-    return $ mkComp [TakesC l i tau (srclocOf tau)]
+    return $ mkComp [TakesC l n tau (srclocOf tau)]
 
 emitC :: (IsLabel l, MonadUnique m) => Exp -> m (Comp l)
 emitC e = do

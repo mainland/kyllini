@@ -2242,8 +2242,9 @@ cgComp comp klbl = cgSteps (unComp comp)
         cgTake tau klbl $ runKont k
 
     cgStep (TakesC l n tau _) klbl k =
-        cgWithLabel l $
-        cgTakes n tau klbl $ runKont k
+        cgWithLabel l $ do
+        i <- evalNat n
+        cgTakes i tau klbl $ runKont k
 
     cgStep (EmitC l e _) klbl k =
         cgWithLabel l $ do

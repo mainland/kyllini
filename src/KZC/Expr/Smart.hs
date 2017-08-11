@@ -456,7 +456,7 @@ takeE :: Type -> Exp
 takeE tau = TakeE tau (srclocOf tau)
 
 takesE :: Int -> Type -> Exp
-takesE n tau = TakesE n tau (srclocOf tau)
+takesE n tau = TakesE (fromIntegral n) tau (srclocOf tau)
 
 emitE :: Exp -> Exp
 emitE e = EmitE e (srclocOf e)
