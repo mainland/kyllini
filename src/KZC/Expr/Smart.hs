@@ -467,5 +467,5 @@ emitsE e = EmitsE e (srclocOf e)
 repeatE :: Exp -> Exp
 repeatE e = RepeatE AutoVect e (srclocOf e)
 
-repeatAnnE :: VectAnn -> Exp -> Exp
+repeatAnnE :: VectAnn Nat -> Exp -> Exp
 repeatAnnE ann e = RepeatE ann e (srclocOf e)

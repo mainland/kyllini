@@ -652,9 +652,10 @@ coalesceComp comp = do
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
       text "B-rules:" </> stack (map ppr (sort cs2))
     dflags <- askConfig
+    ann    <- traverse (traverse evalNat) (vectAnn comp)
     let cs :: [BC]
         cs = filter (byteSizePred dflags asz bsz) $
-             filter (vectAnnPred dflags (vectAnn comp)) $
+             filter (vectAnnPred dflags ann) $
              cs1 ++ cs2
     return (noVect : cs)
   where
@@ -669,24 +670,24 @@ coalesceComp comp = do
     byteSizePred _ _ _ _ =
         True
 
-    vectAnnPred :: Config -> Maybe VectAnn -> BC -> Bool
+    vectAnnPred :: Config -> Maybe (VectAnn Int) -> BC -> Bool
     vectAnnPred dflags ann | VectFilterAnn `testDynFlag` dflags =
         matchVectAnn ann
       where
-        matchVectAnn :: Maybe VectAnn -> BC -> Bool
+        matchVectAnn :: Maybe (VectAnn Int) -> BC -> Bool
         matchVectAnn Nothing _ =
             True
 
         matchVectAnn (Just ann) bc =
             (matchInBlock ann . inBlock) bc && (matchOutBlock ann . outBlock) bc
 
-        matchInBlock :: VectAnn -> Maybe B -> Bool
+        matchInBlock :: VectAnn Int -> Maybe B -> Bool
         matchInBlock _             Nothing        = True
         matchInBlock AutoVect      _              = True
         matchInBlock (Rigid _ m _) (Just (B i _)) = i == m
         matchInBlock (UpTo _ m _)  (Just (B i _)) = i <= m
 
-        matchOutBlock :: VectAnn -> Maybe B -> Bool
+        matchOutBlock :: VectAnn Int -> Maybe B -> Bool
         matchOutBlock _             Nothing        = True
         matchOutBlock AutoVect      _              = True
         matchOutBlock (Rigid _ _ m) (Just (B i _)) = i == m
@@ -801,10 +802,10 @@ isTransformer c =
     Just TransR{} -> True
     _             -> False
 
-vectAnn :: Comp l -> Maybe VectAnn
+vectAnn :: Comp l -> Maybe (VectAnn Nat)
 vectAnn c = go (unComp c)
   where
-    go :: [Step l] -> Maybe VectAnn
+    go :: [Step l] -> Maybe (VectAnn Nat)
     go [] =
         Nothing
 

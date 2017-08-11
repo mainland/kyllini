@@ -343,7 +343,7 @@ data Step l = VarC l Var !SrcLoc
             | TakesC l Int Type !SrcLoc
             | EmitC l Exp !SrcLoc
             | EmitsC l Exp !SrcLoc
-            | RepeatC l VectAnn (Comp l) !SrcLoc
+            | RepeatC l (VectAnn Nat) (Comp l) !SrcLoc
             | ParC PipelineAnn Type (Comp l) (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 

@@ -154,7 +154,7 @@ data Decl -- | Struct declaration
           | LetFunCompD Var (Maybe Range) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-type Range = (Int, Int)
+type Range = (Nat, Nat)
 
 data Const = UnitC
            | BoolC Bool
@@ -246,9 +246,9 @@ data PipelineAnn = Pipeline     -- ^ Always pipeline
   deriving (Enum, Eq, Ord, Read, Show)
 
 data VectAnn = AutoVect
-             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
-                                   -- disallow mitigations up
-             | UpTo  Bool Int Int
+             -- | True == allow mitigations up, False == disallow mitigations up
+             | Rigid Bool Nat Nat
+             | UpTo  Bool Nat Nat
   deriving (Eq, Ord, Read, Show)
 
 data Unop = Lnot  -- ^ Logical not

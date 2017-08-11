@@ -300,7 +300,7 @@ data Exp = ConstE Const !SrcLoc
          | TakesE Int Type !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
-         | RepeatE VectAnn Exp !SrcLoc
+         | RepeatE (VectAnn Nat) Exp !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -339,11 +339,12 @@ data PipelineAnn = AlwaysPipeline -- ^ Always pipeline
                  | AutoPipeline   -- ^ Let the compiler decide when to pipeline
   deriving (Enum, Eq, Ord, Read, Show)
 
-data VectAnn = AutoVect
-             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
-                                   -- disallow mitigations up
-             | UpTo  Bool Int Int
-  deriving (Eq, Ord, Read, Show)
+data VectAnn a = AutoVect
+               -- | True == allow mitigations up, False == disallow mitigations
+               -- up
+               | Rigid Bool a a
+               | UpTo  Bool a a
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Unop = Lnot  -- ^ Logical not
           | Bnot  -- ^ Bitwise not
@@ -1151,7 +1152,7 @@ instance Pretty InlineAnn where
     ppr NoInline   = text "noinline"
     ppr Inline     = text "forceinline"
 
-instance Pretty VectAnn where
+instance Pretty a => Pretty (VectAnn a) where
     ppr (Rigid True from to)  = text "!" <> ppr (Rigid False from to)
     ppr (Rigid False from to) = brackets (commasep [ppr from, ppr to])
     ppr (UpTo f from to)      = text "<=" <+> ppr (Rigid f from to)

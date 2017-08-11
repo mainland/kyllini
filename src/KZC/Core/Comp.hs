@@ -117,7 +117,7 @@ emitsC e = do
     l <- gensym "emitk"
     return $ mkComp [EmitsC l e (srclocOf e)]
 
-repeatC :: (IsLabel l, MonadUnique m) => VectAnn -> Comp l -> m (Comp l)
+repeatC :: (IsLabel l, MonadUnique m) => VectAnn Nat -> Comp l -> m (Comp l)
 repeatC ann c = do
     l <- gensym "repeatk"
     return $ mkComp [RepeatC l ann c (srclocOf c)]

@@ -730,7 +730,12 @@ vect_ann_flag :
 -- Comp ranges
 comp_range :: { Range }
 comp_range :
-    '[' INT ',' INT ']' { (fromIntegral (snd (getINT $2)), fromIntegral (snd (getINT $4))) }
+    '[' exp ',' exp ']'
+        {% do { from <- natExp $2
+              ; to   <- natExp $4
+              ; return (from, to)
+            }
+        }
 
 maybe_comp_range :: { Maybe Range }
 maybe_comp_range :

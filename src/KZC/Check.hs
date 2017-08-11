@@ -1032,7 +1032,8 @@ tcExp (Z.EmitsE e l) exp_ty = do
     mce <- checkVal e (arrT n b)
     return $ E.EmitsE <$> mce <*> pure l
 
-tcExp (Z.RepeatE ann e l) exp_ty = do
+tcExp (Z.RepeatE zann e l) exp_ty = do
+    ann <- fromZ zann
     (sigma, alpha, beta, mce) <-
         withSummaryContext e $ do
         (tau, mce)           <- inferExp e
@@ -1131,7 +1132,8 @@ tcExp e@Z.WriteE{} _ =
 tcExp (Z.StandaloneE e _) exp_ty =
     tcExp e exp_ty
 
-tcExp (Z.MapE ann f ztau l) exp_ty = do
+tcExp (Z.MapE zann f ztau l) exp_ty = do
+    ann  <- fromZ zann
     tau  <- fromZ (ztau, PhiK)
     tau' <- lookupVar f
     unifyTypes tau' tau
@@ -2771,6 +2773,11 @@ instance FromZ [Z.VarBind] [(Z.Var, Type)] where
                   fromZ vbs
           return $ (v, tau) : vbs'
 
+instance FromZ Z.VectAnn (E.VectAnn Nat) where
+    fromZ Z.AutoVect      = pure E.AutoVect
+    fromZ (Z.Rigid f i j) = E.Rigid f <$> fromZ i <*> fromZ j
+    fromZ (Z.UpTo f i j)  = E.UpTo f <$> fromZ i <*> fromZ j
+
 instance FromZ Z.Unop Unop where
     fromZ Z.Lnot   = pure E.Lnot
     fromZ Z.Bnot   = pure E.Bnot
@@ -2934,7 +2941,7 @@ instance Trans Z.InlineAnn E.InlineAnn where
 instance Trans Z.PipelineAnn E.PipelineAnn where
     trans ann = pure $ (toEnum . fromEnum) ann
 
-instance Trans Z.VectAnn E.VectAnn where
-    trans Z.AutoVect      = pure E.AutoVect
-    trans (Z.Rigid f i j) = pure $ E.Rigid f i j
-    trans (Z.UpTo f i j)  = pure $ E.UpTo f i j
+instance Trans (E.VectAnn Nat) (E.VectAnn E.Nat) where
+    trans E.AutoVect      = pure E.AutoVect
+    trans (E.Rigid f i j) = E.Rigid f <$> trans i <*> trans j
+    trans (E.UpTo f i j)  = E.UpTo f <$> trans i <*> trans j
