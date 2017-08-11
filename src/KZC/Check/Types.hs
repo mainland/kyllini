@@ -38,6 +38,7 @@ module KZC.Check.Types (
     structDefTvks,
 
     Type(..),
+    Nat,
     Unop(..),
     Binop(..),
     Kind(..),
@@ -147,6 +148,9 @@ data Type -- Base Types
           | TyVarT TyVar !SrcLoc
           | MetaT MetaTv !SrcLoc
   deriving (Eq, Ord, Show)
+
+-- | A type of kind nat.
+type Nat = Type
 
 -- | Type meta-variable
 data MetaTv = MetaTv Uniq Kind TyRef

@@ -47,6 +47,7 @@ module Language.Ziria.Syntax (
     Binop(..),
 
     Type(..),
+    Nat,
     Kind(..),
     Tvk,
     Trait(..),
@@ -350,6 +351,9 @@ data Type = UnitT !SrcLoc
           | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+-- | A type of kind nat.
+type Nat = Type
 
 -- | Kinds
 data Kind = TauK Traits -- ^ Base types, including arrays of base types

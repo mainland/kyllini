@@ -62,6 +62,7 @@ module KZC.Expr.Syntax (
 
     StructDef(..),
     Type(..),
+    Nat,
     Omega(..),
     Kind(..),
     Tvk,
@@ -456,6 +457,9 @@ data Type -- | Base types
           | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+-- | A type of kind nat.
+type Nat = Type
 
 data UnopT = NegT -- ^ Negation
   deriving (Eq, Ord, Read, Show)
