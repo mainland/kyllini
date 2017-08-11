@@ -754,17 +754,17 @@ vect_ann :
           UpTo flag from to
       }
 
-vect_ann_flag :: { (Bool, (Int, Int)) }
+vect_ann_flag :: { (Bool, Range) }
 vect_ann_flag :
     comp_range     { (True,  $1) }
   | '!' comp_range { (False, $2) }
 
 -- Comp ranges
-comp_range :: { (Int, Int) }
+comp_range :: { Range }
 comp_range :
     '[' INT ',' INT ']' { (fromIntegral (snd (getINT $2)), fromIntegral (snd (getINT $4))) }
 
-maybe_comp_range :: { Maybe (Int, Int) }
+maybe_comp_range :: { Maybe Range }
 maybe_comp_range :
     {- empty -} { Nothing }
   | comp_range  { Just $1 }

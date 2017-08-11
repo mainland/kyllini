@@ -31,6 +31,7 @@ module Language.Ziria.Syntax (
     Program(..),
     Import(..),
     Decl(..),
+    Range,
     Const(..),
     Exp(..),
     GenInterval(..),
@@ -149,9 +150,11 @@ data Decl -- | Struct declaration
           -- | External function binding
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           -- | Computation bindings
-          | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetCompD Var (Maybe Type) (Maybe Range) Exp !SrcLoc
+          | LetFunCompD Var (Maybe Range) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+type Range = (Int, Int)
 
 data Const = UnitC
            | BoolC Bool
@@ -992,7 +995,7 @@ pprTypeAnn :: Maybe Type -> Doc
 pprTypeAnn Nothing    = empty
 pprTypeAnn (Just tau) = brackets (ppr tau)
 
-pprRange :: Maybe (Int, Int) -> Doc
+pprRange :: Maybe Range -> Doc
 pprRange Nothing           = empty
 pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
 
