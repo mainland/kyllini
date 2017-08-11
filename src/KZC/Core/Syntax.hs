@@ -247,7 +247,7 @@ data Decl l = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
             | LetFunCompD BoundVar [Tvk] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data View = IdxVW Var Exp (Maybe Int) !SrcLoc
+data View = IdxVW Var Exp (Maybe Nat) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data LocalDecl -- | Standard let binding
@@ -286,7 +286,7 @@ data Exp = ConstE Const !SrcLoc
          | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Int) !SrcLoc
+         | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -881,8 +881,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
-    pprPrec _ (IdxE e1 e2 (Just i) _) =
-        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
+    pprPrec _ (IdxE e1 e2 (Just len) _) =
+        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
     pprPrec _ (StructE s taus fields _) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals fields
@@ -1404,8 +1404,8 @@ instance Subst Type TyVar Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> substM len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s <$> substM taus <*> substM flds <*> pure l
@@ -1553,8 +1553,8 @@ instance Subst Exp Var Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s taus <$> substM flds <*> pure l

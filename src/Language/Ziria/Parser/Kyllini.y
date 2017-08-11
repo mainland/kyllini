@@ -288,11 +288,10 @@ pexp :
   | pexp '[' exp ']'
       { IdxE $1 $3 Nothing ($1 `srcspan` $4) }
   | pexp '[' exp ':' exp ']'
-      {% do { from      <- constIntExp $3
-            ; to        <- constIntExp $5
-            ; let len   =  to - from + 1
-            ; let efrom =  intC from (srclocOf $5)
-            ; return $ IdxE $1 efrom (Just len) ($1 `srcspan` $6)
+      {% do { from    <- natExp $3
+            ; to      <- natExp $5
+            ; let len =  to - from + 1
+            ; return $ IdxE $1 $3 (Just len) ($1 `srcspan` $6)
             }
       }
 

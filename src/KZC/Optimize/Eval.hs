@@ -887,12 +887,13 @@ evalExp e =
           Nothing   -> partialExp $ arrayE (map toExp vals)
           Just dflt -> return $ ArrayV $ P.fromList dflt vals
 
-    eval flags (IdxE arr start len s) = do
+    eval flags (IdxE arr start nat s) = do
         v_arr   <- eval flags arr
         v_start <- eval flags start
+        len     <- traverse checkKnownNatT nat
         if peval flags
           then evalIdx v_arr v_start len
-          else partialExp $ IdxE (toExp v_arr) (toExp v_start) len s
+          else partialExp $ IdxE (toExp v_arr) (toExp v_start) nat s
 
     eval flags (StructE s taus flds _) = do
         vals <- mapM (eval flags) es

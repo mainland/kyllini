@@ -670,19 +670,20 @@ useExp (AssignE e1 e2 s) = do
         putVal v (ensureTotal tau val)
         topA $ return $ AssignE e1 e2' s
 
-    go e1@(IdxE e_v@(VarE v _) e_i len s) e2' _ = do
+    go e1@(IdxE e_v@(VarE v _) e_i nat s) e2' _ = do
         traceNeedDefault $ text "Assign IdxE:" <+> ppr e1 <+> ppr e2
+        len           <- traverse checkKnownNatT nat
         (n, _)        <- lookupVar v >>= checkArrOrRefArrT
         (e_i', val_i) <- useExp e_i
-        let e1'       = IdxE e_v e_i' len s
-        update n val_i
+        let e1'       = IdxE e_v e_i' nat s
+        update n val_i len
         topA $ return $ AssignE e1' e2' s
       where
-        update :: Type -> Val -> ND m ()
-        update n (IntV i) =
+        update :: Type -> Val -> Maybe Int -> ND m ()
+        update n (IntV i) len =
             updateArray v (Arr n (extendPR i len))
 
-        update _ _ =
+        update _ _ _ =
             return ()
 
     go e1@(ProjE (VarE v _) f _) e2' val2 =
@@ -729,19 +730,20 @@ useExp (ArrayE es s) = do
     n :: Type
     n = natT (length es)
 
-useExp (IdxE e1@(VarE v _) e2 len s) = do
+useExp (IdxE e1@(VarE v _) e2 nat s) = do
     let e1'     =  e1
     val1        <- lookupVal v
     (e2', val2) <- useExp e2
+    len         <- traverse checkKnownNatT nat
     traceNeedDefault $ text "IdxE:" <+> ppr v <+> ppr val1 <+> ppr val2
-    go val1 val2
-    topA $ return $ IdxE e1' e2' len s
+    go val1 val2 len
+    topA $ return $ IdxE e1' e2' nat s
   where
-    go :: Val -> Val -> ND m ()
-    go (ArrV (Arr _ xs)) (IntV j) | extendPR j len <= xs =
+    go :: Val -> Val -> Maybe Int -> ND m ()
+    go (ArrV (Arr _ xs)) (IntV j) len | extendPR j len <= xs =
         return ()
 
-    go _ _ =
+    go _ _ _ =
         useVar v
 
 useExp (IdxE e1 e2 len s) =

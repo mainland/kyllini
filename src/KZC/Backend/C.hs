@@ -1219,13 +1219,14 @@ cgExp e k =
             runKont k $ CExp [cexp|$id:cv|]
 
     go (IdxE e1 e2 maybe_len _) k = do
-        (n, tau) <- inferExp e1 >>= checkArrOrRefArrT
-        cn       <- cgNatType n
-        ce1      <- cgExpOneshot e1
-        ce2      <- cgExpOneshot e2
-        case maybe_len of
-          Nothing  -> calias e <$> cgIdx tau ce1 cn ce2 >>= runKont k
-          Just len -> calias e <$> cgSlice tau ce1 cn ce2 len >>= runKont k
+        (n, tau)   <- inferExp e1 >>= checkArrOrRefArrT
+        cn         <- cgNatType n
+        ce1        <- cgExpOneshot e1
+        ce2        <- cgExpOneshot e2
+        maybe_clen <- traverse cgNatType maybe_len
+        case maybe_clen of
+          Nothing   -> calias e <$> cgIdx tau ce1 cn ce2 >>= runKont k
+          Just clen -> calias e <$> cgSlice tau ce1 cn ce2 clen >>= runKont k
 
     go e@(StructE _ _ flds l) k =
         case unConstE e of
@@ -3068,11 +3069,11 @@ cgSlice :: Type          -- ^ Type of the array element
         -> CExp l        -- ^ The array
         -> CExp l        -- ^ The length of the array
         -> CExp l        -- ^ The array index
-        -> Int           -- ^ The length of the slice
+        -> CExp l        -- ^ The length of the slice
         -> Cg l (CExp l) -- ^ The slice
 cgSlice tau carr clen cidx len = do
     cgBoundsCheck clen cidx
-    cgBoundsCheck clen (cidx + fromIntegral (len - 1))
+    cgBoundsCheck clen (cidx + len - 1)
     return $ CSlice tau carr cidx len
 
 -- | Generate a 'CExp' representing a field projected from a struct.

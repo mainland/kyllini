@@ -650,7 +650,7 @@ simplSteps (EmitsC l1 (IdxE (VarE v  _) ei len1 s1) s2 :
     Just j <- fromIntE ej,
     j == i + sliceLen len1 = do
       rewrite
-      simplSteps $ EmitsC l1 (IdxE (varE v) ei len' s1) s2 : steps
+      simplSteps $ EmitsC l1 (IdxE (varE v) ei (fmap fromIntegral len') s1) s2 : steps
   where
     len' :: Maybe Int
     len' = Just $ sliceLen len1 + sliceLen len2
@@ -1401,8 +1401,8 @@ simplE (ForE _ann v _tau gint
   = do rewrite
        -- The recursive call to 'simplE' is important! We need to be sure to
        -- recursively call simplE here in case @xs@ has been substituted away.
-       simplE $ AssignE (IdxE (VarE xs s) ei (Just len) s)
-                        (IdxE e_ys (f ei) (Just len) s)
+       simplE $ AssignE (IdxE (VarE xs s) ei (Just (fromIntegral len)) s)
+                        (IdxE e_ys (f ei) (Just (fromIntegral len)) s)
                         s
   where
     ei, elen :: Exp
@@ -1504,7 +1504,7 @@ simplE (IdxE e1 e2 len0 s) = do
     e2' <- simplE e2
     go e1' e2' len0
   where
-    go :: Exp -> Exp -> Maybe Int -> SimplM l m Exp
+    go :: Exp -> Exp -> Maybe Type -> SimplM l m Exp
     --
     -- Replace a slice of a slice with a single slice.
     --
@@ -1521,10 +1521,10 @@ simplE (IdxE e1 e2 len0 s) = do
     --
     go e1' e2' (Just len) | Just 0 <- fromIntE e2' = do
         (nat, _) <- inferExp e1' >>= checkArrOrRefArrT
-        case nat of
-          NatT n _ | len == n -> do rewrite
-                                    return e1'
-          _ -> return $ IdxE e1' e2' (Just len) s
+        if nat == len
+          then do rewrite
+                  return e1'
+          else return $ IdxE e1' e2' (Just len) s
 
     go e1' e2' len =
         return $ IdxE e1' e2' len s
@@ -1669,7 +1669,7 @@ simplE (BindE wv tau e1 e2 s) = do
         let len = plusl len1 len2
         simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
       where
-        plusl :: Maybe Int -> Maybe Int -> Maybe Int
+        plusl :: Maybe Type -> Maybe Type -> Maybe Type
         plusl len1 len2 = Just $ sliceLen len1 + sliceLen len2
 
     --

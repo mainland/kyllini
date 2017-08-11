@@ -124,7 +124,7 @@ data CExp l = CVoid
             -- | An array slice. The data constructor's arguments are the type
             -- of the array's elements, the array, the offset, the length of the
             -- slice.
-            | CSlice Type (CExp l) (CExp l) Int
+            | CSlice Type (CExp l) (CExp l) (CExp l)
             -- | A struct.
             | CStruct [(Field, CExp l)]
             -- | A bit array represented as an integer.
@@ -593,15 +593,15 @@ lowerIdx tau ce cidx
     l = carr `srcspan` ci
 
 -- | Lower a slice operation to a 'C.Exp'
-lowerSlice :: Type -> CExp l -> CExp l -> Int -> C.Exp
-lowerSlice tau carr cidx len | isBitT tau =
-    case unBitCSliceBase (CSlice tau carr cidx len) of
+lowerSlice :: Type -> CExp l -> CExp l -> CExp l -> C.Exp
+lowerSlice tau carr cidx clen | isBitT tau =
+    case unBitCSliceBase (CSlice tau carr cidx clen) of
       Just (CBitSlice (CExp ce)) -> ce
       Just (CExp ce) -> ce
       _ -> errordoc $ nest 4 $
            ppr (locOf cidx) <> text ":" </>
            text "lowerCSlice: cannot take slice of bit array where index is not a divisor of the bit width:" </>
-           ppr (CSlice tau carr cidx len)
+           ppr (CSlice tau carr cidx clen)
 
 lowerSlice _ carr cidx _ =
     [cexp|&$carr[$cidx]|]

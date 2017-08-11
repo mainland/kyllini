@@ -756,7 +756,7 @@ instance IsLabel l => ToExp (Ref l m) where
         varE v
 
     toExp (IdxR r start len) =
-        IdxE (toExp r) (toExp start) len noLoc
+        IdxE (toExp r) (toExp start) (fmap fromIntegral len) noLoc
 
     toExp (ProjR r f) =
         ProjE (toExp r) f noLoc

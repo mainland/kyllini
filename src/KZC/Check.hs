@@ -819,29 +819,32 @@ tcExp (Z.ArrayE es l) exp_ty = do
     return $ do ces <- sequence mces
                 return $ E.ArrayE ces l
 
-tcExp (Z.IdxE e1 e2 len l) exp_ty = do
+tcExp (Z.IdxE e1 e2 zlen l) exp_ty = do
     (tau, mce1) <- withSummaryContext e1 $
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
                    co <- mkCast tau2 idxT
                    return $ co mce2
+    len <- traverse fromZ zlen
     checkLen len
-    checkIdxE tau mce1 mce2
+    checkIdxE tau mce1 mce2 len
   where
-    checkLen :: Maybe Int -> Ti ()
+    checkLen :: Maybe Type -> Ti ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     checkIdxE :: Type
               -> Ti E.Exp
               -> Ti E.Exp
+              -> Maybe Type
               -> Ti (Ti E.Exp)
-    checkIdxE tau mce1 mce2 =
+    checkIdxE tau mce1 mce2 len =
         compress tau >>= go
       where
         go :: Type -> Ti (Ti E.Exp)
@@ -849,16 +852,18 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
         -- element of the array.
         go (RefT (ArrT _ tau _) _) = do
             instType (RefT (sliceT tau len) l) exp_ty
-            return $ do ce1 <- mce1
-                        ce2 <- mce2
-                        return $ E.IdxE ce1 ce2 len l
+            return $ do ce1  <- mce1
+                        ce2  <- mce2
+                        clen <- traverse trans len
+                        return $ E.IdxE ce1 ce2 clen l
 
         -- A plain old array gets indexed as one would expect.
         go (ArrT _ tau _) = do
             instType (sliceT tau len) exp_ty
-            return $ do ce1 <- mce1
-                        ce2 <- mce2
-                        return $ E.IdxE ce1 ce2 len l
+            return $ do ce1  <- mce1
+                        ce2  <- mce2
+                        clen <- traverse trans len
+                        return $ E.IdxE ce1 ce2 clen l
 
         -- Otherwise we assert that the type of @e1@ should be an array type.
         go tau = do
@@ -1198,7 +1203,7 @@ refPath e =
     go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) (Just len) _) path =
+    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) (Just (Z.NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (Z.IdxE e _ _ _) _ =
@@ -1671,6 +1676,16 @@ checkRefT tau =
         alpha <- newMetaTvT tauK tau
         unifyTypes tau (refT alpha)
         return alpha
+
+-- | Check that a type of kind nat is a known constant.
+checkKnownNatT :: Type -> Ti Int
+checkKnownNatT tau = do
+    checkKind tau NatK
+    nat <- simplNat tau
+    case nat of
+      NatT n _ -> return n
+      _        -> faildoc $ text "Type" <+> enquote (ppr tau) <+>
+                  text "is not a constant."
 
 -- | Check that a type is an @arr \nat \alpha@ type or a reference to an @arr
 -- \nat \alpha@, returning @\nat@ and @\alpha@.

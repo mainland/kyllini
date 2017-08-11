@@ -46,6 +46,7 @@ module KZC.Core.Lint (
     joinOmega,
 
     checkComplexT,
+    checkKnownNatT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -104,6 +105,7 @@ import KZC.Expr.Lint (Tc(..),
                       joinOmega,
 
                       checkComplexT,
+                      checkKnownNatT,
                       checkArrT,
                       checkKnownArrT,
                       checkArrOrRefArrT,
@@ -459,13 +461,14 @@ inferExp (IdxE e1 e2 len l) = do
     checkLen len
     go tau
   where
-    checkLen :: Maybe Int -> m ()
+    checkLen :: Maybe Type -> m ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
@@ -477,10 +480,6 @@ inferExp (IdxE e1 e2 len l) = do
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
-
-    sliceT :: Type -> Maybe Int -> Type
-    sliceT tau Nothing  = tau
-    sliceT tau (Just i) = ArrT (fromIntegral i) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
@@ -645,7 +644,7 @@ refPath e =
     go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just (NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =

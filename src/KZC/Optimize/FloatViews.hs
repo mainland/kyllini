@@ -205,8 +205,8 @@ withSlices vs k = do
     toLocalDecl (slice@(Slice v es isRef tau), SliceView v' n) = do
         maybe_view <- residualView slice n
         case maybe_view of
-          Just (v'', es') -> return $ letviewD v' tau_v' v'' (sum es') (Just n)
-          Nothing         -> return $ letviewD v' tau_v' v (sum es) (Just n)
+          Just (v'', es') -> return $ letviewD v' tau_v' v'' (sum es') (Just (fromIntegral n))
+          Nothing         -> return $ letviewD v' tau_v' v (sum es) (Just (fromIntegral n))
       where
         tau_v' :: Type
         tau_v' | isRef     = refT $ arrKnownT n tau
@@ -264,13 +264,14 @@ instance MonadTc m => TransformExp (F m) where
                  expT e
         return $ ForE ann v tau iter' e' s
 
-    expT e@(IdxE (VarE v _) e2 len s)
+    expT e@(IdxE (VarE v _) e2 nat s)
       | Just (es, i) <- unSlice e2 = do
+        len          <- traverse checkKnownNatT nat
         (isRef, tau) <- lookupVar v >>= viewType
         maybe_v'     <- lookupView (Slice v es isRef tau) (i + fromMaybe 1 len)
         case maybe_v' of
           Nothing -> return e
-          Just v' -> return $ IdxE (varE v') (castE idxT (fromIntegral i)) len s
+          Just v' -> return $ IdxE (varE v') (castE idxT (fromIntegral i)) nat s
       where
         viewType :: Type -> F m (Bool, Type)
         viewType (ArrT _ tau _) =

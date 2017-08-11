@@ -182,7 +182,7 @@ data Exp = ConstE Const !SrcLoc
          | ForE UnrollAnn Var (Maybe Type) GenInterval Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Int) !SrcLoc
+         | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -697,8 +697,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
-    pprPrec _ (IdxE e1 e2 (Just i) _) =
-        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
+    pprPrec _ (IdxE e1 e2 (Just len) _) =
+        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
     pprPrec _ (StructE s taus fields _) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals fields

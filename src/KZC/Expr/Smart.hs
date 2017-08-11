@@ -210,12 +210,9 @@ arrKnownT i tau = ArrT (NatT i l) tau l
     l :: SrcLoc
     l = srclocOf tau
 
-sliceT :: Type -> Maybe Int -> Type
-sliceT tau Nothing  = tau
-sliceT tau (Just i) = ArrT (NatT i l) tau l
-  where
-    l :: SrcLoc
-    l = srclocOf tau
+sliceT :: Type -> Maybe Type -> Type
+sliceT tau Nothing    = tau
+sliceT tau (Just len) = ArrT len tau (tau `srcspan` len)
 
 structT :: Struct -> Type
 structT struct = StructT struct [] (srclocOf struct)

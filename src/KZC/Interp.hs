@@ -339,9 +339,10 @@ evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)
 evalRef (VarE v _) =
     lookupRef v
 
-evalRef (IdxE e1 e2 len _) = do
+evalRef (IdxE e1 e2 nat _) = do
     ref <- evalRef e1
     i   <- evalExp e2 >>= fromIntV
+    len <- traverse checkKnownNatT nat
     idxR ref i len
 
 evalRef (ProjE e f _) = do
@@ -507,9 +508,10 @@ evalExp (ArrayE es _) = do
     vals <- mapM evalExp es
     return $ ArrayC $ V.fromList vals
 
-evalExp (IdxE e1 e2 len _) = do
+evalExp (IdxE e1 e2 nat _) = do
     val1 <- evalExp e1
     val2 <- evalExp e2 >>= fromIntV
+    len  <- traverse checkKnownNatT nat
     idxV val1 val2 len
 
 evalExp (StructE struct taus flds _) = do
@@ -591,9 +593,10 @@ compileRef (VarE v _) = do
     ref <- lookupRef v
     return $ return ref
 
-compileRef (IdxE e1 e2 len _) = do
+compileRef (IdxE e1 e2 nat _) = do
     mref <- compileRef e1
     mi   <- compileExp e2
+    len  <- traverse checkKnownNatT nat
     return $ do ref <- mref
                 i   <- mi >>= fromIntV
                 idxR ref i len
@@ -779,9 +782,10 @@ compileExp e@IdxE{} | isRef e = do
     mref <- compileRef e
     return $ mref >>= fromRef
 
-compileExp (IdxE e1 e2 len _) = do
+compileExp (IdxE e1 e2 nat _) = do
     mval1 <- compileExp e1
     mval2 <- compileExp e2
+    len   <- traverse checkKnownNatT nat
     return $ do arr <- mval1
                 i   <- mval2 >>= fromIntV
                 idxV arr i len

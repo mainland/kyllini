@@ -446,9 +446,16 @@ evalRef = go []
         val <- evalExp e2
         go (IdxP (addVals val0 val) len : path) e1
 
-    go path (IdxE e1 e2 len _) = do
+    go path (IdxE e1 e2 Nothing _) = do
         val <- evalExp e2
-        go (IdxP val len : path) e1
+        go (IdxP val Nothing : path) e1
+
+    go path (IdxE e1 e2 (Just (NatT len _)) _) = do
+        val <- evalExp e2
+        go (IdxP val (Just len) : path) e1
+
+    go path (IdxE e1 _ _ _) = do
+        go path e1
 
     go path (ProjE e f _) =
         go (ProjP f : path) e

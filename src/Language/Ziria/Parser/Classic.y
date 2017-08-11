@@ -267,15 +267,14 @@ pexp :
   | pexp '.' ID
       { ProjE $1 (mkField (fieldid $3)) ($1 `srcspan` $3) }
   | pexp '[' exp ':' exp ']'
-      {% do { from      <- constIntExp $3
-            ; to        <- constIntExp $5
-            ; let len   =  to - from + 1
-            ; let efrom =  intC from (srclocOf $5)
-            ; return $ IdxE $1 efrom (Just len) ($1 `srcspan` $6)
+      {% do { from    <- constNatExp $3
+            ; to      <- constNatExp $5
+            ; let len =  to - from + 1
+            ; return $ IdxE $1 $3 (Just len) ($1 `srcspan` $6)
             }
       }
   | pexp '[' exp ',' exp ']'
-      {% do { len <- constIntExp $5
+      {% do { len <- constNatExp $5
             ; return $ IdxE $1 $3 (Just len) ($1 `srcspan` $6)
             }
       }

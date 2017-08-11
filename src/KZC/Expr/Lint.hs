@@ -47,6 +47,7 @@ module KZC.Expr.Lint (
     joinOmega,
 
     checkComplexT,
+    checkKnownNatT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -471,13 +472,14 @@ inferExp (IdxE e1 e2 len l) = do
     checkLen len
     go tau
   where
-    checkLen :: Maybe Int -> m ()
+    checkLen :: Maybe Type -> m ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
@@ -676,7 +678,7 @@ refPath e =
     go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just (NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =
@@ -1152,6 +1154,16 @@ checkComplexT (StructT struct taus _) = do
 
 checkComplexT _ =
     fail "Not a complex type"
+
+-- | Check that a type of kind nat is a known constant.
+checkKnownNatT :: MonadTc m => Type -> m Int
+checkKnownNatT tau = do
+    checkKind tau NatK
+    nat <- simplType tau
+    case nat of
+      NatT n _ -> return n
+      _        -> faildoc $ text "Type" <+> enquote (ppr tau) <+>
+                  text "is not a constant."
 
 -- | Check that a type is an @arr \nat \alpha@ type, returning @\nat@ and
 -- @\alpha@. The @\nat@ type is simplified.
