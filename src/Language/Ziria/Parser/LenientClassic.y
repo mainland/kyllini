@@ -889,8 +889,10 @@ imports :
 
 decl_rlist :: { RevList Decl }
 decl_rlist :
-    decl                     { rsingleton $1 }
-  | decl_rlist opt_semi decl { rcons $3 $1 }
+    decl                      { rsingleton $1 }
+  | decl_rlist opt_semi decl  { rcons $3 $1 }
+  | decl_rlist opt_semi error {% expected ["declaration"] Nothing }
+  | error                     {% expected ["declaration"] Nothing }
 
 {------------------------------------------------------------------------------
  -
