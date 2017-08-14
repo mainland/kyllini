@@ -23,6 +23,7 @@ import Control.Monad.Reader (asks)
 import Control.Monad.Ref (modifyRef,
                           readRef)
 import Data.List (foldl')
+import Data.Loc (locOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -37,15 +38,17 @@ import KZC.Compiler.Types
 import KZC.Config
 import KZC.Name
 import KZC.Monad
+import KZC.Util.Error
 import KZC.Util.Pretty
 
 import qualified Language.Ziria.Parser as P
 import qualified Language.Ziria.Syntax as Z
 
-locateModuleSource :: forall m . (MonadConfig m, MonadIO m)
+locateModuleSource :: forall m . (MonadConfig m, MonadErr m, MonadIO m)
                    => ModuleName
                    -> m FilePath
-locateModuleSource mod = do
+locateModuleSource mod =
+    withLocContext (locOf mod) (text "Import of" <+> enquote (ppr mod)) $ do
     paths        <- asksConfig importPaths
     maybe_module <- searchPaths paths
     case maybe_module of
