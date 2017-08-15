@@ -96,12 +96,13 @@ loadModuleInfo modname = do
     path    <- locateModuleSource modname
     modinfo <- summarizeSourceFile path
     updateModuleInfo modname modinfo
-    return modinfo
+    return modinfo { modName = Just modname }
 
 summarizeSourceFile :: FilePath -> KZC ModuleInfo
 summarizeSourceFile sourcePath = do
     imports <- P.parseImportsFromFile sourcePath
-    return ModuleInfo { modSourcePath = sourcePath
+    return ModuleInfo { modName       = Nothing
+                      , modSourcePath = sourcePath
                       , modImports    = [modname | Z.Import modname <- imports]
                       }
 
