@@ -386,6 +386,28 @@ If `T` has traits `Eq`, `Ord`, or `Num`, then `Complex<T>` also has the
 corresponding traits, i.e., `Complex<T>` "inherits" the traits `Eq`, `Ord`, and
 `Num`—but no others—from `T`.
 
+## `Nat` kinds
+
+The new Ziria dialect support types of kind `nat` and well as `nat` singletons.
+Nat variables are declared as folllows:
+
+```
+let nat <n> = <exp>
+```
+
+Here `n` is a variable and `exp` is a nat expression. This declaration brings
+into scope both a type variable `n`, of kind `nat`, **and** a variable `n`, of
+type `n`. A nat expression consists of integer constants, type variables of kind
+nat, addition, subtraction, multiplication, division, and negation.
+
+Nat expressions can be used in several places where constants or, in some cases,
+nat-kinded type variables, could be used, including:
+
+ 1. Array declarations, for the length of an array.
+ 1. In a slice expression.
+ 1. As an argument to `takes`.
+ 1. In a vectorization annotation.
+
 ## Differences with respect to classic Ziria
 
 The `kzc` compiler supports two dialects or Ziria (technically three): the
