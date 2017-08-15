@@ -3,6 +3,12 @@ set -e
 
 PERF=/usr/bin/perf
 
+if [ ! -f "$PERF" ]; then
+    echo "Not collecting perf statistics (can't find perf)"
+else
+    perf stat ls >/dev/null 2>&1 || (echo "Can't execute perf" && perf stat ls && exit 1)
+fi
+
 # Number of runs per benchmark
 N=100
 
