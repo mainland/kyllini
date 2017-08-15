@@ -38,6 +38,9 @@ module KZC.Check.Types (
     structDefTvks,
 
     Type(..),
+    Nat,
+    Unop(..),
+    Binop(..),
     Kind(..),
     Tvk,
     MetaTv(..),
@@ -81,7 +84,11 @@ import KZC.Expr.Syntax (IP(..),
                         qpFromFractional,
 
                         FP(..),
-                        fpBitSize)
+                        fpBitSize,
+
+                        Unop(..),
+                        isFunUnop,
+                        Binop(..))
 import KZC.Globals
 import KZC.Name
 import KZC.Traits
@@ -128,6 +135,12 @@ data Type -- Base Types
           -- Natural number types
           | NatT Int !SrcLoc
 
+          -- | Unary operator applied to a type
+          | UnopT Unop Type !SrcLoc
+
+          -- | Binary operator applied to a type
+          | BinopT Binop Type Type !SrcLoc
+
           -- forall type
           | ForallT [Tvk] Type !SrcLoc
 
@@ -135,6 +148,9 @@ data Type -- Base Types
           | TyVarT TyVar !SrcLoc
           | MetaT MetaTv !SrcLoc
   deriving (Eq, Ord, Show)
+
+-- | A type of kind nat.
+type Nat = Type
 
 -- | Type meta-variable
 data MetaTv = MetaTv Uniq Kind TyRef
@@ -318,6 +334,15 @@ instance Pretty Type where
     pprPrec _ (NatT i _) =
         ppr i
 
+    pprPrec _ (UnopT op tau _) | isFunUnop op =
+        ppr op <> parens (ppr tau)
+
+    pprPrec p (UnopT op tau _) =
+        unop p op tau
+
+    pprPrec p (BinopT op tau1 tau2 _) =
+        infixop p op tau1 tau2
+
     pprPrec p (ForallT tvks (ST (C tau _) (TyVarT s _) (TyVarT a _) (TyVarT b _) _) _) | not expertTypes && alphas' == alphas =
         pprPrec p tau
       where
@@ -399,6 +424,8 @@ instance Fvs Type TyVar where
     fvs (RefT tau _)                = fvs tau
     fvs (FunT taus tau _)           = fvs taus <> fvs tau
     fvs (NatT _ _)                  = mempty
+    fvs (UnopT _ tau _)             = fvs tau
+    fvs (BinopT _ tau1 tau2 _)      = fvs tau1 <> fvs tau2
     fvs (ForallT tvks tau _)        = fvs tau <\\> fromList (map fst tvks)
     fvs (TyVarT tv _)               = singleton tv
     fvs (MetaT _ _)                 = mempty
@@ -420,6 +447,8 @@ instance Fvs Type MetaTv where
     fvs (RefT tau _)                = fvs tau
     fvs (FunT taus tau _)           = fvs taus <> fvs tau
     fvs (NatT _ _)                  = mempty
+    fvs (UnopT _ tau _)             = fvs tau
+    fvs (BinopT _ tau1 tau2 _)      = fvs tau1 <> fvs tau2
     fvs (ForallT _ tau _)           = fvs tau
     fvs (TyVarT _ _)                = mempty
     fvs (MetaT mtv _)               = singleton mtv
@@ -453,6 +482,8 @@ instance HasVars Type TyVar where
     allVars (RefT tau _)                = allVars tau
     allVars (FunT taus tau _)           = allVars taus <> allVars tau
     allVars (NatT _ _)                  = mempty
+    allVars (UnopT _ tau _)             = allVars tau
+    allVars (BinopT _ tau1 tau2 _)      = allVars tau1 <> allVars tau2
     allVars (ForallT tvks tau _)        = fvs tau <> fromList (map fst tvks)
     allVars (TyVarT tv _)               = singleton tv
     allVars (MetaT _ _)                 = mempty
@@ -475,6 +506,8 @@ instance HasVars Type MetaTv where
     allVars (RefT tau _)                = allVars tau
     allVars (FunT taus tau _)           = allVars taus <> allVars tau
     allVars (NatT _ _)                  = mempty
+    allVars (UnopT _ tau _)             = allVars tau
+    allVars (BinopT _ tau1 tau2 _)      = allVars tau1 <> allVars tau2
     allVars (ForallT _ tau _)           = allVars tau
     allVars (TyVarT _ _)                = mempty
     allVars (MetaT mtv _)               = singleton mtv
@@ -524,6 +557,12 @@ instance Subst Type MetaTv Type where
 
     substM tau@NatT{} =
         pure tau
+
+    substM (UnopT op tau l) =
+        UnopT op <$> substM tau <*> pure l
+
+    substM (BinopT op tau1 tau2 l) =
+        BinopT op <$> substM tau1 <*> substM tau2 <*> pure l
 
     substM tau@TyVarT{} =
         pure tau
@@ -581,6 +620,12 @@ instance Subst Type TyVar Type where
     substM tau@NatT{} =
         pure tau
 
+    substM (UnopT op tau l) =
+        UnopT op <$> substM tau <*> pure l
+
+    substM (BinopT op tau1 tau2 l) =
+        BinopT op <$> substM tau1 <*> substM tau2 <*> pure l
+
     substM (ForallT tvks tau l) =
         freshen tvks $ \tvks' ->
         ForallT tvks' <$> substM tau <*> pure l
@@ -634,6 +679,58 @@ instance Freshen TyVar Type TyVar where
 instance Freshen (TyVar, Kind) Type TyVar where
     freshen (alpha, kappa) k =
         freshen alpha $ \alpha' -> k (alpha', kappa)
+
+{------------------------------------------------------------------------------
+ -
+ - Types of kind nat
+ -
+ ------------------------------------------------------------------------------}
+
+instance Num Type where
+    NatT x l + NatT y l' = NatT (x+y) (l `srcspan` l')
+    tau1     + tau2      = BinopT Add tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l - NatT y l' = NatT (x-y) (l `srcspan` l')
+    tau1     - tau2      = BinopT Sub tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l * NatT y l' = NatT (x*y) (l `srcspan` l')
+    tau1     * tau2      = BinopT Mul tau1 tau2 (tau1 `srcspan` tau2)
+
+    negate (NatT x l) = NatT (-x) l
+    negate tau        = UnopT Neg tau (srclocOf tau)
+
+    abs (NatT x l) = NatT (abs x) l
+    abs tau        = UnopT Abs tau (srclocOf tau)
+
+    signum (NatT x l) = NatT (signum x) l
+    signum tau        = errordoc $ text "signum: not supported for type" <+>
+                                   enquote (ppr tau)
+
+    fromInteger i = NatT (fromInteger i) noLoc
+
+instance Real Type where
+    toRational (NatT i _) = toRational i
+    toRational tau        = errordoc $ text "toRational: not supported for type" <+>
+                                       enquote (ppr tau)
+
+instance Enum Type where
+    toEnum i = NatT i noLoc
+
+    fromEnum (NatT i _) = i
+    fromEnum tau        = errordoc $ text "fromEnum: not supported for type" <+>
+                                     enquote (ppr tau)
+
+instance Integral Type where
+    toInteger (NatT i _) = toInteger i
+    toInteger tau        = errordoc $ text "toInteger: not supported for type" <+>
+                                      enquote (ppr tau)
+
+    NatT x l `quot` NatT y l' = NatT (x `quot` y) (l `srcspan` l')
+    tau1     `quot` tau2      = BinopT Div tau1 tau1 (tau1 `srcspan` tau2)
+
+    _ `rem` _ = error "rem: not supported for types"
+
+    x `quotRem` y = (x `quot` y, x `rem` y)
 
 #include "KZC/Check/Types-instances.hs"
 

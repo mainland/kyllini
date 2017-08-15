@@ -474,8 +474,8 @@ instance MonadTc m => TransformExp (L m) where
         go (Just (IdxL _ _ Nothing)) =
             return $ varE v
 
-        go (Just (IdxL _ off _)) | Just e_len <- maybe_len =
-            return $ sliceE (varE v) (e_i - fromIntegral off) e_len
+        go (Just (IdxL _ off _)) | Just (NatT len _) <- maybe_len =
+            return $ sliceE (varE v) (e_i - fromIntegral off) len
 
         go (Just (IdxL _ off _)) =
             return $ idxE (varE v) (e_i - fromIntegral off)

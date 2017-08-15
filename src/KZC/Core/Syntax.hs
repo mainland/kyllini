@@ -64,6 +64,7 @@ module KZC.Core.Syntax (
     Binop(..),
     StructDef(..),
     Type(..),
+    Nat,
     Omega(..),
     Trait(..),
     Kind(..),
@@ -158,6 +159,7 @@ import KZC.Expr.Syntax (Var(..),
                         Binop(..),
                         StructDef(..),
                         Type(..),
+                        Nat,
                         Omega(..),
                         Trait(..),
                         Kind(..),
@@ -245,13 +247,15 @@ data Decl l = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
             | LetFunCompD BoundVar [Tvk] [(Var, Type)] Type (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data View = IdxVW Var Exp (Maybe Int) !SrcLoc
+data View = IdxVW Var Exp (Maybe Nat) !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data LocalDecl -- | Standard let binding
                = LetLD BoundVar Type Exp !SrcLoc
                -- | Ref binding
                | LetRefLD BoundVar Type (Maybe Exp) !SrcLoc
+               -- | Type variable binding
+               | LetTypeLD TyVar Kind Type !SrcLoc
                -- | An array view binding
                | LetViewLD BoundVar Type View !SrcLoc
   deriving (Eq, Ord, Read, Show)
@@ -274,12 +278,15 @@ data Exp = ConstE Const !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
+         -- Lower a (singleton) type to a term. Right now this only works for
+         -- types of kind nat.
+         | LowerE Type !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Int) !SrcLoc
+         | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -333,10 +340,10 @@ data Step l = VarC l Var !SrcLoc
             | BindC l WildVar Type !SrcLoc
 
             | TakeC l Type !SrcLoc
-            | TakesC l Int Type !SrcLoc
+            | TakesC l Nat Type !SrcLoc
             | EmitC l Exp !SrcLoc
             | EmitsC l Exp !SrcLoc
-            | RepeatC l VectAnn (Comp l) !SrcLoc
+            | RepeatC l (VectAnn Nat) (Comp l) !SrcLoc
             | ParC PipelineAnn Type (Comp l) (Comp l) !SrcLoc
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
@@ -483,7 +490,7 @@ stepLabel (ParC _ _ _ right _) = compLabel right
 
 setStepLabel :: l -> Step l -> Step l
 setStepLabel l (VarC _ v s)                = VarC l v s
-setStepLabel l (CallC _ v iotas es s)      = CallC l v iotas es s
+setStepLabel l (CallC _ v taus es s)       = CallC l v taus es s
 setStepLabel l (IfC _ e c1 c2 s)           = IfC l e c1 c2 s
 setStepLabel l (LetC _ decl s)             = LetC l decl s
 setStepLabel l (WhileC _ e c s)            = WhileC l e c s
@@ -529,6 +536,7 @@ instance Size LocalDecl where
     size (LetLD _ _ e _)           = 1 + size e
     size (LetRefLD _ _ Nothing _)  = 1
     size (LetRefLD _ _ (Just e) _) = 1 + size e
+    size LetTypeLD{}               = 0
     size LetViewLD{}               = 0
 
 instance Size Exp where
@@ -544,6 +552,7 @@ instance Size Exp where
     size (WhileE e1 e2 _)       = 1 + size e1 + size e2
     size (ForE _ _ _ gint e3 _) = 1 + size gint + size e3
     size (ArrayE es _)          = 1 + size es
+    size LowerE{}               = 1
     size (IdxE e1 e2 _ _)       = 1 + size e1 + size e2
     size (StructE _ _ flds _)   = size (map snd flds)
     size (ProjE e _ _)          = 1 + size e
@@ -602,6 +611,7 @@ instance LUTSize LocalDecl where
     lutSize (LetLD _ _ e _)           = lutSize e
     lutSize (LetRefLD _ _ Nothing _)  = 0
     lutSize (LetRefLD _ _ (Just e) _) = lutSize e
+    lutSize LetTypeLD{}               = 0
     lutSize LetViewLD{}               = 0
 
 instance LUTSize Exp where
@@ -617,6 +627,7 @@ instance LUTSize Exp where
     lutSize (WhileE e1 e2 _)      = lutSize e1 + lutSize e2
     lutSize (ForE _ _ _ gint e _) = lutSize gint + lutSize e
     lutSize (ArrayE es _)         = lutSize es
+    lutSize LowerE{}              = 0
     lutSize (IdxE e1 e2 _ _)      = lutSize e1 + lutSize e2
     lutSize (StructE _ _ flds _)  = lutSize (map snd flds)
     lutSize (ProjE e _ _)         = lutSize e
@@ -684,9 +695,10 @@ instance Summary (Decl l) where
     summary (LetFunCompD f tvks _ _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
 instance Summary LocalDecl where
-    summary (LetLD v _ _ _)     = text "definition of" <+> ppr v
-    summary (LetRefLD v _ _ _)  = text "definition of" <+> ppr v
-    summary (LetViewLD v _ _ _) = text "definition of" <+> ppr v
+    summary (LetLD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetRefLD v _ _ _)      = text "definition of" <+> ppr v
+    summary (LetTypeLD alpha _ _ _) = text "definition of" <+> ppr alpha
+    summary (LetViewLD v _ _ _)     = text "definition of" <+> ppr v
 
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
@@ -802,6 +814,10 @@ instance Pretty LocalDecl where
         parensIf (p > appPrec) $
         text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
 
+    pprPrec p (LetTypeLD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let type" <+> ppr alpha <+> colon <+> ppr kappa <+> text "=" <+/> ppr tau
+
     pprPrec p (LetViewLD v tau vw _) =
         parensIf (p > appPrec) $
         text "let view" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr vw
@@ -846,6 +862,9 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         nest 2 $ ppr v <+> text ":=" <+/> pprPrec appPrec1 e
 
+    pprPrec p (LowerE tau _) =
+        pprPrec p tau
+
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+>
         group (pprPrec appPrec1 e1) <>
@@ -862,8 +881,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
-    pprPrec _ (IdxE e1 e2 (Just i) _) =
-        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
+    pprPrec _ (IdxE e1 e2 (Just len) _) =
+        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
     pprPrec _ (StructE s taus fields _) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals fields
@@ -1087,11 +1106,13 @@ instance Fvs View Var where
 instance Fvs LocalDecl Var where
     fvs (LetLD v _ e _)      = delete (bVar v) (fvs e)
     fvs (LetRefLD v _ e _)   = delete (bVar v) (fvs e)
+    fvs LetTypeLD{}          = mempty
     fvs (LetViewLD v _ vw _) = delete (bVar v) (fvs vw)
 
 instance Binders LocalDecl Var where
     binders (LetLD v _ _ _)     =  singleton (bVar v)
     binders (LetRefLD v _ _ _)  = singleton (bVar v)
+    binders LetTypeLD{}         = mempty
     binders (LetViewLD v _ _ _) = singleton (bVar v)
 
 instance Fvs Exp Var where
@@ -1104,6 +1125,7 @@ instance Fvs Exp Var where
     fvs (CallE f _ es _)      = singleton f <> fvs es
     fvs (DerefE e _)          = fvs e
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs LowerE{}              = mempty
     fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
@@ -1194,6 +1216,7 @@ instance HasVars View Var where
 instance HasVars LocalDecl Var where
     allVars (LetLD v _ e _)      = singleton (bVar v) <> allVars e
     allVars (LetRefLD v _ e _)   = singleton (bVar v) <> allVars e
+    allVars LetTypeLD{}          = mempty
     allVars (LetViewLD v _ vw _) = singleton (bVar v) <> allVars vw
 
 instance HasVars Exp Var where
@@ -1206,6 +1229,7 @@ instance HasVars Exp Var where
     allVars (CallE f _ es _)      = singleton f <> allVars es
     allVars (DerefE e _)          = allVars e
     allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars LowerE{}              = mempty
     allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
@@ -1269,8 +1293,8 @@ instance (IsLabel l, Fvs l l, Subst l l l) => Subst l l (Step l) where
     substM (VarC l v s) =
         VarC <$> substM l <*> pure v <*> pure s
 
-    substM (CallC l v iotas es s) =
-        CallC <$> substM l <*> pure v <*> pure iotas <*> pure es <*> pure s
+    substM (CallC l v taus es s) =
+        CallC <$> substM l <*> pure v <*> pure taus <*> pure es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC <$> substM l <*> pure e <*> substM c1 <*> substM c2 <*> pure s
@@ -1333,6 +1357,10 @@ instance Subst Type TyVar LocalDecl where
     substM (LetRefLD v tau e l) =
         LetRefLD v <$> substM tau <*> substM e <*> pure l
 
+    substM (LetTypeLD alpha kappa tau l) =
+        freshen alpha $ \alpha' ->
+        LetTypeLD alpha' kappa <$> substM tau <*> pure l
+
     substM (LetViewLD v tau vw s) =
         LetViewLD v <$> substM tau <*> substM vw <*> pure s
 
@@ -1355,14 +1383,17 @@ instance Subst Type TyVar Exp where
     substM (LetE decl e l) =
         LetE <$> substM decl <*> substM e <*> pure l
 
-    substM (CallE v iotas es l) =
-        CallE v iotas <$> substM es <*> pure l
+    substM (CallE v taus es l) =
+        CallE v taus <$> substM es <*> pure l
 
     substM (DerefE e l) =
         DerefE <$> substM e <*> pure l
 
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM (LowerE tau l) =
+        LowerE <$> substM tau <*> pure l
 
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
@@ -1373,8 +1404,8 @@ instance Subst Type TyVar Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> substM len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s <$> substM taus <*> substM flds <*> pure l
@@ -1418,8 +1449,8 @@ instance Subst Type TyVar (Step l) where
     substM step@VarC{} =
         pure step
 
-    substM (CallC l v iotas es s) =
-        CallC l v iotas <$> substM es <*> pure s
+    substM (CallC l v taus es s) =
+        CallC l v taus <$> substM es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
@@ -1492,7 +1523,7 @@ instance Subst Exp Var Exp where
         freshen decl $ \decl' ->
         LetE decl' <$> substM e <*> pure l
 
-    substM (CallE v iotas es l) = do
+    substM (CallE v taus es l) = do
         (theta, _) <- ask
         v' <- case Map.lookup v theta of
                 Nothing          -> return v
@@ -1500,13 +1531,16 @@ instance Subst Exp Var Exp where
                 Just e           ->
                     faildoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
-        CallE v' iotas <$> substM es <*> pure l
+        CallE v' taus <$> substM es <*> pure l
 
     substM (DerefE e l) =
         DerefE <$> substM e <*> pure l
 
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
+
+    substM e@LowerE{} =
+        pure e
 
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
@@ -1519,8 +1553,8 @@ instance Subst Exp Var Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s taus <$> substM flds <*> pure l
@@ -1565,7 +1599,7 @@ instance Subst Exp Var (Step l) where
           Nothing -> return step
           Just e  -> return $ LiftC l e s
 
-    substM (CallC l v iotas es s) = do
+    substM (CallC l v taus es s) = do
         (theta, _) <- ask
         v' <- case Map.lookup v theta of
                 Nothing          -> return v
@@ -1573,7 +1607,7 @@ instance Subst Exp Var (Step l) where
                 Just e           ->
                     faildoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
-        CallC l v' iotas <$> substM es <*> pure s
+        CallC l v' taus <$> substM es <*> pure s
 
     substM (IfC l e c1 c2 s) =
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
@@ -1689,6 +1723,9 @@ instance Freshen LocalDecl Exp Var where
         e' <- substM e
         freshen v $ \v' ->
           k (LetRefLD v' tau e' l)
+
+    freshen (LetTypeLD alpha kappa tau l) k =
+        k (LetTypeLD alpha kappa tau l)
 
     freshen (LetViewLD v tau (IdxVW v_view e len _) l) k =
         ask (Map.lookup v_view . fst) >>= go

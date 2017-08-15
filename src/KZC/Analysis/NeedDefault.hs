@@ -66,8 +66,8 @@ fromUnitR (Range i (NatT 1 _) 1) = Just i
 fromUnitR _                        = Nothing
 
 -- | Construct a symbolic range of length 1.
-iotaR :: Type -> Range
-iotaR x = Range x (natT (1::Int)) 1
+natR :: Type -> Range
+natR x = Range x (natT (1::Int)) 1
 
 -- | Construct a range with known, constant start and length.
 rangeR :: Integral a => a -> a -> Range
@@ -195,8 +195,8 @@ data Val -- | Unknown (not yet defined)
 intV :: Integral a => a -> Val
 intV = IntV . PR . Known . unitR
 
-iotaV :: Type -> Val
-iotaV = IntV . PR . Known . iotaR
+natV :: Type -> Val
+natV = IntV . PR . Known . natR
 
 rangeV :: Type -> Type -> Val
 rangeV i len = IntV $ PR $ Known $ Range i len 1
@@ -277,8 +277,8 @@ ensureTotal :: Type -> Val -> Val
 ensureTotal = go
   where
     go :: Type -> Val -> Val
-    go (ArrT iota _ _)          _ = wholeArrV iota
-    go (RefT (ArrT iota _ _) _) _ = wholeArrV iota
+    go (ArrT nat _ _)          _ = wholeArrV nat
+    go (RefT (ArrT nat _ _) _) _ = wholeArrV nat
 
     go _ val | val == bot = top
              | otherwise  = val
@@ -482,6 +482,11 @@ useLocalDecl (LetRefLD v tau (Just e) s) m = do
                  updateNeedDefault v m
     return (LetRefLD v' tau (Just e') s, x)
 
+useLocalDecl (LetTypeLD alpha kappa tau s) m = do
+    x <- extendTyVars [(alpha, kappa)] $
+         extendTyVarTypes [(alpha, tau)] m
+    return (LetTypeLD alpha kappa tau s, x)
+
 useLocalDecl LetViewLD{} _ =
     faildoc $ text "Views not supported."
 
@@ -519,8 +524,8 @@ useStep (VarC l v s) = do
     useVar v
     return $ VarC l v s
 
-useStep (CallC l f iotas args s) =
-    CallC l f iotas <$> mapM useArg args <*> pure s
+useStep (CallC l f taus args s) =
+    CallC l f taus <$> mapM useArg args <*> pure s
   where
     useArg :: Arg l -> ND m (Arg l)
     useArg (ExpA e)  = ExpA  <$> (fst <$> useExp e)
@@ -594,8 +599,8 @@ useExp e@(VarE v _) = do
     return (e, val)
 
 useExp e@(UnopE Len (VarE v _) _) = do
-    (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-    return (e, iotaV iota)
+    (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+    return (e, natV nat)
 
 useExp (UnopE op e s) =
     topA $ UnopE op <$> (fst <$> useExp e) <*> pure s
@@ -633,11 +638,11 @@ useExp (LetE decl e s) = do
                    fst <$> useExp e
     return (LetE decl' e' s, top)
 
-useExp (CallE f iotas es s) = do
+useExp (CallE f taus es s) = do
     useVar f
     isExt <- isExtFun f
     es'   <- mapM (useArg isExt) es
-    return (CallE f iotas es' s, top)
+    return (CallE f taus es' s, top)
   where
     useArg :: Bool -> Exp -> ND m Exp
     -- We assume that external functions fully initialize any ref passed to
@@ -665,19 +670,20 @@ useExp (AssignE e1 e2 s) = do
         putVal v (ensureTotal tau val)
         topA $ return $ AssignE e1 e2' s
 
-    go e1@(IdxE e_v@(VarE v _) e_i len s) e2' _ = do
+    go e1@(IdxE e_v@(VarE v _) e_i nat s) e2' _ = do
         traceNeedDefault $ text "Assign IdxE:" <+> ppr e1 <+> ppr e2
+        len           <- traverse checkKnownNatT nat
         (n, _)        <- lookupVar v >>= checkArrOrRefArrT
         (e_i', val_i) <- useExp e_i
-        let e1'       = IdxE e_v e_i' len s
-        update n val_i
+        let e1'       = IdxE e_v e_i' nat s
+        update n val_i len
         topA $ return $ AssignE e1' e2' s
       where
-        update :: Type -> Val -> ND m ()
-        update n (IntV i) =
+        update :: Type -> Val -> Maybe Int -> ND m ()
+        update n (IntV i) len =
             updateArray v (Arr n (extendPR i len))
 
-        update _ _ =
+        update _ _ _ =
             return ()
 
     go e1@(ProjE (VarE v _) f _) e2' val2 =
@@ -702,6 +708,9 @@ useExp (AssignE e1 e2 s) = do
     go e1 e2' _  =
         topA $ AssignE <$> (fst <$> useExp e1) <*> pure e2' <*> pure s
 
+useExp (LowerE tau s) =
+    topA $ pure $ LowerE tau s
+
 useExp (WhileE e1 e2 s) =
     topA $ WhileE <$> (fst <$> useExp e1) <*> (fst <$> useExp e2) <*> pure s
 
@@ -721,19 +730,20 @@ useExp (ArrayE es s) = do
     n :: Type
     n = natT (length es)
 
-useExp (IdxE e1@(VarE v _) e2 len s) = do
+useExp (IdxE e1@(VarE v _) e2 nat s) = do
     let e1'     =  e1
     val1        <- lookupVal v
     (e2', val2) <- useExp e2
+    len         <- traverse checkKnownNatT nat
     traceNeedDefault $ text "IdxE:" <+> ppr v <+> ppr val1 <+> ppr val2
-    go val1 val2
-    topA $ return $ IdxE e1' e2' len s
+    go val1 val2 len
+    topA $ return $ IdxE e1' e2' nat s
   where
-    go :: Val -> Val -> ND m ()
-    go (ArrV (Arr _ xs)) (IntV j) | extendPR j len <= xs =
+    go :: Val -> Val -> Maybe Int -> ND m ()
+    go (ArrV (Arr _ xs)) (IntV j) len | extendPR j len <= xs =
         return ()
 
-    go _ _ =
+    go _ _ _ =
         useVar v
 
 useExp (IdxE e1 e2 len s) =

@@ -18,9 +18,11 @@ module KZC.Rename.Monad (
     runRn,
 
     extendTyVars,
+    maybeLookupTyVar,
     lookupTyVar,
 
     extendVars,
+    maybeLookupVar,
     lookupVar,
 
     extendCompVars,
@@ -102,6 +104,9 @@ extendTyVars desc alphas m = do
     alphas' <- mapM ensureUniq alphas
     extendEnv tyVars (\env x -> env { tyVars = x }) (alphas `zip` alphas') m
 
+maybeLookupTyVar :: TyVar -> Rn (Maybe TyVar)
+maybeLookupTyVar alpha = asks (Map.lookup alpha . tyVars)
+
 lookupTyVar :: TyVar -> Rn TyVar
 lookupTyVar alpha =
     lookupEnv tyVars onerr alpha
@@ -113,6 +118,9 @@ extendVars desc vs m = do
     checkDuplicates desc vs
     vs' <- mapM ensureUniq vs
     extendEnv vars (\env x -> env { vars = x }) (vs `zip` vs') m
+
+maybeLookupVar :: Var -> Rn (Maybe Var)
+maybeLookupVar v = asks (Map.lookup v . vars)
 
 lookupVar :: Var -> Rn Var
 lookupVar v =

@@ -80,6 +80,7 @@ import KZC.Util.Pretty
   'length'      { L _ T.Tlength }
   'let'         { L _ T.Tlet }
   'map'         { L _ T.Tmap }
+  'nat'         { L _ T.Tnat }
   'not'         { L _ T.Tnot }
   'noinline'    { L _ T.Tnoinline }
   'nounroll'    { L _ T.Tnounroll }
@@ -228,6 +229,7 @@ identifier :
   | 'fun'    { mkVar $ mkName "fun" (locOf $1) }
   | 'impure' { mkVar $ mkName "impure" (locOf $1) }
   | 'length' { mkVar $ mkName "length" (locOf $1) }
+  | 'nat'    { mkVar $ mkName "nat" (locOf $1) }
 
 {------------------------------------------------------------------------------
  -
@@ -258,78 +260,24 @@ exp :
     bexp             { $1 }
   | '{' exp_list '}' { ArrayE $2 ($1 `srcspan` $2) }
 
-const_exp :: { Exp }
-const_exp :
-    scalar_value
-      { ConstE (unLoc $1) (srclocOf $1) }
-
-  | const_exp '+' const_exp
-      { BinopE Add $1 $3 ($1 `srcspan` $3)}
-  | const_exp '-' const_exp
-      { BinopE Sub $1 $3 ($1 `srcspan` $3)}
-  | const_exp '*' const_exp
-      { BinopE Mul $1 $3 ($1 `srcspan` $3)}
-  | const_exp '/' const_exp
-      { BinopE Div $1 $3 ($1 `srcspan` $3)}
-  | const_exp '%' const_exp
-      { BinopE Rem $1 $3 ($1 `srcspan` $3)}
-  | const_exp '**' const_exp
-      { BinopE Pow $1 $3 ($1 `srcspan` $3)}
-  | const_exp '<<' const_exp
-      { BinopE LshL $1 $3 ($1 `srcspan` $3)}
-  | const_exp '>>' const_exp
-      { BinopE AshR $1 $3 ($1 `srcspan` $3)}
-  | const_exp '&' const_exp
-      { BinopE Band $1 $3 ($1 `srcspan` $3)}
-  | const_exp '|' const_exp
-      { BinopE Bor $1 $3 ($1 `srcspan` $3)}
-  | const_exp '^' const_exp
-      { BinopE Bxor $1 $3 ($1 `srcspan` $3)}
-  | const_exp '==' const_exp
-      { BinopE Eq $1 $3 ($1 `srcspan` $3)}
-  | const_exp '!=' const_exp
-      { BinopE Ne $1 $3 ($1 `srcspan` $3)}
-  | const_exp '<' const_exp
-      { BinopE Lt $1 $3 ($1 `srcspan` $3)}
-  | const_exp '>' const_exp
-      { BinopE Gt $1 $3 ($1 `srcspan` $3)}
-  | const_exp '<=' const_exp
-      { BinopE Le $1 $3 ($1 `srcspan` $3)}
-  | const_exp '>=' const_exp
-      { BinopE Ge $1 $3 ($1 `srcspan` $3)}
-  | const_exp '&&' const_exp
-      { BinopE Land $1 $3 ($1 `srcspan` $3)}
-  | const_exp '||' const_exp
-      { BinopE Lor $1 $3 ($1 `srcspan` $3)}
-
-  | '-' const_exp %prec NEG
-      { UnopE Neg $2 ($1 `srcspan` $2)}
-  | 'not' const_exp
-      { UnopE Lnot $2 ($1 `srcspan` $2)}
-  | '~' const_exp
-      { UnopE Bnot $2 ($1 `srcspan` $2)}
-
-  | '(' const_exp ')'
-      { $2 }
-  | '(' const_exp error
-      {% unclosed ($1 <--> $2) "(" }
-
 pexp :: { Exp }
 pexp :
     ID
       { varE (mkVar (varid $1)) }
   | pexp '.' ID
       { ProjE $1 (mkField (fieldid $3)) ($1 `srcspan` $3) }
-  | pexp '[' exp ':' const_int_exp ']'
-      {% do { from      <- constIntExp $3
-            ; let to    =  unLoc $5
-            ; let len   =  to - from + 1
-            ; let efrom =  intC from (srclocOf $5)
-            ; return $ IdxE $1 efrom (Just len) ($1 `srcspan` $6)
+  | pexp '[' exp ':' exp ']'
+      {% do { from    <- constNatExp $3
+            ; to      <- constNatExp $5
+            ; let len =  to - from + 1
+            ; return $ IdxE $1 $3 (Just len) ($1 `srcspan` $6)
             }
       }
-  | pexp '[' exp ',' const_int_exp ']'
-      { IdxE $1 $3 (Just (unLoc $5)) ($1 `srcspan` $6) }
+  | pexp '[' exp ',' exp ']'
+      {% do { len <- constNatExp $5
+            ; return $ IdxE $1 $3 (Just len) ($1 `srcspan` $6)
+            }
+      }
   | pexp '[' exp ']'
       { IdxE $1 $3 Nothing ($1 `srcspan` $4) }
 
@@ -447,11 +395,6 @@ maybe_initializer :
     {- empty -} { Nothing }
   | ':=' exp    { Just $2 }
 
--- Constant integer expressions
-const_int_exp :: { L Int }
-const_int_exp :
-    const_exp {% fmap (L (locOf $1)) (constIntExp $1) }
-
 -- List of zero or more expressions
 exp_list :: { [Exp] }
 exp_list :
@@ -493,11 +436,8 @@ struct_init :
 
 gen_interval :: { GenInterval }
 gen_interval :
-    '[' exp ':' const_int_exp ']'
-      { let to = intC (unLoc $4) (srclocOf $4)
-        in
-          FromToInclusive $2 to ($1 `srcspan` $5)
-      }
+    '[' exp ':' exp ']'
+      { FromToInclusive $2 $4 ($1 `srcspan` $5) }
   | '[' exp ',' exp ']'
       { StartLen $2 $4 ($1 `srcspan` $5) }
 
@@ -530,9 +470,9 @@ base_type :
     simple_type       { $1 }
   | '(' ')'           { UnitT ($1 `srcspan` $2) }
   | 'bool'            { BoolT (srclocOf $1) }
-  | 'arr' arr_length  { let { (ind, tau) = $2 }
+  | 'arr' arr_length  { let { (n, tau) = $2 }
                         in
-                          ArrT ind tau ($1 `srcspan` tau)
+                          ArrT n tau ($1 `srcspan` tau)
                       }
   | '(' base_type ')' { $2 }
 
@@ -542,10 +482,11 @@ cast_type :
 
 arr_length :: { (Type, Type) }
 arr_length :
-    '[' 'length' '(' ID ')' ']' base_type
-      { (LenT (mkVar (varid $4)) ($2 `srcspan` $5), $7) }
-  | '[' const_int_exp ']' base_type
-      { (NatT (unLoc $2) (srclocOf $2), $4) }
+    '[' exp ']' base_type
+      {% do { n <- constNatExp $2
+            ; return (n, $4)
+            }
+      }
   | base_type
       { (UnknownT (srclocOf $1), $1) }
 
@@ -709,8 +650,11 @@ acomp :
       { EmitsE $2 ($1 `srcspan` $2) }
   | 'take'
       { TakeE (srclocOf $1) }
-  | 'takes' const_int_exp
-      { TakesE (unLoc $2) ($1 `srcspan` $2) }
+  | 'takes' exp
+      {% do { n <- constNatExp $2;
+            ; return $ TakesE n ($1 `srcspan` $2)
+            }
+      }
   | 'filter' var_bind
       { let { (v, tau) = $2 }
         in
@@ -810,17 +754,22 @@ vect_ann :
           UpTo flag from to
       }
 
-vect_ann_flag :: { (Bool, (Int, Int)) }
+vect_ann_flag :: { (Bool, Range) }
 vect_ann_flag :
     comp_range     { (True,  $1) }
   | '!' comp_range { (False, $2) }
 
 -- Comp ranges
-comp_range :: { (Int, Int) }
+comp_range :: { Range }
 comp_range :
-    '[' INT ',' INT ']' { (fromIntegral (snd (getINT $2)), fromIntegral (snd (getINT $4))) }
+    '[' exp ',' exp ']'
+        {% do { from <- constNatExp $2
+              ; to   <- constNatExp $4
+              ; return (from, to)
+            }
+        }
 
-maybe_comp_range :: { Maybe (Int, Int) }
+maybe_comp_range :: { Maybe Range }
 maybe_comp_range :
     {- empty -} { Nothing }
   | comp_range  { Just $1 }

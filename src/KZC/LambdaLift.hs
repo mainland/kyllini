@@ -163,6 +163,10 @@ liftDecl decl@(LetRefD v tau maybe_e l) k = do
     extendVars [(v, refT tau)] $
       withDecl (LetRefD v tau maybe_e' l) k
 
+liftDecl decl@(LetTypeD alpha kappa _ _) k =
+    extendTyVars [(alpha, kappa)] $
+    withDecl decl k
+
 liftDecl decl@(LetFunD f ns vbs tau_ret e l) k =
     extendVars [(f, tau)] $ do
     f'   <- uniquifyLifted f
@@ -228,15 +232,18 @@ liftExp (LetE d e l) =
     k Nothing     = liftExp e
     k (Just decl) = LetE decl <$> liftExp e <*> pure l
 
-liftExp (CallE f iotas args l) = do
+liftExp (CallE f taus args l) = do
     (f', fvs) <- lookupFunFvs f
-    return $ CallE f' iotas (map varE fvs ++ args) l
+    return $ CallE f' taus (map varE fvs ++ args) l
 
 liftExp (DerefE e l) =
     DerefE <$> liftExp e <*> pure l
 
 liftExp (AssignE e1 e2 l) =
     AssignE <$> liftExp e1 <*> liftExp e2 <*> pure l
+
+liftExp e@LowerE{} =
+    pure e
 
 liftExp (WhileE e1 e2 l) =
     WhileE <$> liftExp e1 <*> liftExp e2 <*> pure l

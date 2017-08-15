@@ -266,6 +266,12 @@ transType (FunT taus tau s) =
 transType tau@NatT{} =
     pure tau
 
+transType (UnopT op tau s) =
+    UnopT op <$> typeT tau <*> pure s
+
+transType (BinopT op tau1 tau2 s) =
+    BinopT op <$> typeT tau1 <*> typeT tau2 <*> pure s
+
 transType (ForallT tvks tau s) =
     ForallT tvks <$> extendTyVars tvks (typeT tau) <*> pure s
 
@@ -294,6 +300,12 @@ transLocalDecl (LetRefLD v tau e s) m = do
     tau' <- typeT tau
     x    <- extendVars [(bVar v, refT tau)] m
     return (LetRefLD v tau' e' s, x)
+
+transLocalDecl (LetTypeLD alpha kappa tau s) m = do
+    tau' <- typeT tau
+    x    <- extendTyVars [(alpha, kappa)] $
+            extendTyVarTypes [(alpha, tau)] m
+    return (LetTypeLD alpha kappa tau' s, x)
 
 transLocalDecl (LetViewLD v tau vw s) m = do
     vw'  <- viewT vw
@@ -347,6 +359,9 @@ transExp (DerefE e s) =
 
 transExp (AssignE e1 e2 s) =
     AssignE <$> expT e1 <*> expT e2 <*> pure s
+
+transExp (LowerE tau s) =
+    LowerE <$> typeT tau <*> pure s
 
 transExp (WhileE e1 e2 s) =
     WhileE <$> expT e1 <*> expT e2 <*> pure s

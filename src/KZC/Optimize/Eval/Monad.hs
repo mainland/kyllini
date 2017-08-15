@@ -498,11 +498,6 @@ killHeap m =
     loop 0
     m
 
-simplType :: MonadTc m => Type -> EvalM l m Type
-simplType tau = do
-    phi <- askTyVarTypeSubst
-    return $ subst phi mempty tau
-
 class Ord n => ModifiedVars x n where
     mvs :: SetLike m n => x -> m n
     mvs _ = mempty
@@ -520,6 +515,7 @@ instance ModifiedVars Exp Var where
     mvs (CallE _ _ es _)     = fvs es
     mvs DerefE{}             = mempty
     mvs (AssignE e1 _ _)     = fvs e1
+    mvs LowerE{}             = mempty
     mvs (WhileE e1 e2 _)     = mvs e1 <> mvs e2
     mvs (ForE _ _ _ _ e _)   = mvs e
     mvs ArrayE{}             = mempty

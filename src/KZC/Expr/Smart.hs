@@ -39,6 +39,7 @@ module KZC.Expr.Smart (
     unRefT,
     arrT,
     arrKnownT,
+    sliceT,
     structT,
     stT,
     forallST,
@@ -93,6 +94,7 @@ module KZC.Expr.Smart (
     varE,
     letE,
     callE,
+    lowerTyVarE,
     derefE,
     structE,
     projE,
@@ -207,6 +209,10 @@ arrKnownT i tau = ArrT (NatT i l) tau l
   where
     l :: SrcLoc
     l = srclocOf tau
+
+sliceT :: Type -> Maybe Type -> Type
+sliceT tau Nothing    = tau
+sliceT tau (Just len) = ArrT len tau (tau `srcspan` len)
 
 structT :: Struct -> Type
 structT struct = StructT struct [] (srclocOf struct)
@@ -423,6 +429,11 @@ letE v tau e1 e2 = LetE d e2 (v `srcspan` e2)
 callE :: Var -> [Exp] -> Exp
 callE f es = CallE f [] es (f `srcspan` es)
 
+lowerTyVarE :: TyVar -> Exp
+lowerTyVarE alpha = LowerE (TyVarT alpha l) l
+  where
+    l = srclocOf alpha
+
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 
@@ -445,7 +456,7 @@ takeE :: Type -> Exp
 takeE tau = TakeE tau (srclocOf tau)
 
 takesE :: Int -> Type -> Exp
-takesE n tau = TakesE n tau (srclocOf tau)
+takesE n tau = TakesE (fromIntegral n) tau (srclocOf tau)
 
 emitE :: Exp -> Exp
 emitE e = EmitE e (srclocOf e)
@@ -456,5 +467,5 @@ emitsE e = EmitsE e (srclocOf e)
 repeatE :: Exp -> Exp
 repeatE e = RepeatE AutoVect e (srclocOf e)
 
-repeatAnnE :: VectAnn -> Exp -> Exp
+repeatAnnE :: VectAnn Nat -> Exp -> Exp
 repeatAnnE ann e = RepeatE ann e (srclocOf e)

@@ -36,6 +36,12 @@ module KZC.Check.Monad (
     extendTyVars,
     lookupTyVar,
 
+    extendTyVarTypes,
+    maybeLookupTyVarType,
+    lookupTyVarType,
+
+    simplNat,
+
     typeSize,
 
     withExpContext,
@@ -232,9 +238,49 @@ lookupTyVar tv =
   where
     onerr = notInScope (text "Type variable") tv
 
+extendTyVarTypes :: [(TyVar, Type)] -> Ti a -> Ti a
+extendTyVarTypes = extendEnv tyVarTypes (\env x -> env { tyVarTypes = x })
+
+maybeLookupTyVarType :: TyVar -> Ti (Maybe Type)
+maybeLookupTyVarType alpha = asks (Map.lookup alpha . tyVarTypes)
+
+lookupTyVarType :: TyVar -> Ti Type
+lookupTyVarType alpha =
+    lookupEnv tyVarTypes onerr alpha
+  where
+    onerr = notInScope (text "Instantiated type variable") alpha
+
+-- | Simplify a type of kind nat.
+simplNat :: Type -> Ti Type
+simplNat (UnopT op tau0 l) =
+    unop op <$> simplNat tau0
+  where
+    unop :: Unop -> Type -> Type
+    unop Neg tau = negate tau
+    unop op  tau = UnopT op tau l
+
+simplNat (BinopT op tau1_0 tau2_0 l) =
+    binop op <$> simplNat tau1_0 <*> simplNat tau2_0
+  where
+    binop :: Binop -> Type -> Type -> Type
+    binop Add tau1 tau2 = tau1 + tau2
+    binop Sub tau1 tau2 = tau1 - tau2
+    binop Mul tau1 tau2 = tau1 * tau2
+    binop Div tau1 tau2 = tau1 `quot` tau2
+    binop op  tau1 tau2 = BinopT op tau1 tau2 l
+
+simplNat tau@(TyVarT alpha _) = do
+    maybe_tau' <- maybeLookupTyVarType alpha
+    case maybe_tau' of
+      Nothing   -> return tau
+      Just tau' -> simplNat tau'
+
+simplNat tau =
+    pure tau
+
 -- | Compute the size of a type in bits.
 typeSize :: Type -> Ti Int
-typeSize = go
+typeSize = simplNat >=> go
   where
     go :: Type -> Ti Int
     go UnitT{}                 = pure 0
@@ -419,6 +465,12 @@ instance Compress Type where
 
     compress tau@NatT{} =
         pure tau
+
+    compress (UnopT op tau l) =
+        UnopT op <$> compress tau <*> pure l
+
+    compress (BinopT op tau1 tau2 l) =
+        BinopT op <$> compress tau1 <*> compress tau2 <*> pure l
 
     compress (ForallT tvks tau l) =
         ForallT <$> compress tvks <*> compress tau <*> pure l

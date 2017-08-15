@@ -128,6 +128,10 @@ transDecl decl@(E.LetD v tau e l) k
     extendVars [(v,tau)] $
       k $ LetCompD (mkBoundVar v') tau c l
 
+transDecl decl@(E.LetTypeD _ _ _ l) k =
+    transLocalDecl decl $ \decl' ->
+    k $ LetD decl' l
+
 transDecl decl@(E.LetRefD _ _ _ l) k =
     transLocalDecl decl $ \decl' ->
     k $ LetD decl' l
@@ -183,6 +187,10 @@ transLocalDecl decl@(E.LetRefD v tau (Just e) l) k =
     extendVars [(v, refT tau)] $
       k $ LetRefLD (mkBoundVar v') tau (Just e') l
 
+transLocalDecl (E.LetTypeD alpha kappa tau l) k =
+    extendTyVars [(alpha, kappa)] $
+      k $ LetTypeLD alpha kappa tau l
+
 transLocalDecl decl _ =
     withSummaryContext decl $
     faildoc $ text "Local declarations must be a let or letref, but this is a" <+> pprDeclType decl
@@ -191,6 +199,7 @@ transLocalDecl decl _ =
     pprDeclType E.StructD{}    = text "struct"
     pprDeclType E.LetD{}       = text "let"
     pprDeclType E.LetRefD{}    = text "let ref"
+    pprDeclType E.LetTypeD{}   = text "let type"
     pprDeclType E.LetFunD{}    = text "fun"
     pprDeclType E.LetExtFunD{} = text "fun external"
 
@@ -217,15 +226,18 @@ transExp (E.LetE cdecl e l) =
     transLocalDecl cdecl $ \decl ->
     LetE decl <$> transExp e <*> pure l
 
-transExp (E.CallE f iotas es l) = do
+transExp (E.CallE f taus es l) = do
     f' <- lookupVarSubst f
-    CallE f' iotas <$> mapM transExp es <*> pure l
+    CallE f' taus <$> mapM transExp es <*> pure l
 
 transExp (E.DerefE e l) =
     DerefE <$> transExp e <*> pure l
 
 transExp (E.AssignE e1 e2 l) =
     AssignE <$> transExp e1 <*> transExp e2 <*> pure l
+
+transExp (E.LowerE tau l) =
+    pure $ LowerE tau l
 
 transExp (E.WhileE e1 e2 l) =
     WhileE <$> transExp e1 <*> transExp e2 <*> pure l
@@ -334,13 +346,13 @@ transComp (E.LetE cdecl e _) =
     transLocalDecl cdecl $ \decl ->
     localdeclC decl .>>. transComp e
 
-transComp e@(E.CallE f iotas es _) = do
+transComp e@(E.CallE f taus es _) = do
     f'              <- lookupVarSubst f
     (_, _, tau_res) <- lookupVar f >>= checkFunT
     if isPureishT tau_res
       then liftC =<< transExp e
       else do args <- mapM transArg es
-              callC f' iotas args
+              callC f' taus args
   where
     transArg :: E.Exp -> TC m (Arg l)
     transArg e = do
@@ -378,8 +390,8 @@ transComp (E.BindE (E.TameV v) tau e1 e2 _) =
 transComp (E.TakeE tau _) =
     takeC tau
 
-transComp (E.TakesE i tau _) =
-    takesC i tau
+transComp (E.TakesE n tau _) =
+    takesC n tau
 
 transComp (E.EmitE e _) = do
     e' <- transExp e

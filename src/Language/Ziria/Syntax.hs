@@ -31,6 +31,7 @@ module Language.Ziria.Syntax (
     Program(..),
     Import(..),
     Decl(..),
+    Range,
     Const(..),
     Exp(..),
     GenInterval(..),
@@ -47,6 +48,7 @@ module Language.Ziria.Syntax (
     Binop(..),
 
     Type(..),
+    Nat,
     Kind(..),
     Tvk,
     Trait(..),
@@ -141,14 +143,18 @@ data Decl -- | Struct declaration
           | LetD Var (Maybe Type) Exp !SrcLoc
           -- | Reference binding
           | LetRefD Var (Maybe Type) (Maybe Exp) !SrcLoc
+          -- | Type variable binding
+          | LetTypeD TyVar (Maybe Kind) Type !SrcLoc
           -- | Function binding
           | LetFunD Var [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
           -- | External function binding
           | LetFunExternalD Var [VarBind] Type Bool !SrcLoc
           -- | Computation bindings
-          | LetCompD Var (Maybe Type) (Maybe (Int, Int)) Exp !SrcLoc
-          | LetFunCompD Var (Maybe (Int, Int)) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
+          | LetCompD Var (Maybe Type) (Maybe Range) Exp !SrcLoc
+          | LetFunCompD Var (Maybe Range) [Tvk] [VarBind] (Maybe Type) Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+type Range = (Nat, Nat)
 
 data Const = UnitC
            | BoolC Bool
@@ -160,11 +166,13 @@ data Const = UnitC
 
 data Exp = ConstE Const !SrcLoc
          | VarE Var !SrcLoc
+         | TyVarE TyVar !SrcLoc
          | UnopE Unop Exp !SrcLoc
          | BinopE Binop Exp Exp !SrcLoc
          | IfE Exp Exp (Maybe Exp) !SrcLoc
          | LetE Var (Maybe Type) Exp Exp !SrcLoc
          | LetRefE Var (Maybe Type) (Maybe Exp) Exp !SrcLoc
+         | LetTypeE TyVar Type Exp !SrcLoc
          | LetDeclE Decl Exp !SrcLoc
          -- Functions
          | CallE Var (Maybe [Type]) [Exp] !SrcLoc
@@ -177,7 +185,7 @@ data Exp = ConstE Const !SrcLoc
          | ForE UnrollAnn Var (Maybe Type) GenInterval Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Int) !SrcLoc
+         | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -190,7 +198,7 @@ data Exp = ConstE Const !SrcLoc
          -- Computations
          | ReturnE InlineAnn Exp !SrcLoc
          | TakeE !SrcLoc
-         | TakesE Int !SrcLoc
+         | TakesE Nat !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
          | RepeatE VectAnn Exp !SrcLoc
@@ -238,9 +246,9 @@ data PipelineAnn = Pipeline     -- ^ Always pipeline
   deriving (Enum, Eq, Ord, Read, Show)
 
 data VectAnn = AutoVect
-             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
-                                   -- disallow mitigations up
-             | UpTo  Bool Int Int
+             -- | True == allow mitigations up, False == disallow mitigations up
+             | Rigid Bool Nat Nat
+             | UpTo  Bool Nat Nat
   deriving (Eq, Ord, Read, Show)
 
 data Unop = Lnot  -- ^ Logical not
@@ -334,12 +342,21 @@ data Type = UnitT !SrcLoc
           -- | Reference to array length
           | LenT Var !SrcLoc
 
+          -- | Unary operator applied to a type
+          | UnopT Unop Type !SrcLoc
+
+          -- | Binary operator applied to a type
+          | BinopT Binop Type Type !SrcLoc
+
           -- | Elided type
           | UnknownT !SrcLoc
 
           | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
   deriving (Eq, Ord, Read, Show)
+
+-- | A type of kind nat.
+type Nat = Type
 
 -- | Kinds
 data Kind = TauK Traits -- ^ Base types, including arrays of base types
@@ -364,6 +381,7 @@ instance Fvs Decl Var where
     fvs TypeD  {}                      = mempty
     fvs d@(LetD _ _ e _)               = fvs e <\\> binders d
     fvs d@(LetRefD _ _ e _)            = fvs e <\\> binders d
+    fvs LetTypeD{}                     = mempty
     fvs d@(LetFunD _ _ _ _ e _)        = fvs e <\\> binders d
     fvs LetFunExternalD{}              = mempty
     fvs d@(LetCompD _ _ _ e _)         = fvs e <\\> binders d
@@ -372,11 +390,13 @@ instance Fvs Decl Var where
 instance Fvs Exp Var where
     fvs ConstE{}              = mempty
     fvs (VarE v _)            = singleton v
+    fvs TyVarE{}              = mempty
     fvs (UnopE _ e _)         = fvs e
     fvs (BinopE _ e1 e2 _)    = fvs e1 <> fvs e2
     fvs (IfE e1 e2 e3 _)      = fvs e1 <> fvs e2 <> fvs e3
     fvs (LetE v _ e1 e2 _)    = delete v (fvs e1 <> fvs e2)
     fvs (LetRefE v _ e1 e2 _) = delete v (fvs e1 <> fvs e2)
+    fvs (LetTypeE _ _ e _)    = fvs e
     fvs (LetDeclE decl e _)   = fvs decl <> (fvs e <\\> binders decl)
     fvs (CallE v _ es _)      = singleton v <> fvs es
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
@@ -425,6 +445,7 @@ instance Binders Decl Var where
     binders TypeD{}                       = mempty
     binders (LetD v _ _ _)                = singleton v
     binders (LetRefD v _ _ _)             = singleton v
+    binders LetTypeD{}                    = mempty
     binders (LetFunD v _ ps _ _ _)        = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetFunExternalD v ps _ _ _)  = singleton v <> fromList [pv | VarBind pv _ _ <- ps]
     binders (LetCompD v _ _ _ _)          = singleton v
@@ -441,6 +462,7 @@ instance Summary Decl where
     summary (TypeD s _ _ _)             = text "definition of" <+> ppr s
     summary (LetD v _ _ _)              = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)           = text "definition of" <+> ppr v
+    summary (LetTypeD alpha _ _ _)      = text "definition of" <+> ppr alpha
     summary (LetFunD v _ _ _ _ _)       = text "definition of" <+> ppr v
     summary (LetFunExternalD v _ _ _ _) = text "definition of" <+> ppr v
     summary (LetCompD v _ _ _ _)        = text "definition of" <+> ppr v
@@ -521,6 +543,14 @@ instance Pretty Decl where
         parensIf (p > appPrec) $
         text "let mut" <+> ppr v <+> colon <+> ppr tau <+> pprInitializer e <> semi
 
+    pprPrec p (LetTypeD alpha kappa tau _) | classicDialect =
+        parensIf (p > appPrec) $
+        text "nat" <+> pprKindSig (alpha, kappa) <+> char '=' <+> ppr tau
+
+    pprPrec p (LetTypeD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let nat" <+> pprKindSig (alpha, kappa) <+> char '=' <+> ppr tau <+> semi
+
     pprPrec _ (LetFunD f _tvks ps _tau e _) | classicDialect =
         text "fun" <+> ppr f <> parens (commasep (map ppr ps)) <+> ppr e
 
@@ -581,6 +611,9 @@ instance Pretty Exp where
     pprPrec _ (VarE v _) =
         ppr v
 
+    pprPrec _ (TyVarE alpha _) =
+        ppr alpha
+
     pprPrec _ (UnopE op e _) | isFunUnop op =
         ppr op <> parens (ppr e)
 
@@ -616,6 +649,16 @@ instance Pretty Exp where
         text "let mut" <+> pprTypeSig v tau <+>
         pprInitializer e1 <+/>
         text "in" <+> pprPrec appPrec1 e2
+
+    pprPrec p (LetTypeE alpha tau e _) | classicDialect =
+        parensIf (p >= appPrec) $
+        text "nat" <+> ppr alpha <+> char '=' <+> ppr tau <+>
+        text "in" <+> pprPrec appPrec1 e
+
+    pprPrec p (LetTypeE alpha tau e _) =
+        parensIf (p >= appPrec) $
+        text "let nat" <+> ppr alpha <+> char '=' <+> ppr tau <+>
+        text "in" <+> pprPrec appPrec1 e
 
     pprPrec p (LetDeclE decl e _) =
         parensIf (p >= appPrec) $
@@ -657,8 +700,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
-    pprPrec _ (IdxE e1 e2 (Just i) _) =
-        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
+    pprPrec _ (IdxE e1 e2 (Just len) _) =
+        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
     pprPrec _ (StructE s taus fields _) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals fields
@@ -905,6 +948,15 @@ instance Pretty Type where
     pprPrec _ (LenT v _) =
         text "length" <> parens (ppr v)
 
+    pprPrec _ (UnopT op tau _) | isFunUnop op =
+        ppr op <> parens (ppr tau)
+
+    pprPrec p (UnopT op tau _) =
+        unop p op tau
+
+    pprPrec p (BinopT op tau1 tau2 _) =
+        infixop p op tau1 tau2
+
     pprPrec _ UnknownT{} =
         empty
 
@@ -943,7 +995,7 @@ pprTypeAnn :: Maybe Type -> Doc
 pprTypeAnn Nothing    = empty
 pprTypeAnn (Just tau) = brackets (ppr tau)
 
-pprRange :: Maybe (Int, Int) -> Doc
+pprRange :: Maybe Range -> Doc
 pprRange Nothing           = empty
 pprRange (Just (from, to)) = brackets (commasep [ppr from, ppr to])
 
@@ -1018,6 +1070,57 @@ instance HasFixity Binop where
     fixity Pow  = infixl_ 10
 
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Types of kind nat
+ -
+ ------------------------------------------------------------------------------}
+
+instance Num Type where
+    NatT x l + NatT y l' = NatT (x+y) (l `srcspan` l')
+    tau1     + tau2      = BinopT Add tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l - NatT y l' = NatT (x-y) (l `srcspan` l')
+    tau1     - tau2      = BinopT Sub tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l * NatT y l' = NatT (x*y) (l `srcspan` l')
+    tau1     * tau2      = BinopT Mul tau1 tau2 (tau1 `srcspan` tau2)
+
+    negate (NatT x l) = NatT (-x) l
+    negate tau        = UnopT Neg tau (srclocOf tau)
+
+    abs (NatT x l) = NatT (abs x) l
+    abs tau        = UnopT Abs tau (srclocOf tau)
+
+    signum (NatT x l) = NatT (signum x) l
+    signum tau        = errordoc $ text "signum: not supported for type" <+>
+                                   enquote (ppr tau)
+
+    fromInteger i = NatT (fromInteger i) noLoc
+
+instance Real Type where
+    toRational (NatT i _) = toRational i
+    toRational tau        = errordoc $ text "toRational: not supported for type" <+>
+                                       enquote (ppr tau)
+
+instance Enum Type where
+    toEnum i = NatT i noLoc
+
+    fromEnum (NatT i _) = i
+    fromEnum tau        = errordoc $ text "fromEnum: not supported for type" <+>
+                                     enquote (ppr tau)
+
+instance Integral Type where
+    toInteger (NatT i _) = toInteger i
+    toInteger tau        = errordoc $ text "toInteger: not supported for type" <+>
+                                      enquote (ppr tau)
+
+    NatT x l `quot` NatT y l' = NatT (x `quot` y) (l `srcspan` l')
+    tau1     `quot` tau2      = BinopT Div tau1 tau1 (tau1 `srcspan` tau2)
+
+    _ `rem` _ = error "rem: not supported for types"
+
+    x `quotRem` y = (x `quot` y, x `rem` y)
 
 #include "Language/Ziria/Syntax-instances.hs"
 

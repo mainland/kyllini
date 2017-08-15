@@ -62,6 +62,7 @@ module KZC.Expr.Syntax (
 
     StructDef(..),
     Type(..),
+    Nat,
     Omega(..),
     Kind(..),
     Tvk,
@@ -243,6 +244,8 @@ data Decl -- | Struct declaration
           | LetD Var Type Exp !SrcLoc
           -- | Ref binding
           | LetRefD Var Type (Maybe Exp) !SrcLoc
+          -- | Type variable binding
+          | LetTypeD TyVar Kind Type !SrcLoc
           -- | Function binding
           | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
           -- | External function binding
@@ -272,12 +275,15 @@ data Exp = ConstE Const !SrcLoc
          -- References
          | DerefE Exp !SrcLoc
          | AssignE Exp Exp !SrcLoc
+         -- Lower a (singleton) type to a term. Right now this only works for
+         -- types of kind nat.
+         | LowerE Type !SrcLoc
          -- Loops
          | WhileE Exp Exp !SrcLoc
          | ForE UnrollAnn Var Type (GenInterval Exp) Exp !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
-         | IdxE Exp Exp (Maybe Int) !SrcLoc
+         | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs Struct
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
@@ -291,10 +297,10 @@ data Exp = ConstE Const !SrcLoc
          | ReturnE InlineAnn Exp !SrcLoc
          | BindE WildVar Type Exp Exp !SrcLoc
          | TakeE Type !SrcLoc
-         | TakesE Int Type !SrcLoc
+         | TakesE Nat Type !SrcLoc
          | EmitE Exp !SrcLoc
          | EmitsE Exp !SrcLoc
-         | RepeatE VectAnn Exp !SrcLoc
+         | RepeatE (VectAnn Nat) Exp !SrcLoc
          | ParE PipelineAnn Type Exp Exp !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -333,11 +339,12 @@ data PipelineAnn = AlwaysPipeline -- ^ Always pipeline
                  | AutoPipeline   -- ^ Let the compiler decide when to pipeline
   deriving (Enum, Eq, Ord, Read, Show)
 
-data VectAnn = AutoVect
-             | Rigid Bool Int Int  -- ^ True == allow mitigations up, False ==
-                                   -- disallow mitigations up
-             | UpTo  Bool Int Int
-  deriving (Eq, Ord, Read, Show)
+data VectAnn a = AutoVect
+               -- | True == allow mitigations up, False == disallow mitigations
+               -- up
+               | Rigid Bool a a
+               | UpTo  Bool a a
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
 data Unop = Lnot  -- ^ Logical not
           | Bnot  -- ^ Bitwise not
@@ -441,9 +448,27 @@ data Type -- | Base types
           -- | Types of kind Nat
           | NatT Int !SrcLoc
 
+          -- | Unary operator applied to a type
+          | UnopT Unop Type !SrcLoc
+
+          -- | Binary operator applied to a type
+          | BinopT Binop Type Type !SrcLoc
+
           -- | Type variables and quantification
           | ForallT [Tvk] Type !SrcLoc
           | TyVarT TyVar !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+-- | A type of kind nat.
+type Nat = Type
+
+data UnopT = NegT -- ^ Negation
+  deriving (Eq, Ord, Read, Show)
+
+data BinopT = AddT
+            | SubT
+            | MulT
+            | DivT
   deriving (Eq, Ord, Read, Show)
 
 data Omega = C Type
@@ -466,6 +491,58 @@ isComplexStruct "Complex" = True
 isComplexStruct _         = False
 
 #if !defined(ONLY_TYPEDEFS)
+{------------------------------------------------------------------------------
+ -
+ - Types of kind nat
+ -
+ ------------------------------------------------------------------------------}
+
+instance Num Type where
+    NatT x l + NatT y l' = NatT (x+y) (l `srcspan` l')
+    tau1     + tau2      = BinopT Add tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l - NatT y l' = NatT (x-y) (l `srcspan` l')
+    tau1     - tau2      = BinopT Sub tau1 tau2 (tau1 `srcspan` tau2)
+
+    NatT x l * NatT y l' = NatT (x*y) (l `srcspan` l')
+    tau1     * tau2      = BinopT Mul tau1 tau2 (tau1 `srcspan` tau2)
+
+    negate (NatT x l) = NatT (-x) l
+    negate tau        = UnopT Neg tau (srclocOf tau)
+
+    abs (NatT x l) = NatT (abs x) l
+    abs tau        = UnopT Abs tau (srclocOf tau)
+
+    signum (NatT x l) = NatT (signum x) l
+    signum tau        = errordoc $ text "signum: not supported for type" <+>
+                                   enquote (ppr tau)
+
+    fromInteger i = NatT (fromInteger i) noLoc
+
+instance Real Type where
+    toRational (NatT i _) = toRational i
+    toRational tau        = errordoc $ text "toRational: not supported for type" <+>
+                                       enquote (ppr tau)
+
+instance Enum Type where
+    toEnum i = NatT i noLoc
+
+    fromEnum (NatT i _) = i
+    fromEnum tau        = errordoc $ text "fromEnum: not supported for type" <+>
+                                     enquote (ppr tau)
+
+instance Integral Type where
+    toInteger (NatT i _) = toInteger i
+    toInteger tau        = errordoc $ text "toInteger: not supported for type" <+>
+                                      enquote (ppr tau)
+
+    NatT x l `quot` NatT y l' = NatT (x `quot` y) (l `srcspan` l')
+    tau1     `quot` tau2      = BinopT Div tau1 tau1 (tau1 `srcspan` tau2)
+
+    _ `rem` _ = error "rem: not supported for types"
+
+    x `quotRem` y = (x `quot` y, x `rem` y)
+
 {------------------------------------------------------------------------------
  -
  - Staging
@@ -795,6 +872,7 @@ instance Summary Decl where
     summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
     summary (LetD v _ _ _)            = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
+    summary (LetTypeD alpha _ _ _)    = text "definition of" <+> ppr alpha
     summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
     summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
@@ -863,6 +941,10 @@ instance Pretty Decl where
     pprPrec p (LetRefD v tau (Just e) _) =
         parensIf (p > appPrec) $
         text "let ref" <+> ppr v <+> text ":" <+> ppr tau <+> text "=" <+/> ppr e
+
+    pprPrec p (LetTypeD alpha kappa tau _) =
+        parensIf (p > appPrec) $
+        text "let type" <+> ppr alpha <+> colon <+> ppr kappa <+> text "=" <+/> ppr tau
 
     pprPrec p (LetFunD f tvks vbs tau e _) =
         parensIf (p > appPrec) $
@@ -950,6 +1032,9 @@ instance Pretty Exp where
         parensIf (p > appPrec) $
         ppr v <+> text ":=" <+/> pprPrec appPrec1 e
 
+    pprPrec p (LowerE tau _) =
+        pprPrec p tau
+
     pprPrec _ (WhileE e1 e2 _) =
         text "while" <+>
         group (pprPrec appPrec1 e1) <>
@@ -966,8 +1051,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 Nothing _) =
         pprPrec appPrec1 e1 <> brackets (ppr e2)
 
-    pprPrec _ (IdxE e1 e2 (Just i) _) =
-        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr i])
+    pprPrec _ (IdxE e1 e2 (Just len) _) =
+        pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
     pprPrec _ (StructE s taus fields _) =
         ppr s <> pprTyApp taus <+> pprStruct comma equals fields
@@ -1067,7 +1152,7 @@ instance Pretty InlineAnn where
     ppr NoInline   = text "noinline"
     ppr Inline     = text "forceinline"
 
-instance Pretty VectAnn where
+instance Pretty a => Pretty (VectAnn a) where
     ppr (Rigid True from to)  = text "!" <> ppr (Rigid False from to)
     ppr (Rigid False from to) = brackets (commasep [ppr from, ppr to])
     ppr (UpTo f from to)      = text "<=" <+> ppr (Rigid f from to)
@@ -1195,6 +1280,15 @@ instance Pretty Type where
     pprPrec _ (NatT i _) =
         ppr i
 
+    pprPrec _ (UnopT op tau _) | isFunUnop op =
+        ppr op <> parens (ppr tau)
+
+    pprPrec p (UnopT op tau _) =
+        unop p op tau
+
+    pprPrec p (BinopT op tau1 tau2 _) =
+        infixop p op tau1 tau2
+
     pprPrec p (ForallT tvks (ST omega tau1 tau2 tau3 _) _) =
         parensIf (p > tyappPrec) $
         text "ST" <>  pprForall tvks
@@ -1208,6 +1302,15 @@ instance Pretty Type where
 
     pprPrec _ (TyVarT tv _) =
         ppr tv
+
+instance Pretty UnopT where
+    ppr NegT = text "-"
+
+instance Pretty BinopT where
+    ppr AddT = text "+"
+    ppr SubT = text "-"
+    ppr MulT = text "*"
+    ppr DivT = text "/"
 
 instance Pretty Omega where
     pprPrec p (C tau) =
@@ -1348,6 +1451,8 @@ instance Fvs Type TyVar where
     fvs (RefT tau _)                 = fvs tau
     fvs (FunT taus tau _)            = fvs taus <> fvs tau
     fvs NatT{}                       = mempty
+    fvs (UnopT _ tau _)              = fvs tau
+    fvs (BinopT _ tau1 tau2 _)       = fvs tau1 <> fvs tau2
     fvs (ForallT tvks tau _)         = fvs tau <\\> fromList (map fst tvks)
     fvs (TyVarT tv _)                = singleton tv
 
@@ -1372,6 +1477,7 @@ instance Fvs Decl Var where
     fvs StructD{}               = mempty
     fvs (LetD v _ e _)          = delete v (fvs e)
     fvs (LetRefD v _ e _)       = delete v (fvs e)
+    fvs LetTypeD{}              = mempty
     fvs (LetFunD v _ vbs _ e _) = delete v (fvs e) <\\> fromList (map fst vbs)
     fvs LetExtFunD{}            = mempty
 
@@ -1379,6 +1485,7 @@ instance Binders Decl Var where
     binders StructD{}              = mempty
     binders (LetD v _ _ _)         = singleton v
     binders (LetRefD v _ _ _)      = singleton v
+    binders LetTypeD{}             = mempty
     binders (LetFunD v _ _ _ _ _)  = singleton v
     binders (LetExtFunD v _ _ _ _) = singleton v
 
@@ -1392,6 +1499,7 @@ instance Fvs Exp Var where
     fvs (CallE f _ es _)      = singleton f <> fvs es
     fvs (DerefE e _)          = fvs e
     fvs (AssignE e1 e2 _)     = fvs e1 <> fvs e2
+    fvs LowerE{}              = mempty
     fvs (WhileE e1 e2 _)      = fvs e1 <> fvs e2
     fvs (ForE _ v _ gint e _) = fvs gint <> delete v (fvs e)
     fvs (ArrayE es _)         = fvs es
@@ -1433,6 +1541,7 @@ instance HasVars Decl Var where
     allVars StructD{}                = mempty
     allVars (LetD v _ e _)           = singleton v <> allVars e
     allVars (LetRefD v _ e _)        = singleton v <> allVars e
+    allVars LetTypeD{}               = mempty
     allVars (LetFunD v _ vbs _ e _)  = singleton v <> fromList (map fst vbs) <> allVars e
     allVars (LetExtFunD v _ vbs _ _) = singleton v <> fromList (map fst vbs)
 
@@ -1446,6 +1555,7 @@ instance HasVars Exp Var where
     allVars (CallE f _ es _)      = singleton f <> allVars es
     allVars (DerefE e _)          = allVars e
     allVars (AssignE e1 e2 _)     = allVars e1 <> allVars e2
+    allVars LowerE{}              = mempty
     allVars (WhileE e1 e2 _)      = allVars e1 <> allVars e2
     allVars (ForE _ v _ gint e _) = singleton v <> allVars gint <> allVars e
     allVars (ArrayE es _)         = allVars es
@@ -1527,6 +1637,12 @@ instance Subst Type TyVar Type where
     substM tau@NatT{} =
         pure tau
 
+    substM (UnopT op tau l) =
+        UnopT op <$> substM tau <*> pure l
+
+    substM (BinopT op tau1 tau2 l) =
+        BinopT op <$> substM tau1 <*> substM tau2 <*> pure l
+
     substM (ForallT tvks tau l) =
         freshen tvks $ \tvks' ->
         ForallT tvks' <$> substM tau <*> pure l
@@ -1548,6 +1664,10 @@ instance Subst Type TyVar Decl where
 
     substM (LetRefD v tau e l) =
         LetRefD v <$> substM tau <*> substM e <*> pure l
+
+    substM (LetTypeD alpha kappa tau l) =
+        freshen alpha $ \alpha' ->
+        LetTypeD alpha' kappa <$> substM tau <*> pure l
 
     substM (LetFunD v alphas vbs tau e l) =
         LetFunD v alphas <$> substM vbs <*> substM tau <*> substM e <*> pure l
@@ -1583,6 +1703,9 @@ instance Subst Type TyVar Exp where
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
 
+    substM (LowerE tau l) =
+        LowerE <$> substM tau <*> pure l
+
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
@@ -1592,8 +1715,8 @@ instance Subst Type TyVar Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> substM len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s <$> substM taus <*> substM flds <*> pure l
@@ -1690,6 +1813,9 @@ instance Subst Exp Var Exp where
     substM (AssignE e1 e2 l) =
         AssignE <$> substM e1 <*> substM e2 <*> pure l
 
+    substM e@LowerE{} =
+        pure e
+
     substM (WhileE e1 e2 l) =
         WhileE <$> substM e1 <*> substM e2 <*> pure l
 
@@ -1701,8 +1827,8 @@ instance Subst Exp Var Exp where
     substM (ArrayE es l) =
         ArrayE <$> substM es <*> pure l
 
-    substM (IdxE e1 e2 i l) =
-        IdxE <$> substM e1 <*> substM e2 <*> pure i <*> pure l
+    substM (IdxE e1 e2 len l) =
+        IdxE <$> substM e1 <*> substM e2 <*> pure len <*> pure l
 
     substM (StructE s taus flds l) =
         StructE s taus <$> substM flds <*> pure l
@@ -1789,6 +1915,27 @@ instance FreshVars TyVar where
  -
  ------------------------------------------------------------------------------}
 
+instance Freshen Decl Type TyVar where
+    freshen decl@StructD{} k =
+        k decl
+
+    freshen decl@LetD{} k =
+        k decl
+
+    freshen decl@LetRefD{} k =
+        k decl
+
+    freshen (LetTypeD alpha kappa tau l) k = do
+        tau' <- substM tau
+        freshen alpha $ \alpha' ->
+          k (LetTypeD alpha' kappa tau' l)
+
+    freshen decl@LetFunD{} k =
+        k decl
+
+    freshen decl@LetExtFunD{} k =
+        k decl
+
 instance Freshen TyVar Type TyVar where
     freshen alpha@(TyVar n) =
         freshenV (namedString n) mkV mkE alpha
@@ -1822,6 +1969,9 @@ instance Freshen Decl Exp Var where
         e' <- substM e
         freshen v $ \v' ->
           k (LetRefD v' tau e' l)
+
+    freshen (LetTypeD alpha kappa tau l) k =
+        k (LetTypeD alpha kappa tau l)
 
     freshen (LetFunD v alphas vbs tau e l) k =
         freshen v   $ \v'   ->

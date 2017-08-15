@@ -446,9 +446,16 @@ evalRef = go []
         val <- evalExp e2
         go (IdxP (addVals val0 val) len : path) e1
 
-    go path (IdxE e1 e2 len _) = do
+    go path (IdxE e1 e2 Nothing _) = do
         val <- evalExp e2
-        go (IdxP val len : path) e1
+        go (IdxP val Nothing : path) e1
+
+    go path (IdxE e1 e2 (Just (NatT len _)) _) = do
+        val <- evalExp e2
+        go (IdxP val (Just len) : path) e1
+
+    go path (IdxE e1 _ _ _) = do
+        go path e1
 
     go path (ProjE e f _) =
         go (ProjP f : path) e
@@ -474,8 +481,8 @@ readRef (Ref v path) = do
     -- We're reading the entire array. Rather than sending the read set to top,
     -- we send it to the interval that includes all elements.
     go ref@(ArrayRW _rs ws) [] = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        case iota of
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        case nat of
           NatT n _ -> do let rs :: BoundedInterval
                              rs = extend (unit (0::Integer)) n
                          if rs `inPrecise` ws
@@ -532,8 +539,8 @@ writeRef (Ref v path) = do
     -- We're writing the entire array. As above, rather than sending the write
     -- set to top, we send it to the interval that includes all elements.
     go (ArrayRW rs _ws) [] = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        case iota of
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        case nat of
           NatT n _ -> do let ws :: PreciseInterval
                              ws = extend (unit (0::Integer)) n
                          return $ ArrayRW rs ws
@@ -684,12 +691,17 @@ evalExp e =
             extendVals [(bVar v, val1)] $
             evalExp e2
 
+    go (LetE (LetTypeLD alpha kappa tau _) e _) =
+        extendTyVars [(alpha, kappa)] $
+        extendTyVarTypes [(alpha, tau)] $
+        evalExp e
+
     go (LetE (LetViewLD v tau view _) e2 _) =
         extendVars [(bVar v, tau)] $
         extendViews [(bVar v, view)] $
         evalExp e2
 
-    go (CallE f _iotas es _) = do
+    go (CallE f _taus es _) = do
         isExt <- isExtFun f
         mapM_ (evalArg isExt) es
         return top
@@ -720,6 +732,10 @@ evalExp e =
           VarE v _ -> putVal v val
           _        -> return ()
         return top
+
+    go (LowerE tau _) = do
+        n <- evalNat tau
+        return $ IntV $ unit n
 
     go (WhileE e1 e2 _) = do
         val <- evalExp e1

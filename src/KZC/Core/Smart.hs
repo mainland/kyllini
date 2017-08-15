@@ -107,6 +107,7 @@ import KZC.Expr.Smart (qualK,
                        unRefT,
                        arrT,
                        arrKnownT,
+                       sliceT,
                        structT,
                        stT,
                        forallST,
@@ -156,7 +157,7 @@ letD v tau e = LetLD (mkBoundVar v) tau e (v `srcspan` e)
 letrefD :: Var -> Type -> Maybe Exp -> LocalDecl
 letrefD v tau e = LetRefLD (mkBoundVar v) tau e (v `srcspan` e)
 
-letviewD :: Var -> Type -> Var -> Exp -> Maybe Int -> LocalDecl
+letviewD :: Var -> Type -> Var -> Exp -> Maybe Type -> LocalDecl
 letviewD v tau v_arr e_base len =
     LetViewLD (mkBoundVar v) tau view (v `srcspan` view)
   where
@@ -249,7 +250,7 @@ letrefE v tau e1 e2 = LetE d e2 (d `srcspan` e2)
     d :: LocalDecl
     d = letrefD v tau e1
 
-letviewE :: Var -> Type -> Var -> Exp -> Maybe Int -> Exp -> Exp
+letviewE :: Var -> Type -> Var -> Exp -> Maybe Type -> Exp -> Exp
 letviewE v tau v_arr e_base len e2 = LetE d e2 (d `srcspan` e2)
   where
     d :: LocalDecl
@@ -279,7 +280,7 @@ idxE :: Exp -> Exp -> Exp
 idxE e1 e2 = IdxE e1 (castE idxT e2) Nothing (e1 `srcspan` e2)
 
 sliceE :: Exp -> Exp -> Int -> Exp
-sliceE e1 e2 len = IdxE e1 (castE idxT e2) (Just len) (e1 `srcspan` e2)
+sliceE e1 e2 len = IdxE e1 (castE idxT e2) (Just (fromIntegral len)) (e1 `srcspan` e2)
 
 structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
 structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
@@ -343,9 +344,10 @@ isArrE (ConstE c _) = isArrC c
 isArrE ArrayE{}     = True
 isArrE _            = False
 
-sliceLen :: Num a => Maybe Int -> a
-sliceLen Nothing    = 1
-sliceLen (Just len) = fromInteger (toInteger len)
+sliceLen :: Num a => Maybe Type -> a
+sliceLen Nothing             = 1
+sliceLen (Just (NatT len _)) = fromInteger (toInteger len)
+sliceLen (Just nat)          = errordoc $ text  "unknown slice length:" <+> ppr nat
 
 -- | Tag a computation as an identity with rate n.
 tagIdentityC :: Int -> Comp l -> Comp l

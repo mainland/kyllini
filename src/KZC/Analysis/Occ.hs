@@ -147,6 +147,12 @@ instance MonadTc m => TransformExp (OccM m) where
                               withOccInfo v m
         return (LetRefLD (updStaticInfo (updOccInfo v occ) static) tau e' s, x)
 
+    localDeclT decl@(LetTypeLD alpha kappa tau _) m = do
+        x <- extendTyVars [(alpha, kappa)] $
+             extendTyVarTypes [(alpha, tau)] $
+             m
+        return (decl, x)
+
     localDeclT LetViewLD{} _ =
         faildoc $ text "Views not supported."
 

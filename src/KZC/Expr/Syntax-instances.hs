@@ -10,6 +10,7 @@ instance Located Decl where
   locOf (StructD _ _ _ l) = locOf l
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
+  locOf (LetTypeD _ _ _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l
 instance Located Exp where
@@ -22,6 +23,7 @@ instance Located Exp where
   locOf (CallE _ _ _ l) = locOf l
   locOf (DerefE _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
+  locOf (LowerE _ l) = locOf l
   locOf (WhileE _ _ l) = locOf l
   locOf (ForE _ _ _ _ _ l) = locOf l
   locOf (ArrayE _ l) = locOf l
@@ -59,6 +61,8 @@ instance Located Type where
   locOf (RefT _ l) = locOf l
   locOf (FunT _ _ l) = locOf l
   locOf (NatT _ l) = locOf l
+  locOf (UnopT _ _ l) = locOf l
+  locOf (BinopT _ _ _ l) = locOf l
   locOf (ForallT _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
 instance Located Omega where

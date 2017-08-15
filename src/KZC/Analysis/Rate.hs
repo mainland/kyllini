@@ -195,7 +195,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (RM m) where
         return step
 
     stepT step@(TakesC _ n _ _) = do
-        plusRate $ staticRate n 0
+        i <- evalNat n
+        plusRate $ staticRate i 0
         return step
 
     stepT step@EmitC{} = do

@@ -46,6 +46,7 @@ module KZC.Core.Lint (
     joinOmega,
 
     checkComplexT,
+    checkKnownNatT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -104,6 +105,7 @@ import KZC.Expr.Lint (Tc(..),
                       joinOmega,
 
                       checkComplexT,
+                      checkKnownNatT,
                       checkArrT,
                       checkKnownArrT,
                       checkArrOrRefArrT,
@@ -219,18 +221,14 @@ inferView (IdxVW v e len l) = do
   where
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
-        return $ RefT (mkArrSlice tau len) l
+        return $ RefT (sliceT tau len) l
 
     go (ArrT _ tau _) =
-        return $ mkArrSlice tau len
+        return $ sliceT tau len
 
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 checkView :: MonadTc m => View -> Type -> m ()
 checkView vw tau = do
@@ -253,6 +251,11 @@ checkLocalDecl decl@(LetRefLD v tau maybe_e _) k = do
           Nothing -> return ()
           Just e  -> withSummaryContext e $ checkExp e tau
     extendVars [(bVar v, refT tau)] k
+
+checkLocalDecl decl@(LetTypeLD alpha kappa tau _) k = do
+    alwaysWithSummaryContext decl $ checkKind tau kappa
+    extendTyVars [(alpha, kappa)] $
+      extendTyVarTypes [(alpha, tau)] k
 
 checkLocalDecl decl@(LetViewLD v tau vw _) k = do
     alwaysWithSummaryContext decl $
@@ -353,15 +356,10 @@ inferExp (BinopE op e1 e2 l) = do
     binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
-        (iota1, tau1_elem) <- checkArrT tau1
-        (iota2, tau2_elem) <- checkArrT tau2
+        (nat1, tau1_elem) <- checkArrT tau1
+        (nat2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
-        case (iota1, iota2) of
-          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
-          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
-      where
-        s :: SrcLoc
-        s = tau1 `srcspan` tau2
+        return $ ArrT (nat1 + nat2) tau1_elem (tau1 `srcspan` tau2)
 
     a :: TyVar
     a = "a"
@@ -428,6 +426,10 @@ inferExp e@(AssignE e1 e2 l) = do
     [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
 
+inferExp e@(LowerE tau _) = do
+    withSummaryContext e $ checkKind tau NatK
+    return intT
+
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
         (_, tau, _, _, _) <- inferExp e1 >>= checkPureishSTC
@@ -451,7 +453,7 @@ inferExp (ArrayE es l) = do
     case taus of
       [] -> faildoc $ text "Empty array expression"
       tau:taus -> do mapM_ (checkTypeEquality tau) taus
-                     return $ ArrT (NatT (length es) l) tau l
+                     return $ ArrT (fromIntegral (length es)) tau l
 
 inferExp (IdxE e1 e2 len l) = do
     tau <- withFvContext e1 $ inferExp e1
@@ -459,28 +461,25 @@ inferExp (IdxE e1 e2 len l) = do
     checkLen len
     go tau
   where
-    checkLen :: Maybe Int -> m ()
+    checkLen :: Maybe Type -> m ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
-        return $ RefT (mkArrSlice tau len) l
+        return $ RefT (sliceT tau len) l
 
     go (ArrT _ tau _) =
-        return $ mkArrSlice tau len
+        return $ sliceT tau len
 
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
@@ -645,7 +644,7 @@ refPath e =
     go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just (NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =
@@ -799,10 +798,11 @@ inferStep (TakeC _ tau l) = do
     [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
 
-inferStep (TakesC _ i tau l) = do
+inferStep (TakesC _ n tau l) = do
+    checkKind n NatK
     checkKind tau tauK
     [b] <- freshenVars ["b"] (fvs tau)
-    instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    instST $ forallST [b] (C (arrT n tau)) tau tau (tyVarT b) l
 
 inferStep (EmitC _ e l) = do
     tau   <- withFvContext e $ inferExp e
@@ -877,8 +877,8 @@ compToExp comp =
     stepToExp (VarC _ v l) =
         pure $ VarE v l
 
-    stepToExp (CallC _ f iotas args l) =
-        CallE f iotas <$> mapM argToExp args <*> pure l
+    stepToExp (CallC _ f taus args l) =
+        CallE f taus <$> mapM argToExp args <*> pure l
 
     stepToExp (IfC _ e1 c2 c3 l) =
         IfE e1 <$> compToExp c2 <*> compToExp c3 <*> pure l

@@ -47,6 +47,7 @@ module KZC.Expr.Lint (
     joinOmega,
 
     checkComplexT,
+    checkKnownNatT,
     checkArrT,
     checkKnownArrT,
     checkArrOrRefArrT,
@@ -103,6 +104,7 @@ import KZC.Expr.Syntax
 import KZC.Monad
 import KZC.Platform
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -166,6 +168,11 @@ checkDecl decl@(LetD v tau e _) k = do
 checkDecl decl@(LetRefD v tau Nothing _) k = do
     alwaysWithSummaryContext decl $ checkKind tau tauK
     extendVars [(v, refT tau)] k
+
+checkDecl decl@(LetTypeD alpha kappa tau _) k = do
+    alwaysWithSummaryContext decl $ checkKind tau kappa
+    extendTyVars [(alpha, kappa)] $
+      extendTyVarTypes [(alpha, tau)] k
 
 checkDecl decl@(LetRefD v tau (Just e) _) k = do
     alwaysWithSummaryContext decl $
@@ -358,15 +365,10 @@ inferExp (BinopE op e1 e2 l) = do
     binop Pow  tau1 _tau2 = inferOp [(a, numK)] aT aT aT tau1
 
     binop Cat tau1 tau2 = do
-        (iota1, tau1_elem) <- checkArrT tau1
-        (iota2, tau2_elem) <- checkArrT tau2
+        (nat1, tau1_elem) <- checkArrT tau1
+        (nat2, tau2_elem) <- checkArrT tau2
         checkTypeEquality tau2_elem tau1_elem
-        case (iota1, iota2) of
-          (NatT n _, NatT m _) -> return $ ArrT (NatT (n+m) s) tau1_elem s
-          _ -> faildoc $ text "Cannot determine type of concatenation of arrays of unknown length"
-      where
-        s :: SrcLoc
-        s = tau1 `srcspan` tau2
+        return $ ArrT (nat1 + nat2) tau1_elem (tau1 `srcspan` tau2)
 
     a :: TyVar
     a = "a"
@@ -435,6 +437,10 @@ inferExp (AssignE e1 e2 l) = do
     [s,a,b] <- freshenVars ["s", "a", "b"] mempty
     return $ forallST [s,a,b] (C (UnitT l)) (tyVarT s) (tyVarT a) (tyVarT b) l
 
+inferExp e@(LowerE tau _) = do
+    withSummaryContext e $ checkKind tau NatK
+    return intT
+
 inferExp (WhileE e1 e2 _) = do
     withFvContext e1 $ do
         tau <- inferExp e1 >>= checkForallSTC
@@ -466,28 +472,25 @@ inferExp (IdxE e1 e2 len l) = do
     checkLen len
     go tau
   where
-    checkLen :: Maybe Int -> m ()
+    checkLen :: Maybe Type -> m ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     go :: Type -> m Type
     go (RefT (ArrT _ tau _) _) =
-        return $ RefT (mkArrSlice tau len) l
+        return $ RefT (sliceT tau len) l
 
     go (ArrT _ tau _) =
-        return $ mkArrSlice tau len
+        return $ sliceT tau len
 
     go tau =
         faildoc $ nest 2 $ group $
         text "Expected array type but got:" <+/> ppr tau
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 inferExp (ProjE e f l) = do
     tau <- withFvContext e $ inferExp e
@@ -578,10 +581,11 @@ inferExp (TakeE tau l) = do
     [b] <- freshenVars ["b"] (fvs tau)
     instST $ forallST [b] (C tau) tau tau (tyVarT b) l
 
-inferExp (TakesE i tau l) = do
+inferExp (TakesE n tau l) = do
+    checkKind n NatK
     checkKind tau tauK
     [b] <- freshenVars ["b"] (fvs tau)
-    instST $ forallST [b] (C (arrKnownT i tau)) tau tau (tyVarT b) l
+    instST $ forallST [b] (C (arrT n tau)) tau tau (tyVarT b) l
 
 inferExp (EmitE e l) = do
     tau    <- withFvContext e $ inferExp e
@@ -675,7 +679,7 @@ refPath e =
     go (IdxE e (ConstE (IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (IdxE e (ConstE (IntC _ i) _) (Just len) _) path =
+    go (IdxE e (ConstE (IntC _ i) _) (Just (NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (IdxE e _ _ _) _ =
@@ -880,8 +884,16 @@ checkTypeEquality tau1 tau2 =
     checkT (TyVarT alpha _) (TyVarT alpha' _) | alpha' == alpha =
         return ()
 
-    checkT  (NatT n1 _) (NatT n2 _) | n2 == n1 =
-        return ()
+    checkT tau1 tau2 | isNatT tau1 || isNatT tau2 = do
+        tau1' <- simplType tau1
+        tau2' <- simplType tau2
+        checkNat tau1' tau2'
+      where
+        isNatT :: Type -> Bool
+        isNatT NatT{}   = True
+        isNatT UnopT{}  = True
+        isNatT BinopT{} = True
+        isNatT _        = False
 
     checkT (ForallT tvks1 tau1 _) (ForallT tvks2 tau2 _) | length tvks1 == length tvks2 = do
         zipWithM_ checkKindEquality (map snd tvks1) (map snd tvks2)
@@ -905,6 +917,20 @@ checkTypeEquality tau1 tau2 =
         return ()
 
     checkO _ _ =
+        err
+
+    checkNat :: Type -> Type -> m ()
+    checkNat (NatT i1 _) (NatT i2 _) | i1 == i2 =
+        return ()
+
+    checkNat (UnopT op1 tau1 _) (UnopT op2 tau2 _) | op1 == op2 =
+        checkT tau1 tau2
+
+    checkNat (BinopT op1 tau1a tau1b _) (BinopT op2 tau2a tau2b _) | op1 == op2 = do
+        checkT tau1a tau2a
+        checkT tau1b tau2b
+
+    checkNat _tau1 _tau2 =
         err
 
     err :: m ()
@@ -1014,6 +1040,32 @@ inferKind = inferType
     inferType NatT{} =
         return NatK
 
+    inferType (UnopT op tau _) = do
+        checkNatUnop op
+        checkKind tau NatK
+        return NatK
+      where
+        checkNatUnop :: MonadTc m => Unop -> m ()
+        checkNatUnop Neg = return ()
+        checkNatUnop op  =
+            faildoc $ text "Operator" <+> enquote (ppr op) </>
+                      text "not a legal operator on types of kind nat"
+
+    inferType (BinopT op tau1 tau2 _) = do
+        checkNatBinop op
+        checkKind tau1 NatK
+        checkKind tau2 NatK
+        return NatK
+      where
+        checkNatBinop :: MonadTc m => Binop -> m ()
+        checkNatBinop Add = return ()
+        checkNatBinop Sub = return ()
+        checkNatBinop Mul = return ()
+        checkNatBinop Div = return ()
+        checkNatBinop op  =
+            faildoc $ text "Operator" <+> enquote (ppr op) </>
+                      text "not a legal operator on types of kind nat"
+
     inferType (ForallT tvks tau _) =
         extendTyVars tvks $
         inferType tau
@@ -1104,29 +1156,40 @@ checkComplexT (StructT struct taus _) = do
 checkComplexT _ =
     fail "Not a complex type"
 
--- | Check that a type is an @arr \iota \alpha@ type, returning @\iota@ and
--- @\alpha@.
+-- | Check that a type of kind nat is a known constant.
+checkKnownNatT :: MonadTc m => Type -> m Int
+checkKnownNatT tau = do
+    checkKind tau NatK
+    nat <- simplType tau
+    case nat of
+      NatT n _ -> return n
+      _        -> faildoc $ text "Type" <+> enquote (ppr tau) <+>
+                  text "is not a constant."
+
+-- | Check that a type is an @arr \nat \alpha@ type, returning @\nat@ and
+-- @\alpha@. The @\nat@ type is simplified.
 checkArrT :: MonadTc m => Type -> m (Type, Type)
 checkArrT (ArrT nat alpha _) = do
     checkKind nat NatK
-    return (nat, alpha)
+    nat' <- simplType nat
+    return (nat', alpha)
 
 checkArrT tau =
     faildoc $ nest 2 $ group $
     text "Expected array type but got:" <+/> ppr tau
 
--- | Check that a type is an array of known length, returning the length and
---the type of the array elements
+-- | Check that a type is an array of known length, returning the length and the
+-- type of the array elements
 checkKnownArrT :: forall m . MonadTc m => Type -> m (Int, Type)
-checkKnownArrT tau =
-    checkArrT tau >>= go
+checkKnownArrT tau0 =
+    checkArrT tau0 >>= go
   where
     go :: (Type, Type) -> m (Int, Type)
     go (NatT n _, tau) =
         return (n, tau)
 
     go _ =
-         faildoc $ text "Array type" <+> ppr tau <+>
+         faildoc $ text "Array type" <+> enquote (ppr tau0) <+>
                    text "does not have known length."
 
 -- | Check that the argument is either an array or a reference to an array and

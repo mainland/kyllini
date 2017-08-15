@@ -215,8 +215,8 @@ lutVars refs = do
         return $ Just $ VarL v
 
     inLutVar (v, ArrayRW rs _ws) | Just (lo, hi) <- fromInterval rs = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        return $ Just $ rangeLUTVar v lo hi iota
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        return $ Just $ rangeLUTVar v lo hi nat
 
     inLutVar (v, rws@(ArrayRW rs _ws)) | rs /= bot || weaklyUpdated rws =
         return $ Just $ VarL v
@@ -236,8 +236,8 @@ lutVars refs = do
         return $ Just $ VarL v
 
     outLutVar (v, ArrayRW _rs ws) | Just (lo, hi) <- fromInterval ws = do
-        (iota, _) <- lookupVar v >>= checkArrOrRefArrT
-        return $ Just $ rangeLUTVar v lo hi iota
+        (nat, _) <- lookupVar v >>= checkArrOrRefArrT
+        return $ Just $ rangeLUTVar v lo hi nat
 
     outLutVar (v, ArrayRW _rs ws) | ws /= bot =
         return $ Just $ VarL v
@@ -400,6 +400,9 @@ lutStats e =
         go e1
         go e2
 
+    go (LetE LetTypeLD{} e2 _) =
+        go e2
+
     go (LetE (LetViewLD _ _ (IdxVW _ e1 _ _) _) e2 _) = do
         go e1
         go e2
@@ -414,6 +417,9 @@ lutStats e =
     go (AssignE e1 e2 _) = do
         go e1
         go e2
+
+    go LowerE{} =
+        return ()
 
     go (WhileE e1 e2 _) = do
         hasLoop

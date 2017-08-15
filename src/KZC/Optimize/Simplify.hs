@@ -32,7 +32,6 @@ import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -309,38 +308,6 @@ simplComp c = do
           then go (i+1) n c'
           else return c
 
-simplType :: MonadTc m => Type -> m Type
-simplType tau@UnitT{}   = pure tau
-simplType tau@BoolT{}   = pure tau
-simplType tau@IntT{}    = pure tau
-simplType tau@FixT{}    = pure tau
-simplType tau@FloatT{}  = pure tau
-simplType tau@StringT{} = pure tau
-
-simplType (StructT struct taus l) =
-    StructT struct <$> mapM simplType taus <*> pure l
-
-simplType (ArrT tau1 tau2 l) =
-    ArrT <$> simplType tau1 <*> simplType tau2 <*> pure l
-
-simplType (ST omega tau1 tau2 tau3 l) =
-    ST omega <$> simplType tau1 <*> simplType tau2 <*> simplType tau3 <*> pure l
-
-simplType (RefT tau l) =
-    RefT <$> simplType tau <*> pure l
-
-simplType (FunT taus tau l) =
-    FunT <$> mapM simplType taus <*> simplType tau <*> pure l
-
-simplType tau@NatT{} =
-    pure tau
-
-simplType (ForallT tvks tau l) =
-    ForallT tvks <$> simplType tau <*> pure l
-
-simplType tau@(TyVarT alpha _) =
-    fromMaybe tau <$> maybeLookupTyVarType alpha
-
 simplDecls :: (IsLabel l, MonadTc m)
            => [Decl l]
            -> SimplM l m a
@@ -535,6 +502,9 @@ simplLocalDecl decl m = do
         isDead :: Bool
         isDead = bOccInfo v == Just Dead
 
+    preInlineUnconditionally flags decl@LetTypeLD{} =
+        postInlineUnconditionally flags decl
+
     preInlineUnconditionally _flags LetViewLD{} =
         faildoc $ text "Views not supported"
 
@@ -560,6 +530,12 @@ simplLocalDecl decl m = do
             extendDefinitions [(bVar v', Unknown)] $
             keepRef (bVar v) $
             withRefBinding v' tau' e' s m
+
+    postInlineUnconditionally _flags (LetTypeLD alpha kappa tau s) = do
+        tau' <- simplType tau
+        extendTyVars [(alpha, kappa)] $
+          extendTyVarTypes [(alpha, tau')] $
+          withBinding (LetTypeLD alpha kappa tau' s) m
 
     postInlineUnconditionally _flags LetViewLD{} =
         faildoc $ text "Views not supported"
@@ -633,27 +609,27 @@ simplSteps steps@(TakesC l1 _ tau s1 : BindC l2 TameV{} _ s2 :
                   TakesC{}           : BindC _  TameV{} _ _  :
                   _) = do
     zs <- gensym "zs"
-    extendVars [(zs, arrKnownT total tau)] $
+    extendVars [(zs, arrT total tau)] $
       extendSubsts [(v, DoneExp e) | (v, i, n) <- zip3 vs offs lens,
-                                     let e = sliceE (varE zs) (uintE i) n] $ do
+                                     let e = IdxE (varE zs) (intE i) (Just n) (srclocOf n)] $ do
       steps' <- simplSteps rest
       simplSteps $ TakesC l1 total tau s1 :
-                   BindC l2 (TameV (mkBoundVar zs)) (arrKnownT total tau) s2 :
+                   BindC l2 (TameV (mkBoundVar zs)) (arrT total tau) s2 :
                    steps'
   where
     vs :: [Var]
-    lens :: [Int]
-    offs :: [Int]
-    total :: Int
+    lens :: [Nat]
+    offs :: [Nat]
+    total :: Nat
     (vs, lens) = unzip takes
     offs = scanl (+) 0 lens
     total = last offs
 
-    takes :: [(Var, Int)]
+    takes :: [(Var, Nat)]
     rest :: [Step l]
     (takes, rest) = go [] steps
 
-    go :: [(Var, Int)] -> [Step l] -> ([(Var, Int)], [Step l])
+    go :: [(Var, Nat)] -> [Step l] -> ([(Var, Nat)], [Step l])
     go takes (TakesC _ n _ _ : BindC _ (TameV xs) _ _ : steps) =
       go ((bVar xs, n) : takes) steps
 
@@ -674,7 +650,7 @@ simplSteps (EmitsC l1 (IdxE (VarE v  _) ei len1 s1) s2 :
     Just j <- fromIntE ej,
     j == i + sliceLen len1 = do
       rewrite
-      simplSteps $ EmitsC l1 (IdxE (varE v) ei len' s1) s2 : steps
+      simplSteps $ EmitsC l1 (IdxE (varE v) ei (fmap fromIntegral len') s1) s2 : steps
   where
     len' :: Maybe Int
     len' = Just $ sliceLen len1 + sliceLen len2
@@ -1098,8 +1074,9 @@ simplStep (TakeC l tau s) = do
     return1 $ TakeC l tau' s
 
 simplStep (TakesC l n tau s) = do
+    n'   <- simplType n
     tau' <- simplType tau
-    return1 $ TakesC l n tau' s
+    return1 $ TakesC l n' tau' s
 
 simplStep (EmitC l e s) =
     EmitC l <$> simplE e <*> pure s >>= return1
@@ -1385,6 +1362,11 @@ simplE (AssignE e1 e2 s) = do
               return $ returnE unitE
       else return $ AssignE e1' e2' s
 
+simplE (LowerE tau _) = do
+    tau' <- simplType tau
+    n    <- evalNat tau'
+    return $ intE n
+
 simplE (WhileE e1 e2 s) =
     WhileE <$> simplE e1 <*> simplE e2 <*> pure s
 
@@ -1420,8 +1402,8 @@ simplE (ForE _ann v _tau gint
   = do rewrite
        -- The recursive call to 'simplE' is important! We need to be sure to
        -- recursively call simplE here in case @xs@ has been substituted away.
-       simplE $ AssignE (IdxE (VarE xs s) ei (Just len) s)
-                        (IdxE e_ys (f ei) (Just len) s)
+       simplE $ AssignE (IdxE (VarE xs s) ei (Just (fromIntegral len)) s)
+                        (IdxE e_ys (f ei) (Just (fromIntegral len)) s)
                         s
   where
     ei, elen :: Exp
@@ -1506,7 +1488,7 @@ simplE (ArrayE es s) =
       where
         coalesce :: Var -> Int -> Int -> [Exp] -> Maybe Exp
         coalesce xs i len [] =
-            return $ sliceE (varE xs) (uintE i) (fromIntegral len)
+            return $ sliceE (varE xs) (intE i) (fromIntegral len)
 
         coalesce xs i len (IdxE (VarE xs' _) ej Nothing _ : es'')
           | Just j <- fromIntE ej, j == i + len, xs' == xs =
@@ -1523,7 +1505,7 @@ simplE (IdxE e1 e2 len0 s) = do
     e2' <- simplE e2
     go e1' e2' len0
   where
-    go :: Exp -> Exp -> Maybe Int -> SimplM l m Exp
+    go :: Exp -> Exp -> Maybe Type -> SimplM l m Exp
     --
     -- Replace a slice of a slice with a single slice.
     --
@@ -1539,11 +1521,11 @@ simplE (IdxE e1 e2 len0 s) = do
     --   x[0, n] -> n        when x is an array of size n
     --
     go e1' e2' (Just len) | Just 0 <- fromIntE e2' = do
-        (iota, _) <- inferExp e1' >>= checkArrOrRefArrT
-        case iota of
-          NatT n _ | len == n -> do rewrite
-                                    return e1'
-          _ -> return $ IdxE e1' e2' (Just len) s
+        (nat, _) <- inferExp e1' >>= checkArrOrRefArrT
+        if nat == len
+          then do rewrite
+                  return e1'
+          else return $ IdxE e1' e2' (Just len) s
 
     go e1' e2' len =
         return $ IdxE e1' e2' len s
@@ -1688,7 +1670,7 @@ simplE (BindE wv tau e1 e2 s) = do
         let len = plusl len1 len2
         simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
       where
-        plusl :: Maybe Int -> Maybe Int -> Maybe Int
+        plusl :: Maybe Type -> Maybe Type -> Maybe Type
         plusl len1 len2 = Just $ sliceLen len1 + sliceLen len2
 
     --

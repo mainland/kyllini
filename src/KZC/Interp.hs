@@ -158,7 +158,9 @@ toRef val =
     ValR <$> newRef val
 
 -- | Produce a default reference of the given type.
-defaultRef :: (MonadTcRef m, s ~ PrimState m) => Type -> I s m (Ref s)
+defaultRef :: forall s m . (MonadTcRef m, s ~ PrimState m)
+           => Type
+           -> I s m (Ref s)
 defaultRef (RefT tau _) =
     defaultRef tau
 
@@ -167,12 +169,17 @@ defaultRef (StructT struct taus _) = do
     refs        <- mapM defaultRef ftaus
     return $ StructR struct taus (fs `zip` refs)
 
-defaultRef (ArrT (NatT n _) tau _) | isBaseT tau = do
-    val <- defaultVal tau
-    ArrayR <$> MV.replicate n val
+defaultRef tau@ArrT{} = do
+    (n, tau_elem) <- checkKnownArrT tau
+    go n tau_elem
+  where
+    go :: Int -> Type -> I s m (Ref s)
+    go n tau_elem | isBaseT tau_elem = do
+        val <- defaultVal tau_elem
+        ArrayR <$> MV.replicate n val
 
-defaultRef (ArrT (NatT n _) tau _) =
-    ArrayRefR <$> (V.replicateM n (defaultRef tau) >>= V.thaw)
+    go n tau_elem =
+        ArrayRefR <$> (V.replicateM n (defaultRef tau_elem) >>= V.thaw)
 
 defaultRef tau =
     ValR <$> (defaultVal tau >>= newRef)
@@ -315,6 +322,10 @@ evalDecl (LetRefLD v tau e _) k = do
     evalInit Nothing  = defaultRef tau
     evalInit (Just e) = evalExp e >>= toRef
 
+evalDecl (LetTypeLD alpha kappa tau _) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
+
 evalDecl LetViewLD{} _ =
      faildoc $ text "Views not supported"
 
@@ -328,9 +339,10 @@ evalRef :: forall s m . (s ~ PrimState m, MonadTcRef m)
 evalRef (VarE v _) =
     lookupRef v
 
-evalRef (IdxE e1 e2 len _) = do
+evalRef (IdxE e1 e2 nat _) = do
     ref <- evalRef e1
     i   <- evalExp e2 >>= fromIntV
+    len <- traverse checkKnownNatT nat
     idxR ref i len
 
 evalRef (ProjE e f _) = do
@@ -496,9 +508,10 @@ evalExp (ArrayE es _) = do
     vals <- mapM evalExp es
     return $ ArrayC $ V.fromList vals
 
-evalExp (IdxE e1 e2 len _) = do
+evalExp (IdxE e1 e2 nat _) = do
     val1 <- evalExp e1
     val2 <- evalExp e2 >>= fromIntV
+    len  <- traverse checkKnownNatT nat
     idxV val1 val2 len
 
 evalExp (StructE struct taus flds _) = do
@@ -561,6 +574,10 @@ compileDecl (LetRefLD v tau e _) k = do
                               return $ return val
     compileInit (Just e) = compileExp e
 
+compileDecl (LetTypeLD alpha kappa tau _) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
+
 compileDecl LetViewLD{} _k =
     faildoc $ text "Views not supported."
 
@@ -576,9 +593,10 @@ compileRef (VarE v _) = do
     ref <- lookupRef v
     return $ return ref
 
-compileRef (IdxE e1 e2 len _) = do
+compileRef (IdxE e1 e2 nat _) = do
     mref <- compileRef e1
     mi   <- compileExp e2
+    len  <- traverse checkKnownNatT nat
     return $ do ref <- mref
                 i   <- mi >>= fromIntV
                 idxR ref i len
@@ -764,9 +782,10 @@ compileExp e@IdxE{} | isRef e = do
     mref <- compileRef e
     return $ mref >>= fromRef
 
-compileExp (IdxE e1 e2 len _) = do
+compileExp (IdxE e1 e2 nat _) = do
     mval1 <- compileExp e1
     mval2 <- compileExp e2
+    len   <- traverse checkKnownNatT nat
     return $ do arr <- mval1
                 i   <- mval2 >>= fromIntV
                 idxV arr i len

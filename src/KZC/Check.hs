@@ -362,6 +362,20 @@ checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
                      checkLetRef v ztau e_init l
     extendVars [(v, refT tau)] $ k [mcdecl]
 
+checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
+    alpha <- fromZ zalpha
+    kappa <- maybe (return NatK) fromZ zkappa
+    tau   <- fromZ ztau
+    -- We only allow type variables of kind nat to be specified this way
+    alwaysWithSummaryContext decl $ checkKind tau kappa
+    let mcdecl = do calpha <- trans alpha
+                    ckappa <- trans kappa
+                    ctau   <- trans tau
+                    return $ E.LetTypeD calpha ckappa ctau l
+    extendTyVars [(alpha, kappa)] $
+      extendTyVarTypes [(alpha, tau)] $
+      k [mcdecl]
+
 checkDecl decl@(Z.LetFunD f tvks ps tau e l) k = do
     (tau, mkLetFun) <- alwaysWithSummaryContext decl $
                        checkLetFun f tvks ps tau e l
@@ -452,6 +466,13 @@ tcExp (Z.VarE v _) exp_ty = do
     (tau, co) <- lookupVar v >>= instantiate
     instType tau exp_ty
     return $ co $ E.varE <$> trans v
+
+tcExp (Z.TyVarE zalpha _) exp_ty = do
+    alpha <- fromZ zalpha
+    kappa <- lookupTyVar alpha
+    unifyKinds intT kappa NatK
+    instType intT exp_ty
+    return $ E.lowerTyVarE <$> trans alpha
 
 tcExp (Z.UnopE op e l) exp_ty =
     withExpContext e $
@@ -798,46 +819,51 @@ tcExp (Z.ArrayE es l) exp_ty = do
     return $ do ces <- sequence mces
                 return $ E.ArrayE ces l
 
-tcExp (Z.IdxE e1 e2 len l) exp_ty = do
+tcExp (Z.IdxE e1 e2 zlen l) exp_ty = do
     (tau, mce1) <- withSummaryContext e1 $
                    inferExp e1
     mce2        <- withSummaryContext e2 $ do
                    (tau2, mce2) <- inferVal e2
                    co <- mkCast tau2 idxT
                    return $ co mce2
+    len <- traverse fromZ zlen
     checkLen len
-    checkIdxE tau mce1 mce2
+    checkIdxE tau mce1 mce2 len
   where
-    checkLen :: Maybe Int -> Ti ()
+    checkLen :: Maybe Type -> Ti ()
     checkLen Nothing =
         return ()
 
-    checkLen (Just len) =
-        unless (len >= 0) $
-        faildoc $ text "Slice length must be non-negative."
+    checkLen (Just len) = do
+        n <- checkKnownNatT len
+        unless (n >= 0) $
+          faildoc $ text "Negative slice length:" <+> ppr n
 
     checkIdxE :: Type
               -> Ti E.Exp
               -> Ti E.Exp
+              -> Maybe Type
               -> Ti (Ti E.Exp)
-    checkIdxE tau mce1 mce2 =
+    checkIdxE tau mce1 mce2 len =
         compress tau >>= go
       where
         go :: Type -> Ti (Ti E.Exp)
         -- Indexing into a reference to an array returns a reference to an
         -- element of the array.
         go (RefT (ArrT _ tau _) _) = do
-            instType (RefT (mkArrSlice tau len) l) exp_ty
-            return $ do ce1 <- mce1
-                        ce2 <- mce2
-                        return $ E.IdxE ce1 ce2 len l
+            instType (RefT (sliceT tau len) l) exp_ty
+            return $ do ce1  <- mce1
+                        ce2  <- mce2
+                        clen <- traverse trans len
+                        return $ E.IdxE ce1 ce2 clen l
 
         -- A plain old array gets indexed as one would expect.
         go (ArrT _ tau _) = do
-            instType (mkArrSlice tau len) exp_ty
-            return $ do ce1 <- mce1
-                        ce2 <- mce2
-                        return $ E.IdxE ce1 ce2 len l
+            instType (sliceT tau len) exp_ty
+            return $ do ce1  <- mce1
+                        ce2  <- mce2
+                        clen <- traverse trans len
+                        return $ E.IdxE ce1 ce2 clen l
 
         -- Otherwise we assert that the type of @e1@ should be an array type.
         go tau = do
@@ -845,10 +871,6 @@ tcExp (Z.IdxE e1 e2 len l) exp_ty = do
             alpha <- newMetaTvT tauK l
             unifyTypes tau (ArrT i alpha l)
             compress tau >>= go
-
-    mkArrSlice :: Type -> Maybe Int -> Type
-    mkArrSlice tau Nothing  = tau
-    mkArrSlice tau (Just i) = ArrT (NatT i l) tau l
 
 tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     withSummaryContext e0 $ do
@@ -982,14 +1004,16 @@ tcExp (Z.TakeE l) exp_ty = do
     b <- newMetaTvT tauK l
     instType (stT (C a l) a a b) exp_ty
     return $ do ca <- trans a
-                return $ E.takeE ca
+                return $ E.TakeE ca l
 
-tcExp (Z.TakesE i l) exp_ty = do
+tcExp (Z.TakesE zn l) exp_ty = do
+    n <- fromZ zn
     a <- newMetaTvT tauK l
     b <- newMetaTvT tauK l
-    instType (stT (C (ArrT (NatT i l) a l) l) a a b) exp_ty
-    return $ do ca <- trans a
-                return $ E.takesE (fromIntegral i) ca
+    instType (stT (C (ArrT n a l) l) a a b) exp_ty
+    return $ do cn <- trans n
+                ca <- trans a
+                return $ E.TakesE cn ca l
 
 tcExp (Z.EmitE e l) exp_ty = do
     s       <- newMetaTvT tauK l
@@ -1010,7 +1034,8 @@ tcExp (Z.EmitsE e l) exp_ty = do
     mce <- checkVal e (arrT n b)
     return $ E.EmitsE <$> mce <*> pure l
 
-tcExp (Z.RepeatE ann e l) exp_ty = do
+tcExp (Z.RepeatE zann e l) exp_ty = do
+    ann <- fromZ zann
     (sigma, alpha, beta, mce) <-
         withSummaryContext e $ do
         (tau, mce)           <- inferExp e
@@ -1109,7 +1134,8 @@ tcExp e@Z.WriteE{} _ =
 tcExp (Z.StandaloneE e _) exp_ty =
     tcExp e exp_ty
 
-tcExp (Z.MapE ann f ztau l) exp_ty = do
+tcExp (Z.MapE zann f ztau l) exp_ty = do
+    ann  <- fromZ zann
     tau  <- fromZ (ztau, PhiK)
     tau' <- lookupVar f
     unifyTypes tau' tau
@@ -1181,7 +1207,7 @@ refPath e =
     go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) Nothing _) path =
         go e (IdxP i 1 : path)
 
-    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) (Just len) _) path =
+    go (Z.IdxE e (Z.ConstE (Z.IntC _ i) _) (Just (Z.NatT len _)) _) path =
         go e (IdxP i len : path)
 
     go (Z.IdxE e _ _ _) _ =
@@ -1433,6 +1459,32 @@ kcType tau0@(FunT taus tau_ret _) kappa_exp = do
 kcType tau0@NatT{} kappa_exp =
     instKind tau0 NatK kappa_exp
 
+kcType (UnopT op tau _) kappa_exp = do
+    checkNatUnop op
+    checkKind tau NatK
+    instKind tau NatK kappa_exp
+  where
+    checkNatUnop :: Unop -> Ti ()
+    checkNatUnop Neg = return ()
+    checkNatUnop op  =
+        faildoc $ text "Operator" <+> enquote (ppr op) </>
+                  text "not a legal operator on types of kind nat"
+
+kcType tau@(BinopT op tau1 tau2 _) kappa_exp = do
+    checkNatBinop op
+    checkKind tau1 NatK
+    checkKind tau2 NatK
+    instKind tau NatK kappa_exp
+  where
+    checkNatBinop :: Binop -> Ti ()
+    checkNatBinop Add = return ()
+    checkNatBinop Sub = return ()
+    checkNatBinop Mul = return ()
+    checkNatBinop Div = return ()
+    checkNatBinop op  =
+        faildoc $ text "Operator" <+> enquote (ppr op) </>
+                  text "not a legal operator on types of kind nat"
+
 kcType (ForallT tvks tau _) kappa_exp =
     extendTyVars tvks $
     kcType tau kappa_exp
@@ -1629,18 +1681,28 @@ checkRefT tau =
         unifyTypes tau (refT alpha)
         return alpha
 
--- | Check that a type is an @arr \iota \alpha@ type or a reference to an @arr
--- \iota \alpha@, returning @\iota@ and @\alpha@.
+-- | Check that a type of kind nat is a known constant.
+checkKnownNatT :: Type -> Ti Int
+checkKnownNatT tau = do
+    checkKind tau NatK
+    nat <- simplNat tau
+    case nat of
+      NatT n _ -> return n
+      _        -> faildoc $ text "Type" <+> enquote (ppr tau) <+>
+                  text "is not a constant."
+
+-- | Check that a type is an @arr \nat \alpha@ type or a reference to an @arr
+-- \nat \alpha@, returning @\nat@ and @\alpha@.
 checkArrT :: Type -> Ti (Type, Type)
 checkArrT tau =
     compress tau >>= go
   where
     go :: Type -> Ti (Type, Type)
-    go (ArrT iota alpha _) =
-        return (iota, alpha)
+    go (ArrT nat alpha _) =
+        return (nat, alpha)
 
-    go (RefT (ArrT iota alpha _) _) =
-        return (iota, alpha)
+    go (RefT (ArrT nat alpha _) _) =
+        return (nat, alpha)
 
     go tau = do
         nat   <- newMetaTvT NatK tau
@@ -1850,8 +1912,8 @@ castVal :: Type -> Z.Exp -> Ti (Ti E.Exp)
 castVal tau2 e0 = do
     (tau1, mce) <- inferVal e
     co <- case (e, tau1, tau2) of
-            (Z.ArrayE es _, ArrT iota1 etau1 _, ArrT iota2 etau2 _) -> do
-                unifyTypes iota1 iota2
+            (Z.ArrayE es _, ArrT nat1 etau1 _, ArrT nat2 etau2 _) -> do
+                unifyTypes nat1 nat2
                 co <- mkArrayCast etau1 etau2
                 mapM_ (\e -> checkSafeCast WarnUnsafeAutoCast (Just e) etau1 etau2) es
                 return co
@@ -2347,13 +2409,37 @@ unifyTypes tau1_0 tau2_0 = do
           zipWithM_ unifyTypes taus_a taus_b
           unifyTypes tau_a tau_b
 
-    unify (NatT i1 _) (NatT i2 _) | i1 == i2 =
-        return ()
-
     unify (TyVarT tv1 _) (TyVarT tv2 _) | tv1 == tv2 =
         return ()
 
+    unify tau1 tau2 | isNatT tau1 || isNatT tau2 = do
+        tau1' <- simplNat tau1
+        tau2' <- simplNat tau2
+        unifyNat tau1' tau2'
+      where
+        isNatT :: Type -> Bool
+        isNatT NatT{}   = True
+        isNatT UnopT{}  = True
+        isNatT BinopT{} = True
+        isNatT _        = False
+
     unify tau1 tau2 = do
+        msg <- relevantBindings
+        [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
+        throw $ TypeUnificationException tau1' tau2' msg
+
+    unifyNat :: Type -> Type -> Ti ()
+    unifyNat (NatT i1 _) (NatT i2 _) | i1 == i2 =
+        return ()
+
+    unifyNat (UnopT op1 tau1 _) (UnopT op2 tau2 _) | op1 == op2 =
+        unify tau1 tau2
+
+    unifyNat (BinopT op1 tau1a tau1b _) (BinopT op2 tau2a tau2b _) | op1 == op2 = do
+        unify tau1a tau2a
+        unifyTypes tau1b tau2b
+
+    unifyNat tau1 tau2 = do
         msg <- relevantBindings
         [tau1', tau2'] <- sanitizeTypes [tau1, tau2]
         throw $ TypeUnificationException tau1' tau2' msg
@@ -2633,6 +2719,12 @@ instance FromZ Z.Type Type where
         (n, _) <- lookupVar v >>= checkArrT
         return n
 
+    fromZ (Z.UnopT op tau l) =
+        UnopT <$> fromZ op <*> fromZ tau <*> pure l
+
+    fromZ (Z.BinopT op tau1 tau2 l) =
+        BinopT <$> fromZ op <*> fromZ tau1 <*> fromZ tau2 <*> pure l
+
     fromZ (Z.UnknownT l) =
         newMetaTvT NatK l
 
@@ -2683,6 +2775,59 @@ instance FromZ [Z.VarBind] [(Z.Var, Type)] where
                   fromZ vbs
           return $ (v, tau) : vbs'
 
+instance FromZ Z.VectAnn (E.VectAnn Nat) where
+    fromZ Z.AutoVect      = pure E.AutoVect
+    fromZ (Z.Rigid f i j) = E.Rigid f <$> fromZ i <*> fromZ j
+    fromZ (Z.UpTo f i j)  = E.UpTo f <$> fromZ i <*> fromZ j
+
+instance FromZ Z.Unop Unop where
+    fromZ Z.Lnot   = pure E.Lnot
+    fromZ Z.Bnot   = pure E.Bnot
+    fromZ Z.Neg    = pure E.Neg
+    fromZ Z.Abs    = pure E.Abs
+    fromZ Z.Exp    = pure E.Exp
+    fromZ Z.Exp2   = pure E.Exp2
+    fromZ Z.Expm1  = pure E.Expm1
+    fromZ Z.Log    = pure E.Log
+    fromZ Z.Log2   = pure E.Log2
+    fromZ Z.Log1p  = pure E.Log1p
+    fromZ Z.Sqrt   = pure E.Sqrt
+    fromZ Z.Sin    = pure E.Sin
+    fromZ Z.Cos    = pure E.Cos
+    fromZ Z.Tan    = pure E.Tan
+    fromZ Z.Asin   = pure E.Asin
+    fromZ Z.Acos   = pure E.Acos
+    fromZ Z.Atan   = pure E.Atan
+    fromZ Z.Sinh   = pure E.Sinh
+    fromZ Z.Cosh   = pure E.Cosh
+    fromZ Z.Tanh   = pure E.Tanh
+    fromZ Z.Asinh  = pure E.Asinh
+    fromZ Z.Acosh  = pure E.Acosh
+    fromZ Z.Atanh  = pure E.Atanh
+    fromZ Z.Len    = pure E.Len
+
+instance FromZ Z.Binop Binop where
+    fromZ Z.Eq   = pure E.Eq
+    fromZ Z.Ne   = pure E.Ne
+    fromZ Z.Lt   = pure E.Lt
+    fromZ Z.Le   = pure E.Le
+    fromZ Z.Ge   = pure E.Ge
+    fromZ Z.Gt   = pure E.Gt
+    fromZ Z.Land = pure E.Land
+    fromZ Z.Lor  = pure E.Lor
+    fromZ Z.Band = pure E.Band
+    fromZ Z.Bor  = pure E.Bor
+    fromZ Z.Bxor = pure E.Bxor
+    fromZ Z.LshL = pure E.LshL
+    fromZ Z.LshR = pure E.LshR
+    fromZ Z.AshR = pure E.AshR
+    fromZ Z.Add  = pure E.Add
+    fromZ Z.Sub  = pure E.Sub
+    fromZ Z.Mul  = pure E.Mul
+    fromZ Z.Div  = pure E.Div
+    fromZ Z.Rem  = pure E.Rem
+    fromZ Z.Pow  = pure E.Pow
+
 class Trans a b | b -> a where
     trans :: a -> Ti b
 
@@ -2708,7 +2853,7 @@ instance Trans FP E.FP where
     trans = pure
 
 instance Trans Type E.Type where
-    trans tau = compress tau >>= go
+    trans tau0 = compress tau0 >>= go
       where
         go :: Type -> Ti E.Type
         go (UnitT l)          = E.UnitT <$> pure l
@@ -2731,14 +2876,28 @@ instance Trans Type E.Type where
         go (NatT i l) =
             pure $ E.NatT i l
 
+        go (UnopT op tau l) =
+            E.UnopT op <$> trans tau <*> pure l
+
+        go (BinopT op tau1 tau2 l) =
+            E.BinopT op <$> trans tau1 <*> trans tau2 <*> pure l
+
         go (ForallT tvks tau l) =
             E.ForallT <$> mapM trans tvks <*> trans tau <*> pure l
 
         go (TyVarT alpha l) =
             E.TyVarT <$> trans alpha <*> pure l
 
-        go tau =
-            faildoc $ text "Cannot translate" <+> enquote (ppr tau) <+>
+        go tau@C{} =
+            faildoc $ text "Caught trying to translate type" <+> enquote (ppr tau) <+>
+                      text "of kind omega to Core type"
+
+        go tau@T{} =
+            faildoc $ text "Caught trying to translate type" <+> enquote (ppr tau) <+>
+                      text "of kind omega to Core type"
+
+        go tau@MetaT{} =
+            faildoc $ text "Cannot translate type meta variable" <+> enquote (ppr tau) <+>
                       text "to Core type"
 
 instance Trans Type E.Omega where
@@ -2784,7 +2943,7 @@ instance Trans Z.InlineAnn E.InlineAnn where
 instance Trans Z.PipelineAnn E.PipelineAnn where
     trans ann = pure $ (toEnum . fromEnum) ann
 
-instance Trans Z.VectAnn E.VectAnn where
-    trans Z.AutoVect      = pure E.AutoVect
-    trans (Z.Rigid f i j) = pure $ E.Rigid f i j
-    trans (Z.UpTo f i j)  = pure $ E.UpTo f i j
+instance Trans (E.VectAnn Nat) (E.VectAnn E.Nat) where
+    trans E.AutoVect      = pure E.AutoVect
+    trans (E.Rigid f i j) = E.Rigid f <$> trans i <*> trans j
+    trans (E.UpTo f i j)  = E.UpTo f <$> trans i <*> trans j

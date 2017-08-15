@@ -62,6 +62,10 @@ module KZC.Expr.Lint.Monad (
     extendLet,
     extendLetFun,
 
+    simplType,
+
+    evalNat,
+
     typeSize,
     typeSizeInBytes,
 
@@ -89,6 +93,7 @@ import Data.List (foldl')
 import Data.Loc (Located, noLoc)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -98,6 +103,7 @@ import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Platform
 import KZC.Util.Error
+import KZC.Util.Pretty
 import KZC.Util.Summary
 import KZC.Util.Trace
 import KZC.Util.Uniq
@@ -429,19 +435,100 @@ extendLetFun _f tvks vbs tau_ret k =
     inSTScope tau_ret $
     inLocalScope k
 
+-- | Simplify a type
+simplType :: MonadTc m => Type -> m Type
+simplType tau@UnitT{}   = pure tau
+simplType tau@BoolT{}   = pure tau
+simplType tau@IntT{}    = pure tau
+simplType tau@FixT{}    = pure tau
+simplType tau@FloatT{}  = pure tau
+simplType tau@StringT{} = pure tau
+
+simplType (StructT struct taus l) =
+    StructT struct <$> mapM simplType taus <*> pure l
+
+simplType (ArrT tau1 tau2 l) =
+    ArrT <$> simplType tau1 <*> simplType tau2 <*> pure l
+
+simplType (ST omega tau1 tau2 tau3 l) =
+    ST omega <$> simplType tau1 <*> simplType tau2 <*> simplType tau3 <*> pure l
+
+simplType (RefT tau l) =
+    RefT <$> simplType tau <*> pure l
+
+simplType (FunT taus tau l) =
+    FunT <$> mapM simplType taus <*> simplType tau <*> pure l
+
+simplType tau@NatT{} =
+    pure tau
+
+simplType (UnopT op tau0 l) =
+    unop op <$> simplType tau0
+  where
+    unop :: Unop -> Type -> Type
+    unop Neg tau = negate tau
+    unop op  tau = UnopT op tau l
+
+simplType (BinopT op tau1_0 tau2_0 l) =
+    binop op <$> simplType tau1_0 <*> simplType tau2_0
+  where
+    binop :: Binop -> Type -> Type -> Type
+    binop Add tau1 tau2 = tau1 + tau2
+    binop Sub tau1 tau2 = tau1 - tau2
+    binop Mul tau1 tau2 = tau1 * tau2
+    binop Div tau1 tau2 = tau1 `quot` tau2
+    binop op  tau1 tau2 = BinopT op tau1 tau2 l
+
+simplType (ForallT tvks tau l) =
+    ForallT tvks <$> simplType tau <*> pure l
+
+simplType tau@(TyVarT alpha _) =
+    fromMaybe tau <$> maybeLookupTyVarType alpha
+
+-- | Evaluate a type of kind nat.
+evalNat :: forall m . MonadTc m => Type -> m Int
+evalNat (NatT n _) =
+    return n
+
+evalNat (UnopT op tau1 _) = do
+    x <- evalNat tau1
+    unop op x
+  where
+    unop :: Unop -> Int -> m Int
+    unop Neg x = return $ -x
+    unop op  _ = faildoc $ text "Illegal operation on nat:" <+> ppr op
+
+evalNat (BinopT op tau1 tau2 _) = do
+    x <- evalNat tau1
+    y <- evalNat tau2
+    binop op x y
+  where
+    binop :: Binop -> Int -> Int -> m Int
+    binop Add x y = return $ x + y
+    binop Sub x y = return $ x - y
+    binop Mul x y = return $ x * y
+    binop Div x y = return $ x `div` y
+    binop op  _ _ = faildoc $ text "Illegal operation on nats:" <+> ppr op
+
+evalNat (TyVarT alpha _) =
+    lookupTyVarType alpha >>= evalNat
+
+evalNat tau =
+    faildoc $ text "Expected a type of kind nat, but got" <+> enquote (ppr tau)
+
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
   where
     go :: Type -> m Int
-    go UnitT{}                 = pure 0
-    go BoolT{}                 = pure 1
-    go (IntT ip _)             = ipBitSize ip
-    go (FixT qp _)             = pure $ qpBitSize qp
-    go (FloatT fp _)           = pure $ fpBitSize fp
-    go (ArrT (NatT n _) tau _) = (*) <$> pure n <*> go tau
-    go (ST (C tau) _ _ _ _)    = go tau
-    go (RefT tau _)            = go tau
+    go UnitT{}              = pure 0
+    go BoolT{}              = pure 1
+    go (IntT ip _)          = ipBitSize ip
+    go (FixT qp _)          = pure $ qpBitSize qp
+    go (FloatT fp _)        = pure $ fpBitSize fp
+    go (ArrT n tau _)       = (*) <$> evalNat n <*> go tau
+    go (ST (C tau) _ _ _ _) = go tau
+    go (RefT tau _)         = go tau
 
     go (StructT s taus _) = do
         sdef <- lookupStruct s

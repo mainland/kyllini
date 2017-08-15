@@ -372,9 +372,9 @@ cgEmit tau ce klbl k = do
     f tau ce klbl k
 
 cgEmits :: EmitsK l
-cgEmits iota tau ce klbl k = do
+cgEmits nat tau ce klbl k = do
     f <- asks emitsCg
-    f iota tau ce klbl k
+    f nat tau ce klbl k
 
 cgExit :: ExitK l
 cgExit = do

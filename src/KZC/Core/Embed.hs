@@ -214,7 +214,7 @@ takeC tau = do
 takesC :: (IsLabel l, MonadTc m) => Int -> Type -> K l m Exp
 takesC n tau = do
     l <- gensym "takesk"
-    bindC (mkComp [TakesC l n tau s]) (arrKnownT n tau)
+    bindC (mkComp [TakesC l (fromIntegral n) tau s]) (arrKnownT n tau)
   where
     s :: SrcLoc
     s = srclocOf tau

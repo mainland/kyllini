@@ -11,6 +11,7 @@ instance Located Decl where
   locOf (TypeD _ _ _ l) = locOf l
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
+  locOf (LetTypeD _ _ _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetFunExternalD _ _ _ _ l) = locOf l
   locOf (LetCompD _ _ _ _ l) = locOf l
@@ -18,11 +19,13 @@ instance Located Decl where
 instance Located Exp where
   locOf (ConstE _ l) = locOf l
   locOf (VarE _ l) = locOf l
+  locOf (TyVarE _ l) = locOf l
   locOf (UnopE _ _ l) = locOf l
   locOf (BinopE _ _ _ l) = locOf l
   locOf (IfE _ _ _ l) = locOf l
   locOf (LetE _ _ _ _ l) = locOf l
   locOf (LetRefE _ _ _ _ l) = locOf l
+  locOf (LetTypeE _ _ _ l) = locOf l
   locOf (LetDeclE _ _ l) = locOf l
   locOf (CallE _ _ _ l) = locOf l
   locOf (AssignE _ _ l) = locOf l
@@ -74,6 +77,8 @@ instance Located Type where
   locOf (ST _ _ _ l) = locOf l
   locOf (NatT _ l) = locOf l
   locOf (LenT _ l) = locOf l
+  locOf (UnopT _ _ l) = locOf l
+  locOf (BinopT _ _ _ l) = locOf l
   locOf (UnknownT l) = locOf l
   locOf (ForallT _ _ l) = locOf l
   locOf (TyVarT _ l) = locOf l
