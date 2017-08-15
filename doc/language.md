@@ -158,7 +158,7 @@ types.
 
 The `qM_N`, `qN`, `uqM_N`, and `uqN` types are fixed-point types.
 
-Floating-point values are IEEE-754.
+All floating-point values are IEEE-754. The `f32` and `f64` types are equivalent to `float` and `double`, respectively.
 
 ### Fixed-point types
 
@@ -407,4 +407,4 @@ The lenient flavor further differs in the following ways:
  1. The `seq`/`do` distinction is completely eliminated.
 
 The only reason to use the strict flavor of classic dialect is if you are
-developing new code that must compile with the original Ziria compiler.
+developing new code that must be compatible with the original Ziria compiler.
