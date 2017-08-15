@@ -78,6 +78,7 @@ import KZC.Optimize.LutToGen
 import KZC.Optimize.Simplify
 import KZC.Rename
 import KZC.Util.Error
+import KZC.Util.Summary
 
 data CEnv = CEnv
     { cStart :: Integer
@@ -151,7 +152,7 @@ compileRecursive [[modinfo]] = do
       compileExprProgram (modSourcePath modinfo) (E.Program [] decls)
 
 compileRecursive ([modinfo] : sccs) = do
-    liftIO $ putDocLn $ text "Loading:" <+> dquotes (ppr (modSourcePath modinfo))
+    liftIO $ putDocLn $ text "Importing:" <+> summary modinfo
     loadDependencies (modSourcePath modinfo) $
         compileRecursive sccs
 
