@@ -167,7 +167,7 @@ SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
 .PHONY : clean
 clean : clean-tests clean-runtime
 	$(_QUIET)cabal clean
-	$(_QUIET)rm -rf kzc obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
+	$(_QUIET)rm -rf kzc kzc.prof obj $(patsubst %,$(SRCDIR)%,$(GENERATED)) libkz/src/*.o
 	$(_QUIET)rm -f TAGS
 
 .PHONY : clean-runtime
