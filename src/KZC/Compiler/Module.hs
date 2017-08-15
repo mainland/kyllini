@@ -29,8 +29,10 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Symbol
-import System.Directory
-import System.FilePath
+import System.Directory (doesFileExist)
+import System.FilePath (FilePath,
+                        addExtension,
+                        joinPath)
 import Text.PrettyPrint.Mainland
 
 import Data.Digraph
