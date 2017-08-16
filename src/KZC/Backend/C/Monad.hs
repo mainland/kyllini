@@ -144,6 +144,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Backend.C.CExp
 import KZC.Backend.C.Code

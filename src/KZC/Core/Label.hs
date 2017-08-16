@@ -23,6 +23,7 @@ import Data.String (IsString(..))
 import Data.Symbol
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Core.Syntax
 import KZC.Label

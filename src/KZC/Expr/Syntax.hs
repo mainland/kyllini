@@ -101,6 +101,7 @@ import Data.Symbol
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Name
 import KZC.Platform

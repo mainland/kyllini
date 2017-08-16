@@ -20,6 +20,7 @@ import Data.Loc
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Globals
 import KZC.Util.Uniq

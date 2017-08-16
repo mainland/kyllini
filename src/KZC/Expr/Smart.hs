@@ -114,6 +114,7 @@ import Data.Loc
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Expr.Syntax
 import KZC.Name

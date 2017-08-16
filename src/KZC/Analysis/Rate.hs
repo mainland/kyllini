@@ -37,6 +37,7 @@ import Control.Monad.State (MonadState(..),
                             modify)
 import Data.Maybe (fromJust)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
 import KZC.Core.Lint

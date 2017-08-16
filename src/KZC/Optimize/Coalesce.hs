@@ -33,6 +33,7 @@ import Data.Function (on)
 import Data.List (sort, sortBy)
 import Data.Maybe (isNothing)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Rate
 import KZC.Config

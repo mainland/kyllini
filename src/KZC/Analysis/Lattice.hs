@@ -35,6 +35,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
+import Text.PrettyPrint.Mainland.Class
 
 infix 4 <=
 

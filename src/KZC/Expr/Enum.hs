@@ -29,6 +29,7 @@ import Data.Word (Word32,
                   Word64)
 import GHC.Float (float2Double)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Expr.Syntax
 import KZC.Expr.Lint

@@ -16,6 +16,7 @@ import Control.Monad.Exception
 import Data.Loc
 import Data.Typeable (Typeable)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 data LexerException = LexerException Pos Doc
   deriving (Typeable)

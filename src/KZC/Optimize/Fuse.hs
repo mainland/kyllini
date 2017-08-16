@@ -47,6 +47,7 @@ import qualified Data.Set as Set
 import Data.String (IsString(..))
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Rate
 import KZC.Config

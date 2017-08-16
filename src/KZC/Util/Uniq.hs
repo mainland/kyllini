@@ -30,7 +30,7 @@ import Data.Loc (Located,
                  noLoc,
                  srclocOf)
 import qualified Language.C.Syntax as C
-import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
 

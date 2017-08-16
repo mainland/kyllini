@@ -20,6 +20,7 @@ import Control.Monad.Exception (MonadException(..),
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Text.PrettyPrint.Mainland hiding (width)
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Lut (LUTInfo(..),
                          lutInfo,

@@ -46,6 +46,7 @@ import qualified Data.Vector.Fusion.Bundle.Size as B
 import qualified Data.Vector.Generic.Mutable as MV
 import Data.Vector.Mutable (MVector)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
 import KZC.Core.Enum

@@ -78,6 +78,7 @@ import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Check.Path
 import KZC.Core.Smart

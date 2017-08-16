@@ -23,6 +23,7 @@ module Language.Ziria.Parser.Util (
 
 import Data.Loc
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import Language.Ziria.Parser.Monad
 import Language.Ziria.Syntax

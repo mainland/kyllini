@@ -62,6 +62,7 @@ import Data.Loc
 import Data.Monoid
 import Data.String
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Globals
 import KZC.Name

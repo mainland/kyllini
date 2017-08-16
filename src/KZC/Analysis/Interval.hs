@@ -17,6 +17,7 @@ import Prelude hiding ((<=))
 
 import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Lattice
 

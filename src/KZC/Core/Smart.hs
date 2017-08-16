@@ -75,6 +75,7 @@ module KZC.Core.Smart (
 import Data.Loc
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Core.Syntax
 import KZC.Expr.Smart (qualK,

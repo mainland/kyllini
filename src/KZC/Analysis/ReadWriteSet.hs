@@ -40,6 +40,7 @@ import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (empty)
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Interval
 import KZC.Analysis.Lattice

@@ -11,6 +11,7 @@ module KZC.Compiler.Types (
   ) where
 
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Name
 import KZC.Util.Summary

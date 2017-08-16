@@ -55,6 +55,7 @@ import Data.Loc
 import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
 import KZC.Globals

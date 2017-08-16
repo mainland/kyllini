@@ -46,6 +46,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Typeable
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import qualified Language.Ziria.Syntax as Z
 

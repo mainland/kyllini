@@ -13,7 +13,7 @@ module KZC.Label (
 
 import Data.String (IsString(..))
 import qualified Language.C.Quote as C
-import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Util.Uniq
 import KZC.Vars

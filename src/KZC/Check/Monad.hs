@@ -79,6 +79,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import qualified Language.Ziria.Syntax as Z
 

@@ -37,6 +37,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Occ
 import KZC.Config

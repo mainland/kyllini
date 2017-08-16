@@ -39,6 +39,7 @@ import System.IO (IOMode(..),
                   stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 import Text.Printf (printf)
 
 import Language.Ziria.Parser

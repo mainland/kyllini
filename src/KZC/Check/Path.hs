@@ -20,6 +20,7 @@ module KZC.Check.Path (
 import Control.Monad (unless)
 import Data.List (tails)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 data RefPath v f = RefP v [Path f]
   deriving (Eq, Ord, Show)

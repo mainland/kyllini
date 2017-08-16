@@ -55,6 +55,7 @@ import qualified Data.Set as Set
 import Data.Symbol
 import qualified Data.Text.Lazy as T
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import Language.Ziria.Parser.Alex
 import Language.Ziria.Parser.Tokens

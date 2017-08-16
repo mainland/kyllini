@@ -36,6 +36,7 @@ import Data.Maybe (catMaybes,
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Analysis.Interval (IsInterval(..))
 import KZC.Analysis.Lattice (bot)

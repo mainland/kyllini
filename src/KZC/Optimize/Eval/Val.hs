@@ -80,6 +80,7 @@ import Data.Word (Word32,
 import GHC.Float (double2Float,
                   float2Double)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Core.Label
 import KZC.Core.Lint

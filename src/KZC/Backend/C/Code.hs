@@ -22,6 +22,7 @@ import Data.Sequence (Seq,
 import Language.C.Pretty ()
 import qualified Language.C.Syntax as C
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Backend.C.Util
 import KZC.Quote.C

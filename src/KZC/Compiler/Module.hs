@@ -34,6 +34,7 @@ import System.FilePath (FilePath,
                         addExtension,
                         joinPath)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import Data.Digraph
 import KZC.Compiler.Types

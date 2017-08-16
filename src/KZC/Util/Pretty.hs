@@ -39,6 +39,7 @@ module KZC.Util.Pretty (
   ) where
 
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 -- %nonassoc IF
 -- %left ','

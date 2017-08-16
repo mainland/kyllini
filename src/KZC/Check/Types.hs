@@ -65,6 +65,7 @@ import Data.String
 import Data.Symbol
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import qualified Language.Ziria.Syntax as Z
 

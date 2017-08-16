@@ -19,6 +19,7 @@ module KZC.Traits (
   ) where
 
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Util.EnumSet (Set)
 import qualified KZC.Util.EnumSet as Set

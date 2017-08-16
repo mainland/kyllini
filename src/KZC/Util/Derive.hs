@@ -21,6 +21,7 @@ import Data.Generics
 import Data.Loc
 import Data.Symbol
 import Text.PrettyPrint.Mainland as PP
+import Text.PrettyPrint.Mainland.Class as PP
 
 allLetters :: [Doc]
 allLetters = [char c | c <- ['a'..'z']]

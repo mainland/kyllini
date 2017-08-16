@@ -26,6 +26,7 @@ import Data.Monoid
 import Data.Ratio
 import Data.Symbol
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import Language.Ziria.Parser.Lexer
 import Language.Ziria.Parser.Monad

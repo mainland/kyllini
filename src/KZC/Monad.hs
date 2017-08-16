@@ -28,6 +28,7 @@ import Data.IORef
 import Data.Map (Map)
 import System.IO (stderr)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Check.State (TiEnv,
                         TiState,

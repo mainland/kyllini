@@ -32,6 +32,7 @@ import qualified Data.Vector as V
 import qualified Language.C.Quote as C
 import Numeric (showHex)
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Backend.C.CExp
 import KZC.Backend.C.Code

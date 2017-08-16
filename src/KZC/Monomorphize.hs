@@ -36,6 +36,7 @@ import qualified Data.Map as Map
 import Data.Sequence (Seq,
                       (|>))
 import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
 import KZC.Core.Lint
