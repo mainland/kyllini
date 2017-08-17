@@ -576,6 +576,9 @@ coalesce mode bc a b comp =
     go _ =
         compC comp
 
+-- | Create a coercion that buffers on the left. If we are the consumer half of
+-- a par, take the entire buffer as an array using @take@ rather than taking it
+-- an element at a time using @takes@.
 coleft :: forall l m . (IsLabel l, MonadTc m)
        => Mode
        -> Int       -- ^ Number of elements to take per round
@@ -592,6 +595,8 @@ coleft mode n tau c_right =
           x <- takeC tau
           emitC x
 
+    -- We are the consumer half of a par, so take an entire array of values at
+    -- once.
     c_left Consumer n tau =
         repeatC $ do
           xs <- takeC (coArrT n tau)
@@ -603,6 +608,9 @@ coleft mode n tau c_right =
           xs <- takesC n tau
           emitsC xs
 
+-- | Create a coercion that buffers on the right. If we are the producer half of
+-- a par, emit the entire buffer using @emit@ rather than emitting it an element
+-- at a time using @emits@.
 coright :: forall l m . (IsLabel l, MonadTc m)
         => Mode
         -> Int       -- ^ Number of elements to emit per round
@@ -619,6 +627,8 @@ coright mode n tau c_left =
           x <- takeC tau
           emitC x
 
+    -- We are the producer half of a par, so emit an entire array of values at
+    -- once.
     c_right Producer n tau =
         repeatC $ do
           xs <- takesC n tau
@@ -706,10 +716,10 @@ coalesceComp comp = do
                 }
 
     -- | Implement the C rules.
-    crules :: Int
-           -> Int
-           -> Int
-           -> Int
+    crules :: Int -- ^ Size of input type in bytes
+           -> Int -- ^ Size of output type in bytes
+           -> Int -- ^ Maximum number of elements we can take
+           -> Int -- ^ Maximum number of elements we can emit
            -> Co m BC
     crules asz bsz max_left max_right = do
         (m_left, m_right) <- compInOutM comp
@@ -737,10 +747,10 @@ coalesceComp comp = do
             blockingPred (B i _) = i <= maxBlock
 
     -- | Implement the B rules
-    brules :: Int
-           -> Int
-           -> Maybe M
-           -> Maybe M
+    brules :: Int     -- ^ Size of input type in bytes
+           -> Int     -- ^ Size of output type in bytes
+           -> Maybe M -- ^ Left computation context
+           -> Maybe M -- ^ Right computation context
            -> Co m BC
     brules asz bsz ctx_left ctx_right = do
         guard (isTransformer comp)
