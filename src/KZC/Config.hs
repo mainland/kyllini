@@ -177,12 +177,20 @@ data Config = Config
     , verbLevel  :: !Int
     , maxErrCtx  :: !Int
     , maxSimpl   :: !Int
-    , maxLUT     :: !Int
+
+    -- | Maximum LUT size
+    , maxLUT :: !Int
+    -- | Log-base-2 of maximum LUT size
     , maxLUTLog2 :: !Int
+
+    -- | Minimum number of operations necessary to consider a LUT for an
+    -- expression
     , minLUTOps  :: !Int
 
+    -- | Maximum ratio of new code size to old code size.
     , maxFusionBlowup :: !Double
 
+    -- | Minimum number of bytes before we switch to memcpy
     , minMemcpyBytes :: !Int
 
     , dynFlags    :: !(FlagSet DynFlag)
@@ -208,10 +216,11 @@ instance Monoid Config where
         , verbLevel  = 0
         , maxErrCtx  = 1
         , maxSimpl   = 10
+
         , maxLUT     = 256*1024 -- Default maximum size for LUT is 256K bytes
         , maxLUTLog2 = 8 + 10  -- Default maximum size for LUT log_2 is 18
-        , minLUTOps  = 5 -- Minimum number of operations necessary to consider a
-                         -- LUT for an expression
+
+        , minLUTOps  = 5
 
         -- Maximum ratio of new code size to old code size. Why 3? Because
         -- transforming an expression to work over segments of an array requires
@@ -220,7 +229,7 @@ instance Monoid Config where
         -- operations.
         , maxFusionBlowup = 3.0
 
-        -- Minimum number of bytes before we switch to memcpy
+        -- Always use memcpy
         , minMemcpyBytes = 0
 
         , dynFlags    = mempty
