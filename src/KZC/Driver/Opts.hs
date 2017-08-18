@@ -278,7 +278,7 @@ fOpts =
     , FlagOption "max-lut"                   (ReqArg maxLUTOpt "INT")             "set maximum LUT size in bytes"
     , FlagOption "min-lut-ops"               (ReqArg minLUTOpsOpt "N")            "set minimum operation count to consider a LUT"
     , FlagOption "max-fusion-blowup"         (ReqArg maxFusionBlowupOpt "FLOAT")  "set maximum allowed fusion blowup"
-    , FlagOption "min-memcpy-bytes"          (ReqArg minMemcpyBytesOpt "INT")     "set minmum number of bytes before using memcpy"
+    , FlagOption "min-memcpy-bytes"          (ReqArg minMemcpyBytesOpt "INT")     "set minimum number of bytes before using memcpy"
     , FlagOption "simpl"                     (NoArg simplOpt)                     "run the simplifier"
     , FlagOption "inline"                    (NoArg inlineOpt)                    "inline when simplifying"
     ]
