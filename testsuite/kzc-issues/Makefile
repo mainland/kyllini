@@ -40,6 +40,9 @@ issue09.c : issue09.wpl $(KZC)
 issue16.c : issue16.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse $< -o $@
 
+issue44.c : issue44.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -I../../examples/wifi -O3 -fcoalesce-top $< -o $@
+
 issue48.c : issue48.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -fpipeline $< -o $@
 
