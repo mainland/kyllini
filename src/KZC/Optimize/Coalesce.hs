@@ -81,8 +81,8 @@ observeAll m = Co $ ReaderT $ \env ->
     lift $ runSEFKTM Nothing (runReaderT (unCo m) env)
 
 withLeftCtx :: MonadTc m => Maybe (Rate M) -> Co m a -> Co m a
-withLeftCtx Nothing m =
-    local (\env -> env { leftCtx = CompR (Z 1) (Z 1) }) m
+withLeftCtx Nothing _ =
+    errordoc $ text "withLeftCtx: unknown computation rate"
 
 withLeftCtx (Just r2) m = do
     r1 <- asks leftCtx
@@ -90,8 +90,8 @@ withLeftCtx (Just r2) m = do
     local (\env -> env { leftCtx = r }) m
 
 withRightCtx :: MonadTc m => Maybe (Rate M) -> Co m a -> Co m a
-withRightCtx Nothing m =
-    local (\env -> env { rightCtx = CompR (Z 1) (Z 1) }) m
+withRightCtx Nothing _ =
+    errordoc $ text "withRightCtx: unknown computation rate"
 
 withRightCtx (Just r1) m = do
     r2 <- asks rightCtx
