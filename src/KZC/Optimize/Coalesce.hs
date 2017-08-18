@@ -14,20 +14,14 @@ module KZC.Optimize.Coalesce where
 
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
-                      guard,
-                      when)
+                      guard)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.Logic (MonadLogic(..),
                             ifte)
-import Control.Monad.IO.Class (MonadIO(..),
-                               liftIO)
+import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
-import Control.Monad.State (MonadState(..),
-                            StateT(..),
-                            evalStateT,
-                            modify)
 import Control.Monad.Trans (lift)
 import Data.Function (on)
 import Data.List (sort, sortBy)
@@ -61,20 +55,7 @@ defaultCoEnv = CoEnv simpleTrans simpleTrans
     simpleTrans :: Rate M
     simpleTrans = TransR (N 1) (N 1)
 
-data CoStats = CoStats
-    { upCoalesced :: !Int }
-
-instance Monoid CoStats where
-    mempty = CoStats 0
-
-    x `mappend` y = CoStats
-        { upCoalesced = upCoalesced x + upCoalesced y }
-
-instance Pretty CoStats where
-    ppr stats =
-        text "Up-coalesced:" <+> ppr (upCoalesced stats)
-
-newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
+newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT m) a }
   deriving (Functor, Applicative, Monad,
             Alternative, MonadPlus,
             MonadIO,
@@ -91,17 +72,11 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
 runCo :: forall m a . MonadErr m
       => Co m a
       -> m a
-runCo m = evalStateT (runSEFKT (runReaderT (unCo m) defaultCoEnv)) mempty
+runCo m = runSEFKT (runReaderT (unCo m) defaultCoEnv)
 
 observeAll :: forall m a . MonadErr m => Co m a -> Co m [a]
 observeAll m = Co $ ReaderT $ \env ->
     lift $ runSEFKTM Nothing (runReaderT (unCo m) env)
-
-getStats :: MonadTc m => Co m CoStats
-getStats = Co $ lift $ lift get
-
-modifyStats :: MonadTc m => (CoStats -> CoStats) -> Co m ()
-modifyStats = Co . lift . lift . modify
 
 withLeftCtx :: MonadTc m => Maybe (Rate M) -> Co m a -> Co m a
 withLeftCtx Nothing m =
@@ -137,17 +112,7 @@ askRightCtx = do
 
 coalesceProgram :: forall l m . (IsLabel l, MonadIO m, MonadTc m)
                 => Program l -> m (Program l)
-coalesceProgram = runCo . coalesceProg
-  where
-    coalesceProg :: Program l -> Co m (Program l)
-    coalesceProg prog = do
-        prog'     <- programT prog
-        dumpStats <- asksConfig (testDynFlag ShowFusionStats)
-        when dumpStats $ do
-            stats  <- getStats
-            liftIO $ putDocLn $ nest 2 $
-                text "Coalescing statistics:" </> ppr stats
-        return prog'
+coalesceProgram = runCo . programT
 
 {- Note [Pipeline Coalescing]
 
