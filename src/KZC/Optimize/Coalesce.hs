@@ -242,10 +242,6 @@ allows us to block input/output differently, thus the restriction that
 $\gcd(n_2,n_2') = 1$ in the B-Both rule.
 -}
 
--- | Maximum size of input/output blocks, in bits
-mAX_BLOCK_SIZE :: Int
-mAX_BLOCK_SIZE = 512
-
 -- | Maximum size of input/output batches, in elements.
 mAX_BATCH_SIZE :: Int
 mAX_BATCH_SIZE = 288
@@ -617,14 +613,19 @@ coalesceComp comp = do
     traceCoalesce $ text "Left context:" <+> ppr ctx_left
     traceCoalesce $ text "Right context:" <+> ppr ctx_right
     traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn comp)
-    asz   <- typeSize a
-    bsz   <- typeSize b
-    cs1   <- observeAll $ do
-             guard (not (isBitArrT a) && not (isBitArrT b))
-             crules asz asz (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
-    cs2   <- observeAll $ do
-             guard (not (isBitArrT a) && not (isBitArrT b))
-             brules asz bsz ctx_left ctx_right
+    asz        <- typeSize a
+    bsz        <- typeSize b
+    maxBufSize <- asksConfig maxCoalesceBuffer
+    let -- Maximum number of input elements to buffer
+        maxAs  =  8*maxBufSize `quot` asz
+        -- Maximum number of output elements to buffer
+        maxBs  =  8*maxBufSize `quot` bsz
+    cs1        <- observeAll $ do
+                  guard (not (isBitArrT a) && not (isBitArrT b))
+                  crules asz asz maxAs maxBs
+    cs2        <- observeAll $ do
+                  guard (not (isBitArrT a) && not (isBitArrT b))
+                  brules asz bsz ctx_left ctx_right
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
       text "C-rules:" </> stack (map ppr (sort cs1))
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
