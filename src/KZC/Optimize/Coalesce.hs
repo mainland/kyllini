@@ -10,7 +10,9 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Optimize.Coalesce where
+module KZC.Optimize.Coalesce (
+    coalesceProgram
+  ) where
 
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
