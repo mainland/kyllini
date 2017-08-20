@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      : KZC.Expr.Syntax
@@ -313,9 +314,9 @@ data GenInterval a -- | The interval @e1..e2@, /inclusive/ of @e2@.
                    | StartLen a a !SrcLoc
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
-data Stm d v e = ReturnS InlineAnn e !SrcLoc
-               | LetS d !SrcLoc
-               | BindS (Maybe v) Type e !SrcLoc
+data Stm d v e = LetS d !SrcLoc
+               | ReturnS InlineAnn e !SrcLoc
+               | BindS (Maybe v) Type !SrcLoc
                | ExpS e !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
@@ -853,8 +854,8 @@ instance LiftedBits Const (Maybe Const) where
 expToStms :: Exp -> [Stm Decl Var Exp]
 expToStms (LetE decl e l)               = LetS decl l : expToStms e
 expToStms (ReturnE ann e l)             = [ReturnS ann e l]
-expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
-expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
+expToStms (BindE WildV tau e1 e2 l)     = ExpS e1 (srclocOf e1) : BindS Nothing tau l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = ExpS e1 (srclocOf e1) : BindS (Just v) tau l : expToStms e2
 expToStms e                             = [ExpS e (srclocOf e)]
 
 {------------------------------------------------------------------------------
@@ -1123,25 +1124,68 @@ instance Pretty PipelineAnn where
     ppr _              = text ">>>"
 
 instance (Pretty d, Pretty v, Pretty e) => Pretty (Stm d v e) where
+    pprPrec _ (LetS d _) =
+        ppr d
+
     pprPrec p (ReturnS ann e _) =
         parensIf (p > appPrec) $
         ppr ann <+> text "return" <+> ppr e
 
-    pprPrec _ (LetS d _) =
-        ppr d
+    pprPrec _ (BindS Nothing _ _) =
+        text "_ <- _"
 
-    pprPrec _ (BindS Nothing _ e _) =
-        ppr e
-
-    pprPrec _ (BindS (Just v) tau e _) =
+    pprPrec _ (BindS (Just v) tau _) =
         parens (ppr v <+> colon <+> ppr tau) <+>
-        text "<-" <+> align (ppr e)
+        text "<- _"
 
     pprPrec p (ExpS e _) =
         pprPrec p e
 
     pprList stms =
-        embrace (map ppr stms)
+        pprStms stms
+
+pprStms :: forall d v e . (Pretty d, Pretty v, Pretty e) => [Stm d v e] -> Doc
+pprStms stms = embrace (go stms)
+  where
+    go :: [Stm d v e] -> [Doc]
+    go [] =
+        []
+
+    go (LetS decl _ : k) =
+        pprBind k $
+        ppr decl
+
+    go (ExpS e _ : k) =
+        pprBind k $
+        ppr e
+
+    go (ReturnS ann e _ : k) =
+        pprBind k $
+        ppr ann <+> text "return" <+> ppr e
+
+    go (BindS Nothing _ _  : k) =
+        text "_ <- _" : go k
+
+    go (BindS (Just v) tau _ : k) =
+        bindDoc : go k
+      where
+        bindDoc :: Doc
+        bindDoc = parens (ppr v <+> colon <+> ppr tau) <+>
+                  text "<- _"
+
+    pprBind :: [Stm d v e] -> Doc -> [Doc]
+    pprBind (BindS Nothing _ _  : k) step =
+        step : go k
+
+    pprBind (BindS (Just v) tau _ : k) step =
+        step' : go k
+      where
+        step' :: Doc
+        step' = parens (ppr v <+> colon <+> ppr tau) <+>
+                text "<-" <+> align step
+
+    pprBind k step =
+        step : go k
 
 instance Pretty UnrollAnn where
     ppr Unroll     = text "unroll"
