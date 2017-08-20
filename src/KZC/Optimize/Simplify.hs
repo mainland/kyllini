@@ -702,22 +702,22 @@ simplSteps (LiftC l1 e1 s1 : BindC l2 WildV _tau s2 : steps)
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
     tau'  <- simplType tau
-    go step' tau' wv
+    go step' wv tau'
   where
-    go :: [Step l] -> Type -> WildVar -> SimplM l m [Step l]
+    go :: [Step l] -> WildVar -> Type -> SimplM l m [Step l]
     --
     -- Drop an unbound return, e.g.,
     --
     --   { return e1; ... } -> { ... }
     --
-    go [ReturnC {}] _tau' WildV = do
+    go [ReturnC {}] WildV _tau' = do
         rewrite
         simplSteps steps
 
     --
     -- Default computation sequencing
     --
-    go [step'] tau' WildV = do
+    go [step'] WildV tau' = do
         steps' <- simplSteps steps
         simplLift $ step' : BindC l WildV tau' s : steps'
 
@@ -725,16 +725,16 @@ simplSteps (step : BindC l wv tau s : steps) = do
     -- Drop unused bindings. The step whose result is bound might have an
     -- effect, so we can't just throw it away.
     --
-    go [step'] tau' (TameV v) | bOccInfo v == Just Dead = do
+    go [step'] (TameV v) tau' | bOccInfo v == Just Dead = do
         dropBinding v
-        go [step'] tau' WildV
+        go [step'] WildV tau'
 
     --
     -- Convert a bind-return into a let, e.g.,
     --
     --   { x <- return e1; ... } -> { let x = e1; ... }
     --
-    go [ReturnC l e s] tau' (TameV v) =
+    go [ReturnC l e s] (TameV v) tau'  =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', BoundToExp Nothing Nested e)] $ do
@@ -745,7 +745,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
     --
     -- Default computation bind
     --
-    go [step'] tau' (TameV v) =
+    go [step'] (TameV v) tau' =
         withUniqBoundVar v $ \v' ->
         extendVars [(bVar v', tau)] $
         extendDefinitions [(bVar v', Unknown)] $ do
@@ -755,7 +755,7 @@ simplSteps (step : BindC l wv tau s : steps) = do
     --
     -- Can't happen---simplifying a step has to yield one or more steps
     --
-    go [] _tau' _wv =
+    go [] _wv _tau' =
         faildoc $ text "simplSteps: can't happen"
 
     --
@@ -763,8 +763,8 @@ simplSteps (step : BindC l wv tau s : steps) = do
     -- resulting sequence. A single step can simplify to many steps if we inline
     -- a computation.
     --
-    go step' tau' wv =
-        (++) <$> pure hd <*> go [tl] tau' wv >>= simplLift
+    go step' wv tau' =
+        (++) <$> pure hd <*> go [tl] wv tau' >>= simplLift
       where
         hd :: [Step l]
         tl :: Step l
