@@ -704,9 +704,9 @@ simplSteps (step : BindC l wv tau s : steps) = do
     --
     -- Default computation sequencing
     --
-    go [step'] WildV tau' = do
+    go [step'] WildV _tau' = do
         steps' <- simplSteps steps
-        simplLift $ step' : BindC l WildV tau' s : steps'
+        simplLift $ step' : steps'
 
     --
     -- Drop unused bindings. The step whose result is bound might have an
