@@ -686,19 +686,6 @@ simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 e2 s3 : steps)
     rewrite
     simplSteps (LiftC l1 e1 s1 : BindC l2 (TameV v) tau s2 : EmitC l3 rhs s3 : steps)
 
---
--- Drop dead dereferences
---
---   { lift { y := e; !y }; ... }
---   ->
---   { lift { y := e }; ... }
---
---
-simplSteps (LiftC l1 e1 s1 : BindC l2 WildV _tau s2 : steps)
-  | Just (x, rhs) <- unAssignBangE e1 = do
-    rewrite
-    simplSteps (LiftC l1 (assignE (varE x) rhs) s1 : BindC l2 WildV unitT s2 : steps)
-
 simplSteps (step : BindC l wv tau s : steps) = do
     step' <- simplStep step
     tau'  <- simplType tau
