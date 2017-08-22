@@ -55,6 +55,9 @@ module KZC.Core.Smart (
     genG,
     genrefG,
 
+    expS,
+    returnS,
+
     (.:=.),
     (.>>.),
 
@@ -318,6 +321,12 @@ genG v tau c = GenG v tau c (v `srcspan` tau)
 
 genrefG :: Var -> Type -> Const -> Gen
 genrefG v tau c = GenRefG v tau c (v `srcspan` tau)
+
+expS :: Exp -> Stm LocalDecl BoundVar Exp
+expS e = ExpS e (srclocOf e)
+
+returnS :: Exp -> Stm LocalDecl BoundVar Exp
+returnS e = ReturnS AutoInline e (srclocOf e)
 
 infixr 1 .:=.
 
