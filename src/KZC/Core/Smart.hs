@@ -348,7 +348,7 @@ isArrE _            = False
 sliceLen :: Num a => Maybe Type -> a
 sliceLen Nothing             = 1
 sliceLen (Just (NatT len _)) = fromInteger (toInteger len)
-sliceLen (Just nat)          = errordoc $ text  "unknown slice length:" <+> ppr nat
+sliceLen (Just nat)          = errordoc $ text "unknown slice length:" <+> ppr nat
 
 -- | Tag a computation as an identity with rate n.
 tagIdentityC :: Int -> Comp l -> Comp l
