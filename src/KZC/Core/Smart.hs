@@ -47,11 +47,11 @@ module KZC.Core.Smart (
     returnE,
     bindE,
     seqE,
-    genE,
 
     startLenGenInt,
     toStartLenGenInt,
 
+    genE,
     genG,
     genrefG,
 
