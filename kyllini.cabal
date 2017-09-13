@@ -101,6 +101,7 @@ library
     KZC.Traits
     KZC.Util.Derive
     KZC.Util.EnumSet
+    KZC.Util.Env
     KZC.Util.Error
     KZC.Util.Logic
     KZC.Util.Pretty
