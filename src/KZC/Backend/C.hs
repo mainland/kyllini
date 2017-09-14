@@ -3275,7 +3275,7 @@ cname n@Name{nameSort = Internal (Uniq u)} = namedString n ++ "_" ++ show u
 
 -- | Return the C identifier corresponding to a struct.
 cstruct :: Struct -> SrcLoc -> C.Id
-cstruct s = C.Id (zencode ((displayS . renderCompact . ppr) s "") ++ "_t")
+cstruct (Struct n) = C.Id (zencode (cname n) ++ "_t")
 
 -- | Construct a prettier if statement
 cif :: C.ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm
