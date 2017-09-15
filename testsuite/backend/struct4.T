@@ -1,0 +1,1 @@
+test("struct4")

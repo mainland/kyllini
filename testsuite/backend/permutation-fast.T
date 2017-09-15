@@ -1,0 +1,1 @@
+test("permutation-fast")
