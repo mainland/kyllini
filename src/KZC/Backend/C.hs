@@ -613,8 +613,9 @@ cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeL
     cv <- cgBinder (bVar v) tau False
     extendVars [(bVar v, tau)] $
       extendVarCExps [(bVar v, cv)] $ do
-      e'     <- lutGenToExp (bVar v) e gs
-      citems <- inLocalScope $ inNewBlock_ $ cgExp e' $ multishot cgVoid
+      citems <- savingStats $ do
+                e' <- lutGenToExp (bVar v) e gs
+                inLocalScope $ inNewBlock_ $ cgExp e' $ multishot cgVoid
       appendStm [cstm|{ $items:citems }|]
       k
 
@@ -1202,6 +1203,7 @@ cgExp e k =
                 useCId cv
                 (ce_start, ce_test) <- cgGenInterval gint
                 citems              <- inNewBlock_ $ cgExpVoid e_body
+                incForLoops
                 appendStm $ rl l [cstm|for ($id:cv = $ce_start;
                                             $(ce_test cv);
                                             $id:cv++) {
@@ -2224,6 +2226,7 @@ cgComp comp klbl = cgSteps (unComp comp)
                                        l_inner <- gensym "inner_fork"
                                        cgCompVoid c_body l_inner
                                        cgLabel l_inner
+                incForLoops
                 appendStm $
                   rl sloc [cstm|for ($id:cv = $ce_start;
                                      $(ce_test cv);
@@ -2245,22 +2248,26 @@ cgComp comp klbl = cgSteps (unComp comp)
         faildoc $ text "Cannot compile bind computation step."
 
     cgStep (TakeC l tau _) klbl k =
-        cgWithLabel l $
+        cgWithLabel l $ do
+        incTakes
         cgTake tau klbl $ runKont k
 
     cgStep (TakesC l n tau _) klbl k =
         cgWithLabel l $ do
+        incTakes
         i <- evalNat n
         cgTakes i tau klbl $ runKont k
 
     cgStep (EmitC l e _) klbl k =
         cgWithLabel l $ do
+        incEmits
         tau <- inferExp e
         ce  <- cgExpOneshot e
         cgEmit tau ce klbl $ runKont k CVoid
 
     cgStep (EmitsC l e _) klbl k =
         cgWithLabel l $ do
+        incEmits
         (n, tau) <- inferExp e >>= checkArrT
         ce       <- cgExpOneshot e
         cgEmits n tau ce klbl $ runKont k CVoid
@@ -2278,6 +2285,7 @@ cgComp comp klbl = cgSteps (unComp comp)
         dflags  <- askConfig
         tau_res <- resultType <$> inferStep step
         free    <- isFreeRunning
+        incPars
         if testDynFlag PipelineAll dflags
           then cgParMultiThreaded ForkProducer free tau_res b left right klbl k
           else if free && shouldPipeline dflags ann
@@ -3209,6 +3217,7 @@ cgFor cfrom cto k = do
         useCExp cto
         cbody <- inNewBlock_ $
                  k (CExp [cexp|$id:ci|])
+        incForLoops
         appendStm [cstm|for ($id:ci = $cfrom; $id:ci < $cto; ++$id:ci) {
                           $items:cbody
                         }|]
