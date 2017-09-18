@@ -38,6 +38,7 @@ options =
     , Option ['f']      []          (ReqArg parseFFlags "")              "Specify compiler options"
     , Option ['d']      []          (ReqArg parseDFlags "")              "Specify debug flags"
     , Option ['W']      []          (ReqArg parseWFlags "")              "Specify warnings"
+    , Option ['s']      []          (NoArg setStats)                     "Display statistics"
     ]
   where
     setModeM :: ModeFlag -> Config -> m Config
@@ -121,6 +122,9 @@ options =
 
         setOptIntLevel _ conf =
             return conf
+
+    setStats :: Config -> m Config
+    setStats = return . setDynFlags [ShowCgStats, ShowFusionStats]
 
     outOpt :: String -> Config -> m Config
     outOpt path fs = return fs { output = Just path }
