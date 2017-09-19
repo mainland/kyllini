@@ -89,6 +89,13 @@ def skip_way(way_to_skip):
 
     return f
 
+def only_way(the_way):
+    def f(test, way):
+        if way != the_way:
+            test.skip = True
+
+    return f
+
 def flags(flags):
     """Hard-code KZC flags"""
     def f(test, way):
@@ -112,6 +119,13 @@ def binary(test, way):
 def skip_compile(test, way):
     """Skip compilation"""
     test.skip_compile = True
+
+def wantStats(stats):
+    """Check statistics"""
+    def f(test, way):
+        test.stats = stats
+
+    return f
 
 #
 # Helper functions
@@ -148,6 +162,29 @@ def cleanup(test):
 
     return True
 
+def parseStats(data):
+    stats = {}
+
+    for m in re.finditer(r'^\s+(.*): ([\d\.]*)$', data, re.M):
+        stats[m.group(1)] = float(m.group(2))
+
+    return stats
+
+def checkStats(test, out):
+    stats = parseStats(out)
+
+    for (k, v) in test.stats.iteritems():
+        if callable(v):
+            if not v(stats[k]):
+                recordTestDiff(test, "Unexpected vlaye of %d for statistic %s" % (stats[k], k))
+                return False
+        else:
+            if stats[k] != v:
+                recordTestDiff(test, "Expected statistic %s value of %d but got %d" % (k, v, stats[k]))
+                return False
+
+    return True
+
 #
 # Test functions
 #
@@ -156,6 +193,18 @@ def compile(test, way, args):
 
     cmd = [config.kzc] + test.args + way_flags(way) + args + [source]
     execute_and_compare_stdouterr(test, cmd)
+
+def compile_stats(test, way, args):
+    source = find_source(test)
+
+    cPath =  os.path.splitext(source)[0] + '.c'
+
+    cmd = [config.kzc] + test.args + way_flags(way) + args + ['-s'] + [source]
+    (out, err) = execute(cmd)
+
+    os.remove(cPath)
+
+    return checkStats(test, out)
 
 def compile_and_make(test, way, args):
     source = find_source(test)
