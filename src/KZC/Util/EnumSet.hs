@@ -43,9 +43,9 @@ import Prelude hiding (null)
 import Data.Bits
 import Data.Data (Data, Typeable)
 import Data.List (foldl')
-import Data.Word (Word32)
+import Data.Word (Word64)
 
-newtype Set a = Set Word32
+newtype Set a = Set Word64
   deriving (Eq, Ord, Data, Typeable)
 
 infixl 9 \\
