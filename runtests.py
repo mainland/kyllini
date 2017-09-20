@@ -25,7 +25,14 @@ WAY_FLAGS = { "normal"          : [],
               "lut"             : ['-fautolut', '-flut'],
               "lut-peval"       : ['-fautolut', '-flut', '-fpeval'],
               "simpl-lut-peval" : ['-fsimpl', '-finline', '-fautolut', '-flut', '-fpeval'],
-              "O3"              : ['-O3']
+              "O3"              : ['-O3'],
+              "perf"            : ['-ftimers',
+                                   '-finline', '-fsimpl', '-fautolut', '-flut', '-ffuse', '-fpeval',
+                                   '-fcoalesce-top', '-fcoalesce',
+                                   '-Wno-unsafe-auto-cast',
+                                   '-dlint',
+                                   '-dprint-uniques',
+                                   '-fno-line-pragmas']
             }
 
 ALL_WAYS = ["normal",
