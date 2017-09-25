@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015-2016
+Copyright (c) 2015-2017
         Drexel University.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@ SUCH DAMAGE.
 #if !defined(KZ_DRIVER_H)
 #define KZ_DRIVER_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -78,6 +79,41 @@ void kz_check_error(int err, const char* loc, const char *format, ...)
 #define kz_zero(x, n) memset(x, '\0', n)
 
 void kz_error(const char*);
+
+/*
+ * See the Intel whitepaper: How to Benchmark Code Execution Times on Intel
+ * IA-32 and IA-64 Instruction Set Architectures
+ */
+
+#if defined(__i386__)
+#define REGS "%eax", "%ebx", "%ecx", "%edx"
+#elif defined(__x86_64__)
+#define REGS "%rax", "%rbx", "%rcx", "%rdx"
+#else
+#error Unknown architecture
+#endif
+
+typedef uint64_t cycles;
+
+static __inline__ cycles kz_cycles_start(void) {
+    unsigned cycles_low, cycles_high;
+    asm volatile ("CPUID\n\t"
+                  "RDTSC\n\t"
+                  "mov %%edx, %0\n\t"
+                  "mov %%eax, %1\n\t": "=r" (cycles_high), "=r" (cycles_low)::
+                  REGS);
+    return ((cycles)cycles_high << 32) | cycles_low;
+}
+
+static __inline__ cycles kz_cycles_end(void) {
+    unsigned cycles_low, cycles_high;
+    asm volatile("RDTSCP\n\t"
+                 "mov %%edx, %0\n\t"
+                 "mov %%eax, %1\n\t"
+                 "CPUID\n\t": "=r" (cycles_high), "=r" (cycles_low)::
+                 REGS);
+    return ((cycles)cycles_high << 32) | cycles_low;
+}
 
 long double kz_get_cpu_time(void);
 long double kz_get_real_time(void);

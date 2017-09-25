@@ -397,20 +397,26 @@ cgTimed m = do
   where
     go :: Config -> Cg l a
     go flags | testDynFlag Timers flags = do
+        cycles_start    :: C.Id <- gensym "cycles_start"
+        cycles_end      :: C.Id <- gensym "cycles_end"
         cpu_time_start  :: C.Id <- gensym "cpu_time_start"
         cpu_time_end    :: C.Id <- gensym "cpu_time_end"
         real_time_start :: C.Id <- gensym "real_time_start"
         real_time_end   :: C.Id <- gensym "real_time_end"
+        appendTopDecl [cdecl|static typename cycles $id:cycles_start, $id:cycles_end;|]
         appendTopDecl [cdecl|static long double $id:cpu_time_start, $id:cpu_time_end;|]
         appendTopDecl [cdecl|static long double $id:real_time_start, $id:real_time_end;|]
         appendStm [cstm|$id:cpu_time_start = kz_get_cpu_time();|]
         appendStm [cstm|$id:real_time_start = kz_get_real_time();|]
+        appendStm [cstm|$id:cycles_start = kz_cycles_start();|]
         x <- m
+        appendStm [cstm|$id:cycles_end = kz_cycles_end();|]
         appendStm [cstm|$id:cpu_time_end = kz_get_cpu_time();|]
         appendStm [cstm|$id:real_time_end = kz_get_real_time();|]
         appendStm [cstm|printf("Time elapsed (usec): %d\n", (int) (($id:cpu_time_end - $id:cpu_time_start) * 1000000));|]
         appendStm [cstm|printf("Elapsed cpu time (sec): %Le\n", $id:cpu_time_end - $id:cpu_time_start);|]
         appendStm [cstm|printf("Elapsed real time (sec): %Le\n", $id:real_time_end - $id:real_time_start);|]
+        appendStm [cstm|printf("Elapsed cycles: %ld\n", $id:cycles_end - $id:cycles_start);|]
         return x
 
     go _flags =
