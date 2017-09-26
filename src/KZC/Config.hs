@@ -55,6 +55,7 @@ module KZC.Config (
     whenVerbLevel
   ) where
 
+import Control.Applicative ((<|>))
 import Control.Monad (when)
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Exception (ExceptionT(..), runExceptionT)
@@ -261,8 +262,8 @@ instance Monoid Config where
         , includePaths = includePaths f1 <> includePaths f2
         , defines      = defines f1 <> defines f2
 
-        , output  = output  f1 <> output f2
-        , dumpDir = dumpDir f1 <> dumpDir f2
+        , output  = output  f2 <|> output f1
+        , dumpDir = dumpDir f2 <|> dumpDir f1
 
         , fuel = fuel f1 + fuel f2
         }
