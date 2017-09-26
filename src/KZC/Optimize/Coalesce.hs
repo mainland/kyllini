@@ -146,7 +146,7 @@ coalesceProgram = runCo . coalesceProg
         when dumpStats $ do
             stats  <- getStats
             liftIO $ putDocLn $ nest 2 $
-                text "Fusion statistics:" </> ppr stats
+                text "Coalescing statistics:" </> ppr stats
         return prog'
 
 {- Note [Pipeline Coalescing]

@@ -18,7 +18,25 @@ autoconf && cabal configure && make
 
 After installing MSYS2, follow the above instructions for Linux.
 
-# Validating changes
+# Testing
+
+The `runtests.py` script implements a flexible testing framework that can test not only input/output correctness, but also various code metrics like input/output rate and number of for loops. This helps verify that compiler changes don't introduce performance regressions.
+
+Running `runtests.py --help` will display the available options. There are two main sets of test once should run.
+
+The first test correctness over a wide range of compiler flags. It is run as follows:
+
+```
+./runtests.py testsuite examples/wifi --all-ways
+```
+
+The second tests metrics that correlate to performance. It is run as follows:
+
+```
+./runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf
+```
+
+## Validate script
 
 The `validate` scripts runs the test suite with a large number of optimization
 flag combinations. Running it is as simple as executing

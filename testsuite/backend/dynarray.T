@@ -1,0 +1,1 @@
+test("dynarray", blinkdiff(['-p']))

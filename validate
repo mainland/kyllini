@@ -5,12 +5,12 @@ make
 test_run() {
     BASEDIR=$1
     shift
-    
+
     TESTDIRS=$1
     shift
-    
+
     LIBDIR=$(realpath $BASEDIR/lib)
-    
+
     echo "Validate: base $KZCFLAGS"
     make clean-tests
     for DIR in $TESTDIRS; do
@@ -51,3 +51,8 @@ test_run examples/wifi "transmitter/tests receiver/tests tests sniffer" $@
 
 # WiFi perf tests
 #test_run examples/wifi "transmitter/perf receiver/perf perf" $@
+
+# Run test scripts
+./runtests.py testsuite examples/wifi --all-ways
+
+./runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf

@@ -60,10 +60,15 @@ module KZC.Backend.C.Monad (
     getUsesConsumerThread,
     whenUsesConsumerThread,
 
+    savingStats,
     getStats,
     incDefaultInits,
     incMemCopies,
     incBitArrayCopies,
+    incForLoops,
+    incPars,
+    incTakes,
+    incEmits,
 
     collectLabels,
     useLabel,
@@ -233,29 +238,45 @@ defaultCgEnv = CgEnv
     }
 
 data CgStats = CgStats
-    { defaultInits   :: !Int
-    , memCopies      :: !Int
-    , bitArrayCopies :: !Int
+    { nDefaultInits   :: !Int
+    , nMemCopies      :: !Int
+    , nBitArrayCopies :: !Int
+    , nForLoops       :: !Int
+    , nPars           :: !Int
+    , nTakes          :: !Int
+    , nEmits          :: !Int
     }
 
 instance Monoid CgStats where
     mempty = CgStats
-        { defaultInits   = 0
-        , memCopies      = 0
-        , bitArrayCopies = 0
+        { nDefaultInits   = 0
+        , nMemCopies      = 0
+        , nBitArrayCopies = 0
+        , nForLoops       = 0
+        , nPars           = 0
+        , nTakes          = 0
+        , nEmits          = 0
         }
 
     x `mappend` y =
-        CgStats { defaultInits   = defaultInits x + defaultInits y
-                , memCopies      = memCopies x + memCopies y
-                , bitArrayCopies = bitArrayCopies x + bitArrayCopies y
+        CgStats { nDefaultInits   = nDefaultInits x + nDefaultInits y
+                , nMemCopies      = nMemCopies x + nMemCopies y
+                , nBitArrayCopies = nBitArrayCopies x + nBitArrayCopies y
+                , nForLoops       = nForLoops x + nForLoops y
+                , nPars           = nPars x + nPars y
+                , nTakes          = nTakes x + nTakes y
+                , nEmits          = nEmits x + nEmits y
                 }
 
 instance Pretty CgStats where
     ppr stats =
-        text "Defaulted values:" <+> ppr (defaultInits stats) </>
-        text "   Memory copies:" <+> ppr (memCopies stats) </>
-        text "Bit array copies:" <+> ppr (bitArrayCopies stats)
+        text "Defaulted values:" <+> ppr (nDefaultInits stats) </>
+        text "   Memory copies:" <+> ppr (nMemCopies stats) </>
+        text "Bit array copies:" <+> ppr (nBitArrayCopies stats) </>
+        text "       For loops:" <+> ppr (nForLoops stats) </>
+        text "            Pars:" <+> ppr (nPars stats) </>
+        text "           Takes:" <+> ppr (nTakes stats) </>
+        text "           Emits:" <+> ppr (nEmits stats)
 
 data CgState l = CgState
     { -- | Codegen statistics
@@ -425,6 +446,13 @@ whenUsesConsumerThread m = do
     flag <- getUsesConsumerThread
     when flag m
 
+savingStats :: Cg l a -> Cg l a
+savingStats k = do
+    old_stats <- gets stats
+    x <- k
+    modify $ \s -> s { stats = old_stats }
+    return x
+
 getStats :: Cg l CgStats
 getStats = gets stats
 
@@ -432,16 +460,25 @@ modifyStats :: (CgStats -> CgStats) -> Cg l ()
 modifyStats f = modify $ \s -> s { stats = f (stats s) }
 
 incDefaultInits :: Cg l ()
-incDefaultInits =
-    modifyStats $ \s -> s { defaultInits = defaultInits s + 1 }
+incDefaultInits = modifyStats $ \s -> s { nDefaultInits = nDefaultInits s + 1 }
 
 incMemCopies :: Cg l ()
-incMemCopies =
-    modifyStats $ \s -> s { memCopies = memCopies s + 1 }
+incMemCopies =modifyStats $ \s -> s { nMemCopies = nMemCopies s + 1 }
 
 incBitArrayCopies :: Cg l ()
-incBitArrayCopies =
-    modifyStats $ \s -> s { bitArrayCopies =bitArrayCopies s + 1 }
+incBitArrayCopies = modifyStats $ \s -> s { nBitArrayCopies = nBitArrayCopies s + 1 }
+
+incForLoops :: Cg l ()
+incForLoops = modifyStats $ \s -> s { nForLoops = nForLoops s + 1 }
+
+incPars :: Cg l ()
+incPars = modifyStats $ \s -> s { nPars = nPars s + 1 }
+
+incTakes :: Cg l ()
+incTakes = modifyStats $ \s -> s { nTakes = nTakes s + 1 }
+
+incEmits :: Cg l ()
+incEmits = modifyStats $ \s -> s { nEmits = nEmits s + 1 }
 
 collectLabels :: IsLabel l => Cg l a -> Cg l (Set l, a)
 collectLabels m = do

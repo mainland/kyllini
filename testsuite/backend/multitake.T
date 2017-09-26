@@ -1,0 +1,1 @@
+test("multitake", blinkdiff(['-p']))

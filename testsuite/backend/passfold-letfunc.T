@@ -1,0 +1,1 @@
+test("passfold-letfunc")

@@ -138,20 +138,27 @@ defaultFState = FState
 data FusionStats = FusionStats
     { fusedPars      :: !Int
     , fusionFailures :: !Int
+    , fusionTopRate  :: !(Maybe (Rate M))
     }
 
 instance Monoid FusionStats where
-    mempty = FusionStats 0 0
+    mempty = FusionStats 0 0 Nothing
 
     x `mappend` y = FusionStats
         { fusedPars      = fusedPars x + fusedPars y
         , fusionFailures = fusionFailures x + fusionFailures y
+        , fusionTopRate  = fusionTopRate y
         }
 
 instance Pretty FusionStats where
     ppr stats =
-        text "     Fused pars:" <+> ppr (fusedPars stats) </>
-        text "Fusion failures:" <+> ppr (fusionFailures stats)
+        text "      Fused pars:" <+> ppr (fusedPars stats) </>
+        text " Fusion failures:" <+> ppr (fusionFailures stats) </>
+        text " In multiplicity:" <+> pprRate (fmap inMult (fusionTopRate stats)) </>
+        text "Out multiplicity:" <+> pprRate (fmap outMult (fusionTopRate stats))
+      where
+        pprRate :: Maybe M -> Doc
+        pprRate m = ppr (fromMaybe (0 :: Int) (m >>= fromP))
 
 newtype F l m a = F { unF :: ReaderT (FEnv l)
                                (StateT (FState l)
@@ -361,12 +368,17 @@ fuseProgram = runF . fuseProg
     fuseProg :: Program l -> F l m (Program l)
     fuseProg prog = do
         prog'     <- programT prog
+        modifyStats $ \s -> s { fusionTopRate = progRate prog' }
         dumpStats <- asksConfig (testDynFlag ShowFusionStats)
         when dumpStats $ do
             stats  <- getStats
             liftIO $ putDocLn $ nest 2 $
                 text "Fusion statistics:" </> ppr stats
         return prog'
+      where
+        progRate :: Program l -> Maybe (Rate M)
+        progRate (Program _ _ (Just (Main c _))) = compRate c
+        progRate _                               = Nothing
 
 instance MonadTc m => TransformExp (F l m) where
 
@@ -375,7 +387,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
         comp' <- inSTScope tau $
                  inLocalScope $
                  withLocContext comp (text "In definition of main") $
-                 go comp (uncoalesce comp)
+                 go comp (uncoalesce comp) >>= rateComp
         return $ Main comp' tau
       where
         go :: Comp l
@@ -399,9 +411,8 @@ instance (IsLabel l, MonadTc m) => TransformComp l (F l m) where
                    cfuse2  <- rateComp (mkComp ssfuse2)
                    cfuse1' <- floatViewsComp cfuse1 >>= autolutComp
                    cfuse2' <- floatViewsComp cfuse2 >>= autolutComp
-                   if lutSize cfuse2' > lutSize cfuse1'
-                     then rateComp cfuse2
-                     else rateComp cfuse1)
+                   return $ if lutSize cfuse2' > lutSize cfuse1'
+                            then cfuse2 else cfuse1)
                 return
                 (return c2')
 
