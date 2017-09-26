@@ -39,3 +39,6 @@ issue09.c : issue09.wpl $(KZC)
 
 issue16.c : issue16.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse $< -o $@
+
+issue49.c : issue49.wpl $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -O3 $< -o $@
