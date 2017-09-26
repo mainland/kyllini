@@ -5,12 +5,12 @@ make
 test_run() {
     BASEDIR=$1
     shift
-    
+
     TESTDIRS=$1
     shift
-    
+
     LIBDIR=$(realpath $BASEDIR/lib)
-    
+
     echo "Validate: base $KZCFLAGS"
     make clean-tests
     for DIR in $TESTDIRS; do
