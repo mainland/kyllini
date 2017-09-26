@@ -78,7 +78,6 @@ class Test(object):
         self.skip_compile = False
         self.make_args = []
         self.should_fail = False
-        self.expected_returncode = 0
         self.returncode = 0
         self.skip = False
 
@@ -87,7 +86,6 @@ class Test(object):
 #
 def should_fail(test, way):
     test.should_fail = True
-    test.expected_returncode = 1
 
 def skip_way(way_to_skip):
     def f(test, way):
@@ -183,7 +181,7 @@ def checkStats(test, out):
     for (k, v) in test.stats.iteritems():
         if callable(v):
             if not v(stats[k]):
-                recordTestDiff(test, "Unexpected vlaye of %d for statistic %s" % (stats[k], k))
+                recordTestDiff(test, "Unexpected value of %d for statistic %s" % (stats[k], k))
                 return False
         else:
             if stats[k] != v:
@@ -312,10 +310,11 @@ def test(testname, setup=None, testfn=compile_and_run, source=None, args=[]):
             with ioLock:
                 print "Running %s (%s)" % (test.name, config.way)
 
-            if not testfn(test, config.way, args):
+            if testfn(test, config.way, args):
                 if test.should_fail:
                     config.unexpected_passes[test.name] = config.unexpected_passes.get(test.name, []) + [config.way]
-                else:
+            else:
+                if not test.should_fail:
                     config.unexpected_failures[test.name] = config.unexpected_failures.get(test.name, []) + [config.way]
 
         return test
@@ -382,10 +381,10 @@ def execute_and_compare_stdouterr(test, cmd, cwd=None):
         return True
 
     # Test return code
-    if test.returncode != test.expected_returncode:
+    if test.returncode != 0:
         recordTestDiff(test,
             "Return code: got %d but expected %d\n" %
-            (test.returncode, test.expected_returncode))
+            (test.returncode, 0))
 
     # Diff stdout
     ground_stdout_path = os.path.join(test.cwd, test.name + ".out.ground")
@@ -411,7 +410,7 @@ def execute_and_compare_stdouterr(test, cmd, cwd=None):
     else:
         stderr_same = True
 
-    return test.returncode == test.expected_returncode and stdout_same and stderr_same
+    return test.returncode == 0 and stdout_same and stderr_same
 
 #
 # Output comparison
