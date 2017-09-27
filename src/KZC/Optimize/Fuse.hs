@@ -245,6 +245,14 @@ jointStep step k =
                 unalignedRepeats
               setLoopHead l_joint
               return []
+{- Note [Duplicate labels in loops]
+
+If we hit the joint loop head, that means the loops aligned. Now we need to
+forget all the steps we've seen and record steps until we hit the loop head
+again. Note that we *still* record, the loop head! Also note that this can lead
+to steps with duplicate labels since steps with teh same label may occur in the
+loop prefix as well as the loop body.
+-}
       else do when (l_repeat == Just l_joint) $
                 modify $ \s -> s { seen = mempty }
               recordLabel l_joint
@@ -1142,7 +1150,9 @@ recoverRepeat m = do
                                             zipWithM mkDeclSaveRestore vs taus
             c_repeat                   <- C.repeatC AutoVect $
                                             c_restore <> c_body <> c_save
-            return $ c_prefix <> c_let <> c_repeat
+            -- See Note [Duplicate labels in loops]
+            c_prefix' <- traverse uniquify c_prefix
+            return $ c_prefix' <> c_let <> c_repeat
           where
             -- Variables bound by the shifted prefix of the unaligned repeat
             -- loops
