@@ -761,10 +761,17 @@ simplSteps (step : BindC l wv tau s : steps) = do
 --
 -- Drop an unbound return; we know the return isn't bound becasue it isn't the
 -- final step and we didn't match the bind case just above.
+--
 simplSteps (ReturnC{} : steps@(_:_)) = do
     rewrite
     simplSteps steps
 
+--
+-- Drop unnecessary final return (), e.g.,
+--
+--   { ... ; <expression of unit type>; return (); } ->
+--       { ... ; <expression of unit type>; }
+--
 simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
     step1' <- simplStep step1
     (omega, _, _, _) <- inferComp (mkComp step1') >>= checkST
@@ -773,6 +780,9 @@ simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
                       simplLift step1'
       _         -> simplLift $ step1' ++ [step2]
 
+--
+-- By default, concatenate simplified steps
+--
 simplSteps (step : steps) =
     (++) <$> simplStep step <*> simplSteps steps >>= simplLift
 
