@@ -107,6 +107,9 @@ updStaticInfo v isStatic = v { bStaticRef = Just isStatic }
 occVar :: MonadTc m => Var -> OccM m ()
 occVar v = tellOcc $ Map.singleton v Once
 
+occVarMany :: MonadTc m => Var -> OccM m ()
+occVarMany v = tellOcc $ Map.singleton v Many
+
 collectOcc :: MonadTc m => OccM m a -> OccM m (OccsInfo, a)
 collectOcc m =
     censor (\env -> env { occInfo = mempty }) $ do
@@ -277,5 +280,7 @@ instance MonadTc m => TransformComp l (OccM m) where
 checkRefArg :: MonadTc m => Exp -> OccM m ()
 checkRefArg e = do
     tau <- inferExp e
-    when (isRefT tau) $
-        refPathRoot e >>= writeRef
+    when (isRefT tau) $ do
+        v <- refPathRoot e
+        writeRef v
+        occVarMany v
