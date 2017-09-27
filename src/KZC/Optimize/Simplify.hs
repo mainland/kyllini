@@ -1277,29 +1277,8 @@ simplE (LetE decl e s) = do
     go maybe_decl' e'
   where
     go :: Maybe LocalDecl -> Exp -> SimplM l m Exp
-    go Nothing e' =
-        return e'
-
-    -- XXX This is a hack to transform an expression of the form
-    --
-    --     letref (v : tau) = ... in { v := e1; e2 }
-    --
-    -- into an expression of the forman expression of the form
-    --
-    --     letref (v : tau) = e1 in e2
-    --
-    -- It is a not a very general transformation, but we see this pattern over
-    -- and over again as a result of the interleaver. We want to perform this
-    -- transformation because it may yield a letref that is never actually
-    -- modified, meaning we can convert it into a let, meaning we can avoid a
-    -- memory copy. And we like to avoid memory copies...
-    --
-    go (Just (LetRefLD bv tau _ s)) (BindE WildV _ (AssignE (VarE v _) e1 _) e2 _)
-      | v == bVar bv = do rewrite
-                          return $ LetE (LetRefLD bv tau (Just e1) s) e2 s
-
-    go (Just decl') e' =
-        return $ LetE decl' e' s
+    go Nothing e'      = return e'
+    go (Just decl') e' = return $ LetE decl' e' s
 
 simplE (CallE f0 taus0 es0 s) = do
     taus <- mapM simplType taus0
@@ -1636,161 +1615,8 @@ simplE e@ErrorE{} =
 simplE (ReturnE ann e s) =
     ReturnE ann <$> simplE e <*> pure s
 
-simplE (BindE wv tau e1 e2 s) = do
-    tau' <- simplType tau
-    simplBind wv tau' e1 e2 s
-  where
-    simplBind :: WildVar
-              -> Type
-              -> Exp
-              -> Exp
-              -> SrcLoc
-              -> SimplM l m Exp
-    -- Reassociate bind
-    simplBind wv tau (BindE wv' tau' e1a e1b s') e2 s = do
-        rewrite
-        simplBind wv' tau' e1a (BindE wv tau e1b e2 s') s
-
-    --
-    -- Drop unnecessary final return (), e.g.,
-    --
-    --   { ... ; x := 1; return (); } -> { ... ; x := 1; }
-    --
-    simplBind WildV UnitT{} e1 (ReturnE _ann (ConstE UnitC _) _) _s = do
-        rewrite
-        simplE e1
-
-    --
-    -- Drop an unbound return, e.g.,
-    --
-    --   { return e1; ... } -> { ... }
-    --
-    simplBind WildV _tau ReturnE{} e2 _s = do
-        rewrite
-        simplE e2
-
-    --
-    -- Combine sequential array assignments.
-    --
-    --  { x[e1] := y[e2]; x[e1+1] := y[e2+1]; ... } -> { x[e1:1] := y[e2:1]; ... }
-    --
-    -- We see this after coalescing/fusion
-    --
-    simplBind WildV _ e1 e_rest _
-      | let (e2, mkBind) = unBind e_rest
-      , AssignE (IdxE xs e_i len1 s1) (IdxE ys e_k len1' s2) s3 <- e1
-      , len1' == len1
-      , AssignE (IdxE xs' e_j len2 _)  (IdxE ys' e_l len2' _)  _ <- e2
-      , len2' == len2
-      , xs' == xs
-      , ys' == ys
-      , e_i + sliceLen len1 == e_j
-      , e_k + sliceLen len1 == e_l
-      = do
-        rewrite
-        let len = plusl len1 len2
-        simplE $ mkBind $ AssignE (IdxE xs e_i len s1) (IdxE ys e_k len s2) s3
-      where
-        plusl :: Maybe Type -> Maybe Type -> Maybe Type
-        plusl len1 len2 = Just $ sliceLen len1 + sliceLen len2
-
-    --
-    -- Combine sequential assignment and dereference.
-    --
-    --  { x := e; !x; ... } -> { x := e; return e; ... }
-    --
-    -- We see this after coalescing/fusion. We must be careful not to duplicate
-    -- work! To avoid work duplication, we onlt inline e_rhs when it is simple
-    -- or when x is used only once, i.e., only here!
-    --
-    simplBind WildV tau e1 e_rest s
-      | let (e2, mkBind) = unBind e_rest
-      , AssignE (VarE v  _) e_rhs _ <- e1
-      , DerefE  (VarE v' _)       _ <- e2
-      , v' == v
-      = do
-        theta  <- lookupSubst v
-        let v' =  case theta of
-                    Just (DoneExp (VarE v' _)) -> v'
-                    _ -> v
-        occ    <- lookupOccInfo v'
-        if isSimple e_rhs || occ == Just Once
-          then do rewrite
-                  simplBind WildV tau e1 (mkBind (returnE e_rhs)) s
-          else simplWildBind tau e1 e_rest s
-
-    --
-    -- Default command sequencing
-    --
-    simplBind WildV tau e1 e2 s =
-        simplWildBind tau e1 e2 s
-
-    --
-    -- Drop unused bindings. The expression whose result is bound might have an
-    -- effect, so we can't just throw it away.
-    --
-    simplBind (TameV v) tau e1 e2 s | bOccInfo v == Just Dead = do
-        dropBinding v
-        simplBind WildV tau e1 e2 s
-
-    --
-    -- Convert a bind-return into a let, e.g.,
-    --
-    --   { x <- return e1; ... } -> { let x = e1; ... }
-    --
-    simplBind (TameV v) tau (ReturnE _ e1 _) e2 s = do
-        e1'  <- simplE e1
-        tau' <- simplType tau
-        withUniqBoundVar v $ \v' ->
-          extendVars [(bVar v', tau)] $
-          extendDefinitions [(bVar v', BoundToExp Nothing Nested e1')] $ do
-          e2' <- simplE e2
-          rewrite
-          return $ LetE (LetLD v' tau' e1' s) e2' s
-
-    --
-    -- Avoid an identity assignment
-    --
-    --   { v <- !x; x := v; ... } -> { v <- !x; ... }
-    --
-    simplBind (TameV v) tau e1@(DerefE e_rhs _ ) e_rest _
-      | let (e2, mkBind) = unBind e_rest
-      , AssignE e_lhs (VarE v' _) _ <- e2
-      , v' == bVar v
-      , e_lhs == e_rhs
-      = do
-        rewrite
-        simplBind (TameV v) tau e1 (mkBind (returnE unitE)) s
-
-    --
-    -- Default command bind
-    --
-    simplBind (TameV v) tau e1 e2 s = do
-        e1'  <- simplE e1
-        tau' <- simplType tau
-        withUniqBoundVar v $ \v' ->
-          extendVars [(bVar v', tau)] $
-          extendDefinitions [(bVar v', Unknown)] $ do
-          e2' <- simplE e2
-          return $ BindE (TameV v') tau' e1' e2' s
-
-    -- Default code for simplifying a WildV binding
-    simplWildBind :: Type
-                  -> Exp
-                  -> Exp
-                  -> SrcLoc
-                  -> SimplM l m Exp
-    simplWildBind tau e1 e2 s = do
-        tau' <- simplType tau
-        e1'  <- simplE e1
-        e2'  <- simplE e2
-        return $ BindE WildV tau' e1' e2' s
-
-    -- This gives us a handy way to pull apart binds so we don't have to
-    -- separately handle the cases { e1; e2; } and { e1; e2; ... }
-    unBind :: Exp -> (Exp, Exp -> Exp)
-    unBind (BindE wv tau e1 e2 s) = (e1, \e1' -> BindE wv tau e1' e2 s)
-    unBind e                      = (e, id)
+simplE e@BindE{} =
+    simplStmE e
 
 simplE (LutE sz e) =
     LutE sz <$> simplE e
@@ -1798,6 +1624,280 @@ simplE (LutE sz e) =
 simplE (GenE e gs s) =
     checkGenerators gs $ \_ ->
     GenE <$> simplE e <*> pure gs <*> pure s
+
+-- | A core statement
+type CStm = Stm LocalDecl BoundVar Exp
+
+simplStmE :: forall l m . (IsLabel l, MonadTc m)
+          => Exp
+          -> SimplM l m Exp
+simplStmE e = simplStms (expToStms e) >>= stmsToExp
+
+expToStms :: Exp -> [CStm]
+expToStms (LetE decl e l)               = LetS decl l : expToStms e
+expToStms (ReturnE ann e l)             = [ReturnS ann e l]
+expToStms (BindE WildV _tau e1 e2 _l)   = expToStms e1 ++ expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = expToStms e1 ++ BindS (Just v) tau l : expToStms e2
+expToStms e                             = [ExpS e (srclocOf e)]
+
+stmsToExp :: MonadTc m => [CStm] -> m Exp
+stmsToExp [] =
+    faildoc $ text "stmsToExp: empty statement list"
+
+stmsToExp [LetS{}] =
+    faildoc $ text "stmsToExp: let without body"
+
+stmsToExp (LetS decl l : stms) =
+    LetE decl <$> (extendLocalDecl decl $ stmsToExp stms) <*> pure l
+
+stmsToExp (ReturnS ann e l : BindS Nothing tau _ : stms) =
+    BindE WildV tau (ReturnE ann e l) <$> stmsToExp stms <*> pure l
+
+stmsToExp (ReturnS ann e l : BindS (Just v) tau _ : stms) =
+    mkBind v tau (ReturnE ann e l) l $
+    stmsToExp stms
+
+stmsToExp [ReturnS ann e l] =
+    return $ ReturnE ann e l
+
+stmsToExp (ReturnS ann e l : stms) = do
+    tau <- inferExp e
+    BindE WildV tau (ReturnE ann e l) <$> stmsToExp stms <*> pure l
+
+stmsToExp (ExpS e _ : BindS Nothing tau l : stms) =
+    BindE WildV tau e <$> stmsToExp stms <*> pure l
+
+stmsToExp (ExpS e _ : BindS (Just v) tau l : stms) =
+    mkBind v tau e l $
+    stmsToExp stms
+
+stmsToExp [ExpS e _] =
+    return e
+
+stmsToExp (ExpS e l : stms) = do
+    (_alphas, tau, _s,  _a,  _b) <- inferExp e >>= checkPureishSTC
+    BindE WildV tau e <$> stmsToExp stms <*> pure l
+
+stmsToExp (BindS{} : _) =
+    faildoc $ text "stmsToExp: nothing to bind"
+
+mkBind :: MonadTc m => BoundVar -> Type -> Exp -> SrcLoc -> m Exp -> m Exp
+mkBind v tau e l me =
+    BindE (TameV v) tau e <$> (extendVars [(bVar v, tau)] me) <*> pure l
+
+simplStms :: forall l m . (IsLabel l, MonadTc m)
+          => [CStm]
+          -> SimplM l m [CStm]
+simplStms [] =
+    return []
+
+--
+-- XXX This is a hack to transform an expression of the form
+--
+--     { letref (v : tau) = ..; v := e1; e2 }
+--
+-- into an expression of the form
+--
+--     { letref (v : tau) = e1; e2 }
+--
+-- It is a not a very general transformation, but we see this pattern over
+-- and over again as a result of the interleaver. We want to perform this
+-- transformation because it may yield a letref that is never actually
+-- modified, meaning we can convert it into a let, meaning we can avoid a
+-- memory copy. And we like to avoid memory copies...
+--
+simplStms (LetS (LetRefLD v tau _ s) l : ExpS (AssignE (VarE v' _) e1 _) _ : stms) | v' == bVar v = do
+    rewrite
+    simplStms $ LetS (LetRefLD v tau (Just e1) s) l : stms
+
+simplStms (LetS decl l : stms) = do
+    (maybe_decl', stms') <- simplLocalDecl decl $
+                            simplStms stms
+    case maybe_decl' of
+      Nothing    -> return stms'
+      Just decl' -> return $ LetS decl' l : stms'
+
+simplStms (BindS{} : _) =
+    panicdoc $ text "simplStms: leading bind"
+
+--
+-- Convert a bind followed by a return into a return
+--
+--   { x <- e1; return x; ... } -> { e1; ... }
+--
+simplStms (stm : BindS (Just v) _ _ : ReturnS _ (VarE v' _) _ : stms) | bOccInfo v == Just Once, v' == bVar v = do
+    simplStms (stm : stms)
+
+--
+-- Simplify bindings
+--
+simplStms (stm0 : BindS v tau l : stms) = do
+    stm' <- simplStm stm0
+    tau' <- simplType tau
+    go stm' v tau'
+  where
+    go :: [CStm] -> Maybe BoundVar -> Type -> SimplM l m [CStm]
+    --
+    -- Drop an unbound return, e.g.,
+    --
+    --   { return e1; ... } -> { ... }
+    --
+    go [ReturnS{}] Nothing _tau' = do
+        rewrite
+        simplStms stms
+
+    --
+    -- Default computation sequencing
+    --
+    go [stm'] Nothing _tau' = do
+        stms' <- simplStms stms
+        return $ stm' : stms'
+
+    --
+    -- Drop unused bindings. The stm whose result is bound might have an
+    -- effect, so we can't just throw it away.
+    --
+    go [stm'] (Just v) tau' | bOccInfo v == Just Dead = do
+        dropBinding v
+        go [stm'] Nothing tau'
+
+    --
+    -- Convert a bind-return into a let, e.g.,
+    --
+    --   { x <- return e1; ... } -> { let x = e1; ... }
+    --
+    go [ReturnS _ann e l] (Just v) tau' =
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', BoundToExp Nothing Nested e)] $ do
+        stms' <- simplStms stms
+        rewrite
+        return $ LetS (LetLD v' tau' e l) l : stms'
+
+    --
+    -- Default computation bind
+    --
+    go [stm'] (Just v) tau' =
+        withUniqBoundVar v $ \v' ->
+        extendVars [(bVar v', tau)] $
+        extendDefinitions [(bVar v', Unknown)] $ do
+        stms' <- simplStms stms
+        return $ stm' : BindS (Just v') tau' l : stms'
+
+    --
+    -- Can't happen---simplifying a stm has to yield one or more stms
+    --
+    go [] _v _tau' =
+        faildoc $ text "simplStms: can't happen"
+
+    --
+    -- When simplifying a stms yields more than one stm, simplify the
+    -- resulting sequence. A single stm can simplify to many stms if we inline
+    -- a computation.
+    --
+    go stm' wv tau' =
+        (++) <$> pure hd <*> go [tl] wv tau'
+      where
+        hd :: [CStm]
+        tl :: CStm
+        hd = init stm'
+        tl = last stm'
+
+--
+-- Drop an unbound return; we know the return isn't bound becasue it isn't the
+-- final statement and we didn't match the bind case just above.
+--
+simplStms (ReturnS{} : stms@(_:_)) = do
+    rewrite
+    simplStms stms
+
+--
+-- Combine sequential array assignments.
+--
+--  { x[e1] := y[e2]; x[e1+1] := y[e2+1]; ... } -> { x[e1:1] := y[e2:1]; ... }
+--
+-- We see this after coalescing/fusion
+--
+simplStms (ExpS (AssignE (IdxE xs  e_i len1 s1) (IdxE ys e_k len1' s2) _) _ :
+           ExpS (AssignE (IdxE xs' e_j len2 _)  (IdxE ys' e_l len2' _) _) _ :
+           stms)
+  | len1' == len1, len2' == len2
+  , xs' == xs
+  , ys' == ys
+  , e_i + sliceLen len1 == e_j
+  , e_k + sliceLen len1 == e_l
+  = do
+    rewrite
+    simplStms $ expS (assignE (IdxE xs e_i len s1) (IdxE ys e_k len s2)) : stms
+  where
+    len :: Maybe Type
+    len = plusl len1 len2
+
+    plusl :: Maybe Type -> Maybe Type -> Maybe Type
+    plusl len1 len2 = Just $ sliceLen len1 + sliceLen len2
+
+--
+-- Combine sequential assignment and dereference.
+--
+--  { x := e; !x; ... } -> { x := e; return e; ... }
+--
+--    or
+--
+--  { x := e; !x; ... } -> { return e; ... }
+--
+-- We see this after coalescing/fusion. We must be careful not to duplicate
+-- work! To avoid work duplication, we only inline e_rhs when it is simple or
+-- when x is used only once, i.e., only here! If x is only used once, we drop
+-- the assignment as well.
+--
+simplStms (stm1@(ExpS e1@(AssignE (VarE v  _) e_rhs _) _) :
+           stm2@(ExpS (DerefE (VarE v' _) _) _) :
+           stms) | v' == v = do
+    occ <- lookupOccInfo v
+    case occ of
+      Just Once -> do
+          rewrite
+          simplStms $ returnS e_rhs : stms
+      _ | isSimple e_rhs -> do
+          rewrite
+          simplStms $ stm1 : returnS e_rhs : stms
+      _ -> do
+          e1'   <- simplE e1
+          stms' <- simplStms $ stm2 : stms
+          return $ expS e1' : stms'
+
+--
+-- Drop unnecessary final return (), e.g.,
+--
+--   { ... ; <expression of unit type>; return (); } ->
+--       { ... ; <expression of unit type>; }
+--
+simplStms [stm1, stm2@(ReturnS _ (ConstE UnitC _) _)] = do
+    stm1'                        <- simplStm stm1
+    (_alphas, tau, _s,  _a,  _b) <- stmsToExp stm1' >>= inferExp >>= checkPureishSTC
+    case tau of
+      UnitT{} -> rewrite >> return stm1'
+      _       -> return $ stm1' ++ [stm2]
+
+--
+-- By default, concatenate simplified statements
+--
+simplStms (stm : stms) =
+    (++) <$> simplStm stm <*> simplStms stms
+
+simplStm :: forall l m . (IsLabel l, MonadTc m)
+         => CStm
+         -> SimplM l m [CStm]
+simplStm (ReturnS ann e l) = do
+    stm' <- ReturnS ann <$> simplE e <*> pure l
+    return [stm']
+
+simplStm (ExpS e l) = do
+    stm' <- ExpS <$> simplE e <*> pure l
+    return [stm']
+
+simplStm stm =
+    return [stm]
 
 isTrue :: Exp -> Bool
 isTrue (ConstE (BoolC True) _) = True
