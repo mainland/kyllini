@@ -242,10 +242,6 @@ allows us to block input/output differently, thus the restriction that
 $\gcd(n_2,n_2') = 1$ in the B-Both rule.
 -}
 
--- | Maximum size of input/output batches, in elements.
-mAX_BATCH_SIZE :: Int
-mAX_BATCH_SIZE = 288
-
 class Ord a => Metric a where
     infixl 6  .+.
 
@@ -722,8 +718,9 @@ coalesceComp comp = do
            -> Co m BC
     brules asz bsz ctx_left ctx_right = do
         guard (isTransformer comp)
+        maxRate           <- asksConfig maxCoalesceRate
         (m_left, m_right) <- compInOutM comp
-        let n_max         =  min (nBound m_left) (nBound m_right)
+        let n_max         =  min (nBound maxRate m_left) (nBound maxRate m_right)
         n                 <- choices [1..n_max]
         b_in              <- brule ctx_left  m_left  n
         b_out             <- brule ctx_right m_right n
@@ -758,11 +755,15 @@ coalesceComp comp = do
                  (return Nothing)
 
         -- | Upper bound on n.
-        nBound :: M -> Int
-        nBound (N i) | i == 0    = mAX_BATCH_SIZE
-                     | otherwise = mAX_BATCH_SIZE `quot` i
-        nBound (P i)             = mAX_BATCH_SIZE `quot` i
-        nBound Z{}               = mAX_BATCH_SIZE
+        nBound :: Maybe Int -> M -> Int
+        nBound (Just maxRate) (N i) | i == 0    = maxRate
+                                    | otherwise = maxRate `quot` i
+        nBound (Just maxRate) (P i)             = maxRate `quot` i
+        nBound (Just maxRate) Z{}               = maxRate
+        nBound Nothing        (N i) | i == 0    = 1
+                                    | otherwise = i
+        nBound Nothing        (P i)             = i
+        nBound Nothing        Z{}               = 1
 
         -- | Given a multiplicity constraint and the computation's multiplicity,
         -- return a predicate constraining us to legal blockings.

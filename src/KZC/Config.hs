@@ -196,6 +196,10 @@ data Config = Config
     -- | Maximum buffer size (in bytes) inserted during pipeline coalescing.
     , maxCoalesceBuffer :: !Int
 
+    -- | Maximum rate for widened computations during coalescing. When
+    -- 'Nothing', don't widen.
+    , maxCoalesceRate :: Maybe Int
+
     , dynFlags    :: !(FlagSet DynFlag)
     , warnFlags   :: !(FlagSet WarnFlag)
     , werrorFlags :: !(FlagSet WarnFlag)
@@ -239,6 +243,10 @@ instance Monoid Config where
         -- coalescing.
         , maxCoalesceBuffer = 64
 
+        -- | Maximum rate for widened computations during coalescing. When
+        -- 'Nothing', don't widen.
+        , maxCoalesceRate = Just 288
+
         , dynFlags    = mempty
         , werrorFlags = mempty
         , warnFlags   = mempty
@@ -269,6 +277,8 @@ instance Monoid Config where
         , minMemcpyBytes = min (minMemcpyBytes f1) (minMemcpyBytes f2)
 
         , maxCoalesceBuffer = max (maxCoalesceBuffer f1) (maxCoalesceBuffer f2)
+
+        , maxCoalesceRate = maxCoalesceRate f1 <|> maxCoalesceRate f2
 
         , dynFlags    = dynFlags f1    <> dynFlags f2
         , warnFlags   = warnFlags f1   <> warnFlags f2
