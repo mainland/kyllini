@@ -675,8 +675,10 @@ coalesceTopComp comp = do
         guard (isTransformer comp)
         -- We only rate-expand when we have known input and output rates.
         (inMult, outMult) <- compInOutM comp
-        inRate            <- fromP inMult
-        outRate           <- fromP outMult
+        inRate <- fromP inMult
+        guard (inRate > 0)
+        outRate <- fromP outMult
+        guard (outRate > 0)
         -- Compute limits on rate multipliers. We can only multiply a rate up to
         -- the point where we input/output 'maxElems' elements.
         let xMax =  min (multiplierBound maxElems inRate)
@@ -787,8 +789,10 @@ coalesceComp comp = do
         guard (isTransformer comp)
         -- We only rate-expand when we have known input and output rates.
         (inMult, outMult) <- compInOutM comp
-        inRate            <- fromP inMult
-        outRate           <- fromP outMult
+        inRate <- fromP inMult
+        guard (inRate > 0)
+        outRate <- fromP outMult
+        guard (outRate > 0)
         -- Compute limits on rate multipliers. We can only multiply a rate up to
         -- the point where we input/output 'maxElems' elements.
         let xMax =  min (multiplierBound maxElems inRate)
