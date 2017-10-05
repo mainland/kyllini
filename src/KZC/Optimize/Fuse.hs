@@ -750,7 +750,11 @@ runRight lss rss = do
 
         diverge :: F l m [Step l]
         diverge = do
-            unrollingFor ann c
+            traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr c
+            shouldUnroll <- shouldUnrollFor ann c
+            when (not shouldUnroll) $ do
+              traceFusion $ text "Encountered diverging loop during fusion."
+              mzero
             unrolled <- unrollFor l v tau e1 e2 c
             traceFusion $ text "runRight: unrolling right for"
             runRight lss (unComp unrolled ++ rss)
@@ -804,7 +808,11 @@ runRight lss rss = do
 
         diverge :: F l m [Step l]
         diverge = do
-            unrollingFor ann c
+            traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr c
+            shouldUnroll <- shouldUnrollFor ann c
+            when (not shouldUnroll) $ do
+              traceFusion $ text "Encountered diverging loop during fusion."
+              mzero
             unrolled <- unrollFor l v tau e1 e2 c
             traceFusion $ text "runRight: unrolling left for"
             runRight (unComp unrolled ++ lss) rss
@@ -1020,15 +1028,12 @@ nestedPar = do
     traceFusion $ text "Saw nested par in producer during par fusion."
     mzero
 
--- | Indicate that we are unrolling a for loop with the given body during
--- fusion. This will fail unless the appropriate flag has been specified or if
--- the loop is one that we always unroll.
-unrollingFor :: MonadTc m => UnrollAnn -> Comp l -> F l m ()
-unrollingFor ann body = do
+-- | Decide whether or not we should unroll a for loop with the given body
+-- during fusion.
+shouldUnrollFor :: (IsLabel l, MonadTc m) => UnrollAnn -> Comp l -> F l m Bool
+shouldUnrollFor ann body = do
     doUnroll <- asksConfig (testDynFlag FuseUnroll)
-    unless (ann == Unroll || alwaysUnroll body || (doUnroll && mayUnroll ann)) $ do
-      traceFusion $ text "Encountered diverging loop during fusion."
-      mzero
+    return (ann == Unroll || alwaysUnroll body || (doUnroll && mayUnroll ann))
   where
     alwaysUnroll :: Comp l -> Bool
     alwaysUnroll comp = allEmits (unComp comp) || allTakes (unComp comp)
