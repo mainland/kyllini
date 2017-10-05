@@ -44,7 +44,8 @@ ALL_WAYS = ["normal",
             "fuse-peval",
             "lut",
             "lut-peval",
-            "simpl-lut-peval"]
+            "simpl-lut-peval",
+            "O3"]
 
 def way_flags(way):
     if way:
