@@ -28,7 +28,7 @@ WAY_FLAGS = { "normal"          : [],
               "O3"              : ['-O3'],
               "perf"            : ['-ftimers',
                                    '-finline', '-fsimpl', '-fautolut', '-flut', '-ffuse', '-fpeval',
-                                   '-fcoalesce-top', '-fcoalesce',
+                                   '-fcoalesce', '-fcoalesce-top', '-fmax-top-coalesce-rate=288',
                                    '-Wno-unsafe-auto-cast',
                                    '-dlint',
                                    '-dprint-uniques',
@@ -44,7 +44,8 @@ ALL_WAYS = ["normal",
             "fuse-peval",
             "lut",
             "lut-peval",
-            "simpl-lut-peval"]
+            "simpl-lut-peval",
+            "O3"]
 
 def way_flags(way):
     if way:

@@ -10,28 +10,22 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 
-module KZC.Optimize.Coalesce where
+module KZC.Optimize.Coalesce (
+    coalesceProgram
+  ) where
 
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
-                      guard,
-                      when)
+                      guard)
 import Control.Monad.Exception (MonadException(..))
-import Control.Monad.Logic (MonadLogic(..),
-                            ifte)
-import Control.Monad.IO.Class (MonadIO(..),
-                               liftIO)
+import Control.Monad.Logic (MonadLogic(..))
+import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
-import Control.Monad.State (MonadState(..),
-                            StateT(..),
-                            evalStateT,
-                            modify)
-import Control.Monad.Trans (lift)
 import Data.Function (on)
 import Data.List (sort, sortBy)
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe)
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
@@ -61,20 +55,7 @@ defaultCoEnv = CoEnv simpleTrans simpleTrans
     simpleTrans :: Rate M
     simpleTrans = TransR (N 1) (N 1)
 
-data CoStats = CoStats
-    { upCoalesced :: !Int }
-
-instance Monoid CoStats where
-    mempty = CoStats 0
-
-    x `mappend` y = CoStats
-        { upCoalesced = upCoalesced x + upCoalesced y }
-
-instance Pretty CoStats where
-    ppr stats =
-        text "Up-coalesced:" <+> ppr (upCoalesced stats)
-
-newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
+newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT m) a }
   deriving (Functor, Applicative, Monad,
             Alternative, MonadPlus,
             MonadIO,
@@ -91,17 +72,7 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT (StateT CoStats m)) a }
 runCo :: forall m a . MonadErr m
       => Co m a
       -> m a
-runCo m = evalStateT (runSEFKT (runReaderT (unCo m) defaultCoEnv)) mempty
-
-observeAll :: forall m a . MonadErr m => Co m a -> Co m [a]
-observeAll m = Co $ ReaderT $ \env ->
-    lift $ runSEFKTM Nothing (runReaderT (unCo m) env)
-
-getStats :: MonadTc m => Co m CoStats
-getStats = Co $ lift $ lift get
-
-modifyStats :: MonadTc m => (CoStats -> CoStats) -> Co m ()
-modifyStats = Co . lift . lift . modify
+runCo m = runSEFKT (runReaderT (unCo m) defaultCoEnv)
 
 withLeftCtx :: MonadTc m => Maybe (Rate M) -> Co m a -> Co m a
 withLeftCtx Nothing m =
@@ -113,8 +84,8 @@ withLeftCtx (Just r2) m = do
     local (\env -> env { leftCtx = r }) m
 
 withRightCtx :: MonadTc m => Maybe (Rate M) -> Co m a -> Co m a
-withRightCtx Nothing m =
-    local (\env -> env { rightCtx = CompR (Z 1) (Z 1) }) m
+withRightCtx Nothing _ =
+    errordoc $ text "withRightCtx: unknown computation rate"
 
 withRightCtx (Just r1) m = do
     r2 <- asks rightCtx
@@ -137,17 +108,7 @@ askRightCtx = do
 
 coalesceProgram :: forall l m . (IsLabel l, MonadIO m, MonadTc m)
                 => Program l -> m (Program l)
-coalesceProgram = runCo . coalesceProg
-  where
-    coalesceProg :: Program l -> Co m (Program l)
-    coalesceProg prog = do
-        prog'     <- programT prog
-        dumpStats <- asksConfig (testDynFlag ShowFusionStats)
-        when dumpStats $ do
-            stats  <- getStats
-            liftIO $ putDocLn $ nest 2 $
-                text "Coalescing statistics:" </> ppr stats
-        return prog'
+coalesceProgram = runCo . programT
 
 {- Note [Pipeline Coalescing]
 
@@ -162,25 +123,25 @@ Pipeline coalescing attempts to do two things:
   of the computation multiple times, a transformation that is only valid for
   transformers, not computers.
 
-Coalescing relies on inserting variants of two transformers,
-${{co}_\textrm{L}}_{\tau}^n$ and ${{co}_\textrm{R}}_{\tau}^n$, into the pipeline
-to the left and right (resp.) of the computation being transformed; we then rely
-on fusion to optimize the transformed pipeline.
+Coalescing relies on inserting variants of two transformers, coLeft(tau,n) and
+coRight(tau,n), into the pipeline to the left and right (resp.) of the
+computation being transformed; we then rely on fusion to optimize the
+transformed pipeline.
 
-The transformer ${{co}_\textrm{L}}_{\tau}^n$ is:
+The transformer coLeft(tau,n) is:
 
     repeat { xs <- takes n; emit xs[0]; ...; emit xs[n-1]; }
 
-${{co}_\textrm{L}}_{\tau}^n$ is inserted to the left of a computation. It takes
+coLeft(tau,n) is inserted to the left of a computation. It takes
 arrays of input and parcels them out element-by-element.
 
-The transformer ${{co}_\textrm{R}}_{\tau}^n$ is:
+The transformer coRight(tau,n) is:
 
     letref xs : arr[n] tau in
     repeat { x <- take; xs[0] := x; ...; x <- take; xs[n-1] := x; emits xs }
 
-${{co}_\textrm{R}}_{\tau}^n$ is inserted to the right of a computation. It takes
-its input one element at a time and outputs whole arrays.
+coRight(tau,n) is inserted to the right of a computation. It takes its input one
+element at a time and outputs whole arrays.
 
 The goal behind pipeline coalescing is to line up producers and consumers so
 that they emit and take (resp.) (array-size) blocks of the same size.
@@ -209,11 +170,11 @@ X   &&\to &k*l  &\leadsto  X   &\to &k^l &&\quad \textrm{C-Right}
 \end{alignat*}
 \]
 
-Here, $i^j$ to the left of an arrow corresponds to inserting
-${{co}_\textrm{L}}_{\tau}^i$ to the left of a computation, and $k^l$ corresponds
-to inserting ${{co}_\textrm{R}}_{\tau}^k$ to the right of a computation. The C
-rules do not change the multiplicity of a computation; they only reorganize the
-way input/output is performed by inserting buffers.
+Here, $i^j$ to the left of an arrow corresponds to inserting coLeft(tau,i) to
+the left of a computation, and $k^l$ corresponds to insertingcoRight(tau,k) to
+the right of a computation. The C rules do not change the multiplicity of a
+computation; they only reorganize the way input/output is performed by inserting
+buffers.
 
 ## B-rules
 
@@ -273,44 +234,25 @@ would in effect just mean that we force the computation to run for a factor of
 $k$ more rounds. Running a computation for extra rounds is only useful if it
 allows us to block input/output differently, thus the restriction that
 $\gcd(n_2,n_2') = 1$ in the B-Both rule.
+
+## In Practice
+
+The implementation makes some simplifying choices:
+
+ 1. We only choose blockings of the form $i^1$.
+
+ 2. B-rules require that we know both the input and output multiplicity of the
+ computation. If the multiplicity is known, then we can probably fuse with the
+ blocking coercion. Otherwise we are likely to just end up with a bunch of
+ copies.
+
+ 3. When coalescing a producer and a consumer, we make the producer emit a
+ single array and the consumer consume a single array (emit/take), rather than
+ using emits/takes. This makes them easy to fuse together.
 -}
 
--- | Maximum size of input/output blocks, in bits
-mAX_BLOCK_SIZE :: Int
-mAX_BLOCK_SIZE = 512
-
--- | Maximum size of input/output batches, in elements.
-mAX_BATCH_SIZE :: Int
-mAX_BATCH_SIZE = 288
-
-class Ord a => Metric a where
-    infixl 6  .+.
-
-    (.+.) :: a -> a -> a
-
-data BlockMetric = BlockMetric !Int -- ^ 1 if byte-sized, 0 otherwise
-                               !Int -- ^ Negated block count
-                               !Int -- ^ Negated block size
-  deriving (Eq, Ord, Show)
-
-instance Pretty BlockMetric where
-    ppr (BlockMetric x y z) = ppr (x, y, z)
-
-instance Metric BlockMetric where
-    BlockMetric s t u .+. BlockMetric x y z = BlockMetric (s+x) (t+y) (u+z)
-
-data ParMetric = ParMetric !BlockMetric -- ^ Block utilities
-                           !Int         -- ^ 1 if block sizes match, 0 otherwise
-                           !Int         -- ^ Negated size of necessary rate matcher
-  deriving (Eq, Ord, Show)
-
-instance Pretty ParMetric where
-    ppr (ParMetric x y z) = ppr (x, y, z)
-
-instance Metric ParMetric where
-    ParMetric s t u .+. ParMetric x y z = ParMetric (s.+.x) (t+y) (u+z)
-
--- | Input/output blocking, of the form $i^j$.
+-- | Input/output blocking, of the form $i^j$, i.e., $j$ blocks, each of size
+-- $i$.
 data B = B !Int !Int
   deriving (Eq, Ord, Show)
 
@@ -318,17 +260,17 @@ instance Pretty B where
     ppr (B i j) = ppr i <> char '^' <> ppr j
 
 -- | Blocking candidate for a computation. Has the form $i^j \to k^l$.
-data BC = BC { inBlock   :: Maybe B
-             , outBlock  :: Maybe B
-             , batchFact :: !Int
-             , bcUtil    :: !BlockMetric
+data BC = BC { inBlock  :: Maybe B -- Input blocking
+             , outBlock :: Maybe B -- Output blocking
+             , rateMult :: !Int    -- Rate multiplier
+             , inBits   :: !Int    -- Bit size of each input element
+             , outBits  :: !Int    -- Bit size of each output element
              }
   deriving (Eq, Ord, Show)
 
 instance Pretty BC where
   ppr bc =
-      pprV (inBlock bc) <+> text "->" <+> pprV (outBlock bc) <+>
-      parens (ppr (bcUtil bc))
+      pprV (inBlock bc) <+> text "->" <+> pprV (outBlock bc)
     where
       pprV Nothing  = char '_'
       pprV (Just v) = ppr v
@@ -346,38 +288,33 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
         flags      <- askConfig
         if testDynFlag CoalesceTop flags
           then do
-            bcs <- coalesceComp comp'
+            bcs <- coalesceTopComp comp'
             whenVerb $ traceCoalesce $ nest 2 $
               text "Top-level candidates:" </> stack (map ppr (sort bcs))
-            asz    <- typeSize a
-            bsz    <- typeSize b
-            comp'' <- applyBestBlocking
-                        (sortAscendingBy (topMetric asz bsz) bcs)
-                        a b comp'
+            comp'' <- case sortAscendingBy topMetric bcs of
+                       bc:_ -> applyTopBlocking bc a b comp'
+                       _    -> return comp'
             return $ Main comp'' tau
           else return $ Main comp' tau
         where
-          applyBestBlocking :: [BC]
-                            -> Type
-                            -> Type
-                            -> Comp l
-                            -> Co m (Comp l)
-          applyBestBlocking [] _ _ comp =
-              return comp
-
-          applyBestBlocking (bc:_) a b comp = do
+          applyTopBlocking :: BC
+                           -> Type
+                           -> Type
+                           -> Comp l
+                           -> Co m (Comp l)
+          applyTopBlocking bc a b comp = do
               traceCoalesce $
                text "      Chose vectorization:" <+> ppr bc </>
                text "For top-level computation:" <+> ppr (compRate comp)
-              comp' <- runK $ coalesce Top bc a b comp
+              comp' <- runK $ applyBlocking Top bc a b comp
               whenVerb $ traceCoalesce $ nest 2 $
                 text "Coalesced top-level:" </> ppr comp'
               rateComp comp'
 
     compT c = transComp c >>= rateComp
 
-    stepT c0@(ParC ann b c1 c2 sloc) = withSummaryContext c0 $ do
-        (s, a, c)   <- askSTIndices
+    stepT step0@(ParC ann b c1 c2 sloc) = withSummaryContext step0 $ do
+        (s, a, c) <- askSTIndices
         -- Why can we use c1 and c2 instead of c1' and c1' when calling
         -- withRightCtx and withLeftCtx? The only time the context will limit
         -- our choices is when it is a computer, in which case both the original
@@ -402,26 +339,24 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
           text "Producer candidates:" </> stack (map ppr (sort bcs1))
         whenVerb $ traceCoalesce $ nest 2 $
           text "Consumer candidates:" </> stack (map ppr (sort bcs2))
-        let bcs = sortAscendingBy (uncurry parMetric)
-                                  [(bc1, bc2) | bc1 <- bcs1, bc2 <- bcs2]
-        c' <- applyBestBlocking bcs a b c c1' c2'
+        step' <- case sortAscendingBy patMetric [(bc1, bc2) | bc1 <- bcs1, bc2 <- bcs2] of
+                   (bc1, bc2):_ -> applyParBlocking a b c bc1 c1' bc2 c2'
+                   _            -> return $ ParC ann b c1' c2' sloc
         traceCoalesce $ nest 2 $
-          text "Final coalesced par:" </> ppr c'
-        return c'
+          text "Final coalesced par:" </> ppr step'
+        return step'
       where
-        applyBestBlocking :: [(BC,BC)]
-                          -> Type
-                          -> Type
-                          -> Type
-                          -> Comp l
-                          -> Comp l
-                          -> Co m (Step l)
-        applyBestBlocking [] _ b _ c1 c2 =
-            return $ ParC ann b c1 c2 sloc
-
-        applyBestBlocking (bc@(bc1,bc2):_) a b c c1 c2 = do
+        applyParBlocking :: Type          -- ^ Input type
+                         -> Type          -- ^ Intermediate type
+                         -> Type          -- ^ Output type
+                         -> BC            -- ^ Blocking for left side of par
+                         -> Comp l        -- ^ Left side of par
+                         -> BC            -- ^ Blocking for right side of par
+                         -> Comp l        -- ^ Right side of par
+                         -> Co m (Step l) -- ^ Coalesced par
+        applyParBlocking a b c bc1 c1 bc2 c2 = do
             traceCoalesce $ nest 2 $
-              text "Chose vectorization:" <+> ppr bc </>
+              text "Chose vectorization:" <+> ppr bc1 <+> text ">>>" <+> ppr bc2 </>
               text "            For par:" <+> ppr (compRate c1) <+> text ">>>" <+> ppr (compRate c2)
             parc <- runK $ coalescePar ann a b c c1 c2 bc1 bc2
             traceCoalesce $ nest 2 $
@@ -436,50 +371,78 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
 sortAscendingBy :: Ord b => (a -> b) -> [a] -> [a]
 sortAscendingBy f = sortBy (flip compare `on` f)
 
-blockMetric :: Int -> Maybe B -> BlockMetric
-blockMetric _ Nothing =
-    BlockMetric 0 0 0
+data BlockMetric = BlockMetric !Int -- ^ 1 if byte-sized, 0 otherwise
+                               !Int -- ^ Negated block count
+                               !Int -- ^ Negated block size
+  deriving (Eq, Ord, Show)
 
-blockMetric sz (Just (B i j)) =
-    BlockMetric (if i*sz `rem` 8 == 0 then 1 else 0)
-                (-fromIntegral (i*(j-1)))
-                (-fromIntegral i)
+instance Pretty BlockMetric where
+    ppr (BlockMetric x y z) = ppr (x, y, z)
 
-parMetric :: BC -> BC -> ParMetric
-parMetric bc1 bc2 =
+instance Metric BlockMetric where
+    BlockMetric s t u .+. BlockMetric x y z = BlockMetric (s+x) (t+y) (u+z)
+
+blockingUtil :: BC -> BlockMetric
+blockingUtil BC { inBlock = ablock, outBlock = bblock, inBits = inBits, outBits = outBits } =
+    metric inBits ablock .+. metric outBits bblock
+  where
+    metric :: Int -> Maybe B -> BlockMetric
+    metric _ Nothing =
+        BlockMetric 0 0 0
+
+    metric sz (Just (B i j)) =
+        BlockMetric (if i*sz `rem` 8 == 0 then 1 else 0)
+                    (-fromIntegral (i*(j-1)))
+                    (-fromIntegral i)
+
+class Ord a => Metric a where
+    infixl 6  .+.
+
+    (.+.) :: a -> a -> a
+
+data ParMetric = ParMetric !BlockMetric -- ^ Block utilities
+                           !Int         -- ^ 1 if block sizes match, 0 otherwise
+                           !Int         -- ^ Negated size of necessary rate matcher
+  deriving (Eq, Ord, Show)
+
+instance Pretty ParMetric where
+    ppr (ParMetric x y z) = ppr (x, y, z)
+
+patMetric :: (BC, BC) -> ParMetric
+patMetric (bc1, bc2) =
     go (outBlock bc1) (inBlock bc2)
   where
     go :: Maybe B -> Maybe B -> ParMetric
     go (Just (B i _j)) (Just (B k _l)) =
-        ParMetric (bcUtil bc1 .+. bcUtil bc2)
+        ParMetric (blockingUtil bc1 .+. blockingUtil bc2)
                   (if i == k then 1 else 0)
                   (if i == k then 0 else -fromIntegral (lcm i k))
 
     go _ _ =
-        ParMetric (bcUtil bc1 .+. bcUtil bc2) 0 0
+        ParMetric (blockingUtil bc1 .+. blockingUtil bc2) 0 0
 
-topMetric :: Int -> Int -> BC -> Int
-topMetric asz bsz BC { inBlock = Just (B i _), outBlock = Just (B j _) } =
-    i*(if i*asz `rem` 8 == 0 then 8 else 1) +
-    j*(if j*bsz `rem` 8 == 0 then 8 else 1)
+topMetric :: BC -> Int
+topMetric BC { inBlock  = Just (B i _)
+             , outBlock = Just (B j _)
+             , inBits   = inBits
+             , outBits  = outBits
+             } =
+    i*(if i*inBits `rem` 8 == 0 then 8 else 1) +
+    j*(if j*outBits `rem` 8 == 0 then 8 else 1)
 
-topMetric _ _ _ = 0
+topMetric _ = 0
 
-data Mode = Top
-          | Producer
-          | Consumer
-  deriving (Eq, Ord, Show)
-
+-- | Coalesce the two sides of a par construct.
 coalescePar :: forall l m . (IsLabel l, MonadTc m)
-            => PipelineAnn
-            -> Type
-            -> Type
-            -> Type
-            -> Comp l
-            -> Comp l
-            -> BC
-            -> BC
-            -> K l m Exp
+            => PipelineAnn -- ^ Pipeline annotation
+            -> Type        -- ^ Input type
+            -> Type        -- ^ Intemediate type
+            -> Type        -- ^ Output type
+            -> Comp l      -- ^ Left side of par
+            -> Comp l      -- ^ Right side of par
+            -> BC          -- ^ Left blocking
+            -> BC          -- ^ Right blocking
+            -> K l m Exp   -- ^ Coalesced par
 coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=Just (B j _)}
   | i == j    = matchedRates
   | otherwise = mismatchedRates
@@ -488,16 +451,16 @@ coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=J
     matchedRates =
         parC' ann
               (coArrT i b)
-              (coalesce Producer bc1 a b comp1)
-              (coalesce Consumer bc2 b c comp2)
+              (applyBlocking Producer bc1 a b comp1)
+              (applyBlocking Consumer bc2 b c comp2)
 
     mismatchedRates :: K l m Exp
     mismatchedRates =
         parC' ann (coArrT j b)
               (parC (coArrT i b)
-                    (coalesce Producer bc1 a b comp1)
+                    (applyBlocking Producer bc1 a b comp1)
                     matcher)
-              (coalesce Consumer bc2 b c comp2)
+              (applyBlocking Consumer bc2 b c comp2)
       where
         n :: Int
         n = lcm i j
@@ -535,8 +498,8 @@ coalescePar ann a b c comp1 comp2 bc1@BC{outBlock=Just (B i _)} bc2@BC{inBlock=J
                 emitC (coSliceE ys (k*fromIntegral j) (fromIntegral j))
 
 coalescePar ann a b c comp1 comp2 bc1 bc2 =
-    parC' ann b (coalesce Top bc1 a b comp1)
-                (coalesce Top bc2 b c comp2)
+    parC' ann b (applyBlocking Top bc1 a b comp1)
+                (applyBlocking Top bc2 b c comp2)
 
 -- The type of the block of n elements we pass between computers. When n =
 -- 1, we use elements rather than arrays of size 1.
@@ -550,14 +513,21 @@ coSliceE :: Exp -> Exp -> Int -> Exp
 coSliceE e1 e2 1   = idxE e1 e2
 coSliceE e1 e2 len = sliceE e1 e2 len
 
-coalesce :: forall l m . (IsLabel l, MonadTc m)
-         => Mode
-         -> BC
-         -> Type
-         -> Type
-         -> Comp l
-         -> K l m Exp
-coalesce mode bc a b comp =
+-- | Whether the current computation is top-level, a producer, or a consumer.
+data Mode = Top      -- ^ Computation is top-level
+          | Producer -- ^ Computation is a producer
+          | Consumer -- ^ Computation is a consume
+  deriving (Eq, Ord, Show)
+
+-- | Apply a blocking to a computation.
+applyBlocking :: forall l m . (IsLabel l, MonadTc m)
+              => Mode      -- ^ Computation mode
+              -> BC        -- ^ Blocking
+              -> Type      -- ^ Input type
+              -> Type      -- ^ Output type
+              -> Comp l    -- ^ The computation to which we apply the blocking
+              -> K l m Exp -- ^ Resulting computation
+applyBlocking mode bc a b comp =
     go bc
   where
     go :: BC -> K l m Exp
@@ -565,237 +535,370 @@ coalesce mode bc a b comp =
         -- Associate to the right
         -- coleft mode i a (coright mode k b (compC comp))
         -- Associate to the left
-        coright mode k b (coleft mode i a (compC comp))
+        coRight k b (coLeft i a (compC comp))
 
     go BC{inBlock = Just (B i _j), outBlock = Nothing} =
-        coleft mode i a (compC comp)
+        coLeft i a (compC comp)
 
     go BC{inBlock = Nothing, outBlock = Just (B k _l)} =
-        coright mode k b (compC comp)
+        coRight k b (compC comp)
 
     go _ =
         compC comp
 
-coleft :: forall l m . (IsLabel l, MonadTc m)
-       => Mode
-       -> Int       -- ^ Number of elements to take per round
-       -> Type      -- ^ Type of elements
-       -> K l m Exp -- ^ Right side of par
-       -> K l m Exp
-coleft mode n tau c_right =
-    parC tau (c_left mode n tau) c_right
+    -- | Create a coercion that buffers on the left. If we are the consumer half of
+    -- a par, take the entire buffer as an array using @take@ rather than taking it
+    -- an element at a time using @takes@.
+    coLeft :: Int       -- ^ Number of elements to take per round
+           -> Type      -- ^ Type of elements
+           -> K l m Exp -- ^ Right side of par
+           -> K l m Exp
+    coLeft n tau comp =
+        parC tau (co mode n tau) comp
+      where
+        -- | The coercion computation
+        co :: Mode -> Int -> Type -> K l m Exp
+        co _ 1 tau =
+            identityC 1 $
+            repeatC $ do
+              x <- takeC tau
+              emitC x
+
+        -- We are the consumer half of a par, so take an entire array of values at
+        -- once.
+        co Consumer n tau =
+            repeatC $ do
+              xs <- takeC (coArrT n tau)
+              emitsC xs
+
+        co _ n tau =
+            identityC n $
+            repeatC $ do
+              xs <- takesC n tau
+              emitsC xs
+
+    -- | Create a coercion that buffers on the right. If we are the producer half of
+    -- a par, emit the entire buffer using @emit@ rather than emitting it an element
+    -- at a time using @emits@.
+    coRight :: Int       -- ^ Number of elements to emit per round
+            -> Type      -- ^ Type of elements
+            -> K l m Exp -- ^ Left side of par
+            -> K l m Exp
+    coRight n tau comp =
+        parC tau comp (co mode n tau)
+      where
+        -- | The coercion computation
+        co :: Mode -> Int -> Type -> K l m Exp
+        co _ 1 tau =
+            identityC 1 $
+            repeatC $ do
+              x <- takeC tau
+              emitC x
+
+        -- We are the producer half of a par, so emit an entire array of values at
+        -- once.
+        co Producer n tau =
+            repeatC $ do
+              xs <- takesC n tau
+              emitC xs
+
+        co _ n tau =
+            identityC n $
+            repeatC $ do
+              xs <- takesC n tau
+              emitsC xs
+
+-- | Generate candidate blockings for a top-level computation.
+coalesceTopComp :: forall l m . MonadTc m
+                => Comp l
+                -> Co m [BC]
+coalesceTopComp comp = do
+    (_, a, b) <- askSTIndices
+    inBits    <- typeSize a
+    outBits   <- typeSize b
+    maxBuf    <- asksConfig maxCoalesceBuffer
+    maxRate   <- asksConfig maxTopCoalesceRate
+    -- Evaluate Nat's in the vectorization annotation
+    ann <- traverse (traverse evalNat) (vectAnn comp)
+    traceCoalesce $ text "Vectorization annotation:" <+>
+      ppr ann <+> parens (ppr (vectAnn comp))
+    -- Compute C and B rules
+    let cs = crules comp inBits outBits maxBuf
+    let bs = brules comp inBits outBits maxRate
+    whenVerbLevel 2 $ traceCoalesce $ nest 2 $
+      text "C-rules:" </> stack (map ppr (sort cs))
+    whenVerbLevel 2 $ traceCoalesce $ nest 2 $
+      text "B-rules:" </> stack (map ppr (sort bs))
+    dflags <- askConfig
+    let allCs :: [BC]
+        allCs = filter (byteSizePred dflags) $
+                filter (vectAnnPred dflags ann) $
+                map (dontCoalesceBits a b) $
+                cs ++ bs
+    return $ noVect inBits outBits : allCs
   where
-    c_left :: Mode -> Int -> Type -> K l m Exp
-    c_left _ 1 tau =
-        identityC 1 $
-        repeatC $ do
-          x <- takeC tau
-          emitC x
+    -- | Implement the C rules.
+    crules :: Comp l -- ^ The computation
+           -> Int    -- ^ Size (in bits) of input type
+           -> Int    -- ^ Size (in bits) of output type
+           -> Int    -- ^ Maximum buffer size in bits
+           -> [BC]
+    crules comp inBits outBits maxBuf = do
+        (inMult, outMult) <- compInOutM comp
+        inBlock           <- crule inMult  (8*maxBuf `quot` inBits)
+        outBlock          <- crule outMult (8*maxBuf `quot` outBits)
+        return BC { inBlock  = inBlock
+                  , outBlock = outBlock
+                  , rateMult = 1
+                  , inBits   = inBits
+                  , outBits  = outBits
+                  }
+      where
+        crule :: M         -- ^ Multiplicity
+              -> Int       -- ^ Maximum number of elements
+              -> [Maybe B] -- ^ Blocking
+        -- We only coalesce one side of a computation if it has a known
+        -- multiplicity of i or i+, where i > 0.
+        crule m maxElems =
+            case fromP m of
+              Just i | i > 0 -> [Just (B i 1) | i <= maxElems]
+              _              -> [Nothing]
 
-    c_left Consumer n tau =
-        repeatC $ do
-          xs <- takeC (coArrT n tau)
-          emitsC xs
+    -- | Implement the B rules
+    brules :: Comp l    -- ^ The computation
+           -> Int       -- ^ Size (in bits) of input type
+           -> Int       -- ^ Size (in bits) of output type
+           -> Maybe Int -- ^ Maximum number of elements we may buffer
+           -> [BC]
+    brules comp inBits outBits maxElems = do
+        -- We only rate-expand transformers
+        guard (isTransformer comp)
+        -- We only rate-expand when we have known input and output rates.
+        (inMult, outMult) <- compInOutM comp
+        inRate <- fromP inMult
+        guard (inRate > 0)
+        outRate <- fromP outMult
+        guard (outRate > 0)
+        -- Compute limits on rate multipliers. We can only multiply a rate up to
+        -- the point where we input/output 'maxElems' elements.
+        let xMax =  min (multiplierBound maxElems inBits inRate)
+                        (multiplierBound maxElems outBits outRate)
+        x        <- [1..xMax]
+        -- Compute blockings
+        inBlock  <- brule inRate  x
+        outBlock <- brule outRate x
+        -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
+        -- common factors, i.e., they must be coprime.
+        guard (bfCoprime inBlock outBlock)
+        return BC { inBlock  = Just inBlock
+                  , outBlock = Just outBlock
+                  , rateMult = x
+                  , inBits   = inBits
+                  , outBits  = outBits
+                  }
+      where
+        -- | Upper bound on rate multiplier. We adhere to the 'maxElems' bound
+        -- except when we need to multiply the rate to reach a byte boundary.
+        multiplierBound :: Maybe Int -> Int -> Int -> Int
+        multiplierBound maxElems bits n =
+            max minRateXForBytes maxRateX
+          where
+            -- Min rate multiplier needed to reach a bit boundary.
+            minRateXForBytes :: Int
+            minRateXForBytes = lcm 8 (n*bits) `quot` (8*bits*n)
 
-    c_left _ n tau =
-        identityC n $
-        repeatC $ do
-          xs <- takesC n tau
-          emitsC xs
+            -- Max rate multiplier. We use 'maxElems' to calculate this.
+            maxRateX :: Int
+            maxRateX = fromMaybe 1 $ do
+                k <- maxElems
+                return $ k `quot` n
 
-coright :: forall l m . (IsLabel l, MonadTc m)
-        => Mode
-        -> Int       -- ^ Number of elements to emit per round
-        -> Type      -- ^ Type of elements
-        -> K l m Exp -- ^ Left side of par
-        -> K l m Exp
-coright mode n tau c_left =
-    parC tau c_left (c_right mode n tau)
-  where
-    c_right :: Mode -> Int -> Type -> K l m Exp
-    c_right _ 1 tau =
-        identityC 1 $
-        repeatC $ do
-          x <- takeC tau
-          emitC x
+        -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
+        bfCoprime :: B -> B -> Bool
+        bfCoprime (B _ n) (B _ m) = gcd n m == 1
 
-    c_right Producer n tau =
-        repeatC $ do
-          xs <- takesC n tau
-          emitC xs
+        brule :: Int -- ^ Our rate
+              -> Int -- ^ Rate multiplier factor
+              -> [B]
+        -- We want to bail on batching one side of a computation if it doesn't
+        -- have a known multiplicity of i or i+, where i > 0.
+        brule n x
+          | n > 0     = [B (x*n) 1]
+          | otherwise = []
 
-    c_right _ n tau =
-        identityC n $
-        repeatC $ do
-          xs <- takesC n tau
-          emitsC xs
-
+-- | Generate candidate blockings for a computation.
 coalesceComp :: forall l m . MonadTc m
              => Comp l
              -> Co m [BC]
 coalesceComp comp = do
     (_, a, b) <- askSTIndices
-    ctx_left  <- askLeftCtx
-    ctx_right <- askRightCtx
-    traceCoalesce $ text "Left context:" <+> ppr ctx_left
-    traceCoalesce $ text "Right context:" <+> ppr ctx_right
-    traceCoalesce $ text "Vectorization annotation:" <+> ppr (vectAnn comp)
-    asz   <- typeSize a
-    bsz   <- typeSize b
-    cs1   <- observeAll $ do
-             guard (not (isBitArrT a) && not (isBitArrT b))
-             crules asz asz (mAX_BLOCK_SIZE `quot` asz) (mAX_BLOCK_SIZE `quot` bsz)
-    cs2   <- observeAll $ do
-             guard (not (isBitArrT a) && not (isBitArrT b))
-             brules asz bsz ctx_left ctx_right
+    inBits    <- typeSize a
+    outBits   <- typeSize b
+    leftCtx   <- askLeftCtx
+    rightCtx  <- askRightCtx
+    maxBuf    <- asksConfig maxCoalesceBuffer
+    maxRate   <- asksConfig maxCoalesceRate
+    traceCoalesce $ text "Left context:" <+> ppr leftCtx
+    traceCoalesce $ text "Right context:" <+> ppr rightCtx
+    -- Evaluate Nat's in the vectorization annotation
+    ann <- traverse (traverse evalNat) (vectAnn comp)
+    traceCoalesce $ text "Vectorization annotation:" <+>
+      ppr ann <+> parens (ppr (vectAnn comp))
+    -- Compute C and B rules
+    let cs = crules comp inBits outBits maxBuf
+    let bs = brules comp inBits outBits leftCtx rightCtx maxRate
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
-      text "C-rules:" </> stack (map ppr (sort cs1))
+      text "C-rules:" </> stack (map ppr (sort cs))
     whenVerbLevel 2 $ traceCoalesce $ nest 2 $
-      text "B-rules:" </> stack (map ppr (sort cs2))
+      text "B-rules:" </> stack (map ppr (sort bs))
     dflags <- askConfig
-    ann    <- traverse (traverse evalNat) (vectAnn comp)
-    let cs :: [BC]
-        cs = filter (byteSizePred dflags asz bsz) $
-             filter (vectAnnPred dflags ann) $
-             cs1 ++ cs2
-    return (noVect : cs)
+    let allCs :: [BC]
+        allCs = filter (byteSizePred dflags) $
+                filter (vectAnnPred dflags ann) $
+                map (dontCoalesceBits a b) $
+                cs ++ bs
+    return $ noVect inBits outBits : allCs
   where
-    byteSizePred :: Config -> Int -> Int -> BC -> Bool
-    byteSizePred dflags asz bsz bc | VectOnlyBytes `testDynFlag` dflags =
-        (byteSized asz . inBlock) bc && (byteSized bsz . outBlock) bc
-      where
-        byteSized :: Int -> Maybe B -> Bool
-        byteSized _  Nothing        = True
-        byteSized sz (Just (B i _)) = (i*sz) `rem` 8 == 0
-
-    byteSizePred _ _ _ _ =
-        True
-
-    vectAnnPred :: Config -> Maybe (VectAnn Int) -> BC -> Bool
-    vectAnnPred dflags ann | VectFilterAnn `testDynFlag` dflags =
-        matchVectAnn ann
-      where
-        matchVectAnn :: Maybe (VectAnn Int) -> BC -> Bool
-        matchVectAnn Nothing _ =
-            True
-
-        matchVectAnn (Just ann) bc =
-            (matchInBlock ann . inBlock) bc && (matchOutBlock ann . outBlock) bc
-
-        matchInBlock :: VectAnn Int -> Maybe B -> Bool
-        matchInBlock _             Nothing        = True
-        matchInBlock AutoVect      _              = True
-        matchInBlock (Rigid _ m _) (Just (B i _)) = i == m
-        matchInBlock (UpTo _ m _)  (Just (B i _)) = i <= m
-
-        matchOutBlock :: VectAnn Int -> Maybe B -> Bool
-        matchOutBlock _             Nothing        = True
-        matchOutBlock AutoVect      _              = True
-        matchOutBlock (Rigid _ _ m) (Just (B i _)) = i == m
-        matchOutBlock (UpTo _ _ m)  (Just (B i _)) = i <= m
-
-    vectAnnPred _ _ =
-        const True
-
-    -- | No vectorization
-    noVect :: BC
-    noVect = BC { inBlock   = Nothing
-                , outBlock  = Nothing
-                , batchFact = 1
-                , bcUtil    = BlockMetric 0 0 0
-                }
-
     -- | Implement the C rules.
-    crules :: Int
-           -> Int
-           -> Int
-           -> Int
-           -> Co m BC
-    crules asz bsz max_left max_right = do
-        (m_left, m_right) <- compInOutM comp
-        b_in              <- crule m_left  max_left
-        b_out             <- crule m_right max_right
-        return BC { inBlock   = b_in
-                  , outBlock  = b_out
-                  , batchFact = 1
-                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
+    crules :: Comp l -- ^ The computation
+           -> Int    -- ^ Size (in bits) of input type
+           -> Int    -- ^ Size (in bits) of output type
+           -> Int    -- ^ Maximum buffer size in bits
+           -> [BC]
+    crules comp inBits outBits maxBuf = do
+        (inMult, outMult) <- compInOutM comp
+        inBlock           <- crule inMult  (8*maxBuf `quot` inBits)
+        outBlock          <- crule outMult (8*maxBuf `quot` outBits)
+        return BC { inBlock  = inBlock
+                  , outBlock = outBlock
+                  , rateMult = 1
+                  , inBits   = inBits
+                  , outBits  = outBits
                   }
       where
-        crule :: M   -- ^ Multiplicity
-              -> Int -- ^ Maximum block size, measured in elements (not bytes)
-              -> Co m (Maybe B)
-        -- We only want to bail on coalescing one side of a computation if it
-        -- doesn't have a known multiplicity of i or i+.
-        crule m maxBlock =
-            ifte (fromP m)
-                 (\i -> if i == 0
-                        then return Nothing
-                        else Just <$> fact i i blockingPred)
-                 (return Nothing)
-          where
-            blockingPred :: B -> Bool
-            blockingPred (B i _) = i <= maxBlock
+        crule :: M         -- ^ Multiplicity
+              -> Int       -- ^ Maximum number of elements
+              -> [Maybe B] -- ^ Blocking
+        -- We only coalesce one side of a computation if it has a known
+        -- multiplicity of i or i+, where i > 0.
+        crule m maxElems =
+            case fromP m of
+              Just i | i > 0 -> [Just (B i 1) | i <= maxElems]
+              _              -> [Nothing]
 
     -- | Implement the B rules
-    brules :: Int
-           -> Int
-           -> Maybe M
-           -> Maybe M
-           -> Co m BC
-    brules asz bsz ctx_left ctx_right = do
+    brules :: Comp l    -- ^ The computation
+           -> Int       -- ^ Size (in bits) of input type
+           -> Int       -- ^ Size (in bits) of output type
+           -> Maybe M   -- ^ Left computer's rate
+           -> Maybe M   -- ^ Right computer's rate
+           -> Maybe Int -- ^ Maximum number of elements we may buffer
+           -> [BC]
+    brules comp inBits outBits leftCtx rightCtx maxElems = do
+        -- We only rate-expand transformers
         guard (isTransformer comp)
-        (m_left, m_right) <- compInOutM comp
-        let n_max         =  min (nBound m_left) (nBound m_right)
-        n                 <- choices [1..n_max]
-        b_in              <- brule ctx_left  m_left  n
-        b_out             <- brule ctx_right m_right n
+        -- We only rate-expand when we have known input and output rates.
+        (inMult, outMult) <- compInOutM comp
+        inRate <- fromP inMult
+        guard (inRate > 0)
+        outRate <- fromP outMult
+        guard (outRate > 0)
+        -- Compute limits on rate multipliers. We can only multiply a rate up to
+        -- the point where we input/output 'maxElems' elements.
+        let xMax =  min (multiplierBound maxElems inRate)
+                        (multiplierBound maxElems outRate)
+        x        <- [1..xMax]
+        -- Compute blockings
+        inBlock  <- brule leftCtx  inRate  x
+        outBlock <- brule rightCtx outRate x
         -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
         -- common factors, i.e., they must be coprime.
-        guard (bfCoprime b_in b_out)
-        -- Disallow no-op batching strategy.
-        guard (not (isNothing b_in && isNothing b_out))
-        return BC { inBlock   = b_in
-                  , outBlock  = b_out
-                  , batchFact = n
-                  , bcUtil    = blockMetric asz b_in .+. blockMetric bsz b_out
+        guard (bfCoprime inBlock outBlock)
+        return BC { inBlock  = Just inBlock
+                  , outBlock = Just outBlock
+                  , rateMult = x
+                  , inBits   = inBits
+                  , outBits  = outBits
                   }
       where
+        -- | Upper bound on rate multiplier.
+        multiplierBound :: Maybe Int -> Int -> Int
+        multiplierBound maxElems n = fromMaybe 1 $ do
+            k <- maxElems
+            return $ k `quot` n
+
         -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
-        bfCoprime :: Maybe B -> Maybe B -> Bool
-        bfCoprime (Just (B _ n)) (Just (B _ m)) = gcd n m == 1
-        bfCoprime _              _              = True
+        bfCoprime :: B -> B -> Bool
+        bfCoprime (B _ n) (B _ m) = gcd n m == 1
 
-        brule :: Maybe M
-              -> M
-              -> Int
-              -> Co m (Maybe B)
+        brule :: Maybe M -- ^ If we are in the context of a computer, its rate
+              -> Int     -- ^ Our rate
+              -> Int     -- ^ Rate multiplier factor
+              -> [B]
         -- We want to bail on batching one side of a computation if it doesn't
-        -- have a known multiplicity of i or i+ *or*
-        brule ctx m n =
-            ifte (fromP m)
-                 (\i -> do p <- mkBlockingPred ctx m
-                           if i == 0
-                             then return Nothing
-                             else Just <$> fact i (i*n) p)
-                 (return Nothing)
-
-        -- | Upper bound on n.
-        nBound :: M -> Int
-        nBound (N i) | i == 0    = mAX_BATCH_SIZE
-                     | otherwise = mAX_BATCH_SIZE `quot` i
-        nBound (P i)             = mAX_BATCH_SIZE `quot` i
-        nBound Z{}               = mAX_BATCH_SIZE
+        -- have a known multiplicity of i or i+, where i > 0.
+        brule ctx n x
+          | n > 0     = [b | let b = B (x*n) 1, rateDividesCtx ctx b]
+          | otherwise = []
 
         -- | Given a multiplicity constraint and the computation's multiplicity,
         -- return a predicate constraining us to legal blockings.
-        mkBlockingPred :: Maybe M -> M -> Co m (B -> Bool)
-        mkBlockingPred Nothing _m  =
-            return $ const True
+        rateDividesCtx :: Maybe M -> B -> Bool
+        rateDividesCtx Nothing   _      = True
+        rateDividesCtx (Just m) (B i j)
+            | Just n <- fromP m = (i*j) `divides` n
+            | otherwise         = False
 
-        -- If we have a context, we must be a transformer.
-        mkBlockingPred (Just m_ctx) _m = do
-            n_ctx <- fromP m_ctx
-            return $ \(B i j) -> (i*j) `divides` n_ctx
+-- | Modify a blocking to ensure that bit arrays are never coalesced.
+dontCoalesceBits :: Type -> Type -> BC -> BC
+dontCoalesceBits a b bc =
+  bc { inBlock  = dontCoalesceIf (isBitArrT a) (inBlock bc)
+     , outBlock = dontCoalesceIf (isBitArrT b) (outBlock bc)
+     }
+  where
+    dontCoalesceIf :: Bool -> Maybe a -> Maybe a
+    dontCoalesceIf True  _ = Nothing
+    dontCoalesceIf False x = x
+
+-- | No vectorization
+noVect :: Int -> Int -> BC
+noVect inBits outBits =
+    BC { inBlock  = Nothing
+       , outBlock = Nothing
+       , rateMult = 1
+       , inBits   = inBits
+       , outBits  = outBits
+       }
+
+byteSizePred :: Config -> BC -> Bool
+byteSizePred dflags bc | VectOnlyBytes `testDynFlag` dflags =
+    byteSized (inBits bc)  (inBlock bc) &&
+    byteSized (outBits bc) (outBlock bc)
+  where
+    byteSized :: Int -> Maybe B -> Bool
+    byteSized _ Nothing        = True
+    byteSized n (Just (B i _)) = (i*n) `rem` 8 == 0
+
+byteSizePred _ _ = True
+
+vectAnnPred :: Config -> Maybe (VectAnn Int) -> BC -> Bool
+vectAnnPred dflags (Just ann) bc | VectFilterAnn `testDynFlag` dflags =
+    (matchInBlock ann . inBlock) bc && (matchOutBlock ann . outBlock) bc
+  where
+    matchInBlock :: VectAnn Int -> Maybe B -> Bool
+    matchInBlock _             Nothing        = True
+    matchInBlock AutoVect      _              = True
+    matchInBlock (Rigid _ m _) (Just (B i _)) = i == m
+    matchInBlock (UpTo _ m _)  (Just (B i _)) = i <= m
+
+    matchOutBlock :: VectAnn Int -> Maybe B -> Bool
+    matchOutBlock _             Nothing        = True
+    matchOutBlock AutoVect      _              = True
+    matchOutBlock (Rigid _ _ m) (Just (B i _)) = i == m
+    matchOutBlock (UpTo _ _ m)  (Just (B i _)) = i <= m
+
+vectAnnPred _ _ _ =
+    True
 
 isTransformer :: Comp l -> Bool
 isTransformer c =
@@ -815,22 +918,5 @@ vectAnn c = go (unComp c)
           RepeatC _ ann _ _ -> Just ann
           _                 -> Nothing
 
-choices :: MonadPlus m => [a] -> m a
-choices = foldr (mplus . return) mzero
-
 divides :: Integral a => a -> a -> Bool
 divides x y = y `rem` x == 0
-
--- | Factor a multiplicity into all possible blockings satisfying a given
--- constraint on the blocking.
-fact :: MonadPlus m
-     => Int         -- ^ Minimum multiplicity
-     -> Int         -- ^ Maximum multiplicity
-     -> (B -> Bool) -- ^ Predicate on blocking
-     -> m B
-fact n m p =
-    choices [B i j | i <- [n..m],
-                     m `rem` i == 0,
-                     i `rem` n == 0,
-                     let j = m `quot` i,
-                     p (B i j)]

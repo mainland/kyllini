@@ -95,6 +95,9 @@ far fewer expressions are LUTted.
 | `-fmax-lut=INT`                   | Set maximum LUT size in bytes|
 | `-fmin-lut-ops=N`                 | Set minimum operation count to consider a LUT|
 | `-fmax-fusion-blowup=FLOAT`       | Set maximum allowed fusion blowup|
+| `-fmax-coalesce-buffer=INT`       | Set maximum size (in bytes) of the buffer that will be inserted during pipeline coalescing |
+| `-fmax-coalesce-rate`             | Set maximum rate for coalesced computations |
+| `-fmax-top-coalesce-rate`         | Set maximum rate for coalesced top-level computations |
 | `-fmin-memcpy-bytes=INT`          | Set minimum array size size (in bytes) needed to force the use of `memcpy` instead of unrolled element assignment for copying. |
 
 ## Debugging flags

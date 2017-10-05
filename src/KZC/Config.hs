@@ -193,6 +193,17 @@ data Config = Config
     -- | Minimum number of bytes before we switch to memcpy
     , minMemcpyBytes :: !Int
 
+    -- | Maximum buffer size (in bytes) inserted during pipeline coalescing.
+    , maxCoalesceBuffer :: !Int
+
+    -- | Maximum rate for widened computations during coalescing. When
+    -- 'Nothing', don't widen.
+    , maxCoalesceRate :: Maybe Int
+
+    -- | Maximum rate for widened top-level computations during coalescing. When
+    -- 'Nothing', don't widen.
+    , maxTopCoalesceRate :: Maybe Int
+
     , dynFlags    :: !(FlagSet DynFlag)
     , warnFlags   :: !(FlagSet WarnFlag)
     , werrorFlags :: !(FlagSet WarnFlag)
@@ -232,6 +243,18 @@ instance Monoid Config where
         -- Always use memcpy
         , minMemcpyBytes = 0
 
+        -- Default maximum buffer size (in bytes) inserted during pipeline
+        -- coalescing.
+        , maxCoalesceBuffer = 64
+
+        -- | Maximum rate for widened computations during coalescing. When
+        -- 'Nothing', don't widen.
+        , maxCoalesceRate = Just 288
+
+        -- | Maximum rate for widened top-level computations during coalescing. When
+        -- 'Nothing', don't widen.
+        , maxTopCoalesceRate = Nothing
+
         , dynFlags    = mempty
         , werrorFlags = mempty
         , warnFlags   = mempty
@@ -260,6 +283,12 @@ instance Monoid Config where
         , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
 
         , minMemcpyBytes = min (minMemcpyBytes f1) (minMemcpyBytes f2)
+
+        , maxCoalesceBuffer = max (maxCoalesceBuffer f1) (maxCoalesceBuffer f2)
+
+        , maxCoalesceRate = maxCoalesceRate f1 <|> maxCoalesceRate f2
+
+        , maxTopCoalesceRate = maxTopCoalesceRate f1 <|> maxTopCoalesceRate f2
 
         , dynFlags    = dynFlags f1    <> dynFlags f2
         , warnFlags   = warnFlags f1   <> warnFlags f2
