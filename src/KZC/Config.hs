@@ -200,6 +200,10 @@ data Config = Config
     -- 'Nothing', don't widen.
     , maxCoalesceRate :: Maybe Int
 
+    -- | Maximum rate for widened top-level computations during coalescing. When
+    -- 'Nothing', don't widen.
+    , maxTopCoalesceRate :: Maybe Int
+
     , dynFlags    :: !(FlagSet DynFlag)
     , warnFlags   :: !(FlagSet WarnFlag)
     , werrorFlags :: !(FlagSet WarnFlag)
@@ -247,6 +251,10 @@ instance Monoid Config where
         -- 'Nothing', don't widen.
         , maxCoalesceRate = Just 288
 
+        -- | Maximum rate for widened top-level computations during coalescing. When
+        -- 'Nothing', don't widen.
+        , maxTopCoalesceRate = Just 288
+
         , dynFlags    = mempty
         , werrorFlags = mempty
         , warnFlags   = mempty
@@ -279,6 +287,8 @@ instance Monoid Config where
         , maxCoalesceBuffer = max (maxCoalesceBuffer f1) (maxCoalesceBuffer f2)
 
         , maxCoalesceRate = maxCoalesceRate f1 <|> maxCoalesceRate f2
+
+        , maxTopCoalesceRate = maxTopCoalesceRate f1 <|> maxTopCoalesceRate f2
 
         , dynFlags    = dynFlags f1    <> dynFlags f2
         , warnFlags   = warnFlags f1   <> warnFlags f2

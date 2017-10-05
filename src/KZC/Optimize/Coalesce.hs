@@ -617,7 +617,7 @@ coalesceTopComp comp = do
     inBits    <- typeSize a
     outBits   <- typeSize b
     maxBuf    <- asksConfig maxCoalesceBuffer
-    maxRate   <- asksConfig maxCoalesceRate
+    maxRate   <- asksConfig maxTopCoalesceRate
     -- Evaluate Nat's in the vectorization annotation
     ann <- traverse (traverse evalNat) (vectAnn comp)
     traceCoalesce $ text "Vectorization annotation:" <+>

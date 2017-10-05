@@ -284,6 +284,7 @@ fOpts =
     , FlagOption "max-fusion-blowup"         (ReqArg maxFusionBlowupOpt "FLOAT")  "set maximum allowed fusion blowup"
     , FlagOption "max-coalesce-buffer"       (ReqArg maxCoalesceBufferOpt "INT")  "set maximum coalescing buffer size (in bytes)"
     , FlagOption "max-coalesce-rate"         (ReqArg maxCoalesceRateOpt "INT")    "set maximum rate of widened computations during coalescing"
+    , FlagOption "max-top-coalesce-rate"     (ReqArg maxTopCoalesceRateOpt "INT") "set maximum rate of widened top-level computations during coalescing"
     , FlagOption "min-memcpy-bytes"          (ReqArg minMemcpyBytesOpt "INT")     "set minimum number of bytes before using memcpy"
     , FlagOption "simpl"                     (NoArg simplOpt)                     "run the simplifier"
     , FlagOption "inline"                    (NoArg inlineOpt)                    "inline when simplifying"
@@ -339,6 +340,12 @@ fOpts =
         case reads s of
           [(n, "")]  -> return fs { maxCoalesceRate = Just n }
           _          -> fail "argument to -fmax-coalesce-rate must be an integer"
+
+    maxTopCoalesceRateOpt :: String -> Config -> m Config
+    maxTopCoalesceRateOpt s fs =
+        case reads s of
+          [(n, "")]  -> return fs { maxTopCoalesceRate = Just n }
+          _          -> fail "argument to -fmax-top-coalesce-rate must be an integer"
 
     minMemcpyBytesOpt :: String -> Config -> m Config
     minMemcpyBytesOpt s fs =
