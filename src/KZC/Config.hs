@@ -253,7 +253,7 @@ instance Monoid Config where
 
         -- | Maximum rate for widened top-level computations during coalescing. When
         -- 'Nothing', don't widen.
-        , maxTopCoalesceRate = Just 288
+        , maxTopCoalesceRate = Nothing
 
         , dynFlags    = mempty
         , werrorFlags = mempty
