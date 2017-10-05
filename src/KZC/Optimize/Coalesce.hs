@@ -288,7 +288,7 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
         flags      <- askConfig
         if testDynFlag CoalesceTop flags
           then do
-            bcs <- coalesceComp comp'
+            bcs <- coalesceTopComp comp'
             whenVerb $ traceCoalesce $ nest 2 $
               text "Top-level candidates:" </> stack (map ppr (sort bcs))
             comp'' <- case sortAscendingBy topMetric bcs of
@@ -607,6 +607,112 @@ applyBlocking mode bc a b comp =
             repeatC $ do
               xs <- takesC n tau
               emitsC xs
+
+-- | Generate candidate blockings for a top-level computation.
+coalesceTopComp :: forall l m . MonadTc m
+                => Comp l
+                -> Co m [BC]
+coalesceTopComp comp = do
+    (_, a, b) <- askSTIndices
+    inBits    <- typeSize a
+    outBits   <- typeSize b
+    maxBuf    <- asksConfig maxCoalesceBuffer
+    maxRate   <- asksConfig maxCoalesceRate
+    -- Evaluate Nat's in the vectorization annotation
+    ann <- traverse (traverse evalNat) (vectAnn comp)
+    traceCoalesce $ text "Vectorization annotation:" <+>
+      ppr ann <+> parens (ppr (vectAnn comp))
+    -- Compute C and B rules
+    let cs = crules comp inBits outBits maxBuf
+    let bs = brules comp inBits outBits maxRate
+    whenVerbLevel 2 $ traceCoalesce $ nest 2 $
+      text "C-rules:" </> stack (map ppr (sort cs))
+    whenVerbLevel 2 $ traceCoalesce $ nest 2 $
+      text "B-rules:" </> stack (map ppr (sort bs))
+    dflags <- askConfig
+    let allCs :: [BC]
+        allCs = filter (byteSizePred dflags) $
+                filter (vectAnnPred dflags ann) $
+                map (dontCoalesceBits a b) $
+                cs ++ bs
+    return $ noVect inBits outBits : allCs
+  where
+    -- | Implement the C rules.
+    crules :: Comp l -- ^ The computation
+           -> Int    -- ^ Size (in bits) of input type
+           -> Int    -- ^ Size (in bits) of output type
+           -> Int    -- ^ Maximum buffer size in bits
+           -> [BC]
+    crules comp inBits outBits maxBuf = do
+        (inMult, outMult) <- compInOutM comp
+        inBlock           <- crule inMult  (8*maxBuf `quot` inBits)
+        outBlock          <- crule outMult (8*maxBuf `quot` outBits)
+        return BC { inBlock  = inBlock
+                  , outBlock = outBlock
+                  , rateMult = 1
+                  , inBits   = inBits
+                  , outBits  = outBits
+                  }
+      where
+        crule :: M         -- ^ Multiplicity
+              -> Int       -- ^ Maximum number of elements
+              -> [Maybe B] -- ^ Blocking
+        -- We only coalesce one side of a computation if it has a known
+        -- multiplicity of i or i+, where i > 0.
+        crule m maxElems =
+            case fromP m of
+              Just i | i > 0 -> [Just (B i 1) | i <= maxElems]
+              _              -> [Nothing]
+
+    -- | Implement the B rules
+    brules :: Comp l    -- ^ The computation
+           -> Int       -- ^ Size (in bits) of input type
+           -> Int       -- ^ Size (in bits) of output type
+           -> Maybe Int -- ^ Maximum number of elements we may buffer
+           -> [BC]
+    brules comp inBits outBits maxElems = do
+        -- We only rate-expand transformers
+        guard (isTransformer comp)
+        -- We only rate-expand when we have known input and output rates.
+        (inMult, outMult) <- compInOutM comp
+        inRate            <- fromP inMult
+        outRate           <- fromP outMult
+        -- Compute limits on rate multipliers. We can only multiply a rate up to
+        -- the point where we input/output 'maxElems' elements.
+        let xMax =  min (multiplierBound maxElems inRate)
+                        (multiplierBound maxElems outRate)
+        x        <- [1..xMax]
+        -- Compute blockings
+        inBlock  <- brule inRate  x
+        outBlock <- brule outRate x
+        -- A batch of the form i^j -> k^l is only allowed if j and l DO NOT have
+        -- common factors, i.e., they must be coprime.
+        guard (bfCoprime inBlock outBlock)
+        return BC { inBlock  = Just inBlock
+                  , outBlock = Just outBlock
+                  , rateMult = x
+                  , inBits   = inBits
+                  , outBits  = outBits
+                  }
+      where
+        -- | Upper bound on rate multiplier.
+        multiplierBound :: Maybe Int -> Int -> Int
+        multiplierBound maxElems n = fromMaybe 1 $ do
+            k <- maxElems
+            return $ k `quot` n
+
+        -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
+        bfCoprime :: B -> B -> Bool
+        bfCoprime (B _ n) (B _ m) = gcd n m == 1
+
+        brule :: Int -- ^ Our rate
+              -> Int -- ^ Rate multiplier factor
+              -> [B]
+        -- We want to bail on batching one side of a computation if it doesn't
+        -- have a known multiplicity of i or i+, where i > 0.
+        brule n x
+          | n > 0     = [B (x*n) 1]
+          | otherwise = []
 
 -- | Generate candidate blockings for a computation.
 coalesceComp :: forall l m . MonadTc m
