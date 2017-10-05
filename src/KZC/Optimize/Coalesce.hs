@@ -681,8 +681,8 @@ coalesceTopComp comp = do
         guard (outRate > 0)
         -- Compute limits on rate multipliers. We can only multiply a rate up to
         -- the point where we input/output 'maxElems' elements.
-        let xMax =  min (multiplierBound maxElems inRate)
-                        (multiplierBound maxElems outRate)
+        let xMax =  min (multiplierBound maxElems inBits inRate)
+                        (multiplierBound maxElems outBits outRate)
         x        <- [1..xMax]
         -- Compute blockings
         inBlock  <- brule inRate  x
@@ -697,11 +697,21 @@ coalesceTopComp comp = do
                   , outBits  = outBits
                   }
       where
-        -- | Upper bound on rate multiplier.
-        multiplierBound :: Maybe Int -> Int -> Int
-        multiplierBound maxElems n = fromMaybe 1 $ do
-            k <- maxElems
-            return $ k `quot` n
+        -- | Upper bound on rate multiplier. We adhere to the 'maxElems' bound
+        -- except when we need to multiply the rate to reach a byte boundary.
+        multiplierBound :: Maybe Int -> Int -> Int -> Int
+        multiplierBound maxElems bits n =
+            max minRateXForBytes maxRateX
+          where
+            -- Min rate multiplier needed to reach a bit boundary.
+            minRateXForBytes :: Int
+            minRateXForBytes = lcm 8 (n*bits) `quot` (8*bits*n)
+
+            -- Max rate multiplier. We use 'maxElems' to calculate this.
+            maxRateX :: Int
+            maxRateX = fromMaybe 1 $ do
+                k <- maxElems
+                return $ k `quot` n
 
         -- | Return 'True' if blocking factors are coprime, 'False' otherwise.
         bfCoprime :: B -> B -> Bool
