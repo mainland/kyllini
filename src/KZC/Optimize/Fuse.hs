@@ -1037,21 +1037,45 @@ shouldUnrollFor ann body = do
   where
     alwaysUnroll :: Comp l -> Bool
     alwaysUnroll comp = allEmits (unComp comp) || allTakes (unComp comp)
-      where
-        allEmits :: [Step l] -> Bool
-        allEmits []           = True
-        allEmits (EmitC{}:ss) = allEmits ss
-        allEmits _            = False
 
-        allTakes :: [Step l] -> Bool
-        allTakes [] =
-            True
+    allEmits :: [Step l] -> Bool
+    allEmits [] =
+        True
 
-        allTakes (TakeC{}:BindC _ (TameV bv) _ _:LiftC _ (AssignE _ (VarE v' _) _) _:ss) =
-            v' == bVar bv && allTakes ss
+    allEmits (EmitC{}:ss) =
+        allEmits ss
 
-        allTakes _ =
-            False
+    allEmits (ReturnC _ e _:ss) =
+        isUnitE e && allEmits ss
+
+    allEmits _ =
+        False
+
+    allTakes :: [Step l] -> Bool
+    allTakes [] =
+        True
+
+    allTakes (TakeC{}:BindC _ (TameV bv) _ _:LiftC _ (AssignE _ (VarE v' _) _) _:ss) =
+        v' == bVar bv && allTakes ss
+
+    allTakes (TakeC{}:BindC _ WildV _ _:ss) =
+        allTakes ss
+
+    allTakes (TakeC{}:ss) =
+        allTakes ss
+
+    allTakes (ReturnC _ e _:BindC _ WildV _ _:ss) =
+        isUnitE e && allTakes ss
+
+    allTakes (ReturnC _ e _:ss) =
+        isUnitE e && allTakes ss
+
+    allTakes _ =
+        False
+
+    isUnitE :: Exp -> Bool
+    isUnitE (ConstE UnitC{} _) = True
+    isUnitE _                  = False
 
 unalignedRepeats :: MonadTc m => F l m ()
 unalignedRepeats =
