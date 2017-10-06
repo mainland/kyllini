@@ -29,6 +29,7 @@ test_run() {
         "-ffuse" \
         "-fpeval" \
         "-fsimpl -fpeval" \
+        "-ffuse -fsimpl" \
         "-ffuse -fpeval" \
         "-fautolut -flut" \
         "-fautolut -flut -fpeval" \
