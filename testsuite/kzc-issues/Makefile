@@ -49,3 +49,5 @@ issue49.c : issue49.wpl $(KZC)
 issue52.c : issue52.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -fsimpl $< -o $@
 
+fuse01.c : fuse01.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
