@@ -570,9 +570,13 @@ fuse left right = do
             void $ runRight (unComp left) (unComp right)
     return $ collapseJoint <$> comp
 
-pprFirstStep :: IsLabel l => [Step l] -> Doc
+pprFirstStep :: forall l . IsLabel l => [Step l] -> Doc
 pprFirstStep []       = empty
-pprFirstStep (step:_) = ppr step
+pprFirstStep (step:_) = pprLabel (stepLabel step) <+> ppr step
+  where
+    pprLabel :: Maybe l -> Doc
+    pprLabel Nothing  = empty
+    pprLabel (Just l) = ppr l <> colon
 
 runRight :: forall l m . (IsLabel l, MonadTc m)
          => [Step l]
