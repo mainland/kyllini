@@ -731,12 +731,12 @@ runRight lss rss = do
 
         splitRight :: F l m [Step l]
         splitRight =
-            unComp <$> trySplitFor rs lss compInP compOutP
+            unComp <$> trySplitFor "right" rs lss compInP compOutP
 
         splitLeft :: F l m [Step l]
         splitLeft =
             case lss of
-              ls:_ -> unComp <$> trySplitFor ls (rs:rss) compOutP compInP
+              ls:_ -> unComp <$> trySplitFor "left" ls (rs:rss) compOutP compInP
               _    -> mzero
 
         join :: F l m (Step (Joint l))
@@ -795,7 +795,7 @@ runRight lss rss = do
 
         split :: F l m [Step l]
         split =
-            unComp <$> trySplitFor ls rss compOutP compInP
+            unComp <$> trySplitFor "left" ls rss compOutP compInP
 
         join :: F l m (Step (Joint l))
         join = do
@@ -938,12 +938,13 @@ runLeft lss rss = do
           runLeft lss rss
 
 trySplitFor :: forall l m . (IsLabel l, MonadTc m)
-            => Step l
-            -> [Step l]
-            -> (Comp l -> F l m Int)
-            -> (Comp l -> F l m Int)
-            -> F l m (Comp l)
-trySplitFor (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
+            => String                -- ^ Description of for loop being split
+            -> Step l                -- ^ For loop
+            -> [Step l]              -- ^ Other loop
+            -> (Comp l -> F l m Int) -- ^ Compute rate of for loop
+            -> (Comp l -> F l m Int) -- ^ Compute rate of other loop
+            -> F l m (Comp l)        -- ^ New split for loop
+trySplitFor which (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
     i       <- tryFromIntE ei
     len_for <- tryFromIntE elen
     -- Extract loop body and iteration count
@@ -959,7 +960,7 @@ trySplitFor (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
     guard $ n_for > n_loop || len_for > len_loop
     let m = if n_for == n_loop then n_loopi else n_loop
     let (q, r) = n_for `quotRem` m
-    traceFusion $ text "Considering splitting for loop" </>
+    traceFusion $ text "Considering splitting" <+> text which <+> "for loop" </>
         text "  For loop body rate:" <+> ppr n_fori </>
         text "Other loop body rate:" <+> ppr n_loopi </>
         text "       For loop rate:" <+> ppr n_for </>
@@ -993,7 +994,7 @@ trySplitFor (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
         c <- rateComp (mkComp ss)
         return (1, c)
 
-trySplitFor _ _ _ _ =
+trySplitFor _ _ _ _ _ =
     mzero
 
 -- | Run the right side of a par when we've hit a emit/take combination.
