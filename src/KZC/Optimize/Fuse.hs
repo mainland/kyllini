@@ -678,34 +678,34 @@ runRight lss rss = do
             mzero
 
     -- See Note [Fusing For Loops]
-    run (ls@(ForC _ _ v_l tau_l gint_l c_l _):lss)
-        (rs@(ForC _ _ v_r tau_r gint_r c_r s):rss)
-      | Just i_l   <- fromIntE ei_l
-      , Just len_l <- fromIntE elen_l
-      , Just i_r   <- fromIntE ei_r
-      , Just len_r <- fromIntE elen_r
-      , Just m     <- compOutP c_l
-      , Just n     <- compInP c_r
+    run (ls@(ForC _ _ i_l tau_l gint_l c_l _):lss)
+        (rs@(ForC _ _ i_r tau_r gint_r c_r s):rss)
+      | Just start_l <- fromIntE estart_l
+      , Just len_l   <- fromIntE elen_l
+      , Just start_r <- fromIntE estart_r
+      , Just len_r   <- fromIntE elen_r
+      , Just m       <- compOutP c_l
+      , Just n       <- compInP c_r
       -- Rates of loop bodies equal and they are executed the same number of
       -- times.
       , m == n && len_l == len_r
       = do
         traceFusion $ text "runRight: attempting to merge for loops"
         (lss', c) <- collectLoopBody $
-                     extendVars [(v_l, tau_l), (v_r, tau_r)] $
+                     extendVars [(i_l, tau_l), (i_r, tau_r)] $
                      runRight (unComp c_l) (unComp c_r)
         unless (null lss') $
             traceFusion $ text "runRight: failed to merge with left for"
         guard (null lss')
         l_joint <- joint (ls:lss) (rs:rss)
         traceFusion $ text "runRight: merged for loops"
-        let step = ForC l_joint AutoUnroll v_r tau_r (startLenGenInt ei_r elen_r)
-                   (subst1 (v_l /-> varE v_r + asintE tau_r (i_l - i_r)) c)
+        let step = ForC l_joint AutoUnroll i_r tau_r (startLenGenInt estart_r elen_r)
+                   (subst1 (i_l /-> varE i_r + asintE tau_r (start_l - start_r)) c)
                    s
         jointStep step $ runRight lss rss
       where
-        (ei_l, elen_l) = toStartLenGenInt gint_l
-        (ei_r, elen_r) = toStartLenGenInt gint_r
+        (estart_l, elen_l) = toStartLenGenInt gint_l
+        (estart_r, elen_r) = toStartLenGenInt gint_r
 
     run lss@(RepeatC _ _ c_l _:_) rss@(ForC _ _ _ _ gint c_r _:_)
       | Just m   <- compOutP c_l
