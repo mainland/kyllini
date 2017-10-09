@@ -998,6 +998,14 @@ pprComp comp =
         group (pprPrec appPrec1 e) <+>
         ppr c
 
+    pprSteps (ForC _ ann v tau gint c@Comp{unComp=[_]} _ : k) =
+        pprBind k $
+        nest 2 $
+        ppr ann <+> text "for" <+>
+        group (parens (ppr v <+> colon <+> ppr tau) <+>
+               text "in" <+> ppr gint) </>
+        ppr c
+
     pprSteps (ForC _ ann v tau gint c _ : k) =
         pprBind k $
         ppr ann <+> text "for" <+>
