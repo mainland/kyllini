@@ -505,12 +505,10 @@ fusePar left0 right0 = do
     traceFusion $ text "Attempting to fuse" <+>
         text "producer:" </> indent 2 (ppr left) </>
         text "and consumer:" </> indent 2 (ppr right)
-    comp <- prune 3 $
-            fuse left right >>=
-            simplComp >>=
-            rateComp
+    comp0 <- prune 3 $ fuse left right
+    comp  <- simplComp comp0 >>= rateComp
     checkFusionBlowup left right comp
-    fusionSucceeded left right comp
+    fusionSucceeded left right comp0 comp
     return $ unComp comp
   where
     checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
@@ -554,13 +552,14 @@ fusePar left0 right0 = do
           warndoc $ text "LUT too large too large during fusion" <+> parens (ppr nbytes)
           mzero
 
-    fusionSucceeded :: Comp l -> Comp l -> Comp l -> F l m ()
-    fusionSucceeded left right result = do
+    fusionSucceeded :: Comp l -> Comp l -> Comp l -> Comp l -> F l m ()
+    fusionSucceeded left right result simplResult = do
         modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
         traceFusion $ text "Fused" <+>
             text "producer:" </> indent 2 (ppr left) </>
             text "and consumer:" </> indent 2 (ppr right) </>
-            text "into:" </> indent 2 (ppr result)
+            text "into:" </> indent 2 (ppr result) </>
+            text "which simplified to:" </> indent 2 (ppr simplResult)
 
 fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l         -- ^ Left computation
