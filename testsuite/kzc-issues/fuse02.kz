@@ -1,0 +1,28 @@
+fun a() {
+    repeat {
+        xs <- takes 10;
+        let ys : [int; 10] = xs;
+        for i in 0..10 {
+            emit ys[i];
+        }
+    }
+}
+
+fun b() {
+    let mut k : int;
+    let mut xs : [int; 5];
+    
+    repeat {
+        for i in 0..5 {
+            y <- take;
+            xs[i] = y;
+            // This will foil our loop unrolling heuristic.
+            k = i;
+        }
+
+        emits xs;
+        emit k;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();
