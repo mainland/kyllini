@@ -793,7 +793,7 @@ runRight lss rss = do
         (rss', c') <- collectLoopBody $
                       withLeftKont lss $
                       extendVars [(v, tau)] $
-                      runLeft (unComp c) rss
+                      runRight (unComp c) rss
         guardRightConvergence rss rss'
         traceFusion $ text "runRight: joined left for"
         l' <- joint (ls:lss) rss
