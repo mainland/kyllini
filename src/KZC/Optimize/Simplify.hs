@@ -809,12 +809,6 @@ notUsedIn x y = Set.null (vs1 `Set.intersection` vs2)
 simplLift :: forall l m . (IsLabel l, MonadTc m)
           => [Step l]
           -> SimplM l m [Step l]
-simplLift [] =
-    return []
-
-simplLift [step] =
-    return [step]
-
 simplLift (IfC l e1 Comp{unComp=[LiftC _ e2 _]} Comp{unComp=[LiftC _ e3 _]} s : steps) = do
     rewrite
     simplLift $ LiftC l (IfE e1 e2 e3 s) s : steps
