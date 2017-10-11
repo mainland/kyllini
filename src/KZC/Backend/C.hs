@@ -657,7 +657,7 @@ cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
     ces      <- V.toList <$> V.mapM cgConst cs
-    return $ CInit [cinit|{ $inits:(cgArrayNatTnits tau ces) }|]
+    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
 
 cgConst (ReplicateC n c) = do
     tau    <- inferConst noLoc c
@@ -666,7 +666,7 @@ cgConst (ReplicateC n c) = do
     return $
       if c == c_dflt
       then CInit [cinit|{ $init:(toInitializer ce) }|]
-      else CInit [cinit|{ $inits:(cgArrayNatTnits tau (replicate n ce)) }|]
+      else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
 
 cgConst (EnumC tau) =
     cgConst =<< ArrayC <$> enumType tau
@@ -687,8 +687,8 @@ cgConst (StructC struct taus flds) = do
                 Just c -> cgConst c
         return $ toInitializer ce
 
-cgArrayNatTnits :: forall l . Type -> [CExp l] -> [C.Initializer]
-cgArrayNatTnits tau ces | isBitT tau =
+cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
+cgArrayConstInits tau ces | isBitT tau =
     finalizeBits $ foldl mkBits (0,0,[]) ces
   where
     mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
@@ -707,7 +707,7 @@ cgArrayNatTnits tau ces | isBitT tau =
     const (CInt i) = [cinit|$(chexconst i)|]
     const ce       = toInitializer ce
 
-cgArrayNatTnits _tau ces =
+cgArrayConstInits _tau ces =
     map toInitializer ces
 
 {- Note [Bit Arrays]
