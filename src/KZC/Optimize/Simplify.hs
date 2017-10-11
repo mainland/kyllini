@@ -774,7 +774,8 @@ simplSteps [step1, step2@(ReturnC _ (ConstE UnitC _) _)] = do
     step1' <- simplStep step1
     (omega, _, _, _) <- inferComp (mkComp step1') >>= checkST
     case omega of
-      C UnitT{} -> rewrite >> return step1'
+      C UnitT{} -> do rewrite
+                      simplLift step1'
       _         -> simplLift $ step1' ++ [step2]
 
 simplSteps (step : steps) =
