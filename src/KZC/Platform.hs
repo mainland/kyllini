@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 -- |
 -- Module      :  KZC.Platform
 -- Copyright   :  (c) 2015-2017 Drexel University
@@ -32,6 +34,10 @@ class Monad m => MonadPlatform m where
 
 asksPlatform :: MonadPlatform m => (Platform -> a) -> m a
 asksPlatform f = fmap f askPlatform
+
+instance MonadPlatform ((->) Platform) where
+    askPlatform       = id
+    localPlatform f m = m . f
 
 instance MonadPlatform m => MonadPlatform (MaybeT m) where
     askPlatform       = lift askPlatform
