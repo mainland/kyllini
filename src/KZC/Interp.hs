@@ -369,8 +369,9 @@ evalExp e0@(UnopE op e _) = do
     unop Lnot c | Just c' <- liftBool op not c =
         return  c'
 
-    unop Bnot c | Just c' <- liftBits op complement c =
-        return c'
+    unop Bnot (IntC ip x) | ipIsSigned ip = do
+        w <- ipBitSize ip
+        return $ IntC ip (complementInt x w)
 
     unop Neg c | Just c' <- liftNum op negate c =
         return c'
@@ -554,6 +555,12 @@ evalExp (LutE _ e) =
 evalExp e =
     faildoc $ text "Cannot evaluate" <+> ppr e
 
+complementInt :: Int -- ^ The integer, which must be positive!
+              -> Int -- ^ The integer's bit width
+              -> Int -- ^ The complemented integer
+complementInt i w =
+  fromIntegral (complement (fromIntegral i :: Word) .&. (2^w-1))
+
 compileDecl :: forall a s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
             => LocalDecl -> I s m (IO a) -> I s m (IO a)
 compileDecl (LetLD v tau e _) k = do
@@ -621,23 +628,27 @@ compileExp (VarE v _) = do
     return $ fromRef ref
 
 compileExp e0@(UnopE op e _) = do
-    mval <- compileExp e
-    return $ mval >>= unop op
+    mval  <- compileExp e
+    pform <- askPlatform
+    return $ mval >>= unop pform op
   where
-    unop :: Unop -> Val -> IO Val
-    unop Lnot c | Just c' <- liftBool op not c =
+    unop :: Platform -> Unop -> Val -> IO Val
+    unop _ Lnot c | Just c' <- liftBool op not c =
         return c'
 
-    unop Bnot c | Just c' <- liftBits op complement c =
+    unop pform Bnot (IntC ip x) | not (ipIsSigned ip) =
+        return $ IntC ip (complementInt x w)
+      where
+        w :: Int
+        w = ipBitSize ip pform
+
+    unop _ Neg c | Just c' <- liftNum op negate c =
         return c'
 
-    unop Neg c | Just c' <- liftNum op negate c =
-        return c'
-
-    unop Len (ArrayC v) =
+    unop _ Len (ArrayC v) =
         return $ idxC $ V.length v
 
-    unop _ _ =
+    unop _ _ _ =
         faildoc $ text "Could not evaluate" <+> ppr e0
 
 compileExp e0@(BinopE op e1 e2 _) = do
