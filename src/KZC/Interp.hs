@@ -850,18 +850,18 @@ compileGen :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
             -> [Gen]
             -> I s m (IO Const)
 compileGen e gs = do
-    w     <- sum <$> mapM typeSize taus
-    let n =  2^w
-    refs  <- mapM defaultRef taus
-    ss    <- mapM streamConst cs
-    mval  <- extendRefs (vs `zip` refs) $
-             compileExp e
+    -- Number of bits needed to represent a single generator value
+    w    <- sum <$> mapM typeSize taus
+    refs <- mapM defaultRef taus
+    ss   <- mapM streamConst cs
+    mval <- extendRefs (vs `zip` refs) $
+            compileExp e
     let mgen :: Vector Const -> IO Const
         mgen cs = do zipWithM_ assign refs (V.toList cs)
                      mval
     return $ do
        mv <- MV.munstream $ B.mapM mgen $
-             B.fromStream (streamProduct (V.fromList ss)) (B.Exact n)
+             B.fromStream (streamProduct (V.fromList ss)) (B.Exact (2^w))
        ArrayC <$> V.unsafeFreeze mv
   where
     -- Generators are listed so that the last generator varies fastest.
