@@ -360,7 +360,7 @@ withMonoInstantiatedTyVars _tau k =
 
 -- | Return the types at which an ST type in the current ST context is
 -- instantiated.
-instSTTypes :: (MonadTcRef m, TransformExp (MonoM l m))
+instSTTypes :: MonadTcRef m
             => Type
             -> MonoM l m [Type]
 instSTTypes tau_ret =
