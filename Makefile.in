@@ -207,7 +207,7 @@ TAGS : $(SRC)
 #
 KZCMAIN = tools/kzc/Main.hs
 
-kzc : $(KZCMAIN) $(SRC) dist/build/autogen/cabal_macros.h
+kzc : $(KZCMAIN) $(SRC)
 	@mkdir -p obj
 	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(KZCMAIN) -odir obj -hidir obj \
 		-o $@
@@ -220,16 +220,16 @@ kzc.prof : kzc
 #
 # Generated instances
 #
-$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Check/Types.hs
+$(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Check/Types.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
+$(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
+$(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
-$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs dist/build/autogen/cabal_macros.h $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
+$(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
 	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #
@@ -335,6 +335,3 @@ Makefile : Makefile.in
 
 %.buildinfo : %.buildinfo.in
 	./config.status
-
-dist/build/autogen/cabal_macros.h :
-	cabal build BlinkDiff
