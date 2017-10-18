@@ -149,17 +149,22 @@ SOURCE = \
 	Language/Ziria/Smart.hs \
 	Language/Ziria/Syntax.hs
 
-GENERATED = \
+GENERATED_INSTANCES = \
 	KZC/Core/Syntax-instances.hs \
 	KZC/Check/Types-instances.hs \
 	KZC/Expr/Syntax-instances.hs \
+	Language/Ziria/Syntax-instances.hs
+
+GENERATED_PARSER = \
 	Language/Ziria/Parser/Classic.hs \
 	Language/Ziria/Parser/Kyllini.hs \
 	Language/Ziria/Parser/LenientClassic.hs \
-	Language/Ziria/Parser/Lexer.hs \
-	Language/Ziria/Syntax-instances.hs
+	Language/Ziria/Parser/Lexer.hs
 
-SRC = $(patsubst %,$(SRCDIR)%,$(SOURCE)) $(patsubst %,$(SRCDIR)%,$(GENERATED))
+SRC = \
+	$(patsubst %,$(SRCDIR)%,$(SOURCE)) \
+	$(patsubst %,$(SRCDIR)%,$(GENERATED_INSTANCES)) \
+	$(patsubst %,$(SRCDIR)%,$(GENERATED_PARSER))
 
 #
 # all, clean, and distclean targets
@@ -169,6 +174,8 @@ clean : clean-tests clean-runtime
 	$(_QUIET)cabal clean
 	$(_QUIET)rm -rf kzc kzc.prof obj libkz/src/*.o
 	$(_QUIET)rm -f TAGS
+	$(_QUIET)rm -f $(patsubst %,$(SRCDIR)%,$(GENERATED_PARSER))
+	$(_QUIET)rm -f $(patsubst %.hs,$(SRCDIR)%.info,$(GENERATED_PARSER))
 
 .PHONY : clean-runtime
 clean-runtime :
@@ -191,7 +198,6 @@ clean-tests :
 .PHONY : distclean
 distclean : clean
 	$(_QUIET)rm -rf \
-	    $(patsubst %,$(SRCDIR)%,$(GENERATED)) \
 	    dist \
 	    autom4te.cache configure config.log config.status \
 	    include/KzcConfig.h include/KzcSysTools.h mk/common.mk Makefile kyllini.buildinfo
