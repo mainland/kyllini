@@ -194,7 +194,7 @@ distclean : clean
 	    $(patsubst %,$(SRCDIR)%,$(GENERATED)) \
 	    dist \
 	    autom4te.cache configure config.log config.status \
-	    include/KzcConfig.h include/KzcSysTools.h mk/common.mk Makefile kzc.buildinfo
+	    include/KzcConfig.h include/KzcSysTools.h mk/common.mk Makefile kyllini.buildinfo
 
 .PHONY : tags
 tags : TAGS
