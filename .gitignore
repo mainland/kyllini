@@ -1,5 +1,6 @@
 *.dump-*
 /.cabal-sandbox
+/.stack-work
 /Makefile
 /TODO
 /autom4te.cache

@@ -1,22 +1,45 @@
 # Building `kzc`
 
-`kzc` is developed on Linux using GHC 8.0 and can be built as follows:
+`kzc` is developed on Linux using GHC 8.0.2 and is compatible with 8.2.1. There are three ways to build the project.
+
+#### Building with `cabal`
 
 ```
+autoreconf -i
 cabal sandbox init
 cabal install --only-dependencies --enable-tests
-autoconf && cabal configure && make
+cabal configure
+cabal build
+```
+
+#### Building with `stack`
+
+The `stack` build currently uses [LTS 9.9](https://www.stackage.org/lts-9.9).
+
+```
+autoreconf -i
+stack build
+```
+
+#### Building with `make`
+
+When `make` is used, packages installed in the current cabal sandbox or by stack as part of LTS 9.9 will be used. If the stack packages are present, they are preferred. Note that using the stack package database requires that the version of GHC in your path is the same as the version of GHC included in the stack LTS. It also requires that stack has already built the packages this project requires, which can be accomplished by building once with `stack`.
+
+```
+autoreconf -i
+./configure
+make
 ```
 
 ## Building under Windows
 
  1. Install [MSYS2](https://msys2.github.io/).
- 1. Installing the **full** [Haskell Platform](https://www.haskell.org/platform/windows.html).
+ 1. Installing the [Haskell Platform](https://www.haskell.org/platform/windows.html).
  1. Install the toolchains you need. You can run the kyllini tests in the MinGW environment (recommended, because this is what GHC uses under Windows) or in the MSYS2 environment. Read the [description of the different MSYS2 subsystems](https://github.com/msys2/msys2/wiki/MSYS2-introduction#msys2-susbsystems) to see which packages you need to install.
  1. Install the `autoconf` MSYS2 package, e.g., execute `pacman -S autoconf` in the MSYS2 shell.
  1. Set the Windows environment variable `MSYS2_PATH_TYPE` to `inherit` so that MSYS2 will pick up your `PATH` and can find GHC.
 
-After installing MSYS2, follow the above instructions for Linux.
+After installing MSYS2, follow the instructions above.
 
 # Testing
 

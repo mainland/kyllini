@@ -7,6 +7,12 @@ EXEEXT=@EXEEXT@
 include $(TOP)/mk/virtual.mk
 
 #
+# Useful variables
+#
+OS=$(shell uname -s | tr "[:upper:]" "[:lower:]")
+ARCH=$(shell uname -m)
+
+#
 # No built-in rules
 #
 MAKEFLAGS += --no-builtin-rules
@@ -93,9 +99,22 @@ GHCFLAGS += $(GHCFLAGS_OPT)
 endif
 
 #
-# Support cabal sandbox
+# Support cabal sandbox and stack package databases. We prefer stack.
 #
-ifneq ($(wildcard $(TOP)/.cabal-sandbox/*-packages.conf.d),)
+STACK_LTS=lts-9.9/8.0.2
+STACK_PKGDB=$(HOME)/.stack/snapshots/$(ARCH)-$(OS)/$(STACK_LTS)/pkgdb
+
+ifneq ($(wildcard $(STACK_PKGDB)/*.conf),)
+GHCFLAGS += \
+	-clear-package-db \
+	-global-package-db \
+	-package-db=$(STACK_PKGDB)
+
+RUNGHCFLAGS += \
+	-clear-package-db \
+	-global-package-db \
+	-package-db --ghc-arg=$(STACK_PKGDB)
+else ifneq ($(wildcard $(TOP)/.cabal-sandbox/*-packages.conf.d),)
 GHCFLAGS += \
 	-no-user-package-db \
 	-package-db $(wildcard $(TOP)/.cabal-sandbox/*-packages.conf.d)
