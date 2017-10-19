@@ -250,9 +250,9 @@ compileExprProgram filepath prog =  do
         runIf (testDynFlag Simplify) (iterateSimplPhase "-phase3") >=>
         -- Clean up the code, do some analysis, and codegen
         traceCorePhase "hashcons" hashconsPhase >=>
-        tracePhase "refFlow" refFlowPhase >=>
-        tracePhase "needDefault" needDefaultPhase >=>
-        tracePhase "monomorphize" monomorphizePhase >=>
+        traceCorePhase "refFlow" refFlowPhase >=>
+        traceCorePhase "needDefault" needDefaultPhase >=>
+        traceCorePhase "monomorphize" monomorphizePhase >=>
         dumpFinal >=>
         tracePhase "compile" compilePhase
       where
@@ -272,7 +272,7 @@ compileExprProgram filepath prog =  do
                 (prog'', stats) <- tracePhase "simpl" simplPhase prog'
                 if stats /= mempty
                   then do void $ dumpPass DumpSimpl "core" ("simpl" ++ desc) prog''
-                          void $ lintCore prog''
+                          void $ tracePhase "lint" lintCore prog''
                           go (i+1) n prog''
                   else return prog
 
