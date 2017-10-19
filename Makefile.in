@@ -1,41 +1,13 @@
 TOP=.
 
-.PHONY : all
-all : kzc $(BLINKDIFF)
-
 include mk/common.mk
+
+.PHONY : all
+all : $(BIN)/kzc $(BIN)/BlinkDiff
 
 #
 # GHC flags
 #
-GHCFLAGS += \
-	-hide-all-packages \
-	-package array \
-	-package base \
-	-package binary \
-	-package data-binary-ieee754 \
-	-package bytestring \
-	-package containers \
-	-package directory \
-	-package exception-mtl \
-	-package exception-transformers \
-	-package filepath \
-	-package language-c-quote \
-	-package logict \
-	-package mainland-pretty \
-	-package mtl \
-	-package primitive \
-	-package process \
-	-package ref-fd \
-	-package srcloc \
-	-package syb \
-	-package symbol \
-	-package text \
-	-package template-haskell \
-	-package transformers \
-	-package vector \
-	-package QuickCheck
-
 GHCFLAGS_OPT = -O2 -funbox-strict-fields
 
 ifeq ($(OPT), 1)
@@ -172,7 +144,7 @@ SRC = \
 .PHONY : clean
 clean : clean-tests clean-runtime
 	$(_QUIET)cabal clean
-	$(_QUIET)rm -rf kzc kzc.prof obj libkz/src/*.o
+	$(_QUIET)rm -rf $(BIN)/kzc $(BIN)/kzc.prof $(BIN)/BlinkDiff obj libkz/src/*.o
 	$(_QUIET)rm -f TAGS
 	$(_QUIET)rm -f $(patsubst %,$(SRCDIR)%,$(GENERATED_PARSER))
 	$(_QUIET)rm -f $(patsubst %.hs,$(SRCDIR)%.info,$(GENERATED_PARSER))
@@ -211,17 +183,59 @@ TAGS : $(SRC)
 #
 # kzc compiler
 #
+KZC_PACKAGES += \
+	-hide-all-packages \
+	-package array \
+	-package base \
+	-package binary \
+	-package data-binary-ieee754 \
+	-package bytestring \
+	-package containers \
+	-package directory \
+	-package exception-mtl \
+	-package exception-transformers \
+	-package filepath \
+	-package language-c-quote \
+	-package logict \
+	-package mainland-pretty \
+	-package mtl \
+	-package primitive \
+	-package process \
+	-package ref-fd \
+	-package srcloc \
+	-package syb \
+	-package symbol \
+	-package text \
+	-package template-haskell \
+	-package transformers \
+	-package vector \
+	-package QuickCheck
+
 KZCMAIN = tools/kzc/Main.hs
 
-kzc : $(KZCMAIN) $(SRC)
-	@mkdir -p obj
-	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(KZCMAIN) -odir obj -hidir obj \
+$(BIN)/kzc : $(KZCMAIN) $(SRC)
+	@mkdir -p obj/kzc
+	$(_QUIET)$(GHC) $(GHCFLAGS) $(KZC_PACKAGES) --make $(KZCMAIN) -odir obj/kzc -hidir obj/kzc \
 		-o $@
 
-kzc.prof : kzc
-	@mkdir -p obj
-	$(_QUIET)$(GHC) $(GHCFLAGS) --make $(KZCMAIN) -odir obj -hidir obj \
+$(BIN)/kzc.prof : kzc
+	@mkdir -p obj/kzc
+	$(_QUIET)$(GHC) $(GHCFLAGS) $(KZC_PACKAGES) --make $(KZCMAIN) -odir obj/kzc -hidir obj/kzc \
 		-prof -auto-all -caf-all -osuf p_o -hisuf p_hi -hcsuf p_hc -o $@
+
+#
+# BlinkDiff
+#
+BLINKDIFF_PACKAGES += \
+	-hide-all-packages \
+	-package base \
+	-package containers \
+	-package parsec
+
+$(BLINKDIFF) : tools/BlinkDiff.hs
+	@mkdir -p obj/BlinkDiff
+	$(_QUIET)$(GHC) $(GHCFLAGS) -Wwarn $(BLINKDIFF_PACKAGES) --make $^ -odir obj/BlinkDiff -hidir obj/BlinkDiff \
+		-o $@
 
 #
 # Generated instances

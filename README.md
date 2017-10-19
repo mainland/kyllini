@@ -12,13 +12,15 @@ cabal configure
 cabal build
 ```
 
+Building with `cabal` *will not* generate binaries in the `bin` directory, so you will need to specify the path to `kzc` explicitly when invoking  `runtests.py`.
+
 #### Building with `stack`
 
 The `stack` build currently uses [LTS 9.9](https://www.stackage.org/lts-9.9).
 
 ```
 autoreconf -i
-stack build
+stack install
 ```
 
 #### Building with `make`

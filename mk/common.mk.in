@@ -147,20 +147,22 @@ endif
 	cat $^ | flamegraph.pl >$@
 
 #
-# BlinkDiff
+# Common locations
 #
 
-BLINKDIFF=$(TOP)/dist/build/BlinkDiff/BlinkDiff
+BIN=bin
 
-$(BLINKDIFF) : $(TOP)/tools/BlinkDiff.hs
-	$(_QUIET)cd $(TOP) && cabal build BlinkDiff
+#
+# BlinkDiff
+#
+BLINKDIFF?=$(TOP)/$(BIN)/BlinkDiff$(EXEEXT)
 
 #
 # Ziria Executables
 #
 TESTDIR = $(TOP)/testsuite
 
-KZC?=$(TOP)/kzc$(EXEEXT)
+KZC?=$(TOP)/$(BIN)/kzc$(EXEEXT)
 KZCLIB?=$(TESTDIR)/lib
 
 KZCFLAGS := -I$(KZCLIB) -dlint -dprint-uniques -fno-line-pragmas $(KZCFLAGS)

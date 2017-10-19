@@ -4,6 +4,9 @@
 /Makefile
 /TODO
 /autom4te.cache
+/bin/BlinkDiff
+/bin/kzc
+/bin/kzc.prof
 /cabal.sandbox.config
 /config.log
 /config.status
@@ -11,7 +14,6 @@
 /dist
 /include/KzcConfig.h
 /include/KzcSysTools.h
-/kzc
 /kyllini.buildinfo
 /mk/common.mk
 /libkz/src/*.o

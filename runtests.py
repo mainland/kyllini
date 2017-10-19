@@ -463,7 +463,7 @@ def blinkdiff_compare(test):
     if config.way == 'O3':
         test.blink_args += ['-p']
 
-    cmd = "./dist/build/BlinkDiff/BlinkDiff -f %s -g %s -v" % (result_path, ground_path) + " " + " ".join(test.blink_args)
+    cmd = "bin/BlinkDiff -f %s -g %s -v" % (result_path, ground_path) + " " + " ".join(test.blink_args)
 
     logging.debug(cmd)
     p = Popen(cmd,
@@ -490,7 +490,7 @@ def main():
     parser.add_argument('-d', '--debug', help='print debug output',
                         action='store_true', dest='debug')
     parser.add_argument('--kzc', help='path to kzc',
-                        default='kzc', metavar='PATH',
+                        default='bin/kzc', metavar='PATH',
                         action='store', dest='kzc')
     parser.add_argument('--dump-all', help='dump all',
                         action='store_true', dest='dump_all')
