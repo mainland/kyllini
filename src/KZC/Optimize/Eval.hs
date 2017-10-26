@@ -549,8 +549,9 @@ evalConst (EnumC tau) =
     evalConst =<< ArrayC <$> enumType tau
 
 evalConst (StructC s taus flds) = do
-    vals <- mapM evalConst cs
-    return $ StructV s taus (Map.fromList (fs `zip` vals))
+    vals  <- mapM evalConst cs
+    taus' <- mapM simplType taus
+    return $ StructV s taus' (Map.fromList (fs `zip` vals))
   where
     fs :: [Field]
     cs :: [Const]
@@ -897,8 +898,9 @@ evalExp e =
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) nat s
 
     eval flags (StructE s taus flds _) = do
-        vals <- mapM (eval flags) es
-        return $ StructV s taus (Map.fromList (fs `zip` vals))
+        vals  <- mapM (eval flags) es
+        taus' <- mapM simplType taus
+        return $ StructV s taus' (Map.fromList (fs `zip` vals))
       where
         fs :: [Field]
         es :: [Exp]
