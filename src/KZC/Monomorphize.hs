@@ -239,7 +239,7 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
         fgen taus =
             splitNatParams tvks taus $ \tvks' ->
             withMonoInstantiatedTyVars tau_ret $ do
-            vbs'     <- mapM transField vbs
+            vbs'     <- mapM transVarBinding vbs
             tau_ret' <- typeT tau_ret
             e'       <- extendVars vbs $
                         expT e
@@ -250,7 +250,7 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
     declsT (LetExtFunD f tvks@(_:_) vbs tau_ret l : decls) k =
         extendVars [(bVar f, tau)] $
         extendFun (bVar f) fgen $ do
-        vbs'     <- mapM transField vbs
+        vbs'     <- mapM transVarBinding vbs
         tau_ret' <- typeT tau_ret
         appendTopDecl $ LetExtFunD f tvks vbs' tau_ret' l
         declsT decls k
@@ -276,7 +276,7 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
         fgen taus = withSummaryContext decl $
             splitNatParams tvks taus $ \tvks' ->
             withMonoInstantiatedTyVars tau_ret $ do
-            vbs'     <- mapM transField vbs
+            vbs'     <- mapM transVarBinding vbs
             tau_ret' <- instST tau_ret >>= typeT
             c'       <- extendVars vbs $
                         compT c

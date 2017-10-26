@@ -22,7 +22,10 @@ module KZC.Core.Transform (
     transConst,
     transExp,
     transType,
-    transField
+    transVarBinding,
+    transField,
+    transFieldConst,
+    transFieldExp
   ) where
 
 import Data.Maybe (fromMaybe)
@@ -123,7 +126,7 @@ transDecl (LetD decl s) m = do
     return (LetD decl' s, x)
 
 transDecl (LetFunD f tvks vbs tau_ret e l) m = do
-    vbs'     <- mapM transField vbs
+    vbs'     <- mapM transVarBinding vbs
     tau_ret' <- typeT tau_ret
     extendVars [(bVar f, tau)] $ do
       e' <- extendLetFun f tvks vbs tau_ret $
@@ -135,7 +138,7 @@ transDecl (LetFunD f tvks vbs tau_ret e l) m = do
     tau = funT tvks (map snd vbs) tau_ret l
 
 transDecl (LetExtFunD f tvks vbs tau_ret l) m = do
-    vbs'     <- mapM transField vbs
+    vbs'     <- mapM transVarBinding vbs
     tau_ret' <- typeT tau_ret
     x        <- extendExtFuns [(bVar f, tau)] m
     return (LetExtFunD f tvks vbs' tau_ret' l, x)
@@ -151,7 +154,7 @@ transDecl (LetCompD v tau comp l) m = do
     return (LetCompD v tau' comp' l, x)
 
 transDecl (LetFunCompD f tvks vbs tau_ret comp l) m = do
-    vbs'     <- mapM transField vbs
+    vbs'     <- mapM transVarBinding vbs
     tau_ret' <- typeT tau_ret
     extendVars [(bVar f, tau)] $ do
       comp' <- extendLetFun f tvks vbs tau_ret $
@@ -282,11 +285,17 @@ transOmega :: TransformExp m => Omega -> m Omega
 transOmega T       = pure T
 transOmega (C tau) = C <$> typeT tau
 
-transField :: TransformExp m => (a, Type) -> m (a, Type)
+transVarBinding :: TransformExp m => (Var, Type) -> m (Var, Type)
+transVarBinding (x, tau) = (,) <$> pure x <*> typeT tau
+
+transField :: TransformExp m => (Field, Type) -> m (Field, Type)
 transField (x, tau) = (,) <$> pure x <*> typeT tau
 
-transFieldConst :: TransformExp m => (a, Const) -> m (a, Const)
+transFieldConst :: TransformExp m => (Field, Const) -> m (Field, Const)
 transFieldConst (x, c) = (,) <$> pure x <*> constT c
+
+transFieldExp :: TransformExp m => (Field, Exp) -> m (Field, Exp)
+transFieldExp (x, e) = (,) <$> pure x <*> expT e
 
 transLocalDecl :: TransformExp m => LocalDecl -> m a -> m (LocalDecl, a)
 transLocalDecl (LetLD v tau e s) m = do
@@ -379,9 +388,7 @@ transExp (IdxE e1 e2 len s) =
     IdxE <$> expT e1 <*> expT e2 <*> pure len <*> pure s
 
 transExp (StructE struct taus flds s) =
-    StructE struct taus <$> (zip fs <$> mapM expT es) <*> pure s
-  where
-    (fs, es) = unzip flds
+    StructE struct taus <$> mapM transFieldExp flds <*> pure s
 
 transExp (ProjE e f s) =
     ProjE <$> expT e <*> pure f <*> pure s
