@@ -607,6 +607,54 @@ void kz_output_bit(kz_buf_t* buf, const bit_t* data, size_t n)
 }
 
 /*
+ * complex int input/output
+ */
+
+void kz_init_input_complex(const kz_params_t* params, kz_buf_t* buf)
+{
+    assert(sizeof(complex_t) == 2*sizeof(int));
+    init_input<int>(params, buf);
+    buf->idx /= 2;
+    buf->len /= 2;
+}
+
+void kz_init_output_complex(const kz_params_t* params, kz_buf_t* buf)
+{
+    assert(sizeof(complex_t) == 2*sizeof(int));
+    init_output<int>(params, buf);
+    buf->idx /= 2;
+    buf->len /= 2;
+}
+
+void kz_cleanup_input_complex(const kz_params_t* params, kz_buf_t* buf)
+{
+    assert(sizeof(complex_t) == 2*sizeof(int));
+    buf->idx *= 2;
+    buf->len *= 2;
+    cleanup_input<int>(params, buf);
+}
+
+void kz_cleanup_output_complex(const kz_params_t* params, kz_buf_t* buf)
+{
+    assert(sizeof(complex_t) == 2*sizeof(int));
+    buf->idx *= 2;
+    buf->len *= 2;
+    cleanup_output<int>(params, buf);
+}
+
+FORCEINLINE
+const complex_t* kz_input_complex(kz_buf_t* buf, size_t n)
+{
+    return input<complex_t>(buf, n);
+}
+
+FORCEINLINE
+void kz_output_complex(kz_buf_t* buf, const complex_t* data, size_t n)
+{
+    output<complex_t>(buf, data, n);
+}
+
+/*
  * complext16_t input/output
  */
 

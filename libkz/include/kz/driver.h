@@ -181,6 +181,13 @@ void            kz_cleanup_output_uint32(const kz_params_t*, kz_buf_t*);
 const uint32_t* kz_input_uint32(kz_buf_t*, size_t);
 void            kz_output_uint32(kz_buf_t*, const uint32_t*, size_t);
 
+void             kz_init_input_complex(const kz_params_t*, kz_buf_t*);
+void             kz_init_output_complex(const kz_params_t*, kz_buf_t*);
+void             kz_cleanup_input_complex(const kz_params_t*, kz_buf_t*);
+void             kz_cleanup_output_complex(const kz_params_t*, kz_buf_t*);
+const complex_t* kz_input_complex(kz_buf_t*, size_t);
+void             kz_output_complex(kz_buf_t*, const complex_t*, size_t);
+
 void               kz_init_input_complex16(const kz_params_t*, kz_buf_t*);
 void               kz_init_output_complex16(const kz_params_t*, kz_buf_t*);
 void               kz_cleanup_input_complex16(const kz_params_t*, kz_buf_t*);

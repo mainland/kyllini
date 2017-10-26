@@ -300,7 +300,8 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau_struct@StructT{} = do
             maybe_tau <- runMaybeT $ checkComplexT tau_struct
             case maybe_tau of
-              Just tau | tau == int16T -> appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
+              Just tau | tau == intT   -> appStm [cstm|$id:(fname "complex")($cp, &$cbuf);|]
+                       | tau == int16T -> appStm [cstm|$id:(fname "complex16")($cp, &$cbuf);|]
                        | tau == int32T -> appStm [cstm|$id:(fname "complex32")($cp, &$cbuf);|]
               _                        -> appStm [cstm|$id:(fname "bytes")($cp, &$cbuf);|]
 
@@ -335,7 +336,8 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau_struct@StructT{} = do
             maybe_tau <- runMaybeT $ checkComplexT tau_struct
             case maybe_tau of
-              Just tau | tau == int16T -> return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
+              Just tau | tau == intT   -> return $ CExp [cexp|kz_input_complex(&$cbuf, $cn)|]
+                       | tau == int16T -> return $ CExp [cexp|kz_input_complex16(&$cbuf, $cn)|]
                        | tau == int32T -> return $ CExp [cexp|kz_input_complex32(&$cbuf, $cn)|]
               _                        -> do ctau <- cgType tau
                                              return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
@@ -369,7 +371,8 @@ void kz_main(const typename kz_params_t* $id:params)
         go tau_struct@StructT{} = do
             maybe_tau <- runMaybeT $ checkComplexT tau_struct
             case maybe_tau of
-              Just tau | tau == int16T -> appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
+              Just tau | tau == intT   -> appendStm [cstm|kz_output_complex(&$cbuf, $cval, $cn);|]
+                       | tau == int16T -> appendStm [cstm|kz_output_complex16(&$cbuf, $cval, $cn);|]
                        | tau == int32T -> appendStm [cstm|kz_output_complex32(&$cbuf, $cval, $cn);|]
               _                        -> do ctau <- cgType tau
                                              appendStm [cstm|kz_output_bytes(&$cbuf, $cval, $cn*sizeof($ty:ctau));|]
