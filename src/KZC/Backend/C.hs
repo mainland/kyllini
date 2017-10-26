@@ -1626,7 +1626,8 @@ cgType StringT{} =
 cgType tau_struct@(StructT struct [] l) = do
     maybe_tau <- runMaybeT $ checkComplexT tau_struct
     case maybe_tau of
-      Just tau | tau == int8T  -> return [cty|typename complex8_t|]
+      Just tau | tau == intT   -> return [cty|typename complex_t|]
+               | tau == int8T  -> return [cty|typename complex8_t|]
                | tau == int16T -> return [cty|typename complex16_t|]
                | tau == int32T -> return [cty|typename complex32_t|]
                | tau == int64T -> return [cty|typename complex64_t|]

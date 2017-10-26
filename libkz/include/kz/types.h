@@ -39,8 +39,8 @@ typedef uint8_t bit_t;
 #define BIT_ARRAY_ELEM_BITS (sizeof(bit_t) * CHAR_BIT)
 
 typedef struct complex_t {
-    int32_t re;
-    int32_t im;
+    int re;
+    int im;
 } complex_t;
 
 typedef struct complex8_t {
