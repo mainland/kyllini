@@ -110,6 +110,13 @@ def flags(flags):
 
     return f
 
+def add_flags(flags):
+    """Add KZC flags"""
+    def f(test, way):
+        test.args += flags
+
+    return f
+
 def blinkdiff(flags):
     """Add BlinkDiff flags"""
     def f(test, way):
