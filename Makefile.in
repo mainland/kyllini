@@ -218,7 +218,7 @@ $(BIN)/kzc : $(KZCMAIN) $(SRC)
 	$(_QUIET)$(GHC) $(GHCFLAGS) $(KZC_PACKAGES) --make $(KZCMAIN) -odir obj/kzc -hidir obj/kzc \
 		-o $@
 
-$(BIN)/kzc.prof : kzc
+$(BIN)/kzc.prof : $(BIN)/kzc
 	@mkdir -p obj/kzc
 	$(_QUIET)$(GHC) $(GHCFLAGS) $(KZC_PACKAGES) --make $(KZCMAIN) -odir obj/kzc -hidir obj/kzc \
 		-prof -auto-all -caf-all -osuf p_o -hisuf p_hi -hcsuf p_hc -o $@
