@@ -198,7 +198,7 @@ def compile(test, way, args):
     source = find_source(test)
 
     cmd = [config.kzc] + test.args + way_flags(way) + args + [source]
-    execute_and_compare_stdouterr(test, cmd)
+    return execute_and_compare_stdouterr(test, cmd)
 
 def compile_stats(test, way, args):
     source = find_source(test)
