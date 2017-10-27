@@ -1,0 +1,12 @@
+fun id(x) {
+    return x;
+}
+
+fun id2() {
+    repeat {
+      xs <- takes 2;
+      emits xs;
+    }
+}
+
+let comp main : ST T () () = map id |>>>| map id >>> id2();
