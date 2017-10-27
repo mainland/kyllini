@@ -183,7 +183,8 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
     constT (StructC struct taus@(_:_) flds) = do
         taus'   <- mapM typeT taus
         struct' <- lookupMonoStruct struct taus'
-        return $ StructC struct' [] flds
+        flds'   <- mapM transFieldConst flds
+        return $ StructC struct' [] flds'
 
     constT c = transConst c
 
@@ -197,7 +198,8 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
     expT (StructE struct taus@(_:_) flds s) = do
         taus'   <- mapM typeT taus
         struct' <- lookupMonoStruct struct taus'
-        return $ StructE struct' [] flds s
+        flds'   <- mapM transFieldExp flds
+        return $ StructE struct' [] flds' s
 
     expT e = transExp e
 

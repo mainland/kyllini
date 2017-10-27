@@ -1,0 +1,9 @@
+fun test<T : Num>(n : T){
+    let c = Complex<T>{re=n,im=0};
+    repeat {
+      x <- take;
+      emit x * c;
+    }
+  }
+
+let comp main : ST T Complex<int> Complex<int> = test(2);

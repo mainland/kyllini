@@ -1093,11 +1093,30 @@ simplStep (ParC ann b c1 c2 sloc) = do
                  simplC c2
     return1 $ ParC ann b c1' c2' sloc
 
+simplConst :: forall l m . (IsLabel l, MonadTc m)
+           => Const
+           -> SimplM l m Const
+simplConst c@UnitC{}        = return c
+simplConst c@BoolC{}        = return c
+simplConst c@IntC{}         = return c
+simplConst c@FixC{}         = return c
+simplConst c@FloatC{}       = return c
+simplConst c@StringC{}      = return c
+simplConst (ArrayC v)       = ArrayC <$> V.mapM simplConst v
+simplConst (ReplicateC n c) = ReplicateC n <$> simplConst c
+simplConst (EnumC tau)      = EnumC <$> simplType tau
+
+simplConst (StructC struct taus flds) =
+    StructC struct <$> mapM simplType taus <*> mapM simplField flds
+  where
+    simplField :: (Field, Const) -> SimplM l m (Field, Const)
+    simplField (f, c) = (,) <$> pure f <*> simplConst c
+
 simplE :: forall l m . (IsLabel l, MonadTc m)
        => Exp
        -> SimplM l m Exp
-simplE e@ConstE{} =
-    return e
+simplE (ConstE c s)=
+    ConstE <$> simplConst c <*> pure s
 
 simplE e0@(VarE v _) =
     lookupSubst v >>= go
@@ -1527,11 +1546,12 @@ simplE (IdxE e1 e2 len0 s) = do
         return $ IdxE e1' e2' len s
 
 simplE (StructE struct taus flds s) = do
-    es <- mapM simplE es
-    if all isConstE es
-      then do cs <- mapM unConstE es
-              return $ ConstE (StructC struct taus (fs `zip` cs)) s
-      else return $ StructE struct taus (fs `zip` es) s
+    es'   <- mapM simplE es
+    taus' <- mapM simplType taus
+    if all isConstE es'
+      then do cs <- mapM unConstE es'
+              return $ ConstE (StructC struct taus' (fs `zip` cs)) s
+      else return $ StructE struct taus' (fs `zip` es') s
   where
     fs :: [Field]
     es :: [Exp]
