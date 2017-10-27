@@ -655,7 +655,7 @@ void kz_output_complex(kz_buf_t* buf, const complex_t* data, size_t n)
 }
 
 /*
- * complext16_t input/output
+ * complex16_t input/output
  */
 
 void kz_init_input_complex16(const kz_params_t* params, kz_buf_t* buf)
@@ -703,7 +703,7 @@ void kz_output_complex16(kz_buf_t* buf, const complex16_t* data, size_t n)
 }
 
 /*
- * complext32_t input/output
+ * complex32_t input/output
  */
 
 void kz_init_input_complex32(const kz_params_t* params, kz_buf_t* buf)
