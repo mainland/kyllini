@@ -25,7 +25,7 @@ stack install
 
 #### Building with `make`
 
-When `make` is used, packages installed in the current cabal sandbox or by stack as part of LTS 9.9 will be used. If the stack packages are present, they are preferred. Note that using the stack package database requires that the version of GHC in your path is the same as the version of GHC included in the stack LTS. It also requires that stack has already built the packages this project requires, which can be accomplished by building once with `stack`.
+When `make` is used, packages installed in the current cabal sandbox or by stack as part of LTS 9.9 will be used. If the stack packages are present, they are preferred. Note that using the stack package database requires that the version of GHC in your path is the same as the version of GHC included in the stack LTS. It also requires that stack has already built the packages this project requires, which can be accomplished by building once with `stack build`. If you want to build a profiled version of `kzc`, use `stack build --profile`.
 
 ```
 autoreconf -i
