@@ -417,6 +417,63 @@ DECLARE_IO(float,float)
 DECLARE_IO(double,double)
 
 /*
+ * unit input/output
+ */
+
+void kz_init_input_unit(const kz_params_t* params, kz_buf_t* buf)
+{
+    init_input<int>(params, buf);
+    buf->idx = 0;
+    buf->len = 0;
+}
+
+void kz_init_output_unit(const kz_params_t* params, kz_buf_t* buf)
+{
+    init_output<int>(params, buf);
+    buf->idx = 0;
+    buf->len = 0;
+}
+
+void kz_cleanup_input_unit(const kz_params_t* params, kz_buf_t* buf)
+{
+    cleanup_input<int>(params, buf);
+}
+
+void kz_cleanup_output_unit(const kz_params_t* params, kz_buf_t* buf)
+{
+    buf->idx = 0;
+    buf->len = 0;
+    cleanup_output<int>(params, buf);
+}
+
+FORCEINLINE
+int kz_input_unit(kz_buf_t* buf, size_t n)
+{
+    if (buf->dev == DEV_DUMMY) {
+        buf->dummy_samples -= n;
+        if (buf->dummy_samples >= 0)
+            return 1;
+        else
+            return 0;
+    } else {
+        if (buf->idx + n <= buf->len) {
+            buf->idx += n;
+            return 1;
+        } else
+            return 0;
+    }
+}
+
+FORCEINLINE
+void kz_output_unit(kz_buf_t* buf, size_t n)
+{
+    if (buf->dev == DEV_DUMMY)
+        return;
+    else
+        buf->idx += n;
+}
+
+/*
  * bit input/output
  */
 void kz_init_input_bit(const kz_params_t* params, kz_buf_t* buf)
