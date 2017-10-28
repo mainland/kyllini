@@ -218,47 +218,79 @@ void kz_main(const typename kz_params_t* $id:params)
     guardtakek = return ()
 
     takek :: TakeK l
-    takek tau _klbl k = do
-        -- Generate a pointer to the current element in the buffer.
-        ctau   <- cgType tau
-        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
-        cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
-        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
-          then cgExit
-          else return ()
-        go tau cbuf
+    takek tau _klbl (k :: CExp l -> Cg l a) = do
+        cinput   <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
+        zeroSize <- hasZeroTypeSize tau
+        takeInput zeroSize cinput
       where
-        go tau cbuf
-          | isBitT tau    = k $ CExp [cexp|*$cbuf & 1|]
-          | isBitArrT tau = k $ CBitSlice $ CExp [cexp|*$cbuf|]
-          | otherwise     = k $ CExp [cexp|*$cbuf|]
+        takeInput :: Bool -> CExp l -> Cg l a
+        takeInput True cinput = do
+            if [cexp|$cinput == 0|]
+              then cgExit
+              else return ()
+            k CVoid
+
+        takeInput False cinput = do
+            -- Generate a pointer to the current element in the buffer.
+            ctau <- cgType tau
+            cbuf <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
+            if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
+              then cgExit
+              else return ()
+            k $ cgBufElem tau cbuf
+          where
+            cgBufElem tau cbuf
+              | isBitT tau    = CExp [cexp|*$cbuf & 1|]
+              | isBitArrT tau = CBitSlice $ CExp [cexp|*$cbuf|]
+              | otherwise     = CExp [cexp|*$cbuf|]
 
     takesk :: TakesK l
-    takesk n tau _klbl k = do
-        -- Generate a pointer to the current element in the buffer.
-        ctau   <- cgType tau
-        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
-        cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
-        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
-          then cgExit
-          else return ()
-        go tau cbuf
+    takesk n tau _klbl (k :: CExp l -> Cg l a) = do
+        cinput   <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
+        zeroSize <- hasZeroTypeSize tau
+        takeInput zeroSize cinput
       where
-        go tau cbuf
-          | isBitT tau = k $ CBitSlice $ CExp [cexp|$cbuf|]
-          | otherwise  = k $ CExp [cexp|$cbuf|]
+        takeInput :: Bool -> CExp l -> Cg l a
+        takeInput True cinput = do
+            if [cexp|$cinput == 0|]
+              then cgExit
+              else return ()
+            k CVoid
+
+        takeInput False cinput = do
+            -- Generate a pointer to the current element in the buffer.
+            ctau <- cgType tau
+            cbuf <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
+            if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
+              then cgExit
+              else return ()
+            k $ cgBufElem tau cbuf
+          where
+            cgBufElem tau cbuf
+              | isBitT tau = CBitSlice $ CExp [cexp|$cbuf|]
+              | otherwise  = CExp [cexp|$cbuf|]
 
     emitk :: EmitK l
     emitk tau ce _klbl k = do
-        ceAddr <- cgAddrOf tau ce
-        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        zeroSize <- hasZeroTypeSize tau
+        ceElem   <- if zeroSize then return CVoid else cgAddrOf tau ce
+        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceElem
         k
 
     emitsk :: EmitsK l
     emitsk n tau ce _klbl k = do
-        ceAddr <- cgAddrOf (arrT n tau) ce
-        cgOutput (arrT n tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        zeroSize <- hasZeroTypeSize tau
+        emitOutput zeroSize
         k
+      where
+        emitOutput :: Bool -> Cg l ()
+        emitOutput True = do
+            cn <- cgNatType n
+            cgOutput tau (CExp [cexp|$id:out_buf|]) cn CVoid
+
+        emitOutput False = do
+            ceAddr <- cgAddrOf (arrT n tau) ce
+            cgOutput (arrT n tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
     cgInitInput :: Type -> CExp l -> CExp l -> Cg l ()
     cgInitInput = cgBufferInit "kz_init_input"
@@ -279,7 +311,11 @@ void kz_main(const typename kz_params_t* $id:params)
     cgBufferCleanup = cgBufferConfig appendThreadCleanupStm
 
     cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferConfig appStm f tau cp cbuf = go tau
+    cgBufferConfig appStm f tau cp cbuf = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then appStm [cstm|$id:(fname "unit")($cp, &$cbuf);|]
+          else go tau
       where
         go :: Type -> Cg l ()
         go (ArrT _ tau _)     = go tau
@@ -313,7 +349,11 @@ void kz_main(const typename kz_params_t* $id:params)
         fname t = fromString (f ++ "_" ++ t)
 
     cgInput :: Type -> CExp l -> CExp l -> Cg l (CExp l)
-    cgInput tau cbuf cn = go tau
+    cgInput tau cbuf cn = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then return $ CExp [cexp|kz_input_unit(&$cbuf, $cn)|]
+          else go tau
       where
         go :: Type -> Cg l (CExp l)
         go (ArrT n tau _)    = do ci <- cgNatType n
@@ -348,7 +388,11 @@ void kz_main(const typename kz_params_t* $id:params)
             return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
     cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
-    cgOutput tau cbuf cn cval = go tau
+    cgOutput tau cbuf cn cval = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then appendStm [cstm|kz_output_unit(&$cbuf, $cn);|]
+          else go tau
       where
         go :: Type -> Cg l ()
         go (ArrT n tau _)     = do ci <- cgNatType n
@@ -2360,11 +2404,8 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     useLabel rightl
     cleftk  <- cgThreadCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
     crightk <- cgThreadCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
-    -- Generate a pointer to the current element in the buffer.
-    ctau    <- cgType b
-    ctauptr <- cgBufPtrType b
-    cbuf    <- cgThreadCTemp b "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
-    cbufp   <- cgThreadCTemp b "par_bufp" ctauptr                        Nothing
+    -- Generate buffer and a pointer to the current element in the buffer.
+    (cbuf, cbufp) <- cgBuf b
     -- The void continuation simply swallows its argument and does nothing. We
     -- use this for transformers since they never return anyway.
     let voidk :: Kont l ()
@@ -2397,14 +2438,31 @@ cgParSingleThreaded _tau_res b left right klbl k = do
                      cgLeft voidk
                      runKont k CVoid
   where
-    cgBufPtrType :: Type -> Cg l C.Type
-    cgBufPtrType (ArrT _ tau _) = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+    -- Generate buffer and a pointer to the current element in the buffer
+    cgBuf :: Type -> Cg l (CExp l, CExp l)
+    cgBuf tau = do
+        zeroSize <- hasZeroTypeSize tau
+        go zeroSize
+      where
+        go :: Bool -> Cg l (CExp l, CExp l)
+        go True =
+            return (CVoid, CVoid)
 
-    cgBufPtrType tau = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+        go False = do
+            ctau    <- cgType tau
+            ctauptr <- cgBufPtrType tau
+            cbuf    <- cgThreadCTemp tau "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
+            cbufp   <- cgThreadCTemp tau "par_bufp" ctauptr                        Nothing
+            return (cbuf, cbufp)
+
+        cgBufPtrType :: Type -> Cg l C.Type
+        cgBufPtrType (ArrT _ tau _) = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau*|]
+
+        cgBufPtrType tau = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau*|]
 
     cgDerefBufPtr :: Type -> CExp l -> CExp l
     cgDerefBufPtr ArrT{} ce = ce
@@ -2418,11 +2476,12 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     -- label of @ccomp@, since it is the continuation, generate code to jump
     -- to the left computation's continuation, and then call @k2@ with
     -- @ccomp@ suitably modified to have a required label.
-    takek cleftk crightk _cbuf cbufp _tau klbl k = do
+    takek cleftk crightk _cbuf cbufp tau klbl k = do
         useLabel klbl
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         appendStm [cstm|INDJUMP($cleftk);|]
-        k $ cgDerefBufPtr b cbufp
+        zeroSize <- hasZeroTypeSize tau
+        k $ if zeroSize then CVoid else cgDerefBufPtr b cbufp
 
     takesk :: CExp l -> CExp l -> CExp l -> CExp l -> TakesK l
     -- The multi-element take is a bit tricker. We allocate a buffer to hold
@@ -2431,24 +2490,37 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     -- through to the next action, which is why we call @k2@ with @ccomp@
     -- without forcing its label to be required---we don't need the label!
     takesk cleftk crightk _cbuf cbufp n tau _klbl k = do
-        ctau_arr <- cgType (arrKnownT n tau)
-        carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
-        klbl     <- gensym "inner_takesk"
+        klbl <- gensym "inner_takesk"
         useLabel klbl
-        cgInitAlways carr (arrKnownT n tau)
+        zeroSize <- hasZeroTypeSize tau
+        carr     <- cgBuf zeroSize
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel klbl $
-                cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
+                if zeroSize
+                  then return ()
+                  else cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
         newScope $ k carr
+      where
+        cgBuf :: Bool -> Cg l (CExp l)
+        cgBuf True =
+            return CVoid
+
+        cgBuf False = do
+            ctau_arr <- cgType (arrKnownT n tau)
+            carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
+            cgInitAlways carr (arrKnownT n tau)
+            return carr
 
     emitk :: CExp l -> CExp l -> CExp l -> CExp l -> EmitK l
     -- @tau@ must be a base (scalar) type
     emitk cleftk crightk cbuf cbufp tau ce klbl k = do
         useLabel klbl
         appendStm [cstm|$cleftk = LABELADDR($id:klbl);|]
-        cgAssignBufp tau cbuf cbufp ce
+        zeroSize <- hasZeroTypeSize tau
+        unless zeroSize $
+            cgAssignBufp tau cbuf cbufp ce
         appendStm [cstm|INDJUMP($crightk);|]
         k
 
@@ -2466,9 +2538,11 @@ cgParSingleThreaded _tau_res b left right klbl k = do
             loopl <- gensym "emitsk_next"
             useLabel loopl
             appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
+            zeroSize <- hasZeroTypeSize tau
             cgFor 0 cn $ \ci -> do
-                celem <- cgIdx tau ce cn ci
-                cgAssignBufp tau cbuf cbufp celem
+                unless zeroSize $ do
+                    celem <- cgIdx tau ce cn ci
+                    cgAssignBufp tau cbuf cbufp celem
                 appendStm [cstm|INDJUMP($crightk);|]
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
@@ -2519,8 +2593,7 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
     -- the storage.
     (cres, k') <- splitMultishotBind "par_res" tau_res False k
     -- Generate a temporary to hold the par buffer.
-    cb   <- cgType b
-    cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
+    cbuf <- cgBuf b
     -- Generate a name for the producer thread function
     cf <- gensym "par_threadfun"
     -- Generate a temporary to hold the thread info.
@@ -2577,8 +2650,10 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         let leftdonek :: Omega -> Kont l ()
             leftdonek C{} = multishot $ \ce -> do
                             appendComment $ text "Left computer done"
-                            cgAssign tau_res cres ce
-                            cgMemoryBarrier
+                            zeroSize <- hasZeroTypeSize tau_res
+                            unless zeroSize $ do
+                                cgAssign tau_res cres ce
+                                cgMemoryBarrier
                             cgExit
             leftdonek T   = multishot $ const $ do
                             appendComment $ text "Left transformer done"
@@ -2586,7 +2661,9 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         let rightdonek :: Omega -> Kont l a
             rightdonek C{} = oneshot tau_res $ \ce -> do
                              appendComment $ text "Right computer done"
-                             cgAssign tau_res cres ce
+                             zeroSize <- hasZeroTypeSize tau_res
+                             unless zeroSize $
+                                 cgAssign tau_res cres ce
                              appendStm [cstm|$ctinfo.done = 1;|]
                              cgWithLabel l_pardone (restore k')
             rightdonek T   = oneshot tau_res $ \_ce -> do
@@ -2607,6 +2684,14 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
             cgConsumer ctinfo cbuf $
             cgParSpawn cf ctinfo right' (rightdonek omega_r)
   where
+    cgBuf :: Type -> Cg l (CExp l)
+    cgBuf UnitT{} =
+        return CVoid
+
+    cgBuf tau = do
+        ctau <- cgType tau
+        cgTopCTemp tau "par_buf" [cty|$tyqual:calign $ty:ctau[KZ_BUFFER_SIZE]|] Nothing
+
     -- | Generate code to spawn a thread that is one side of a par construct.
     cgParSpawn :: forall a . C.Id
                -> CExp l
@@ -2667,8 +2752,10 @@ static void* $id:cf(void* dummy)
         cgProduce ctinfo cbuf tau ce = do
             cgWaitWhileBufferFull ctinfo
             let cidx = CExp [cexp|$ctinfo.prod_cnt % KZ_BUFFER_SIZE|]
-            cgAssign (refT tau) (CIdx tau cbuf cidx) ce
-            cgMemoryBarrier
+            zeroSize <- hasZeroTypeSize tau_res
+            unless zeroSize $ do
+                cgAssign (refT tau) (CIdx tau cbuf cidx) ce
+                cgMemoryBarrier
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
         -- | Wait until the consumer requests data
@@ -2718,14 +2805,24 @@ static void* $id:cf(void* dummy)
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
-            ctau_arr <- cgType (arrKnownT n tau)
-            carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
-            cgInitAlways carr (arrKnownT n tau)
+            zeroSize <- hasZeroTypeSize tau
+            carr     <- cgBuf zeroSize
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
                 cgConsume ctinfo cbuf tau $ \ce ->
-                    cgAssign (refT tau) (CIdx tau carr ci) ce
+                    unless zeroSize $
+                      cgAssign (refT tau) (CIdx tau carr ci) ce
             k carr
+          where
+            cgBuf :: Bool -> Cg l (CExp l)
+            cgBuf True = do
+                return CVoid
+
+            cgBuf False = do
+                ctau_arr <- cgType (arrKnownT n tau)
+                carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
+                cgInitAlways carr (arrKnownT n tau)
+                return carr
 
         -- | Consume a single data element from the buffer. We take a
         -- consumption continuation because we must be sure that we insert a
@@ -2737,7 +2834,10 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|++$ctinfo.cons_cnt;|]
             cgWaitWhileBufferEmpty ctinfo
             let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
-            consumek (CIdx tau cbuf cidx)
+            zeroSize <- hasZeroTypeSize tau
+            if zeroSize
+              then consumek CVoid
+              else consumek (CIdx tau cbuf cidx)
 
         -- | Request @cn@ data elements.
         cgRequestData :: CExp l -> CExp l -> Cg l ()

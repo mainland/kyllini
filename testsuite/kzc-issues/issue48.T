@@ -1,1 +1,1 @@
-test("issue48", [add_flags(['-fpipeline']), should_fail], compile)
+test("issue48", [add_flags(['-fpipeline'])], compile)
