@@ -746,7 +746,8 @@ runRight lss rss = do
         traceFusion $ text "runRight: unrolling right repeat"
         withRightKont rss $ do
           rightRepeat c
-          runRight lss (unComp c ++ rss)
+          rss' <- unrollRepeat rss
+          runRight lss rss'
 
     run _lss (ParC{} : _rss) =
         nestedPar
@@ -805,33 +806,29 @@ runRight lss rss = do
         panicdoc $ text "joinLeftFor: not a for loop"
 
     divergeRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-    divergeRightFor lss (ForC l ann v tau gint c _ : rss) = do
+    divergeRightFor lss (forc@(ForC _l ann _v _tau _gint c _) : rss) = do
         traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr c
         shouldUnroll <- shouldUnrollFor ann c
         when (not shouldUnroll) $ do
           traceFusion $ text "Encountered diverging loop during fusion."
           mzero
-        unrolled <- unrollFor l v tau e1 e2 c
+        unrolled <- unrollFor forc
         traceFusion $ text "runRight: unrolling right for"
         runRight lss (unComp unrolled ++ rss)
-      where
-        (e1, e2) = toStartLenGenInt gint
 
     divergeRightFor _ _ =
         panicdoc $ text "divergeRightFor: not a for loop"
 
     divergeLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-    divergeLeftFor (ForC l ann v tau gint c _ : lss) rss = do
+    divergeLeftFor (forc@(ForC _l ann _v _tau _gint c _) : lss) rss = do
         traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr c
         shouldUnroll <- shouldUnrollFor ann c
         when (not shouldUnroll) $ do
           traceFusion $ text "Encountered diverging loop during fusion."
           mzero
-        unrolled <- unrollFor l v tau e1 e2 c
+        unrolled <- unrollFor forc
         traceFusion $ text "runRight: unrolling left for"
         runRight (unComp unrolled ++ lss) rss
-      where
-        (e1, e2) = toStartLenGenInt gint
 
     divergeLeftFor _ _ =
         panicdoc $ text "divergeLeftFor: not a for loop"
@@ -868,7 +865,8 @@ runLeftUnroll lss@(RepeatC _ _ c _ : _) rss = do
     traceFusion $ text "runLeftUnroll: unrolling left repeat"
     withLeftKont lss $ do
       leftRepeat c
-      runLeft (unComp c ++ lss) rss
+      lss' <- unrollRepeat lss
+      runLeft lss' rss
 
 runLeftUnroll lss rss =
     runLeft lss rss
@@ -1280,18 +1278,38 @@ the initial label is necessary to allow accurate determination of the next
 computational step.
 -}
 
+-- | Unroll a repeat loop.
+unrollRepeat :: (IsLabel l, MonadTc m)
+             => [Step l]
+             -> m [Step l]
+unrollRepeat steps@(RepeatC _l _ann c _s : _) =
+    return $ unComp c ++ steps
+
+unrollRepeat steps =
+    faildoc $ nest 2 $ text "unrollRepeat: not a repeat" </> ppr steps
+
+-- | Unroll a for loop.
 unrollFor :: forall l m . (IsLabel l, MonadTc m)
-          => l
-          -> Var
-          -> Type
-          -> Exp
-          -> Exp
-          -> Comp l
+          => Step l
           -> F l m (Comp l)
-unrollFor l v tau e1 e2 c = do
+unrollFor (ForC l _ann v tau gint c _) = do
     i   <- tryFromIntE e1
     len <- tryFromIntE e2
     return $ setCompLabel l $ unrollBody i len $ \j -> subst1 (v /-> asintE tau j) c
+  where
+   (e1, e2) = toStartLenGenInt gint
+
+unrollFor step =
+    faildoc $ nest 2 $ text "unrollFor: not a for" </> ppr step
+
+-- | Unroll the body of a for loop.
+unrollBody :: IsLabel l
+           => Int             -- ^ Initial index
+           -> Int             -- ^ Number of iterations to unroll
+           -> (Int -> Comp l) -- ^ Function to generate loop body
+           -> Comp l
+unrollBody z n f =
+    mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
 
 splitFor :: forall l m . (IsLabel l, MonadTc m)
          => l
@@ -1309,14 +1327,6 @@ splitFor l v tau i len k c =
       unrollBody 0 q $ \j -> subst1 (v /-> varE v' * asintE tau q + asintE tau (i+j)) c
   where
     q = len `quot` k
-
-unrollBody :: IsLabel l
-           => Int
-           -> Int
-           -> (Int -> Comp l)
-           -> Comp l
-unrollBody z n f =
-    mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
 
 {- Note [Unrolling takes and emits]
 
