@@ -283,6 +283,13 @@ def compile_and_run(test, way, args):
             os.remove(os.path.join(test.cwd, outfilePath))
 
 #
+# Set up for a given way
+#
+def setup_way(way):
+    execute(['make', 'clean-runtime'])
+    execute(['make', 'runtime'])
+
+#
 # Main test driver
 #
 def find_lib(path):
@@ -583,6 +590,7 @@ def main():
     for way in ways:
         q.join()
         config.way = way
+        setup_way(way)
 
         for path in args.paths:
             if os.path.isfile(path):
