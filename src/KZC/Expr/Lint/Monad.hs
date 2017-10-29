@@ -66,6 +66,7 @@ module KZC.Expr.Lint.Monad (
 
     evalNat,
 
+    hasZeroTypeSize,
     typeSize,
     typeSizeInBytes,
 
@@ -517,6 +518,43 @@ evalNat (TyVarT alpha _) =
 evalNat tau =
     faildoc $ text "Expected a type of kind nat, but got" <+> enquote (ppr tau)
 
+-- | Return 'True' if type has a zero-size representation, 'False' otherwise. We
+-- need this in addition to 'typeSize' because 'typeSize' requires that type
+-- variables of kind nat are all defined to handle the case of arrays, and when
+-- compiling size-polymorphic functions, we may not have this information.
+hasZeroTypeSize :: forall m . MonadTc m => Type -> m Bool
+hasZeroTypeSize = go
+  where
+    go :: Type -> m Bool
+    go UnitT{}              = pure True
+    go BoolT{}              = pure False
+    go IntT{}               = pure False
+    go FixT {}              = pure False
+    go FloatT{}             = pure False
+    go (ArrT _ tau _)       = hasZeroTypeSize tau
+    go (ST (C tau) _ _ _ _) = hasZeroTypeSize tau
+    go (RefT tau _)         = hasZeroTypeSize tau
+
+    go (StructT s taus _) = do
+        sdef <- lookupStruct s
+        flds <- tyAppStruct sdef taus
+        and <$> mapM (hasZeroTypeSize . snd) flds
+
+    go (ForallT _ (ST (C tau) _ _ _ _) _) =
+        hasZeroTypeSize tau
+
+    go tau@(TyVarT alpha _) = do
+        maybe_tau <- maybeLookupTyVarType alpha
+        case maybe_tau of
+          Nothing   -> err tau
+          Just tau' -> go tau'
+
+    go tau =
+        err tau
+
+    err tau =
+        faildoc $ text "Cannot determine whether type" <+> ppr tau <+> text "has zero size"
+
 -- | Compute the size of a type in bits.
 typeSize :: forall m . MonadTc m => Type -> m Int
 typeSize = go
@@ -539,7 +577,16 @@ typeSize = go
     go (ForallT _ (ST (C tau) _ _ _ _) _) =
         go tau
 
+    go tau@(TyVarT alpha _) = do
+        maybe_tau <- maybeLookupTyVarType alpha
+        case maybe_tau of
+          Nothing   -> err tau
+          Just tau' -> go tau'
+
     go tau =
+        err tau
+
+    err tau =
         faildoc $ text "Cannot calculate bit width of type" <+> ppr tau
 
 -- | Compute the size of a type in bytes.

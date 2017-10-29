@@ -19,6 +19,7 @@ module KZC.Backend.C.CExp (
     FunCompC,
 
     CExp(..),
+    isVoid,
 
     calias,
     cdiv,
@@ -137,6 +138,10 @@ data CExp l = CVoid
             | CComp (forall a . CompC l a)
             -- | A computation function.
             | CFunComp (forall a. FunCompC l a)
+
+isVoid :: CExp l -> Bool
+isVoid CVoid = True
+isVoid _     = False
 
 deriving instance Show (CExp l)
 

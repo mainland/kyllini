@@ -118,6 +118,13 @@ static __inline__ cycles kz_cycles_end(void) {
 long double kz_get_cpu_time(void);
 long double kz_get_real_time(void);
 
+void kz_init_input_unit(const kz_params_t*, kz_buf_t*);
+void kz_init_output_unit(const kz_params_t*, kz_buf_t*);
+void kz_cleanup_input_unit(const kz_params_t*, kz_buf_t*);
+void kz_cleanup_output_unit(const kz_params_t*, kz_buf_t*);
+int  kz_input_unit(kz_buf_t*, size_t);
+void kz_output_unit(kz_buf_t*, size_t);
+
 void         kz_init_input_bit(const kz_params_t*, kz_buf_t*);
 void         kz_init_output_bit(const kz_params_t*, kz_buf_t*);
 void         kz_cleanup_input_bit(const kz_params_t*, kz_buf_t*);

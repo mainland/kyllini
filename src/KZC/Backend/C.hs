@@ -24,7 +24,8 @@ import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Bits
 import Data.Foldable (toList)
 import Data.Loc
-import Data.Maybe (isJust)
+import Data.Maybe (catMaybes,
+                   isJust)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
@@ -217,47 +218,79 @@ void kz_main(const typename kz_params_t* $id:params)
     guardtakek = return ()
 
     takek :: TakeK l
-    takek tau _klbl k = do
-        -- Generate a pointer to the current element in the buffer.
-        ctau   <- cgType tau
-        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
-        cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
-        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
-          then cgExit
-          else return ()
-        go tau cbuf
+    takek tau _klbl (k :: CExp l -> Cg l a) = do
+        cinput   <- cgInput tau (CExp [cexp|$id:in_buf|]) 1
+        zeroSize <- hasZeroTypeSize tau
+        takeInput zeroSize cinput
       where
-        go tau cbuf
-          | isBitT tau    = k $ CExp [cexp|*$cbuf & 1|]
-          | isBitArrT tau = k $ CBitSlice $ CExp [cexp|*$cbuf|]
-          | otherwise     = k $ CExp [cexp|*$cbuf|]
+        takeInput :: Bool -> CExp l -> Cg l a
+        takeInput True cinput = do
+            if [cexp|$cinput == 0|]
+              then cgExit
+              else return ()
+            k CVoid
+
+        takeInput False cinput = do
+            -- Generate a pointer to the current element in the buffer.
+            ctau <- cgType tau
+            cbuf <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
+            if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
+              then cgExit
+              else return ()
+            k $ cgBufElem tau cbuf
+          where
+            cgBufElem tau cbuf
+              | isBitT tau    = CExp [cexp|*$cbuf & 1|]
+              | isBitArrT tau = CBitSlice $ CExp [cexp|*$cbuf|]
+              | otherwise     = CExp [cexp|*$cbuf|]
 
     takesk :: TakesK l
-    takesk n tau _klbl k = do
-        -- Generate a pointer to the current element in the buffer.
-        ctau   <- cgType tau
-        cbuf   <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
-        cinput <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
-        if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
-          then cgExit
-          else return ()
-        go tau cbuf
+    takesk n tau _klbl (k :: CExp l -> Cg l a) = do
+        cinput   <- cgInput tau (CExp [cexp|$id:in_buf|]) (fromIntegral n)
+        zeroSize <- hasZeroTypeSize tau
+        takeInput zeroSize cinput
       where
-        go tau cbuf
-          | isBitT tau = k $ CBitSlice $ CExp [cexp|$cbuf|]
-          | otherwise  = k $ CExp [cexp|$cbuf|]
+        takeInput :: Bool -> CExp l -> Cg l a
+        takeInput True cinput = do
+            if [cexp|$cinput == 0|]
+              then cgExit
+              else return ()
+            k CVoid
+
+        takeInput False cinput = do
+            -- Generate a pointer to the current element in the buffer.
+            ctau <- cgType tau
+            cbuf <- cgThreadCTemp tau "take_bufp" [cty|$tyqual:calign const $ty:ctau*|] (Just [cinit|NULL|])
+            if [cexp|($cbuf = (const $ty:ctau*) $cinput) == NULL|]
+              then cgExit
+              else return ()
+            k $ cgBufElem tau cbuf
+          where
+            cgBufElem tau cbuf
+              | isBitT tau = CBitSlice $ CExp [cexp|$cbuf|]
+              | otherwise  = CExp [cexp|$cbuf|]
 
     emitk :: EmitK l
     emitk tau ce _klbl k = do
-        ceAddr <- cgAddrOf tau ce
-        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        zeroSize <- hasZeroTypeSize tau
+        ceElem   <- if zeroSize then return CVoid else cgAddrOf tau ce
+        cgOutput tau (CExp [cexp|$id:out_buf|]) 1 ceElem
         k
 
     emitsk :: EmitsK l
     emitsk n tau ce _klbl k = do
-        ceAddr <- cgAddrOf (arrT n tau) ce
-        cgOutput (arrT n tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
+        zeroSize <- hasZeroTypeSize tau
+        emitOutput zeroSize
         k
+      where
+        emitOutput :: Bool -> Cg l ()
+        emitOutput True = do
+            cn <- cgNatType n
+            cgOutput tau (CExp [cexp|$id:out_buf|]) cn CVoid
+
+        emitOutput False = do
+            ceAddr <- cgAddrOf (arrT n tau) ce
+            cgOutput (arrT n tau) (CExp [cexp|$id:out_buf|]) 1 ceAddr
 
     cgInitInput :: Type -> CExp l -> CExp l -> Cg l ()
     cgInitInput = cgBufferInit "kz_init_input"
@@ -278,7 +311,11 @@ void kz_main(const typename kz_params_t* $id:params)
     cgBufferCleanup = cgBufferConfig appendThreadCleanupStm
 
     cgBufferConfig :: (C.Stm -> Cg l ()) -> String -> Type -> CExp l -> CExp l -> Cg l ()
-    cgBufferConfig appStm f tau cp cbuf = go tau
+    cgBufferConfig appStm f tau cp cbuf = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then appStm [cstm|$id:(fname "unit")($cp, &$cbuf);|]
+          else go tau
       where
         go :: Type -> Cg l ()
         go (ArrT _ tau _)     = go tau
@@ -312,7 +349,11 @@ void kz_main(const typename kz_params_t* $id:params)
         fname t = fromString (f ++ "_" ++ t)
 
     cgInput :: Type -> CExp l -> CExp l -> Cg l (CExp l)
-    cgInput tau cbuf cn = go tau
+    cgInput tau cbuf cn = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then return $ CExp [cexp|kz_input_unit(&$cbuf, $cn)|]
+          else go tau
       where
         go :: Type -> Cg l (CExp l)
         go (ArrT n tau _)    = do ci <- cgNatType n
@@ -347,7 +388,11 @@ void kz_main(const typename kz_params_t* $id:params)
             return $ CExp [cexp|kz_input_bytes(&$cbuf, $cn*sizeof($ty:ctau))|]
 
     cgOutput :: Type -> CExp l -> CExp l -> CExp l -> Cg l ()
-    cgOutput tau cbuf cn cval = go tau
+    cgOutput tau cbuf cn cval = do
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then appendStm [cstm|kz_output_unit(&$cbuf, $cn);|]
+          else go tau
       where
         go :: Type -> Cg l ()
         go (ArrT n tau _)     = do ci <- cgNatType n
@@ -523,9 +568,9 @@ cgDecl decl@(LetFunD f tvks vbs tau_ret e l) k =
                         appendStm $ rl l [cstm|return $cres;|]
           if isReturnedByRef tau_res
             then do cretparam <- cgRetParam tau_res (Just cres_ident)
-                    appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam])) { $items:(toBlockItems cblock) }|]
+                    appendTopFunDef $ rl l [cedecl|static void $id:cf($params:(cgParams (cparams1 ++ cparams2 ++ [cretparam]))) { $items:(toBlockItems cblock) }|]
             else do ctau_res <- cgType tau_res
-                    appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cparams1 ++ cparams2)) { $items:(toBlockItems cblock) }|]
+                    appendTopFunDef $ rl l [cedecl|static $ty:ctau_res $id:cf($params:(cgParams (cparams1 ++ cparams2))) { $items:(toBlockItems cblock) }|]
       k
   where
     tau_res :: Type
@@ -545,9 +590,9 @@ cgDecl decl@(LetExtFunD f tvks vbs tau_ret l) k =
         (_, cparams2) <- unzip <$> mapM cgVarBind vbs
         if isReturnedByRef tau_res
           then do cretparam <- cgRetParam tau_res Nothing
-                  appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cparams1 ++ cparams2 ++ [cretparam]));|]
+                  appendTopFunDef $ rl l [cedecl|void $id:cf($params:(cgParams (cparams1 ++ cparams2 ++ [cretparam])));|]
           else do ctau_ret <- cgType tau_res
-                  appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cparams1 ++ cparams2));|]
+                  appendTopFunDef $ rl l [cedecl|$ty:ctau_ret $id:cf($params:(cgParams (cparams1 ++ cparams2)));|]
     k
   where
     tau :: Type
@@ -1145,9 +1190,9 @@ cgExp e k =
         if isReturnedByRef tau_res
           then extendTyVarCExps (nats `zip` cnats) $ do
                (cres, k') <- splitMultishotBind "call_res" tau_res True k
-               appendStm $ rl l [cstm|$cf($args:cnats, $args:(ces ++ [cres]));|]
+               appendStm $ rl l [cstm|$cf($args:cnats, $args:(cgArgs ces ++ [cres]));|]
                k'
-          else runKont k $ CExp [cexp|$cf($args:cnats, $args:ces)|]
+          else runKont k $ CExp [cexp|$cf($args:cnats, $args:(cgArgs ces))|]
       where
         cgArg :: Exp -> Cg l (CExp l)
         cgArg e = do
@@ -1163,6 +1208,10 @@ cgExp e k =
 
             go tau =
                 cgExpOneshot e >>= cgLower tau
+
+        -- | Remove void arguments
+        cgArgs :: [CExp l] -> [CExp l]
+        cgArgs ces = filter (not . isVoid) ces
 
     go (DerefE e _) k =
         cgExp e $ mapKont (\f ce -> f (cgDeref ce)) k
@@ -1424,13 +1473,16 @@ cgLoop (Just l) m = cgWithLabel l $ do
 -- | Compile a function variable binding. When the variable is a ref type, it is
 -- represented as a pointer, so we use the 'CPtr' constructor to ensure that
 -- dereferencing occurs.
-cgVarBind :: (Var, Type) -> Cg l (CExp l, C.Param)
+cgVarBind :: (Var, Type) -> Cg l (CExp l, Maybe C.Param)
 cgVarBind (v, tau) = do
-    cv     <- cvar v
-    cparam <- cgParam tau (Just cv)
-    return $ go cv cparam
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return (CVoid, Nothing)
+      else do cv     <- cvar v
+              cparam <- cgParam tau (Just cv)
+              return $ go cv cparam
   where
-    go :: C.Id -> C.Param -> (CExp l, C.Param)
+    go :: C.Id -> Maybe C.Param -> (CExp l, Maybe C.Param)
     go cv cparam
       | isPassByRef tau = (CPtr $ CExp $ rl l [cexp|$id:cv|], cparam)
       | isBitArrT tau   = (CBitSlice $ CExp $ rl l [cexp|$id:cv|], cparam)
@@ -1440,10 +1492,10 @@ cgVarBind (v, tau) = do
     l = locOf v <--> locOf tau
 
 -- | Compile a Nat type variable binding.
-cgNatTyVar :: TyVar -> Cg l (CExp l, C.Param)
+cgNatTyVar :: TyVar -> Cg l (CExp l, Maybe C.Param)
 cgNatTyVar alpha = do
     calpha <- cvar alpha
-    return (CExp [cexp|$id:calpha|], [cparam|int $id:calpha|])
+    return (CExp [cexp|$id:calpha|], Just [cparam|int $id:calpha|])
 
 -- | Compile a type-level Nat to a C expression.
 cgNatType :: Type -> Cg l (CExp l)
@@ -1575,121 +1627,128 @@ cgWidthMatchesBitcastTypeWidth _  = False
 
 -- | Compile a type to its C representation.
 cgType :: Type -> Cg l C.Type
-cgType UnitT{} =
-    return [cty|void|]
-
-cgType BoolT{} =
-    return [cty|typename uint8_t|]
-
-cgType tau | isBitT tau =
-    cgBitElemType
-
-cgType (IntT IDefault _) =
-    return [cty|int|]
-
-cgType tau@(IntT (I w) _)
-    | w <= 8    = return [cty|typename int8_t|]
-    | w <= 16   = return [cty|typename int16_t|]
-    | w <= 32   = return [cty|typename int32_t|]
-    | w <= 64   = return [cty|typename int64_t|]
-    | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
-
-cgType (IntT UDefault _) =
-    return [cty|unsigned|]
-
-cgType tau@(IntT (U w) _)
-    | w <= 8    = return [cty|typename uint8_t|]
-    | w <= 16   = return [cty|typename uint16_t|]
-    | w <= 32   = return [cty|typename uint32_t|]
-    | w <= 64   = return [cty|typename uint64_t|]
-    | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
-
-cgType (FixT (Q i f) _) =
-    return [cty|typename $id:q|]
+cgType tau = do
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return [cty|void|]
+      else go tau
   where
-    q = "QTY(" ++ show i ++ "," ++ show f ++ ")"
+    go :: Type -> Cg l C.Type
+    go UnitT{} =
+        return [cty|void|]
 
-cgType (FixT (UQ i f) _) =
-    return [cty|typename $id:uq|]
-  where
-    uq = "UQTY(" ++ show i ++ "," ++ show f ++ ")"
+    go BoolT{} =
+        return [cty|typename uint8_t|]
 
-cgType (FloatT FP16 _) =
-    return [cty|float|]
+    go tau | isBitT tau =
+        cgBitElemType
 
-cgType (FloatT FP32 _) =
-    return [cty|float|]
+    go (IntT IDefault _) =
+        return [cty|int|]
 
-cgType (FloatT FP64 _) =
-    return [cty|double|]
+    go tau@(IntT (I w) _)
+        | w <= 8    = return [cty|typename int8_t|]
+        | w <= 16   = return [cty|typename int16_t|]
+        | w <= 32   = return [cty|typename int32_t|]
+        | w <= 64   = return [cty|typename int64_t|]
+        | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
 
-cgType StringT{} =
-    return [cty|char*|]
+    go (IntT UDefault _) =
+        return [cty|unsigned|]
 
-cgType tau_struct@(StructT struct [] l) = do
-    maybe_tau <- runMaybeT $ checkComplexT tau_struct
-    case maybe_tau of
-      Just tau | tau == intT   -> return [cty|typename complex_t|]
-               | tau == int8T  -> return [cty|typename complex8_t|]
-               | tau == int16T -> return [cty|typename complex16_t|]
-               | tau == int32T -> return [cty|typename complex32_t|]
-               | tau == int64T -> return [cty|typename complex64_t|]
-      _ -> return [cty|typename $id:(cstruct struct l)|]
+    go tau@(IntT (U w) _)
+        | w <= 8    = return [cty|typename uint8_t|]
+        | w <= 16   = return [cty|typename uint16_t|]
+        | w <= 32   = return [cty|typename uint32_t|]
+        | w <= 64   = return [cty|typename uint64_t|]
+        | otherwise = faildoc $ text "Cannot compile fixed type" <+> ppr tau <+> "(width >64)."
 
-cgType tau@StructT{} =
-    withSummaryContext tau $
-    faildoc $ text "Cannot compile polymorphic struct types."
+    go (FixT (Q i f) _) =
+        return [cty|typename $id:q|]
+      where
+        q = "QTY(" ++ show i ++ "," ++ show f ++ ")"
 
-cgType tau@(ArrT _ tau_elem _) | isBitT tau_elem = do
-    (n, _)       <- checkKnownArrT tau
-    cbitElemType <- cgBitElemType
-    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
+    go (FixT (UQ i f) _) =
+        return [cty|typename $id:uq|]
+      where
+        uq = "UQTY(" ++ show i ++ "," ++ show f ++ ")"
 
-cgType tau@ArrT{} = do
-    (n, tau_elem) <- checkKnownArrT tau
-    ctau          <- cgType tau_elem
-    return [cty|$ty:ctau[$int:n]|]
+    go (FloatT FP16 _) =
+        return [cty|float|]
 
-cgType tau@(ST (C tau') _ _ _ _) | isPureishT tau =
-    cgType tau'
+    go (FloatT FP32 _) =
+        return [cty|float|]
 
-cgType tau@ST{} =
-    panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
+    go (FloatT FP64 _) =
+        return [cty|double|]
 
-cgType (RefT tau@(ArrT _ tau_elem _) _) | isBitT tau_elem = do
-    (n, _)       <- checkKnownArrT tau
-    cbitElemType <- cgBitElemType
-    return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
+    go StringT{} =
+        return [cty|char*|]
 
-cgType (RefT tau@ArrT{} _) = do
-    (n, tau_elem) <- checkKnownArrT tau
-    ctau          <- cgType tau_elem
-    return [cty|$ty:ctau[$int:n]|]
+    go tau_struct@(StructT struct [] l) = do
+        maybe_tau <- runMaybeT $ checkComplexT tau_struct
+        case maybe_tau of
+          Just tau | tau == intT   -> return [cty|typename complex_t|]
+                   | tau == int8T  -> return [cty|typename complex8_t|]
+                   | tau == int16T -> return [cty|typename complex16_t|]
+                   | tau == int32T -> return [cty|typename complex32_t|]
+                   | tau == int64T -> return [cty|typename complex64_t|]
+          _ -> return [cty|typename $id:(cstruct struct l)|]
 
-cgType (RefT tau _) = do
-    ctau <- cgType tau
-    return [cty|$ty:ctau*|]
+    go tau@StructT{} =
+        withSummaryContext tau $
+        faildoc $ text "Cannot compile polymorphic struct types."
 
-cgType (ForallT alphas (FunT args ret _) _) =
-    cgFunType (map fst alphas) args ret
+    go tau@(ArrT _ tau_elem _) | isBitT tau_elem = do
+        (n, _)       <- checkKnownArrT tau
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
-cgType (FunT args ret _) =
-    cgFunType [] args ret
+    go tau@ArrT{} = do
+        (n, tau_elem) <- checkKnownArrT tau
+        ctau          <- cgType tau_elem
+        return [cty|$ty:ctau[$int:n]|]
 
-cgType NatT{} =
-    return [cty|int|]
+    go tau@(ST (C tau') _ _ _ _) | isPureishT tau =
+        cgType tau'
 
-cgType UnopT{} =
-    return [cty|int|]
+    go tau@ST{} =
+        panicdoc $ text "cgType: cannot translate ST types:" <+> ppr tau
 
-cgType BinopT{} =
-    return [cty|int|]
+    go (RefT tau@(ArrT _ tau_elem _) _) | isBitT tau_elem = do
+        (n, _)       <- checkKnownArrT tau
+        cbitElemType <- cgBitElemType
+        return [cty|$ty:cbitElemType[$int:(bitArrayLen n)]|]
 
-cgType tau@ForallT{} =
-    faildoc $ text "cgType: cannot translate polymorphic type:" <+> ppr tau
+    go (RefT tau@ArrT{} _) = do
+        (n, tau_elem) <- checkKnownArrT tau
+        ctau          <- cgType tau_elem
+        return [cty|$ty:ctau[$int:n]|]
 
-cgType (TyVarT alpha _) =
-    lookupTyVarType alpha >>= cgType
+    go (RefT tau _) = do
+        ctau <- cgType tau
+        return [cty|$ty:ctau*|]
+
+    go (ForallT alphas (FunT args ret _) _) =
+        cgFunType (map fst alphas) args ret
+
+    go (FunT args ret _) =
+        cgFunType [] args ret
+
+    go NatT{} =
+        return [cty|int|]
+
+    go UnopT{} =
+        return [cty|int|]
+
+    go BinopT{} =
+        return [cty|int|]
+
+    go tau@ForallT{} =
+        faildoc $ text "cgType: cannot translate polymorphic type:" <+> ppr tau
+
+    go (TyVarT alpha _) =
+        lookupTyVarType alpha >>= cgType
 
 -- | Compute the type of array elements in a bit array.
 cgBitElemType :: Cg l C.Type
@@ -1697,13 +1756,13 @@ cgBitElemType = cgType (IntT (U bIT_ARRAY_ELEM_BITS) noLoc)
 
 cgFunType :: [TyVar] -> [Type] -> Type -> Cg l C.Type
 cgFunType nats args ret = do
-    let natTys =  replicate (length nats) [cparam|int|]
+    let natTys =  replicate (length nats) (Just [cparam|int|])
     argTys     <- mapM (`cgParam` Nothing) args
     if isReturnedByRef ret
       then do retTy <- cgParam ret Nothing
-              return [cty|void (*)($params:(natTys ++ argTys ++ [retTy]))|]
+              return [cty|void (*)($params:(cgParams (natTys ++ argTys ++ [retTy])))|]
       else do retTy <- cgType ret
-              return [cty|$ty:retTy (*)($params:(natTys ++ argTys))|]
+              return [cty|$ty:retTy (*)($params:(cgParams (natTys ++ argTys)))|]
 
 {- Note [Type Qualifiers for Array Arguments]
 
@@ -1715,13 +1774,23 @@ See:
   http://stackoverflow.com/questions/3430315/purpose-of-static-keyword-in-array-parameter-of-function
 -}
 
--- | Compile a function parameter.
-cgParam :: Type -> Maybe C.Id -> Cg l C.Param
+-- | Combine compiled function parameters.
+cgParams :: [Maybe C.Param] -> [C.Param]
+cgParams ps = case catMaybes ps of
+                []  -> [ [cparam|void|] ]
+                ps' -> ps'
+
+-- | Compile a function parameter. A function parameter of unit type will not
+-- result in a compiler parameter.
+cgParam :: Type -> Maybe C.Id -> Cg l (Maybe C.Param)
 cgParam tau maybe_cv = do
-    ctau <- cgParamType tau
-    case maybe_cv of
-      Nothing -> return [cparam|$ty:ctau|]
-      Just cv -> return [cparam|$ty:ctau $id:cv|]
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return Nothing
+      else do ctau <- cgParamType tau
+              case maybe_cv of
+                Nothing -> return $ Just [cparam|$ty:ctau|]
+                Just cv -> return $ Just [cparam|$ty:ctau $id:cv|]
   where
     cgParamType :: Type -> Cg l C.Type
     cgParamType (ArrT nat tau _) =
@@ -1767,12 +1836,15 @@ cgParam tau maybe_cv = do
     cgParamType tau = cgType tau
 
 -- | Compile a function parameter that is used to return a result.
-cgRetParam :: Type -> Maybe C.Id -> Cg l C.Param
+cgRetParam :: Type -> Maybe C.Id -> Cg l (Maybe C.Param)
 cgRetParam tau maybe_cv = do
-    ctau <- cgRetParamType tau
-    case maybe_cv of
-      Nothing -> return [cparam|$ty:ctau|]
-      Just cv -> return [cparam|$ty:ctau $id:cv|]
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return Nothing
+      else do ctau <- cgRetParamType tau
+              case maybe_cv of
+                 Nothing -> return $ Just [cparam|$ty:ctau|]
+                 Just cv -> return $ Just [cparam|$ty:ctau $id:cv|]
   where
     cgRetParamType :: Type -> Cg l C.Type
     cgRetParamType (ArrT nat tau _) =
@@ -1915,20 +1987,24 @@ isTainted BoundV{ bTainted = Just taint } = taint
 -- | Declare C storage for the given variable. If we are in top scope, declare
 -- the storage at top level; otherwise, declare it at thread scope.
 cgBinder :: Var -> Type -> Bool -> Cg l (CExp l)
-cgBinder _ UnitT{} _ =
-    return CVoid
-
-cgBinder v tau@(ST (C tau') _ _ _ _) init | isPureishT tau =
-    cgBinder v tau' init
-
 cgBinder v tau init = do
-    isTop       <- isInTopScope
-    cv          <- cvar v
-    (cdecl, ce) <- cgStorage cv tau init
-    if isTop
-      then appendTopDecl cdecl
-      else appendDecl cdecl
-    return ce
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return CVoid
+      else go tau
+  where
+    go :: Type -> Cg l (CExp l)
+    go tau@(ST (C tau') _ _ _ _) | isPureishT tau =
+        go tau'
+
+    go tau = do
+        isTop       <- isInTopScope
+        cv          <- cvar v
+        (cdecl, ce) <- cgStorage cv tau init
+        if isTop
+          then appendTopDecl cdecl
+          else appendDecl cdecl
+        return ce
 
 -- | Perform mandatory initialization of an l-value.
 cgInitAlways :: CExp l -> Type -> Cg l ()
@@ -1944,15 +2020,15 @@ cgInitAlways _ _ =
 -- | Allocate storage for a temporary of the given core type. The name of the
 -- temporary is gensym'd using @s@ with a prefix of @__@.
 cgTemp :: String -> Type -> Cg l (CExp l)
-cgTemp _ UnitT{} =
-    return CVoid
-
 cgTemp s tau = do
-    cv          <- gensym ("__" ++ s)
-    (cdecl, ce) <- cgStorage cv tau False
-    appendDecl cdecl
-    cgInitAlways ce tau
-    return ce
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return CVoid
+      else do cv          <- gensym ("__" ++ s)
+              (cdecl, ce) <- cgStorage cv tau False
+              appendDecl cdecl
+              cgInitAlways ce tau
+              return ce
 
 -- | Allocate storage for a C identifier with the given core type.
 cgStorage :: C.Id -- ^ C identifier for storage
@@ -2328,11 +2404,8 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     useLabel rightl
     cleftk  <- cgThreadCTemp b "par_leftk"  [cty|typename KONT|] (Just [cinit|LABELADDR($id:leftl)|])
     crightk <- cgThreadCTemp b "par_rightk" [cty|typename KONT|] (Just [cinit|LABELADDR($id:rightl)|])
-    -- Generate a pointer to the current element in the buffer.
-    ctau    <- cgType b
-    ctauptr <- cgBufPtrType b
-    cbuf    <- cgThreadCTemp b "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
-    cbufp   <- cgThreadCTemp b "par_bufp" ctauptr                        Nothing
+    -- Generate buffer and a pointer to the current element in the buffer.
+    (cbuf, cbufp) <- cgBuf b
     -- The void continuation simply swallows its argument and does nothing. We
     -- use this for transformers since they never return anyway.
     let voidk :: Kont l ()
@@ -2365,14 +2438,31 @@ cgParSingleThreaded _tau_res b left right klbl k = do
                      cgLeft voidk
                      runKont k CVoid
   where
-    cgBufPtrType :: Type -> Cg l C.Type
-    cgBufPtrType (ArrT _ tau _) = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+    -- Generate buffer and a pointer to the current element in the buffer
+    cgBuf :: Type -> Cg l (CExp l, CExp l)
+    cgBuf tau = do
+        zeroSize <- hasZeroTypeSize tau
+        go zeroSize
+      where
+        go :: Bool -> Cg l (CExp l, CExp l)
+        go True =
+            return (CVoid, CVoid)
 
-    cgBufPtrType tau = do
-        ctau <- cgType tau
-        return [cty|const $ty:ctau*|]
+        go False = do
+            ctau    <- cgType tau
+            ctauptr <- cgBufPtrType tau
+            cbuf    <- cgThreadCTemp tau "par_buf"  [cty|$tyqual:calign $ty:ctau|] Nothing
+            cbufp   <- cgThreadCTemp tau "par_bufp" ctauptr                        Nothing
+            return (cbuf, cbufp)
+
+        cgBufPtrType :: Type -> Cg l C.Type
+        cgBufPtrType (ArrT _ tau _) = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau*|]
+
+        cgBufPtrType tau = do
+            ctau <- cgType tau
+            return [cty|const $ty:ctau*|]
 
     cgDerefBufPtr :: Type -> CExp l -> CExp l
     cgDerefBufPtr ArrT{} ce = ce
@@ -2386,11 +2476,12 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     -- label of @ccomp@, since it is the continuation, generate code to jump
     -- to the left computation's continuation, and then call @k2@ with
     -- @ccomp@ suitably modified to have a required label.
-    takek cleftk crightk _cbuf cbufp _tau klbl k = do
+    takek cleftk crightk _cbuf cbufp tau klbl k = do
         useLabel klbl
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         appendStm [cstm|INDJUMP($cleftk);|]
-        k $ cgDerefBufPtr b cbufp
+        zeroSize <- hasZeroTypeSize tau
+        k $ if zeroSize then CVoid else cgDerefBufPtr b cbufp
 
     takesk :: CExp l -> CExp l -> CExp l -> CExp l -> TakesK l
     -- The multi-element take is a bit tricker. We allocate a buffer to hold
@@ -2399,24 +2490,37 @@ cgParSingleThreaded _tau_res b left right klbl k = do
     -- through to the next action, which is why we call @k2@ with @ccomp@
     -- without forcing its label to be required---we don't need the label!
     takesk cleftk crightk _cbuf cbufp n tau _klbl k = do
-        ctau_arr <- cgType (arrKnownT n tau)
-        carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
-        klbl     <- gensym "inner_takesk"
+        klbl <- gensym "inner_takesk"
         useLabel klbl
-        cgInitAlways carr (arrKnownT n tau)
+        zeroSize <- hasZeroTypeSize tau
+        carr     <- cgBuf zeroSize
         appendStm [cstm|$crightk = LABELADDR($id:klbl);|]
         cgFor 0 (fromIntegral n) $ \ci -> do
             appendStm [cstm|INDJUMP($cleftk);|]
             cgWithLabel klbl $
-                cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
+                if zeroSize
+                  then return ()
+                  else cgAssign (refT tau) (CIdx tau carr ci) (cgDerefBufPtr b cbufp)
         newScope $ k carr
+      where
+        cgBuf :: Bool -> Cg l (CExp l)
+        cgBuf True =
+            return CVoid
+
+        cgBuf False = do
+            ctau_arr <- cgType (arrKnownT n tau)
+            carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
+            cgInitAlways carr (arrKnownT n tau)
+            return carr
 
     emitk :: CExp l -> CExp l -> CExp l -> CExp l -> EmitK l
     -- @tau@ must be a base (scalar) type
     emitk cleftk crightk cbuf cbufp tau ce klbl k = do
         useLabel klbl
         appendStm [cstm|$cleftk = LABELADDR($id:klbl);|]
-        cgAssignBufp tau cbuf cbufp ce
+        zeroSize <- hasZeroTypeSize tau
+        unless zeroSize $
+            cgAssignBufp tau cbuf cbufp ce
         appendStm [cstm|INDJUMP($crightk);|]
         k
 
@@ -2434,9 +2538,11 @@ cgParSingleThreaded _tau_res b left right klbl k = do
             loopl <- gensym "emitsk_next"
             useLabel loopl
             appendStm [cstm|$cleftk = LABELADDR($id:loopl);|]
+            zeroSize <- hasZeroTypeSize tau
             cgFor 0 cn $ \ci -> do
-                celem <- cgIdx tau ce cn ci
-                cgAssignBufp tau cbuf cbufp celem
+                unless zeroSize $ do
+                    celem <- cgIdx tau ce cn ci
+                    cgAssignBufp tau cbuf cbufp celem
                 appendStm [cstm|INDJUMP($crightk);|]
                 -- Because we need a statement to label, but the continuation is
                 -- the next loop iteration...
@@ -2487,8 +2593,7 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
     -- the storage.
     (cres, k') <- splitMultishotBind "par_res" tau_res False k
     -- Generate a temporary to hold the par buffer.
-    cb   <- cgType b
-    cbuf <- cgTopCTemp b "par_buf" [cty|$tyqual:calign $ty:cb[KZ_BUFFER_SIZE]|] Nothing
+    cbuf <- cgBuf b
     -- Generate a name for the producer thread function
     cf <- gensym "par_threadfun"
     -- Generate a temporary to hold the thread info.
@@ -2545,8 +2650,10 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         let leftdonek :: Omega -> Kont l ()
             leftdonek C{} = multishot $ \ce -> do
                             appendComment $ text "Left computer done"
-                            cgAssign tau_res cres ce
-                            cgMemoryBarrier
+                            zeroSize <- hasZeroTypeSize tau_res
+                            unless zeroSize $ do
+                                cgAssign tau_res cres ce
+                                cgMemoryBarrier
                             cgExit
             leftdonek T   = multishot $ const $ do
                             appendComment $ text "Left transformer done"
@@ -2554,7 +2661,9 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
         let rightdonek :: Omega -> Kont l a
             rightdonek C{} = oneshot tau_res $ \ce -> do
                              appendComment $ text "Right computer done"
-                             cgAssign tau_res cres ce
+                             zeroSize <- hasZeroTypeSize tau_res
+                             unless zeroSize $
+                                 cgAssign tau_res cres ce
                              appendStm [cstm|$ctinfo.done = 1;|]
                              cgWithLabel l_pardone (restore k')
             rightdonek T   = oneshot tau_res $ \_ce -> do
@@ -2575,6 +2684,14 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
             cgConsumer ctinfo cbuf $
             cgParSpawn cf ctinfo right' (rightdonek omega_r)
   where
+    cgBuf :: Type -> Cg l (CExp l)
+    cgBuf UnitT{} =
+        return CVoid
+
+    cgBuf tau = do
+        ctau <- cgType tau
+        cgTopCTemp tau "par_buf" [cty|$tyqual:calign $ty:ctau[KZ_BUFFER_SIZE]|] Nothing
+
     -- | Generate code to spawn a thread that is one side of a par construct.
     cgParSpawn :: forall a . C.Id
                -> CExp l
@@ -2635,8 +2752,10 @@ static void* $id:cf(void* dummy)
         cgProduce ctinfo cbuf tau ce = do
             cgWaitWhileBufferFull ctinfo
             let cidx = CExp [cexp|$ctinfo.prod_cnt % KZ_BUFFER_SIZE|]
-            cgAssign (refT tau) (CIdx tau cbuf cidx) ce
-            cgMemoryBarrier
+            zeroSize <- hasZeroTypeSize tau_res
+            unless zeroSize $ do
+                cgAssign (refT tau) (CIdx tau cbuf cidx) ce
+                cgMemoryBarrier
             appendStm [cstm|++$ctinfo.prod_cnt;|]
 
         -- | Wait until the consumer requests data
@@ -2686,14 +2805,24 @@ static void* $id:cf(void* dummy)
 
         takesk :: TakesK l
         takesk n tau _klbl k = do
-            ctau_arr <- cgType (arrKnownT n tau)
-            carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
-            cgInitAlways carr (arrKnownT n tau)
+            zeroSize <- hasZeroTypeSize tau
+            carr     <- cgBuf zeroSize
             cgRequestData ctinfo (fromIntegral n)
             cgFor 0 (fromIntegral n) $ \ci ->
                 cgConsume ctinfo cbuf tau $ \ce ->
-                    cgAssign (refT tau) (CIdx tau carr ci) ce
+                    unless zeroSize $
+                      cgAssign (refT tau) (CIdx tau carr ci) ce
             k carr
+          where
+            cgBuf :: Bool -> Cg l (CExp l)
+            cgBuf True = do
+                return CVoid
+
+            cgBuf False = do
+                ctau_arr <- cgType (arrKnownT n tau)
+                carr     <- cgThreadCTemp tau "par_takes_xs" [cty|$tyqual:calign $ty:ctau_arr|] Nothing
+                cgInitAlways carr (arrKnownT n tau)
+                return carr
 
         -- | Consume a single data element from the buffer. We take a
         -- consumption continuation because we must be sure that we insert a
@@ -2705,7 +2834,10 @@ static void* $id:cf(void* dummy)
             appendStm [cstm|++$ctinfo.cons_cnt;|]
             cgWaitWhileBufferEmpty ctinfo
             let cidx = CExp [cexp|$ctinfo.cons_cnt % KZ_BUFFER_SIZE|]
-            consumek (CIdx tau cbuf cidx)
+            zeroSize <- hasZeroTypeSize tau
+            if zeroSize
+              then consumek CVoid
+              else consumek (CIdx tau cbuf cidx)
 
         -- | Request @cn@ data elements.
         cgRequestData :: CExp l -> CExp l -> Cg l ()
@@ -2793,17 +2925,17 @@ cgAssign :: forall l . Type -> CExp l -> CExp l -> Cg l ()
 cgAssign _ _ CVoid =
     return ()
 
--- If the type of the value is unit, don't actually perform the
--- assignment. However, we *do* need no evaluate the expression; it could, for
--- example, be a function call!
-cgAssign UnitT{} _ ce =
-    appendStm [cstm|$ce;|]
-
 cgAssign tau ce1 ce2 = do
     useCExp ce1
     useCExp ce2
-    alias <- mayAlias ce1 ce2
-    assign alias tau ce1 ce2
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      -- If the value has a zero-size representation, don't actually perform the
+      -- assignment. However, we *do* need to evaluate the expression; it could,
+      -- for example, be a function call!
+      then appendStm [cstm|$ce2;|]
+      else do alias <- mayAlias ce1 ce2
+              assign alias tau ce1 ce2
   where
     mayAlias :: CExp l -> CExp l -> Cg l Bool
     mayAlias ce1@(CAlias e1' _) ce2@(CAlias e2' _) = do
