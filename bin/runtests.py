@@ -104,6 +104,13 @@ def only_way(the_way):
 
     return f
 
+def only_flag(flag):
+    def f(test, way):
+        if flag not in way_flags(way):
+            test.skip = True
+
+    return f
+
 def flags(flags):
     """Hard-code KZC flags"""
     def f(test, way):
