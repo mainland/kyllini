@@ -311,7 +311,7 @@ parRate (TransR i m2) (TransR m3 l)
 
 -- c1 >>> c2
 parRate CompR{} CompR{} =
-    errordoc $ text "Saw two computers in parallel."
+    faildoc $ text "Saw two computers in parallel."
 
 -- | Return the in/out multiplicities of a computation.
 compInOutM :: forall l m . Monad m => Comp l -> m (M, M)
