@@ -63,3 +63,21 @@ fuse04.c : fuse04.kz $(KZC)
 
 fuse05.c : fuse05.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse06.c : fuse06.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse07.c : fuse07.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse08.c : fuse08.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -i../lib -ffuse -fsimpl $< -o $@
+
+fuse09.c : fuse09.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse10.c : fuse10.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse11.c : fuse11.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@

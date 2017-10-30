@@ -1,0 +1,18 @@
+fun a() {
+   repeat {
+      xs <- takes 5;
+
+      emit 0;
+
+      emits xs[0:4];
+   }
+}
+
+fun b() {
+    repeat {
+        x <- take;
+        emit x;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();
