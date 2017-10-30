@@ -1,0 +1,19 @@
+fun a() {
+    for i in 0..1000 {
+        emit 0;
+    }
+        
+    repeat {
+        x <- take;
+        emit x;
+    }
+}
+
+fun b() {
+    repeat {
+        y <- take;
+        emit y;
+    }
+}
+
+let comp main : ST T int int = b() >>> a();

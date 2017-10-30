@@ -54,3 +54,12 @@ fuse01.c : fuse01.kz $(KZC)
 
 fuse02.c : fuse02.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse03.c : fuse03.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse04.c : fuse04.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse05.c : fuse05.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
