@@ -57,6 +57,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Name
@@ -173,6 +174,7 @@ newtype F l m a = F { unF :: ReaderT (FEnv l)
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)
@@ -1282,6 +1284,7 @@ newtype UT m a = UT { runUT :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)
@@ -1315,6 +1318,7 @@ newtype UE m a = UE { runUE :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)

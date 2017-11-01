@@ -48,6 +48,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
@@ -333,6 +334,7 @@ newtype RW m a = RW { unRW :: ReaderT REnv (StateT RState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

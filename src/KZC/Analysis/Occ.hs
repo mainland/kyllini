@@ -37,6 +37,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -77,6 +78,7 @@ newtype OccM m a = OccM { unOccM :: WriterT Occs m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

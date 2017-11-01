@@ -71,6 +71,7 @@ library
     KZC.Expr.Smart
     KZC.Expr.Syntax
     KZC.Expr.ToCore
+    KZC.Fuel
     KZC.Globals
     KZC.Interp
     KZC.Monad

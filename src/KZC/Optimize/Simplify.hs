@@ -44,6 +44,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
+import KZC.Fuel
 import KZC.Label
 import KZC.Platform
 import KZC.Util.Error
@@ -134,6 +135,7 @@ newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

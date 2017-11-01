@@ -43,6 +43,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Platform
 import KZC.Util.Error
@@ -86,6 +87,7 @@ newtype MonoM l m a = MonoM { unMonoM:: ReaderT (MonoEnv l m) (StateT (MonoState
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

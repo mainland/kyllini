@@ -33,6 +33,7 @@ import Text.PrettyPrint.Mainland
 
 import KZC.Config
 import KZC.Expr.Lint.Monad
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -207,6 +208,9 @@ instance (MonadErr m, MonadUnique m) => MonadUnique (SEFKT m) where
 instance (MonadErr m, MonadConfig m) => MonadConfig (SEFKT m) where
     askConfig   = lift askConfig
     localConfig = liftLocal askConfig localConfig
+
+instance (MonadErr m, MonadFuel m) => MonadFuel (SEFKT m) where
+    useFuel = lift useFuel
 
 instance (MonadErr m, MonadPlatform m) => MonadPlatform (SEFKT m) where
     askPlatform   = lift askPlatform

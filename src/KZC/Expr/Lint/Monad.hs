@@ -103,6 +103,7 @@ import Text.PrettyPrint.Mainland.Class
 import KZC.Config
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Pretty
@@ -151,7 +152,7 @@ complexStructDef = StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVa
     num :: Kind
     num = TauK (traits [NumR])
 
-class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
+class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadFuel m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 

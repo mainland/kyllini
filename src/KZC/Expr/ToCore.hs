@@ -32,6 +32,7 @@ import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Expr.Lint
 import qualified KZC.Expr.Syntax as E
+import KZC.Fuel
 import KZC.Label
 import KZC.Platform
 import KZC.Util.Error
@@ -51,6 +52,7 @@ newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

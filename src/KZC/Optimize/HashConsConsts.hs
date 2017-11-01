@@ -33,6 +33,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Platform
 import KZC.Util.Error
@@ -57,6 +58,7 @@ newtype HC l m a = HC { unHC :: StateT (HCState l) m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

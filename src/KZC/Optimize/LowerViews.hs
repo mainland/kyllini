@@ -29,6 +29,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Platform
 import KZC.Util.Env
@@ -49,6 +50,7 @@ newtype L l m a = L { unL :: ReaderT LEnv m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

@@ -156,6 +156,7 @@ import KZC.Backend.C.Code
 import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
+import KZC.Fuel
 import KZC.Label
 import KZC.Monad
 import KZC.Platform
@@ -329,6 +330,7 @@ newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadRef IORef,

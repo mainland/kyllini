@@ -36,6 +36,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Monad.SEFKT
 import KZC.Platform
@@ -64,6 +65,7 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT m) a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc,

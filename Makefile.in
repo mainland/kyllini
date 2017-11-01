@@ -69,6 +69,7 @@ SOURCE = \
 	KZC/Expr/Smart.hs \
 	KZC/Expr/Syntax.hs \
 	KZC/Expr/ToCore.hs \
+	KZC/Fuel.hs \
 	KZC/Globals.hs \
 	KZC/Interp.hs \
 	KZC/Monad.hs \

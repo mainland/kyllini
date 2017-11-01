@@ -60,6 +60,7 @@ import qualified KZC.Core.Syntax as C
 import qualified KZC.Expr.Lint as E
 import qualified KZC.Expr.Syntax as E
 import qualified KZC.Expr.ToCore as E
+import KZC.Fuel
 import KZC.Globals
 import KZC.Label
 import KZC.LambdaLift
@@ -102,7 +103,8 @@ newtype C m a = C { unC :: ReaderT CEnv m a }
               MonadReader CEnv,
               MonadException,
               MonadErr,
-              MonadConfig)
+              MonadConfig,
+              MonadFuel)
 
 deriving instance MonadRef IORef m => MonadRef IORef (C m)
 deriving instance MonadAtomicRef IORef m => MonadAtomicRef IORef (C m)

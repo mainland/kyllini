@@ -36,6 +36,7 @@ import KZC.Check.State (TiEnv,
                         defaultTiState)
 import KZC.Compiler.Types
 import KZC.Config
+import KZC.Fuel
 import KZC.Expr.Lint.Monad (TcEnv,
                             defaultTcEnv)
 import KZC.Name
@@ -52,6 +53,7 @@ data KZCEnv = KZCEnv
     , errctx     :: ![ErrorContext]
     , flags      :: !Config
     , platform   :: !Platform
+    , fuelref    :: !(IORef Int)
     , rnenvref   :: !(IORef RnEnv)
     , tienvref   :: !(IORef TiEnv)
     , tistateref :: !(IORef TiState)
@@ -64,6 +66,7 @@ defaultKZCEnv :: (MonadIO m, MonadRef IORef m)
               -> m KZCEnv
 defaultKZCEnv fs = do
     u      <- newRef (Uniq 0)
+    fref   <- newRef (fuel fs)
     rneref <- newRef defaultRnEnv
     tieref <- newRef defaultTiEnv
     tisref <- newRef defaultTiState
@@ -74,6 +77,7 @@ defaultKZCEnv fs = do
                   , errctx     = []
                   , flags      = fs
                   , platform   = Platform { platformIntWidth = 32 }
+                  , fuelref    = fref
                   , rnenvref   = rneref
                   , tienvref   = tieref
                   , tistateref = tisref
@@ -141,3 +145,8 @@ instance MonadPlatform KZC where
 instance MonadTrace KZC where
     askTraceDepth     = asks tracedepth
     localTraceDepth f = local $ \env -> env { tracedepth = f (tracedepth env) }
+
+instance MonadFuel KZC where
+    useFuel = do fref <- asks fuelref
+                 f    <- atomicModifyRef fref $ \x -> (x-1, x)
+                 return $ f > 0

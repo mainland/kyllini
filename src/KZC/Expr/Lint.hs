@@ -99,6 +99,7 @@ import Text.PrettyPrint.Mainland.Class
 
 import KZC.Check.Path
 import KZC.Config
+import KZC.Fuel
 import KZC.Expr.Lint.Monad
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
@@ -119,6 +120,7 @@ newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace)
 

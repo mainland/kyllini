@@ -54,6 +54,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax hiding (I)
 import qualified KZC.Core.Syntax as S
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
@@ -230,6 +231,7 @@ newtype I s m a = I { unI :: ReaderT (IEnv s) m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)

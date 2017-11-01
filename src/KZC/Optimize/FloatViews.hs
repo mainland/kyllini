@@ -46,6 +46,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Name
 import KZC.Platform
@@ -95,6 +96,7 @@ newtype F m a = F { unF :: ReaderT FEnv (StateT FState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

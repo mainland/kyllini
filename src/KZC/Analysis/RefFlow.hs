@@ -41,6 +41,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -90,6 +91,7 @@ newtype RF m a = RF { unRF :: StateT RFState (WriterT RefSet m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

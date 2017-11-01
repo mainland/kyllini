@@ -29,6 +29,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -40,6 +41,7 @@ newtype AutoM m a = AutoM { unAutoM :: m a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

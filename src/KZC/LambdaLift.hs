@@ -35,6 +35,7 @@ import KZC.Config
 import KZC.Expr.Lint
 import KZC.Expr.Smart
 import KZC.Expr.Syntax
+import KZC.Fuel
 import KZC.Platform
 import KZC.Util.Env
 import KZC.Util.Error
@@ -66,6 +67,7 @@ newtype LiftM m a = LiftM { unLiftM:: ReaderT LiftEnv (StateT LiftState m) a }
               MonadUnique,
               MonadErr,
               MonadConfig,
+              MonadFuel,
               MonadPlatform,
               MonadTrace,
               MonadTc)

@@ -28,6 +28,7 @@ import KZC.Config
 import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Interp (compileAndRunGen)
 import KZC.Platform
 import KZC.Util.Error
@@ -40,6 +41,7 @@ newtype L m a = L { unL :: m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)

@@ -43,6 +43,7 @@ import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
 import KZC.Core.Transform
+import KZC.Fuel
 import KZC.Label
 import KZC.Name
 import KZC.Optimize.LowerViews
@@ -67,6 +68,7 @@ newtype G l m a = G { unG :: StateT (GState l) m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)
@@ -435,6 +437,7 @@ newtype L m a = L { unL :: ReaderT LEnv m a }
             MonadUnique,
             MonadErr,
             MonadConfig,
+            MonadFuel,
             MonadPlatform,
             MonadTrace,
             MonadTc)
