@@ -1369,13 +1369,11 @@ simplE (DerefE e s) = do
              else ReturnE AutoInline e' s
 
 simplE (AssignE e1 e2 s) = do
-    e1'  <- simplE e1
-    e2'  <- simplE e2
-    drop <- refPathRoot e1' >>= isDroppedRef
+    drop <- refPathRoot e1 >>= isDroppedRef
     if drop
       then do rewrite
               return $ returnE unitE
-      else return $ AssignE e1' e2' s
+      else AssignE <$> simplE e1 <*> simplE e2 <*> pure s
 
 simplE (LowerE tau _) = do
     tau' <- simplType tau

@@ -45,3 +45,7 @@ issue48.c : issue48.kz $(KZC)
 
 issue49.c : issue49.wpl $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -O3 $< -o $@
+
+issue52.c : issue52.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -fsimpl $< -o $@
+

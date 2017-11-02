@@ -1,0 +1,14 @@
+fun test() {
+    let mut xs : [int; 8];
+
+    x <- takes 8;
+
+    xs[0:7] = x;
+    
+    repeat {
+      x <- take;
+      emit x;
+    }
+  }
+
+let comp main : ST T int int = test();
