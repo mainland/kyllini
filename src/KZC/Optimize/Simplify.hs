@@ -520,7 +520,7 @@ simplLocalDecl decl m = do
                dropBinding v
                withoutBinding m
           else withUniqBoundVar v $ \v' ->
-               extendVars [(bVar v', tau)] $
+               extendVars [(bVar v', tau')] $
                extendOccInfo v' $
                extendDefinitions [(bVar v', BoundToExp (bOccInfo v') Top e')] $
                withBinding (LetLD v' tau' e' s) m
