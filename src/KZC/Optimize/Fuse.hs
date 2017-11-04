@@ -19,7 +19,6 @@ import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
                       guard,
                       unless,
-                      void,
                       when,
                       zipWithM)
 import Control.Monad.Exception (MonadException(..))
@@ -37,7 +36,8 @@ import Control.Monad.State (MonadState(..),
                             modify)
 import Control.Monad.Trans (lift)
 import Data.Foldable (toList)
-import Data.Loc (srclocOf)
+import Data.Loc (noLoc,
+                 srclocOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -112,9 +112,10 @@ data FEnv l = FEnv
 
 defaultFEnv :: (IsLabel l, MonadUnique m) => m (FEnv l)
 defaultFEnv = do
-    l <- gensym "end"
-    return FEnv { leftKont  = l
-                , rightKont = l
+    l_left  <- gensym "end_left"
+    l_right <- gensym "end_right"
+    return FEnv { leftKont  = l_left
+                , rightKont = l_right
                 }
 
 data FState l = FState
@@ -123,7 +124,6 @@ data FState l = FState
     , loopHead      :: !(Maybe (Joint l))      -- Label of loop head
     , leftLoopHead  :: !(Maybe l)              -- Label of head of left repeat
     , rightLoopHead :: !(Maybe l)              -- Label of head of right repeat
-    , codeCache     :: !(Map l (Comp l))
     }
 
 defaultFState :: IsLabel l => FState l
@@ -133,7 +133,6 @@ defaultFState = FState
     , loopHead      = Nothing
     , leftLoopHead  = Nothing
     , rightLoopHead = Nothing
-    , codeCache     = mempty
     }
 
 data FusionStats = FusionStats
@@ -198,14 +197,12 @@ withRightKont steps m = do
     local (\env -> env { rightKont = klabel }) m
 
 leftStepsLabel :: MonadTc m => [Step l] -> F l m l
-leftStepsLabel []                    = asks leftKont
-leftStepsLabel (RepeatC _ _ c _ : _) = leftStepsLabel (unComp c)
-leftStepsLabel (step : _)            = stepLabel step
+leftStepsLabel []         = asks leftKont
+leftStepsLabel (step : _) = stepLabel step
 
 rightStepsLabel :: MonadTc m => [Step l] -> F l m l
-rightStepsLabel []                    = asks rightKont
-rightStepsLabel (RepeatC _ _ c _ : _) = rightStepsLabel (unComp c)
-rightStepsLabel (step : _)            = stepLabel step
+rightStepsLabel []         = asks rightKont
+rightStepsLabel (step : _) = stepLabel step
 
 joint :: MonadTc m
       => [Step l]
@@ -231,35 +228,40 @@ jointLeft lss = do
     l_l <- leftStepsLabel lss
     return (l_l `JointL`)
 
+-- | Record a joint step.
 jointStep :: (IsLabel l, MonadTc m)
           => Step (Joint l)
           -> F l m [Step l]
           -> F l m [Step l]
-jointStep step k =
-    extendStepVars step $ do
-    l_repeat <- repeatLabel
+jointStep step k = do
     l_joint  <- stepLabel step
-    whenVerbLevel 2 $ traceFusion $
-        text "jointStep:" <+> ppr l_joint <> colon </> ppr step
-    saw <- sawLabel l_joint
+    l_repeat <- repeatLabel
+    saw      <- sawLabel l_joint
     if saw
-      then do when (l_repeat /= Just l_joint)
-                unalignedRepeats
-              setLoopHead l_joint
+      then do setLoopHead l_joint
+              c <- gets code
+              whenVerbLevel 2 $ traceFusion $
+                  text "Found loop with label:" <+> ppr l_joint </>
+                  text "final code:" </> indent 2 (ppr (toList c))
               return []
 {- Note [Duplicate labels in loops]
 
 If we hit the joint loop head, that means the loops aligned. Now we need to
 forget all the steps we've seen and record steps until we hit the loop head
 again. Note that we *still* record, the loop head! Also note that this can lead
-to steps with duplicate labels since steps with teh same label may occur in the
+to steps with duplicate labels since steps with the same label may occur in the
 loop prefix as well as the loop body.
 -}
       else do when (l_repeat == Just l_joint) $
                 modify $ \s -> s { seen = mempty }
               recordLabel l_joint
+              whenVerbLevel 2 $ traceFusion $
+                text "jointStep:" <+> ppr l_joint <> colon </> ppr step
               modify $ \s -> s { code = code s |> step }
-              k
+              whenVerbLevel 3 $ do
+                  c <- gets code
+                  traceFusion $ text "Joint code:" </> ppr (toList c)
+              extendStepVars step k
 
 extendStepVars :: MonadTc m
                => Step l
@@ -277,43 +279,216 @@ extendStepVars (BindC _ wv tau _) k =
 extendStepVars _ k =
     k
 
-collectSteps :: MonadTc m => F l m a -> F l m (a, [Step (Joint l)])
-collectSteps m = do
-    old_code <- gets code
-    modify $ \s -> s { code = mempty }
-    x <- m
-    steps <- toList <$> gets code
-    modify $ \s -> s { code = old_code }
-    return (x, steps)
-
-collectLoopBody :: forall a l m . (IsLabel l, MonadTc m)
-                => F l m a
-                -> F l m (a, Comp (Joint l))
-collectLoopBody m = do
-    ((x, steps), maybe_l) <- collectLoopHead $ collectSteps m
-    case maybe_l of
-      Nothing -> return (x, mkComp steps)
-      Just _  -> faildoc $ text "Unexpected loop head in body of computation."
-
 setLoopHead :: MonadTc m => Joint l -> F l m ()
 setLoopHead l = modify $ \s -> s { loopHead = Just l }
 
-collectLoopHead :: (IsLabel l, MonadTc m)
-                => F l m a
-                -> F l m (a, Maybe (Joint l))
-collectLoopHead m = do
+{- Note [Fusing Repeat]
+
+We fuse repeat by unrolling the repeat loop on demand.
+
+The only time that fusion will produce a repeat loop is when both sides of the
+par are repeats. We detect a loop by keeping track of the labels of all fused
+steps that have been produced so far and recording the loop header label when we
+encounter a step we have seen before. This label is then used by `collectSteps`
+to recover the loop.
+
+When the repeat loops are unaligned, we take care to save and restore variables
+that are bound by the shifted repeat loop prefix.
+-}
+
+collectSteps :: forall a l m . (IsLabel l, MonadTc m)
+             => F l m a
+             -> F l m (a, [Step (Joint l)])
+collectSteps m = do
+    old_code     <- gets code
     old_seen     <- gets seen
     old_loopHead <- gets loopHead
-    modify $ \s -> s { seen     = mempty
+    modify $ \s -> s { code     = mempty
                      , loopHead = Nothing
                      }
     x <- m
-    new_seen <- gets seen
-    l        <- gets loopHead
-    modify $ \s -> s { seen     = new_seen <> old_seen
+    l_head <- gets loopHead
+    steps  <- toList <$> gets code
+    modify $ \s -> s { code     = old_code
+                     , seen     = old_seen
                      , loopHead = old_loopHead
                      }
-    return (x, l)
+    case l_head of
+      Nothing -> return (x, steps)
+      Just l  -> do c <- recover l steps
+                    whenVerb $ traceFusion $ nest 2 $ text "Recovered loop:" </> ppr c
+                    return (x, unComp c)
+  where
+    recover :: Joint l                -- ^ Label of the head of the repeat loop
+            -> [Step (Joint l)]       -- ^ Computation steps
+            -> F l m (Comp (Joint l)) -- ^ Computation with recovered repeat
+    recover l steps = loop steps []
+      where
+        loop :: [Step (Joint l)]       -- ^ Remaining steps in the computation
+             -> [Step (Joint l)]       -- ^ Prefix (reversed) of the computation
+             -> F l m (Comp (Joint l)) -- ^ Computation with recovered repeat
+        loop [] _prefix = do
+            traceFusion $ text "Could not find repeat label!"
+            -- XXX We could try this...but would we still be able to recover the
+            -- loop?
+            --
+            --   return $ mkComp $ reverse prefix
+            --
+            mzero
+
+        loop steps@(step:_) [] | stepLabel step == Just l =
+            return $ mkComp [RepeatC l AutoVect c_body (srclocOf c_body)]
+          where
+            c_body :: Comp (Joint l)
+            c_body = mkComp steps
+
+        loop steps@(step:_) prefix | stepLabel step == Just l = do
+            unalignedRepeats
+            taus                       <- mapM (inferFv c_prefix) vs
+            (c_let, c_restore, c_save) <- mconcat <$>
+                                            zipWithM mkDeclSaveRestore vs taus
+            c_repeat                   <- C.repeatC AutoVect $
+                                            c_restore <> c_body <> c_save
+            -- See Note [Duplicate labels in loops]
+            c_prefix' <- traverse uniquify c_prefix
+            return $ c_prefix' <> c_let <> c_repeat
+          where
+            -- Variables bound by the shifted prefix of the unaligned repeat
+            -- loops
+            vs :: [Var]
+            vs = Set.toList $ fvs c_body `Set.intersection` binders c_body
+
+            c_prefix, c_body :: Comp (Joint l)
+            c_prefix = mkComp (reverse prefix)
+            c_body   = mkComp steps
+
+        loop (step:steps) prefix =
+            loop steps (step:prefix)
+
+    inferFv :: Comp (Joint l) -> Var -> F l m Type
+    inferFv c v = do
+        (tau, _, _, _) <- inferComp (c <> mkComp [returnVarC]) >>=
+                          checkSTC
+        return tau
+      where
+        returnVarC :: Step (Joint l)
+        returnVarC = ReturnC "dummy" (varE v) (srclocOf v)
+
+    mkDeclSaveRestore :: Var
+                      -> Type
+                      -> F l m (Comp (Joint l), Comp (Joint l), Comp (Joint l))
+    mkDeclSaveRestore v tau | isRefT tau = do
+        v'       <- gensym (namedString v ++ "_save")
+        t1       <- gensym (namedString v ++ "_temp1")
+        t2       <- gensym (namedString v ++ "_temp2")
+        t3       <- gensym (namedString v ++ "_temp3")
+        letc     <- mkSteps [C.liftC $ derefE (varE v)
+                            ,C.bindC (TameV (mkBoundVar t1)) (unRefT tau)
+                            ,C.letrefC v' (unRefT tau) (Just (varE t1))]
+        restorec <- mkSteps [C.liftC $ derefE (varE v')
+                            ,C.bindC (TameV (mkBoundVar t2)) (unRefT tau)
+                            ,C.liftC $ assignE (varE v) (varE t2)]
+        savec    <- mkSteps [C.liftC $ derefE (varE v)
+                            ,C.bindC (TameV (mkBoundVar t3)) (unRefT tau)
+                            ,C.liftC $ assignE (varE v') (varE t3)]
+        return (letc, restorec, savec)
+
+    mkDeclSaveRestore v tau = do
+        v'       <- gensym (namedString v ++ "_save")
+        letc     <- mkSteps [C.letrefC v' tau (Just (varE v))]
+        restorec <- mkSteps [C.liftC $ derefE (varE v')
+                            ,C.bindC (TameV (mkBoundVar v)) tau]
+        savec    <- mkSteps [C.liftC $ assignE (varE v') (varE v)]
+        return (letc, restorec, savec)
+
+    mkSteps :: [F l m (Comp (Joint l))] -> F l m (Comp (Joint l))
+    mkSteps = fmap mconcat . sequence
+
+collectSteps_ :: (IsLabel l, MonadTc m)
+              => F l m a
+              -> F l m [Step (Joint l)]
+collectSteps_ k = snd <$> collectSteps k
+
+collectComp :: (IsLabel l, MonadTc m)
+            => F l m a
+            -> F l m (a, Comp (Joint l))
+collectComp k = do
+    (x, steps) <- collectSteps k
+    return (x, mkComp steps)
+
+collectComp_ :: (IsLabel l, MonadTc m)
+             => F l m a
+             -> F l m (Comp (Joint l))
+collectComp_ k = snd <$> collectComp k
+
+collectLeftLoopBody :: forall a l m . (IsLabel l, MonadTc m)
+                    => l
+                    -> Comp l
+                    -> [Step l]
+                    -> ([Step l] -> F l m a)
+                    -> F l m (Comp (Joint l))
+collectLeftLoopBody l_left c rss k = do
+    l_right     <- rightStepsLabel rss
+    let l_joint =  l_left `JointL` l_right
+    steps <- collectSteps_ $
+             withLeftKont [noopStep l_left] $
+             k (labelLoopBody l_left c)
+    collectLoopBody l_joint steps
+
+collectRightLoopBody :: forall a l m . (IsLabel l, MonadTc m)
+                     => [Step l]
+                     -> l
+                     -> Comp l
+                     -> ([Step l] -> F l m a)
+                     -> F l m (Comp (Joint l))
+collectRightLoopBody lss l_right c k = do
+    l_left      <- leftStepsLabel lss
+    let l_joint =  l_left `JointL` l_right
+    steps <- collectSteps_ $
+             withRightKont [noopStep l_right] $
+             k (labelLoopBody l_right c)
+    collectLoopBody l_joint steps
+
+collectJointLoopBody :: forall a l m . (IsLabel l, MonadTc m)
+                     => l
+                     -> Comp l
+                     -> l
+                     -> Comp l
+                     -> ([Step l] -> [Step l] -> F l m a)
+                     -> F l m (Comp (Joint l))
+collectJointLoopBody l_left c_left l_right c_right k = do
+    steps <- collectSteps_ $
+             withLeftKont  [noopStep l_left] $
+             withRightKont [noopStep l_right] $
+             k (labelLoopBody l_left c_left)
+               (labelLoopBody l_right c_right)
+    collectLoopBody l_joint steps
+  where
+    l_joint :: Joint l
+    l_joint = l_left `JointL` l_right
+
+-- | Modify a loop body so that the given label, which should be the label of
+-- the loop header, comes both before and after the loop body.
+labelLoopBody :: l -> Comp l -> [Step l]
+labelLoopBody l c = noopStep l : unComp c ++ [noopStep l]
+
+collectLoopBody :: (IsLabel l, MonadTc m)
+                => Joint l
+                -> [Step (Joint l)]
+                -> F l m (Comp (Joint l))
+collectLoopBody l_joint [RepeatC l _ c _] | l == l_joint =
+    return c
+
+collectLoopBody l_joint [RepeatC l _ c _] = do
+    whenVerbLevel 2 $ traceFusion $ nest 2 $
+      text "Expected loop head" <+> ppr l_joint <+>
+      text "but got" <+> ppr l </> ppr c
+    mzero
+
+collectLoopBody _l_joint steps = do
+    whenVerbLevel 2 $ traceFusion $ nest 2 $
+      text "Expected loop but got:" </> ppr steps
+    mzero
 
 repeatLabel :: forall l m . MonadTc m => F l m (Maybe (Joint l))
 repeatLabel = do
@@ -322,20 +497,6 @@ repeatLabel = do
     case (maybe_left, maybe_right) of
       (Just left, Just right) -> return $ Just $ JointL left right
       _                       -> return Nothing
-
-leftRepeat :: MonadTc m
-           => Comp l
-           -> F l m ()
-leftRepeat c = do
-    l <- leftStepsLabel (unComp c)
-    modify $ \s -> s { leftLoopHead = Just l }
-
-rightRepeat :: MonadTc m
-            => Comp l
-            -> F l m ()
-rightRepeat c = do
-    l <- rightStepsLabel (unComp c)
-    modify $ \s -> s { rightLoopHead = Just l }
 
 sawLabel :: (IsLabel l, MonadTc m)
          => Joint l -> F l m Bool
@@ -350,26 +511,6 @@ getStats = F $ lift $ lift $ lift get
 
 modifyStats :: MonadTc m => (FusionStats -> FusionStats) -> F l m ()
 modifyStats = F . lift . lift . lift . modify
-
--- Cache generated code. When we rewrite code on the fly, we must ensure that if
--- we rewrite the same code more than once, we rewrite it in exactly the same
--- way---including code labels. Otherwise loop detection will not work. This bit
--- us when trying to fuse repeat04.wpl!
-cacheCode :: forall l m . (IsLabel l, MonadTc m)
-          => l
-          -> F l m (Comp l)
-          -> F l m (Comp l)
-cacheCode l m =
-    gets (Map.lookup l . codeCache) >>= go
-  where
-    go :: Maybe (Comp l) -> F l m (Comp l)
-    go (Just c) =
-        return c
-
-    go Nothing = do
-        c <- setCompLabel l <$> m >>= rateComp
-        modify $ \s -> s { codeCache = Map.insert l c (codeCache s)}
-        return c
 
 fuseProgram :: forall l m . (IsLabel l, MonadIO m, MonadTc m)
             => Program l -> m (Program l)
@@ -507,8 +648,13 @@ fusePar left0 right0 = do
         text "and consumer:" </> indent 2 (ppr right)
     comp0 <- prune 3 $ fuse left right
     comp  <- simplComp comp0 >>= rateComp
+    traceFusion $ text "Fused" <+>
+        text "producer:" </> indent 2 (ppr left) </>
+        text "and consumer:" </> indent 2 (ppr right) </>
+        text "into:" </> indent 2 (ppr comp0) </>
+        text "which simplified to:" </> indent 2 (ppr comp)
     checkFusionBlowup left right comp
-    fusionSucceeded left right comp0 comp
+    fusionSucceeded
     return $ unComp comp
   where
     checkFusionBlowup :: Comp l -> Comp l -> Comp l -> F l m ()
@@ -552,22 +698,17 @@ fusePar left0 right0 = do
           warndoc $ text "LUT too large too large during fusion" <+> parens (ppr nbytes)
           mzero
 
-    fusionSucceeded :: Comp l -> Comp l -> Comp l -> Comp l -> F l m ()
-    fusionSucceeded left right result simplResult = do
+    fusionSucceeded :: F l m ()
+    fusionSucceeded =
         modifyStats $ \s -> s { fusedPars = fusedPars s + 1 }
-        traceFusion $ text "Fused" <+>
-            text "producer:" </> indent 2 (ppr left) </>
-            text "and consumer:" </> indent 2 (ppr right) </>
-            text "into:" </> indent 2 (ppr result) </>
-            text "which simplified to:" </> indent 2 (ppr simplResult)
 
 fuse :: forall l m . (IsLabel l, MonadTc m)
      => Comp l         -- ^ Left computation
      -> Comp l         -- ^ Right computation
      -> F l m (Comp l)
 fuse left right = do
-    comp <- recoverRepeat_ $
-            void $ runRight (unComp left) (unComp right)
+    comp <- collectComp_ $
+            runRight (unComp left) (unComp right)
     return $ collapseJoint <$> comp
 
 pprFirstStep :: forall l . IsLabel l => [Step l] -> Doc
@@ -583,9 +724,9 @@ runRight :: forall l m . (IsLabel l, MonadTc m)
          -> [Step l]
          -> F l m [Step l]
 runRight lss rss = do
-    whenVerb $ traceFusion $ text "runRight:" </>
-        indent 2 (nest 2 $ text "left:" </> pprFirstStep lss) </>
-        indent 2 (nest 2 $ text "right:" </> pprFirstStep rss)
+    whenVerb $ traceFusion $ nest 2 $ text "runRight:" </>
+        text "left:"  </> indent 2 (pprFirstStep lss) </>
+        text "right:" </> indent 2 (pprFirstStep rss)
     run lss rss
   where
     run :: [Step l] -> [Step l] -> F l m [Step l]
@@ -641,10 +782,10 @@ runRight lss rss = do
         joinIf :: F l m (Step (Joint l), [Step l])
         joinIf = do
             l'          <- joint lss (rs:rss)
-            (lss1, c1') <- recoverRepeat $
+            (lss1, c1') <- collectComp $
                            withRightKont rss $
                            runRight lss (unComp c1)
-            (lss2, c2') <- recoverRepeat $
+            (lss2, c2') <- collectComp $
                            withRightKont rss $
                            runRight lss (unComp c2)
             guardLeftConvergence lss1 lss2
@@ -653,23 +794,23 @@ runRight lss rss = do
         divergeIf :: F l m [Step l]
         divergeIf = do
             l'  <- joint lss (rs:rss)
-            c1' <- recoverRepeat_ $ void $ runRight lss (unComp c1 ++ rss)
-            c2' <- recoverRepeat_ $ void $ runRight lss (unComp c2 ++ rss)
+            c1' <- collectComp_ $
+                   runRight lss (unComp c1 ++ rss)
+            c2' <- collectComp_ $
+                   runRight lss (unComp c2 ++ rss)
             jointStep (IfC l' e c1' c2' s) $
               return []
 
-    run lss (rs@(WhileC _l e c s) : rss) =
+    run lss (rs@(WhileC l e c s) : rss) =
         ifte joinWhile
              (\step -> jointStep step $ runRight lss rss)
              divergeWhile
       where
         joinWhile :: F l m (Step (Joint l))
         joinWhile = do
-            l'         <- joint lss (rs:rss)
-            (lss', c') <- collectLoopBody $
-                          withRightKont rss $
-                          runRight lss (unComp c)
-            guardLeftConvergence lss lss'
+            c' <- collectRightLoopBody lss l c $ \rss' ->
+                  runRight lss rss'
+            l' <- joint lss (rs:rss)
             return $ WhileC l' e c' s
 
         divergeWhile :: F l m [Step l]
@@ -687,12 +828,16 @@ runRight lss rss = do
       , n > 0
       -- Repeat loop needs to produce at least as fast as for loop consumes
       , m >= n*len
-      = runLeftUnroll lss rss
+      = do
+        traceFusion $ text "runRight: unrolling left repeat"
+        withLeftKont lss $ do
+          lss' <- unrollLeftRepeat lss
+          runLeft lss' rss
       where
         (_, elen) = toStartLenGenInt gint
 
     -- See Note [Fusing For Loops]. This fuses rate-matched for loops.
-    run (ls@(ForC _ _ i_l tau_l gint_l c_l _):lss) (rs@(ForC _ _ i_r tau_r gint_r c_r s):rss)
+    run (ls@(ForC l_l _ i_l tau_l gint_l c_l _):lss) (rs@(ForC l_r _ i_r tau_r gint_r c_r s):rss)
       | Just start_l <- fromIntE estart_l
       , Just len_l   <- fromIntE elen_l
       , Just start_r <- fromIntE estart_r
@@ -704,12 +849,9 @@ runRight lss rss = do
       , m == n && len_l == len_r
       = do
         traceFusion $ text "runRight: attempting to merge rate-matched for loops"
-        (lss', c) <- collectLoopBody $
-                     extendVars [(i_l, tau_l), (i_r, tau_r)] $
-                     runRight (unComp c_l) (unComp c_r)
-        unless (null lss') $
-            traceFusion $ text "runRight: failed to merge with left for"
-        guard (null lss')
+        c <- collectJointLoopBody l_l c_l l_r c_r $ \lss' rss' ->
+             extendVars [(i_l, tau_l), (i_r, tau_r)] $
+             runRight lss' rss'
         l_joint <- joint (ls:lss) (rs:rss)
         traceFusion $ text "runRight: merged for loops"
         let step = ForC l_joint AutoUnroll i_r tau_r (startLenGenInt estart_r elen_r)
@@ -737,23 +879,22 @@ runRight lss rss = do
         divergeRightFor     lss (rs:rss) `mplus`
         stepLeft            lss (rs:rss)
 
-    run (ls@ForC{}:lss) rss =
+    run (ls@ForC{}:lss) rss@(RepeatC{} : _) =
         ifte (splitLeftFor   ls       rss) (\steps -> runRight (steps ++ lss) rss) $
         ifte (joinLeftFor    (ls:lss) rss) (\step -> jointStep step $ runRight lss rss) $
         divergeLeftFor       (ls:lss) rss
 
-    run lss rss@(RepeatC _ _ c _ : _) = do
+    run lss rss@(RepeatC{} : _) = do
         traceFusion $ text "runRight: unrolling right repeat"
         withRightKont rss $ do
-          rightRepeat c
-          rss' <- unrollRepeat rss
+          rss' <- unrollRightRepeat rss
           runRight lss rss'
 
     run _lss (ParC{} : _rss) =
         nestedPar
 
     run lss rss@(TakeC{} : _) =
-        runLeftUnroll lss rss
+        runLeft lss rss
 
     run _ (TakesC{} : _) =
         faildoc $ text "Saw takes in consumer."
@@ -763,113 +904,97 @@ runRight lss rss = do
         jointStep (fmap relabel rs) $
           runRight lss rss
 
-    splitRightFor :: (IsLabel l, MonadTc m) => [Step l] -> Step l -> F l m [Step l]
-    splitRightFor lss rs =
-        trySplitFor "right" rs lss compInP compOutP
+splitRightFor :: (IsLabel l, MonadTc m) => [Step l] -> Step l -> F l m [Step l]
+splitRightFor lss rs =
+    trySplitFor "right" rs lss compInP compOutP
 
-    splitLeftFor :: (IsLabel l, MonadTc m) => Step l -> [Step l] -> F l m [Step l]
-    splitLeftFor ls rss =
-        trySplitFor "left" ls rss compOutP compInP
+splitLeftFor :: (IsLabel l, MonadTc m) => Step l -> [Step l] -> F l m [Step l]
+splitLeftFor ls rss =
+    trySplitFor "left" ls rss compOutP compInP
 
-    joinRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
-    joinRightFor lss (rs@(ForC _l ann v tau gint c s) : rss) = do
-        traceFusion $ text "runRight: attempting to join right for"
-        (lss', c') <- collectLoopBody $
-                      withRightKont rss $
-                      extendVars [(v, tau)] $
-                      runRight lss (unComp c)
-        guardLeftConvergence lss lss'
-        traceFusion $ text "runRight: joined right for"
-        l' <- joint lss (rs:rss)
-        return $ ForC l' ann v tau (startLenGenInt e1 e2) c' s
-      where
-        (e1, e2) = toStartLenGenInt gint
+joinRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
+joinRightFor lss (rs@(ForC l ann v tau gint c s) : rss) = do
+    traceFusion $ text "runRight: attempting to join right for" </>
+        text "Left:" </> indent 2 (ppr lss) </>
+        text "Right:" </> indent 2 (ppr rs)
+    c' <- collectRightLoopBody lss l c $ \rss' ->
+          extendVars [(v, tau)] $
+          runRight lss rss'
+    traceFusion $ text "runRight: joined right for"
+    l' <- joint lss (rs:rss)
+    return $ ForC l' ann v tau (startLenGenInt e1 e2) c' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
-    joinRightFor _ _ =
-        panicdoc $ text "joinRightFor: not a for loop"
+joinRightFor _ _ =
+    panicdoc $ text "joinRightFor: not a for loop"
 
-    joinLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
-    joinLeftFor (ls@(ForC _l _ann v tau gint c s) : lss) rss = do
-        traceFusion $ text "runRight: attempting to join left for"
-        (rss', c') <- collectLoopBody $
-                      withLeftKont lss $
-                      extendVars [(v, tau)] $
-                      runRight (unComp c) rss
-        guardRightConvergence rss rss'
-        traceFusion $ text "runRight: joined left for"
-        l' <- joint (ls:lss) rss
-        return $ ForC l' AutoUnroll v tau (startLenGenInt e1 e2) c' s
-      where
-        (e1, e2) = toStartLenGenInt gint
+joinLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
+joinLeftFor (ls@(ForC l _ann v tau gint c s) : lss) rss = do
+    traceFusion $ text "runRight: attempting to join left for"
+    c' <- collectLeftLoopBody l c rss $ \lss' ->
+          extendVars [(v, tau)] $
+          runRight lss' rss
+    traceFusion $ text "runRight: joined left for"
+    l' <- joint (ls:lss) rss
+    return $ ForC l' AutoUnroll v tau (startLenGenInt e1 e2) c' s
+  where
+    (e1, e2) = toStartLenGenInt gint
 
-    joinLeftFor _ _ =
-        panicdoc $ text "joinLeftFor: not a for loop"
+joinLeftFor _ _ =
+    panicdoc $ text "joinLeftFor: not a for loop"
 
-    divergeRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-    divergeRightFor lss (forc@(ForC _l ann _v _tau _gint c _) : rss) = do
-        traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr c
-        shouldUnroll <- shouldUnrollFor ann c
-        when (not shouldUnroll) $ do
-          traceFusion $ text "Encountered diverging loop during fusion."
-          mzero
-        unrolled <- unrollFor forc
-        traceFusion $ text "runRight: unrolling right for"
-        runRight lss (unComp unrolled ++ rss)
+divergeRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+divergeRightFor lss (forc@(ForC _l ann _v _tau _gint c _) : rss) = do
+    traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr forc
+    shouldUnroll <- shouldUnrollFor ann c
+    when (not shouldUnroll) $ do
+      traceFusion $ text "Encountered diverging loop during fusion."
+      mzero
+    unrolled <- unrollFor forc
+    traceFusion $ text "runRight: unrolling right for"
+    runRight lss (unComp unrolled ++ rss)
 
-    divergeRightFor _ _ =
-        panicdoc $ text "divergeRightFor: not a for loop"
+divergeRightFor _ _ =
+    panicdoc $ text "divergeRightFor: not a for loop"
 
-    divergeLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-    divergeLeftFor (forc@(ForC _l ann _v _tau _gint c _) : lss) rss = do
-        traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr c
-        shouldUnroll <- shouldUnrollFor ann c
-        when (not shouldUnroll) $ do
-          traceFusion $ text "Encountered diverging loop during fusion."
-          mzero
-        unrolled <- unrollFor forc
-        traceFusion $ text "runRight: unrolling left for"
-        runRight (unComp unrolled ++ lss) rss
+divergeLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+divergeLeftFor (forc@(ForC _l ann _v _tau _gint c _) : lss) rss = do
+    traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr forc
+    shouldUnroll <- shouldUnrollFor ann c
+    when (not shouldUnroll) $ do
+      traceFusion $ text "Encountered diverging loop during fusion."
+      mzero
+    unrolled <- unrollFor forc
+    traceFusion $ text "runRight: unrolling left for"
+    runRight (unComp unrolled ++ lss) rss
 
-    divergeLeftFor _ _ =
-        panicdoc $ text "divergeLeftFor: not a for loop"
+divergeLeftFor _ _ =
+    panicdoc $ text "divergeLeftFor: not a for loop"
 
-    -- If we can't fuse the right for loop and the left side doesn't emit, we
-    -- attempt to step the left side hoping we can fuse the rest of the
-    -- computation.
-    stepLeft :: forall l m . (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-    stepLeft [] _ = do
-        traceFusion $ text "Failed to step left"
-        mzero
+-- If we can't fuse the right for loop and the left side doesn't emit, we
+-- attempt to step the left side hoping we can fuse the rest of the
+-- computation.
+stepLeft :: forall l m . (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+stepLeft [] _ = do
+    traceFusion $ text "Failed to step left"
+    mzero
 
-    stepLeft (ls:lss) rss = do
-        traceFusion $ text "Attempting to step left" </> indent 2 (ppr ls)
-        noEmit <- doesNotEmit ls
-        unless noEmit $ do
-          traceFusion $ text "Failed to step left"
-          mzero
-        l_right <- rightStepsLabel rss
-        let ls' =  fmap (`JointL` l_right) ls
-        jointStep ls' $
-          runLeft lss rss
-      where
-        doesNotEmit :: Step l -> F l m Bool
-        doesNotEmit step = do
-            m <- rateComp (mkComp [step]) >>= compOutM
-            return $ m == N 0
-
-runLeftUnroll :: forall l m . (IsLabel l, MonadTc m)
-              => [Step l]
-              -> [Step l]
-              -> F l m [Step l]
-runLeftUnroll lss@(RepeatC _ _ c _ : _) rss = do
-    traceFusion $ text "runLeftUnroll: unrolling left repeat"
-    withLeftKont lss $ do
-      leftRepeat c
-      lss' <- unrollRepeat lss
-      runLeft lss' rss
-
-runLeftUnroll lss rss =
-    runLeft lss rss
+stepLeft (ls:lss) rss = do
+    traceFusion $ text "Attempting to step left" </> indent 2 (ppr ls)
+    noEmit <- doesNotEmit ls
+    unless noEmit $ do
+      traceFusion $ text "Failed to step left"
+      mzero
+    l_right <- rightStepsLabel rss
+    let ls' =  fmap (`JointL` l_right) ls
+    jointStep ls' $
+      runLeft lss rss
+  where
+    doesNotEmit :: Step l -> F l m Bool
+    doesNotEmit step = do
+        m <- rateComp (mkComp [step]) >>= compOutM
+        return $ m == N 0
 
 runLeft :: forall l m . (IsLabel l, MonadTc m)
         => [Step l]
@@ -892,11 +1017,12 @@ runLeft lss rss = do
       where
         joinIf :: F l m (Step (Joint l), [Step l])
         joinIf = do
+            traceFusion $ text "Attempting to join left if"
             l'          <- joint (ls:lss) rss
-            (rss1, c1') <- recoverRepeat $
+            (rss1, c1') <- collectComp $
                            withLeftKont lss $
                            runLeft (unComp c1) rss
-            (rss2, c2') <- recoverRepeat $
+            (rss2, c2') <- collectComp $
                            withLeftKont lss $
                            runLeft (unComp c2) rss
             guardRightConvergence rss1 rss2
@@ -904,24 +1030,25 @@ runLeft lss rss = do
 
         divergeIf :: F l m [Step l]
         divergeIf = do
+            traceFusion $ text "Left if diverged"
             l'  <- joint (ls:lss) rss
-            c1' <- recoverRepeat_ $ void $ runLeft (unComp c1 ++ lss) rss
-            c2' <- recoverRepeat_ $ void $ runLeft (unComp c2 ++ lss) rss
+            c1' <- collectComp_ $
+                   runLeft (unComp c1 ++ lss) rss
+            c2' <- collectComp_ $
+                   runLeft (unComp c2 ++ lss) rss
             jointStep (IfC l' e c1' c2' s) $
               return []
 
-    run (ls@(WhileC _l e c s) : lss) rss =
+    run (ls@(WhileC l e c s) : lss) rss =
         ifte joinWhile
              (\step -> jointStep step $ runLeft lss rss)
              divergeWhile
       where
         joinWhile :: F l m (Step (Joint l))
         joinWhile = do
-            l'         <- joint (ls:lss) rss
-            (rss', c') <- collectLoopBody $
-                          withLeftKont lss $
-                          runLeft (unComp c) rss
-            guardRightConvergence rss rss'
+            c' <- collectLeftLoopBody l c rss $ \lss' ->
+                  runRight lss' rss
+            l' <- joint (ls:lss) rss
             return $ WhileC l' e c' s
 
         divergeWhile :: F l m [Step l]
@@ -929,9 +1056,15 @@ runLeft lss rss = do
             traceFusion $ text "Encountered diverging while in producer"
             mzero
 
-    -- We run all for loops on the right.
-    run lss@(ForC{}:_) rss =
+    -- We fuse two for loops using the same method no matter which side is
+    -- running.
+    run lss@(ForC{}:_) rss@(ForC{}:_) =
         runRight lss rss
+
+    run (ls@ForC{}:lss) rss =
+        ifte (splitLeftFor   ls       rss) (\steps -> runRight (steps ++ lss) rss) $
+        ifte (joinLeftFor    (ls:lss) rss) (\step -> jointStep step $ runRight lss rss) $
+        divergeLeftFor       (ls:lss) rss
 
     run lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
         emitTake e lss rss
@@ -942,10 +1075,11 @@ runLeft lss rss = do
     run (EmitsC{} : _) _ =
         faildoc $ text "Saw emits in producer."
 
-    -- We only unroll left repeats on the right so the loop merger there has a
-    -- chance to see it first.
-    run lss@(RepeatC{}:_) rss =
-        runRight lss rss
+    run lss@(RepeatC{}:_) rss = do
+        traceFusion $ text "runLeft: unrolling left repeat"
+        withLeftKont lss $ do
+            lss' <- unrollLeftRepeat lss
+            runLeft lss' rss
 
     run (ParC{} : _lss) _rss =
         nestedPar
@@ -958,38 +1092,53 @@ runLeft lss rss = do
 trySplitFor :: forall l m . (IsLabel l, MonadTc m)
             => String                -- ^ Description of for loop being split
             -> Step l                -- ^ For loop
-            -> [Step l]              -- ^ Other loop
+            -> [Step l]              -- ^ Body of other loop
             -> (Comp l -> F l m Int) -- ^ Compute rate of for loop
             -> (Comp l -> F l m Int) -- ^ Compute rate of other loop
             -> F l m [Step l]        -- ^ New split for loop
-trySplitFor which (ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
+trySplitFor which for@(ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
     i       <- tryFromIntE ei
     len_for <- tryFromIntE elen
     -- Extract loop body and iteration count
     (len_loop, c_loop) <- loopBody ss_loop
-    -- Rate of a single iteration
-    n_fori  <- fromP_for c_for
-    n_loopi <- fromP_loop c_loop
+    -- Rate of a body for loop
+    r_for_body <- fromP_for c_for
+    -- Rate of body of other loop
+    r_loop_body <- fromP_loop c_loop
     -- Rates must both be greater than 0
-    guard $ n_fori > 0 && n_loopi > 0
+    guard $ r_for_body > 0 && r_loop_body > 0
     -- Total rates
-    let n_for  = n_fori*len_for
-    let n_loop = n_loopi*len_loop
-    guard $ n_for > n_loop || len_for > len_loop
-    let m = if n_for == n_loop then n_loopi else n_loop
-    let (q, r) = n_for `quotRem` m
+    let r_for  = r_for_body*len_for
+    let r_loop = r_loop_body*len_loop
+    guard $ r_for > r_loop || len_for > len_loop
+    -- Try to match the rate of the for loop body with that of the body of the
+    -- other loop if the two loops have trhe same total rate, otherwise try to
+    -- match the body of the for loop body with the rate of the entire other
+    -- loop.
+    let m = if r_for == r_loop then r_loop_body else r_loop
+    let (q, r) = r_for `quotRem` m
     traceFusion $ text "Considering splitting" <+> text which <+> "for loop" </>
-        text "  For loop body rate:" <+> ppr n_fori </>
-        text "Other loop body rate:" <+> ppr n_loopi </>
-        text "       For loop rate:" <+> ppr n_for </>
-        text "     Other loop rate:" <+> ppr n_loop </>
+        text "  For loop body rate:" <+> ppr r_for_body </>
+        text "Other loop body rate:" <+> ppr r_loop_body </>
+        text "       For loop rate:" <+> ppr r_for </>
+        text "     Other loop rate:" <+> ppr r_loop </>
         text "          Match rate:" <+> ppr m </>
         text "               (q,r):" <+> ppr (q, r)
-    guard $ r == 0
-    guard $ q /= 1 && q < len_for
+    when (r /= 0) $ do
+        traceFusion $ text "Will not split loop (r /= 0)"
+        mzero
+    when (q == 1) $ do
+        traceFusion $ text "Will not split loop (q == 1)"
+        mzero
+    when (q >= len_for) $ do
+        traceFusion $ text "Will not split loop (q >= len_for)"
+        mzero
     c_for' <- splitFor l v tau i len_for q c_for
     whenVerb $ traceFusion $
-      text "Split for loop:" </> indent 2 (ppr c_for')
+      text "Split for loop:" </>
+      indent 2 (ppr for) </>
+      text "into:" </>
+      indent 2 (ppr c_for')
     return $ unComp c_for'
   where
     ei, elen :: Exp
@@ -1158,111 +1307,6 @@ guardRightConvergence rss rss' = do
         traceFusion $ text "Right branches did not converge"
     guard (l' == l)
 
-{- Note [Fusing Repeat]
-
-We fuse repeat by unrolling the repeat loop on demand.
-
-The only time that fusion will produce a repeat loop is when both sides of the
-par are repeats. We detect a loop by keeping track of the labels of all fused
-steps that have been produced so far and recording the loop header label when we
-encounter a step we have seen before. This label is then used by `recoverRepeat`
-to recover the loop.
-
-When the repeat loops are unaligned, we take care to save and restore variables
-that are bound by the shifted repeat loop prefix.
--}
-
-recoverRepeat :: forall a l m . (IsLabel l, MonadTc m)
-              => F l m a
-              -> F l m (a, Comp (Joint l))
-recoverRepeat m = do
-    ((x, steps), maybe_l) <- collectLoopHead $ collectSteps m
-    case maybe_l of
-      Nothing -> return (x, mkComp steps)
-      Just l  -> (,) <$> pure x <*> recover l steps []
-  where
-    recover :: Joint l
-            -> [Step (Joint l)]       -- ^ Remaining steps in the computation
-            -> [Step (Joint l)]       -- ^ Prefix (reversed) of the computation
-            -> F l m (Comp (Joint l)) -- ^ Computation with recovered repeat
-    recover l = loop
-      where
-        loop :: [Step (Joint l)] -> [Step (Joint l)] -> F l m (Comp (Joint l))
-        loop [] _prefix = do
-            traceFusion $ text "Could not find repeat label!"
-            -- XXX We could try this...but would we still be able to recover the
-            -- loop?
-            --
-            --   return $ mkComp $ reverse prefix
-            --
-            mzero
-
-        loop steps@(step:_) prefix | stepLabel step == Just l = do
-            taus                       <- mapM (inferFv c_prefix) vs
-            (c_let, c_restore, c_save) <- mconcat <$>
-                                            zipWithM mkDeclSaveRestore vs taus
-            c_repeat                   <- C.repeatC AutoVect $
-                                            c_restore <> c_body <> c_save
-            -- See Note [Duplicate labels in loops]
-            c_prefix' <- traverse uniquify c_prefix
-            return $ c_prefix' <> c_let <> c_repeat
-          where
-            -- Variables bound by the shifted prefix of the unaligned repeat
-            -- loops
-            vs :: [Var]
-            vs = Set.toList $ fvs c_body `Set.intersection` binders c_body
-
-            c_prefix, c_body :: Comp (Joint l)
-            c_prefix = mkComp (reverse prefix)
-            c_body   = mkComp steps
-
-        loop (step:steps) prefix =
-            loop steps (step:prefix)
-
-    inferFv :: Comp (Joint l) -> Var -> F l m Type
-    inferFv c v = do
-        (tau, _, _, _) <- inferComp (c <> mkComp [returnVarC]) >>=
-                          checkSTC
-        return tau
-      where
-        returnVarC :: Step (Joint l)
-        returnVarC = ReturnC "dummy" (varE v) (srclocOf v)
-
-    mkDeclSaveRestore :: Var
-                      -> Type
-                      -> F l m (Comp (Joint l), Comp (Joint l), Comp (Joint l))
-    mkDeclSaveRestore v tau | isRefT tau = do
-        v'       <- gensym (namedString v ++ "_save")
-        t1       <- gensym (namedString v ++ "_temp1")
-        t2       <- gensym (namedString v ++ "_temp2")
-        t3       <- gensym (namedString v ++ "_temp3")
-        letc     <- mkSteps [C.liftC $ derefE (varE v)
-                            ,C.bindC (TameV (mkBoundVar t1)) (unRefT tau)
-                            ,C.letrefC v' (unRefT tau) (Just (varE t1))]
-        restorec <- mkSteps [C.liftC $ derefE (varE v')
-                            ,C.bindC (TameV (mkBoundVar t2)) (unRefT tau)
-                            ,C.liftC $ assignE (varE v) (varE t2)]
-        savec    <- mkSteps [C.liftC $ derefE (varE v)
-                            ,C.bindC (TameV (mkBoundVar t3)) (unRefT tau)
-                            ,C.liftC $ assignE (varE v') (varE t3)]
-        return (letc, restorec, savec)
-
-    mkDeclSaveRestore v tau = do
-        v'       <- gensym (namedString v ++ "_save")
-        letc     <- mkSteps [C.letrefC v' tau (Just (varE v))]
-        restorec <- mkSteps [C.liftC $ derefE (varE v')
-                            ,C.bindC (TameV (mkBoundVar v)) tau]
-        savec    <- mkSteps [C.liftC $ assignE (varE v') (varE v)]
-        return (letc, restorec, savec)
-
-    mkSteps :: [F l m (Comp (Joint l))] -> F l m (Comp (Joint l))
-    mkSteps = fmap mconcat . sequence
-
-recoverRepeat_ :: forall l m . (IsLabel l, MonadTc m)
-               => F l m ()
-               -> F l m (Comp (Joint l))
-recoverRepeat_ m = snd <$> recoverRepeat m
-
 {- Note [Fusing For Loops]
 
 We first attempt to fuse a for loop by fusing the body of the for with the other
@@ -1278,15 +1322,35 @@ the initial label is necessary to allow accurate determination of the next
 computational step.
 -}
 
--- | Unroll a repeat loop.
-unrollRepeat :: (IsLabel l, MonadTc m)
-             => [Step l]
-             -> m [Step l]
-unrollRepeat steps@(RepeatC _l _ann c _s : _) =
-    return $ unComp c ++ steps
+-- | Return a no-op step with the given label.
+noopStep :: l -> Step l
+noopStep l = ReturnC l unitE noLoc
 
-unrollRepeat steps =
-    faildoc $ nest 2 $ text "unrollRepeat: not a repeat" </> ppr steps
+-- | Return a no-op computation with the given label.
+noopComp :: l -> Comp l
+noopComp l = mkComp [noopStep l]
+
+-- | Unroll a left repeat loop.
+unrollLeftRepeat :: (IsLabel l, MonadTc m)
+                 => [Step l]
+                 -> F l m [Step l]
+unrollLeftRepeat steps@(RepeatC l _ann c _s : _) = do
+    modify $ \s -> s { leftLoopHead = Just l }
+    return $ noopStep l : unComp c ++ steps
+
+unrollLeftRepeat steps =
+    faildoc $ nest 2 $ text "unrollLeftRepeat: not a repeat" </> ppr steps
+
+-- | Unroll a right repeat loop.
+unrollRightRepeat :: (IsLabel l, MonadTc m)
+                  => [Step l]
+                  -> F l m [Step l]
+unrollRightRepeat steps@(RepeatC l _ann c _s : _) = do
+    modify $ \s -> s { rightLoopHead = Just l }
+    return $ noopStep l : unComp c ++ steps
+
+unrollRightRepeat steps =
+    faildoc $ nest 2 $ text "unrollRightRepeat: not a repeat" </> ppr steps
 
 -- | Unroll a for loop.
 unrollFor :: forall l m . (IsLabel l, MonadTc m)
@@ -1295,7 +1359,7 @@ unrollFor :: forall l m . (IsLabel l, MonadTc m)
 unrollFor (ForC l _ann v tau gint c _) = do
     i   <- tryFromIntE e1
     len <- tryFromIntE e2
-    return $ setCompLabel l $ unrollBody i len $ \j -> subst1 (v /-> asintE tau j) c
+    return $ noopComp l <> unrollBody i len (\j -> subst1 (v /-> asintE tau j) c)
   where
    (e1, e2) = toStartLenGenInt gint
 
@@ -1312,19 +1376,19 @@ unrollBody z n f =
     mconcat [indexLabel i <$> f i | i <- [z..(z+n-1)]]
 
 splitFor :: forall l m . (IsLabel l, MonadTc m)
-         => l
-         -> Var
-         -> Type
-         -> Int
-         -> Int
-         -> Int
-         -> Comp l
-         -> F l m (Comp l)
-splitFor l v tau i len k c =
-    cacheCode l $ do
-    v' <- gensym "i"
-    C.forC AutoUnroll v' tau (asintE tau (0 :: Integer)) (asintE tau k) $
-      unrollBody 0 q $ \j -> subst1 (v /-> varE v' * asintE tau q + asintE tau (i+j)) c
+         => l              -- ^ Label of for loop
+         -> Var            -- ^ Loop index variable
+         -> Type           -- ^ Type of loop infex variable
+         -> Int            -- ^ Initial loop index
+         -> Int            -- ^ Number of iterations
+         -> Int            -- ^ Number of iterations to perform in new loop body
+         -> Comp l         -- ^ Original loop body
+         -> F l m (Comp l) -- ^ New loop
+splitFor l v tau i len k c = do
+    v'       <- gensym "i"
+    let gint =  startLenGenInt (asintE tau (0 :: Integer)) (asintE tau k)
+    c'       <- rateComp $ unrollBody 0 q $ \j -> subst1 (v /-> varE v' * asintE tau q + asintE tau (i+j)) c
+    return $ mkComp [ForC l AutoUnroll v' tau gint c' noLoc]
   where
     q = len `quot` k
 
