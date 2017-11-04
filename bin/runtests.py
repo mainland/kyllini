@@ -190,6 +190,12 @@ def parseStats(data):
     for m in re.finditer(r'^\s+(.*): ([\d\.]*)$', data, re.M):
         stats[m.group(1)] = float(m.group(2))
 
+    for m in re.finditer(r'^\s+(.*): True$', data, re.M):
+        stats[m.group(1)] = True
+
+    for m in re.finditer(r'^\s+(.*): False$', data, re.M):
+        stats[m.group(1)] = False
+
     return stats
 
 def checkStats(test, out):
