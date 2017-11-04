@@ -151,8 +151,9 @@ mappendStats stats =
     modify $ \s -> s { simplStats = simplStats s <> stats }
 
 dropBinding :: MonadTc m => BoundVar -> SimplM l m ()
-dropBinding _ =
+dropBinding _ = do
     mappendStats mempty { simplDrop = 1 }
+    rewrite
 
 inlineBinding :: MonadTc m => Var -> SimplM l m ()
 inlineBinding _v =
