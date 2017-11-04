@@ -583,9 +583,14 @@ simplSteps (LetC l decl s : steps) = do
     (maybe_decl', steps') <- withSummaryContext steps $
                              simplLocalDecl decl $
                              simplSteps steps
-    case maybe_decl' of
-      Nothing    -> return steps'
-      Just decl' -> simplLift $ LetC l decl' s : steps'
+    go maybe_decl' steps'
+  where
+    -- When we drop a let and it is the last step, add a @return ()@ step in
+    -- case there was a bind step *before* the dropped let.
+    go :: Maybe LocalDecl -> [Step l] -> SimplM l m [Step l]
+    go Nothing      []     = return [ReturnC l unitE s]
+    go Nothing      steps' = return steps'
+    go (Just decl') steps' = simplLift $ LetC l decl' s : steps'
 
 simplSteps (BindC {} : _) =
     panicdoc $ text "simplSteps: leading BindC"
