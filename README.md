@@ -12,7 +12,7 @@ cabal configure
 cabal build
 ```
 
-Building with `cabal` *will not* generate binaries in the `bin` directory, so you will need to specify the path to `kzc` explicitly when invoking  `runtests.py`.
+Building with `cabal` *will not* generate binaries in the `bin` directory, so you will need to specify the path to `kzc` explicitly when invoking  `bin/runtests.py`.
 
 #### Building with `stack`
 
@@ -45,20 +45,20 @@ After installing MSYS2, follow the instructions above.
 
 # Testing
 
-The `runtests.py` script implements a flexible testing framework that can test not only input/output correctness, but also various code metrics like input/output rate and number of for loops. This helps verify that compiler changes don't introduce performance regressions.
+The `bin/runtests.py` script implements a flexible testing framework that can test not only input/output correctness, but also various code metrics like input/output rate and number of for loops. This helps verify that compiler changes don't introduce performance regressions.
 
-Running `runtests.py --help` will display the available options. There are two main sets of test once should run.
+Running `./bin/runtests.py --help` will display the available options. There are two main sets of test once should run.
 
 The first test correctness over a wide range of compiler flags. It is run as follows:
 
 ```
-./runtests.py testsuite examples/wifi --all-ways
+./bin/runtests.py testsuite examples/wifi --all-ways
 ```
 
 The second tests metrics that correlate to performance. It is run as follows:
 
 ```
-./runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf
+./bin/runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf
 ```
 
 ## Validate script

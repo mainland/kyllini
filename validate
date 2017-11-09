@@ -53,6 +53,6 @@ test_run examples/wifi "transmitter/tests receiver/tests tests sniffer" $@
 #test_run examples/wifi "transmitter/perf receiver/perf perf" $@
 
 # Run test scripts
-./runtests.py testsuite examples/wifi --all-ways
+./bin/runtests.py testsuite examples/wifi --all-ways
 
-./runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf
+./bin/runtests.py examples/wifi/transmitter/perf examples/wifi/receiver/perf examples/wifi/perf --way perf
