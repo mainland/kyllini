@@ -25,6 +25,7 @@ import Data.Bits
 import Data.Foldable (toList)
 import Data.Loc
 import Data.Maybe (catMaybes,
+                   fromMaybe,
                    isJust)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -527,16 +528,27 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl decl@(StructD s [] flds l) k = do
-    withSummaryContext decl $ do
-        cflds <- mapM cgField flds
-        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
-    extendStructs [StructDef s [] flds l] k
+cgDecl decl@(StructD s [] flds l) k =
+    extendStructs [StructDef s [] flds l] $ do
+    maybe_ctau <- runMaybeT $ cgComplexType (StructT s (map snd flds) l)
+    genStructDecl maybe_ctau
+    k
   where
     cgField :: (Field, Type) -> Cg l C.FieldGroup
     cgField (fld, tau) = do
         ctau <- cgType tau
         return [csdecl|$ty:ctau $id:(cfield fld);|]
+
+    genStructDecl :: Maybe C.Type -> Cg l ()
+    -- We avoid generating declarations for complex types the runtime already
+    -- knows about.
+    genStructDecl Just{} =
+        return ()
+
+    genStructDecl _ =
+        withSummaryContext decl $ do
+        cflds <- mapM cgField flds
+        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
 
 cgDecl decl@StructD{} _k =
     withSummaryContext decl $
@@ -1686,14 +1698,8 @@ cgType tau = do
         return [cty|char*|]
 
     go tau_struct@(StructT struct [] l) = do
-        maybe_tau <- runMaybeT $ checkComplexT tau_struct
-        case maybe_tau of
-          Just tau | tau == intT   -> return [cty|typename complex_t|]
-                   | tau == int8T  -> return [cty|typename complex8_t|]
-                   | tau == int16T -> return [cty|typename complex16_t|]
-                   | tau == int32T -> return [cty|typename complex32_t|]
-                   | tau == int64T -> return [cty|typename complex64_t|]
-          _ -> return [cty|typename $id:(cstruct struct l)|]
+        maybe_ctau <- runMaybeT $ cgComplexType tau_struct
+        return $ fromMaybe [cty|typename $id:(cstruct struct l)|] maybe_ctau
 
     go tau@StructT{} =
         withSummaryContext tau $
@@ -1749,6 +1755,19 @@ cgType tau = do
 
     go (TyVarT alpha _) =
         lookupTyVarType alpha >>= cgType
+
+-- | Return the C type corresponding to a complex type @tau@.
+cgComplexType :: forall m . MonadTc m => Type -> m C.Type
+cgComplexType tau =
+    checkComplexT tau >>= go
+  where
+    go :: Type -> m C.Type
+    go tau | tau == intT   = return [cty|typename complex_t|]
+           | tau == int8T  = return [cty|typename complex8_t|]
+           | tau == int16T = return [cty|typename complex16_t|]
+           | tau == int32T = return [cty|typename complex32_t|]
+           | tau == int64T = return [cty|typename complex64_t|]
+           | otherwise     = fail "cgComplexType: not a known complex type"
 
 -- | Compute the type of array elements in a bit array.
 cgBitElemType :: Cg l C.Type
