@@ -1380,19 +1380,23 @@ unrollBody z n f =
 
 splitFor :: forall l m . (IsLabel l, MonadTc m)
          => l              -- ^ Label of for loop
-         -> Var            -- ^ Loop index variable
-         -> Type           -- ^ Type of loop infex variable
-         -> Int            -- ^ Initial loop index
-         -> Int            -- ^ Number of iterations
-         -> Int            -- ^ Number of iterations to perform in new loop body
-         -> Comp l         -- ^ Original loop body
-         -> F l m (Comp l) -- ^ New loop
-splitFor l v tau i len k c = do
-    v'       <- gensym "i"
-    let gint =  startLenGenInt (asintE tau (0 :: Integer)) (asintE tau k)
-    c'       <- rateComp $ unrollBody 0 q $ \j -> subst1 (v /-> varE v' * asintE tau q + asintE tau (i+j)) c
-    return $ mkComp [ForC l AutoUnroll v' tau gint c' noLoc]
+         -> Var            -- ^ Loop variable
+         -> Type           -- ^ Type of loop variable
+         -> Int            -- ^ Loop start
+         -> Int            -- ^ Loop length
+         -> Int            -- ^ Number of iterations of outer loop
+         -> Comp l         -- ^ Loop body
+         -> F l m (Comp l) -- ^ Split loop
+splitFor l v tau start len k c = do
+    i         <- gensym "i"
+    let i_int =  startLenGenInt (asintE tau (0 :: Integer)) (asintE tau k)
+    j         <- gensym "j"
+    body1 <- rateComp $ subst1 (v /-> varE i * asintE tau q + asintE tau start + varE j) c
+    body2 <- C.forC AutoUnroll j tau (asintE tau (0 :: Integer)) (asintE tau q) body1
+    -- body2 <- rateComp $ mkComp [ForC l AutoUnroll j tau j_int body1 noLoc]
+    rateComp $ mkComp [ForC l AutoUnroll i tau i_int body2 noLoc]
   where
+    q :: Int
     q = len `quot` k
 
 {- Note [Unrolling takes and emits]
