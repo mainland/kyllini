@@ -95,6 +95,7 @@ data DynFlag = Quiet
              | BoundsCheck
              | PartialEval
              | Timers
+             | Cycles
              | AutoLUT
              | LUT
              | NoGensym

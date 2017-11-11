@@ -261,6 +261,7 @@ fFlags =
     , (BoundsCheck,   "bounds-check", "generate bounds checks")
     , (PartialEval,   "peval",        "run the partial evaluator")
     , (Timers,        "timers",       "insert code to track elapsed time")
+    , (Cycles,        "cycles",       "insert code to count cycles")
     , (AutoLUT,       "autolut",      "run the auto-LUTter")
     , (LUT,           "lut",          "run the LUTter")
     , (Pipeline,      "pipeline",     "pipeline computations")
