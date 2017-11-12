@@ -81,3 +81,6 @@ fuse10.c : fuse10.kz $(KZC)
 
 fuse11.c : fuse11.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse12.c : fuse12.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
