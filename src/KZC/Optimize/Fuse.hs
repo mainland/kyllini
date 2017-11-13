@@ -863,26 +863,25 @@ runRight lss rss = do
         (estart_r, elen_r) = toStartLenGenInt gint_r
 
     -- Fuse for loops that aren't rate matched.
-    run (ls@ForC{}:lss) (rs@ForC{}:rss) = do
-        traceFusion $ text "runRight: attempting to merge non-rate-matched for loops"
-        ifte   (splitRightFor (ls:lss) rs)       (\steps -> runRight (ls:lss) (steps ++ rss)) $
-          ifte (splitLeftFor  ls       (rs:rss)) (\steps -> runRight (steps ++ lss) (rs:rss)) $
-          ifte (joinRightFor  (ls:lss) (rs:rss)) (\step  -> jointStep step $ runRight (ls:lss) rss) $
-          ifte (joinLeftFor   (ls:lss) (rs:rss)) (\step  -> jointStep step $ runRight lss (rs:rss)) $
-          divergeRightFor     (ls:lss) (rs:rss) `mplus`
-          divergeLeftFor      (ls:lss) (rs:rss) `mplus`
-          stepLeft            (ls:lss) (rs:rss)
+    run lss@(ForC{}:_) rss@(ForC{}:_) =
+        splitRightFor   lss rss `mplus`
+        splitLeftFor    lss rss `mplus`
+        joinRightFor    lss rss `mplus`
+        joinLeftFor     lss rss `mplus`
+        divergeRightFor lss rss `mplus`
+        divergeLeftFor  lss rss `mplus`
+        stepLeft        lss rss
 
-    run lss (rs@ForC{}:rss) =
-        ifte (splitRightFor lss rs)       (\steps -> runRight lss (steps ++ rss)) $
-        ifte (joinRightFor  lss (rs:rss)) (\step  -> jointStep step $ runRight lss rss) $
-        divergeRightFor     lss (rs:rss) `mplus`
-        stepLeft            lss (rs:rss)
+    run lss rss@(ForC{}:_) =
+        splitRightFor   lss rss `mplus`
+        joinRightFor    lss rss `mplus`
+        divergeRightFor lss rss `mplus`
+        stepLeft        lss rss
 
-    run (ls@ForC{}:lss) rss@(RepeatC{} : _) =
-        ifte (splitLeftFor   ls       rss) (\steps -> runRight (steps ++ lss) rss) $
-        ifte (joinLeftFor    (ls:lss) rss) (\step -> jointStep step $ runRight lss rss) $
-        divergeLeftFor       (ls:lss) rss
+    run lss@(ForC{}:_) rss@(RepeatC{} : _) =
+        splitLeftFor   lss rss `mplus`
+        joinLeftFor    lss rss `mplus`
+        divergeLeftFor lss rss
 
     run lss rss@(RepeatC{} : _) = do
         traceFusion $ text "runRight: unrolling right repeat"
@@ -903,98 +902,6 @@ runRight lss rss = do
         relabel <- jointLeft lss
         jointStep (fmap relabel rs) $
           runRight lss rss
-
-splitRightFor :: (IsLabel l, MonadTc m) => [Step l] -> Step l -> F l m [Step l]
-splitRightFor lss rs =
-    trySplitFor "right" rs lss compInCount compOutCount
-
-splitLeftFor :: (IsLabel l, MonadTc m) => Step l -> [Step l] -> F l m [Step l]
-splitLeftFor ls rss =
-    trySplitFor "left" ls rss compOutCount compInCount
-
-joinRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
-joinRightFor lss (rs@(ForC l ann v tau gint c s) : rss) = do
-    traceFusion $ text "runRight: attempting to join right for" </>
-        text "Left:" </> indent 2 (ppr lss) </>
-        text "Right:" </> indent 2 (ppr rs)
-    c' <- collectRightLoopBody lss l c $ \rss' ->
-          extendVars [(v, tau)] $
-          runRight lss rss'
-    traceFusion $ text "runRight: joined right for"
-    l' <- joint lss (rs:rss)
-    return $ ForC l' ann v tau (startLenGenInt e1 e2) c' s
-  where
-    (e1, e2) = toStartLenGenInt gint
-
-joinRightFor _ _ =
-    panicdoc $ text "joinRightFor: not a for loop"
-
-joinLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
-joinLeftFor (ls@(ForC l _ann v tau gint c s) : lss) rss = do
-    traceFusion $ text "runRight: attempting to join left for"
-    c' <- collectLeftLoopBody l c rss $ \lss' ->
-          extendVars [(v, tau)] $
-          runRight lss' rss
-    traceFusion $ text "runRight: joined left for"
-    l' <- joint (ls:lss) rss
-    return $ ForC l' AutoUnroll v tau (startLenGenInt e1 e2) c' s
-  where
-    (e1, e2) = toStartLenGenInt gint
-
-joinLeftFor _ _ =
-    panicdoc $ text "joinLeftFor: not a for loop"
-
-divergeRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-divergeRightFor lss (forc@(ForC _l ann _v _tau _gint c _) : rss) = do
-    traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr forc
-    shouldUnroll <- shouldUnrollFor ann c
-    when (not shouldUnroll) $ do
-      traceFusion $ text "Encountered diverging loop during fusion."
-      mzero
-    unrolled <- unrollFor forc
-    traceFusion $ text "runRight: unrolling right for"
-    runRight lss (unComp unrolled ++ rss)
-
-divergeRightFor _ _ =
-    panicdoc $ text "divergeRightFor: not a for loop"
-
-divergeLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-divergeLeftFor (forc@(ForC _l ann _v _tau _gint c _) : lss) rss = do
-    traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr forc
-    shouldUnroll <- shouldUnrollFor ann c
-    when (not shouldUnroll) $ do
-      traceFusion $ text "Encountered diverging loop during fusion."
-      mzero
-    unrolled <- unrollFor forc
-    traceFusion $ text "runRight: unrolling left for"
-    runRight (unComp unrolled ++ lss) rss
-
-divergeLeftFor _ _ =
-    panicdoc $ text "divergeLeftFor: not a for loop"
-
--- If we can't fuse the right for loop and the left side doesn't emit, we
--- attempt to step the left side hoping we can fuse the rest of the
--- computation.
-stepLeft :: forall l m . (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
-stepLeft [] _ = do
-    traceFusion $ text "Failed to step left"
-    mzero
-
-stepLeft (ls:lss) rss = do
-    traceFusion $ text "Attempting to step left" </> indent 2 (ppr ls)
-    noEmit <- doesNotEmit ls
-    unless noEmit $ do
-      traceFusion $ text "Failed to step left"
-      mzero
-    l_right <- rightStepsLabel rss
-    let ls' =  fmap (`JointL` l_right) ls
-    jointStep ls' $
-      runLeft lss rss
-  where
-    doesNotEmit :: Step l -> F l m Bool
-    doesNotEmit step = do
-        m <- rateComp (mkComp [step]) >>= compOutM
-        return $ m == N 0
 
 runLeft :: forall l m . (IsLabel l, MonadTc m)
         => [Step l]
@@ -1061,10 +968,10 @@ runLeft lss rss = do
     run lss@(ForC{}:_) rss@(ForC{}:_) =
         runRight lss rss
 
-    run (ls@ForC{}:lss) rss =
-        ifte (splitLeftFor   ls       rss) (\steps -> runRight (steps ++ lss) rss) $
-        ifte (joinLeftFor    (ls:lss) rss) (\step -> jointStep step $ runRight lss rss) $
-        divergeLeftFor       (ls:lss) rss
+    run lss@(ForC{}:_) rss =
+        splitLeftFor   lss rss `mplus`
+        joinLeftFor    lss rss `mplus`
+        divergeLeftFor lss rss
 
     run lss@(EmitC _ e _ : _) rss@(TakeC{} : _) =
         emitTake e lss rss
@@ -1088,6 +995,16 @@ runLeft lss rss = do
         relabel <- jointRight rss
         jointStep (fmap relabel ls) $
           runLeft lss rss
+
+splitRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+splitRightFor lss ~(rs:rss) = do
+    steps <- trySplitFor "right" rs lss compInCount compOutCount
+    runRight lss (steps ++ rss)
+
+splitLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+splitLeftFor ~(ls:lss) rss = do
+    steps <- trySplitFor "left" ls rss compOutCount compInCount
+    runRight (steps ++ lss) rss
 
 trySplitFor :: forall l m . (IsLabel l, MonadTc m)
             => String                -- ^ Description of for loop being split
@@ -1163,6 +1080,92 @@ trySplitFor which for@(ForC l _ann v tau gint c_for _) ss_loop toCount_for toCou
 
 trySplitFor _ _ _ _ _ =
     panicdoc $ text "trySplitFor: not a for loop"
+
+joinRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+joinRightFor lss (rs@(ForC l ann v tau gint c s) : rss) = do
+    traceFusion $ text "runRight: attempting to join right for" </>
+        text "Left:" </> indent 2 (ppr lss) </>
+        text "Right:" </> indent 2 (ppr rs)
+    c' <- collectRightLoopBody lss l c $ \rss' ->
+          extendVars [(v, tau)] $
+          runRight lss rss'
+    traceFusion $ text "runRight: joined right for"
+    l' <- joint lss (rs:rss)
+    jointStep (ForC l' ann v tau (startLenGenInt e1 e2) c' s) $
+        runRight lss rss
+  where
+    (e1, e2) = toStartLenGenInt gint
+
+joinRightFor _ _ =
+    panicdoc $ text "joinRightFor: not a for loop"
+
+joinLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+joinLeftFor (ls@(ForC l _ann v tau gint c s) : lss) rss = do
+    traceFusion $ text "runRight: attempting to join left for"
+    c' <- collectLeftLoopBody l c rss $ \lss' ->
+          extendVars [(v, tau)] $
+          runRight lss' rss
+    traceFusion $ text "runRight: joined left for"
+    l' <- joint (ls:lss) rss
+    jointStep (ForC l' AutoUnroll v tau (startLenGenInt e1 e2) c' s) $
+        runRight lss rss
+  where
+    (e1, e2) = toStartLenGenInt gint
+
+joinLeftFor _ _ =
+    panicdoc $ text "joinLeftFor: not a for loop"
+
+divergeRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+divergeRightFor lss (forc@(ForC _l ann _v _tau _gint c _) : rss) = do
+    traceFusion $ nest 2 $ text "Considering unrolling right for:" </> ppr forc
+    shouldUnroll <- shouldUnrollFor ann c
+    when (not shouldUnroll) $ do
+      traceFusion $ text "Encountered diverging loop during fusion."
+      mzero
+    unrolled <- unrollFor forc
+    traceFusion $ text "runRight: unrolling right for"
+    runRight lss (unComp unrolled ++ rss)
+
+divergeRightFor _ _ =
+    panicdoc $ text "divergeRightFor: not a for loop"
+
+divergeLeftFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+divergeLeftFor (forc@(ForC _l ann _v _tau _gint c _) : lss) rss = do
+    traceFusion $ nest 2 $ text "Considering unrolling left for:" </> ppr forc
+    shouldUnroll <- shouldUnrollFor ann c
+    when (not shouldUnroll) $ do
+      traceFusion $ text "Encountered diverging loop during fusion."
+      mzero
+    unrolled <- unrollFor forc
+    traceFusion $ text "runRight: unrolling left for"
+    runRight (unComp unrolled ++ lss) rss
+
+divergeLeftFor _ _ =
+    panicdoc $ text "divergeLeftFor: not a for loop"
+
+-- If we can't fuse the right for loop and the left side doesn't emit, we
+-- attempt to step the left side hoping we can fuse the rest of the
+-- computation.
+stepLeft :: forall l m . (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m [Step l]
+stepLeft [] _ = do
+    traceFusion $ text "Failed to step left"
+    mzero
+
+stepLeft (ls:lss) rss = do
+    traceFusion $ text "Attempting to step left" </> indent 2 (ppr ls)
+    noEmit <- doesNotEmit ls
+    unless noEmit $ do
+      traceFusion $ text "Failed to step left"
+      mzero
+    l_right <- rightStepsLabel rss
+    let ls' =  fmap (`JointL` l_right) ls
+    jointStep ls' $
+      runLeft lss rss
+  where
+    doesNotEmit :: Step l -> F l m Bool
+    doesNotEmit step = do
+        m <- rateComp (mkComp [step]) >>= compOutM
+        return $ m == N 0
 
 -- | Run the right side of a par when we've hit a emit/take combination.
 emitTake :: forall l m . (IsLabel l, MonadTc m)
