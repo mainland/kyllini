@@ -662,7 +662,7 @@ coalesceTopComp comp = do
         -- We only coalesce one side of a computation if it has a known
         -- multiplicity of i or i+, where i > 0.
         crule m maxElems =
-            case fromP m of
+            case toCount m of
               Just i | i > 0 -> [Just (B i 1) | i <= maxElems]
               _              -> [Nothing]
 
@@ -677,9 +677,9 @@ coalesceTopComp comp = do
         guard (isTransformer comp)
         -- We only rate-expand when we have known input and output rates.
         (inMult, outMult) <- compInOutM comp
-        inRate <- fromP inMult
+        inRate <- toCount inMult
         guard (inRate > 0)
-        outRate <- fromP outMult
+        outRate <- toCount outMult
         guard (outRate > 0)
         -- Compute limits on rate multipliers. We can only multiply a rate up to
         -- the point where we input/output 'maxElems' elements.
@@ -784,7 +784,7 @@ coalesceComp comp = do
         -- We only coalesce one side of a computation if it has a known
         -- multiplicity of i or i+, where i > 0.
         crule m maxElems =
-            case fromP m of
+            case toCount m of
               Just i | i > 0 -> [Just (B i 1) | i <= maxElems]
               _              -> [Nothing]
 
@@ -801,9 +801,9 @@ coalesceComp comp = do
         guard (isTransformer comp)
         -- We only rate-expand when we have known input and output rates.
         (inMult, outMult) <- compInOutM comp
-        inRate <- fromP inMult
+        inRate <- toCount inMult
         guard (inRate > 0)
-        outRate <- fromP outMult
+        outRate <- toCount outMult
         guard (outRate > 0)
         -- Compute limits on rate multipliers. We can only multiply a rate up to
         -- the point where we input/output 'maxElems' elements.
@@ -848,8 +848,8 @@ coalesceComp comp = do
         rateDividesCtx :: Maybe M -> B -> Bool
         rateDividesCtx Nothing   _      = True
         rateDividesCtx (Just m) (B i j)
-            | Just n <- fromP m = (i*j) `divides` n
-            | otherwise         = False
+            | Just n <- toCount m = (i*j) `divides` n
+            | otherwise           = False
 
 -- | Modify a blocking to ensure that bit arrays are never coalesced.
 dontCoalesceBits :: Type -> Type -> BC -> BC

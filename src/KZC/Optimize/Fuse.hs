@@ -158,7 +158,7 @@ instance Pretty FusionStats where
         text "Out multiplicity:" <+> pprRate (fmap outMult (fusionTopRate stats))
       where
         pprRate :: Maybe M -> Doc
-        pprRate m = ppr (fromMaybe (0 :: Int) (m >>= fromP))
+        pprRate m = ppr (fromMaybe (0 :: Int) (m >>= toCount))
 
 newtype F l m a = F { unF :: ReaderT (FEnv l)
                                (StateT (FState l)
@@ -819,9 +819,9 @@ runRight lss rss = do
             mzero
 
     run lss@(RepeatC _ _ c_l _:_) rss@(ForC _ _ _ _ gint c_r _:_)
-      | Just m   <- compOutP c_l
+      | Just m   <- compOutCount c_l
       , Just len <- fromIntE elen
-      , Just n   <- compInP c_r
+      , Just n   <- compInCount c_r
       -- Repeat must produce
       , m > 0
       -- Loop must consume
@@ -842,8 +842,8 @@ runRight lss rss = do
       , Just len_l   <- fromIntE elen_l
       , Just start_r <- fromIntE estart_r
       , Just len_r   <- fromIntE elen_r
-      , Just m       <- compOutP c_l
-      , Just n       <- compInP c_r
+      , Just m       <- compOutCount c_l
+      , Just n       <- compInCount c_r
       -- Rates of loop bodies equal and they are executed the same number of
       -- times.
       , m == n && len_l == len_r
@@ -906,11 +906,11 @@ runRight lss rss = do
 
 splitRightFor :: (IsLabel l, MonadTc m) => [Step l] -> Step l -> F l m [Step l]
 splitRightFor lss rs =
-    trySplitFor "right" rs lss compInP compOutP
+    trySplitFor "right" rs lss compInCount compOutCount
 
 splitLeftFor :: (IsLabel l, MonadTc m) => Step l -> [Step l] -> F l m [Step l]
 splitLeftFor ls rss =
-    trySplitFor "left" ls rss compOutP compInP
+    trySplitFor "left" ls rss compOutCount compInCount
 
 joinRightFor :: (IsLabel l, MonadTc m) => [Step l] -> [Step l] -> F l m (Step (Joint l))
 joinRightFor lss (rs@(ForC l ann v tau gint c s) : rss) = do
@@ -1096,15 +1096,15 @@ trySplitFor :: forall l m . (IsLabel l, MonadTc m)
             -> (Comp l -> F l m Int) -- ^ Compute rate of for loop
             -> (Comp l -> F l m Int) -- ^ Compute rate of other loop
             -> F l m [Step l]        -- ^ New split for loop
-trySplitFor which for@(ForC l _ann v tau gint c_for _) ss_loop fromP_for fromP_loop = do
+trySplitFor which for@(ForC l _ann v tau gint c_for _) ss_loop toCount_for toCount_loop = do
     i       <- tryFromIntE ei
     len_for <- tryFromIntE elen
     -- Extract loop body and iteration count
     (len_loop, c_loop) <- loopBody ss_loop
     -- Rate of a body for loop
-    r_for_body <- fromP_for c_for
+    r_for_body <- toCount_for c_for
     -- Rate of body of other loop
-    r_loop_body <- fromP_loop c_loop
+    r_loop_body <- toCount_loop c_loop
     -- Rates must both be greater than 0
     guard $ r_for_body > 0 && r_loop_body > 0
     -- Total rates
