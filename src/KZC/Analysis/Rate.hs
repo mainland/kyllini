@@ -21,6 +21,14 @@ module KZC.Analysis.Rate (
 
     compInCount,
     compOutCount,
+
+    stepInOutM,
+    stepInM,
+    stepOutM,
+
+    stepInCount,
+    stepOutCount,
+
     toCount
   ) where
 
@@ -344,6 +352,38 @@ compInCount comp = compInM comp >>= toCount
 -- | Return the output count of a computation.
 compOutCount :: MonadPlus m => Comp l -> m Int
 compOutCount comp = compOutM comp >>= toCount
+
+-- | Return the in/out multiplicities of a computational step.
+stepInOutM :: forall l m . MonadPlus m => Step l -> m (M, M)
+stepInOutM = go
+  where
+    go :: Step l -> m (M, M)
+    go (ForC _l _ann _i _tau gint c _) | Just r <- compRate c =
+        intOutM $ expM elen r
+      where
+        (_estart, elen) = toStartLenGenInt gint
+
+    go _ = mzero
+
+    intOutM :: Rate M -> m (M, M)
+    intOutM (CompR m1 m2)  = return (m1, m2)
+    intOutM (TransR m1 m2) = return (m1, m2)
+
+-- | Return the input multiplicity of a computational step.
+stepInM :: MonadPlus m => Step l -> m M
+stepInM step = fst <$> stepInOutM step
+
+-- | Return the output multiplicity of a computational step.
+stepOutM :: MonadPlus m => Step l -> m M
+stepOutM step = snd <$> stepInOutM step
+
+-- | Return the input count of a computational step.
+stepInCount :: MonadPlus m => Step l -> m Int
+stepInCount step = stepInM step >>= toCount
+
+-- | Return the output multiplicity of a computational step.
+stepOutCount :: MonadPlus m => Step l -> m Int
+stepOutCount step = stepOutM step >>= toCount
 
 -- | Given a positive multiplicity, i.e., a multiplicity of the form n or n+,
 -- return the corresponding count, n. Otherwise, fail.
