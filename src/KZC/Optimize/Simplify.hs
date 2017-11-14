@@ -1406,39 +1406,41 @@ simplE (ForE _ann _v _tau _gint e@(ReturnE _ (ConstE UnitC{} _) _) _) = do
 --
 -- Simplify assignment loops.
 --
---   for i in [0,len]
---     xs[i] := e_yx[i + k]
+--   for i in [start,len]
+--     xs[e1 + i] := e_ys[e2 + i]
 -- ->
---   xs[0,len] := e_yx[k,len]
+--   xs[start+e1,len] := e_ys[start+e2,len] (when i not in fvs e1 and i not in fvs e2)
 --
 -- This loop form shows up regularly in fused code.
 --
-simplE (ForE _ann v _tau gint
-             (AssignE (IdxE (VarE xs _) eidx  Nothing _) e_rhs _)
-             s)
-  | Just len            <- fromIntE elen
-  , Just v'             <- fromIdxVarE eidx
-  , Just (e_ys, v'', f) <- unIdx e_rhs
+simplE (ForE _ann v tau gint (AssignE e_lhs e_rhs _) s)
+  | Just len             <- fromIntE elen
+  , Just (e_xs, v',  e1) <- unIdx e_lhs
+  , Just (e_ys, v'', e2) <- unIdx e_rhs
+  , v `notElem` (fvs e1 :: Set Var), v `notElem` (fvs e2 :: Set Var)
   , v' == v, v'' == v
   = do rewrite
        -- The recursive call to 'simplE' is important! We need to be sure to
-       -- recursively call simplE here in case @xs@ has been substituted away.
-       simplE $ AssignE (IdxE (VarE xs s) ei (Just (fromIntegral len)) s)
-                        (IdxE e_ys (f ei) (Just (fromIntegral len)) s)
+       -- recursively call simplE here in case @e_xs@ has been substituted away.
+       simplE $ AssignE (IdxE e_xs (estart + e1) (Just (fromIntegral len)) s)
+                        (IdxE e_ys (estart + e2) (Just (fromIntegral len)) s)
                         s
   where
-    ei, elen :: Exp
-    (ei, elen) = toStartLenGenInt gint
+    estart, elen :: Exp
+    (estart, elen) = toStartLenGenInt gint
 
-    unIdx :: Exp -> Maybe (Exp, Var, Exp -> Exp)
+    -- | Decompose an expression of the form @e1[v + e2]@ into the constituent
+    -- expressions and variable. This handles the case where @e2@ is @0@, and
+    -- the case where the index is @e2 + v@ instead of @v + e2@.
+    unIdx :: Exp -> Maybe (Exp, Var, Exp)
     unIdx (IdxE e1 e2 Nothing _) | Just v <- fromIdxVarE e2 =
-        return (e1, v, id)
+        return (e1, v, asintE tau (0 :: Integer))
 
-    unIdx (IdxE e1 (BinopE Add e2 e3 s) Nothing _) | Just v <- fromIdxVarE e2 =
-        return (e1, v, \e -> BinopE Add e e3 s)
+    unIdx (IdxE e1 (BinopE Add e2 e3 _) Nothing _) | Just v <- fromIdxVarE e2 =
+        return (e1, v, e3)
 
-    unIdx (IdxE e1 (BinopE Add e2 e3 s) Nothing _) | Just v <- fromIdxVarE e3 =
-        return (e1, v, \e -> BinopE Add e e2 s)
+    unIdx (IdxE e1 (BinopE Add e2 e3 _) Nothing _) | Just v <- fromIdxVarE e3 =
+        return (e1, v, e2)
 
     unIdx _ =
         fail "Not an index expression"
