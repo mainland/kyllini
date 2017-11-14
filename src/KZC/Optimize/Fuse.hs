@@ -749,16 +749,16 @@ runRight lss rss = do
     need to wait until the right side is done running before running a final
     lift or return on the left.
     -}
-    run (ls1:ls2:lss) rss | isFree ls1 ls2 = do
+    run (ls1:ls2@BindC{}:lss) rss | isFree ls1 = do
         relabel <- jointRight rss
         jointStep (fmap relabel ls1) $
           jointStep (fmap relabel ls2) $
           runRight lss rss
       where
-        isFree :: Step l -> Step l -> Bool
-        isFree ReturnC{} BindC{} = True
-        isFree LiftC{}   BindC{} = True
-        isFree _         _       = False
+        isFree :: Step l -> Bool
+        isFree LiftC{}   = True
+        isFree ReturnC{} = True
+        isFree _         = False
 
     -- lss@(_:_) ensures we won't match a final lift/return. A final let is
     -- weird and useless anyway, so we don't worry about it :)
@@ -769,8 +769,8 @@ runRight lss rss = do
       where
         isFree :: Step l -> Bool
         isFree LetC{}              = True
-        isFree ReturnC{}           = True
         isFree LiftC{}             = True
+        isFree ReturnC{}           = True
         isFree (BindC _ WildV _ _) = True
         isFree _                   = False
 
