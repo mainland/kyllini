@@ -169,6 +169,10 @@ def find_source(test):
 #
 # Helpers
 #
+def removeFile(path):
+    if os.path.isfile(path):
+        os.remove(path)
+
 def recordTestDiff(test, diff):
     test_desc = "%s(%s)" % (test.name, config.way)
     config.diffs[test_desc] = config.diffs.get(test_desc, "") + diff
@@ -179,8 +183,8 @@ def cleanup(test):
     cPath =  os.path.splitext(source)[0] + '.c'
     exePath = '%s.exe' % test.basename
 
-    os.remove(cPath)
-    os.remove(os.path.join(test.cwd, exePath))
+    removeFile(cPath)
+    removeFile(os.path.join(test.cwd, exePath))
 
     return True
 
@@ -230,7 +234,7 @@ def compile_stats(test, way, args):
     cmd = [config.kzc] + test.args + way_flags(way) + args + ['-s'] + [source]
     (out, err) = execute(cmd)
 
-    os.remove(cPath)
+    removeFile(cPath)
 
     return checkStats(test, out)
 
@@ -282,11 +286,11 @@ def compile_and_run(test, way, args):
             return blinkdiff_compare(test)
     finally:
         if not test.skip_compile:
-            os.remove(cPath)
-            os.remove(os.path.join(test.cwd, exePath))
+            removeFile(cPath)
+            removeFile(os.path.join(test.cwd, exePath))
 
         if not config.ground:
-            os.remove(os.path.join(test.cwd, outfilePath))
+            removeFile(os.path.join(test.cwd, outfilePath))
 
 #
 # Set up for a given way
@@ -346,12 +350,12 @@ def test(testname, setup=None, testfn=compile_and_run, source=None, args=[]):
             else:
                 if not test.should_fail:
                     config.unexpected_failures[test.name] = config.unexpected_failures.get(test.name, []) + [config.way]
-
-        return test
     except Exception, err:
         config.unexpected_failures[test.name] = config.unexpected_failures.get(test.name, []) + [config.way]
-        print err
-        traceback.print_exc()
+        print >> sys.stderr, err
+        traceback.print_exc(file=sys.stderr)
+
+    return test
 
 #
 # Running a test and comparing output
@@ -573,7 +577,11 @@ def main():
 
             logging.debug("Running %s" % path)
             threadLocal.cwd = os.path.dirname(path)
-            execfile(path)
+            try:
+                execfile(path)
+            except Exception, err:
+                print err
+                traceback.print_exc()
 
             q.task_done()
 
