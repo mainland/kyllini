@@ -62,6 +62,7 @@ module KZC.Backend.C.Monad (
 
     savingStats,
     getStats,
+    topIsRepeat,
     incDefaultInits,
     incMemCopies,
     incBitArrayCopies,
@@ -239,7 +240,8 @@ defaultCgEnv = CgEnv
     }
 
 data CgStats = CgStats
-    { nDefaultInits   :: !Int
+    { bTopIsRepeat    :: !Bool
+    , nDefaultInits   :: !Int
     , nMemCopies      :: !Int
     , nBitArrayCopies :: !Int
     , nForLoops       :: !Int
@@ -250,7 +252,8 @@ data CgStats = CgStats
 
 instance Monoid CgStats where
     mempty = CgStats
-        { nDefaultInits   = 0
+        { bTopIsRepeat    = False
+        , nDefaultInits   = 0
         , nMemCopies      = 0
         , nBitArrayCopies = 0
         , nForLoops       = 0
@@ -260,7 +263,8 @@ instance Monoid CgStats where
         }
 
     x `mappend` y =
-        CgStats { nDefaultInits   = nDefaultInits x + nDefaultInits y
+        CgStats { bTopIsRepeat    = bTopIsRepeat x || bTopIsRepeat y
+                , nDefaultInits   = nDefaultInits x + nDefaultInits y
                 , nMemCopies      = nMemCopies x + nMemCopies y
                 , nBitArrayCopies = nBitArrayCopies x + nBitArrayCopies y
                 , nForLoops       = nForLoops x + nForLoops y
@@ -271,6 +275,7 @@ instance Monoid CgStats where
 
 instance Pretty CgStats where
     ppr stats =
+        text "Top-level repeat:" <+> ppr (bTopIsRepeat stats) </>
         text "Defaulted values:" <+> ppr (nDefaultInits stats) </>
         text "   Memory copies:" <+> ppr (nMemCopies stats) </>
         text "Bit array copies:" <+> ppr (nBitArrayCopies stats) </>
@@ -460,6 +465,9 @@ getStats = gets stats
 
 modifyStats :: (CgStats -> CgStats) -> Cg l ()
 modifyStats f = modify $ \s -> s { stats = f (stats s) }
+
+topIsRepeat :: Cg l ()
+topIsRepeat = modifyStats $ \s -> s { bTopIsRepeat = True }
 
 incDefaultInits :: Cg l ()
 incDefaultInits = modifyStats $ \s -> s { nDefaultInits = nDefaultInits s + 1 }

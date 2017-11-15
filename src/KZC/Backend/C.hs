@@ -158,6 +158,11 @@ cgProgram (Program _imports decls maybe_main) = do
     Main comp tau <- maybe (fail "No main computation!")
                            return
                            maybe_main
+    -- If the top-level computation consists of a single repeat, record that
+    -- fact. We use this to test fusion.
+    case unComp comp of
+      [RepeatC{}] -> topIsRepeat
+      _           -> return ()
     appendTopDef [cedecl|$esc:("#include <kz.h>")|]
     appendTopDecl [cdecl|typename kz_buf_t $id:in_buf;|]
     appendTopDecl [cdecl|typename kz_buf_t $id:out_buf;|]

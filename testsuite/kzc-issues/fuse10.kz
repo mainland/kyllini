@@ -1,0 +1,23 @@
+fun f(y : [int; 2]) -> () {
+   print y;
+}
+
+fun a() {
+    repeat {
+      xs <- takes 4;
+      emits xs;
+    }
+}
+
+fun b() {
+    let mut preamble : [int; 2];
+    
+    repeat {
+       f(preamble);
+
+       takes 2;
+       emit 0;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();

@@ -18,9 +18,18 @@ module KZC.Analysis.Rate (
     compInOutM,
     compInM,
     compOutM,
-    compInP,
-    compOutP,
-    fromP
+
+    compInCount,
+    compOutCount,
+
+    stepInOutM,
+    stepInM,
+    stepOutM,
+
+    stepInCount,
+    stepOutCount,
+
+    toCount
   ) where
 
 import Prelude hiding ((<=))
@@ -102,6 +111,10 @@ e.g., multiplicities $i$ and $j^+$ to get the multiplicity $\gcd(i, j)^+$.
 The rules for inferring rates for a computer in sequence with a transformer are
 slightly less obvious because we have to ensure that the computed rate is valid
 for *all* transformer rounds.
+
+During fusion, we compute *counts*, which are integers that count the number of
+items input or output in a single round. A multiplicity of $n$ or $n^+$ maps to
+a rate of $n$. That is, a count approximates a multiplicity.
 -}
 
 newtype RateState = RateState { rate :: Rate M }
@@ -254,8 +267,8 @@ parRate (CompR i m2) (TransR m3 l)
   | otherwise      = return $ CompR i (n `mtimes` l)
   where
     j, k, n:: Int
-    j = (fromJust . fromP) m2
-    k = (fromJust . fromP) m3
+    j = (fromJust . toCount) m2
+    k = (fromJust . toCount) m3
     n = j `quot` k
 
 -- t >>> c
@@ -279,8 +292,8 @@ parRate (TransR i m2) (CompR m3 l)
   | otherwise      = return $ CompR (n `mtimes` i) l
   where
     j, k, n :: Int
-    j = (fromJust . fromP) m2
-    k = (fromJust . fromP) m3
+    j = (fromJust . toCount) m2
+    k = (fromJust . toCount) m3
     n = k `quot` j
 
 -- t1 >>> t2
@@ -307,8 +320,8 @@ parRate (TransR i m2) (TransR m3 l)
     return $ TransR ((n `quot` j) `mtimes` i) ((n `quot` k) `mtimes` l)
   where
     j, k, n :: Int
-    j = (fromJust . fromP) m2
-    k = (fromJust . fromP) m3
+    j = (fromJust . toCount) m2
+    k = (fromJust . toCount) m3
     n = lcm j k
 
 -- c1 >>> c2
@@ -332,22 +345,52 @@ compInM comp = fst <$> compInOutM comp
 compOutM :: Monad m => Comp l -> m M
 compOutM comp = snd <$> compInOutM comp
 
--- | Return the input multiplicity of a computation if it is of the form n or
--- n+.
-compInP :: MonadPlus m => Comp l -> m Int
-compInP comp = compInM comp >>= fromP
+-- | Return the input count of a computation.
+compInCount :: MonadPlus m => Comp l -> m Int
+compInCount comp = compInM comp >>= toCount
 
--- | Return the output multiplicity of a computation if it is of the form n or
--- n+.
-compOutP :: MonadPlus m => Comp l -> m Int
-compOutP comp = compOutM comp >>= fromP
+-- | Return the output count of a computation.
+compOutCount :: MonadPlus m => Comp l -> m Int
+compOutCount comp = compOutM comp >>= toCount
+
+-- | Return the in/out multiplicities of a computational step.
+stepInOutM :: forall l m . MonadPlus m => Step l -> m (M, M)
+stepInOutM = go
+  where
+    go :: Step l -> m (M, M)
+    go (ForC _l _ann _i _tau gint c _) | Just r <- compRate c =
+        intOutM $ expM elen r
+      where
+        (_estart, elen) = toStartLenGenInt gint
+
+    go _ = mzero
+
+    intOutM :: Rate M -> m (M, M)
+    intOutM (CompR m1 m2)  = return (m1, m2)
+    intOutM (TransR m1 m2) = return (m1, m2)
+
+-- | Return the input multiplicity of a computational step.
+stepInM :: MonadPlus m => Step l -> m M
+stepInM step = fst <$> stepInOutM step
+
+-- | Return the output multiplicity of a computational step.
+stepOutM :: MonadPlus m => Step l -> m M
+stepOutM step = snd <$> stepInOutM step
+
+-- | Return the input count of a computational step.
+stepInCount :: MonadPlus m => Step l -> m Int
+stepInCount step = stepInM step >>= toCount
+
+-- | Return the output multiplicity of a computational step.
+stepOutCount :: MonadPlus m => Step l -> m Int
+stepOutCount step = stepOutM step >>= toCount
 
 -- | Given a positive multiplicity, i.e., a multiplicity of the form n or n+,
--- return n. Otherwise, fail.
-fromP :: MonadPlus m => M -> m Int
-fromP (N i) = return i
-fromP (P i) = return i
-fromP Z{}   = mzero
+-- return the corresponding count, n. Otherwise, fail.
+toCount :: MonadPlus m => M -> m Int
+toCount (N i) = return i
+toCount (P i) = return i
+toCount Z{}   = mzero
 
 -- | Get a computation's rate when we know it must exist.
 compR :: Comp l -> Rate M
@@ -387,20 +430,6 @@ notPos Z{} = True
 notPos _   = False
 
 -- | Given a multiplicity m, return the multiplicity of a computation with
--- multiplicity m that is repeated 0 or more times.
-mstar :: M -> M
-mstar (N 0) = N 0
-mstar (N i) = Z i
-mstar (P i) = Z i
-mstar (Z i) = Z i
-
--- | Return the rate of a computation with the given rate that is repeated 0 or
--- more times.
-rstar :: Rate M -> Rate M
-rstar (CompR i j) = CompR  (mstar i) (mstar j)
-rstar TransR{}    = error "rstar: transformer"
-
--- | Given a multiplicity m, return the multiplicity of a computation with
 -- multiplicity m that is repeated n times.
 mtimes :: Int -> M -> M
 mtimes 0 _     = N 0
@@ -408,11 +437,25 @@ mtimes n (N i) = N (i*n)
 mtimes n (P i) = P (i*n)
 mtimes _ (Z i) = Z i
 
+-- | Given a multiplicity m, return the multiplicity of a computation with
+-- multiplicity m that is repeated 0 or more times.
+mstar :: M -> M
+mstar (N 0) = N 0
+mstar (N i) = Z i
+mstar (P i) = Z i
+mstar (Z i) = Z i
+
 -- | Return the rate of a computation with the given rate that is repeated n
 -- times.
 rtimes :: Int -> Rate M -> Rate M
 n `rtimes` CompR i j = CompR  (n `mtimes` i) (n `mtimes` j)
 _ `rtimes` TransR{}  = error "rtimes: transformer"
+
+-- | Return the rate of a computation with the given rate that is repeated 0 or
+-- more times.
+rstar :: Rate M -> Rate M
+rstar (CompR i j) = CompR  (mstar i) (mstar j)
+rstar TransR{}    = error "rstar: transformer"
 
 -- | Add rates for computations in sequence.
 rplus :: Rate M -> Rate M -> Rate M

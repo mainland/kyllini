@@ -1,0 +1,29 @@
+fun f(b : int) {
+    return [b, b];
+}
+
+fun a() {
+    repeat {
+      xs <- takes 6;
+
+      for i in 0..2 {
+          let ys = f(xs[3*i]);
+          emits ys;
+          let ys = f(xs[3*i+1]);
+          emit ys[0];
+          let ys = f(xs[3*i+2]);
+          emit ys[1];
+      }
+    }
+}
+
+fun b() {
+    repeat {
+        for i in 0..2 {
+            xs <- takes 4;
+            emits xs;
+        }
+    }
+}
+
+let comp main : ST T int int = a() >>> b();

@@ -1,0 +1,28 @@
+let nat N = 2;
+
+fun a() {
+    flag <- take;
+    
+    repeat {
+        xs <- takes N;
+        if flag == 1 then {
+            for i in 0..N
+                emit xs[i];
+        }
+    }
+}
+
+fun b() {
+    repeat {
+        let mut xs : [int; N];
+        
+        for i in 0..N {
+            y <- take;
+            xs[i] = y;
+        }
+
+        emits xs;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();

@@ -49,3 +49,38 @@ issue49.c : issue49.wpl $(KZC)
 issue52.c : issue52.kz $(KZC)
 	$(_QUIET)$(KZC) $(KZCFLAGS) -fsimpl $< -o $@
 
+fuse01.c : fuse01.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse02.c : fuse02.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse03.c : fuse03.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse04.c : fuse04.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse05.c : fuse05.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse06.c : fuse06.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse07.c : fuse07.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse08.c : fuse08.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -i../lib -ffuse -fsimpl $< -o $@
+
+fuse09.c : fuse09.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse10.c : fuse10.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse11.c : fuse11.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@
+
+fuse12.c : fuse12.kz $(KZC)
+	$(_QUIET)$(KZC) $(KZCFLAGS) -ffuse -fsimpl $< -o $@

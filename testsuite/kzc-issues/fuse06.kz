@@ -1,0 +1,29 @@
+fun a() {
+    flag <- take;
+
+    if (flag == 1) then {
+        repeat {
+          x <- take;
+          emit x;
+        }
+    } else if (flag == 2) then {
+        repeat {
+          x <- take;
+          emit x;
+        }
+    } else {
+        repeat {
+          x <- take;
+          emit x;
+        }
+    }
+}
+
+fun b() {
+    repeat {
+        x <- take;
+        emit x;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();

@@ -1,0 +1,22 @@
+fun f(b : int) {
+    return [b, b];
+}
+
+fun a() {
+    repeat {
+      xs <- takes 4;
+
+      emits xs[0:1];
+      emit xs[2];
+      emit xs[3];
+    }
+}
+
+fun b() {
+    repeat {
+        xs <- takes 4;
+        emits xs;
+    }
+}
+
+let comp main : ST T int int = a() >>> b();
