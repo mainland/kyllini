@@ -24,6 +24,8 @@ module KZC.Core.Lint (
 
     checkProgram,
 
+    extendLocalDecl,
+
     checkConst,
     inferConst,
 
@@ -235,6 +237,20 @@ checkView :: MonadTc m => View -> Type -> m ()
 checkView vw tau = do
     tau' <- inferView vw
     checkTypeEquality tau' tau
+
+extendLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
+extendLocalDecl (LetLD v tau _e _) k =
+    extendVars [(bVar v, tau)] k
+
+extendLocalDecl (LetRefLD v tau _maybe_e _) k =
+    extendVars [(bVar v, refT tau)] k
+
+extendLocalDecl (LetTypeLD alpha kappa tau _) k =
+    extendTyVars [(alpha, kappa)] $
+    extendTyVarTypes [(alpha, tau)] k
+
+extendLocalDecl (LetViewLD v tau _vw _) k =
+    extendVars [(bVar v, tau)] k
 
 checkLocalDecl :: MonadTc m => LocalDecl -> m a -> m a
 checkLocalDecl decl@(LetLD v tau e _) k = do

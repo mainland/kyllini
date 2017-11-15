@@ -677,8 +677,8 @@ instance LUTSize (Comp l) where
 expToStms :: Exp -> [Stm LocalDecl BoundVar Exp]
 expToStms (LetE decl e l)               = LetS decl l : expToStms e
 expToStms (ReturnE ann e l)             = [ReturnS ann e l]
-expToStms (BindE WildV tau e1 e2 l)     = BindS Nothing tau e1 l : expToStms e2
-expToStms (BindE (TameV v) tau e1 e2 l) = BindS (Just v) tau e1 l : expToStms e2
+expToStms (BindE WildV tau e1 e2 l)     = ExpS e1 (srclocOf e1) : BindS Nothing tau l : expToStms e2
+expToStms (BindE (TameV v) tau e1 e2 l) = ExpS e1 (srclocOf e1) : BindS (Just v) tau l : expToStms e2
 expToStms e                             = [ExpS e (srclocOf e)]
 
 {------------------------------------------------------------------------------

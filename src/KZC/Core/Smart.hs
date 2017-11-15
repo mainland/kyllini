@@ -47,13 +47,16 @@ module KZC.Core.Smart (
     returnE,
     bindE,
     seqE,
-    genE,
 
     startLenGenInt,
     toStartLenGenInt,
 
+    genE,
     genG,
     genrefG,
+
+    expS,
+    returnS,
 
     (.:=.),
     (.>>.),
@@ -319,6 +322,12 @@ genG v tau c = GenG v tau c (v `srcspan` tau)
 genrefG :: Var -> Type -> Const -> Gen
 genrefG v tau c = GenRefG v tau c (v `srcspan` tau)
 
+expS :: Exp -> Stm LocalDecl BoundVar Exp
+expS e = ExpS e (srclocOf e)
+
+returnS :: Exp -> Stm LocalDecl BoundVar Exp
+returnS e = ReturnS AutoInline e (srclocOf e)
+
 infixr 1 .:=.
 
 (.:=.) :: Var -> Exp -> Exp
@@ -348,7 +357,7 @@ isArrE _            = False
 sliceLen :: Num a => Maybe Type -> a
 sliceLen Nothing             = 1
 sliceLen (Just (NatT len _)) = fromInteger (toInteger len)
-sliceLen (Just nat)          = errordoc $ text  "unknown slice length:" <+> ppr nat
+sliceLen (Just nat)          = errordoc $ text "unknown slice length:" <+> ppr nat
 
 -- | Tag a computation as an identity with rate n.
 tagIdentityC :: Int -> Comp l -> Comp l
