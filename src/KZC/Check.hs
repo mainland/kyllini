@@ -1294,10 +1294,11 @@ tcStms (stm@(Z.ExpS e l) : stms) exp_ty = do
             collectCheckValCtx tau1 $
             checkExp e tau1
     nu' <- compress nu
-    unless (isUnitT nu') $
+    unless (isUnitT nu') $ do
+        [nu''] <- sanitizeTypes [nu']
         withSummaryContext stm $
-        warndocWhen WarnUnusedCommandBind $
-        text "Command discarded a result of type" <+> ppr nu'
+          warndocWhen WarnUnusedCommandBind $
+          text "Command discarded a result of type" <+> ppr nu''
     mce2 <- checkStms stms tau2
     return $ do ce1 <- withSummaryContext stm mce1
                 cnu <- trans nu
