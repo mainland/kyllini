@@ -673,6 +673,9 @@ inferComp comp =
         checkLocalDecl decl $
         inferSteps k
 
+    inferSteps [BindC{}] =
+        faildoc $ text "Computation may not end in bind"
+
     inferSteps (step:k) =
         inferStep step >>= inferBind step k
 
@@ -682,9 +685,11 @@ inferComp comp =
             void $ checkST tau
         return tau
 
-    inferBind step [BindC{}] _ = do
-        [s,a,b] <- freshenVars ["s", "a", "b"] mempty
-        instST $ forallST [s,a,b] (C unitT) (tyVarT s) (tyVarT a) (tyVarT b) (srclocOf step)
+    inferBind _ [LetC{}] _ =
+        faildoc $ text "Computation may not end in let."
+
+    inferBind _ [BindC{}] _ =
+        faildoc $ text "Computation may not end in bind."
 
     inferBind step (BindC _ wv tau _ : k) tau0 = do
         (tau', s,  a,  b) <- withFvContext step $

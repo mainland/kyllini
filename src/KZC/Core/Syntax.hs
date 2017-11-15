@@ -1059,6 +1059,9 @@ pprComp comp =
         pprPrec parrPrec1 e2
 
     pprBind :: [Step l] -> Doc -> [Doc]
+    pprBind [bind@BindC{}] step =
+        step : pprSteps [bind]
+
     pprBind (BindC _ WildV _ _  : k) step =
         step : pprSteps k
 
