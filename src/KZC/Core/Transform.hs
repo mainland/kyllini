@@ -426,5 +426,5 @@ transExp (GenE e gs s) =
     GenE <$> expT e <*> mapM genT gs <*> pure s
 
 transGen :: TransformExp m => Gen -> m Gen
-transGen (GenG v tau c s)    = GenG v <$> typeT tau <*> pure c <*> pure s
-transGen (GenRefG v tau c s) = GenRefG v <$> typeT tau <*> pure c <*> pure s
+transGen (GenG v tau c s)    = GenG v <$> typeT tau <*> constT c <*> pure s
+transGen (GenRefG v tau c s) = GenRefG v <$> typeT tau <*> constT c <*> pure s
