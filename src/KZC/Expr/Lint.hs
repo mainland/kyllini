@@ -872,14 +872,14 @@ checkTypeEquality tau1 tau2 =
         zipWithM_ checkT taus1 taus2
 
     checkT (ST omega_a tau1_a tau2_a tau3_a _) (ST omega_b tau1_b tau2_b tau3_b _) = do
-          checkO omega_a omega_b
-          checkT tau1_a tau1_b
-          checkT tau2_a tau2_b
-          checkT tau3_a tau3_b
+        checkO omega_a omega_b
+        checkT tau1_a tau1_b
+        checkT tau2_a tau2_b
+        checkT tau3_a tau3_b
 
     checkT (FunT taus_a tau_a _) (FunT taus_b tau_b _) | length taus_a == length taus_b = do
-          zipWithM_ checkT taus_a taus_b
-          checkT tau_a tau_b
+        zipWithM_ checkT taus_a taus_b
+        checkT tau_a tau_b
 
     checkT (RefT tau1 _) (RefT tau2 _) =
         checkT tau1 tau2
