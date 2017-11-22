@@ -20,10 +20,15 @@ import Control.Monad (forM_,
                       unless,
                       when)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Ref (MonadRef(..),
+                          atomicModifyRef)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Bits
 import Data.Foldable (toList)
+import Data.IORef (IORef)
 import Data.Loc
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe (catMaybes,
                    fromMaybe,
                    isJust)
@@ -33,6 +38,7 @@ import Data.String (IsString(..))
 import qualified Data.Vector as V
 import qualified Language.C.Quote as C
 import Numeric (showHex)
+import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
@@ -3442,9 +3448,19 @@ needsBitMask CBitSlice{}   = True
 needsBitMask (CAlias _ ce) = needsBitMask ce
 needsBitMask _             = False
 
+hexConstCache :: IORef (Map Integer C.Exp)
+{-# NOINLINE hexConstCache #-}
+hexConstCache = unsafePerformIO $ newRef Map.empty
+
 -- | Return a C hex constant.
 chexconst :: Integer -> C.Exp
-chexconst i = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
+chexconst i = i `seq` unsafePerformIO $ atomicModifyRef hexConstCache $ \env ->
+    case Map.lookup i env of
+      Nothing -> let ce   = C.Const (C.IntConst ("0x" ++ showHex i "") C.Unsigned i noLoc) noLoc
+                     env' = Map.insert i ce env
+                 in
+                   ce `seq` env `seq` (env', ce)
+      Just ce -> (env, ce)
 
 -- | Return the C identifier corresponding to a value that is an instance of
 -- 'Named'.
