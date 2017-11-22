@@ -23,7 +23,7 @@ import qualified Data.Vector.Fusion.Bundle.Monadic as B
 import qualified Data.Vector.Fusion.Bundle.Size as B
 import Data.Vector.Fusion.Stream.Monadic (Step(..),
                                           Stream(..))
-import qualified Data.Vector.Fusion.Stream.Monadic as Stream
+import qualified Data.Vector.Fusion.Stream.Monadic as S
 import qualified Data.Vector.Generic.Mutable as MV
 import Data.Word (Word32,
                   Word64)
@@ -130,12 +130,12 @@ streamTypeValues (StructT struct taus _) = do
         mkStruct :: Vector Const -> Const
         mkStruct cs = StructC struct taus (fs `zip` V.toList cs)
     ss0 <- V.fromList <$> mapM streamTypeValues taus
-    return $ Stream.map mkStruct $ streamProduct ss0
+    return $ S.map mkStruct $ streamProduct ss0
 
 streamTypeValues tau@ArrT{} = do
     (n, tau_lem) <- checkKnownArrT tau
     stream       <- streamTypeValues tau_lem
-    return $ Stream.map ArrayC $ streamProduct (V.replicate n stream)
+    return $ S.map ArrayC $ streamProduct (V.replicate n stream)
 
 streamTypeValues tau =
     faildoc $ text "Cannot stream values of type" <+> ppr tau
