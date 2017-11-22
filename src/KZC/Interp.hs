@@ -20,7 +20,8 @@ module KZC.Interp (
     evalExp,
 
     compileExp,
-    compileAndRunExp
+    compileAndRunExp,
+    compileAndRunGen
   ) where
 
 import Control.Monad (void,
@@ -43,6 +44,8 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 import qualified Data.Vector.Fusion.Bundle.Monadic as B
 import qualified Data.Vector.Fusion.Bundle.Size as B
+import Data.Vector.Fusion.Stream.Monadic (Stream)
+import qualified Data.Vector.Fusion.Stream.Monadic as S
 import qualified Data.Vector.Generic.Mutable as MV
 import Data.Vector.Mutable (MVector)
 import Text.PrettyPrint.Mainland
@@ -852,8 +855,10 @@ compileExp (BindE (TameV v) tau e1 e2 _) = do
 compileExp (LutE _ e) =
     compileExp e
 
-compileExp (GenE e gs _) =
-    compileGen e gs
+compileExp (GenE e gs _) = do
+    (cs, n) <- compileGen e gs
+    return $ do mv <- MV.munstream (B.fromStream cs (B.Exact n))
+                ArrayC <$> V.unsafeFreeze mv
 
 compileExp e =
     faildoc $ text "Cannot evaluate" <+> ppr e
@@ -863,10 +868,10 @@ compileAndRunExp e = do
     mval <- evalI $ compileExp e
     liftIO mval
 
-compileGen :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
-            => Exp
-            -> [Gen]
-            -> I s m (IO Const)
+compileGen :: forall s m m' . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m, MonadIO m', PrimMonad m', MonadRef IORef m', s ~ PrimState m')
+           => Exp
+           -> [Gen]
+           -> I s m (Stream m' Const, Int)
 compileGen e gs = do
     -- Number of bits needed to represent a single generator value
     w    <- sum <$> mapM typeSize taus
@@ -874,13 +879,10 @@ compileGen e gs = do
     ss   <- mapM streamConst cs
     mval <- extendRefs (vs `zip` refs) $
             compileExp e
-    let mgen :: Vector Const -> IO Const
+    let mgen :: Vector Const -> m' Const
         mgen cs = do zipWithM_ assign refs (V.toList cs)
-                     mval
-    return $ do
-       mv <- MV.munstream $ B.mapM mgen $
-             B.fromStream (streamProduct (V.fromList ss)) (B.Exact (2^w))
-       ArrayC <$> V.unsafeFreeze mv
+                     liftIO mval
+    return (S.mapM mgen (streamProduct (V.fromList ss)), 2^w)
   where
     -- Generators are listed so that the last generator varies fastest.
     -- Therefore we must reverse the list of generators since when streaming a
@@ -890,3 +892,8 @@ compileGen e gs = do
     unGen :: Gen -> (Var, Type, Const)
     unGen (GenG v tau c _)    = (v, tau, c)
     unGen (GenRefG v tau c _) = (v, tau, c)
+
+-- | Compile a generator expression to a pair consisting of a stream of
+-- constants and the number of elements in the stream.
+compileAndRunGen :: MonadTcRef m => Exp -> [Gen] -> m (Stream m Const, Int)
+compileAndRunGen e gs = evalI $ compileGen e gs

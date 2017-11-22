@@ -35,7 +35,11 @@ import Data.Maybe (catMaybes,
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
-import qualified Data.Vector as V
+import Data.Vector (Vector)
+import qualified Data.Vector.Fusion.Bundle.Monadic as B
+import Data.Vector.Fusion.Stream.Monadic (Stream)
+import qualified Data.Vector.Fusion.Stream.Monadic as S
+import Data.Word (Word)
 import qualified Language.C.Quote as C
 import Numeric (showHex)
 import System.IO.Unsafe (unsafePerformIO)
@@ -52,7 +56,7 @@ import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Interp (compileAndRunExp)
+import KZC.Interp (compileAndRunGen)
 import KZC.Label
 import KZC.Monad (KZC)
 import KZC.Name
@@ -737,20 +741,22 @@ cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
 
 cgConst c@(ArrayC cs) = do
     (_, tau) <- inferConst noLoc c >>= checkArrT
-    ces      <- V.toList <$> V.mapM cgConst cs
-    return $ CInit [cinit|{ $inits:(cgArrayConstInits tau ces) }|]
+    cinits   <- cgConstVector tau cs
+    return $ CInit [cinit|{ $inits:cinits }|]
 
 cgConst (ReplicateC n c) = do
     tau    <- inferConst noLoc c
     c_dflt <- defaultValueC tau
-    ce     <- cgConst c
-    return $
-      if c == c_dflt
-      then CInit [cinit|{ $init:(toInitializer ce) }|]
-      else CInit [cinit|{ $inits:(cgArrayConstInits tau (replicate n ce)) }|]
+    if c == c_dflt
+      then do ce <- cgConst c
+              return $ CInit [cinit|{ $init:(toInitializer ce) }|]
+      else do cinits <- cgConstStream tau (S.replicate n c)
+              return $ CInit [cinit|{ $inits:cinits }|]
 
-cgConst (EnumC tau) =
-    cgConst =<< ArrayC <$> enumType tau
+cgConst (EnumC tau) = do
+    cs     <- enumType tau
+    cinits <- cgConstVector tau cs
+    return $ CInit [cinit|{ $inits:cinits }|]
 
 cgConst (StructC struct taus flds) = do
     fldDefs <- lookupStructFields struct taus
@@ -762,34 +768,47 @@ cgConst (StructC struct taus flds) = do
     return $ CInit [cinit|{ $inits:cinits }|]
   where
     cgField :: [(Field, Const)] -> Field -> Cg l C.Initializer
-    cgField flds f = do
-        ce <- case lookup f flds of
-                Nothing -> panicdoc $ text "cgField: missing field"
-                Just c -> cgConst c
-        return $ toInitializer ce
+    cgField flds f =
+        case lookup f flds of
+          Nothing -> panicdoc $ text "cgField: missing field"
+          Just c -> cgConstInit c
 
-cgArrayConstInits :: forall l . Type -> [CExp l] -> [C.Initializer]
-cgArrayConstInits tau ces | isBitT tau =
-    finalizeBits $ foldl mkBits (0,0,[]) ces
+-- | Compile a constant to a C initializer.
+cgConstInit :: Const -> Cg l C.Initializer
+cgConstInit c = toInitializer <$> cgConst c
+
+-- | Compile a vector of constants to a list of C initializers.
+cgConstVector :: Type -> Vector Const -> Cg l [C.Initializer]
+cgConstVector tau cs = cgConstStream tau (B.elements (B.fromVector cs))
+
+data PackedBits = PB !Word           -- ^ Current partially-packed word
+                     !Int            -- ^ Next bit position
+                     [C.Initializer] -- ^ Packed words
+
+-- | Compile a stream of constants to a list of C initializers.
+cgConstStream :: forall l . Type -> Stream (Cg l) Const -> Cg l [C.Initializer]
+cgConstStream tau cs | isBitT tau =
+    finalizeBits <$> S.foldl' mkBits (PB 0 0 []) cs
   where
-    mkBits :: (CExp l, Int, [C.Initializer]) -> CExp l -> (CExp l, Int, [C.Initializer])
-    mkBits (cconst, i, cinits) ce
-        | i == bIT_ARRAY_ELEM_BITS - 1 = (0,         0, const cconst' : cinits)
-        | otherwise                    = (cconst', i+1, cinits)
+    mkBits :: PackedBits
+           -> Const
+           -> PackedBits
+    mkBits (PB bits i cinits) (IntC _ b)
+      | i == bIT_ARRAY_ELEM_BITS - 1 = PB 0     0     ([cinit|$(chexconst (fromIntegral bits'))|] : cinits)
+      | otherwise                    = PB bits' (i+1) cinits
       where
-        cconst' :: CExp l
-        cconst' = cconst .|. (ce `shiftL` i)
+        bits' :: Word
+        bits' = bits .|. (fromIntegral b `shiftL` i)
 
-    finalizeBits :: (CExp l, Int, [C.Initializer]) -> [C.Initializer]
-    finalizeBits (_,      0, cinits) = reverse cinits
-    finalizeBits (cconst, _, cinits) = reverse $ const cconst : cinits
+    mkBits _ _ =
+        error "mkBits: expected IntC!"
 
-    const :: CExp l -> C.Initializer
-    const (CInt i) = [cinit|$(chexconst i)|]
-    const ce       = toInitializer ce
+    finalizeBits :: PackedBits -> [C.Initializer]
+    finalizeBits (PB _    0 cinits) = reverse cinits
+    finalizeBits (PB bits _ cinits) = reverse $ [cinit|$(chexconst (fromIntegral bits))|] : cinits
 
-cgArrayConstInits _tau ces =
-    map toInitializer ces
+cgConstStream _tau cs =
+    S.toList $ S.mapM cgConstInit cs
 
 {- Note [Bit Arrays]
 
@@ -1457,9 +1476,12 @@ cgExp e k =
     go (LutE _ e) k =
         cgExp e k
 
-    go e@GenE{} k = do
-        ce <- compileAndRunExp e >>= cgConst
-        cgConstExp e ce k
+    go e0@(GenE e gs _) k = do
+        tau     <- checkGenerators gs $ \_ -> inferExp e
+        (cs, _) <- compileAndRunGen e gs
+        cinits  <- cgConstStream tau cs
+        let ce  =  CInit [cinit|{ $inits:cinits }|]
+        cgConstExp e0 ce k
 
 cgConstExp :: Exp -> CExp l -> Kont l a -> Cg l a
 cgConstExp e (CInit cinit) k = do
