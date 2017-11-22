@@ -20,7 +20,7 @@ module KZC.Interp (
     evalExp,
 
     compileExp,
-    compileAndRunGen
+    compileAndRunExp
   ) where
 
 import Control.Monad (void,
@@ -858,6 +858,11 @@ compileExp (GenE e gs _) =
 compileExp e =
     faildoc $ text "Cannot evaluate" <+> ppr e
 
+compileAndRunExp :: MonadTcRef m => Exp -> m Const
+compileAndRunExp e = do
+    mval <- evalI $ compileExp e
+    liftIO mval
+
 compileGen :: forall s m . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m)
             => Exp
             -> [Gen]
@@ -885,8 +890,3 @@ compileGen e gs = do
     unGen :: Gen -> (Var, Type, Const)
     unGen (GenG v tau c _)    = (v, tau, c)
     unGen (GenRefG v tau c _) = (v, tau, c)
-
-compileAndRunGen :: MonadTcRef m => Exp -> [Gen] -> m Const
-compileAndRunGen e gs = do
-    mval <- evalI $ compileGen e gs
-    liftIO mval

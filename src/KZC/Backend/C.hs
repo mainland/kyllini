@@ -52,7 +52,7 @@ import KZC.Core.Enum
 import KZC.Core.Lint
 import KZC.Core.Smart
 import KZC.Core.Syntax
-import KZC.Interp (compileAndRunGen)
+import KZC.Interp (compileAndRunExp)
 import KZC.Label
 import KZC.Monad (KZC)
 import KZC.Name
@@ -1457,9 +1457,9 @@ cgExp e k =
     go (LutE _ e) k =
         cgExp e k
 
-    go e0@(GenE e gs _) k = do
-        ce <- compileAndRunGen e gs >>= cgConst
-        cgConstExp e0 ce k
+    go e@GenE{} k = do
+        ce <- compileAndRunExp e >>= cgConst
+        cgConstExp e ce k
 
 cgConstExp :: Exp -> CExp l -> Kont l a -> Cg l a
 cgConstExp e (CInit cinit) k = do
