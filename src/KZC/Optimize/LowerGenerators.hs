@@ -29,7 +29,7 @@ import KZC.Core.Lint
 import KZC.Core.Syntax
 import KZC.Core.Transform
 import KZC.Fuel
-import KZC.Interp (compileAndRunGen)
+import KZC.Interp (compileAndRunExp)
 import KZC.Platform
 import KZC.Util.Error
 import KZC.Util.Trace
@@ -64,8 +64,8 @@ lowerGenerators :: MonadTcRef m => Program l -> m (Program l)
 lowerGenerators = runL . programT
 
 instance MonadTcRef m => TransformExp (L m) where
-    expT (GenE e gs _) =
-        ConstE <$> compileAndRunGen e gs <*> pure noLoc
+    expT e@GenE{} =
+        ConstE <$> compileAndRunExp e <*> pure noLoc
 
     expT e =
         transExp e
