@@ -259,10 +259,10 @@ inferConst _ (EnumC tau) = do
     w <- typeSize tau
     return $ arrKnownT (2^w) tau
 
-inferConst l (StructC s taus flds) = do
-    fdefs <- checkStructUse s taus (map fst flds)
+inferConst l (StructC struct taus flds) = do
+    fdefs <- checkStructUse struct taus (map fst flds)
     mapM_ (checkField fdefs) flds
-    return $ StructT s taus l
+    return $ StructT struct taus l
   where
     checkField :: [(Field, Type)] -> (Field, Const) -> m ()
     checkField fldDefs (f, c) = do
@@ -501,15 +501,13 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        (s, taus) <- checkStructT tau
-        sdef      <- lookupStruct s
-        tau_f     <- checkStructFieldT sdef taus f
+        (struct, taus) <- checkStructT tau
+        tau_f          <- checkStructFieldT struct taus f
         return $ RefT tau_f l
 
     go tau = do
-        (s, taus) <- checkStructT tau
-        sdef      <- lookupStruct s
-        checkStructFieldT sdef taus f
+        (struct, taus) <- checkStructT tau
+        checkStructFieldT struct taus f
 
 inferExp e0@(CastE tau2 e _) =
     withFvContext e0 $ do
@@ -523,11 +521,11 @@ inferExp e0@(BitcastE tau2 e _) =
     checkBitcast tau1 tau2
     return tau2
 
-inferExp e0@(StructE s taus flds l) =
+inferExp e0@(StructE struct taus flds l) =
     withFvContext e0 $ do
-    fdefs <- checkStructUse s taus (map fst flds)
+    fdefs <- checkStructUse struct taus (map fst flds)
     mapM_ (checkField fdefs) flds
-    return $ StructT s taus l
+    return $ StructT struct taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fdefs (f, e) = do
@@ -699,9 +697,9 @@ checkStructNotRedefined :: MonadTc m => Struct -> m ()
 checkStructNotRedefined s = do
     maybe_sdef <- maybeLookupStruct s
     case maybe_sdef of
-      Nothing   -> return ()
-      Just sdef -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
-                   parens (text "original definition at" <+> ppr (locOf sdef))
+      Nothing     -> return ()
+      Just struct -> faildoc $ text "Struct" <+> ppr s <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf struct))
 
 -- | Check a struct declaration.
 checkStructDef :: MonadTc m => StructDef -> m ()
@@ -715,14 +713,13 @@ checkStructDef (StructDef s tvks flds _) = do
 
 -- | Check that a struct has no missing and no extra fields.
 checkStructUse :: forall m . MonadTc m
-               => Struct
+               => StructDef
                -> [Type]
                -> [Field]
                -> m [(Field, Type)]
 checkStructUse struct taus flds = do
-    sdef  <- lookupStruct struct
-    checkStructTyApp sdef taus
-    fdefs <- lookupStructFields struct taus
+    checkStructTyApp struct taus
+    fdefs <- tyAppStruct struct taus
     checkMissingFields flds fdefs
     checkExtraFields flds fdefs
     return fdefs
@@ -984,8 +981,7 @@ inferKind = inferType
     inferType StringT{} =
         return tauK
 
-    inferType tau_struct@(StructT s taus _) = do
-        StructDef _ tvks _ _ <- lookupStruct s
+    inferType tau_struct@(StructT (StructDef _ tvks _ _) taus _) = do
         checkTyApp tvks taus
         maybe_tau <- runMaybeT $ checkComplexT tau_struct
         case maybe_tau of
@@ -1151,7 +1147,7 @@ joinOmega omega1 omega2 =
 -- both fields must have the same type.
 checkComplexT :: MonadTc m => Type -> m Type
 checkComplexT (StructT struct taus _) = do
-    flds <- lookupStructFields struct taus
+    flds <- tyAppStruct struct taus
     case flds of
       [("re", tau), ("im", tau')] | tau' == tau -> return tau
       _                                         -> fail "Not a complex type"
@@ -1209,11 +1205,10 @@ checkArrOrRefArrT tau =
     text "Expected array type but got:" <+/> ppr tau
 
 -- | Check that a type is a struct type, returning the name of the struct.
-checkStructT :: MonadTc m => Type -> m (Struct, [Type])
-checkStructT (StructT s taus _) = do
-    sdef <- lookupStruct s
-    checkStructTyApp sdef taus
-    return (s, taus)
+checkStructT :: MonadTc m => Type -> m (StructDef, [Type])
+checkStructT (StructT struct taus _) = do
+    checkStructTyApp struct taus
+    return (struct, taus)
 
 checkStructT tau =
     faildoc $ nest 2 $
@@ -1221,21 +1216,21 @@ checkStructT tau =
 
 -- | Check that a type is a struct or struct reference type, returning the name
 -- of the struct.
-checkStructOrRefStructT :: MonadTc m => Type -> m (Struct, [Type])
-checkStructOrRefStructT (StructT s taus _)          = return (s, taus)
-checkStructOrRefStructT (RefT (StructT s taus _) _) = return (s, taus)
+checkStructOrRefStructT :: MonadTc m => Type -> m (StructDef, [Type])
+checkStructOrRefStructT (StructT struct taus _)          = return (struct, taus)
+checkStructOrRefStructT (RefT (StructT struct taus _) _) = return (struct, taus)
 checkStructOrRefStructT tau =
     faildoc $ nest 2 $
     text "Expected struct type, but got:" <+/> ppr tau
 
 checkStructFieldT :: MonadTc m => StructDef -> [Type] -> Field -> m Type
-checkStructFieldT sdef@(StructDef s _ _ _) taus f = do
-    flds <- tyAppStruct sdef taus
+checkStructFieldT struct@(StructDef s _ _ _) taus f = do
+    flds <- tyAppStruct struct taus
     case lookup f flds of
       Just tau -> return tau
       Nothing ->
           faildoc $
-          text "Struct" <+> ppr s <+>
+          text "Struct" <+> enquote (ppr s) <+>
           text "does not have a field named" <+> ppr f
 
 checkRefT :: MonadTc m => Type -> m Type

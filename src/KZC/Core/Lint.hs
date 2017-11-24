@@ -504,15 +504,13 @@ inferExp (ProjE e f l) = do
   where
     go :: Type -> m Type
     go (RefT tau _) = do
-        (s, taus) <- checkStructT tau
-        sdef      <- lookupStruct s
-        tau_f     <- checkStructFieldT sdef taus f
+        (struct, taus) <- checkStructT tau
+        tau_f          <- checkStructFieldT struct taus f
         return $ RefT tau_f l
 
     go tau = do
-        (s, taus) <- checkStructT tau
-        sdef      <- lookupStruct s
-        checkStructFieldT sdef taus f
+        (struct, taus) <- checkStructT tau
+        checkStructFieldT struct taus f
 
 inferExp (CastE tau2 e _) = do
     tau1 <- inferExp e
@@ -524,11 +522,11 @@ inferExp (BitcastE tau2 e _) = do
     checkBitcast tau1 tau2
     return tau2
 
-inferExp e0@(StructE s taus flds l) =
+inferExp e0@(StructE struct taus flds l) =
     withFvContext e0 $ do
-    fdefs <- checkStructUse s taus (map fst flds)
+    fdefs <- checkStructUse struct taus (map fst flds)
     mapM_ (checkField fdefs) flds
-    return $ StructT s taus l
+    return $ StructT struct taus l
   where
     checkField :: [(Field, Type)] -> (Field, Exp) -> m ()
     checkField fldDefs (f, e) = do

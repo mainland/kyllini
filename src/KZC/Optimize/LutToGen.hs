@@ -166,11 +166,11 @@ lutExp e info = do
               return $ StructDef struct [] (fs `zip` taus) noLoc
 
     mkLUT :: StructDef -> Exp -> G l m Var
-    mkLUT struct@(StructDef s _taus _flds _) e = do
+    mkLUT struct e = do
         taus_in     <- mapM lookupLUTVar lvs_in
         bits        <- sum <$> mapM typeSize taus_in
         v_lut       <- gensym "lut"
-        let tau_lut =  arrKnownT (2^bits) (structT s)
+        let tau_lut =  arrKnownT (2^bits) (structT struct)
         e'          <- packLUTElement info struct e
         let gs      =  [mkGen lv tau | (lv, tau) <- lvs_in `zip` taus_in]
         -- We reverse the generators @gs@ here so that the first generator in
@@ -278,7 +278,7 @@ packLUTElement :: forall m . MonadTc m
                -> StructDef
                -> Exp
                -> m Exp
-packLUTElement info (StructDef s _taus flds _) e =
+packLUTElement info struct@(StructDef _struct _taus flds _) e =
     bindFreeOutVars $
     bindResult e $
     bindResultVars (reverse (resultVars `zip` taus))
@@ -328,10 +328,10 @@ packLUTElement info (StructDef s _taus flds _) e =
 
     bindResultVars :: [(LUTVar, Type)] -> [Exp] -> m Exp
     bindResultVars [] vals | isPureT (lutResultType info) =
-        return $ structE s [] (fs `zip` vals)
+        return $ structE struct [] (fs `zip` vals)
 
     bindResultVars [] vals =
-        return $ returnE $ structE s [] (fs `zip` vals)
+        return $ returnE $ structE struct [] (fs `zip` vals)
 
     bindResultVars ((lv,tau):vtaus) vals = do
         x <- gensym (namedString (unLUTVar lv))

@@ -59,13 +59,13 @@ type MonoGen l m a = [Type] -> MonoM l m a
 
 type FunGen l m = MonoGen l m Var
 
-type StructGen l m = MonoGen l m Struct
+type StructGen l m = MonoGen l m StructDef
 
 -- | Cache of monomorphized things.
 type Cache a = IORef (Map [Type] a)
 
 data MonoEnv l m = MonoEnv
-    { structGens :: Map Struct (MonoGen l m Struct, Cache Struct)
+    { structGens :: Map Struct (MonoGen l m StructDef, Cache StructDef)
     , funGens    :: Map Var (MonoGen l m Var, Cache Var)
     }
 
@@ -141,7 +141,7 @@ lookupMono desc proj x taus = do
 lookupMonoFun :: MonadTcRef m => Var -> [Type] -> MonoM l m Var
 lookupMonoFun = lookupMono (text "function") funGens
 
-lookupMonoStruct :: MonadTcRef m => Struct -> [Type] -> MonoM l m Struct
+lookupMonoStruct :: MonadTcRef m => Struct -> [Type] -> MonoM l m StructDef
 lookupMonoStruct = lookupMono (text "struct") structGens
 
 appendTopDecl :: MonadTcRef m => Decl l -> MonoM l m ()
@@ -158,7 +158,7 @@ mkStructGen :: MonadTcRef m => StructDef -> StructGen l m
 mkStructGen (StructDef s [] flds l) [] = do
     struct' <- StructDef s [] <$> mapM transField flds <*> pure l
     appendTopDecl $ StructD struct' l
-    return s
+    return struct'
 
 mkStructGen (StructDef struct [] _ _) _ =
     panicdoc $ text "mkStructGen: struct" <+> enquote (ppr struct) <+>
@@ -166,10 +166,12 @@ mkStructGen (StructDef struct [] _ _) _ =
 
 mkStructGen (StructDef s tvks flds l) taus =
     extendTyVarTypes (map fst tvks `zip` taus) $ do
-    s'      <- monoStructName s taus
-    struct' <- StructDef s' [] <$> mapM transField flds <*> pure l
+    struct' <- StructDef <$> monoStructName s taus
+                         <*> pure []
+                         <*> mapM transField flds
+                         <*> pure l
     appendTopDecl $ StructD struct' l
-    return s'
+    return struct'
 
 monomorphizeProgram :: forall l m . (IsLabel l, MonadTcRef m)
                     => Program l
@@ -193,14 +195,14 @@ the types from the explicit type application.
 -}
 
 instance MonadTcRef m => TransformExp (MonoM l m) where
-    typeT (StructT struct taus s) = do
+    typeT (StructT (StructDef struct _ _ _) taus s) = do
         taus'   <- mapM typeT taus
         struct' <- lookupMonoStruct struct taus'
         return $ StructT struct' [] s
 
     typeT tau = transType tau
 
-    constT (StructC struct taus flds) = do
+    constT (StructC (StructDef struct _ _ _) taus flds) = do
         taus'   <- mapM typeT taus
         struct' <- lookupMonoStruct struct taus'
         flds'   <- mapM transFieldConst flds
@@ -215,7 +217,7 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
           f' <- lookupMonoFun f nonNatTaus
           CallE f' natTaus <$> mapM expT args <*> pure s
 
-    expT (StructE struct taus flds s) = do
+    expT (StructE (StructDef struct _ _ _) taus flds s) = do
         taus'   <- mapM typeT taus
         struct' <- lookupMonoStruct struct taus'
         flds'   <- mapM transFieldExp flds

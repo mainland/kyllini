@@ -286,8 +286,8 @@ idxE e1 e2 = IdxE e1 (castE idxT e2) Nothing (e1 `srcspan` e2)
 sliceE :: Exp -> Exp -> Int -> Exp
 sliceE e1 e2 len = IdxE e1 (castE idxT e2) (Just (fromIntegral len)) (e1 `srcspan` e2)
 
-structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
-structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
+structE :: StructDef -> [Type] -> [(Field, Exp)] -> Exp
+structE struct taus fs = StructE struct taus fs (srclocOf (map snd fs))
 
 projE :: Exp -> Field -> Exp
 projE e f = ProjE e f (e `srcspan` f)

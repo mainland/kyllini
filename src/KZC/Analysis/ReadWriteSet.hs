@@ -505,7 +505,7 @@ readRef (Ref v path) = do
 
     go ref@(StructRW _rs ws) [] = do
         (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
-        flds           <- lookupStructFields struct taus
+        flds           <- tyAppStruct struct taus
         let rs :: BoundedFields
             rs = fields (map fst flds)
         if rs `inPrecise` ws
@@ -560,7 +560,7 @@ writeRef (Ref v path) = do
 
     go (StructRW rs _) [] = do
         (struct, taus) <- lookupVar v >>= checkStructOrRefStructT
-        flds           <- lookupStructFields struct taus
+        flds           <- tyAppStruct struct taus
         let ws :: PreciseFields
             ws  = fields (map fst flds)
         return $ StructRW rs ws

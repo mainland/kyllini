@@ -695,7 +695,7 @@ useExp (AssignE e1 e2 s) = do
         go :: Val -> ND m (Exp, Val)
         go val | val == bot = do
             (struct, taus) <- lookupVar v >>= checkRefT >>= checkStructT
-            flds           <- lookupStructFields struct taus
+            flds           <- tyAppStruct struct taus
             putVal v $ StructV $
                 Map.insert f val2 $
                 Map.fromList (map fst flds `zip` repeat bot)

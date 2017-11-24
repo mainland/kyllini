@@ -113,7 +113,7 @@ projV val _ =
 data Ref s -- | A reference to a value
            = ValR !(IORef Val)
            -- | A struct reference
-           | StructR Struct [Type] ![(Field, Ref s)]
+           | StructR StructDef [Type] ![(Field, Ref s)]
            -- | A reference to an array of values of base type
            | ArrayR !(MVector s Val)
            -- | A reference to an element of base type in a mutable array.
@@ -170,7 +170,7 @@ defaultRef (RefT tau _) =
     defaultRef tau
 
 defaultRef (StructT struct taus _) = do
-    (fs, ftaus) <- unzip <$> lookupStructFields struct taus
+    (fs, ftaus) <- unzip <$> tyAppStruct struct taus
     refs        <- mapM defaultRef ftaus
     return $ StructR struct taus (fs `zip` refs)
 

@@ -215,7 +215,7 @@ sliceT :: Type -> Maybe Type -> Type
 sliceT tau Nothing    = tau
 sliceT tau (Just len) = ArrT len tau (tau `srcspan` len)
 
-structT :: Struct -> Type
+structT :: StructDef -> Type
 structT struct = StructT struct [] (srclocOf struct)
 
 stT :: Omega -> Type -> Type -> Type -> Type
@@ -373,7 +373,7 @@ arrayC cs
     n :: Int
     n = V.length cs
 
-structC :: Struct -> [Type] -> [(Field, Const)] -> Const
+structC :: StructDef -> [Type] -> [(Field, Const)] -> Const
 structC = StructC
 
 isArrC :: Const -> Bool
@@ -438,8 +438,8 @@ lowerTyVarE alpha = LowerE (TyVarT alpha l) l
 derefE :: Exp -> Exp
 derefE e = DerefE e (srclocOf e)
 
-structE :: Struct -> [Type] -> [(Field, Exp)] -> Exp
-structE s taus fs = StructE s taus fs (srclocOf (map snd fs))
+structE :: StructDef -> [Type] -> [(Field, Exp)] -> Exp
+structE struct taus fs = StructE struct taus fs (srclocOf (map snd fs))
 
 projE :: Exp -> Field -> Exp
 projE e f = ProjE e f (e `srcspan` f)

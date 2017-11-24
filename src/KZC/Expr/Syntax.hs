@@ -266,7 +266,7 @@ data Const = UnitC
            | ArrayC !(Vector Const)
            | ReplicateC Int Const
            | EnumC Type
-           | StructC Struct [Type] [(Field, Const)]
+           | StructC StructDef [Type] [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -290,7 +290,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs
-         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
+         | StructE StructDef [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Casts
          | CastE Type Exp !SrcLoc
@@ -435,7 +435,7 @@ data Type -- | Base types
           | StringT !SrcLoc
 
           -- | Structs and arrays
-          | StructT Struct [Type] !SrcLoc
+          | StructT StructDef [Type] !SrcLoc
           | ArrT Type Type !SrcLoc
 
           -- | Monadic type
@@ -488,9 +488,9 @@ data Kind = TauK Traits -- ^ Base types, including arrays of base types
 type Tvk = (TyVar, Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
-isComplexStruct :: Struct -> Bool
-isComplexStruct "Complex" = True
-isComplexStruct _         = False
+isComplexStruct :: StructDef -> Bool
+isComplexStruct (StructDef "Complex" _ _ _) = True
+isComplexStruct _                           = False
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -810,9 +810,9 @@ instance LiftedCast Const (Maybe Const) where
     liftCast _ _ =
         Nothing
 
-complexC :: Struct -> Const -> Const -> Const
-complexC sname a b =
-    StructC sname [] [("re", a), ("im", b)]
+complexC :: StructDef -> Const -> Const -> Const
+complexC struct a b =
+    StructC struct [] [("re", a), ("im", b)]
 
 uncomplexC :: Const -> (Const, Const)
 uncomplexC c@(StructC struct _ x) | isComplexStruct struct =
@@ -976,8 +976,8 @@ instance Pretty Const where
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
-    pprPrec _ (StructC s taus flds) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals flds
+    pprPrec _ (StructC (StructDef struct _ _ _) taus flds) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals flds
 
     pprPrec _ (ArrayC cs)
         | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
@@ -1060,8 +1060,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just len) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
-    pprPrec _ (StructE s taus fields _) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
+    pprPrec _ (StructE (StructDef struct _ _ _) taus fields _) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -1301,9 +1301,9 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "mut" <+> pprPrec tyappPrec1 tau
 
-    pprPrec p (StructT s taus _) =
+    pprPrec p (StructT (StructDef struct _ _ _) taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s <> pprTyApp taus
+        text "struct" <+> ppr struct <> pprTyApp taus
 
     pprPrec p (ArrT ind tau@StructT{} _) =
         parensIf (p > tyappPrec) $

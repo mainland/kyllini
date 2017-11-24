@@ -880,20 +880,21 @@ tcExp (Z.IdxE e1 e2 zlen l) exp_ty = do
 
 tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     withSummaryContext e0 $ do
-    sdef           <- lookupStruct s
+    struct         <- lookupStruct s
     taus           <- mapM fromZ ztaus
-    (tau, fldDefs) <- tyAppStruct sdef taus
-    checkTyApp (structDefTvks sdef) taus
+    (tau, fldDefs) <- tyAppStruct struct taus
+    checkTyApp (structDefTvks struct) taus
     checkMissingFields zflds fldDefs
     checkExtraFields zflds fldDefs
     (s', taus') <- checkStructT tau
-    (fs, mces)  <- unzip <$> mapM (checkField fldDefs) zflds
+    struct'     <- lookupStruct s'
+    (fs, mces) <- unzip <$> mapM (checkField fldDefs) zflds
     instType tau exp_ty
-    return $ do cs    <- trans s'
-                ctaus <- mapM trans taus'
-                cfs   <- mapM trans fs
-                ces   <- sequence mces
-                return $ E.StructE cs ctaus (cfs `zip` ces) l
+    return $ do cstruct <- trans struct'
+                ctaus   <- mapM trans taus'
+                cfs     <- mapM trans fs
+                ces     <- sequence mces
+                return $ E.StructE cstruct ctaus (cfs `zip` ces) l
   where
     checkField :: [(Z.Field, Type)] -> (Z.Field, Z.Exp) -> Ti (Z.Field, Ti E.Exp)
     checkField fldDefs (f, e) = do
@@ -940,8 +941,8 @@ tcExp (Z.ProjE e f l) exp_ty = do
         go :: Type -> Ti (Ti E.Exp)
         go (RefT tau _) = do
             (s, taus) <- checkStructT tau
-            sdef      <- lookupStruct s
-            tau_f     <- checkStructFieldT sdef taus f
+            struct    <- lookupStruct s
+            tau_f     <- checkStructFieldT struct taus f
             instType (RefT tau_f l) exp_ty
             return $ do ce <- mce
                         cf <- trans f
@@ -949,8 +950,8 @@ tcExp (Z.ProjE e f l) exp_ty = do
 
         go tau = do
             (s, taus) <- checkStructT tau
-            sdef      <- lookupStruct s
-            tau_f     <- checkStructFieldT sdef taus f
+            struct    <- lookupStruct s
+            tau_f     <- checkStructFieldT struct taus f
             instType tau_f exp_ty
             return $ do ce <- mce
                         cf <- trans f
@@ -1230,9 +1231,9 @@ checkStructNotRedefined :: Z.Struct -> Ti ()
 checkStructNotRedefined s = do
     maybe_sdef <- maybeLookupStruct s
     case maybe_sdef of
-      Nothing   -> return ()
-      Just sdef -> faildoc $ text "Struct" <+> enquote (ppr s) <+> text "redefined" <+>
-                   parens (text "original definition at" <+> ppr (locOf sdef))
+      Nothing     -> return ()
+      Just struct -> faildoc $ text "Struct" <+> enquote (ppr s) <+> text "redefined" <+>
+                     parens (text "original definition at" <+> ppr (locOf struct))
 
 tcStms :: [Z.Stm] -> Expected Type -> Ti (Ti E.Exp)
 tcStms [stm@Z.LetS{}] _ =
@@ -1400,8 +1401,8 @@ kcType tau@StringT{} kappa_exp =
     instKind tau tauK kappa_exp
 
 kcType tau_struct@(StructT s taus _) kappa_exp = do
-    sdef <- lookupStruct s
-    checkTyApp (structDefTvks sdef) taus
+    struct <- lookupStruct s
+    checkTyApp (structDefTvks struct) taus
     maybe_tau <- checkComplexT tau_struct
     kappa'    <- case maybe_tau of
                  -- A struct has traits Eq, Ord, and Num if its elements do.
@@ -1719,8 +1720,8 @@ checkArrT tau =
 -- both fields must have the same type.
 checkComplexT :: Type -> Ti (Maybe Type)
 checkComplexT (StructT struct taus _) = do
-    sdef       <- lookupStruct struct
-    (_, zflds) <- tyAppStruct sdef taus
+    struct     <- lookupStruct struct
+    (_, zflds) <- tyAppStruct struct taus
     case zflds of
       [("re", tau), ("im", tau')] | tau' == tau -> return $ Just tau
       _                                         -> return Nothing
@@ -1742,8 +1743,8 @@ checkStructT tau =
         text "Expected struct type, but got" <+/> ppr tau
 
 checkStructFieldT :: StructDef -> [Type] -> Z.Field -> Ti Type
-checkStructFieldT sdef taus f = do
-    (_, flds) <- tyAppStruct sdef taus
+checkStructFieldT struct taus f = do
+    (_, flds) <- tyAppStruct struct taus
     case lookup f flds of
       Just tau -> return tau
       Nothing  -> faildoc $ text "Unknown field" <+> enquote (ppr f)
@@ -1973,17 +1974,17 @@ mkCast tau1 tau2 = do
 -- | Construct a cast between two instantiations of a struct at different types.
 mkStructCast :: Z.Struct -> [Type] -> [Type] -> Co
 mkStructCast zs taus1 taus2 mce = do
-    sdef        <- lookupStruct zs
-    (_, zflds1) <- tyAppStruct sdef taus1
-    (_, zflds2) <- tyAppStruct sdef taus2
+    struct      <- lookupStruct zs
+    (_, zflds1) <- tyAppStruct struct taus1
+    (_, zflds2) <- tyAppStruct struct taus2
     fs          <- mapM (trans . fst) zflds1
     coercions   <- zipWithM (\(_, tau1) (_, tau2) -> mkCast tau1 tau2) zflds1 zflds2
-    cs          <- trans zs
+    cstruct     <- trans struct
     ctaus2      <- mapM trans taus2
     ce1         <- mce
     mkLetE (structT zs taus1) ce1 $ \cx -> do
         ces <- zipWithM ($) coercions [return $ E.projE cx f | f <- fs]
-        return $ E.structE cs ctaus2 (fs `zip` ces)
+        return $ E.structE cstruct ctaus2 (fs `zip` ces)
 
 mkCheckedSafeCast :: Z.Exp -> Type -> Type -> Ti Co
 mkCheckedSafeCast e tau1 tau2 = do
@@ -2708,8 +2709,8 @@ instance FromZ Z.Type Type where
 
     fromZ (Z.StructT s ztaus _) = do
         taus     <- mapM fromZ ztaus
-        sdef     <- lookupStruct s
-        (tau, _) <- tyAppStruct sdef taus
+        struct   <- lookupStruct s
+        (tau, _) <- tyAppStruct struct taus
         return tau
 
     fromZ (Z.ST omega tau1 tau2 l) =
@@ -2867,7 +2868,8 @@ instance Trans Type E.Type where
         go (FloatT fp l)      = E.FloatT <$> trans fp <*> pure l
         go (StringT l)        = pure $ E.StringT l
         go (SynT _ tau _)     = go tau
-        go (StructT s taus l) = E.StructT <$> trans s <*> mapM trans taus <*> pure l
+        go (StructT s taus l) = do struct <- lookupStruct s
+                                   E.StructT <$> trans struct <*> mapM trans taus <*> pure l
         go (RefT tau l)       = E.RefT <$> go tau <*> pure l
         go (ArrT i tau l)     = E.ArrT <$> trans i <*> go tau <*> pure l
 

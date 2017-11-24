@@ -289,7 +289,7 @@ data Exp = ConstE Const !SrcLoc
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Nat) !SrcLoc
          -- Structs
-         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
+         | StructE StructDef [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Casts
          | CastE Type Exp !SrcLoc
@@ -884,8 +884,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just len) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
-    pprPrec _ (StructE s taus fields _) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
+    pprPrec _ (StructE (StructDef struct _ _ _) taus fields _) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
