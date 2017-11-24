@@ -553,8 +553,8 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl decl@(StructD s [] flds l) k =
-    extendStructs [StructDef s [] flds l] $ do
+cgDecl decl@(StructD struct@(StructDef s [] flds _) l) k =
+    extendStructs [struct] $ do
     maybe_ctau <- runMaybeT $ cgComplexType (StructT s (map snd flds) l)
     genStructDecl maybe_ctau
     k

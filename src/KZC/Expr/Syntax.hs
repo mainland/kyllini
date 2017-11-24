@@ -241,7 +241,7 @@ data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
 data Decl -- | Struct declaration
-          = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          = StructD StructDef !SrcLoc
           -- | Standard let binding
           | LetD Var Type Exp !SrcLoc
           -- | Ref binding
@@ -252,6 +252,9 @@ data Decl -- | Struct declaration
           | LetFunD Var [Tvk] [(Var, Type)] Type Exp !SrcLoc
           -- | External function binding
           | LetExtFunD Var [Tvk] [(Var, Type)] Type !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
+data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC
@@ -286,7 +289,7 @@ data Exp = ConstE Const !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Nat) !SrcLoc
-         -- Structs Struct
+         -- Structs
          | StructE Struct [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Casts
@@ -421,9 +424,6 @@ data Binop = Eq
            | Rem
            | Pow
            | Cat -- ^ Array concatenation.
-  deriving (Eq, Ord, Read, Show)
-
-data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
 data Type -- | Base types
@@ -871,18 +871,18 @@ instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
 instance Summary Decl where
-    summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
+    summary (StructD struct _)        = text "definition of" <+> summary struct
     summary (LetD v _ _ _)            = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
     summary (LetTypeD alpha _ _ _)    = text "definition of" <+> ppr alpha
     summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
     summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
+instance Summary StructDef where
+    summary (StructDef struct tvks _ _) = text "struct" <+> ppr struct <> pprForall tvks
+
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
-
-instance Summary StructDef where
-    summary (StructDef s _ _ _) = text "struct" <+> ppr s
 
 instance Summary Type where
     summary tau = text "type:" <+> align (ppr tau)
@@ -928,9 +928,8 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    pprPrec p (StructD s tvks flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
+    pprPrec p (StructD struct _) =
+        pprPrec p struct
 
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
@@ -957,6 +956,11 @@ instance Pretty Decl where
         text "fun external" <+> pprFunDecl f tvks vbs tau
 
     pprList decls = stack (map ppr decls)
+
+instance Pretty StructDef where
+    pprPrec p (StructDef s tvks fields _) =
+        parensIf (p > appPrec) $
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon fields
 
 instance Pretty Const where
     pprPrec _ UnitC             = text "()"

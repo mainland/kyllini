@@ -30,7 +30,7 @@ module KZC.Expr.Lint (
 
     refPath,
 
-    checkStructDecl,
+    checkStructDef,
     checkStructUse,
 
     inferKind,
@@ -154,10 +154,10 @@ checkDecls :: MonadTc m => [Decl] -> m ()
 checkDecls = foldr checkDecl (return ())
 
 checkDecl :: forall m a . MonadTc m => Decl -> m a -> m a
-checkDecl decl@(StructD s tvks flds l) k = do
+checkDecl decl@(StructD struct _) k = do
     alwaysWithSummaryContext decl $
-        checkStructDecl s tvks flds
-    extendStructs [StructDef s tvks flds l] k
+        checkStructDef struct
+    extendStructs [struct] k
 
 checkDecl decl@(LetD v tau e _) k = do
     alwaysWithSummaryContext decl $ do
@@ -704,8 +704,8 @@ checkStructNotRedefined s = do
                    parens (text "original definition at" <+> ppr (locOf sdef))
 
 -- | Check a struct declaration.
-checkStructDecl :: MonadTc m => Struct -> [Tvk] -> [(Field, Type)] -> m ()
-checkStructDecl s tvks flds = do
+checkStructDef :: MonadTc m => StructDef -> m ()
+checkStructDef (StructDef s tvks flds _) = do
     checkStructNotRedefined s
     checkDuplicates "field names" fnames
     extendTyVars tvks $

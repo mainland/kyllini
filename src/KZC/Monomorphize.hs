@@ -17,7 +17,7 @@ module KZC.Monomorphize (
     monomorphizeProgram
   ) where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Monad.Exception (MonadException(..))
 import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -154,23 +154,22 @@ getTopDecls = do
     modify $ \s -> s { topdecls = mempty }
     return decls
 
-mkMonoStructGen :: MonadTcRef m => StructDef -> StructGen l m
-mkMonoStructGen (StructDef struct [] flds l) [] = do
-    flds' <- mapM transField flds
-    appendTopDecl $ StructD struct [] flds' l
-    return struct
+mkStructGen :: MonadTcRef m => StructDef -> StructGen l m
+mkStructGen (StructDef s [] flds l) [] = do
+    struct' <- StructDef s [] <$> mapM transField flds <*> pure l
+    appendTopDecl $ StructD struct' l
+    return s
 
-mkMonoStructGen (StructDef struct _ _ _) _ =
-    panicdoc $ text "mkMonoStructGen: struct" <+> enquote (ppr struct) <+>
+mkStructGen (StructDef struct [] _ _) _ =
+    panicdoc $ text "mkStructGen: struct" <+> enquote (ppr struct) <+>
                text "is not polymorphic"
 
-mkPolyStructGen :: MonadTcRef m => StructDef -> StructGen l m
-mkPolyStructGen (StructDef struct tvks flds l) taus =
+mkStructGen (StructDef s tvks flds l) taus =
     extendTyVarTypes (map fst tvks `zip` taus) $ do
-    struct' <- monoStructName struct taus
-    flds'   <- mapM transField flds
-    appendTopDecl $ StructD struct' [] flds' l
-    return struct'
+    s'      <- monoStructName s taus
+    struct' <- StructDef s' [] <$> mapM transField flds <*> pure l
+    appendTopDecl $ StructD struct' l
+    return s'
 
 monomorphizeProgram :: forall l m . (IsLabel l, MonadTcRef m)
                     => Program l
@@ -226,7 +225,7 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
 
 instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
     programT prog =
-        extendStruct "Complex" (mkPolyStructGen complexStructDef) $ do
+        extendStruct "Complex" (mkStructGen complexStructDef) $ do
         Program imports decls main <- transProgram prog
         decls' <- getTopDecls
         return $ Program imports (decls <> decls') main
@@ -236,23 +235,16 @@ instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
         decls <- getTopDecls
         return (decls, x)
 
-    declsT (StructD struct tvks@[] flds l : decls) k =
-        extendStructs [sdef] $
-        extendStruct struct (mkMonoStructGen sdef) $ do
-        -- Go ahead and generate and cache the mono struct now
-        void $ lookupMonoStruct struct []
+    declsT (StructD struct@(StructDef s _ _ _) _ : decls) k =
+        extendStructs [struct] $
+        extendStruct s (mkStructGen struct) $ do
+        when (isMono struct) $
+          -- Go ahead and generate and cache the mono struct now
+          void $ lookupMonoStruct s []
         declsT decls k
       where
-        sdef :: StructDef
-        sdef = StructDef struct tvks flds l
-
-    declsT (StructD struct tvks flds l : decls) k =
-        extendStructs [sdef] $
-        extendStruct struct (mkPolyStructGen sdef) $
-        declsT decls k
-      where
-        sdef :: StructDef
-        sdef = StructDef struct tvks flds l
+        isMono :: StructDef -> Bool
+        isMono (StructDef _s tvks _flds _l) = null tvks
 
     declsT (decl@(LetFunD f tvks@(_:_) vbs tau_ret e l) : decls) k =
         extendVars [(bVar f, tau)] $

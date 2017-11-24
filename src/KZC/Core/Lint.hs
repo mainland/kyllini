@@ -92,7 +92,7 @@ import KZC.Expr.Lint (Tc(..),
                       checkConst,
                       inferConst,
 
-                      checkStructDecl,
+                      checkStructDef,
                       checkStructUse,
 
                       inferKind,
@@ -162,10 +162,10 @@ checkDecl :: forall l m a . (IsLabel l, MonadTc m)
           => Decl l
           -> m a
           -> m a
-checkDecl decl@(StructD s tvks flds l) k = do
+checkDecl decl@(StructD struct _) k = do
     alwaysWithSummaryContext decl $
-        checkStructDecl s tvks flds
-    extendStructs [StructDef s tvks flds l] k
+        checkStructDef struct
+    extendStructs [struct] k
 
 checkDecl (LetD decl _) k =
     checkLocalDecl decl k

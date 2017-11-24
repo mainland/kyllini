@@ -102,8 +102,8 @@ evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
-evalDecl decl@(StructD s taus flds l) k =
-    extendStructs [StructDef s taus flds l] $
+evalDecl decl@(StructD struct _) k =
+    extendStructs [struct] $
     k $ const . return $ decl
 
 evalDecl (LetD decl s) k =

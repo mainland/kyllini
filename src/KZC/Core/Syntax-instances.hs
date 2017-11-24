@@ -1,5 +1,5 @@
 instance Located (Decl a) where
-  locOf (StructD _ _ _ l) = locOf l
+  locOf (StructD _ l) = locOf l
   locOf (LetD _ l) = locOf l
   locOf (LetFunD _ _ _ _ _ l) = locOf l
   locOf (LetExtFunD _ _ _ _ l) = locOf l

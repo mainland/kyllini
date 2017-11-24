@@ -395,8 +395,8 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
-    postInlineUnconditionally _flags decl@(StructD s taus flds l) =
-        extendStructs [StructDef s taus flds l] $
+    postInlineUnconditionally _flags decl@(StructD struct _) =
+        extendStructs [struct] $
         withBinding decl m
 
     postInlineUnconditionally _flags LetD{} =

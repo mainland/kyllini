@@ -339,13 +339,11 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
           -- in.
           mapM_ zonkTvk tvks
           return (tvks, taus_fields)
+    let struct   = StructDef zs tvks (zfields `zip` taus_fields) l
     let mcdecl k = alwaysWithSummaryContext decl $ do
-                   cs           <- trans zs
-                   ctvks        <- mapM trans tvks
-                   cfields      <- mapM trans zfields
-                   ctaus_fields <- mapM trans taus_fields
-                   k [E.StructD cs ctvks (cfields `zip` ctaus_fields) l]
-    extendStructs [StructDef zs tvks (zfields `zip` taus_fields) l] $ k mcdecl
+                   cstruct <- trans struct
+                   k [E.StructD cstruct l]
+    extendStructs [struct] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
 
@@ -909,7 +907,7 @@ tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     checkMissingFields flds fldDefs =
         unless (Set.null missing) $
           faildoc $
-            text "Struct definition has missing fields:" <+>
+            text "Struct expression has missing fields:" <+>
             (commasep . map ppr . Set.toList) missing
       where
         fs, fs', missing :: Set Z.Field
@@ -921,7 +919,7 @@ tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     checkExtraFields flds fldDefs =
         unless (Set.null extra) $
           faildoc $
-            text "Struct definition has extra fields:" <+>
+            text "Struct expression has extra fields:" <+>
             (commasep . map ppr . Set.toList) extra
       where
         fs, fs', extra :: Set Z.Field
@@ -2939,6 +2937,16 @@ instance Trans (TyVar, Kind) (E.TyVar, E.Kind) where
 
 instance Trans (Z.Var, Type) (E.Var, E.Type) where
     trans (v, tau) = (,) <$> trans v <*> trans tau
+
+instance Trans (Z.Field, Type) (E.Field, E.Type) where
+    trans (f, tau) = (,) <$> trans f <*> trans tau
+
+instance Trans StructDef E.StructDef where
+    trans (StructDef zstruct tvks zflds l) =
+        E.StructDef <$> trans zstruct <*> mapM trans tvks <*> mapM trans zflds <*> pure l
+
+    trans def@TypeDef{} =
+        faildoc $ text "Cannot translate typedef" <+> ppr def
 
 instance Trans Z.UnrollAnn E.UnrollAnn where
     trans ann = pure $ (toEnum . fromEnum) ann

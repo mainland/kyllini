@@ -12,6 +12,7 @@ module KZC.Core.Transform (
     TransformComp(..),
 
     transProgram,
+    transStructDef,
     transDecls,
     transDecl,
     transLocalDecl,
@@ -106,6 +107,10 @@ transMain (Main comp tau) = do
     tau'  <- typeT tau
     return $ Main comp' tau'
 
+transStructDef :: TransformExp m => StructDef -> m StructDef
+transStructDef (StructDef s tvks flds l) =
+    StructDef s tvks <$> mapM transField flds <*> pure l
+
 transDecls :: TransformComp l m => [Decl l] -> m a -> m ([Decl l], a)
 transDecls [] m = do
     x <- m
@@ -116,10 +121,10 @@ transDecls (d:ds) m = do
     return (d':ds', x)
 
 transDecl :: TransformComp l m => Decl l -> m a -> m (Decl l, a)
-transDecl (StructD s tvks flds l) m = do
-    flds' <- mapM transField flds
-    x     <- extendStructs [StructDef s tvks flds l] m
-    return (StructD s tvks flds' l, x)
+transDecl (StructD struct l) m = do
+    struct' <- transStructDef struct
+    x       <- extendStructs [struct] m
+    return (StructD struct' l, x)
 
 transDecl (LetD decl s) m = do
     (decl', x) <- localDeclT decl m
