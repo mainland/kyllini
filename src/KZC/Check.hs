@@ -80,7 +80,7 @@ readExpected (Check tau) = return tau
 checkProgram :: Z.Program -> (E.Program -> Ti a) -> Ti a
 checkProgram (Z.Program zimports zdecls) k =
     checkDecls zdecls $ \mdecls -> do
-    decls       <- sequence mdecls
+    decls       <- mdecls
     let imports =  [E.Import m | Z.Import m <- zimports]
     k $ E.Program imports decls
 
@@ -316,8 +316,13 @@ checkLetExtFun f ps ztau_ret isPure l = do
     checkRetType ztau =
         fromZ ztau
 
+-- | Create a generator for '[E.Decl]' from a 'Decl' and a generator for a
+-- 'E.Decl'.
+toDeclsGen :: Z.Decl -> Ti E.Decl -> Ti [E.Decl]
+toDeclsGen decl mcdecl = alwaysWithSummaryContext decl $ (:[]) <$> mcdecl
+
 checkDecl :: Z.Decl
-          -> ([Ti E.Decl] -> Ti a)
+          -> (Ti [E.Decl] -> Ti a)
           -> Ti a
 checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
     (tvks, taus_fields) <-
@@ -337,8 +342,8 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
                  ctvks        <- mapM trans tvks
                  cfields      <- mapM trans zfields
                  ctaus_fields <- mapM trans taus_fields
-                 return $ E.StructD cs ctvks (cfields `zip` ctaus_fields) l
-    extendStructs [StructDef zs tvks (zfields `zip` taus_fields) l] $ k [mcdecl]
+                 return [E.StructD cs ctvks (cfields `zip` ctaus_fields) l]
+    extendStructs [StructDef zs tvks (zfields `zip` taus_fields) l] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
 
@@ -351,17 +356,17 @@ checkDecl decl@(Z.TypeD zs ztvks ztau l) k = do
                 fromZ ztau
         mapM_ zonkTvk tvks
         return (tvks, tau)
-    extendStructs [TypeDef zs tvks tau l] $ k []
+    extendStructs [TypeDef zs tvks tau l] $ k $ return []
 
 checkDecl decl@(Z.LetD v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLet v ztau e l
-    extendVars [(v, tau)] $ k [alwaysWithSummaryContext decl mcdecl]
+    extendVars [(v, tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecl decl@(Z.LetRefD v ztau e_init l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLetRef v ztau e_init l
-    extendVars [(v, refT tau)] $ k [mcdecl]
+    extendVars [(v, refT tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
     alpha <- fromZ zalpha
@@ -369,47 +374,47 @@ checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
     tau   <- fromZ ztau
     -- We only allow type variables of kind nat to be specified this way
     alwaysWithSummaryContext decl $ checkKind tau kappa
-    let mcdecl = do calpha <- trans alpha
-                    ckappa <- trans kappa
-                    ctau   <- trans tau
-                    return $ E.LetTypeD calpha ckappa ctau l
+    let mcdecl = alwaysWithSummaryContext decl $ do
+                 calpha <- trans alpha
+                 ckappa <- trans kappa
+                 ctau   <- trans tau
+                 return [E.LetTypeD calpha ckappa ctau l]
     extendTyVars [(alpha, kappa)] $
       extendTyVarTypes [(alpha, tau)] $
-      k [mcdecl]
+      k mcdecl
 
 checkDecl decl@(Z.LetFunD f tvks ps tau e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f tvks ps tau e l
-    let mcdecl = alwaysWithSummaryContext decl mkLetFun
-    extendVars [(f,tau)] $ k [mcdecl]
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
+                     checkLetFun f tvks ps tau e l
+    extendVars [(f,tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecl decl@(Z.LetFunExternalD f ps ztau_ret isPure l) k = do
-    (tau, mkLetExtFun) <- alwaysWithSummaryContext decl $
-                          checkLetExtFun f ps ztau_ret isPure l
-    let mcdecl = alwaysWithSummaryContext decl mkLetExtFun
-    extendVars [(f,tau)] $ k [mcdecl]
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
+                     checkLetExtFun f ps ztau_ret isPure l
+    extendVars [(f,tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecl decl@(Z.LetCompD v ztau _ e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
                      checkLetComp v ztau e l
-    extendVars [(v, tau)] $ k [alwaysWithSummaryContext decl mcdecl]
+    extendVars [(v, tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecl decl@(Z.LetFunCompD f _range tvks ps tau e l) k = do
-    (tau, mkLetFun) <- alwaysWithSummaryContext decl $
-                       checkLetFun f tvks ps tau e l
-    let mcdecl = alwaysWithSummaryContext decl mkLetFun
-    extendVars [(f,tau)] $ k [mcdecl]
+    (tau, mcdecl) <- alwaysWithSummaryContext decl $
+                     checkLetFun f tvks ps tau e l
+    extendVars [(f,tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecls :: [Z.Decl]
-           -> ([Ti E.Decl] -> Ti a)
+           -> (Ti [E.Decl] -> Ti a)
            -> Ti a
 checkDecls [] k =
-    k []
+    k $ return []
 
 checkDecls (decl:decls) k =
     checkDecl  decl  $ \mcdecl  ->
     checkDecls decls $ \mcdecls ->
-    k (mcdecl ++ mcdecls)
+    k $ do decl  <- mcdecl
+           decls <- mcdecls
+           return $ decl ++ decls
 
 mkSigned :: Monad m => Type -> m Type
 mkSigned (IntT UDefault l)     = return $ IntT IDefault l
@@ -652,11 +657,11 @@ tcExp (Z.LetRefE v ztau e1 e2 l) exp_ty = do
       checkLetBody e2 exp_ty mcdecl l
 
 tcExp (Z.LetDeclE decl e l) exp_ty =
-    checkDecl decl $ \[mcdecl] -> do
+    checkDecl decl $ \mcdecl -> do
     tau <- newMetaTvT MuK l
     instType tau exp_ty
     mce <- collectCheckValCtx tau $ checkExp e tau
-    return $ E.LetE <$> mcdecl <*> mce <*> pure l
+    return $ E.LetE <$> (head <$> mcdecl) <*> mce <*> pure l
 
 tcExp e@(Z.CallE f maybe_ztaus es l) exp_ty =
     withCallContext f e $ do
@@ -1238,12 +1243,9 @@ tcStms (Z.LetS decl l : stms) exp_ty = do
     tau <- mkSTOmega
     instType tau exp_ty
     collectCheckValCtx tau $
-      checkDecl decl $ \[mcdecl] -> do
+      checkDecl decl $ \mcdecl -> do
       mce <- checkStms stms tau
-      return $ do
-          cdecl <- mcdecl
-          ce    <- mce
-          return $ E.LetE cdecl ce l
+      return $ E.LetE <$> (head <$> mcdecl) <*> mce <*> pure l
 
 tcStms [stm@Z.BindS{}] _ =
     withSummaryContext stm $
