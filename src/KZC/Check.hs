@@ -79,10 +79,9 @@ readExpected (Check tau) = return tau
 
 checkProgram :: Z.Program -> (E.Program -> Ti a) -> Ti a
 checkProgram (Z.Program zimports zdecls) k =
-    checkDecls zdecls $ \mdecls -> do
-    decls       <- mdecls
-    let imports =  [E.Import m | Z.Import m <- zimports]
-    k $ E.Program imports decls
+    checkDecls zdecls $ \mdecls ->
+    mdecls $ \decls ->
+    k $ E.Program [E.Import m | Z.Import m <- zimports] decls
 
 {- Note [Value Contexts]
 
@@ -318,12 +317,15 @@ checkLetExtFun f ps ztau_ret isPure l = do
 
 -- | Create a generator for '[E.Decl]' from a 'Decl' and a generator for a
 -- 'E.Decl'.
-toDeclsGen :: Z.Decl -> Ti E.Decl -> Ti [E.Decl]
-toDeclsGen decl mcdecl = alwaysWithSummaryContext decl $ (:[]) <$> mcdecl
+toDeclsGen :: Z.Decl -> Ti E.Decl -> ([E.Decl] -> Ti a) -> Ti a
+toDeclsGen decl mcdecl k =
+    alwaysWithSummaryContext decl $ do
+    cdecl <- mcdecl
+    k [cdecl]
 
 checkDecl :: Z.Decl
-          -> (Ti [E.Decl] -> Ti a)
-          -> Ti a
+          -> ((([E.Decl] -> Ti a) -> Ti a) -> Ti b)
+          -> Ti b
 checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
     (tvks, taus_fields) <-
         alwaysWithSummaryContext decl $ do
@@ -337,12 +339,12 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
           -- in.
           mapM_ zonkTvk tvks
           return (tvks, taus_fields)
-    let mcdecl = alwaysWithSummaryContext decl $ do
-                 cs           <- trans zs
-                 ctvks        <- mapM trans tvks
-                 cfields      <- mapM trans zfields
-                 ctaus_fields <- mapM trans taus_fields
-                 return [E.StructD cs ctvks (cfields `zip` ctaus_fields) l]
+    let mcdecl k = alwaysWithSummaryContext decl $ do
+                   cs           <- trans zs
+                   ctvks        <- mapM trans tvks
+                   cfields      <- mapM trans zfields
+                   ctaus_fields <- mapM trans taus_fields
+                   k [E.StructD cs ctvks (cfields `zip` ctaus_fields) l]
     extendStructs [StructDef zs tvks (zfields `zip` taus_fields) l] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
@@ -356,7 +358,7 @@ checkDecl decl@(Z.TypeD zs ztvks ztau l) k = do
                 fromZ ztau
         mapM_ zonkTvk tvks
         return (tvks, tau)
-    extendStructs [TypeDef zs tvks tau l] $ k $ return []
+    extendStructs [TypeDef zs tvks tau l] $ k $ \k -> k []
 
 checkDecl decl@(Z.LetD v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
@@ -374,11 +376,11 @@ checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
     tau   <- fromZ ztau
     -- We only allow type variables of kind nat to be specified this way
     alwaysWithSummaryContext decl $ checkKind tau kappa
-    let mcdecl = alwaysWithSummaryContext decl $ do
-                 calpha <- trans alpha
-                 ckappa <- trans kappa
-                 ctau   <- trans tau
-                 return [E.LetTypeD calpha ckappa ctau l]
+    let mcdecl k = alwaysWithSummaryContext decl $ do
+                   calpha <- trans alpha
+                   ckappa <- trans kappa
+                   ctau   <- trans tau
+                   k [E.LetTypeD calpha ckappa ctau l]
     extendTyVars [(alpha, kappa)] $
       extendTyVarTypes [(alpha, tau)] $
       k mcdecl
@@ -404,17 +406,17 @@ checkDecl decl@(Z.LetFunCompD f _range tvks ps tau e l) k = do
     extendVars [(f,tau)] $ k $ toDeclsGen decl mcdecl
 
 checkDecls :: [Z.Decl]
-           -> (Ti [E.Decl] -> Ti a)
+           -> ((([E.Decl] -> Ti a) -> Ti a) -> Ti a)
            -> Ti a
 checkDecls [] k =
-    k $ return []
+    k $ \k -> k []
 
 checkDecls (decl:decls) k =
     checkDecl  decl  $ \mcdecl  ->
     checkDecls decls $ \mcdecls ->
-    k $ do decl  <- mcdecl
-           decls <- mcdecls
-           return $ decl ++ decls
+    k $ \k -> mcdecl  $ \decls1 ->
+              mcdecls $ \decls2 ->
+              k $ decls1 ++ decls2
 
 mkSigned :: Monad m => Type -> m Type
 mkSigned (IntT UDefault l)     = return $ IntT IDefault l
@@ -661,7 +663,7 @@ tcExp (Z.LetDeclE decl e l) exp_ty =
     tau <- newMetaTvT MuK l
     instType tau exp_ty
     mce <- collectCheckValCtx tau $ checkExp e tau
-    return $ E.LetE <$> (head <$> mcdecl) <*> mce <*> pure l
+    return $ mcdecl $ \[cdecl] -> E.LetE cdecl <$> mce <*> pure l
 
 tcExp e@(Z.CallE f maybe_ztaus es l) exp_ty =
     withCallContext f e $ do
@@ -1245,7 +1247,7 @@ tcStms (Z.LetS decl l : stms) exp_ty = do
     collectCheckValCtx tau $
       checkDecl decl $ \mcdecl -> do
       mce <- checkStms stms tau
-      return $ E.LetE <$> (head <$> mcdecl) <*> mce <*> pure l
+      return $ mcdecl $ \[cdecl] -> E.LetE cdecl <$> mce <*> pure l
 
 tcStms [stm@Z.BindS{}] _ =
     withSummaryContext stm $
