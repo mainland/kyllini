@@ -28,11 +28,13 @@ import qualified Language.Ziria.Syntax as Z
 
 import KZC.Check.Smart
 import KZC.Check.Types
+import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
 
 data TiEnv = TiEnv
     { curexp     :: Maybe Z.Exp
     , structs    :: !(Map Z.Struct StructDef)
+    , cstructs   :: !(Map E.Struct E.StructDef)
     , varTypes   :: !(Map Z.Var Type)
     , tyVars     :: !(Map TyVar Kind)
     , tyVarTypes :: !(Map TyVar Type)
@@ -44,6 +46,7 @@ defaultTiEnv :: TiEnv
 defaultTiEnv = TiEnv
     { curexp     = Nothing
     , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
+    , cstructs   = Map.fromList [(E.structName s, s) | s <- builtinEStructs]
     , varTypes   = Map.empty
     , tyVars     = Map.empty
     , tyVarTypes = Map.empty
@@ -69,6 +72,18 @@ defaultTiEnv = TiEnv
 
     complexType :: Z.Struct -> Type -> StructDef
     complexType s tau = TypeDef s [] (structT "Complex" [tau]) noLoc
+
+    builtinEStructs :: [E.StructDef]
+    builtinEStructs = [complexEStructDef]
+
+    complexEStructDef :: E.StructDef
+    complexEStructDef = E.StructDef "Complex" [(a, num)] [("re", E.tyVarT a), ("im", E.tyVarT a)] noLoc
+      where
+        a :: E.TyVar
+        a = "a"
+
+        num :: E.Kind
+        num = E.TauK (E.traits [NumR])
 
 data TiState = TiState
     { valctx :: E.Exp -> E.Exp }

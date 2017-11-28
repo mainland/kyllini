@@ -29,7 +29,8 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Bits (shiftL)
 import Data.Foldable (toList)
 import Data.List ((\\))
-import Data.Loc (noLoc)
+import Data.Loc (noLoc,
+                 srclocOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Sequence ((|>),
@@ -139,13 +140,13 @@ lutExp e info = do
 
     maybeMkLUT :: Maybe (Var, StructDef) -> G l m (Var, StructDef)
     maybeMkLUT Nothing = do
-        structdef@(StructDef struct _taus flds _) <- mkStructDef
-        appendTopDecl $ StructD struct [] flds noLoc
-        extendStructs [structdef] $ do
+        struct <- mkStructDef
+        appendTopDecl $ StructD struct (srclocOf struct)
+        extendStructs [struct] $ do
           e'    <- lowerLUTVars (toList $ lutInVars info) e
-          v_lut <- mkLUT structdef e'
-          insertLUT e v_lut structdef
-          return (v_lut, structdef)
+          v_lut <- mkLUT struct e'
+          insertLUT e v_lut struct
+          return (v_lut, struct)
 
     maybeMkLUT (Just (v_lut, structdef)) =
         return (v_lut, structdef)
@@ -165,12 +166,12 @@ lutExp e info = do
               return $ StructDef struct [] (fs `zip` taus) noLoc
 
     mkLUT :: StructDef -> Exp -> G l m Var
-    mkLUT structdef@(StructDef struct _taus _flds _) e = do
+    mkLUT struct e = do
         taus_in     <- mapM lookupLUTVar lvs_in
         bits        <- sum <$> mapM typeSize taus_in
         v_lut       <- gensym "lut"
         let tau_lut =  arrKnownT (2^bits) (structT struct)
-        e'          <- packLUTElement info structdef e
+        e'          <- packLUTElement info struct e
         let gs      =  [mkGen lv tau | (lv, tau) <- lvs_in `zip` taus_in]
         -- We reverse the generators @gs@ here so that the first generator in
         -- @gs@ varies fastest because its values must make up the least
@@ -277,10 +278,10 @@ packLUTElement :: forall m . MonadTc m
                -> StructDef
                -> Exp
                -> m Exp
-packLUTElement info (StructDef struct _taus flds _) e =
+packLUTElement info struct@(StructDef _struct _taus flds _) e =
     bindFreeOutVars $
-      bindResult e $
-      bindResultVars (reverse (resultVars `zip` taus))
+    bindResult e $
+    bindResultVars (reverse (resultVars `zip` taus))
   where
     fs :: [Field]
     taus :: [Type]

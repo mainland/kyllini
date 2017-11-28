@@ -553,9 +553,9 @@ cgDecls :: IsLabel l => [Decl l] -> Cg l a -> Cg l a
 cgDecls decls k = foldr cgDecl k decls
 
 cgDecl :: forall l a . IsLabel l => Decl l -> Cg l a -> Cg l a
-cgDecl decl@(StructD s [] flds l) k =
-    extendStructs [StructDef s [] flds l] $ do
-    maybe_ctau <- runMaybeT $ cgComplexType (StructT s (map snd flds) l)
+cgDecl decl@(StructD struct@(StructDef _ [] flds _) l) k =
+    extendStructs [struct] $ do
+    maybe_ctau <- runMaybeT $ cgComplexType (StructT struct (map snd flds) l)
     genStructDecl maybe_ctau
     k
   where
@@ -573,7 +573,7 @@ cgDecl decl@(StructD s [] flds l) k =
     genStructDecl _ =
         withSummaryContext decl $ do
         cflds <- mapM cgField flds
-        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct s l) { $sdecls:cflds } $id:(cstruct s l);|]
+        appendTopDecl $ rl l [cdecl|typedef struct $id:(cstruct struct l) { $sdecls:cflds } $id:(cstruct struct l);|]
 
 cgDecl decl@StructD{} _k =
     withSummaryContext decl $
@@ -759,7 +759,7 @@ cgConst (EnumC tau) = do
     return $ CInit [cinit|{ $inits:cinits }|]
 
 cgConst (StructC struct taus flds) = do
-    fldDefs <- lookupStructFields struct taus
+    fldDefs <- tyAppStruct struct taus
     -- We must be careful to generate initializers in the same order as the
     -- struct's fields are declared, which is why we map 'cgField' over the
     -- struct's field definitions rather than mapping it over the values as
@@ -3242,8 +3242,7 @@ cgAssign tau ce1 ce2 = do
 
     assign _ tau cv (CStruct flds) = do
         (struct, taus) <- checkStructOrRefStructT tau
-        structdef      <- lookupStruct struct
-        mapM_ (cgAssignField structdef taus) flds
+        mapM_ (cgAssignField struct taus) flds
       where
         cgAssignField :: StructDef -> [Type] -> (Field, CExp l) -> Cg l ()
         cgAssignField structdef taus (fld, ce) = do
@@ -3497,8 +3496,8 @@ cname n@Name{nameSort = Orig}              = namedString n
 cname n@Name{nameSort = Internal (Uniq u)} = namedString n ++ "_" ++ show u
 
 -- | Return the C identifier corresponding to a struct.
-cstruct :: Struct -> SrcLoc -> C.Id
-cstruct (Struct n) = C.Id (zencode (cname n) ++ "_t")
+cstruct :: StructDef -> SrcLoc -> C.Id
+cstruct (StructDef (Struct n) _ _ _) = C.Id (zencode (cname n) ++ "_t")
 
 -- | Construct a prettier if statement
 cif :: C.ToExp ce => ce -> [C.BlockItem] -> [C.BlockItem] -> C.Stm

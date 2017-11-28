@@ -395,8 +395,8 @@ simplDecl decl m = do
     -- substitution. Otherwise, rename it if needed and add it to the current
     -- set of in scope bindings.
     postInlineUnconditionally :: Config -> Decl l -> SimplM l m (Maybe (Decl l), a)
-    postInlineUnconditionally _flags decl@(StructD s taus flds l) =
-        extendStructs [StructDef s taus flds l] $
+    postInlineUnconditionally _flags decl@(StructD struct _) =
+        extendStructs [struct] $
         withBinding decl m
 
     postInlineUnconditionally _flags LetD{} =
@@ -1564,20 +1564,20 @@ simplE (CastE tau e s) = do
     cast tau' e'
   where
     cast :: Type -> Exp -> SimplM l m Exp
-    cast (StructT sn' taus' _) (ConstE (StructC sn _taus flds) s) | isComplexStruct sn && isComplexStruct sn' = do
+    cast (StructT struct' taus' _) (ConstE (StructC struct _taus flds) s) | isComplexStruct struct && isComplexStruct struct' = do
         rewrite
-        flds' <- castStruct cast' sn' flds
-        return $ ConstE (StructC sn' taus' flds') s
+        flds' <- castStruct cast' struct' flds
+        return $ ConstE (StructC struct' taus' flds') s
       where
         cast' :: Type -> Const -> SimplM l m Const
         cast' tau c = do
             ConstE c' _ <- cast tau (ConstE c s)
             return c'
 
-    cast (StructT sn' taus' _) (StructE sn _taus flds s) | isComplexStruct sn && isComplexStruct sn' = do
+    cast (StructT struct' taus' _) (StructE struct _taus flds s) | isComplexStruct struct && isComplexStruct struct' = do
         rewrite
-        flds' <- castStruct cast sn' flds
-        return $ StructE sn' taus' flds' s
+        flds' <- castStruct cast struct' flds
+        return $ StructE struct' taus' flds' s
 
     -- Eliminate casts of constants
     cast tau (ConstE c _) | Just c' <- liftCast tau c = do

@@ -7,7 +7,7 @@ instance Located Struct where
 instance Located TyVar where
   locOf (TyVar l) = locOf l
 instance Located Decl where
-  locOf (StructD _ _ _ l) = locOf l
+  locOf (StructD _ l) = locOf l
   locOf (LetD _ _ _ l) = locOf l
   locOf (LetRefD _ _ _ l) = locOf l
   locOf (LetTypeD _ _ _ l) = locOf l

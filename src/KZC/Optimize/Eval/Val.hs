@@ -97,7 +97,7 @@ data Val l m a where
     UnknownV :: Val l m Exp
 
     ConstV  :: !Const -> Val l m Exp
-    StructV :: !Struct -> [Type] -> !(Map Field (Val l m Exp)) -> Val l m Exp
+    StructV :: StructDef -> [Type] -> !(Map Field (Val l m Exp)) -> Val l m Exp
     ArrayV  :: !(P.PArray (Val l m Exp)) -> Val l m Exp
 
     -- An element of an array
@@ -236,7 +236,7 @@ defaultValue = go
     go StringT{}     = return $ ConstV $ StringC ""
 
     go (StructT struct taus _) = do
-        (fs, ftaus) <- unzip <$> lookupStructFields struct taus
+        (fs, ftaus) <- unzip <$> tyAppStruct struct taus
         vals        <- mapM go ftaus
         return $ StructV struct taus (Map.fromList (fs `zip` vals))
 
@@ -348,7 +348,7 @@ toBitsV = go
         toBitArr (fromIntegral (doubleToWord f)) 64
 
     go (StructV _ _ m) (StructT struct taus _) = do
-        flds <- lookupStructFields struct taus
+        flds <- tyAppStruct struct taus
         packValues [(m Map.! f, tau) | (f, tau) <- flds]
 
     go (ArrayV arr) (ArrT _ tau _) =
@@ -415,7 +415,7 @@ fromBitsV (ArrayV vs) tau =
         go vs tau
 
     go vs (StructT struct taus _) = do
-        flds <- lookupStructFields struct taus
+        flds <- tyAppStruct struct taus
         vals <- unpackValues (ArrayV vs) (map snd flds)
         return $ StructV struct taus (Map.fromList (map fst flds `zip` vals))
 
@@ -497,8 +497,8 @@ enumVals (RefT tau _) =
     enumVals tau
 
 enumVals (StructT struct taus _) = do
-    (fs, ftaus) <- unzip <$> lookupStructFields struct taus
-    valss      <- enumValsList ftaus
+    (fs, ftaus) <- unzip <$> tyAppStruct struct taus
+    valss       <- enumValsList ftaus
     return [StructV struct taus (Map.fromList (fs `zip` vs)) | vs <- valss]
 
 enumVals (ArrT (NatT n _) tau _) = do
@@ -545,7 +545,7 @@ bitcastV val (ArrT (NatT n _) tau_elem _) tau_to | isBitT tau_elem = do
 bitcastV val _ tau_to =
     return $ ExpV $ bitcastE tau_to (toExp val)
 
-complexV :: Struct -> Type -> Val l m Exp -> Val l m Exp -> Val l m Exp
+complexV :: StructDef -> Type -> Val l m Exp -> Val l m Exp -> Val l m Exp
 complexV struct tau a b =
     StructV struct [tau] (Map.fromList [("re", a), ("im", b)])
 
@@ -604,20 +604,20 @@ instance IsLabel l => LiftedNum (Val l m Exp) (Val l m Exp) where
     liftNum2 op f (ConstV c1) (ConstV c2) | Just c' <- liftNum2 op f c1 c2 =
         ConstV c'
 
-    liftNum2 Add _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
-        complexV s tau (a+c) (b+d)
+    liftNum2 Add _ x@(StructV struct [tau] _) y@(StructV struct' [tau'] _) | isComplexStruct struct && struct' == struct && tau' == tau =
+        complexV struct tau (a+c) (b+d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
-    liftNum2 Sub _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
-        complexV s tau (a-c) (b-d)
+    liftNum2 Sub _ x@(StructV struct [tau] _) y@(StructV struct' [tau'] _) | isComplexStruct struct && struct' == struct && tau' == tau =
+        complexV struct tau (a-c) (b-d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
 
-    liftNum2 Mul _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
-        complexV s tau (a*c - b*d) (b*c + a*d)
+    liftNum2 Mul _ x@(StructV struct [tau] _) y@(StructV struct' [tau'] _) | isComplexStruct struct && struct' == struct && tau' == tau =
+        complexV struct tau (a*c - b*d) (b*c + a*d)
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
@@ -629,8 +629,8 @@ instance IsLabel l => LiftedIntegral (Val l m Exp) (Val l m Exp) where
     liftIntegral2 op f (ConstV c1) (ConstV c2) | Just c' <- liftIntegral2 op f c1 c2 =
         ConstV c'
 
-    liftIntegral2 Div _ x@(StructV s [tau] _) y@(StructV s' [tau'] _) | isComplexStruct s && s' == s && tau' == tau =
-        complexV s tau ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
+    liftIntegral2 Div _ x@(StructV struct [tau] _) y@(StructV struct' [tau'] _) | isComplexStruct struct && struct' == struct && tau' == tau =
+        complexV struct tau ((a*c + b*d)/(c*c + d*d)) ((b*c - a*d)/(c*c + d*d))
       where
         (a, b) = uncomplexV x
         (c, d) = uncomplexV y
@@ -690,8 +690,8 @@ toConst :: forall l m . IsLabel l => Val l m Exp -> Const
 toConst (ConstV c) =
     c
 
-toConst (StructV s taus flds) =
-    structC s taus (fs `zip` map toConst vals)
+toConst (StructV struct taus flds) =
+    structC struct taus (fs `zip` map toConst vals)
   where
     (fs, vals) = unzip $ Map.assocs flds
 
@@ -711,10 +711,10 @@ instance IsLabel l => ToExp (Val l m Exp) where
     toExp (ConstV c) =
         constE c
 
-    toExp (StructV s taus flds) =
-        fromMaybe (structE s taus (fs `zip` es)) $ do
+    toExp (StructV struct taus flds) =
+        fromMaybe (structE struct taus (fs `zip` es)) $ do
             cs <- mapM unConstE es
-            return $ constE $ structC s taus (fs `zip` cs)
+            return $ constE $ structC struct taus (fs `zip` cs)
       where
         fs :: [Field]
         vals :: [Val l m Exp]

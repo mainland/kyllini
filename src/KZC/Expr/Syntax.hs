@@ -241,7 +241,7 @@ data Import = Import ModuleName
   deriving (Eq, Ord, Read, Show)
 
 data Decl -- | Struct declaration
-          = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+          = StructD StructDef !SrcLoc
           -- | Standard let binding
           | LetD Var Type Exp !SrcLoc
           -- | Ref binding
@@ -254,6 +254,9 @@ data Decl -- | Struct declaration
           | LetExtFunD Var [Tvk] [(Var, Type)] Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
+data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
+  deriving (Eq, Ord, Read, Show)
+
 data Const = UnitC
            | BoolC !Bool
            | IntC !IP {-# UNPACK #-} !Int
@@ -263,7 +266,7 @@ data Const = UnitC
            | ArrayC !(Vector Const)
            | ReplicateC Int Const
            | EnumC Type
-           | StructC Struct [Type] [(Field, Const)]
+           | StructC StructDef [Type] [(Field, Const)]
   deriving (Eq, Ord, Read, Show)
 
 data Exp = ConstE Const !SrcLoc
@@ -286,8 +289,8 @@ data Exp = ConstE Const !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Nat) !SrcLoc
-         -- Structs Struct
-         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
+         -- Structs
+         | StructE StructDef [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Casts
          | CastE Type Exp !SrcLoc
@@ -423,9 +426,6 @@ data Binop = Eq
            | Cat -- ^ Array concatenation.
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
-  deriving (Eq, Ord, Read, Show)
-
 data Type -- | Base types
           = UnitT !SrcLoc
           | BoolT !SrcLoc
@@ -435,7 +435,7 @@ data Type -- | Base types
           | StringT !SrcLoc
 
           -- | Structs and arrays
-          | StructT Struct [Type] !SrcLoc
+          | StructT StructDef [Type] !SrcLoc
           | ArrT Type Type !SrcLoc
 
           -- | Monadic type
@@ -488,9 +488,9 @@ data Kind = TauK Traits -- ^ Base types, including arrays of base types
 type Tvk = (TyVar, Kind)
 
 -- | @isComplexStruct s@ is @True@ if @s@ is a complex struct type.
-isComplexStruct :: Struct -> Bool
-isComplexStruct "Complex" = True
-isComplexStruct _         = False
+isComplexStruct :: StructDef -> Bool
+isComplexStruct (StructDef "Complex" _ _ _) = True
+isComplexStruct _                           = False
 
 #if !defined(ONLY_TYPEDEFS)
 {------------------------------------------------------------------------------
@@ -810,9 +810,9 @@ instance LiftedCast Const (Maybe Const) where
     liftCast _ _ =
         Nothing
 
-complexC :: Struct -> Const -> Const -> Const
-complexC sname a b =
-    StructC sname [] [("re", a), ("im", b)]
+complexC :: StructDef -> Const -> Const -> Const
+complexC struct a b =
+    StructC struct [] [("re", a), ("im", b)]
 
 uncomplexC :: Const -> (Const, Const)
 uncomplexC c@(StructC struct _ x) | isComplexStruct struct =
@@ -871,18 +871,18 @@ instance Summary Var where
     summary v = text "variable:" <+> align (ppr v)
 
 instance Summary Decl where
-    summary (StructD s tvks _ _)      = text "definition of" <+> ppr s <> pprForall tvks
+    summary (StructD struct _)        = text "definition of" <+> summary struct
     summary (LetD v _ _ _)            = text "definition of" <+> ppr v
     summary (LetRefD v _ _ _)         = text "definition of" <+> ppr v
     summary (LetTypeD alpha _ _ _)    = text "definition of" <+> ppr alpha
     summary (LetFunD f tvks _ _ _ _)  = text "definition of" <+> ppr f <> pprForall tvks
     summary (LetExtFunD f tvks _ _ _) = text "definition of" <+> ppr f <> pprForall tvks
 
+instance Summary StructDef where
+    summary (StructDef struct tvks _ _) = text "struct" <+> ppr struct <> pprForall tvks
+
 instance Summary Exp where
     summary e = text "expression:" <+> align (ppr e)
-
-instance Summary StructDef where
-    summary (StructDef s _ _ _) = text "struct" <+> ppr s
 
 instance Summary Type where
     summary tau = text "type:" <+> align (ppr tau)
@@ -928,9 +928,8 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance Pretty Decl where
-    pprPrec p (StructD s tvks flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
+    pprPrec p (StructD struct _) =
+        pprPrec p struct
 
     pprPrec p (LetD v tau e _) =
         parensIf (p > appPrec) $
@@ -958,6 +957,11 @@ instance Pretty Decl where
 
     pprList decls = stack (map ppr decls)
 
+instance Pretty StructDef where
+    pprPrec p (StructDef s tvks fields _) =
+        parensIf (p > appPrec) $
+        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon fields
+
 instance Pretty Const where
     pprPrec _ UnitC             = text "()"
     pprPrec _ (BoolC False)     = text "false"
@@ -972,8 +976,8 @@ instance Pretty Const where
     pprPrec _ (FloatC _ f)      = ppr f
     pprPrec _ (StringC s)       = text (show s)
 
-    pprPrec _ (StructC s taus flds) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals flds
+    pprPrec _ (StructC (StructDef struct _ _ _) taus flds) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals flds
 
     pprPrec _ (ArrayC cs)
         | not (V.null cs) && V.all isBit cs = char '\'' <> folddoc (<>) (map bitDoc (reverse (V.toList cs)))
@@ -1056,8 +1060,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just len) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
-    pprPrec _ (StructE s taus fields _) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
+    pprPrec _ (StructE (StructDef struct _ _ _) taus fields _) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
@@ -1297,9 +1301,9 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "mut" <+> pprPrec tyappPrec1 tau
 
-    pprPrec p (StructT s taus _) =
+    pprPrec p (StructT (StructDef struct _ _ _) taus _) =
         parensIf (p > tyappPrec) $
-        text "struct" <+> ppr s <> pprTyApp taus
+        text "struct" <+> ppr struct <> pprTyApp taus
 
     pprPrec p (ArrT ind tau@StructT{} _) =
         parensIf (p > tyappPrec) $

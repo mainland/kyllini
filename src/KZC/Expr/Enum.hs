@@ -122,7 +122,7 @@ streamTypeValues (FloatT FP64 _) = return $ Stream f 0
     hi = 2^(64::Int) - 1
 
 streamTypeValues (StructT struct taus _) = do
-    flds <- lookupStructFields struct taus
+    flds <- tyAppStruct struct taus
     let fs :: [Field]
         taus :: [Type]
         (fs, taus) = unzip flds

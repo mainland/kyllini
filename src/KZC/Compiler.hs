@@ -162,7 +162,7 @@ compileRecursive ([modinfo] : sccs) = do
 getStructIds :: C KZC [Symbol]
 getStructIds = do
     decls <- askDecls
-    return [nameSym n | E.StructD (E.Struct n) _ _ _ <- decls]
+    return [nameSym n | E.StructD (E.StructDef (E.Struct n) _ _ _) _ <- decls]
 
 setFileDialect :: MonadIO m => FilePath -> m ()
 setFileDialect filepath = do

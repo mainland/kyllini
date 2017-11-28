@@ -129,9 +129,9 @@ liftDecls (decl:decls) k =
     k' (Just decl) = (decl :) <$> liftDecls decls k
 
 liftDecl :: MonadTc m => Decl -> (Maybe Decl -> LiftM m a) -> LiftM m a
-liftDecl (StructD s taus flds l) k =
-    extendStructs [StructDef s taus flds l] $ do
-    appendTopDecl $ StructD s taus flds l
+liftDecl (StructD struct l) k =
+    extendStructs [struct] $ do
+    appendTopDecl $ StructD struct l
     k Nothing
 
 liftDecl decl@(LetD v tau e l) k | isPureT tau =

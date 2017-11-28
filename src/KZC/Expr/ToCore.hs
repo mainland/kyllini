@@ -113,9 +113,9 @@ transDecl :: (IsLabel l, MonadTc m)
           => E.Decl
           -> (Decl l -> TC m a)
           -> TC m a
-transDecl (E.StructD s taus flds l) k =
-    extendStructs [StructDef s taus flds l] $
-    k $ StructD s taus flds l
+transDecl (E.StructD struct l) k =
+    extendStructs [struct] $
+    k $ StructD struct l
 
 transDecl decl@(E.LetD v tau e l) k
   | isPureT tau =

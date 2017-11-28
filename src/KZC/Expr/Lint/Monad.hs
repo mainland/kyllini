@@ -28,7 +28,6 @@ module KZC.Expr.Lint.Monad (
     extendStructs,
     lookupStruct,
     maybeLookupStruct,
-    lookupStructFields,
     tyAppStruct,
 
     inLocalScope,
@@ -240,11 +239,10 @@ defaultValueC (FixT qp _)   = return $ FixC qp 0
 defaultValueC (FloatT fp _) = return $ FloatC fp 0
 defaultValueC StringT{}     = return $ StringC ""
 
-defaultValueC (StructT s taus _) = do
-    sdef        <- lookupStruct s
-    (fs, ftaus) <- unzip <$> tyAppStruct sdef taus
+defaultValueC (StructT struct taus _) = do
+    (fs, ftaus) <- unzip <$> tyAppStruct struct taus
     cs          <- mapM defaultValueC ftaus
-    return $ StructC s taus (fs `zip` cs)
+    return $ StructC struct taus (fs `zip` cs)
 
 defaultValueC (ArrT (NatT n _) tau _) = do
     c <- defaultValueC tau
@@ -277,14 +275,9 @@ maybeLookupStruct :: MonadTc m => Struct -> m (Maybe StructDef)
 maybeLookupStruct s =
     asksTc (Map.lookup s . structs)
 
-lookupStructFields :: MonadTc m => Struct -> [Type] -> m [(Field, Type)]
-lookupStructFields struct taus = do
-    sdef <- lookupStruct struct
-    tyAppStruct sdef taus
-
 -- | Perform type application of a struct to type arguments and return the
 -- resulting fields and their types.
-tyAppStruct :: forall m . MonadTc m => StructDef -> [Type] -> m [(Field, Type)]
+tyAppStruct :: Monad m => StructDef -> [Type] -> m [(Field, Type)]
 tyAppStruct (StructDef _ tvks flds _) taus =
     return (map fst flds `zip` subst theta mempty (map snd flds))
   where
@@ -536,9 +529,8 @@ hasZeroTypeSize = go
     go (ST (C tau) _ _ _ _) = hasZeroTypeSize tau
     go (RefT tau _)         = hasZeroTypeSize tau
 
-    go (StructT s taus _) = do
-        sdef <- lookupStruct s
-        flds <- tyAppStruct sdef taus
+    go (StructT struct taus _) = do
+        flds <- tyAppStruct struct taus
         and <$> mapM (hasZeroTypeSize . snd) flds
 
     go (ForallT _ (ST (C tau) _ _ _ _) _) =
@@ -570,9 +562,8 @@ typeSize = go
     go (ST (C tau) _ _ _ _) = go tau
     go (RefT tau _)         = go tau
 
-    go (StructT s taus _) = do
-        sdef <- lookupStruct s
-        flds <- tyAppStruct sdef taus
+    go (StructT struct taus _) = do
+        flds <- tyAppStruct struct taus
         sum <$> mapM (typeSize . snd) flds
 
     go (ForallT _ (ST (C tau) _ _ _ _) _) =
@@ -633,11 +624,10 @@ relevantBindings =
 
 castStruct :: forall a m . MonadTc m
            => (Type -> a -> m a)
-           -> Struct
+           -> StructDef
            -> [(Field, a)]
            -> m [(Field, a)]
-castStruct cast sn flds = do
-    StructDef _ _ fldtaus _ <- lookupStruct sn
+castStruct cast (StructDef _ _ fldtaus _) flds =
     mapM (castField fldtaus) flds
   where
     castField :: [(Field, Type)] -> (Field, a) -> m (Field, a)

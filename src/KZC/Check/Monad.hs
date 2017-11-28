@@ -28,6 +28,9 @@ module KZC.Check.Monad (
     maybeLookupStruct,
     tyAppStruct,
 
+    extendCoreStructs,
+    lookupCoreStruct,
+
     extendVars,
     lookupVar,
 
@@ -87,6 +90,7 @@ import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
 import KZC.Config
+import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
 import KZC.Monad
 import KZC.Platform
@@ -183,13 +187,13 @@ maybeLookupStruct s =
 -- | Perform type application of a struct to type arguments and return the
 -- resulting type and its fields.
 tyAppStruct :: StructDef -> [Type] -> Ti (Type, [(Z.Field, Type)])
-tyAppStruct sdef taus = go sdef
+tyAppStruct struct taus = go struct
   where
     theta :: Map TyVar Type
     theta = Map.fromList (map fst tvks `zip` taus)
 
     tvks :: [Tvk]
-    tvks = case sdef of
+    tvks = case struct of
              StructDef _ tvks _ _ -> tvks
              TypeDef _ tvks _ _   -> tvks
 
@@ -200,12 +204,23 @@ tyAppStruct sdef taus = go sdef
         go (TypeDef s tvks tau' l)
 
     go (TypeDef s _ (StructT s' taus' _) _) = do
-        sdef'        <- lookupStruct s'
-        (tau', flds) <- tyAppStruct sdef' taus'
+        struct'      <- lookupStruct s'
+        (tau', flds) <- tyAppStruct struct' taus'
         return (synT (structT s taus) tau', flds)
 
     go (TypeDef s _ tau' _) =
         return (synT (structT s taus) tau', [])
+
+extendCoreStructs :: [E.StructDef] -> Ti a -> Ti a
+extendCoreStructs ss =
+    extendEnv cstructs
+        (\env x -> env { cstructs = x }) [(E.structName s, s) | s <- ss]
+
+lookupCoreStruct :: E.Struct -> Ti E.StructDef
+lookupCoreStruct s =
+    lookupEnv cstructs onerr s
+  where
+    onerr = notInScope (text "Struct") s
 
 extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do
@@ -293,8 +308,8 @@ typeSize = simplNat >=> go
     go (RefT tau _)            = go tau
 
     go (StructT s taus _) = do
-        sdef      <- lookupStruct s
-        (_, flds) <- tyAppStruct sdef taus
+        struct    <- lookupStruct s
+        (_, flds) <- tyAppStruct struct taus
         sum <$> mapM (typeSize . snd) flds
 
     go (ForallT _ (ST (C tau _) _ _ _ _) _) =

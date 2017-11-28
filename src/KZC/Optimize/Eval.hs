@@ -102,8 +102,8 @@ evalDecl :: forall l m a . (IsLabel l, MonadTcRef m)
          => Decl l
          -> ((FrozenHeap l m -> EvalM l m (Decl l)) -> EvalM l m a)
          -> EvalM l m a
-evalDecl decl@(StructD s taus flds l) k =
-    extendStructs [StructDef s taus flds l] $
+evalDecl decl@(StructD struct _) k =
+    extendStructs [struct] $
     k $ const . return $ decl
 
 evalDecl (LetD decl s) k =
@@ -548,10 +548,10 @@ evalConst (ReplicateC n c) = do
 evalConst (EnumC tau) =
     evalConst =<< ArrayC <$> enumType tau
 
-evalConst (StructC s taus flds) = do
+evalConst (StructC struct taus flds) = do
     vals  <- mapM evalConst cs
     taus' <- mapM simplType taus
-    return $ StructV s taus' (Map.fromList (fs `zip` vals))
+    return $ StructV struct taus' (Map.fromList (fs `zip` vals))
   where
     fs :: [Field]
     cs :: [Const]
@@ -897,10 +897,10 @@ evalExp e =
           then evalIdx v_arr v_start len
           else partialExp $ IdxE (toExp v_arr) (toExp v_start) nat s
 
-    eval flags (StructE s taus flds _) = do
+    eval flags (StructE struct taus flds _) = do
         vals  <- mapM (eval flags) es
         taus' <- mapM simplType taus
-        return $ StructV s taus' (Map.fromList (fs `zip` vals))
+        return $ StructV struct taus' (Map.fromList (fs `zip` vals))
       where
         fs :: [Field]
         es :: [Exp]
@@ -918,9 +918,9 @@ evalExp e =
         cast (subst phi mempty tau) val
       where
         cast :: Type -> Val l m Exp -> EvalM l m (Val l m Exp)
-        cast (StructT s [_tau] _) (StructV s' [tau'] flds) | isComplexStruct s && isComplexStruct s' = do
-            flds' <- castStruct cast s' (Map.toList flds)
-            return $ StructV s' [tau'] (Map.fromList flds')
+        cast (StructT struct' [tau'] _) (StructV struct [_tau] flds) | isComplexStruct struct && isComplexStruct struct' = do
+            flds' <- castStruct cast struct' (Map.toList flds)
+            return $ StructV struct' [tau'] (Map.fromList flds')
 
         cast tau val =
             maybePartialVal $ liftCast tau val

@@ -240,7 +240,7 @@ data Import = Import ModuleName
 data Main l = Main (Comp l) Type
   deriving (Eq, Ord, Read, Show)
 
-data Decl l = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
+data Decl l = StructD StructDef !SrcLoc
             | LetD LocalDecl !SrcLoc
             | LetFunD BoundVar [Tvk] [(Var, Type)] Type Exp !SrcLoc
             | LetExtFunD BoundVar [Tvk] [(Var, Type)] Type !SrcLoc
@@ -288,8 +288,8 @@ data Exp = ConstE Const !SrcLoc
          -- Arrays
          | ArrayE [Exp] !SrcLoc
          | IdxE Exp Exp (Maybe Nat) !SrcLoc
-         -- Structs Struct
-         | StructE Struct [Type] [(Field, Exp)] !SrcLoc
+         -- Structs
+         | StructE StructDef [Type] [(Field, Exp)] !SrcLoc
          | ProjE Exp Field !SrcLoc
          -- Casts
          | CastE Type Exp !SrcLoc
@@ -688,7 +688,7 @@ expToStms e                             = [ExpS e (srclocOf e)]
  ------------------------------------------------------------------------------}
 
 instance Summary (Decl l) where
-    summary (StructD s tvks _ _)         = text "definition of" <+> ppr s <> pprForall tvks
+    summary (StructD struct _)           = text "definition of" <+> summary struct
     summary (LetD decl _)                = summary decl
     summary (LetFunD f tvks _ _ _ _)     = text "definition of" <+> ppr f <> pprForall tvks
     summary (LetExtFunD f tvks _ _ _)    = text "definition of" <+> ppr f <> pprForall tvks
@@ -769,9 +769,8 @@ instance Pretty Import where
     pprList imports = semisep (map ppr imports)
 
 instance IsLabel l => Pretty (Decl l) where
-    pprPrec p (StructD s tvks flds _) =
-        parensIf (p > appPrec) $
-        text "struct" <+> ppr s <> pprForall tvks <+> pprStruct comma colon flds
+    pprPrec p (StructD struct _) =
+        pprPrec p struct
 
     pprPrec p (LetD decl _) =
         pprPrec p decl
@@ -885,8 +884,8 @@ instance Pretty Exp where
     pprPrec _ (IdxE e1 e2 (Just len) _) =
         pprPrec appPrec1 e1 <> brackets (commasep [ppr e2, ppr len])
 
-    pprPrec _ (StructE s taus fields _) =
-        ppr s <> pprTyApp taus <+> pprStruct comma equals fields
+    pprPrec _ (StructE (StructDef struct _ _ _) taus fields _) =
+        ppr struct <> pprTyApp taus <+> pprStruct comma equals fields
 
     pprPrec _ (ProjE e f _) =
         pprPrec appPrec1 e <> text "." <> ppr f
