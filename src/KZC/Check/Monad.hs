@@ -28,6 +28,9 @@ module KZC.Check.Monad (
     maybeLookupStruct,
     tyAppStruct,
 
+    extendCoreStructs,
+    lookupCoreStruct,
+
     extendVars,
     lookupVar,
 
@@ -87,6 +90,7 @@ import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
 import KZC.Config
+import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
 import KZC.Monad
 import KZC.Platform
@@ -206,6 +210,17 @@ tyAppStruct struct taus = go struct
 
     go (TypeDef s _ tau' _) =
         return (synT (structT s taus) tau', [])
+
+extendCoreStructs :: [E.StructDef] -> Ti a -> Ti a
+extendCoreStructs ss =
+    extendEnv cstructs
+        (\env x -> env { cstructs = x }) [(E.structName s, s) | s <- ss]
+
+lookupCoreStruct :: E.Struct -> Ti E.StructDef
+lookupCoreStruct s =
+    lookupEnv cstructs onerr s
+  where
+    onerr = notInScope (text "Struct") s
 
 extendVars :: [(Z.Var, Type)] -> Ti a -> Ti a
 extendVars vtaus m = do

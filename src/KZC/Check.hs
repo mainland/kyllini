@@ -342,7 +342,8 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
     let struct   = StructDef zs tvks (zfields `zip` taus_fields) l
     let mcdecl k = alwaysWithSummaryContext decl $ do
                    cstruct <- trans struct
-                   k [E.StructD cstruct l]
+                   extendCoreStructs [cstruct] $
+                     k [E.StructD cstruct l]
     extendStructs [struct] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
@@ -887,10 +888,10 @@ tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     checkMissingFields zflds fldDefs
     checkExtraFields zflds fldDefs
     (s', taus') <- checkStructT tau
-    struct'     <- lookupStruct s'
     (fs, mces) <- unzip <$> mapM (checkField fldDefs) zflds
     instType tau exp_ty
-    return $ do cstruct <- trans struct'
+    return $ do cs      <- trans s'
+                cstruct <- lookupCoreStruct cs
                 ctaus   <- mapM trans taus'
                 cfs     <- mapM trans fs
                 ces     <- sequence mces
@@ -2861,17 +2862,17 @@ instance Trans Type E.Type where
     trans tau0 = compress tau0 >>= go
       where
         go :: Type -> Ti E.Type
-        go (UnitT l)          = E.UnitT <$> pure l
-        go (BoolT l)          = E.BoolT <$> pure l
-        go (IntT ip l)        = E.IntT <$> trans ip <*> pure l
-        go (FixT qp l)        = E.FixT <$> trans qp <*> pure l
-        go (FloatT fp l)      = E.FloatT <$> trans fp <*> pure l
-        go (StringT l)        = pure $ E.StringT l
-        go (SynT _ tau _)     = go tau
-        go (StructT s taus l) = do struct <- lookupStruct s
-                                   E.StructT <$> trans struct <*> mapM trans taus <*> pure l
-        go (RefT tau l)       = E.RefT <$> go tau <*> pure l
-        go (ArrT i tau l)     = E.ArrT <$> trans i <*> go tau <*> pure l
+        go (UnitT l)           = E.UnitT <$> pure l
+        go (BoolT l)           = E.BoolT <$> pure l
+        go (IntT ip l)         = E.IntT <$> trans ip <*> pure l
+        go (FixT qp l)         = E.FixT <$> trans qp <*> pure l
+        go (FloatT fp l)       = E.FloatT <$> trans fp <*> pure l
+        go (StringT l)         = pure $ E.StringT l
+        go (SynT _ tau _)      = go tau
+        go (StructT zs taus l) = do estruct <- trans zs >>= lookupCoreStruct
+                                    E.StructT estruct <$> mapM trans taus <*> pure l
+        go (RefT tau l)        = E.RefT <$> go tau <*> pure l
+        go (ArrT i tau l)      = E.ArrT <$> trans i <*> go tau <*> pure l
 
         go (ST omega tau1 tau2 tau3 l) =
             E.ST <$> trans omega <*> go tau1 <*> go tau2 <*> go tau3 <*> pure l
