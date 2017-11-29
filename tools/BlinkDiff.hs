@@ -17,35 +17,56 @@
    permissions and limitations under the License.
 -}
 
-{-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 module Main where
 
-import System.Console.GetOpt
-import System.Environment
-import System.Exit
-import System.IO
-import System.IO.Error
-import GHC.IO.Exception
-
-import Data.IORef
-
-import Control.Exception
-import Text.Parsec
-import qualified Data.Map as M
-
-import Foreign
-
-import Control.Arrow ( (***) )
-import Control.Monad ( when, unless, foldM )
-import Data.List     ( nub )
-import Data.Maybe    ( isJust, fromJust, fromMaybe )
-import Data.Monoid   ( (<>) )
-import Text.Read     ( readMaybe )
-
+import Control.Arrow         ( (***) )
+import Control.Monad         ( void,
+                               when )
+import Data.IORef            ( IORef,
+                               newIORef,
+                               readIORef,
+                               writeIORef )
+import Data.Maybe            ( isJust,
+                               fromJust,
+                               fromMaybe )
+import Data.Monoid           ( (<>) )
+import Data.Word             ( Word8 )
+import Foreign               ( ForeignPtr,
+                               mallocForeignPtrBytes,
+                               peekElemOff,
+                               withForeignPtr )
+import GHC.IO.Exception      ( ioe_description )
+import System.Console.GetOpt ( ArgDescr(..),
+                               ArgOrder(..),
+                               OptDescr(..),
+                               getOpt,
+                               usageInfo )
+import System.Environment    ( getArgs )
+import System.Exit           ( ExitCode(..),
+                               exitWith,
+                               exitSuccess)
+import System.IO             ( BufferMode(..),
+                               Handle,
+                               IOMode(..),
+                               hClose,
+                               hGetBuf,
+                               hIsEOF,
+                               hGetChar,
+                               hPutStr,
+                               hPutStrLn,
+                               hSetBuffering,
+                               openBinaryFile,
+                               openFile,
+                               stderr,
+                               stdout )
+import System.IO.Error       ( catchIOError,
+                               ioeGetFileName )
+import Text.Read             ( readMaybe )
 
 ----------------------------------
 -- Begin Command Line Arguments --
@@ -56,34 +77,31 @@ data DynFlag =
     InFile String
   | GroundFile String
   | Verbose
-  | PrefixAllowed     -- PrefixAllowed means that # entries can differ
-  | Debug             -- If set then Debug mode is on (else binary is assumed)
+  | PrefixAllowed        -- ^ PrefixAllowed means that # entries can differ
+  | Debug                -- ^ If set then Debug mode is on (else binary is
+                         -- assumed)
   | Help
-  | NinetyPercent Double
-                      -- Compare files in debug mode, assuming int-valued
-                      -- entries that they must be within each other by
-                      -- the percent expressed by the double [0.0 - 1.0]
-  | Threshold Double
-                      -- When the absolute value is too small (close to zero)
-                      -- the relative error will be arbitrary and we'll get false positives
-                      -- To avoid this, set the threshold, and any mismatched values
-                      -- that are below the threshold will be ignored
-  | Offset Double
-                      -- Allow a certain offset (deviation) from the required value.
-                      -- This ensures that floating point rounding errors caused
-                      -- by imprecisions in IEEE 754 will not affect the match.
-                      -- Usually only an offset of 1.0 is required, which allows
-                      -- the result to be +/- 1.0 of the required value.
+  | NinetyPercent Double -- ^ Compare files in debug mode, assuming int-valued
+                         -- entries that they must be within each other by the
+                         -- percent expressed by the double [0.0 - 1.0]
+  | Threshold Double     -- ^ When the absolute value is too small (close to
+                         -- zero) the relative error will be arbitrary and we'll
+                         -- get false positives To avoid this, set the
+                         -- threshold, and any mismatched values that are below
+                         -- the threshold will be ignored
+  | Offset Double        -- ^ Allow a certain offset (deviation) from the
+                         -- required value.  This ensures that floating point
+                         -- rounding errors caused by imprecisions in IEEE 754
+                         -- will not affect the match.  Usually only an offset
+                         -- of 1.0 is required, which allows the result to be
+                         -- +/- 1.0 of the required value.
   | AsComplex
   deriving Eq
 
-
 type DynFlags = [DynFlag]
-
 
 isDynFlagSet :: DynFlags -> DynFlag -> Bool
 isDynFlagSet flags f = f `elem` flags
-
 
 options :: [OptDescr DynFlag]
 options
@@ -98,52 +116,44 @@ options
     , Option ['o']     ["off"]        (ReqArg parse_off "offset")     "Ignore a certain offset (deviation) from the required value"
     , Option ['c']     ["as-complex"] (NoArg AsComplex)               "When precision is on and debug is on, the precision test is done for complex numbers (i.e. pairs of entries at a time)"
     ]
-  where parse_npc :: String -> DynFlag
-        parse_npc s = NinetyPercent (read s)
+  where
+    parse_npc :: String -> DynFlag
+    parse_npc s = NinetyPercent (read s)
 
-        parse_thr :: String -> DynFlag
-        parse_thr s = Threshold (read s)
+    parse_thr :: String -> DynFlag
+    parse_thr s = Threshold (read s)
 
-        parse_off :: String -> DynFlag
-        parse_off s = Offset (read s)
-
+    parse_off :: String -> DynFlag
+    parse_off s = Offset (read s)
 
 usage :: String
 usage = "Usage: blinkdiff [OPTION...] \n\
         \Exit codes: 0 = files match, 1 = mismatch, 2 = some error occured\n"
 
-
 fullUsage :: String
 fullUsage = usageInfo usage options
-
 
 failWithMsg :: String -> IO a
 failWithMsg msg = hPutStrLn stderr msg >> exitWith (ExitFailure 2)
 
-
 failWithUsageMsg :: String -> IO a
 failWithUsageMsg msg = failWithMsg (msg <> "\n" <> fullUsage)
 
-
 mismatchWithMsg :: Bool -> String -> IO ()
-mismatchWithMsg verbose_on msg
-  = do { when verbose_on $
-         putStrLn ("Mismatch: " <> msg)
-       ; exitWith (ExitFailure 1)
-       }
-
+mismatchWithMsg verbose_on msg = do
+    when verbose_on $
+      putStrLn ("Mismatch: " <> msg)
+    exitWith (ExitFailure 1)
 
 getInFile :: DynFlags -> IO String
 getInFile []                = failWithUsageMsg "No input file given"
 getInFile (InFile file : _) = return file
 getInFile (_ : opts')       = getInFile opts'
 
-
 getGndFile :: DynFlags -> IO String
 getGndFile []                    = failWithUsageMsg "No ground file given"
 getGndFile (GroundFile file : _) = return file
 getGndFile (_ : opts')           = getGndFile opts'
-
 
 getNpcFlag :: DynFlags -> IO (Maybe Double)
 -- Returns Nothing if npc is not set, or 0-100 if npc is set
@@ -153,7 +163,6 @@ getNpcFlag (NinetyPercent n : _)
   | otherwise          = failWithUsageMsg "Ninety-percent must be in range 0.0-1.0"
 getNpcFlag (_ : opts') = getNpcFlag opts'
 
-
 getThrFlag :: DynFlags -> IO (Maybe Double)
 -- Returns Nothing if npc is not set, or 0-100 if npc is set
 getThrFlag []          = return Nothing
@@ -161,7 +170,6 @@ getThrFlag (Threshold n : _)
   | 0.0 <= n           = return (Just n)
   | otherwise          = failWithUsageMsg "Threshold must be positive"
 getThrFlag (_ : opts') = getThrFlag opts'
-
 
 -- | Get the offset from the arguments
 getOffFlag :: DynFlags -> IO (Maybe Double)
@@ -171,61 +179,62 @@ getOffFlag (Offset n : _)
   | otherwise          = failWithUsageMsg "Offset must be positive"
 getOffFlag (_ : opts') = getOffFlag opts'
 
-
 compilerOpts :: [String] -> IO (DynFlags, [String])
 compilerOpts argv =
   case getOpt Permute options argv of
          (o,n,[]  ) -> return (o,n)
          (_,_,errs) -> failWithUsageMsg $ concat errs
 
-
 --------------------------------
 -- End Command Line Arguments --
 --------------------------------
-
 
 -- Return codes:
 -- 0 files match
 -- 1 file mismatch
 -- 2 some exception/error code
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-main = do { hSetBuffering stdout NoBuffering
-          ; catchIOError go (errHandler "Invalid parameters!") }
- where go = do { args <- getArgs
-               ; (flags,_) <- compilerOpts args
-               ; when (isDynFlagSet flags Help) $ failWithMsg fullUsage
-               ; inFile  <- getInFile flags
-               ; gndFile <- getGndFile flags
-               ; npc <- getNpcFlag flags
-               ; thr <- getThrFlag flags
-               ; off <- getOffFlag flags
-               ; when ((isJust npc || isJust thr || isJust off) && not (isDynFlagSet flags Debug)) $
-                 failWithUsageMsg $
-                   "Ninety-percent, threshold, and offset can only be used in debug mode"
-               ; doCompare flags npc thr off inFile gndFile
-               }
-
+main :: IO ()
+main = do
+    hSetBuffering stdout NoBuffering
+    catchIOError go (errHandler "Invalid parameters!")
+  where
+    go :: IO ()
+    go = do
+        args <- getArgs
+        (flags,_) <- compilerOpts args
+        when (isDynFlagSet flags Help) $
+          failWithMsg fullUsage
+        inFile  <- getInFile flags
+        gndFile <- getGndFile flags
+        npc <- getNpcFlag flags
+        thr <- getThrFlag flags
+        off <- getOffFlag flags
+        when ((isJust npc || isJust thr || isJust off) && not (isDynFlagSet flags Debug)) $
+          failWithUsageMsg
+          "Ninety-percent, threshold, and offset can only be used in debug mode"
+        doCompare flags npc thr off inFile gndFile
 
 -- Abnormal termination (exit code 2)
-errHandler msg (e :: IOError)
-  = do -- hPutStrLn stderr msg
-       let fn = ioe_filename e
-       when (isJust fn) $ hPutStr stderr (fromJust fn <> ":")
-       hPutStrLn stderr (ioe_description e)
-       exitWith (ExitFailure 2)
+errHandler :: String -> IOError -> IO ()
+errHandler _msg e = do
+    -- hPutStrLn stderr msg
+    when (isJust fn) $
+      hPutStr stderr (fromJust fn <> ":")
+    hPutStrLn stderr (ioe_description e)
+    exitWith (ExitFailure 2)
+  where
+    fn :: Maybe FilePath
+    fn = ioeGetFileName e
 
-
-doCompare
-  :: DynFlags -> Maybe Double -> Maybe Double -> Maybe Double -> String -> String -> IO ()
-doCompare dflags npc thr off infile gndfile
-  = withFiles infile gndfile $
+doCompare :: DynFlags -> Maybe Double -> Maybe Double -> Maybe Double -> String -> String -> IO ()
+doCompare dflags npc thr off infile gndfile =
+  withFiles infile gndfile $
     if debug_on then
-        if complex_on then
-            do_compare prefix_on verbose_on $ textPairFmtReader npc thr off
-        else
-            do_compare prefix_on verbose_on $ textFmtReader npc thr off
-    else
-        do_compare prefix_on verbose_on $ binFmtReader
+      if complex_on
+        then do_compare prefix_on verbose_on $ textPairFmtReader npc thr off
+        else do_compare prefix_on verbose_on $ textFmtReader npc thr off
+    else do_compare prefix_on verbose_on binFmtReader
   where
     debug_on   = isDynFlagSet dflags Debug
     complex_on = isDynFlagSet dflags AsComplex
@@ -234,172 +243,191 @@ doCompare dflags npc thr off infile gndfile
     open_file  = if debug_on then openFile else openBinaryFile
 
     withFiles ifile gfile act =
-      catchIOError (do { hin  <- open_file ifile ReadMode
-                       ; hgnd <- open_file gfile ReadMode
-                       ; act hin hgnd
-                       ; hClose hin >> hClose hgnd }) $
-      errHandler "Cannot open file!"
-
+        do hin  <- open_file ifile ReadMode
+           hgnd <- open_file gfile ReadMode
+           void $ act hin hgnd
+           hClose hin >> hClose hgnd
+      `catchIOError` errHandler "Cannot open file!"
 
 -- Main comparison loop
-do_compare :: Show b
+do_compare :: forall s b . Show b
            => Bool  -- Prefix  flag
            -> Bool  -- Verbose flag
            -> FmtReader s b -> Handle -> Handle -> IO ()
 -- Post: Should never raise an IOError
-do_compare prefix_on verbose_on fmtr hin hgnd
-  = do s1 <- init_state fmtr -- Initialize two readers
-       s2 <- init_state fmtr
-       aref <- newIORef (1.0 :: Double)
-       go aref 0 (s1,s2)
+do_compare prefix_on verbose_on fmtr hin hgnd = do
+    s1   <- init_state fmtr -- Initialize two readers
+    s2   <- init_state fmtr
+    aref <- newIORef (1.0 :: Double)
+    go aref 0 (s1,s2)
   where
-    go aref cnt (s1,s2)
-     = do { hin_eof  <- hIsEOF hin
-          ; hgnd_eof <- hIsEOF hgnd
-          ; if hin_eof then
-               if prefix_on then
-                  if cnt > 0 || (cnt == 0 && hgnd_eof) then
-                     do { let msg = if hgnd_eof then "Matching! (EOF)"
-                                  else "Matching! (Prefix of " <>
-                                            show cnt <> " entries)"
-                        ; when verbose_on $
-                          do { putStr msg
-                             ; r <- readIORef aref
-                             ; putStrLn (" (Accuracy " <> show (to_pc r) <> "%)") }
-                        ; exitWith ExitSuccess }
-                       -- cnt = 0 && (not hgnd_eof)
-                  else mismatchWithMsg verbose_on $
-                         "Empty outfile!"
-               else if hgnd_eof then
-                      do { when verbose_on $
-                           do { putStr "Matching! (EOF)"
-                              ; r <- readIORef aref
-                              ; putStrLn
-                                   (" (Accuracy " <> show (to_pc r) <> "%)") }
-                         ; exitWith ExitSuccess }
-                    else mismatchWithMsg verbose_on $
-                         "file shorter than ground!"
-            else
-                do { mb_ival <- read_entry fmtr s1 hin
-                   ; when hgnd_eof (mismatchWithMsg verbose_on "ground shorter than file!")
-                   ; mb_gval <- read_entry fmtr s2 hgnd
-                   ; case (mb_ival,mb_gval) of
-                        (Nothing,_) ->
-                           failWithMsg "Parse error! Bad input file"
-                        (_,Nothing) ->
-                           failWithMsg "Parse error! Bad ground file"
-                        (Just ival,Just gval) ->
-                           case eq_entry fmtr ival gval of
-                             CmpEq -> go aref (cnt+1) (s1,s2)
-                             CmpWithin r ->
-                               do { rstored <- readIORef aref
-                                  ; when (r < rstored) $ writeIORef aref r
-                                  ; go aref (cnt+1) (s1,s2) }
-                             CmpDiff ->
-                               mismatchWithMsg verbose_on $
-                               ("at entry " <> show cnt <> "\n" <>
-                                   "(file) " <> show ival <> " - (ground) " <> show gval)
-                   } }
-    -- Convert a double from 0.0-1.0 to 00.00-100.00%
-    to_pc (r :: Double) =
-      let round_up :: Integer = round (10000.0 * r)
-      in fromIntegral round_up / 100.00
+    go :: IORef Double -> Int -> (s, s) -> IO ()
+    go aref cnt (s1,s2) = do
+        hin_eof  <- hIsEOF hin
+        hgnd_eof <- hIsEOF hgnd
+        if hin_eof
+          then inEOF aref cnt hgnd_eof
+          else do
+              mb_ival <- read_entry fmtr s1 hin
+              when hgnd_eof (mismatchWithMsg verbose_on "ground shorter than file!")
+              mb_gval <- read_entry fmtr s2 hgnd
+              case (mb_ival,mb_gval) of
+                (Nothing,_) ->
+                  failWithMsg "Parse error! Bad input file"
+                (_,Nothing) ->
+                  failWithMsg "Parse error! Bad ground file"
+                (Just ival,Just gval) ->
+                     case eq_entry fmtr ival gval of
+                       CmpEq -> go aref (cnt+1) (s1,s2)
+                       CmpWithin r -> do rstored <- readIORef aref
+                                         when (r < rstored) $ writeIORef aref r
+                                         go aref (cnt+1) (s1,s2)
+                       CmpDiff ->
+                         mismatchWithMsg verbose_on $
+                           "at entry " <> show cnt <> "\n" <>
+                           "(file) " <> show ival <> " - (ground) " <> show gval
 
+    inEOF :: IORef Double
+          -> Int
+          -> Bool  -- ^ Is ground EOF
+          -> IO ()
+    inEOF aref cnt hgnd_eof | prefix_on =
+      if cnt > 0 || (cnt == 0 && hgnd_eof)
+      then do
+        let msg = if hgnd_eof
+                  then "Matching! (EOF)"
+                  else "Matching! (Prefix of " <> show cnt <> " entries)"
+        when verbose_on $ do
+            putStr msg
+            r <- readIORef aref
+            putStrLn (" (Accuracy " <> show (to_pc r) <> "%)")
+        exitSuccess
+      else mismatchWithMsg verbose_on "Empty outfile!"
 
-{- Format readers
- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  A Format Reader consists of an initialization function, a reader for
-  the next entry and a comparison function that can compare two entries.
--}
-data FmtReader s a =
-  MkFmtReader {
-      init_state  :: IO s
+    inEOF aref _cnt hgnd_eof | hgnd_eof = do
+        when verbose_on $ do
+            putStr "Matching! (EOF)"
+            r <- readIORef aref
+            putStrLn (" (Accuracy " <> show (to_pc r) <> "%)")
+        exitSuccess
+
+    inEOF _aref _cnt _hgnd_eof =
+        mismatchWithMsg verbose_on "file shorter than ground!"
+
+    -- | Convert a double from 0.0-1.0 to 00.00-100.00%
+    to_pc :: Double -> Double
+    to_pc r = fromIntegral round_up / 100.00
+      where
+        round_up :: Integer
+        round_up = round (10000.0 * r)
+
+-- | Format reader. A format reader consists of an initialization function, a
+-- reader for the next entry, and a comparison function that can compare two
+-- entries.
+data FmtReader s a = MkFmtReader
+    { init_state  :: IO s
       -- Pre: handle is not EOF, Post: never raises an IOError
     , read_entry  :: s -> Handle -> IO (Maybe a)
-    , eq_entry    :: a -> a -> CmpRes }
+    , eq_entry    :: a -> a -> CmpRes
+    }
 
-
--- Comparison result
-data CmpRes =
-   CmpEq             -- Exactly the same
- | CmpWithin Double  -- Entries are close by a percent
-                     -- The threshold is something that
-                     -- each FmtReader knows about
- | CmpDiff           -- Definitely different
-
+-- | Comparison result
+data CmpRes = CmpEq             -- ^ Exactly the same
+            | CmpWithin Double  -- ^ Entries are close by a percent. The
+                                -- threshold is something that each 'FmtReader'
+                                -- knows about.
+            | CmpDiff           -- ^ Definitely different
 
 -- | Check if the values are exactly equal
 compareAbsolute :: Eq a => a -> a -> CmpRes
 compareAbsolute x y = if x == y then CmpEq else CmpDiff
 
-
--- A Binary Format Reader
--- ~~~~~~~~~~~~~~~~~~~~~~
+-- | A Binary Format Reader
 binFmtReader :: FmtReader (ForeignPtr Word8) Word8
-binFmtReader
-  = MkFmtReader { init_state  = mallocForeignPtrBytes 1
-                , read_entry  = bin_read_entry
-                , eq_entry    = compareAbsolute
+binFmtReader = MkFmtReader
+    { init_state = mallocForeignPtrBytes 1
+    , read_entry = bin_read_entry
+    , eq_entry   = compareAbsolute
     }
-
-
-bin_read_entry :: ForeignPtr Word8 -> Handle -> IO (Maybe Word8)
-bin_read_entry fptr h
-  = catchIOError do_read $ \(e :: IOError) -> return Nothing
   where
-     do_read
-        = do { mlen <- withForeignPtr fptr hget
-             ; if mlen == 1 then
-                   do { val <- withForeignPtr fptr hpeek
-                      ; return $ Just val }
-               else return Nothing }
-     hget buf  = hGetBuf h buf 1
-     hpeek buf = peekElemOff buf 0
+    bin_read_entry :: ForeignPtr Word8 -> Handle -> IO (Maybe Word8)
+    bin_read_entry fptr h =
+          do mlen <- withForeignPtr fptr hget
+             if mlen == 1
+               then do val <- withForeignPtr fptr hpeek
+                       return $ Just val
+               else return Nothing
+        `catchIOError` \(_e :: IOError) -> return Nothing
+      where
+         hget buf  = hGetBuf h buf 1
+         hpeek buf = peekElemOff buf 0
 
-
--- A Text Format Reader
--- ~~~~~~~~~~~~~~~~~~~~
+-- ^ A Text Format Reader.
 -- We pass on the NPC and THR flags because the comparison function may need to
--- compare for similarity up to a certain percentage (given by NPC)
--- instead of absolute equality, and only for entries larger than THR in absolute.
--- A typical example where we need THR is when we expect a zero but,
--- due to a numerical error, get a small number (e.g. 1). This has infinite relative
--- error but no effect on the correctness. We ignore these corner cases through THR
-
-
+-- compare for similarity up to a certain percentage (given by NPC) instead of
+-- absolute equality, and only for entries larger than THR in absolute. A
+-- typical example where we need THR is when we expect a zero but, due to a
+-- numerical error, get a small number (e.g. 1). This has infinite relative
+-- error but no effect on the correctness. We ignore these corner cases through
+-- THR
 textFmtReader :: Maybe Double -> Maybe Double -> Maybe Double -> FmtReader () String
-textFmtReader npc thr off
-  = MkFmtReader { init_state = return ()
-                , read_entry = txt_read_entry
-                , eq_entry   = txt_cmp_entry npc thr off
+textFmtReader npc thr off = MkFmtReader
+    { init_state = return ()
+    , read_entry = txt_read_entry
+    , eq_entry   = txt_cmp_entry npc thr off
     }
+  where
+    txt_cmp_entry :: Maybe Double -> Maybe Double -> Maybe Double -> String -> String -> CmpRes
+    -- txt_cmp_entry :: NinetyPercent -> Threshold -> Offset -> X -> Y -> CmpRes
+    txt_cmp_entry Nothing _ _ rawx rawy = compareAbsolute rawx rawy
+    txt_cmp_entry mpc mthr moff rawx rawy
+      | pc  <- fromJust mpc
+      , thr <- fromMaybe 0 mthr
+      , off <- fromMaybe 0 moff
+      , (Just x, Just y) :: (Maybe Double, Maybe Double)
+            <- (readMaybe rawx, readMaybe rawy)
+      = let delta = abs (x - y)
+        in if | abs x < thr && abs y < thr  -> CmpWithin 1.0 -- return 100% accuracy if threshold allows it
+              | delta <= off                -> CmpWithin 1.0 -- return 100% accuracy if offset allows it
+              | delta <= abs y * (1.0 - pc) -> CmpWithin (1.0 - delta/y)
+              | otherwise                   -> CmpDiff
+      -- We could just fail here and complain that we could not parse the file
+      | otherwise = error $ "Unparseable files: " <> rawx <> " - " <> rawy
 
-
+txt_read_entry :: () -> Handle -> IO (Maybe String)
 txt_read_entry _unit h = go []
   where
-    go acc =
-      do b <- hIsEOF h
-         if b then return (Just $ reverse acc)
-         else do { x <- hGetChar h
-                 ; if x == '\\' then
-                       go_special acc
-                   else if x == ','
-                        then return (Just $ reverse acc)
-                        else if is_whitespace x
-                             then go acc else go (x:acc) }
-     -- Read one more character to get a special character
-    go_special acc
-       = do { b <- hIsEOF h
-            ; if b then illegal_escape_fail
-              else do { x' <- hGetChar h
-                      ; case compute_special_char x' of
-                          Just c -> go (c:acc)
-                          Nothing -> illegal_escape_fail
-                      }}
-    illegal_escape_fail
-       = failWithMsg "Illegal escape sequence!"
+    go :: String -> IO (Maybe String)
+    go acc = do
+        b <- hIsEOF h
+        if b
+          then return (Just $ reverse acc)
+          else do x <- hGetChar h
+                  if x == '\\'
+                    then go_special acc
+                    else if x == ','
+                         then return (Just $ reverse acc)
+                         else if is_whitespace x
+                              then go acc
+                              else go (x:acc)
 
-    is_whitespace x = (x == '\n' || x == ' ' || x == '\t' || x == '\r')
+    -- Read one more character to get a special character
+    go_special :: String -> IO (Maybe String)
+    go_special acc = do
+        b <- hIsEOF h
+        if b
+          then illegal_escape_fail
+          else do x' <- hGetChar h
+                  case compute_special_char x' of
+                      Just c  -> go (c:acc)
+                      Nothing -> illegal_escape_fail
+
+    illegal_escape_fail = failWithMsg "Illegal escape sequence!"
+
+    is_whitespace :: Char -> Bool
+    is_whitespace x = x == '\n' || x == ' ' || x == '\t' || x == '\r'
+
+    compute_special_char :: Char -> Maybe Char
     compute_special_char 'n'  = Just '\n'
     compute_special_char ' '  = Just ' '
     compute_special_char 't'  = Just '\t'
@@ -408,50 +436,33 @@ txt_read_entry _unit h = go []
     compute_special_char ','  = Just ','
     compute_special_char _    = Nothing
 
-
-txt_cmp_entry :: Maybe Double -> Maybe Double -> Maybe Double -> String -> String -> CmpRes
--- txt_cmp_entry :: NinetyPercent -> Threshold -> Offset -> X -> Y -> CmpRes
-txt_cmp_entry Nothing _ _ rawx rawy = compareAbsolute rawx rawy
-txt_cmp_entry mpc mthr moff rawx rawy
-  | pc  <- fromJust mpc
-  , thr <- fromMaybe 0 mthr
-  , off <- fromMaybe 0 moff
-  , (Just x, Just y) :: (Maybe Double, Maybe Double)
-        <- (readMaybe rawx, readMaybe rawy)
-  = let delta = abs (x - y)
-    in if | abs x < thr && abs y < thr  -> CmpWithin 1.0 -- return 100% accuracy if threshold allows it
-          | delta <= off                -> CmpWithin 1.0 -- return 100% accuracy if offset allows it
-          | delta <= abs y * (1.0 - pc) -> CmpWithin (1.0 - delta/y)
-          | otherwise                   -> CmpDiff
-  -- We could just fail here and complain that we could not parse the file
-  | otherwise = error $ "Unparseable files: " <> rawx <> " - " <> rawy
-
-
--- Pair Format Reader
-textPairFmtReader
-  :: Maybe Double -> Maybe Double -> Maybe Double -> FmtReader () (Integer,Integer)
-textPairFmtReader npc thr off
-  = MkFmtReader { init_state = return ()
-                , read_entry = txtpair_read_entry
-                , eq_entry   = txtpair_cmp_entry npc thr off
+-- | Pair Format Reader
+textPairFmtReader :: Maybe Double -> Maybe Double -> Maybe Double -> FmtReader () (Integer,Integer)
+textPairFmtReader npc thr off = MkFmtReader
+    { init_state = return ()
+    , read_entry = txtpair_read_entry
+    , eq_entry   = txtpair_cmp_entry npc thr off
     }
 
-
--- Read two entries at a time
-txtpair_read_entry _unit h
-  = do mh1 <- txt_read_entry _unit h
-       case mh1 of
-         Nothing -> return Nothing
-         Just v1 -> do mh2 <- txt_read_entry _unit h
-                       case mh2 of
-                         Nothing -> return Nothing
-                         Just v2 -> return $ Just (read v1, read v2)
-
+-- | Read two entries at a time
+txtpair_read_entry :: (Read a, Read b) => () -> Handle -> IO (Maybe (a, b))
+txtpair_read_entry _unit h = do
+    mh1 <- txt_read_entry _unit h
+    case mh1 of
+      Nothing -> return Nothing
+      Just v1 -> do mh2 <- txt_read_entry _unit h
+                    case mh2 of
+                      Nothing -> return Nothing
+                      Just v2 -> return $ Just (read v1, read v2)
 
 txtpair_cmp_entry :: Integral a
-                  => Maybe Double -> Maybe Double -> Maybe Double -> (a,a) -> (a,a) -> CmpRes
--- txtpair_cmp_entry :: NinetyPercent -> Threshold -> Offset -> Xix -> Yiy -> CmpRes
-txtpair_cmp_entry Nothing _ moff rawx rawy = compareAbsolute rawx rawy
+                  => Maybe Double
+                  -> Maybe Double
+                  -> Maybe Double
+                  -> (a,a)
+                  -> (a,a)
+                  -> CmpRes
+txtpair_cmp_entry Nothing _ _moff rawx rawy = compareAbsolute rawx rawy
 txtpair_cmp_entry mpc mthr moff rawx rawy
   | pc  <- fromJust mpc
   , thr <- fromMaybe 0 mthr
@@ -467,5 +478,3 @@ txtpair_cmp_entry mpc mthr moff rawx rawy
           | delta <= ymes * (1.0 - pc) -> CmpWithin (1.0 - delta/ymes)
           | otherwise                  -> CmpDiff
   | otherwise = error "Unparsable complex file. Traceback txtpair_cmp_entry"
-
-
