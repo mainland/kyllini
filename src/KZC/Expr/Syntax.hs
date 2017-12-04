@@ -436,7 +436,7 @@ data Type -- | Base types
 
           -- | Structs and arrays
           | StructT StructDef [Type] !SrcLoc
-          | ArrT Type Type !SrcLoc
+          | ArrT Nat Type !SrcLoc
 
           -- | Monadic type
           | ST Omega Type Type Type !SrcLoc
@@ -1305,12 +1305,12 @@ instance Pretty Type where
         parensIf (p > tyappPrec) $
         text "struct" <+> ppr struct <> pprTyApp taus
 
-    pprPrec p (ArrT ind tau@StructT{} _) =
+    pprPrec p (ArrT nat tau@StructT{} _) =
         parensIf (p > tyappPrec) $
-        ppr tau <> brackets (ppr ind)
+        ppr tau <> brackets (ppr nat)
 
-    pprPrec _ (ArrT ind tau _) =
-        ppr tau <> brackets (ppr ind)
+    pprPrec _ (ArrT nat tau _) =
+        ppr tau <> brackets (ppr nat)
 
     pprPrec p (ST omega tau1 tau2 tau3 _) =
         parensIf (p > tyappPrec) $
@@ -1495,7 +1495,7 @@ instance Fvs Type TyVar where
     fvs FloatT{}                     = mempty
     fvs StringT{}                    = mempty
     fvs (StructT _ taus _)           = fvs taus
-    fvs (ArrT _ tau _)               = fvs tau
+    fvs (ArrT nat tau _)             = fvs nat <> fvs tau
     fvs (ST  omega tau1 tau2 tau3 _) = fvs omega <> fvs tau1 <> fvs tau2 <> fvs tau3
     fvs (RefT tau _)                 = fvs tau
     fvs (FunT taus tau _)            = fvs taus <> fvs tau

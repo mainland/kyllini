@@ -372,7 +372,7 @@ void kz_main(const typename kz_params_t* $id:params)
           else go tau
       where
         go :: Type -> Cg l (CExp l)
-        go (ArrT n tau _)    = do ci <- cgNatType n
+        go (ArrT nat tau _)  = do ci <- cgNatType nat
                                   cgInput tau cbuf (cn*ci)
         go tau | isBitT tau  = return $ CExp [cexp|kz_input_bit(&$cbuf, $cn)|]
         go (IntT IDefault _) = return $ CExp [cexp|kz_input_int(&$cbuf, $cn)|]
@@ -411,7 +411,7 @@ void kz_main(const typename kz_params_t* $id:params)
           else go tau
       where
         go :: Type -> Cg l ()
-        go (ArrT n tau _)     = do ci <- cgNatType n
+        go (ArrT nat tau _)   = do ci <- cgNatType nat
                                    cgOutput tau cbuf (cn*ci) cval
         go tau | isBitT tau   = appendStm [cstm|kz_output_bit(&$cbuf, $cval, $cn);|]
         go (IntT IDefault  _) = appendStm [cstm|kz_output_int(&$cbuf, $cval, $cn);|]
@@ -1037,11 +1037,11 @@ cgExp e k =
           Nothing -> cgUnop op tau ce  >>= runKont k
       where
         cgUnop ::  Unop -> Type -> CExp l -> Cg l (CExp l)
-        cgUnop Len (RefT (ArrT n _ _) _) _ =
-            cgNatType n
+        cgUnop Len (RefT (ArrT nat _ _) _) _ =
+            cgNatType nat
 
-        cgUnop Len (ArrT n _ _) _ =
-            cgNatType n
+        cgUnop Len (ArrT nat _ _) _ =
+            cgNatType nat
 
         cgUnop Len _ _ =
             panicdoc $
@@ -1425,7 +1425,7 @@ cgExp e k =
           | otherwise                      = appendStm $ rl l [cstm|printf("%llu", (unsigned long long) $ce);|]
         cgPrintScalar FloatT{}          ce = appendStm $ rl l [cstm|printf("%f",  (double) $ce);|]
         cgPrintScalar StringT{}         ce = appendStm $ rl l [cstm|printf("%s",  $ce);|]
-        cgPrintScalar (ArrT n tau _)    ce = cgPrintArray n tau ce
+        cgPrintScalar (ArrT nat tau _)  ce = cgPrintArray nat tau ce
 
         cgPrintScalar tau_struct@StructT{} ce = do
             maybe_tau <- runMaybeT $ checkComplexT tau_struct
@@ -1440,7 +1440,7 @@ cgExp e k =
         cgPrintScalar tau _ =
             faildoc $ text "Cannot print type:" <+> ppr tau
 
-        cgPrintArray :: Type -> Type -> CExp l -> Cg l ()
+        cgPrintArray :: Nat -> Type -> CExp l -> Cg l ()
         cgPrintArray nat tau ce | isBitT tau = do
             cn    <- cgNatType nat
             caddr <- cgAddrOf (ArrT nat tau noLoc) ce
@@ -1553,10 +1553,10 @@ cgNatTyVar alpha = do
     return (CExp [cexp|$id:calpha|], Just [cparam|int $id:calpha|])
 
 -- | Compile a type-level Nat to a C expression.
-cgNatType :: Type -> Cg l (CExp l)
+cgNatType :: Nat -> Cg l (CExp l)
 cgNatType tau = simplType tau >>= cgNat
   where
-    cgNat :: Type -> Cg l (CExp l)
+    cgNat :: Nat -> Cg l (CExp l)
     cgNat (NatT i _) =
         return $ CInt (fromIntegral i)
 
@@ -1858,7 +1858,7 @@ cgParam tau maybe_cv = do
     cgParamType (ArrT nat tau _) =
         simplType nat >>= go
       where
-        go :: Type -> Cg l C.Type
+        go :: Nat -> Cg l C.Type
         go (NatT n _) | isBitT tau = do
             cbitElemType <- cgBitElemType
             return [cty|const $ty:cbitElemType[$tyqual:cstatic $int:(bitArrayLen n)]|]
@@ -2070,8 +2070,8 @@ cgBinder v tau init = do
 
 -- | Perform mandatory initialization of an l-value.
 cgInitAlways :: CExp l -> Type -> Cg l ()
-cgInitAlways cv (ArrT n tau _) | isBitT tau = do
-    cn <- cgNatType n
+cgInitAlways cv (ArrT nat tau _) | isBitT tau = do
+    cn <- cgNatType nat
     case cn of
       CInt n | bitArrayOff n == 0 -> return ()
       _ -> appendStm [cstm|$cv[$(bitArrayLen cn-1)] = 0;|]
@@ -2103,8 +2103,8 @@ cgStorage _ UnitT{} _ =
 -- Note that we use 'appendStm' for initialization code for arrays allocated
 -- with @alloca@. This is OK since the only time we don't statically know an
 -- array's size is when we are in a function body.
-cgStorage cv (ArrT n tau _) init | isBitT tau =
-    cgNatType n >>= go
+cgStorage cv (ArrT nat tau _) init | isBitT tau =
+    cgNatType nat >>= go
   where
     go :: CExp l -> Cg l (C.InitGroup, CExp l)
     go (CInt n) | init = do
@@ -2126,9 +2126,9 @@ cgStorage cv (ArrT n tau _) init | isBitT tau =
     ce :: CExp l
     ce = CExp $ rl cv [cexp|$id:cv|]
 
-cgStorage cv (ArrT n tau _) init = do
+cgStorage cv (ArrT nat tau _) init = do
     ctau <- cgType tau
-    cgNatType n >>= go ctau
+    cgNatType nat >>= go ctau
   where
     go :: C.Type -> CExp l -> Cg l (C.InitGroup, CExp l)
     go ctau (CInt n) | init = do

@@ -290,12 +290,12 @@ instance Pretty Type where
     pprPrec p (SynT _ tau' _) =
         pprPrec p tau'
 
-    pprPrec p (ArrT ind tau@StructT{} _) =
+    pprPrec p (ArrT nat tau@StructT{} _) =
         parensIf (p > tyappPrec) $
-        ppr tau <> brackets (ppr ind)
+        ppr tau <> brackets (ppr nat)
 
-    pprPrec _ (ArrT ind tau _) =
-        ppr tau <> brackets (ppr ind)
+    pprPrec _ (ArrT nat tau _) =
+        ppr tau <> brackets (ppr nat)
 
     pprPrec p (C tau _) =
         parensIf (p > tyappPrec) $

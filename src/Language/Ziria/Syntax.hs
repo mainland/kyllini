@@ -916,15 +916,15 @@ instance Pretty Type where
     pprPrec _ (FloatT w _) =
         text "float" <> ppr w
 
-    pprPrec p (ArrT ind tau _) | classicDialect =
+    pprPrec p (ArrT nat tau _) | classicDialect =
         parensIf (p > tyappPrec) $
-        text "arr" <> brackets (ppr ind) <+> ppr tau
+        text "arr" <> brackets (ppr nat) <+> ppr tau
 
     pprPrec _ (ArrT UnknownT{} tau _) =
         brackets (ppr tau)
 
-    pprPrec _ (ArrT ind tau _) =
-        brackets (pprPrec appPrec1 tau <+> semi <+> ppr ind)
+    pprPrec _ (ArrT nat tau _) =
+        brackets (pprPrec appPrec1 tau <+> semi <+> ppr nat)
 
     pprPrec p (StructT s taus _) =
         parensIf (p > tyappPrec) $
