@@ -694,6 +694,7 @@ cgDecl (LetFunCompD f tvks vbs tau_ret comp l) k =
 cgLocalDecl :: forall l a . IsLabel l => Config -> LocalDecl -> Cg l a -> Cg l a
 cgLocalDecl flags decl@(LetLD v tau e0@(GenE e gs _) _) k | testDynFlag ComputeLUTs flags =
     withSummaryContext decl $ do
+    incLUTs
     appendComment $ text "Lut:" </> ppr e0
     cv <- cgBinder (bVar v) tau False
     extendVars [(bVar v, tau)] $
@@ -1477,6 +1478,8 @@ cgExp e k =
         cgExp e k
 
     go e0@(GenE e gs _) k = do
+        incLUTs
+        appendComment $ text "Lut:" </> ppr e0
         tau     <- checkGenerators gs $ \_ -> inferExp e
         (cs, _) <- compileAndRunGen e gs
         cinits  <- cgConstStream tau cs
