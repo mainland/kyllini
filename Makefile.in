@@ -98,6 +98,7 @@ SOURCE = \
 	KZC/Rename.hs \
 	KZC/Rename/Monad.hs \
 	KZC/Rename/State.hs \
+	KZC/Target/Standalone.hs \
 	KZC/Traits.hs \
 	KZC/Util/Derive.hs \
 	KZC/Util/EnumSet.hs \
