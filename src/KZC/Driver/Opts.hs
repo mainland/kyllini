@@ -31,7 +31,7 @@ options =
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
     , Option ['o']      ["output"]  (ReqArg outOpt "FILE")               "Output to FILE"
     , Option ['O']      []          (OptArg setOptLevel "LEVEL")         "Set optimization level"
-    , Option ['i']      []          (ReqArg importPathOpt "DIR")        "Add import directory"
+    , Option ['i']      []          (ReqArg importPathOpt "DIR")         "Add import directory"
     , Option ['I']      []          (ReqArg includePathOpt "DIR")        "Add preprocessor include directory"
     , Option ['D']      []          (ReqArg defineOpt "VAR[=DEF]")       "Define preprocessor symbol"
     , Option ['w']      []          (NoArg inhibitWarnings)              "Inhibit all warning messages."
