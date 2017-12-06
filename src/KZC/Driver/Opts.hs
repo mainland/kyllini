@@ -14,6 +14,7 @@ module KZC.Driver.Opts (
 
 import Control.Monad ((>=>),
                       when)
+import Data.Char (toLower)
 import Data.Maybe (fromMaybe)
 import System.Console.GetOpt
 import System.Environment (getProgName)
@@ -39,6 +40,7 @@ options =
     , Option ['d']      []          (ReqArg parseDFlags "")              "Specify debug flags"
     , Option ['W']      []          (ReqArg parseWFlags "")              "Specify warnings"
     , Option ['s']      []          (NoArg setStats)                     "Display statistics"
+    , Option ['t']      ["target"]  (ReqArg setTarget "TARGET")          "Set target"
     ]
   where
     setModeM :: ModeFlag -> Config -> m Config
@@ -140,6 +142,12 @@ options =
 
     inhibitWarnings :: Config -> m Config
     inhibitWarnings fs = return fs { warnFlags = mempty }
+
+    setTarget :: String -> Config -> m Config
+    setTarget t fs =
+      case map toLower t of
+        "standalone" -> return fs { target = StandaloneTarget }
+        _            -> fail $ "Unknown target: " ++ t
 
     parseFFlags :: String -> Config -> m Config
     parseFFlags = parseFlagOpts "-f" opts fOpts

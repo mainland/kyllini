@@ -12,6 +12,7 @@ module KZC.Config (
     WarnFlag(..),
     DumpFlag(..),
     TraceFlag(..),
+    Target(..),
     Config(..),
 
     defaultConfig,
@@ -162,6 +163,9 @@ data TraceFlag = TracePhase
                | TraceMono
   deriving (Eq, Ord, Enum, Bounded, Show)
 
+data Target = StandaloneTarget
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
 type FlagSet a = ES.Set a
 
 testFlag :: Enum a => a -> FlagSet a -> Bool
@@ -210,6 +214,8 @@ data Config = Config
     , werrorFlags :: !(FlagSet WarnFlag)
     , dumpFlags   :: !(FlagSet DumpFlag)
     , traceFlags  :: !(FlagSet TraceFlag)
+
+    , target :: Target
 
     , importPaths  :: ![FilePath]
     , includePaths :: ![FilePath]
@@ -262,6 +268,8 @@ instance Monoid Config where
         , dumpFlags   = mempty
         , traceFlags  = mempty
 
+        , target = StandaloneTarget
+
         , importPaths  = []
         , includePaths = []
         , defines      = []
@@ -296,6 +304,8 @@ instance Monoid Config where
         , werrorFlags = werrorFlags f1 <> werrorFlags f2
         , dumpFlags   = dumpFlags f1   <> dumpFlags f2
         , traceFlags  = traceFlags f1  <> traceFlags f2
+
+        , target = target f2
 
         , importPaths  = importPaths f1 <> importPaths f2
         , includePaths = includePaths f1 <> includePaths f2
