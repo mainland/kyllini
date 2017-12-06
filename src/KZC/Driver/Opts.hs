@@ -14,6 +14,7 @@ module KZC.Driver.Opts (
 
 import Control.Monad ((>=>),
                       when)
+import Data.Char (toLower)
 import Data.Maybe (fromMaybe)
 import System.Console.GetOpt
 import System.Environment (getProgName)
@@ -31,7 +32,7 @@ options =
     , Option ['C']      []          (NoArg (setDynFlagM StopAfterCheck)) "Stop after type checking"
     , Option ['o']      ["output"]  (ReqArg outOpt "FILE")               "Output to FILE"
     , Option ['O']      []          (OptArg setOptLevel "LEVEL")         "Set optimization level"
-    , Option ['i']      []          (ReqArg importPathOpt "DIR")        "Add import directory"
+    , Option ['i']      []          (ReqArg importPathOpt "DIR")         "Add import directory"
     , Option ['I']      []          (ReqArg includePathOpt "DIR")        "Add preprocessor include directory"
     , Option ['D']      []          (ReqArg defineOpt "VAR[=DEF]")       "Define preprocessor symbol"
     , Option ['w']      []          (NoArg inhibitWarnings)              "Inhibit all warning messages."
@@ -39,6 +40,7 @@ options =
     , Option ['d']      []          (ReqArg parseDFlags "")              "Specify debug flags"
     , Option ['W']      []          (ReqArg parseWFlags "")              "Specify warnings"
     , Option ['s']      []          (NoArg setStats)                     "Display statistics"
+    , Option ['t']      ["target"]  (ReqArg setTarget "TARGET")          "Set target"
     ]
   where
     setModeM :: ModeFlag -> Config -> m Config
@@ -140,6 +142,12 @@ options =
 
     inhibitWarnings :: Config -> m Config
     inhibitWarnings fs = return fs { warnFlags = mempty }
+
+    setTarget :: String -> Config -> m Config
+    setTarget t fs =
+      case map toLower t of
+        "standalone" -> return fs { target = StandaloneTarget }
+        _            -> fail $ "Unknown target: " ++ t
 
     parseFFlags :: String -> Config -> m Config
     parseFFlags = parseFlagOpts "-f" opts fOpts

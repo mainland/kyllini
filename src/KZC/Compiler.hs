@@ -49,7 +49,6 @@ import KZC.Analysis.NeedDefault
 import KZC.Analysis.Occ
 import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
-import qualified KZC.Backend.C as CGen
 import KZC.Check
 import KZC.Compiler.Module
 import KZC.Compiler.Types
@@ -79,6 +78,7 @@ import KZC.Optimize.LowerViews
 import KZC.Optimize.LutToGen
 import KZC.Optimize.Simplify
 import KZC.Rename
+import KZC.Target.Standalone as Standalone
 import KZC.Util.Error
 import KZC.Util.Summary
 
@@ -363,7 +363,7 @@ compileExprProgram filepath prog =  do
 
     compilePhase :: C.LProgram -> MaybeT (C KZC) ()
     compilePhase =
-        lift . lift . CGen.compileProgram >=>
+        lift . lift . Standalone.compileProgram >=>
         lift . lift . writeOutput
 
     writeOutput :: Pretty a
