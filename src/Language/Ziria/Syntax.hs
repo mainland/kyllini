@@ -133,8 +133,8 @@ data FP = FP16
 data Program = Program [Import] [Decl]
   deriving (Eq, Ord, Read, Show)
 
-data Import = Import ModuleName
-  deriving (Eq, Ord, Read, Show)
+newtype Import = Import ModuleName
+  deriving (Eq, Ord, Read, Show, IsString, Relocatable)
 
 data Decl -- | Struct declaration
           = StructD Struct [Tvk] [(Field, Type)] !SrcLoc
