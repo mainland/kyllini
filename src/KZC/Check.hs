@@ -327,37 +327,34 @@ checkDecl :: Z.Decl
           -> ((([E.Decl] -> Ti a) -> Ti a) -> Ti b)
           -> Ti b
 checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
-    (tvks, taus_fields) <-
-        alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined zs
-        checkDuplicates "field names" zfields
-        tvks <- mapM fromZ ztvks
-        extendTyVars tvks $ do
-          taus_fields <- mapM fromZ ztaus_fields
-          mapM_ (`checkKind` tauK) taus_fields
-          -- XXX for some reason we don't need this here, even though we need it
-          -- in.
-          mapM_ zonkTvk tvks
-          return (tvks, taus_fields)
-    let struct   = StructDef zs tvks (zfields `zip` taus_fields) l
+    structdef <- alwaysWithSummaryContext decl $ do
+                 checkStructNotRedefined zs
+                 checkDuplicates "field names" zfields
+                 tvks <- mapM fromZ ztvks
+                 extendTyVars tvks $ do
+                   taus_fields <- mapM fromZ ztaus_fields
+                   mapM_ (`checkKind` tauK) taus_fields
+                   -- XXX for some reason we don't need this here, even though we need it
+                   -- in.
+                   mapM_ zonkTvk tvks
+                   return $ StructDef zs tvks (zfields `zip` taus_fields) l
     let mcdecl k = alwaysWithSummaryContext decl $ do
-                   cstruct <- trans struct
-                   extendCoreStructs [cstruct] $
-                     k [E.StructD cstruct l]
-    extendStructs [struct] $ k mcdecl
+                   cstructdef <- trans structdef
+                   extendCoreStructs [cstructdef] $
+                     k [E.StructD cstructdef l]
+    extendStructs [structdef] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
 
 checkDecl decl@(Z.TypeD zs ztvks ztau l) k = do
-    (tvks, tau) <-
-        alwaysWithSummaryContext decl $ do
-        checkStructNotRedefined zs
-        tvks <- mapM fromZ ztvks
-        tau  <- extendTyVars tvks $
-                fromZ ztau
-        mapM_ zonkTvk tvks
-        return (tvks, tau)
-    extendStructs [TypeDef zs tvks tau l] $ k $ \k -> k []
+    typedef <- alwaysWithSummaryContext decl $ do
+               checkStructNotRedefined zs
+               tvks <- mapM fromZ ztvks
+               tau  <- extendTyVars tvks $
+                       fromZ ztau
+               mapM_ zonkTvk tvks
+               return $ TypeDef zs tvks tau l
+    extendStructs [typedef] $ k $ \k' -> k' []
 
 checkDecl decl@(Z.LetD v ztau e l) k = do
     (tau, mcdecl) <- alwaysWithSummaryContext decl $
