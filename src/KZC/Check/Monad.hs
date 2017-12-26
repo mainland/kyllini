@@ -90,7 +90,6 @@ import KZC.Check.Smart
 import KZC.Check.State
 import KZC.Check.Types
 import KZC.Config
-import qualified KZC.Expr.Smart as E
 import qualified KZC.Expr.Syntax as E
 import KZC.Monad
 import KZC.Platform

@@ -881,7 +881,7 @@ tcExp e0@(Z.StructE s ztaus zflds l) exp_ty =
     struct         <- lookupStruct s
     taus           <- mapM fromZ ztaus
     (tau, fldDefs) <- tyAppStruct struct taus
-    checkTyApp (structDefTvks struct) taus
+    checkTyApp (structTvks struct) taus
     checkMissingFields zflds fldDefs
     checkExtraFields zflds fldDefs
     (s', taus') <- checkStructT tau
@@ -1400,7 +1400,7 @@ kcType tau@StringT{} kappa_exp =
 
 kcType tau_struct@(StructT s taus _) kappa_exp = do
     struct <- lookupStruct s
-    checkTyApp (structDefTvks struct) taus
+    checkTyApp (structTvks struct) taus
     maybe_tau <- checkComplexT tau_struct
     kappa'    <- case maybe_tau of
                  -- A struct has traits Eq, Ord, and Num if its elements do.

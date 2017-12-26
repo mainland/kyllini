@@ -254,7 +254,11 @@ data Decl -- | Struct declaration
           | LetExtFunD Var [Tvk] [(Var, Type)] Type !SrcLoc
   deriving (Eq, Ord, Read, Show)
 
-data StructDef = StructDef Struct [Tvk] [(Field, Type)] !SrcLoc
+data StructDef = StructDef { structName   :: Struct
+                           , structTvks   :: [Tvk]
+                           , structFields :: [(Field, Type)]
+                           , structLoc    :: !SrcLoc
+                           }
   deriving (Eq, Ord, Read, Show)
 
 data Const = UnitC

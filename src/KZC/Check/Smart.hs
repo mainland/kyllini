@@ -46,8 +46,6 @@ module KZC.Check.Smart (
     funT,
     forallT,
 
-    structName,
-
     isNumT,
     isFracT,
     isUnitT,
@@ -182,10 +180,6 @@ forallT tvks (ForallT tvks' tau l) =
 
 forallT tvks tau =
     ForallT tvks tau (map fst tvks `srcspan` tau)
-
-structName :: StructDef -> Z.Struct
-structName (StructDef s _ _ _) = s
-structName (TypeDef s _ _ _)   = s
 
 -- | Return 'True' if a type is a numeric type.
 isNumT :: Type -> Bool

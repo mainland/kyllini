@@ -35,7 +35,6 @@ module KZC.Check.Types (
     TyVar(..),
 
     StructDef(..),
-    structDefTvks,
 
     Type(..),
     Nat,
@@ -101,13 +100,17 @@ import KZC.Vars
 newtype TyVar = TyVar Name
   deriving (Eq, Ord, Show)
 
-data StructDef = StructDef Z.Struct [Tvk] [(Z.Field, Type)] !SrcLoc
-               | TypeDef Z.Struct [Tvk] Type !SrcLoc
+data StructDef = StructDef { structName   :: Z.Struct
+                           , structTvks   :: [Tvk]
+                           , structFields :: [(Z.Field, Type)]
+                           , structLoc    :: !SrcLoc
+                           }
+               | TypeDef { structName :: Z.Struct
+                         , structTvks :: [Tvk]
+                         , typeAlias  :: Type
+                         , structLoc  :: !SrcLoc
+                         }
   deriving (Eq, Ord, Show)
-
-structDefTvks :: StructDef -> [Tvk]
-structDefTvks (StructDef _ tvks _ _) = tvks
-structDefTvks (TypeDef _ tvks _ _)   = tvks
 
 data Type -- Base Types
           = UnitT !SrcLoc

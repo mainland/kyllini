@@ -65,8 +65,6 @@ module KZC.Expr.Smart (
     isPureT,
     isPureishT,
 
-    structName,
-
     splitArrT,
 
     natT,
@@ -337,9 +335,6 @@ isPureishT ST{} =
 
 isPureishT _ =
     True
-
-structName :: StructDef -> Struct
-structName (StructDef s _ _ _) = s
 
 splitArrT :: Monad m => Type -> m (Type, Type)
 splitArrT (ArrT nat tau _) =

@@ -135,8 +135,6 @@ import KZC.Expr.Smart (qualK,
                        isPureT,
                        isPureishT,
 
-                       structName,
-
                        splitArrT,
 
                        natT,
