@@ -26,6 +26,7 @@ module KZC.Check.Monad (
 
     extendStructs,
     lookupStruct,
+    askStructIds,
     maybeLookupStruct,
     tyAppStruct,
 
@@ -81,6 +82,7 @@ import Data.IORef
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
@@ -188,6 +190,11 @@ lookupStruct s =
     lookupEnv structs onerr s
   where
     onerr = notInScope (text "Struct") s
+
+-- | Return the set of all declared struct identifiers.
+askStructIds :: Ti (Set Z.Struct)
+askStructIds =
+    Map.keysSet <$> asks structs
 
 maybeLookupStruct :: Z.Struct -> Ti (Maybe StructDef)
 maybeLookupStruct s =

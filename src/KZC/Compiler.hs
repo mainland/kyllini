@@ -26,7 +26,6 @@ import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
-import Data.Symbol
 import qualified Data.Text.Lazy.Encoding as E
 import System.CPUTime (getCPUTime)
 import System.Directory (createDirectoryIfMissing)
@@ -50,6 +49,7 @@ import KZC.Analysis.Occ
 import KZC.Analysis.Rate
 import KZC.Analysis.RefFlow
 import KZC.Check
+import qualified KZC.Check.Monad as Check
 import KZC.Compiler.Module
 import KZC.Compiler.Types
 import KZC.Config
@@ -159,11 +159,6 @@ compileRecursive ([modinfo] : sccs) = do
     loadDependencies (modSourcePath modinfo) $
         compileRecursive sccs
 
-getStructIds :: C KZC [Symbol]
-getStructIds = do
-    decls <- askDecls
-    return [nameSym n | E.StructD (E.StructDef (E.Struct n) _ _ _) _ <- decls]
-
 setFileDialect :: MonadIO m => FilePath -> m ()
 setFileDialect filepath = do
     dialect <- moduleDialect filepath
@@ -188,8 +183,8 @@ loadDependencies filepath k = do
 
     parsePhase :: FilePath -> MaybeT (C KZC) Z.Program
     parsePhase filepath = do
-        structIds <- lift getStructIds
-        lift $ lift $ parseProgramFromFile (Set.fromList structIds) filepath
+        structs <- lift $ lift $ Check.liftTi' Check.askStructIds
+        lift $ lift $ parseProgramFromFile (Set.map namedSymbol structs) filepath
 
     pprPhase :: Z.Program -> MaybeT (C KZC) Z.Program
     pprPhase decls = do
