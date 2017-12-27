@@ -138,7 +138,7 @@ addStructIdentifier ident =
 
 addStructIdentifiers :: Set Symbol -> P ()
 addStructIdentifiers idents =
-  modify $ \s -> s { structIdentifiers = idents <> structIdentifiers s }
+    modify $ \s -> s { structIdentifiers = idents <> structIdentifiers s }
 
 isStructIdentifier :: Symbol -> P Bool
 isStructIdentifier ident =
