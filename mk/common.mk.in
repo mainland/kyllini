@@ -165,7 +165,7 @@ TESTDIR = $(TOP)/testsuite
 KZC?=$(TOP)/$(BIN)/kzc$(EXEEXT)
 KZCLIB?=$(TESTDIR)/lib
 
-KZCFLAGS := -I$(KZCLIB) -dlint -dprint-uniques -fno-line-pragmas $(KZCFLAGS)
+KZCFLAGS := -i$(TOP)/lib -I$(KZCLIB) -dlint -dprint-uniques -fno-line-pragmas $(KZCFLAGS)
 
 RUNTIME_SRC=\
 	$(TOP)/libkz/src/bits.c \

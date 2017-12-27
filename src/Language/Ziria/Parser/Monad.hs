@@ -81,7 +81,7 @@ emptyPState d buf pos = PState
     , curToken          = error "no token"
     , lexState          = [0]
     , dialect           = d
-    , structIdentifiers = Set.fromList ["Complex", "complex", "complex8", "complex16", "complex32", "complex64"]
+    , structIdentifiers = mempty
     }
 
 newtype P a = P { runP :: PState -> Either SomeException (a, PState) }
@@ -138,7 +138,7 @@ addStructIdentifier ident =
 
 addStructIdentifiers :: Set Symbol -> P ()
 addStructIdentifiers idents =
-  modify $ \s -> s { structIdentifiers = idents <> structIdentifiers s }
+    modify $ \s -> s { structIdentifiers = idents <> structIdentifiers s }
 
 isStructIdentifier :: Symbol -> P Bool
 isStructIdentifier ident =

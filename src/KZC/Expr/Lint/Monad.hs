@@ -14,7 +14,6 @@
 module KZC.Expr.Lint.Monad (
     TcEnv(..),
     defaultTcEnv,
-    complexStructDef,
 
     MonadTc(..),
     MonadTcRef,
@@ -90,7 +89,7 @@ import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.IORef (IORef)
 import Data.List (foldl')
-import Data.Loc (Located, noLoc)
+import Data.Loc (Located)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -100,7 +99,6 @@ import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
 import KZC.Config
-import KZC.Expr.Smart
 import KZC.Expr.Syntax
 import KZC.Fuel
 import KZC.Platform
@@ -128,7 +126,7 @@ data TcEnv = TcEnv
 defaultTcEnv :: TcEnv
 defaultTcEnv = TcEnv
     { curfvs     = Nothing
-    , structs    = Map.fromList [(structName s, s) | s <- builtinStructs]
+    , structs    = mempty
     , topScope   = True
     , topVars    = mempty
     , extFuns    = mempty
@@ -138,18 +136,6 @@ defaultTcEnv = TcEnv
     , stTyVars   = mempty
     , stIndices  = Nothing
     }
-  where
-    builtinStructs :: [StructDef]
-    builtinStructs = [complexStructDef]
-
-complexStructDef :: StructDef
-complexStructDef = StructDef "Complex" [(a, num)] [("re", tyVarT a), ("im", tyVarT a)] noLoc
-  where
-    a :: TyVar
-    a = "a"
-
-    num :: Kind
-    num = TauK (traits [NumR])
 
 class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadFuel m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv

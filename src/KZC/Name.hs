@@ -109,12 +109,18 @@ data ModuleName = ModuleName
 instance Located ModuleName where
     locOf (ModuleName _ loc) = locOf loc
 
+instance Relocatable ModuleName where
+    reloc loc m = m { modLoc = SrcLoc loc }
+
 instance Pretty ModuleName where
     ppr (ModuleName syms _) =
         dotsep (map (text . unintern) syms)
       where
         dotsep :: [Doc] -> Doc
         dotsep = folddoc (<>) . punctuate dot
+
+instance IsString ModuleName where
+    fromString s = ModuleName [intern s] noLoc
 
 mkModuleName :: [Symbol] -> Loc -> ModuleName
 mkModuleName s l = ModuleName s (SrcLoc l)

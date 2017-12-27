@@ -328,6 +328,8 @@ def test(testname, setup=None, testfn=compile_and_run, source=None, args=[]):
         test.args = list(config.args)
         test.source = source
 
+        test.args.append('-ilib')
+
         if test.lib:
             test.args.append('-i'+os.path.dirname(test.lib))
             test.args.append('-i'+test.lib)
