@@ -14,6 +14,7 @@ module KZC.Check.Monad (
     Ti(..),
     runTi,
     liftTi,
+    liftTi',
 
     localExp,
     askCurrentExp,
@@ -132,6 +133,15 @@ liftTi m = do
         ask >>= writeRef eref
         get >>= writeRef sref
         return x
+
+-- | Run a @Ti@ computation in the @KZC@ monad without updating the @Ti@
+-- environment.
+liftTi' :: Ti a -> KZC a
+liftTi' m = do
+    env    <- asks tienvref >>= readRef
+    state  <- asks tistateref >>= readRef
+    (a, _) <- runTi m env state
+    return a
 
 -- | Specify the current expression we are working with.
 localExp :: Z.Exp -> Ti a -> Ti a
