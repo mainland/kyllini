@@ -921,7 +921,8 @@ param :
 
 program :: { Program }
 program :
-    imports decl_rlist { Program $1 (rev $2) }
+    {- empty -}        { Program [] [] }
+  | imports decl_rlist { Program $1 (rev $2) }
 
 import :: { Import }
 import :
