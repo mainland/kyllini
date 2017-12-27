@@ -1,0 +1,7 @@
+struct Complex<T> { re : T, im : T }
+
+type complex   = Complex<int>;
+type complex8  = Complex<int8>;
+type complex16 = Complex<int16>;
+type complex32 = Complex<int32>;
+type complex64 = Complex<int64>;

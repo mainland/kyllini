@@ -226,8 +226,7 @@ instance MonadTcRef m => TransformExp (MonoM l m) where
     expT e = transExp e
 
 instance (IsLabel l, MonadTcRef m) => TransformComp l (MonoM l m) where
-    programT prog =
-        extendStruct "Complex" (mkStructGen complexStructDef) $ do
+    programT prog = do
         Program imports decls main <- transProgram prog
         decls' <- getTopDecls
         return $ Program imports (decls <> decls') main
