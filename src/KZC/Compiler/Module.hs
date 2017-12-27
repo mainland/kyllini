@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -104,8 +105,11 @@ summarizeSourceFile sourcePath = do
     imports <- P.parseImportsFromFile sourcePath
     return ModuleInfo { modName       = Nothing
                       , modSourcePath = sourcePath
-                      , modImports    = [modname | Z.Import modname <- imports]
+                      , modImports    = [modname | Z.Import modname <- prelude : imports]
                       }
+  where
+    prelude :: Z.Import
+    prelude = Z.Import "prelude"
 
 updateModuleInfo :: ModuleName -> ModuleInfo -> KZC ()
 updateModuleInfo modname modinfo = do
