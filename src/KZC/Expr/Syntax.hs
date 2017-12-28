@@ -468,15 +468,6 @@ data Type -- | Base types
 -- | A type of kind nat.
 type Nat = Type
 
-data UnopT = NegT -- ^ Negation
-  deriving (Eq, Ord, Read, Show)
-
-data BinopT = AddT
-            | SubT
-            | MulT
-            | DivT
-  deriving (Eq, Ord, Read, Show)
-
 data Omega = C Type
            | T
   deriving (Eq, Ord, Read, Show)
@@ -1355,15 +1346,6 @@ instance Pretty Type where
 
     pprPrec _ (TyVarT tv _) =
         ppr tv
-
-instance Pretty UnopT where
-    ppr NegT = text "-"
-
-instance Pretty BinopT where
-    ppr AddT = text "+"
-    ppr SubT = text "-"
-    ppr MulT = text "*"
-    ppr DivT = text "/"
 
 instance Pretty Omega where
     pprPrec p (C tau) =
