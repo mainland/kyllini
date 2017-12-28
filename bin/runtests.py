@@ -244,7 +244,8 @@ def compile_and_make(test, way, args):
     exePath = '%s.exe' % test.basename
 
     cmd = [config.kzc] + test.args + way_flags(way) + args + [source]
-    execute_and_compare_stdouterr(test, cmd)
+    if not execute_and_compare_stdouterr(test, cmd):
+        return False
 
     cmd = ['make', exePath] + test.make_args
     execute(cmd, cwd=test.cwd)
