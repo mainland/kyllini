@@ -525,6 +525,7 @@ hasZeroTypeSize = go
     go IntT{}               = pure False
     go FixT {}              = pure False
     go FloatT{}             = pure False
+    go StringT{}            = pure False
     go (ArrT _ tau _)       = hasZeroTypeSize tau
     go (ST (C tau) _ _ _ _) = hasZeroTypeSize tau
     go (RefT tau _)         = hasZeroTypeSize tau

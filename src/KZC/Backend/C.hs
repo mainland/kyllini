@@ -733,46 +733,53 @@ cgLocalDecl _flags LetViewLD{} _k =
 -- guaranteed to be a legal C initializer, so it can be used in an array or
 -- struct initializer.
 cgConst :: forall l . Const -> Cg l (CExp l)
-cgConst UnitC        = return CVoid
-cgConst (BoolC b)    = return $ CBool b
-cgConst (IntC _ x)   = return $ CInt (fromIntegral x)
-cgConst (FixC _ x)   = return $ CInt (fromIntegral x)
-cgConst (FloatC _ f) = return $ CFloat (toRational f)
-cgConst (StringC s)  = return $ CExp [cexp|$string:s|]
-
-cgConst c@(ArrayC cs) = do
-    (_, tau) <- inferConst noLoc c >>= checkArrT
-    cinits   <- cgConstVector tau cs
-    return $ CInit [cinit|{ $inits:cinits }|]
-
-cgConst (ReplicateC n c) = do
-    tau    <- inferConst noLoc c
-    c_dflt <- defaultValueC tau
-    if c == c_dflt
-      then do ce <- cgConst c
-              return $ CInit [cinit|{ $init:(toInitializer ce) }|]
-      else do cinits <- cgConstStream tau (S.replicate n c)
-              return $ CInit [cinit|{ $inits:cinits }|]
-
-cgConst (EnumC tau) = do
-    cs     <- enumType tau
-    cinits <- cgConstVector tau cs
-    return $ CInit [cinit|{ $inits:cinits }|]
-
-cgConst (StructC struct taus flds) = do
-    fldDefs <- tyAppStruct struct taus
-    -- We must be careful to generate initializers in the same order as the
-    -- struct's fields are declared, which is why we map 'cgField' over the
-    -- struct's field definitions rather than mapping it over the values as
-    -- declared in @flds@
-    cinits <- mapM (cgField flds . fst) fldDefs
-    return $ CInit [cinit|{ $inits:cinits }|]
+cgConst c = do
+    zeroSize <- inferConst noLoc c >>= hasZeroTypeSize
+    if zeroSize
+      then return CVoid
+      else go c
   where
-    cgField :: [(Field, Const)] -> Field -> Cg l C.Initializer
-    cgField flds f =
-        case lookup f flds of
-          Nothing -> panicdoc $ text "cgField: missing field"
-          Just c -> cgConstInit c
+    go :: Const -> Cg l (CExp l)
+    go UnitC        = return CVoid
+    go (BoolC b)    = return $ CBool b
+    go (IntC _ x)   = return $ CInt (fromIntegral x)
+    go (FixC _ x)   = return $ CInt (fromIntegral x)
+    go (FloatC _ f) = return $ CFloat (toRational f)
+    go (StringC s)  = return $ CExp [cexp|$string:s|]
+
+    go c@(ArrayC cs) = do
+        (_, tau) <- inferConst noLoc c >>= checkArrT
+        cinits   <- cgConstVector tau cs
+        return $ CInit [cinit|{ $inits:cinits }|]
+
+    go (ReplicateC n c) = do
+        tau    <- inferConst noLoc c
+        c_dflt <- defaultValueC tau
+        if c == c_dflt
+          then do ce <- cgConst c
+                  return $ CInit [cinit|{ $init:(toInitializer ce) }|]
+          else do cinits <- cgConstStream tau (S.replicate n c)
+                  return $ CInit [cinit|{ $inits:cinits }|]
+
+    go (EnumC tau) = do
+        cs     <- enumType tau
+        cinits <- cgConstVector tau cs
+        return $ CInit [cinit|{ $inits:cinits }|]
+
+    go (StructC struct taus flds) = do
+        fldDefs <- tyAppStruct struct taus
+        -- We must be careful to generate initializers in the same order as the
+        -- struct's fields are declared, which is why we map 'cgField' over the
+        -- struct's field definitions rather than mapping it over the values as
+        -- declared in @flds@
+        cinits <- mapM (cgField flds . fst) fldDefs
+        return $ CInit [cinit|{ $inits:cinits }|]
+      where
+        cgField :: [(Field, Const)] -> Field -> Cg l C.Initializer
+        cgField flds f =
+            case lookup f flds of
+              Nothing -> panicdoc $ text "cgField: missing field"
+              Just c -> cgConstInit c
 
 -- | Compile a constant to a C initializer.
 cgConstInit :: Const -> Cg l C.Initializer
@@ -2750,12 +2757,12 @@ cgParMultiThreaded strategy free tau_res b left right klbl k = do
             cgParSpawn cf ctinfo right' (rightdonek omega_r)
   where
     cgBuf :: Type -> Cg l (CExp l)
-    cgBuf UnitT{} =
-        return CVoid
-
     cgBuf tau = do
-        ctau <- cgType tau
-        cgTopCTemp tau "par_buf" [cty|$tyqual:calign $ty:ctau[KZ_BUFFER_SIZE]|] Nothing
+        zeroSize <- hasZeroTypeSize tau
+        if zeroSize
+          then return CVoid
+          else do ctau <- cgType tau
+                  cgTopCTemp tau "par_buf" [cty|$tyqual:calign $ty:ctau[KZ_BUFFER_SIZE]|] Nothing
 
     -- | Generate code to spawn a thread that is one side of a par construct.
     cgParSpawn :: forall a . C.Id
@@ -3264,33 +3271,47 @@ cgBoundsCheck clen cidx = do
       appendStm [cstm|kz_assert($cidx >= 0 && $cidx < $clen, $string:(renderLoc cidx), "Array index %d out of bounds (%d)", $cidx, $clen);|]
 
 -- | Generate a 'CExp' representing an index into an array.
-cgIdx :: Type          -- ^ Type of the array element
-      -> CExp l        -- ^ The array
-      -> CExp l        -- ^ The length of the array
-      -> CExp l        -- ^ The array index
-      -> Cg l (CExp l) -- ^ The indexed element
-cgIdx tau (CSlice _ carr cidx1 _) clen cidx2 = do
-    cgBoundsCheck clen cidx2
-    return $ CIdx tau carr (cidx1 + cidx2)
-
-cgIdx tau (CAlias _ carr) clen cidx =
-    cgIdx tau carr clen cidx
-
+cgIdx :: forall l . Type -- ^ Type of the array element
+      -> CExp l          -- ^ The array
+      -> CExp l          -- ^ The length of the array
+      -> CExp l          -- ^ The array index
+      -> Cg l (CExp l)   -- ^ The indexed element
 cgIdx tau carr clen cidx = do
-    cgBoundsCheck clen cidx
-    return $ CIdx tau carr cidx
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return CVoid
+      else mkIdx carr cidx
+  where
+    mkIdx :: CExp l -> CExp l -> Cg l (CExp l)
+    mkIdx (CSlice _ carr cidx1 _) cidx2 = do
+        cgBoundsCheck clen cidx2
+        return $ CIdx tau carr (cidx1 + cidx2)
+
+    mkIdx (CAlias _ carr) cidx =
+        cgIdx tau carr clen cidx
+
+    mkIdx carr cidx = do
+        cgBoundsCheck clen cidx
+        return $ CIdx tau carr cidx
 
 -- | Generate a 'CExp' representing a slice of an array.
-cgSlice :: Type          -- ^ Type of the array element
-        -> CExp l        -- ^ The array
-        -> CExp l        -- ^ The length of the array
-        -> CExp l        -- ^ The array index
-        -> CExp l        -- ^ The length of the slice
-        -> Cg l (CExp l) -- ^ The slice
-cgSlice tau carr clen cidx len = do
-    cgBoundsCheck clen cidx
-    cgBoundsCheck clen (cidx + len - 1)
-    return $ CSlice tau carr cidx len
+cgSlice :: forall l . Type -- ^ Type of the array element
+        -> CExp l          -- ^ The array
+        -> CExp l          -- ^ The length of the array
+        -> CExp l          -- ^ The array index
+        -> CExp l          -- ^ The length of the slice
+        -> Cg l (CExp l)   -- ^ The slice
+cgSlice tau carr clen cidx clen_slice = do
+    zeroSize <- hasZeroTypeSize tau
+    if zeroSize
+      then return CVoid
+      else mkSlice carr cidx clen_slice
+  where
+    mkSlice :: CExp l -> CExp l -> CExp l -> Cg l (CExp l)
+    mkSlice carr cidx clen_slice = do
+        cgBoundsCheck clen cidx
+        cgBoundsCheck clen (cidx + clen_slice - 1)
+        return $ CSlice tau carr cidx clen_slice
 
 -- | Generate a 'CExp' representing a field projected from a struct.
 cgProj :: CExp l -> Field -> Cg l (CExp l)
