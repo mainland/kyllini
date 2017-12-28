@@ -647,8 +647,8 @@ coalesceTopComp comp = do
            -> [BC]
     crules comp inBits outBits maxBuf = do
         (inMult, outMult) <- compInOutM comp
-        inBlock           <- crule inMult  (8*maxBuf `quot` inBits)
-        outBlock          <- crule outMult (8*maxBuf `quot` outBits)
+        inBlock           <- crule inMult  (maxBufElems maxBuf inBits)
+        outBlock          <- crule outMult (maxBufElems maxBuf outBits)
         return BC { inBlock  = inBlock
                   , outBlock = outBlock
                   , rateMult = 1
@@ -707,7 +707,9 @@ coalesceTopComp comp = do
           where
             -- Min rate multiplier needed to reach a bit boundary.
             minRateXForBytes :: Int
-            minRateXForBytes = lcm 8 (n*bits) `quot` (8*bits*n)
+            minRateXForBytes
+              | bits == 0 = 1
+              | otherwise = lcm 8 (n*bits) `quot` (8*bits*n)
 
             -- Max rate multiplier. We use 'maxElems' to calculate this.
             maxRateX :: Int
@@ -769,8 +771,8 @@ coalesceComp comp = do
            -> [BC]
     crules comp inBits outBits maxBuf = do
         (inMult, outMult) <- compInOutM comp
-        inBlock           <- crule inMult  (8*maxBuf `quot` inBits)
-        outBlock          <- crule outMult (8*maxBuf `quot` outBits)
+        inBlock           <- crule inMult  (maxBufElems maxBuf inBits)
+        outBlock          <- crule outMult (maxBufElems maxBuf outBits)
         return BC { inBlock  = inBlock
                   , outBlock = outBlock
                   , rateMult = 1
@@ -919,6 +921,14 @@ vectAnn c = go (unComp c)
         case last steps of
           RepeatC _ ann _ _ -> Just ann
           _                 -> Nothing
+
+-- | Compute maximum buffer elements
+maxBufElems :: Int -- ^ Max buffer size in bytes
+            -> Int -- ^ Number of bits in one element
+            -> Int -- ^ Maximum number of elements
+maxBufElems maxBuf nbits
+  | nbits == 0 = maxBuf
+  | otherwise  = 8*maxBuf `quot` nbits
 
 divides :: Integral a => a -> a -> Bool
 divides x y = y `rem` x == 0
