@@ -318,9 +318,8 @@ checkLetExtFun f ps ztau_ret isPure l = do
 -- | Create a generator for '[E.Decl]' from a 'Decl' and a generator for a
 -- 'E.Decl'.
 toDeclsGen :: Z.Decl -> Ti E.Decl -> ([E.Decl] -> Ti a) -> Ti a
-toDeclsGen decl mcdecl k =
-    alwaysWithSummaryContext decl $ do
-    cdecl <- mcdecl
+toDeclsGen decl mcdecl k = do
+    cdecl <- alwaysWithSummaryContext decl mcdecl
     k [cdecl]
 
 checkDecl :: Z.Decl
@@ -338,10 +337,10 @@ checkDecl decl@(Z.StructD zs ztvks zflds l) k = do
                    -- in.
                    mapM_ zonkTvk tvks
                    return $ StructDef zs tvks (zfields `zip` taus_fields) l
-    let mcdecl k = alwaysWithSummaryContext decl $ do
-                   cstructdef <- trans structdef
-                   extendCoreStructs [cstructdef] $
-                     k [E.StructD cstructdef l]
+    let mcdecl k = do cstructdef <- alwaysWithSummaryContext decl $
+                                    trans structdef
+                      extendCoreStructs [cstructdef] $
+                        k [E.StructD cstructdef l]
     extendStructs [structdef] $ k mcdecl
   where
     (zfields, ztaus_fields) = unzip zflds
@@ -372,11 +371,12 @@ checkDecl decl@(Z.LetTypeD zalpha zkappa ztau l) k = do
     tau   <- fromZ ztau
     -- We only allow type variables of kind nat to be specified this way
     alwaysWithSummaryContext decl $ checkKind tau kappa
-    let mcdecl k = alwaysWithSummaryContext decl $ do
-                   calpha <- trans alpha
-                   ckappa <- trans kappa
-                   ctau   <- trans tau
-                   k [E.LetTypeD calpha ckappa ctau l]
+    let mcdecl k = do (calpha, ckappa, ctau) <- alwaysWithSummaryContext decl $ do
+                                                calpha <- trans alpha
+                                                ckappa <- trans kappa
+                                                ctau   <- trans tau
+                                                return (calpha, ckappa, ctau)
+                      k [E.LetTypeD calpha ckappa ctau l]
     extendTyVars [(alpha, kappa)] $
       extendTyVarTypes [(alpha, tau)] $
       k mcdecl
