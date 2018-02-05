@@ -177,7 +177,7 @@ loadDependencies filepath k = do
         pprPhase >=>
         stopIf (testDynFlag StopAfterParse) >=>
         tracePhase "rename" renamePhase >=>
-        tracePhase "typecheck" checkPhase
+        traceExprPhase "typecheck" checkPhase
 
     parsePhase :: FilePath -> MaybeT (C KZC) Z.Program
     parsePhase filepath = do
