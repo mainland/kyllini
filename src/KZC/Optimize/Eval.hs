@@ -80,7 +80,7 @@ evalMain (Main comp tau) =
                      CompReturnV {}  -> do h'    <- freezeHeap
                                            comp' <- toComp val
                                            return (h', comp')
-                     CompV h' steps' -> return (h', mkComp  steps')
+                     CompV h' steps' -> return (h', mkComp steps')
                      _               -> faildoc $ nest 2 $
                                         text "Computation did not return CompReturnV or CompV:" </>
                                         ppr val
@@ -396,7 +396,7 @@ evalStep step@(CallC _ f taus args _) =
             letBinds :: [(Var, Type, ArgVal l m)] -> Comp l -> EvalM l m (Comp l)
             letBinds bs comp = do
               bindsSteps <- mapM letBind bs
-              return $ mkComp  $ concat bindsSteps ++ unComp comp
+              return $ mkComp $ concat bindsSteps ++ unComp comp
 
             letBind :: (Var, Type, ArgVal l m) -> EvalM l m [Step l]
             letBind (_v, RefT {}, _e1)      = return []
@@ -438,7 +438,7 @@ evalStep (IfC l e1 c2 c3 s) =
                            c3' <- savingHeap $ evalFullSteps $ unComp c3
                            killVars c2'
                            killVars c3'
-                           partial $ CompV h [IfC l (toExp val) (mkComp  c2') (mkComp  c3') s]
+                           partial $ CompV h [IfC l (toExp val) (mkComp c2') (mkComp c3') s]
 
 evalStep LetC{} =
     panicdoc $ text "evalStep: saw LetC"
@@ -462,7 +462,7 @@ evalStep (LiftC l e s) = do
 evalStep (ReturnC l e s) = do
     val <- evalExp e
     case val of
-      ExpV e' -> partialComp $ mkComp  [ReturnC l e' s]
+      ExpV e' -> partialComp $ mkComp [ReturnC l e' s]
       _       -> return $ CompReturnV val
 
 evalStep BindC{} =
@@ -470,19 +470,19 @@ evalStep BindC{} =
 
 evalStep (TakeC l tau s) = do
     tau' <- simplType tau
-    partialComp $ mkComp  [TakeC l tau' s]
+    partialComp $ mkComp [TakeC l tau' s]
 
 evalStep (TakesC l n tau s) = do
     tau' <- simplType tau
-    partialComp $ mkComp  [TakesC l n tau' s]
+    partialComp $ mkComp [TakesC l n tau' s]
 
 evalStep (EmitC l e s) = do
     val <- evalExp e
-    partialComp $ mkComp  [EmitC l (toExp val) s]
+    partialComp $ mkComp [EmitC l (toExp val) s]
 
 evalStep (EmitsC l e s) = do
     val <- evalExp e
-    partialComp $ mkComp  [EmitsC l (toExp val) s]
+    partialComp $ mkComp [EmitsC l (toExp val) s]
 
 evalStep (RepeatC l ann c s) = do
     h <- freezeHeap
@@ -491,7 +491,7 @@ evalStep (RepeatC l ann c s) = do
               withSummaryContext c $
               evalComp c
     steps' <- toSteps val
-    partial $ CompV h [RepeatC l ann (mkComp  steps') s]
+    partial $ CompV h [RepeatC l ann (mkComp steps') s]
 
 evalStep (ParC ann b c1 c2 l) = do
     h         <- freezeHeap
@@ -504,7 +504,7 @@ evalStep (ParC ann b c1 c2 l) = do
                  evalComp c2
     steps1    <- toSteps val1
     steps2    <- toSteps val2
-    partial $ CompV h [ParC ann b (mkComp  steps1) (mkComp  steps2) l]
+    partial $ CompV h [ParC ann b (mkComp steps1) (mkComp steps2) l]
 
 -- | Fully evaluate a sequence of steps in the current heap, returning a
 -- sequence of steps representing all changes to the heap.
