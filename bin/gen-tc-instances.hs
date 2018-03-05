@@ -5,7 +5,7 @@
 
 module Main where
 
-import Data.Generics
+import Data.Generics (Data, Typeable)
 
 import qualified Language.Ziria.Syntax as Z
 
