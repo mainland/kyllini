@@ -101,7 +101,7 @@ endif
 #
 # Support cabal sandbox and stack package databases. We prefer stack.
 #
-STACK_LTS=lts-9.9/8.0.2
+STACK_LTS=lts-9.21/8.0.2
 STACK_PKGDB=$(HOME)/.stack/snapshots/$(ARCH)-$(OS)/$(STACK_LTS)/pkgdb
 
 ifneq ($(wildcard $(STACK_PKGDB)/*.conf),)
