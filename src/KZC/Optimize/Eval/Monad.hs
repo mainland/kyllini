@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -78,6 +79,7 @@ module KZC.Optimize.Eval.Monad (
 import Control.Monad (forM_,
                       when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -97,7 +99,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe,
                    mapMaybe)
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Sequence ((|>),
                       Seq)
 import Data.Set (Set)
@@ -163,17 +167,21 @@ defaultEvalState = do
                      }
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader (EvalEnv l m),
-              MonadState (EvalState l m),
-              MonadException,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadUnique,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader (EvalEnv l m)
+             , MonadState (EvalState l m)
+             , MonadException
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadUnique
+             , MonadTc)
 
 deriving instance MonadRef IORef m => MonadRef IORef (EvalM l m)
 

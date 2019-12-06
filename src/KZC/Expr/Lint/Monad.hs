@@ -76,6 +76,7 @@ module KZC.Expr.Lint.Monad (
   ) where
 
 import Control.Monad.Except (ExceptT(..), runExceptT)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -138,13 +139,16 @@ defaultTcEnv = TcEnv
     , stIndices  = Nothing
     }
 
-class (Functor m, Applicative m, MonadErr m, MonadConfig m, MonadFuel m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
+class (Functor m, Applicative m, MonadFail m, MonadErr m, MonadConfig m, MonadFuel m, MonadPlatform m, MonadTrace m, MonadUnique m) => MonadTc m where
     askTc   :: m TcEnv
     localTc :: (TcEnv -> TcEnv) -> m a -> m a
 
 -- | A 'MonadTc' with support for IO references.
-class (MonadTc m, MonadIO m, MonadRef IORef m,
-       PrimMonad m, PrimState m ~ RealWorld)
+class ( MonadTc m
+      , MonadIO m
+      , MonadRef IORef m
+      , PrimMonad m
+      , PrimState m ~ RealWorld)
     => MonadTcRef m
 
 asksTc :: MonadTc m => (TcEnv -> a) -> m a

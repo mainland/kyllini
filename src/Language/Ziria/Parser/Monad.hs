@@ -47,6 +47,7 @@ module Language.Ziria.Parser.Monad (
   ) where
 
 import Control.Monad.Exception
+import qualified Control.Monad.Fail as Fail
 import Control.Monad.State
 import Data.Int (Int64)
 import Data.Loc
@@ -91,22 +92,26 @@ instance Functor P where
     fmap f x = x >>= return . f
 
 instance Applicative P where
-    pure  = return
+    pure a = P $ \s -> Right (a, s)
+
     (<*>) = ap
 
+    m1 *> m2 = P $ \s ->
+        case runP m1 s of
+          Left e         -> Left e
+          Right (_, s')  -> runP m2 s'
+
 instance Monad P where
+    return = pure
+
     m >>= k = P $ \s ->
         case runP m s of
           Left e         -> Left e
           Right (a, s')  -> runP (k a) s'
 
-    m1 >> m2 = P $ \s ->
-        case runP m1 s of
-          Left e         -> Left e
-          Right (_, s')  -> runP m2 s'
+    fail = Fail.fail
 
-    return a = P $ \s -> Right (a, s)
-
+instance Fail.MonadFail P where
     fail msg = do
         inp <- getInput
         throw $ ParserException (Loc (alexPos inp) (alexPos inp))

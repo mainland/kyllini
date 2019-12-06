@@ -18,7 +18,8 @@ module KZC.Util.SetLike (
   ) where
 
 import qualified Data.List as List
-import Data.Monoid
+import Data.Monoid (Monoid(..), (<>))
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -76,10 +77,13 @@ mkOrderedSet xs xs' (y:ys)
 instance Foldable OrderedSet where
     foldr f z (OS xs _) = List.foldr f z xs
 
+instance Ord a => Sem.Semigroup (OrderedSet a) where
+    OS xs xs' <> OS ys _ = mkOrderedSet xs xs' ys
+
 instance Ord a => Monoid (OrderedSet a) where
     mempty = OS mempty mempty
 
-    OS xs xs' `mappend` OS ys _ = mkOrderedSet xs xs' ys
+    mappend = (Sem.<>)
 
 instance Ord a => SetLike OrderedSet a where
     member x (OS _ ys) = Set.member x ys

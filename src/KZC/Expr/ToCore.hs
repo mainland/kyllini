@@ -16,6 +16,7 @@ module KZC.Expr.ToCore (
   ) where
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -46,16 +47,20 @@ defaultTCEnv :: TCEnv
 defaultTCEnv = TCEnv mempty
 
 newtype TC m a = TC { unTC :: ReaderT TCEnv m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader TCEnv,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader TCEnv
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans TC where
     lift m = TC $ lift m

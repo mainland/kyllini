@@ -21,6 +21,7 @@ module KZC.Analysis.Lut (
 
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
@@ -322,16 +323,20 @@ defaultLUTStats = LUTStats
     }
 
 newtype L m a = L { unL :: StateT LUTStats m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadState LUTStats,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadState LUTStats
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 execL :: MonadTc m => L m () -> m LUTStats
 execL m = execStateT (unL m) defaultLUTStats

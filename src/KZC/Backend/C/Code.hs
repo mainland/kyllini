@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 -- |
@@ -12,7 +13,10 @@ module KZC.Backend.C.Code (
   ) where
 
 import Data.Foldable (toList)
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+import qualified Data.Semigroup as Sem
 import Data.Sequence (Seq,
                       ViewL((:<)),
                       ViewR((:>)),
@@ -46,15 +50,8 @@ instance Pretty CodeBlock where
             (map ppr . toList . blockCleanupStms) c ++
             (map ppr . toList . blockStms) c
 
-instance Monoid CodeBlock where
-    mempty = CodeBlock
-        { blockDecls       = mempty
-        , blockInitStms    = mempty
-        , blockCleanupStms = mempty
-        , blockStms        = mempty
-        }
-
-    a `mappend` b = CodeBlock
+instance Sem.Semigroup CodeBlock where
+    a <> b = CodeBlock
         { blockDecls       = blockDecls a <> blockDecls b
         , blockInitStms    = blockInitStms a <> blockInitStms b
         , blockCleanupStms = blockCleanupStms a <> blockCleanupStms b
@@ -63,6 +60,16 @@ instance Monoid CodeBlock where
                                     stms1 <> ([cstm|$id:lbl: $stm:stm|] <| stms2)
                                _ -> blockStms a <> blockStms b
         }
+
+instance Monoid CodeBlock where
+    mempty = CodeBlock
+        { blockDecls       = mempty
+        , blockInitStms    = mempty
+        , blockCleanupStms = mempty
+        , blockStms        = mempty
+        }
+
+    mappend = (Sem.<>)
 
 instance ToBlockItems CodeBlock where
     toBlockItems b =
@@ -100,18 +107,8 @@ instance Pretty Code where
             (map ppr . toList . codeDecls) c ++
             (map ppr . toList . codeStms) c
 
-instance Monoid Code where
-    mempty = Code
-        { codeDefs              = mempty
-        , codeFunDefs           = mempty
-        , codeThreadDecls       = mempty
-        , codeThreadInitStms    = mempty
-        , codeThreadCleanupStms = mempty
-        , codeDecls             = mempty
-        , codeStms              = mempty
-        }
-
-    a `mappend` b = Code
+instance Sem.Semigroup Code where
+    a <> b = Code
         { codeDefs              = codeDefs a <> codeDefs b
         , codeFunDefs           = codeFunDefs a <> codeFunDefs b
         , codeThreadDecls       = codeThreadDecls a <> codeThreadDecls b
@@ -123,3 +120,17 @@ instance Monoid Code where
                                          stms1 <> ([cstm|$id:lbl: $stm:stm|] <| stms2)
                                     _ -> codeStms a <> codeStms b
         }
+
+
+instance Monoid Code where
+    mempty = Code
+        { codeDefs              = mempty
+        , codeFunDefs           = mempty
+        , codeThreadDecls       = mempty
+        , codeThreadInitStms    = mempty
+        , codeThreadCleanupStms = mempty
+        , codeDecls             = mempty
+        , codeStms              = mempty
+        }
+
+    mappend = (Sem.<>)

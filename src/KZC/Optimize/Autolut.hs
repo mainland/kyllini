@@ -17,6 +17,7 @@ module KZC.Optimize.Autolut (
 
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Text.PrettyPrint.Mainland hiding (width)
@@ -36,15 +37,19 @@ import KZC.Util.Trace
 import KZC.Util.Uniq
 
 newtype AutoM m a = AutoM { unAutoM :: m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans AutoM where
     lift = AutoM

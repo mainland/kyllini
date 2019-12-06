@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -129,6 +130,7 @@ import Prelude hiding (elem)
 
 import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Ref (MonadRef)
@@ -144,7 +146,10 @@ import Data.Foldable (toList)
 import Data.IORef (IORef)
 import Data.Loc
 import Data.Map (Map)
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+import qualified Data.Semigroup as Sem
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
@@ -252,6 +257,19 @@ data CgStats = CgStats
     , nEmits          :: !Int
     }
 
+instance Sem.Semigroup CgStats where
+    x <> y =
+        CgStats { bTopIsRepeat    = bTopIsRepeat x || bTopIsRepeat y
+                , nLUTs           = nLUTs x + nLUTs y
+                , nDefaultInits   = nDefaultInits x + nDefaultInits y
+                , nMemCopies      = nMemCopies x + nMemCopies y
+                , nBitArrayCopies = nBitArrayCopies x + nBitArrayCopies y
+                , nForLoops       = nForLoops x + nForLoops y
+                , nPars           = nPars x + nPars y
+                , nTakes          = nTakes x + nTakes y
+                , nEmits          = nEmits x + nEmits y
+                }
+
 instance Monoid CgStats where
     mempty = CgStats
         { bTopIsRepeat    = False
@@ -265,17 +283,7 @@ instance Monoid CgStats where
         , nEmits          = 0
         }
 
-    x `mappend` y =
-        CgStats { bTopIsRepeat    = bTopIsRepeat x || bTopIsRepeat y
-                , nLUTs           = nLUTs x + nLUTs y
-                , nDefaultInits   = nDefaultInits x + nDefaultInits y
-                , nMemCopies      = nMemCopies x + nMemCopies y
-                , nBitArrayCopies = nBitArrayCopies x + nBitArrayCopies y
-                , nForLoops       = nForLoops x + nForLoops y
-                , nPars           = nPars x + nPars y
-                , nTakes          = nTakes x + nTakes y
-                , nEmits          = nEmits x + nEmits y
-                }
+    mappend = (Sem.<>)
 
 instance Pretty CgStats where
     ppr stats =
@@ -333,19 +341,23 @@ defaultCgState = CgState
 
 -- | The 'Cg' monad.
 newtype Cg l a = Cg { unCg :: ReaderT (CgEnv l) (StateT (CgState l) Tc) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadException,
-              MonadReader (CgEnv l),
-              MonadState (CgState l),
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadRef IORef,
-              MonadTc,
-              MonadTcRef)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadException
+             , MonadReader (CgEnv l)
+             , MonadState (CgState l)
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadRef IORef
+             , MonadTc
+             , MonadTcRef)
 
 instance PrimMonad (Cg l) where
     type PrimState (Cg l) = PrimState Tc

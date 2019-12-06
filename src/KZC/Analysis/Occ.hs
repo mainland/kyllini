@@ -18,6 +18,7 @@ import Prelude hiding ((<=))
 
 import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Writer (MonadWriter(..),
@@ -26,6 +27,7 @@ import Control.Monad.Writer (MonadWriter(..),
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -53,9 +55,12 @@ data Occs = Occs
     }
   deriving (Eq)
 
+instance Sem.Semigroup Occs where
+    (<>) = lub
+
 instance Monoid Occs where
     mempty  = Occs mempty mempty
-    mappend = lub
+    mappend = (Sem.<>)
 
 instance Poset Occs where
     Occs info rs <= Occs info' rs' = info <= info' && rs <= rs'
@@ -72,16 +77,20 @@ lookupOccInfo v occs =
     fromMaybe Dead $ Map.lookup v (occInfo occs)
 
 newtype OccM m a = OccM { unOccM :: WriterT Occs m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadWriter Occs,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadWriter Occs
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans OccM where
     lift = OccM . lift

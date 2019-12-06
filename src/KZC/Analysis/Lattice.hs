@@ -166,14 +166,14 @@ instance Pretty a => Pretty (Known a) where
     ppr Any       = text "top"
 
 instance Functor Known where
-    fmap f x = x >>= return . f
+    fmap = liftM
 
 instance Applicative Known where
-    pure  = return
+    pure  = Known
     (<*>) = ap
 
 instance Monad Known where
-    return = Known
+    return = pure
 
     Unknown >>= _ = Unknown
     Known x >>= f = f x
@@ -225,14 +225,14 @@ instance Pretty a => Pretty (Top a) where
     ppr Top        = topDoc
 
 instance Functor Top where
-    fmap f x = x >>= return . f
+    fmap = liftM
 
 instance Applicative Top where
-    pure  = return
+    pure  = NotTop
     (<*>) = ap
 
 instance Monad Top where
-    return = NotTop
+    return = pure
 
     NotTop x >>= f = f x
     Top      >>= _ = Top

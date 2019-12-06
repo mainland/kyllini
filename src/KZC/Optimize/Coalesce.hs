@@ -18,6 +18,7 @@ import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
                       guard)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Logic (MonadLogic(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -58,19 +59,23 @@ defaultCoEnv = CoEnv simpleTrans simpleTrans
     simpleTrans = TransR (N 1) (N 1)
 
 newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT m) a }
-  deriving (Functor, Applicative, Monad,
-            Alternative, MonadPlus,
-            MonadIO,
-            MonadReader CoEnv,
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc,
-            MonadLogic)
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , Alternative
+           , MonadPlus
+           , MonadFail
+           , MonadIO
+           , MonadReader CoEnv
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc
+           , MonadLogic)
 
 runCo :: forall m a . MonadErr m
       => Co m a

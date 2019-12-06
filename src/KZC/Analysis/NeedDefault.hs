@@ -25,6 +25,7 @@ import Prelude hiding ((<=))
 import Control.Monad (void,
                       when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..),
@@ -37,6 +38,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -289,7 +291,13 @@ ensureTotal = go
 data NDState = NDState
     { vals        :: !(Map Var Val)
     , usedDefault :: !(Set Var)
-    }
+  }
+
+instance Sem.Semigroup NDState where
+    x <> y = NDState
+        { usedDefault = usedDefault x <> usedDefault y
+        , vals        = vals x <> vals y
+        }
 
 instance Monoid NDState where
     mempty = NDState
@@ -297,22 +305,23 @@ instance Monoid NDState where
         , usedDefault = mempty
         }
 
-    x `mappend` y = NDState
-        { usedDefault = usedDefault x <> usedDefault y
-        , vals        = vals x <> vals y
-        }
+    mappend = (Sem.<>)
 
 newtype ND m a = ND { unND :: StateT NDState m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadState NDState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadState NDState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans ND where
     lift m = ND $ lift m

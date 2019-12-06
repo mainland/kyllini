@@ -20,6 +20,7 @@ module KZC.Monad (
   ) where
 
 import Control.Monad.Exception
+import Control.Monad.Fail as Fail
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
 import Control.Monad.Reader
@@ -86,9 +87,14 @@ defaultKZCEnv fs = do
                   }
 
 newtype KZC a = KZC { unKZC :: ReaderT KZCEnv IO a }
-    deriving (Functor, Applicative, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader KZCEnv)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadRef IORef
+             , MonadAtomicRef IORef
+             , MonadReader KZCEnv)
 
 instance PrimMonad KZC where
     type PrimState KZC = RealWorld
@@ -101,18 +107,6 @@ evalKZC :: Config -> KZC a -> IO a
 evalKZC fs m = do
     env <- defaultKZCEnv fs
     runKZC m env
-
-instance Monad KZC where
-    {-# INLINE return #-}
-    return a = KZC $ return a
-
-    {-# INLINE (>>=) #-}
-    m >>= f  = KZC $ unKZC m >>= unKZC  . f
-
-    {-# INLINE (>>) #-}
-    m1 >> m2 = KZC $ unKZC m1 >> unKZC m2
-
-    fail msg = throw (FailException (string msg))
 
 instance MonadException KZC where
     throw = throwContextException (KZC . throw)

@@ -74,6 +74,7 @@ module KZC.Check.Monad (
   ) where
 
 import Control.Monad.Exception
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State
@@ -105,16 +106,21 @@ import KZC.Util.Uniq
 import KZC.Vars
 
 newtype Ti a = Ti { unTi :: ReaderT TiEnv (StateT TiState KZC) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader TiEnv,
-              MonadState TiState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadPlatform,
-              MonadTrace)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadRef IORef
+             , MonadAtomicRef IORef
+             , MonadReader TiEnv
+             , MonadState TiState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadPlatform
+             , MonadTrace)
 
 runTi :: Ti a -> TiEnv -> TiState -> KZC (a, TiState)
 runTi m r = runStateT (runReaderT (unTi m) r)

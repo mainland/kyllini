@@ -19,6 +19,7 @@ module KZC.Monomorphize (
 
 import Control.Monad (void, when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -82,17 +83,20 @@ defaultMonoState :: MonoState l
 defaultMonoState = MonoState { topdecls = mempty }
 
 newtype MonoM l m a = MonoM { unMonoM:: ReaderT (MonoEnv l m) (StateT (MonoState l) m) a }
-    deriving (Functor, Applicative, Monad,
-              MonadReader (MonoEnv l m),
-              MonadState (MonoState l),
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadReader (MonoEnv l m)
+             , MonadState (MonoState l)
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 deriving instance MonadRef IORef m => MonadRef IORef (MonoM l m)
 

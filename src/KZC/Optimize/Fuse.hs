@@ -22,6 +22,7 @@ import Control.Monad (MonadPlus(..),
                       when,
                       zipWithM)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
 import Control.Monad.Logic.Class (MonadLogic(..),
@@ -42,6 +43,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
+import qualified Data.Semigroup as Sem
 import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -142,14 +144,17 @@ data FusionStats = FusionStats
     , fusionTopRate  :: !(Maybe (Rate M))
     }
 
-instance Monoid FusionStats where
-    mempty = FusionStats 0 0 Nothing
-
-    x `mappend` y = FusionStats
+instance Sem.Semigroup FusionStats where
+    x <> y = FusionStats
         { fusedPars      = fusedPars x + fusedPars y
         , fusionFailures = fusionFailures x + fusionFailures y
         , fusionTopRate  = fusionTopRate y
         }
+
+instance Monoid FusionStats where
+    mempty = FusionStats 0 0 Nothing
+
+    mappend = (Sem.<>)
 
 instance Pretty FusionStats where
     ppr stats =
@@ -164,20 +169,24 @@ instance Pretty FusionStats where
 newtype F l m a = F { unF :: ReaderT (FEnv l)
                                (StateT (FState l)
                                  (SEFKT (StateT FusionStats m))) a }
-    deriving (Functor, Applicative, Monad,
-              Alternative, MonadPlus,
-              MonadIO,
-              MonadReader (FEnv l),
-              MonadState (FState l),
-              MonadException,
-              MonadLogic,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , Alternative
+             , MonadPlus
+             , MonadFail
+             , MonadIO
+             , MonadReader (FEnv l)
+             , MonadState (FState l)
+             , MonadException
+             , MonadLogic
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 runF :: forall l m a . (IsLabel l, MonadTc m)
      => F l m a
@@ -1413,16 +1422,20 @@ unrollTakes :: (IsLabel l, MonadTc m)
 unrollTakes = runUT . compT
 
 newtype UT m a = UT { runUT :: m a }
-  deriving (Functor, Applicative, Monad,
-            Alternative, MonadPlus,
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , Alternative
+           , MonadPlus
+           , MonadFail
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 instance MonadTc m => TransformExp (UT m) where
 
@@ -1447,16 +1460,20 @@ unrollEmits :: (IsLabel l, MonadTc m)
 unrollEmits = runUE . compT
 
 newtype UE m a = UE { runUE :: m a }
-  deriving (Functor, Applicative, Monad,
-            Alternative, MonadPlus,
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , Alternative
+           , MonadPlus
+           , MonadFail
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 instance MonadTc m => TransformExp (UE m) where
 

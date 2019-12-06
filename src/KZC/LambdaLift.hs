@@ -14,6 +14,7 @@ module KZC.LambdaLift (
   ) where
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
                              asks)
@@ -60,17 +61,20 @@ defaultLiftState = LiftState
     { topdecls = mempty }
 
 newtype LiftM m a = LiftM { unLiftM:: ReaderT LiftEnv (StateT LiftState m) a }
-    deriving (Functor, Applicative, Monad,
-              MonadReader LiftEnv,
-              MonadState LiftState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadReader LiftEnv
+             , MonadState LiftState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans LiftM where
     lift  = LiftM . lift . lift

@@ -96,7 +96,9 @@ import Data.List ((\\))
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.String
 import Data.Symbol
 import Data.Vector (Vector)

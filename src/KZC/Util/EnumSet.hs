@@ -43,6 +43,7 @@ import Prelude hiding (null)
 import Data.Bits
 import Data.Data (Data, Typeable)
 import Data.List (foldl')
+import qualified Data.Semigroup as Sem
 import Data.Word (Word64)
 
 newtype Set a = Set Word64
@@ -109,10 +110,13 @@ toList (Set bits) = [x | x <- [minBound..maxBound::a],
 fromList :: forall a . Enum a => [a] -> Set a
 fromList xs = Set (foldl' setBit 0 (map fromEnum xs))
 
-instance Monoid (Set a) where
+instance Ord a => Sem.Semigroup (Set a) where
+    Set x <> Set y = Set (x .|. y)
+
+instance Ord a => Monoid (Set a) where
     mempty = Set 0
 
-    Set x `mappend` Set y = Set (x .|. y)
+    mappend = (Sem.<>)
 
 instance (Enum a, Bounded a, Show a) => Show (Set a) where
     show = show . toList

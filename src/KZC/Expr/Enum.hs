@@ -15,6 +15,7 @@ module KZC.Expr.Enum (
     enumType
   ) where
 
+import Control.Monad.Fail (MonadFail)
 import Data.Binary.IEEE754 (wordToFloat,
                             wordToDouble)
 import Data.Vector (Vector)
@@ -37,7 +38,7 @@ import KZC.Expr.Lint
 -- | Stream all values of a constant. If the constant is an array, yield each
 -- element of the array in turn. If the stream is a scalar, yield the singe
 -- scalar.
-streamConst :: forall m m' . (MonadTc m, Monad m')
+streamConst :: forall m m' . (MonadTc m, MonadFail m')
             => Const
             -> m (Stream m' Const)
 streamConst (ArrayC cs) = return $ Stream f 0
@@ -65,7 +66,7 @@ streamConst c = return $ Stream f (Just c)
     f Nothing  = return Done
 
 -- | Stream all constants of the given type in bit order.
-streamTypeValues :: forall m m' . (MonadTc m, Monad m')
+streamTypeValues :: forall m m' . (MonadTc m, MonadFail m')
                  => Type
                  -> m (Stream m' Const)
 streamTypeValues UnitT{} = return $ Stream f 0
@@ -144,7 +145,7 @@ type ProductState m a = Maybe (Vector (Stream m a), Vector a)
 
 -- | Stream the product of a vector of streams. The first stream in teh vector
 -- of streams varies fastest.
-streamProduct :: forall a m . Monad m
+streamProduct :: forall a m . MonadFail m
               => Vector (Stream m a)
               -> Stream m (Vector a)
 streamProduct ss0 = Stream (f ss0) Nothing

@@ -19,6 +19,7 @@ import Prelude hiding ((<=))
 
 import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -90,17 +91,21 @@ defaultFState :: FState
 defaultFState = FState mempty
 
 newtype F m a = F { unF :: ReaderT FEnv (StateT FState m) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader FEnv,
-              MonadState FState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader FEnv
+             , MonadState FState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans F where
     lift = F . lift . lift

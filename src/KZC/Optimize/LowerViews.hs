@@ -17,6 +17,7 @@ module KZC.Optimize.LowerViews (
 import Prelude hiding ((<=))
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -44,16 +45,20 @@ defaultLEnv :: LEnv
 defaultLEnv = LEnv mempty
 
 newtype L l m a = L { unL :: ReaderT LEnv m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader LEnv,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader LEnv
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans (L l) where
     lift = L . lift

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -70,7 +71,10 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.List (foldl')
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+import qualified Data.Semigroup as Sem
 
 import qualified KZC.Util.EnumSet as ES
 
@@ -228,6 +232,44 @@ data Config = Config
     }
   deriving (Eq, Ord, Show)
 
+instance Sem.Semigroup Config where
+    f1 <> f2 = Config
+        { mode       = mode f2
+        , verbLevel  = verbLevel f1 + verbLevel f2
+        , maxErrCtx  = max (maxErrCtx f1) (maxErrCtx f2)
+        , maxSimpl   = max (maxSimpl f1) (maxSimpl f2)
+        , maxLUT     = max (maxLUT f1) (maxLUT f2)
+        , maxLUTLog2 = max (maxLUT f1) (maxLUT f2)
+        , minLUTOps  = min (minLUTOps f1) (minLUTOps f2)
+
+        , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
+
+        , minMemcpyBytes = min (minMemcpyBytes f1) (minMemcpyBytes f2)
+
+        , maxCoalesceBuffer = max (maxCoalesceBuffer f1) (maxCoalesceBuffer f2)
+
+        , maxCoalesceRate = maxCoalesceRate f1 <|> maxCoalesceRate f2
+
+        , maxTopCoalesceRate = maxTopCoalesceRate f1 <|> maxTopCoalesceRate f2
+
+        , dynFlags    = dynFlags f1    <> dynFlags f2
+        , warnFlags   = warnFlags f1   <> warnFlags f2
+        , werrorFlags = werrorFlags f1 <> werrorFlags f2
+        , dumpFlags   = dumpFlags f1   <> dumpFlags f2
+        , traceFlags  = traceFlags f1  <> traceFlags f2
+
+        , target = target f2
+
+        , importPaths  = importPaths f1 <> importPaths f2
+        , includePaths = includePaths f1 <> includePaths f2
+        , defines      = defines f1 <> defines f2
+
+        , output  = output  f2 <|> output f1
+        , dumpDir = dumpDir f2 <|> dumpDir f1
+
+        , fuel = fuel f1 + fuel f2
+        }
+
 instance Monoid Config where
     mempty = Config
         { mode       = Compile
@@ -280,42 +322,7 @@ instance Monoid Config where
         , fuel = 0
         }
 
-    mappend f1 f2 = Config
-        { mode       = mode f2
-        , verbLevel  = verbLevel f1 + verbLevel f2
-        , maxErrCtx  = max (maxErrCtx f1) (maxErrCtx f2)
-        , maxSimpl   = max (maxSimpl f1) (maxSimpl f2)
-        , maxLUT     = max (maxLUT f1) (maxLUT f2)
-        , maxLUTLog2 = max (maxLUT f1) (maxLUT f2)
-        , minLUTOps  = min (minLUTOps f1) (minLUTOps f2)
-
-        , maxFusionBlowup = max (maxFusionBlowup f1) (maxFusionBlowup f2)
-
-        , minMemcpyBytes = min (minMemcpyBytes f1) (minMemcpyBytes f2)
-
-        , maxCoalesceBuffer = max (maxCoalesceBuffer f1) (maxCoalesceBuffer f2)
-
-        , maxCoalesceRate = maxCoalesceRate f1 <|> maxCoalesceRate f2
-
-        , maxTopCoalesceRate = maxTopCoalesceRate f1 <|> maxTopCoalesceRate f2
-
-        , dynFlags    = dynFlags f1    <> dynFlags f2
-        , warnFlags   = warnFlags f1   <> warnFlags f2
-        , werrorFlags = werrorFlags f1 <> werrorFlags f2
-        , dumpFlags   = dumpFlags f1   <> dumpFlags f2
-        , traceFlags  = traceFlags f1  <> traceFlags f2
-
-        , target = target f2
-
-        , importPaths  = importPaths f1 <> importPaths f2
-        , includePaths = includePaths f1 <> includePaths f2
-        , defines      = defines f1 <> defines f2
-
-        , output  = output  f2 <|> output f1
-        , dumpDir = dumpDir f2 <|> dumpDir f1
-
-        , fuel = fuel f1 + fuel f2
-        }
+    mappend = (Sem.<>)
 
 defaultConfig :: Config
 defaultConfig =

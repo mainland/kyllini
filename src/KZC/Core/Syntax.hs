@@ -114,7 +114,10 @@ import Control.Monad.Reader
 import Data.Loc
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString(..))
@@ -359,14 +362,17 @@ data Comp l = Comp { unComp   :: [Step l]
                    }
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable)
 
+instance Sem.Semigroup (Comp l) where
+    -- Appending steps tosses out rate information
+    x <> y = Comp { unComp   = unComp x <> unComp y
+                  , compRate = Nothing
+                  , compTag  = Nothing
+                  }
+
 instance Monoid (Comp l) where
     mempty = Comp mempty Nothing Nothing
 
-    -- Appending steps tosses out rate information
-    x `mappend` y = Comp { unComp   = unComp x <> unComp y
-                         , compRate = Nothing
-                         , compTag  = Nothing
-                         }
+    mappend = (Sem.<>)
 
 mkComp :: [Step l] -> Comp l
 mkComp steps = mempty { unComp = steps }

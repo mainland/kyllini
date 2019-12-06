@@ -23,6 +23,7 @@ import Control.Monad (MonadPlus(..),
 import Control.Monad.Exception (Exception(..),
                                 MonadException(..),
                                 SomeException)
+import qualified Control.Monad.Fail as Fail
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Logic (MonadLogic(..),
                             reflect)
@@ -124,8 +125,16 @@ instance MonadErr m => Functor (SEFKT m) where
     fmap f x = x >>= return . f
 
 instance MonadErr m => Applicative (SEFKT m) where
-    pure  = return
+    {-# INLINE pure #-}
+    pure x = SEFKT $ \ek fk sk -> sk x ek fk
+
     (<*>) = ap
+
+    {-# INLINE (*>) #-}
+    m1 *> m2 = SEFKT $ \ek fk sk ->
+               unSEFKT m1 ek  fk  $ \_ ek'  fk'  ->
+               unSEFKT m2 ek' fk' $ \y ek'' fk'' ->
+               sk y ek'' fk''
 
 instance MonadErr m => Alternative (SEFKT m) where
     empty = SEFKT $ \_ek fk _sk -> fk
@@ -133,8 +142,7 @@ instance MonadErr m => Alternative (SEFKT m) where
     m1 <|> m2 = SEFKT $ \ek fk sk -> unSEFKT m1 ek (unSEFKT m2 ek fk sk) sk
 
 instance MonadErr m => Monad (SEFKT m) where
-    {-# INLINE return #-}
-    return x = SEFKT $ \ek fk sk -> sk x ek fk
+    return = pure
 
     {-# INLINE (>>=) #-}
     m >>= f  = SEFKT $ \ek fk sk ->
@@ -142,12 +150,9 @@ instance MonadErr m => Monad (SEFKT m) where
                unSEFKT (f x) ek' fk' $ \y ek'' fk'' ->
                sk y ek'' fk''
 
-    {-# INLINE (>>) #-}
-    m1 >> m2 = SEFKT $ \ek fk sk ->
-               unSEFKT m1 ek  fk  $ \_ ek'  fk'  ->
-               unSEFKT m2 ek' fk' $ \y ek'' fk'' ->
-               sk y ek'' fk''
+    fail = Fail.fail
 
+instance MonadErr m => Fail.MonadFail (SEFKT m) where
     fail msg = throw (FailException (string msg))
 
 instance MonadErr m => MonadPlus (SEFKT m) where

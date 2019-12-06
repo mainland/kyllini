@@ -16,10 +16,11 @@ module KZC.Monad.KT (
     reset
   ) where
 
-import Control.Monad (ap)
+import Control.Monad (ap, liftM)
 import Control.Monad.Exception (Exception(..),
                                 MonadException(..),
                                 SomeException)
+import qualified Control.Monad.Fail as Fail
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Text.PrettyPrint.Mainland
@@ -60,26 +61,29 @@ instance MonadTrans (KT r) where
     lift m = KT $ \ek sk -> m >>= \x -> sk ek x
 
 instance MonadErr m => Functor (KT r m) where
-    fmap f x = x >>= return . f
+    fmap = liftM
 
 instance MonadErr m => Applicative (KT r m) where
-    pure  = return
-    (<*>) = ap
+    pure x = KT $ \ek sk -> sk ek x
+    (<*>)  = ap
+
+    m1 *> m2 = KT $ \ek sk ->
+        unKT m1 ek  $ \ek'  _ ->
+        unKT m2 ek' $ \ek'' y ->
+        sk ek'' y
+
+instance MonadErr m => Fail.MonadFail (KT r m) where
+    fail msg = throw (FailException (string msg))
 
 instance MonadErr m => Monad (KT r m) where
-    return x = KT $ \ek sk -> sk ek x
+    return = pure
 
     m >>= f  = KT $ \ek sk ->
                unKT m     ek  $ \ek'  x ->
                unKT (f x) ek' $ \ek'' y ->
                sk ek'' y
 
-    m1 >> m2 = KT $ \ek sk ->
-               unKT m1 ek  $ \ek'  _ ->
-               unKT m2 ek' $ \ek'' y ->
-               sk ek'' y
-
-    fail msg = throw (FailException (string msg))
+    fail = Fail.fail
 
 instance (MonadErr m, MonadIO m) => MonadIO (KT r m) where
     liftIO = lift . liftIO

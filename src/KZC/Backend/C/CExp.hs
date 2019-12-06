@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -45,7 +46,9 @@ import Prelude hiding (elem)
 
 import Data.Bits
 import Data.Loc
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import qualified Language.C.Quote as C
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class

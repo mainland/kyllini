@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,6 +20,7 @@ import Prelude hiding ((<=))
 import qualified Prelude
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -32,7 +34,10 @@ import Data.List (foldl')
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Vector as V
@@ -92,6 +97,13 @@ data SimplStats = SimplStats
     }
   deriving (Eq, Ord, Show)
 
+instance Sem.Semigroup SimplStats where
+    s1 <> s2 =
+        SimplStats { simplDrop     = simplDrop s1 + simplDrop s2
+                   , simplInline   = simplInline s1 + simplInline s2
+                   , simplRewrites = simplRewrites s1 + simplRewrites s2
+                   }
+
 instance Monoid SimplStats where
     mempty =
         SimplStats { simplDrop     = 0
@@ -99,11 +111,7 @@ instance Monoid SimplStats where
                    , simplRewrites = 0
                    }
 
-    s1 `mappend` s2 =
-        SimplStats { simplDrop     = simplDrop s1 + simplDrop s2
-                   , simplInline   = simplInline s1 + simplInline s2
-                   , simplRewrites = simplRewrites s1 + simplRewrites s2
-                   }
+    mappend = (Sem.<>)
 
 data SimplEnv l = SimplEnv
     { simplOccInfo :: !(Map Var OccInfo)
@@ -128,17 +136,21 @@ defaultSimplState = SimplState
     { simplStats = mempty }
 
 newtype SimplM l m a = SimplM { unSimplM :: StateT SimplState (ReaderT (SimplEnv l) m) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader (SimplEnv l),
-              MonadState SimplState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader (SimplEnv l)
+             , MonadState SimplState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans (SimplM l) where
     lift m = SimplM $ lift $ lift m

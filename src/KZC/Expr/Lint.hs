@@ -76,6 +76,7 @@ import Control.Monad (unless,
                       void)
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -114,16 +115,21 @@ import KZC.Util.Uniq
 import KZC.Vars
 
 newtype Tc a = Tc { unTc :: ReaderT TcEnv KZC a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader TcEnv,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadRef IORef
+             , MonadAtomicRef IORef
+             , MonadReader TcEnv
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace)
 
 instance MonadTc Tc where
     askTc     = Tc ask

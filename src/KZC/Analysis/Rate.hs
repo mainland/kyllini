@@ -37,6 +37,7 @@ import Prelude hiding ((<=))
 import Control.Monad (MonadPlus(..),
                       when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..),
@@ -123,16 +124,20 @@ defaultRState :: RateState
 defaultRState = RateState (staticRate 0 0)
 
 newtype RM m a = RM { unRM :: StateT RateState m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadState RateState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadState RateState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans RM where
     lift m = RM $ lift m

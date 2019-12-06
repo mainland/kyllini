@@ -17,6 +17,7 @@ import Prelude hiding ((<=))
 
 import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
@@ -32,6 +33,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
+import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland
@@ -69,6 +71,13 @@ data RFState = RFState
       usedTainted :: !(Set Var)
     }
 
+instance Sem.Semigroup RFState where
+    x <> y = RFState
+        { varFlowsFrom = Map.unionWith (<>) (varFlowsFrom x) (varFlowsFrom y)
+        , tainted      = tainted x <> tainted y
+        , usedTainted  = usedTainted x <> usedTainted y
+        }
+
 instance Monoid RFState where
     mempty = RFState
         { varFlowsFrom = mempty
@@ -76,26 +85,26 @@ instance Monoid RFState where
         , usedTainted  = mempty
         }
 
-    x `mappend` y = RFState
-        { varFlowsFrom = Map.unionWith (<>) (varFlowsFrom x) (varFlowsFrom y)
-        , tainted      = tainted x <> tainted y
-        , usedTainted  = usedTainted x <> usedTainted y
-        }
+    mappend = (Sem.<>)
 
 type RefSet = Set Ref
 
 newtype RF m a = RF { unRF :: StateT RFState (WriterT RefSet m) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadWriter RefSet,
-              MonadState RFState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadWriter RefSet
+             , MonadState RFState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 runRF :: MonadTc m => RF m a -> m a
 runRF m = fst <$> runWriterT (evalStateT (unRF m) mempty)

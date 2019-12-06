@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -19,7 +20,9 @@ module KZC.Util.Derive (
 
 import Data.Generics
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Symbol
 import Text.PrettyPrint.Mainland as PP
 import Text.PrettyPrint.Mainland.Class as PP

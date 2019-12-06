@@ -1,11 +1,12 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
 -- |
 -- Module      : Language.Ziria.Parser.Exceptions
 -- Copyright   : (c) 2014-2015 Drexel University
 -- License     : BSD-style
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
-
-{-# LANGUAGE DeriveDataTypeable #-}
 
 module Language.Ziria.Parser.Exceptions (
     LexerException(..),
@@ -14,7 +15,9 @@ module Language.Ziria.Parser.Exceptions (
 
 import Control.Monad.Exception
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Typeable (Typeable)
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class

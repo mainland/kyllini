@@ -23,6 +23,7 @@ import Prelude hiding ((<=))
 
 import Control.Monad (void)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -327,17 +328,21 @@ instance BranchLattice RState where
         }
 
 newtype RW m a = RW { unRW :: ReaderT REnv (StateT RState m) a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadReader REnv,
-              MonadState RState,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadReader REnv
+             , MonadState RState
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 execRW :: MonadTc m => RW m a -> m RState
 execRW m = execStateT (runReaderT (unRW m) defaultREnv) defaultRState

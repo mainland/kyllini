@@ -16,6 +16,7 @@ module KZC.Optimize.LutToGen (
 
 import Control.Monad (unless)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -63,16 +64,20 @@ defaultGState :: GState l
 defaultGState = GState mempty mempty
 
 newtype G l m a = G { unG :: StateT (GState l) m a }
-  deriving (Applicative, Functor, Monad, MonadIO,
-            MonadState (GState l),
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Applicative
+           , Functor
+           , Monad
+           , MonadFail
+           , MonadIO
+           , MonadState (GState l)
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 instance MonadTrans (G l) where
     lift = G . lift
@@ -432,16 +437,20 @@ unpackLUTIdx = go 0
 type LEnv = Map Var LUTVar
 
 newtype L m a = L { unL :: ReaderT LEnv m a }
-  deriving (Applicative, Functor, Monad, MonadIO,
-            MonadReader LEnv,
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Applicative
+           , Functor
+           , Monad
+           , MonadFail
+           , MonadIO
+           , MonadReader LEnv
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 instance MonadTrans L where
     lift = L . lift

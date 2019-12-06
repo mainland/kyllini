@@ -14,6 +14,7 @@ module KZC.Optimize.HashConsConsts (
   ) where
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
@@ -52,16 +53,20 @@ defaultHCState = HCState
     }
 
 newtype HC l m a = HC { unHC :: StateT (HCState l) m a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadState (HCState l),
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadFuel,
-              MonadPlatform,
-              MonadTrace,
-              MonadTc)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadState (HCState l)
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadFuel
+             , MonadPlatform
+             , MonadTrace
+             , MonadTc)
 
 instance MonadTrans (HC l) where
     lift m = HC $ lift m

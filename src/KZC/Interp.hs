@@ -27,6 +27,7 @@ module KZC.Interp (
 import Control.Monad (void,
                       zipWithM_)
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO,
                                liftIO)
 import Control.Monad.Primitive (PrimMonad(..),
@@ -228,16 +229,20 @@ defaultIEnv :: IEnv s
 defaultIEnv = IEnv { refs = mempty }
 
 newtype I s m a = I { unI :: ReaderT (IEnv s) m a }
-  deriving (Applicative, Functor, Monad, MonadIO,
-            MonadReader (IEnv s),
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Applicative
+           , Functor
+           , Monad
+           , MonadFail
+           , MonadIO
+           , MonadReader (IEnv s)
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 deriving instance MonadRef IORef m => MonadRef IORef (I s m)
 
@@ -868,7 +873,7 @@ compileAndRunExp e = do
     mval <- evalI $ compileExp e
     liftIO mval
 
-compileGen :: forall s m m' . (s ~ RealWorld, s ~ PrimState m, MonadTcRef m, MonadIO m', PrimMonad m', MonadRef IORef m', s ~ PrimState m')
+compileGen :: forall s m m' . (s ~ RealWorld, s ~ PrimState m, MonadFail m', MonadTcRef m, MonadIO m', PrimMonad m', MonadRef IORef m', s ~ PrimState m')
            => Exp
            -> [Gen]
            -> I s m (Stream m' Const, Int)

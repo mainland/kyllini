@@ -17,6 +17,7 @@ module KZC.Optimize.LowerGenerators (
   ) where
 
 import Control.Monad.Exception (MonadException(..))
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Ref (MonadRef(..))
@@ -36,15 +37,19 @@ import KZC.Util.Trace
 import KZC.Util.Uniq
 
 newtype L m a = L { unL :: m a }
-  deriving (Applicative, Functor, Monad, MonadIO,
-            MonadException,
-            MonadUnique,
-            MonadErr,
-            MonadConfig,
-            MonadFuel,
-            MonadPlatform,
-            MonadTrace,
-            MonadTc)
+  deriving ( Applicative
+           , Functor
+           , Monad
+           , MonadFail
+           , MonadIO
+           , MonadException
+           , MonadUnique
+           , MonadErr
+           , MonadConfig
+           , MonadFuel
+           , MonadPlatform
+           , MonadTrace
+           , MonadTc)
 
 deriving instance MonadRef IORef m => MonadRef IORef (L m)
 
