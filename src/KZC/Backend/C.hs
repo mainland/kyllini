@@ -477,9 +477,9 @@ cgConstInit c = toInitializer <$> cgConst c
 cgConstVector :: Type -> Vector Const -> Cg l [C.Initializer]
 cgConstVector tau cs = cgConstStream tau (B.elements (B.fromVector cs))
 
-data PackedBits = PB !Word           -- ^ Current partially-packed word
-                     !Int            -- ^ Next bit position
-                     [C.Initializer] -- ^ Packed words
+data PackedBits = PB !Word           -- Current partially-packed word
+                     !Int            -- Next bit position
+                     [C.Initializer] -- Packed words
 
 -- | Compile a stream of constants to a list of C initializers.
 cgConstStream :: forall l . Type -> Stream (Cg l) Const -> Cg l [C.Initializer]

@@ -379,9 +379,9 @@ instance (IsLabel l, MonadTc m) => TransformComp l (Co m) where
 sortAscendingBy :: Ord b => (a -> b) -> [a] -> [a]
 sortAscendingBy f = sortBy (flip compare `on` f)
 
-data BlockMetric = BlockMetric !Int -- ^ 1 if byte-sized, 0 otherwise
-                               !Int -- ^ Negated block count
-                               !Int -- ^ Negated block size
+data BlockMetric = BlockMetric !Int -- 1 if byte-sized, 0 otherwise
+                               !Int -- Negated block count
+                               !Int -- Negated block size
   deriving (Eq, Ord, Show)
 
 instance Pretty BlockMetric where
@@ -408,9 +408,9 @@ class Ord a => Metric a where
 
     (.+.) :: a -> a -> a
 
-data ParMetric = ParMetric !BlockMetric -- ^ Block utilities
-                           !Int         -- ^ 1 if block sizes match, 0 otherwise
-                           !Int         -- ^ Negated size of necessary rate matcher
+data ParMetric = ParMetric !BlockMetric -- Block utilities
+                           !Int         -- 1 if block sizes match, 0 otherwise
+                           !Int         -- Negated size of necessary rate matcher
   deriving (Eq, Ord, Show)
 
 instance Pretty ParMetric where

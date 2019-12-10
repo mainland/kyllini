@@ -296,12 +296,10 @@ instance Monoid Config where
         -- coalescing.
         , maxCoalesceBuffer = 64
 
-        -- | Maximum rate for widened computations during coalescing. When
-        -- 'Nothing', don't widen.
+        -- Maximum rate for widened computations during coalescing
         , maxCoalesceRate = Just 288
 
-        -- | Maximum rate for widened top-level computations during coalescing. When
-        -- 'Nothing', don't widen.
+        -- Don't widen top-level computations during coalescing
         , maxTopCoalesceRate = Nothing
 
         , dynFlags    = mempty
