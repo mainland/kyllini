@@ -21,10 +21,6 @@ extra-source-files:
   Makefile.in
   configure
   include/KzcSysTools.h.in
-  src/Language/Ziria/Parser/Classic.hs
-  src/Language/Ziria/Parser/Kyllini.hs
-  src/Language/Ziria/Parser/LenientClassic.hs
-  src/Language/Ziria/Parser/Lexer.hs
 
 library
   default-language: Haskell2010
