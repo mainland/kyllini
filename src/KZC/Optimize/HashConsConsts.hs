@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -14,7 +15,9 @@ module KZC.Optimize.HashConsConsts (
   ) where
 
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),

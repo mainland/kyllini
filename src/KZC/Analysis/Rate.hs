@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -37,7 +38,9 @@ import Prelude hiding ((<=))
 import Control.Monad (MonadPlus(..),
                       when)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..),
@@ -334,7 +337,7 @@ parRate CompR{} CompR{} =
     faildoc $ text "Saw two computers in parallel."
 
 -- | Return the in/out multiplicities of a computation.
-compInOutM :: forall l m . Monad m => Comp l -> m (M, M)
+compInOutM :: forall l m . MonadFail m => Comp l -> m (M, M)
 compInOutM = go . compRate
   where
     go :: Maybe (Rate M) -> m (M, M)
@@ -343,19 +346,19 @@ compInOutM = go . compRate
     go (Just (TransR m1 m2)) = return (m1, m2)
 
 -- | Return the input multiplicity of a computation.
-compInM :: Monad m => Comp l -> m M
+compInM :: MonadFail m => Comp l -> m M
 compInM comp = fst <$> compInOutM comp
 
 -- | Return the output multiplicity of a computation.
-compOutM :: Monad m => Comp l -> m M
+compOutM :: MonadFail m => Comp l -> m M
 compOutM comp = snd <$> compInOutM comp
 
 -- | Return the input count of a computation.
-compInCount :: MonadPlus m => Comp l -> m Int
+compInCount :: (MonadFail m, MonadPlus m) => Comp l -> m Int
 compInCount comp = compInM comp >>= toCount
 
 -- | Return the output count of a computation.
-compOutCount :: MonadPlus m => Comp l -> m Int
+compOutCount :: (MonadFail m, MonadPlus m) => Comp l -> m Int
 compOutCount comp = compOutM comp >>= toCount
 
 -- | Return the in/out multiplicities of a computational step.

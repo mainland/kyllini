@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -25,7 +26,9 @@ import Prelude hiding ((<=))
 import Control.Monad (void,
                       when)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..),
@@ -37,7 +40,9 @@ import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -385,7 +390,7 @@ useField v f = do
     when (partial intT val') $
         needDefault v
   where
-    err :: Monad m => m a
+    err :: MonadFail m => m a
     err = faildoc $ text "Struct does not have field" <+> enquote (ppr f)
 
 defaultsUsedExp :: MonadTc m => Exp -> m (Set Var)

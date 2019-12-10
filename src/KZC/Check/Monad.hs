@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -74,7 +75,9 @@ module KZC.Check.Monad (
   ) where
 
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State

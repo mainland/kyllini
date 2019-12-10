@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -20,7 +21,9 @@ module KZC.Monad (
   ) where
 
 import Control.Monad.Exception
-import Control.Monad.Fail as Fail
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
 import Control.Monad.Reader

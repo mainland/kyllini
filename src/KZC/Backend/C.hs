@@ -69,7 +69,6 @@ import Data.Vector (Vector)
 import qualified Data.Vector.Fusion.Bundle.Monadic as B
 import Data.Vector.Fusion.Stream.Monadic (Stream)
 import qualified Data.Vector.Fusion.Stream.Monadic as S
-import Data.Word (Word)
 import qualified Language.C.Quote as C
 import Numeric (showHex)
 import System.IO.Unsafe (unsafePerformIO)

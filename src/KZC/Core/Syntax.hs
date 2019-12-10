@@ -110,6 +110,9 @@ module KZC.Core.Syntax (
 
 import Prelude hiding ((<=))
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Reader
 import Data.Loc
 import qualified Data.Map as Map
@@ -444,7 +447,7 @@ instance BranchLattice OccInfo where
  - Computation labels
  -
  ------------------------------------------------------------------------------}
-compLabel :: Monad m => Comp l -> m l
+compLabel :: MonadFail m => Comp l -> m l
 compLabel Comp{ unComp = [] }     = fail "compLabel: empty computation"
 compLabel Comp{ unComp = step:_ } = stepLabel step
 
@@ -457,7 +460,7 @@ setCompLabel l comp@Comp{ unComp = step:steps } =
 
 -- | Rewrite the label of the first step in a computation and ensure that any
 -- references to the old label are rewritten to refer to the new label.
-rewriteStepsLabel :: (IsLabel l, Monad m) => l -> [Step l] -> m [Step l]
+rewriteStepsLabel :: (IsLabel l, MonadFail m) => l -> [Step l] -> m [Step l]
 rewriteStepsLabel _ steps@[] =
     return steps
 
@@ -478,7 +481,7 @@ compUsedLabels comp =
     go (ParC _ _ l r _:steps)     = compUsedLabels l <> compUsedLabels r <> go steps
     go (_:steps)                  = go steps
 
-stepLabel :: Monad m => Step l -> m l
+stepLabel :: MonadFail m => Step l -> m l
 stepLabel (VarC l _ _)         = return l
 stepLabel (CallC l _ _ _ _)    = return l
 stepLabel (IfC l _ _ _ _)      = return l
@@ -1546,7 +1549,7 @@ instance Subst Exp Var Exp where
                 Nothing          -> return v
                 Just (VarE v' _) -> return v'
                 Just e           ->
-                    faildoc $ "Cannot substitute expression" <+>
+                    errordoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
         CallE v' taus <$> substM es <*> pure l
 
@@ -1622,7 +1625,7 @@ instance Subst Exp Var (Step l) where
                 Nothing          -> return v
                 Just (VarE v' _) -> return v'
                 Just e           ->
-                    faildoc $ "Cannot substitute expression" <+>
+                    errordoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
         CallC l v' taus <$> substM es <*> pure s
 
@@ -1630,7 +1633,7 @@ instance Subst Exp Var (Step l) where
         IfC l <$> substM e <*> substM c1 <*> substM c2 <*> pure s
 
     substM LetC{} =
-        faildoc $ text "Cannot substitute in a let computation step."
+        errordoc $ text "Cannot substitute in a let computation step."
 
     substM (WhileC l e c s) =
         WhileC l <$> substM e <*> substM c <*> pure s
@@ -1647,7 +1650,7 @@ instance Subst Exp Var (Step l) where
         ReturnC l <$> substM e <*> pure s
 
     substM BindC{} =
-        faildoc $ text "Cannot substitute in a bind computation step."
+        errordoc $ text "Cannot substitute in a bind computation step."
 
     substM step@TakeC{} =
         return step

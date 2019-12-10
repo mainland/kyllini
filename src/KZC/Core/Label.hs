@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
@@ -19,7 +20,9 @@ module KZC.Core.Label (
 
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.String (IsString(..))
 import Data.Symbol
 import qualified Language.C.Quote as C

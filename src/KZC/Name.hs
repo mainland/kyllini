@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      : KZC.Name
 -- Copyright   : (c) 2015 Drexel University
@@ -17,7 +19,9 @@ module KZC.Name (
   ) where
 
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland

@@ -44,6 +44,9 @@ module KZC.Backend.C.CExp (
 
 import Prelude hiding (elem)
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.Bits
 import Data.Loc
 #if !MIN_VERSION_base(4,11,0)
@@ -469,7 +472,7 @@ calias e ce          = case refPath e of
 -- | Return the result of dividing the 'CExp' by a constant. A result is
 -- returned only if the quotient can be symbolically computed and has a
 -- remainder of zero.
-cdiv :: forall l m . Monad m => CExp l -> Integer -> m (CExp l)
+cdiv :: forall l m . MonadFail m => CExp l -> Integer -> m (CExp l)
 cdiv (CInt x) n | r == 0    = return $ CInt q
                 | otherwise = fail "cdiv: not divisible"
   where
@@ -521,7 +524,7 @@ cfloor ce         = CExp [cexp|floor($ce)|]
 
 -- | Return the 'Integer' value of a 'CExp'. This is necessarily a partial
 -- operation.
-unCInt :: Monad m => CExp l -> m Integer
+unCInt :: MonadFail m => CExp l -> m Integer
 unCInt (CInt i) = return i
 unCInt ce       = case C.toExp ce noLoc of
                     [cexp|$int:i|] -> return i
@@ -529,7 +532,7 @@ unCInt ce       = case C.toExp ce noLoc of
 
 -- | Given a 'CExp' that is potentially an index into array, return the base
 -- array and the index.
-unCIdx :: Monad m => CExp l -> m (CExp l, CExp l)
+unCIdx :: MonadFail m => CExp l -> m (CExp l, CExp l)
 unCIdx (CIdx tau (CAlias _ carr) ci) =
     unCIdx (CIdx tau carr ci)
 
@@ -562,7 +565,7 @@ unCSlice carr =
 -- array base of the slice, i.e., a pointer to the beginning of the slice. This
 -- function is partial; the base array can only be calculated if the index of
 -- the slice is certain to be divisible by 'bIT_ARRAY_ELEM_BITS'.
-unBitCSliceBase :: Monad m => CExp l -> m (CExp l)
+unBitCSliceBase :: MonadFail m => CExp l -> m (CExp l)
 unBitCSliceBase (CSlice tau (CAlias _ carr) ci clen) =
     unBitCSliceBase (CSlice tau carr ci clen)
 

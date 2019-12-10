@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,6 +16,9 @@ module KZC.Compiler (
   ) where
 
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -23,7 +27,9 @@ import qualified Data.ByteString.Lazy as B
 import Data.Foldable (toList)
 import Data.IORef
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
@@ -99,12 +105,17 @@ defaultCEnv = do
                 }
 
 newtype C m a = C { unC :: ReaderT CEnv m a }
-    deriving (Functor, Applicative, Monad, MonadTrans, MonadIO,
-              MonadReader CEnv,
-              MonadException,
-              MonadErr,
-              MonadConfig,
-              MonadFuel)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadTrans
+             , MonadIO
+             , MonadReader CEnv
+             , MonadException
+             , MonadErr
+             , MonadConfig
+             , MonadFuel)
 
 deriving instance MonadRef IORef m => MonadRef IORef (C m)
 deriving instance MonadAtomicRef IORef m => MonadAtomicRef IORef (C m)
@@ -158,7 +169,7 @@ compileRecursive ([modinfo] : sccs) =
     loadDependencies (modSourcePath modinfo) $
         compileRecursive sccs
 
-setFileDialect :: MonadIO m => FilePath -> m ()
+setFileDialect :: (MonadFail m, MonadIO m) => FilePath -> m ()
 setFileDialect filepath = do
     dialect <- moduleDialect filepath
     when (dialect == Z.Classic) $

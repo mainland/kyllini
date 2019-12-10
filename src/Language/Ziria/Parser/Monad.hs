@@ -5,6 +5,7 @@
 -- Author      : Geoffrey Mainland <mainland@drexel.edu>
 -- Maintainer  : Geoffrey Mainland <mainland@drexel.edu>
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -51,7 +52,9 @@ import qualified Control.Monad.Fail as Fail
 import Control.Monad.State
 import Data.Int (Int64)
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Symbol
@@ -109,7 +112,9 @@ instance Monad P where
           Left e         -> Left e
           Right (a, s')  -> runP (k a) s'
 
+#if !MIN_VERSION_base(4,13,0)
     fail = Fail.fail
+#endif /* !MIN_VERSION_base(4,13,0) */
 
 instance Fail.MonadFail P where
     fail msg = do

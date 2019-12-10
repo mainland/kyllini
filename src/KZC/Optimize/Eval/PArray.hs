@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  KZC.Optimize.Eval.PArray
 -- Copyright   :  (c) 2015 Drexel University
@@ -23,6 +25,9 @@ import qualified Prelude as P
 import Prelude hiding (length)
 
 import Control.Monad (when)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List (foldl')
@@ -75,7 +80,7 @@ length :: PArray a -> Int
 length (ArrP _ len _) = len
 length (ArrF _ v)     = V.length v
 
-(!?) :: Monad m => PArray a -> Int -> m a
+(!?) :: MonadFail m => PArray a -> Int -> m a
 ArrP dflt len m !? i
     | i < 0 || i >= len = fail "Array index out of bounds"
     | otherwise         = case IntMap.lookup i m of
@@ -85,7 +90,7 @@ ArrF _ v !? i = maybe (fail "Array index out of bounds")
                       return
                       (v V.!? i)
 
-(//) :: Monad m => PArray a -> [(Int, a)] -> m (PArray a)
+(//) :: MonadFail m => PArray a -> [(Int, a)] -> m (PArray a)
 arr // [] =
     return arr
 
@@ -103,7 +108,7 @@ ArrP dflt len m // ixs = do
 ArrF dflt v // ixs =
     return $ ArrF dflt (v V.// ixs)
 
-slice :: Monad m => Int -> Int -> PArray a -> m (PArray a)
+slice :: MonadFail m => Int -> Int -> PArray a -> m (PArray a)
 slice i n (ArrP dflt len m)
     | i < 0 || n < 0 || i + n > len = fail "Array index out of bounds"
     | otherwise                     = return $ ArrP dflt n m'

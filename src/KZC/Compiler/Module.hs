@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -18,6 +19,9 @@ module KZC.Compiler.Module (
     modulesDepSCCs
   ) where
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
 import Control.Monad.Reader (asks)
@@ -31,8 +35,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Symbol
 import System.Directory (doesFileExist)
-import System.FilePath (FilePath,
-                        addExtension,
+import System.FilePath (addExtension,
                         joinPath)
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
@@ -48,7 +51,7 @@ import KZC.Util.Pretty
 import qualified Language.Ziria.Parser as P
 import qualified Language.Ziria.Syntax as Z
 
-locateModuleSource :: forall m . (MonadConfig m, MonadErr m, MonadIO m)
+locateModuleSource :: forall m . (MonadFail m, MonadConfig m, MonadErr m, MonadIO m)
                    => ModuleName
                    -> m FilePath
 locateModuleSource mod =

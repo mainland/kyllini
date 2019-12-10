@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
@@ -15,7 +16,12 @@ module KZC.Analysis.Interval (
 
 import Prelude hiding ((<=))
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 import Text.PrettyPrint.Mainland.Class
@@ -27,10 +33,10 @@ class IsInterval a where
     empty :: a
 
     unit :: Integral i => i -> a
-    fromUnit :: (Integral i, Monad m) => a -> m i
+    fromUnit :: (Integral i, MonadFail m) => a -> m i
 
     interval :: Integral i => i -> i -> a
-    fromInterval :: (Integral i, Monad m) => a -> m (i, i)
+    fromInterval :: (Integral i, MonadFail m) => a -> m (i, i)
 
     extend :: Integral i => a -> i -> a
 

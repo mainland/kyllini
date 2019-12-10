@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-|
@@ -18,8 +19,13 @@ module KZC.Check.Path (
   ) where
 
 import Control.Monad (unless)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.List (tails)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
@@ -66,7 +72,7 @@ pathsMayAlias rp1@(RefP v1 p1) rp2@(RefP v2 p2) =
         errordoc $ nest 2 $
         text "pathsMayAlias: illegal paths:" </> ppr rp1 </> ppr rp2
 
-checkNoPathAliasing :: forall v f m . (Eq v, Eq f, Pretty v, Pretty f, Monad m)
+checkNoPathAliasing :: forall v f m . (Eq v, Eq f, Pretty v, Pretty f, MonadFail m)
                     => [RefPath v f]
                     -> m ()
 checkNoPathAliasing rpaths =

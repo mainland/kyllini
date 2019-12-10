@@ -169,7 +169,9 @@ library
     -fmax-pmcheck-iterations=10000000
 
   if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wnoncanonical-monad-instances -Wnoncanonical-monadfail-instances
+    ghc-options: -Wcompat -Wnoncanonical-monad-instances
+    if impl(ghc < 8.8)
+      ghc-options: -Wnoncanonical-monadfail-instances
 
   hs-source-dirs:
     src

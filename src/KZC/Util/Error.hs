@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
@@ -43,6 +44,9 @@ import Control.Monad.Exception (Exception(..),
                                 SomeException,
                                 catch,
                                 throw)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
 import qualified Control.Monad.State.Strict as S (StateT(..))
@@ -52,7 +56,9 @@ import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland
@@ -311,11 +317,11 @@ instance Pretty WarnException where
 instance Show WarnException where
     show = pretty 80 . ppr
 
-notInScope :: (Pretty a, MonadErr m) => Doc -> a -> m b
+notInScope :: (Pretty a, MonadFail m, MonadErr m) => Doc -> a -> m b
 notInScope desc v =
     faildoc $ desc <+> enquote (ppr v) <+> text "not in scope"
 
-checkDuplicates :: forall m a . (Ord a, Located a, Pretty a, MonadErr m)
+checkDuplicates :: forall m a . (Ord a, Located a, Pretty a, MonadFail m, MonadErr m)
                 => Doc -> [a] -> m ()
 checkDuplicates desc vs =
     case filter  (\x -> length x /= 1)

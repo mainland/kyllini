@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -14,6 +15,9 @@ module KZC.Driver.Opts (
 
 import Control.Monad ((>=>),
                       when)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.Char (toLower)
 import Data.Maybe (fromMaybe)
 import System.Console.GetOpt
@@ -22,7 +26,7 @@ import System.Environment (getProgName)
 import KZC.Config
 import KZC.Globals
 
-options :: forall m . Monad m => [OptDescr (Config -> m Config)]
+options :: forall m . MonadFail m => [OptDescr (Config -> m Config)]
 options =
     [ Option ['h', '?'] ["--help"]  (NoArg (setModeM Help))              "Show help"
     , Option ['q']      ["quiet"]   (NoArg (setDynFlagM Quiet))          "Be quiet"
@@ -175,7 +179,7 @@ splitOn x s = case break (== x) s of
               (xs, []) -> (xs, [])
               (xs, ys) -> (xs, drop 1 ys)
 
-humandReadable :: (Integral a, Read a, Monad m) => String -> m a
+humandReadable :: (Integral a, Read a, MonadFail m) => String -> m a
 humandReadable s =
     case reads s of
       (n, "")  : _ -> return n
@@ -189,7 +193,7 @@ data FlagOpt = forall a . FlagOpt a String String (a -> Config -> Config) (Maybe
 
 data FlagOptDescr a = FlagOption String (ArgDescr a) String
 
-parseFlagOpts :: forall m . Monad m
+parseFlagOpts :: forall m . MonadFail m
               => String
               -> [FlagOpt]
               -> [FlagOptDescr (Config -> m Config)]
@@ -212,17 +216,17 @@ parseFlagOpts flagpfx fopts foptdescrs arg fs =
               -> [FlagOptDescr (Config -> m Config)]
               -> Config
               -> m Config
-    parseOpts _ _ [] = fail $ "unrecognized option `" ++ flagpfx ++ arg ++ "'"
+    parseOpts _ _ [] = \_ -> fail $ "unrecognized option `" ++ flagpfx ++ arg ++ "'"
 
     parseOpts flag flagArg (FlagOption flag' argOpt _:_) | flag' == flag =
         go argOpt
       where
         go :: ArgDescr (Config -> m Config) -> Config -> m Config
         go (NoArg g)    | null flagArg = g
-                        | otherwise    = fail $ "Argument specified:" ++ arg
+                        | otherwise    = \_ -> fail $ "Argument specified:" ++ arg
         go (OptArg g _) | null flagArg = g Nothing
                         | otherwise    = g (Just flagArg)
-        go (ReqArg g _) | null flagArg = fail $ "Argument required:" ++ arg
+        go (ReqArg g _) | null flagArg = \_ -> fail $ "Argument required:" ++ arg
                         | otherwise    = g flagArg
 
     parseOpts flag flagArg (_:opts) =
@@ -284,7 +288,7 @@ fFlags =
     , (FloatViews,    "float-views",  "float view slices")
     ]
 
-fOpts :: forall m . Monad m => [FlagOptDescr (Config -> m Config)]
+fOpts :: forall m . MonadFail m => [FlagOptDescr (Config -> m Config)]
 fOpts =
     [ FlagOption "errctx"                    (ReqArg maxErrCtxOpt "INT")          "set maximum error context"
     , FlagOption "max-simplifier-iterations" (ReqArg maxSimplIterationsOpt "INT") "set maximum simplification iterations"
@@ -416,7 +420,7 @@ dTraceFlags =
     , (TraceMono,        "mono",         "trace monomorphization")
     ]
 
-dOpts :: forall m . Monad m => [FlagOptDescr (Config -> m Config)]
+dOpts :: forall m . MonadFail m => [FlagOptDescr (Config -> m Config)]
 dOpts =
   [ FlagOption "dump-all" (NoArg dumpAll)        "dump all output"
   , FlagOption "fuel"     (ReqArg addFuel "INT") "add debug fuel"
@@ -442,7 +446,7 @@ wFlags =
     , (WarnBitArrayCopy,      "bitarray-copy",        "warn on a bit array copy")
     ]
 
-wOpts :: forall m . Monad m => [FlagOptDescr (Config -> m Config)]
+wOpts :: forall m . MonadFail m => [FlagOptDescr (Config -> m Config)]
 wOpts =
     [ FlagOption "all"   (NoArg wAll)            "enable all warnings about questionable constructs"
     , FlagOption "error" (OptArg werror "WFLAG") "make warnings errors"

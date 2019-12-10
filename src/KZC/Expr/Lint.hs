@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -76,7 +77,9 @@ import Control.Monad (unless,
                       void)
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -92,7 +95,9 @@ import Data.List (nub)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Vector as V
@@ -676,7 +681,7 @@ checkNoAliasing etaus = do
     root _ =
         return []
 
-refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
+refPath :: forall m . MonadFail m => Exp -> m (RefPath Var Field)
 refPath e =
     go e []
   where
@@ -1200,7 +1205,7 @@ checkKnownArrT tau0 =
 
 -- | Check that the argument is either an array or a reference to an array and
 -- return the array's size and the type of its elements.
-checkArrOrRefArrT :: Monad m => Type -> m (Type, Type)
+checkArrOrRefArrT :: MonadFail m => Type -> m (Type, Type)
 checkArrOrRefArrT (ArrT n tau _) =
     return (n, tau)
 

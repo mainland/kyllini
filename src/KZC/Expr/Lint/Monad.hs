@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -76,7 +77,9 @@ module KZC.Expr.Lint.Monad (
   ) where
 
 import Control.Monad.Except (ExceptT(..), runExceptT)
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..),
                                 RealWorld)
@@ -94,7 +97,9 @@ import Data.Loc (Located)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland

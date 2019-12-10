@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -76,10 +77,15 @@ import Control.Monad (unless,
                       when,
                       zipWithM,
                       zipWithM_)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */                    
 import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
@@ -649,7 +655,7 @@ checkNoAliasing etaus = do
     root _ =
         return []
 
-refPath :: forall m . Monad m => Exp -> m (RefPath Var Field)
+refPath :: forall m . MonadFail m => Exp -> m (RefPath Var Field)
 refPath e =
     go e []
   where

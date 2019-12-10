@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances#-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -27,7 +28,9 @@ module KZC.Interp (
 import Control.Monad (void,
                       zipWithM_)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO,
                                liftIO)
 import Control.Monad.Primitive (PrimMonad(..),
@@ -82,14 +85,14 @@ intV :: Integral i => Type -> i -> Val
 intV ~(IntT ip _) i = IntC ip (fromIntegral i)
 
 -- | Convert a 'Val' to an 'Integral' value.
-fromIntV :: (Integral a, Monad m) => Val -> m a
+fromIntV :: (Integral a, MonadFail m) => Val -> m a
 fromIntV (IntC IDefault x) = return $ fromIntegral x
 fromIntV (IntC S.I{} x)    = return $ fromIntegral x
 fromIntV (IntC UDefault x) = return $ fromIntegral x
 fromIntV (IntC U{} x)      = return $ fromIntegral x
 fromIntV val               = faildoc $ text "Not an integer:" <+> ppr val
 
-idxV :: Monad m => Val -> Int -> Maybe Int -> m Val
+idxV :: MonadFail m => Val -> Int -> Maybe Int -> m Val
 idxV (ArrayC v) i Nothing =
     maybe err return $ v V.!? i
   where
@@ -101,7 +104,7 @@ idxV (ArrayC v) i (Just len) =
 idxV val _ _ =
     faildoc $ text "Cannot index into non-array:" <+> ppr val
 
-projV :: Monad m => Val -> Field -> m Val
+projV :: MonadFail m => Val -> Field -> m Val
 projV (StructC _ _ flds) f =
     maybe err return $ lookup f flds
   where
@@ -190,7 +193,7 @@ defaultRef tau@ArrT{} = do
 defaultRef tau =
     ValR <$> (defaultVal tau >>= newRef)
 
-idxR :: PrimMonad m
+idxR :: (MonadFail m, PrimMonad m)
      => Ref (PrimState m)
      -> Int
      -> Maybe Int
@@ -210,7 +213,7 @@ idxR (ArrayRefR mv) i (Just len) =
 idxR val _ _ =
     faildoc $ text "Cannot index into non-array:" <+> ppr val
 
-projR :: PrimMonad m
+projR :: (MonadFail m, PrimMonad m)
       => Ref (PrimState m)
       -> Field
       -> m (Ref (PrimState m))
@@ -281,7 +284,7 @@ lookupRef v = do
 extendRefs :: MonadTcRef m => [(Var, Ref s)] -> I s m a -> I s m a
 extendRefs = extendEnv refs (\env x -> env { refs = x })
 
-assign :: forall s m . (s ~ PrimState m, PrimMonad m, MonadRef IORef m)
+assign :: forall s m . (s ~ PrimState m, MonadFail m, PrimMonad m, MonadRef IORef m)
        => Ref s -> Val -> m ()
 assign (ValR ref) val =
     val `seq` writeRef ref val

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 {-
 Module      :  KZC.Monad.KT
 Copyright   :  (c) 2016-2017 Drexel University
@@ -83,7 +85,9 @@ instance MonadErr m => Monad (KT r m) where
                unKT (f x) ek' $ \ek'' y ->
                sk ek'' y
 
+#if !MIN_VERSION_base(4,13,0)
     fail = Fail.fail
+#endif /* !MIN_VERSION_base(4,13,0) */
 
 instance (MonadErr m, MonadIO m) => MonadIO (KT r m) where
     liftIO = lift . liftIO

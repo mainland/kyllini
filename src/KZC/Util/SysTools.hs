@@ -24,7 +24,9 @@ import Control.Concurrent (forkIO,
 import qualified Control.Exception as E
 import Control.Monad (unless)
 import Control.Monad.IO.Class
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
 import System.Exit (ExitCode(..))

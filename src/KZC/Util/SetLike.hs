@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
@@ -18,7 +19,10 @@ module KZC.Util.SetLike (
   ) where
 
 import qualified Data.List as List
+
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid (Monoid(..), (<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import qualified Data.Semigroup as Sem
 import Data.Set (Set)
 import qualified Data.Set as Set

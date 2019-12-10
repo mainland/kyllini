@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -22,7 +23,9 @@ import Control.Monad (MonadPlus(..),
                       when,
                       zipWithM)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO(..),
                                liftIO)
 import Control.Monad.Logic.Class (MonadLogic(..),
@@ -42,7 +45,9 @@ import Data.Loc (noLoc,
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import qualified Data.Semigroup as Sem
 import Data.Sequence (Seq, (|>))
 import Data.Set (Set)
@@ -1278,7 +1283,7 @@ knownArraySize tau = do
       _        -> fail "Unknown emitted array size"
 
 -- | Attempt to extract a constant integer from an 'Exp'.
-tryFromIntE :: (MonadPlus m, MonadTrace m) => Exp -> m Int
+tryFromIntE :: (MonadFail m, MonadPlus m, MonadTrace m) => Exp -> m Int
 tryFromIntE (ConstE c _) = fromIntC c
 tryFromIntE _            = do traceFusion $ text "Non-constant for loop bound"
                               mzero

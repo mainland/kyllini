@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -18,7 +19,9 @@ import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus(..),
                       guard)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Logic (MonadLogic(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..),
@@ -27,7 +30,9 @@ import Control.Monad.Reader (MonadReader(..),
 import Data.Function (on)
 import Data.List (sort, sortBy)
 import Data.Maybe (fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 
@@ -77,7 +82,7 @@ newtype Co m a = Co { unCo :: ReaderT CoEnv (SEFKT m) a }
            , MonadTc
            , MonadLogic)
 
-runCo :: forall m a . MonadErr m
+runCo :: forall m a . (MonadFail m, MonadErr m)
       => Co m a
       -> m a
 runCo m = runSEFKT (runReaderT (unCo m) defaultCoEnv)

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -36,13 +37,18 @@ import Control.Monad (filterM,
                       zipWithM,
                       zipWithM_)
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Ref
 import Data.IORef
 import Data.List (sort)
 import Data.Loc
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Typeable
@@ -415,7 +421,7 @@ checkDecls (decl:decls) k =
               mcdecls $ \decls2 ->
               k $ decls1 ++ decls2
 
-mkSigned :: Monad m => Type -> m Type
+mkSigned :: MonadFail m => Type -> m Type
 mkSigned (IntT UDefault l)     = return $ IntT IDefault l
 mkSigned (IntT (U w) l)        = return $ IntT (I w) l
 mkSigned tau@(IntT IDefault _) = return tau
@@ -423,7 +429,7 @@ mkSigned tau@(IntT I{} _)      = return tau
 mkSigned tau =
     faildoc $ text "Cannot cast type" <+> enquote (ppr tau) <+> text "to unsigned."
 
-mkUnsigned :: Monad m => Type -> m Type
+mkUnsigned :: MonadFail m => Type -> m Type
 mkUnsigned (IntT IDefault l)     = return $ IntT UDefault l
 mkUnsigned (IntT (I w) l)        = return $ IntT (U w) l
 mkUnsigned tau@(IntT UDefault _) = return tau
@@ -1202,7 +1208,7 @@ checkNoAliasing etaus = do
     root _ =
         return []
 
-refPath :: forall m . Monad m => Z.Exp -> m (RefPath Z.Var Z.Field)
+refPath :: forall m . MonadFail m => Z.Exp -> m (RefPath Z.Var Z.Field)
 refPath e =
     go e []
   where

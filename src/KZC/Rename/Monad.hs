@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -33,6 +34,9 @@ module KZC.Rename.Monad (
   ) where
 
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.IORef
@@ -63,14 +67,19 @@ liftRn m = do
         return x
 
 newtype Rn a = Rn { unRn :: ReaderT RnEnv KZC a }
-    deriving (Functor, Applicative, Monad, MonadIO,
-              MonadRef IORef, MonadAtomicRef IORef,
-              MonadReader RnEnv,
-              MonadException,
-              MonadUnique,
-              MonadErr,
-              MonadConfig,
-              MonadTrace)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadFail
+             , MonadIO
+             , MonadRef IORef
+             , MonadAtomicRef IORef
+             , MonadReader RnEnv
+             , MonadException
+             , MonadUnique
+             , MonadErr
+             , MonadConfig
+             , MonadTrace)
 
 runRn :: Rn a -> RnEnv -> KZC a
 runRn m = runReaderT (unRn m)

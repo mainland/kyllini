@@ -18,6 +18,9 @@ module Language.Ziria.Parser.Kyllini (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.List (foldl1',
                   intersperse)
 import Data.Loc
@@ -977,7 +980,7 @@ structid t = mkSymName (getSTRUCTID t) (locOf t)
 fieldid :: L T.Token -> Name
 fieldid t = mkSymName (getID t) (locOf t)
 
-mkFloatT :: Monad m => Int -> SrcLoc -> m Type
+mkFloatT :: MonadFail m => Int -> SrcLoc -> m Type
 mkFloatT 32 s = return $ FloatT FP32 s
 mkFloatT 64 s = return $ FloatT FP64 s
 mkFloatT w  _ = faildoc $ text "Cannot handle float width" <+> ppr w

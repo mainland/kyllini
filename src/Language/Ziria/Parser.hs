@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 --------------------------------------------------------------------------------
@@ -21,6 +22,9 @@ module Language.Ziria.Parser (
   ) where
 
 import Control.Monad.Exception
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Trans
 import qualified Data.ByteString.Lazy as B
 import Data.Loc
@@ -48,7 +52,7 @@ dialectExts = [ (".wpl", Classic)
               , (".kz",  Kyllini)
               ]
 
-moduleDialect :: forall m . Monad m => FilePath -> m Dialect
+moduleDialect :: forall m . MonadFail m => FilePath -> m Dialect
 moduleDialect filepath =
     go dialectExts
   where

@@ -62,6 +62,9 @@ module KZC.Optimize.Eval.Val (
   ) where
 
 import Control.Monad (foldM)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.Binary.IEEE754 (floatToWord,
                             wordToFloat,
                             doubleToWord,
@@ -299,13 +302,13 @@ catV val1 val2 =
     ExpV $ catE (toExp val1) (toExp val2)
 
 -- | Extract a slice of an array
-idxV :: (IsLabel l, Monad m, Monad m')
+idxV :: (IsLabel l, Monad m, MonadFail m')
       => Val l m Exp -> Int -> m' (Val l m Exp)
 idxV (ArrayV vs) off = vs P.!? off
 idxV val off         = return $ ExpV $ idxE (toExp val) (fromIntegral off)
 
 -- | Extract a slice of an array
-sliceV :: (IsLabel l, Monad m, Monad m')
+sliceV :: (IsLabel l, Monad m, MonadFail m')
        => Val l m Exp
        -> Int
        -> Int
@@ -384,7 +387,7 @@ packValues vtaus =
     emptyBitArr :: Val l m Exp
     emptyBitArr = ArrayV $ P.fromList zeroBitV []
 
-fromBitsV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
+fromBitsV :: forall l m m' . (IsLabel l, MonadFail m, MonadTc m')
           => Val l m Exp
           -> Type
           -> m' (Val l m Exp)
@@ -442,7 +445,7 @@ fromBitsV val tau = do
     w <- typeSize tau
     return $ ExpV $ bitcastE (arrKnownT w bitT) (toExp val)
 
-unpackValues :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
+unpackValues :: forall l m m' . (IsLabel l, MonadFail m, MonadTc m')
              => Val l m Exp
              -> [Type]
              -> m' [Val l m Exp]
@@ -528,7 +531,7 @@ enumValsList (tau:taus) = do
     return [v:vs | vs <- valss, v <- vals]
 
 -- | Bitcast a value from one type to another
-bitcastV :: forall l m m' . (IsLabel l, Monad m, MonadTc m')
+bitcastV :: forall l m m' . (IsLabel l, MonadFail m, MonadTc m')
          => Val l m Exp
          -> Type
          -> Type

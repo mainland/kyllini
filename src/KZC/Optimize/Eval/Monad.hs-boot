@@ -12,9 +12,10 @@ module KZC.Optimize.Eval.Monad (
 
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT(..))
+import Data.Kind (Type)
 
-data EvalEnv l (m :: * -> *)
+data EvalEnv l (m :: Type -> Type)
 
-data EvalState l (m :: * -> *)
+data EvalState l (m :: Type -> Type)
 
 newtype EvalM l m a = EvalM { unEvalM :: ReaderT (EvalEnv l m) (StateT (EvalState l m) m) a }

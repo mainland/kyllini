@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -107,6 +108,9 @@ module KZC.Expr.Smart (
     repeatAnnE
   ) where
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.List (sort)
 import Data.Loc
 import Data.Vector (Vector)
@@ -235,7 +239,7 @@ funT :: [Tvk] -> [Type] -> Type -> SrcLoc -> Type
 funT []   taus tau l = FunT taus tau l
 funT tvks taus tau l = ForallT tvks (FunT taus tau l) l
 
-unFunT :: Monad m => Type -> m ([Tvk], [Type], Type)
+unFunT :: MonadFail m => Type -> m ([Tvk], [Type], Type)
 unFunT (ForallT tvks (FunT taus tau _) _) = return (tvks, taus, tau)
 unFunT (FunT taus tau _)                  = return ([], taus, tau)
 unFunT _                                  = fail "unFunT: not a function"
@@ -336,7 +340,7 @@ isPureishT ST{} =
 isPureishT _ =
     True
 
-splitArrT :: Monad m => Type -> m (Type, Type)
+splitArrT :: MonadFail m => Type -> m (Type, Type)
 splitArrT (ArrT nat tau _) =
     return (nat, tau)
 
@@ -377,7 +381,7 @@ isArrC ReplicateC{} = True
 isArrC EnumC{}      = True
 isArrC _            = False
 
-fromIntC :: Monad m => Const -> m Int
+fromIntC :: MonadFail m => Const -> m Int
 fromIntC (IntC _ x) =
     return x
 

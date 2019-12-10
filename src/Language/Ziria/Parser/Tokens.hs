@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -17,7 +18,9 @@ module Language.Ziria.Parser.Tokens (
   ) where
 
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class

@@ -130,7 +130,9 @@ import Prelude hiding (elem)
 
 import Control.Monad (when)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Ref (MonadRef)
@@ -877,7 +879,7 @@ promoteScope ce = do
                      , outOfLocalScope = Set.insert cid (outOfLocalScope s)
                      }
   where
-    cexpId :: forall m . Monad m => CExp l -> m C.Id
+    cexpId :: forall m . MonadFail m => CExp l -> m C.Id
     cexpId (CExp ce) = go ce
       where
         go :: C.Exp -> m C.Id

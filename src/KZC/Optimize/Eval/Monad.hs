@@ -79,7 +79,9 @@ module KZC.Optimize.Eval.Monad (
 import Control.Monad (forM_,
                       when)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.Reader (MonadReader(..),

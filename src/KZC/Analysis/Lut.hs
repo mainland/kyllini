@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -21,7 +22,9 @@ module KZC.Analysis.Lut (
 
 import Control.Monad.Exception (MonadException(..),
                                 SomeException)
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (MonadState(..),
                             StateT(..),
@@ -34,7 +37,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes,
                    fromMaybe)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.PrettyPrint.Mainland hiding (width)
@@ -269,7 +274,7 @@ lutVars refs = do
 -- | Compute the variable that is the result expression. This is a partial
 -- operation. Note that the variable may have type ref, in which case its
 -- dereferenced value is the result of the expression.
-resultVar :: Monad m => Exp -> m Var
+resultVar :: MonadFail m => Exp -> m Var
 resultVar (VarE v _) =
     return v
 

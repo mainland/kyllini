@@ -38,7 +38,7 @@ module KZC.Util.Pretty (
     unop,
     infixop
   ) where
-    
+
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif /* !MIN_VERSION_base(4,11,0) */

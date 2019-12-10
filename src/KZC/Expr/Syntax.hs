@@ -1840,7 +1840,7 @@ instance Subst Exp Var Exp where
                 Nothing          -> return v
                 Just (VarE v' _) -> return v'
                 Just e           ->
-                    faildoc $ "Cannot substitute expression" <+>
+                    errordoc $ "Cannot substitute expression" <+>
                     ppr e <+> text "for variable" <+> ppr v
         CallE v' alphas <$> substM es <*> pure l
 

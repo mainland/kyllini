@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -75,8 +76,14 @@ module KZC.Core.Smart (
     refPathRoot
   ) where
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.Loc
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
+
 import qualified Data.Vector as V
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
@@ -168,7 +175,7 @@ letviewD v tau v_arr e_base len =
     view = IdxVW v_arr e_base len (v_arr `srcspan` e_base)
 
 -- | @'unConstE' e@ returns a constant version of @e@ if possible.
-unConstE :: forall m . Monad m => Exp -> m Const
+unConstE :: forall m . MonadFail m => Exp -> m Const
 unConstE (ConstE c _) =
     return c
 
@@ -193,12 +200,12 @@ unConstE e =
 constE :: Const -> Exp
 constE c = ConstE c noLoc
 
-fromIntE :: Monad m => Exp -> m Int
+fromIntE :: MonadFail m => Exp -> m Int
 fromIntE (ConstE c _) = fromIntC c
 fromIntE _            = fail "fromIntE: not an integer"
 
 -- | Return the index variable from an array indexing expression.
-fromIdxVarE :: Monad m => Exp -> m Var
+fromIdxVarE :: MonadFail m => Exp -> m Var
 fromIdxVarE (VarE v _)             = return v
 fromIdxVarE (CastE _ (VarE v _) _) = return v
 fromIdxVarE _                      = fail "Not an index variable"
@@ -374,7 +381,7 @@ identityRateC _                            = Nothing
 
 -- | Given an expression of type @ref \tau@, return the source variable of type
 -- @ref@.
-refPathRoot :: Monad m => Exp -> m Var
+refPathRoot :: MonadFail m => Exp -> m Var
 refPathRoot (VarE v _)     = return v
 refPathRoot (IdxE e _ _ _) = refPathRoot e
 refPathRoot (ProjE e _ _)  = refPathRoot e

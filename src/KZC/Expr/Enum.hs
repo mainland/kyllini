@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -15,7 +16,9 @@ module KZC.Expr.Enum (
     enumType
   ) where
 
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Data.Binary.IEEE754 (wordToFloat,
                             wordToDouble)
 import Data.Vector (Vector)

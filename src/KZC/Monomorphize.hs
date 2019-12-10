@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -19,7 +20,9 @@ module KZC.Monomorphize (
 
 import Control.Monad (void, when)
 import Control.Monad.Exception (MonadException(..))
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.Ref (MonadRef(..))
 import Control.Monad.Reader (MonadReader(..),
                              ReaderT(..),
@@ -35,7 +38,9 @@ import Data.IORef
 import Data.List (partition)
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif /* !MIN_VERSION_base(4,11,0) */
 import Data.Sequence (Seq,
                       (|>))
 import Text.PrettyPrint.Mainland

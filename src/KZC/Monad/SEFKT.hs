@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -24,6 +25,9 @@ import Control.Monad.Exception (Exception(..),
                                 MonadException(..),
                                 SomeException)
 import qualified Control.Monad.Fail as Fail
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail (MonadFail)
+#endif /* !MIN_VERSION_base(4,13,0) */
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Logic (MonadLogic(..),
                             reflect)
@@ -48,7 +52,7 @@ type FK ans = ans
 
 newtype SEFKT m a = SEFKT { unSEFKT :: forall ans . EK (m ans) -> FK (m ans) -> SK (m ans) a -> m ans }
 
-runSEFKT :: forall m a . MonadErr m => SEFKT m a -> m a
+runSEFKT :: forall m a . (MonadFail m, MonadErr m) => SEFKT m a -> m a
 runSEFKT m =
     unSEFKT m errk failk $ \x _ek _fk -> return x
   where
@@ -150,7 +154,9 @@ instance MonadErr m => Monad (SEFKT m) where
                unSEFKT (f x) ek' fk' $ \y ek'' fk'' ->
                sk y ek'' fk''
 
+#if !MIN_VERSION_base(4,13,0)
     fail = Fail.fail
+#endif /* !MIN_VERSION_base(4,13,0) */
 
 instance MonadErr m => Fail.MonadFail (SEFKT m) where
     fail msg = throw (FailException (string msg))
