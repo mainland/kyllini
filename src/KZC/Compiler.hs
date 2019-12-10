@@ -23,6 +23,7 @@ import qualified Data.ByteString.Lazy as B
 import Data.Foldable (toList)
 import Data.IORef
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set

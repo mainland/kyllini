@@ -52,6 +52,7 @@ import Control.Monad.Writer (WriterT(..))
 import qualified Control.Monad.Writer.Strict as S (WriterT(..))
 import Data.List (sortBy)
 import Data.Loc
+import Data.Monoid ((<>))
 import Data.Ord (comparing)
 import Data.Typeable (Typeable, cast)
 import Text.PrettyPrint.Mainland

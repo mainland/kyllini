@@ -26,6 +26,7 @@ import Control.Monad.Reader (MonadReader(..),
 import Data.Function (on)
 import Data.List (sort, sortBy)
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 

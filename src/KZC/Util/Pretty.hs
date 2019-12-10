@@ -38,6 +38,7 @@ module KZC.Util.Pretty (
     infixop
   ) where
 
+import Data.Monoid ((<>))
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 

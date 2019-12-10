@@ -15,6 +15,7 @@ module KZC.Analysis.Interval (
 
 import Prelude hiding ((<=))
 
+import Data.Monoid ((<>))
 import Test.QuickCheck
 import Text.PrettyPrint.Mainland hiding (empty)
 import Text.PrettyPrint.Mainland.Class

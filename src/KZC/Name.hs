@@ -17,6 +17,7 @@ module KZC.Name (
   ) where
 
 import Data.Loc
+import Data.Monoid ((<>))
 import Data.String
 import Data.Symbol
 import Text.PrettyPrint.Mainland

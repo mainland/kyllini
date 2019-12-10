@@ -19,6 +19,7 @@ module KZC.Check.Path (
 
 import Control.Monad (unless)
 import Data.List (tails)
+import Data.Monoid ((<>))
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 

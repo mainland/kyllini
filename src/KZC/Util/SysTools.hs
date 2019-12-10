@@ -24,6 +24,7 @@ import Control.Concurrent (forkIO,
 import qualified Control.Exception as E
 import Control.Monad (unless)
 import Control.Monad.IO.Class
+import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
 import System.Exit (ExitCode(..))

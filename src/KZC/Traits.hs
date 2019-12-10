@@ -18,6 +18,7 @@ module KZC.Traits (
     intersectTraits
   ) where
 
+import Data.Monoid ((<>))
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 

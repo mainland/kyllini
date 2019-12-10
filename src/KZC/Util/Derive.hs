@@ -19,6 +19,7 @@ module KZC.Util.Derive (
 
 import Data.Generics
 import Data.Loc
+import Data.Monoid ((<>))
 import Data.Symbol
 import Text.PrettyPrint.Mainland as PP
 import Text.PrettyPrint.Mainland.Class as PP

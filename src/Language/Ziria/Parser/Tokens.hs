@@ -17,6 +17,7 @@ module Language.Ziria.Parser.Tokens (
   ) where
 
 import qualified Data.Map as Map
+import Data.Monoid ((<>))
 import Data.Symbol
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class

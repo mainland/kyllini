@@ -79,6 +79,7 @@ import Control.Monad (unless,
 import Data.Foldable (traverse_)
 import Data.Loc
 import qualified Data.Map as Map
+import Data.Monoid ((<>))
 import Text.PrettyPrint.Mainland
 import Text.PrettyPrint.Mainland.Class
 

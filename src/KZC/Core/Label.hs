@@ -19,6 +19,7 @@ module KZC.Core.Label (
 
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
+import Data.Monoid ((<>))
 import Data.String (IsString(..))
 import Data.Symbol
 import qualified Language.C.Quote as C

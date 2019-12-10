@@ -50,6 +50,7 @@ import Control.Monad.Exception
 import Control.Monad.State
 import Data.Int (Int64)
 import Data.Loc
+import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Symbol
