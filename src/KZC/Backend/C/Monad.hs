@@ -404,24 +404,24 @@ cgGuardTake = do
 
 cgTake :: TakeK l
 cgTake tau klbl k = do
-    f <- asks takeCg
+    f <- asks (\x -> takeCg x)
     cgGuardTake
     f tau klbl k
 
 cgTakes :: TakesK l
 cgTakes n tau klbl k = do
-    f <- asks takesCg
+    f <- asks (\x -> takesCg x)
     cgGuardTake
     f n tau klbl k
 
 cgEmit :: EmitK l
 cgEmit tau ce klbl k = do
-    f <- asks emitCg
+    f <- asks (\x -> emitCg x)
     f tau ce klbl k
 
 cgEmits :: EmitsK l
 cgEmits nat tau ce klbl k = do
-    f <- asks emitsCg
+    f <- asks (\x -> emitsCg x)
     f nat tau ce klbl k
 
 cgExit :: ExitK l

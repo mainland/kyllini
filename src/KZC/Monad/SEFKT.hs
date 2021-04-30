@@ -205,7 +205,7 @@ instance (MonadErr m, MonadState s m) => MonadState s (SEFKT m) where
 
 instance MonadErr m => MonadErr (SEFKT m) where
     askErrCtx   = lift askErrCtx
-    localErrCtx = liftLocal askErrCtx localErrCtx
+    localErrCtx = liftLocal askErrCtx (\x -> localErrCtx x)
 
     displayWarning = lift . displayWarning
 
@@ -218,19 +218,19 @@ instance (MonadErr m, MonadUnique m) => MonadUnique (SEFKT m) where
 
 instance (MonadErr m, MonadConfig m) => MonadConfig (SEFKT m) where
     askConfig   = lift askConfig
-    localConfig = liftLocal askConfig localConfig
+    localConfig = liftLocal askConfig (\x -> localConfig x)
 
 instance (MonadErr m, MonadFuel m) => MonadFuel (SEFKT m) where
     useFuel = lift useFuel
 
 instance (MonadErr m, MonadPlatform m) => MonadPlatform (SEFKT m) where
     askPlatform   = lift askPlatform
-    localPlatform = liftLocal askPlatform localPlatform
+    localPlatform = liftLocal askPlatform (\x -> localPlatform x)
 
 instance (MonadErr m, MonadTrace m) => MonadTrace (SEFKT m) where
     askTraceDepth   = lift askTraceDepth
-    localTraceDepth = liftLocal askTraceDepth localTraceDepth
+    localTraceDepth = liftLocal askTraceDepth (\x -> localTraceDepth x)
 
 instance MonadTc m => MonadTc (SEFKT m) where
     askTc   = lift askTc
-    localTc = liftLocal askTc localTc
+    localTc = liftLocal askTc (\x -> localTc x)
