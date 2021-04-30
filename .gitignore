@@ -10,7 +10,6 @@
 /cabal.sandbox.config
 /config.log
 /config.status
-/configure
 /dist
 /include/KzcConfig.h
 /include/KzcSysTools.h
