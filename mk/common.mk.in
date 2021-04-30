@@ -101,19 +101,9 @@ endif
 #
 # Support cabal sandbox and stack package databases. We prefer stack.
 #
-STACK_LTS=lts-9.21/8.0.2
-STACK_PKGDB=$(HOME)/.stack/snapshots/$(ARCH)-$(OS)/$(STACK_LTS)/pkgdb
-
-ifneq ($(wildcard $(STACK_PKGDB)/*.conf),)
-GHCFLAGS += \
-	-clear-package-db \
-	-global-package-db \
-	-package-db=$(STACK_PKGDB)
-
-RUNGHCFLAGS += \
-	-clear-package-db \
-	-global-package-db \
-	-package-db --ghc-arg=$(STACK_PKGDB)
+ifneq ($(wildcard .stack-work),)
+GHC=stack ghc --
+RUNGHC=stack runghc --
 else ifneq ($(wildcard $(TOP)/.cabal-sandbox/*-packages.conf.d),)
 GHCFLAGS += \
 	-no-user-package-db \
