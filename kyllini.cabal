@@ -10,7 +10,8 @@ stability:     alpha
 homepage:      http://www.cs.drexel.edu/~mainland/
 category:      Language
 synopsis:      Kyllini compiler.
-tested-with:   GHC==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.1
+tested-with:   GHC==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.4
+               || ==8.10.4 || ==9.0.1
 
 description:
   kzc is an alternative compiler for the Ziria language
