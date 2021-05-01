@@ -166,8 +166,11 @@ library
 
   ghc-options:
     -Wall -fno-warn-name-shadowing
-    -- XXX Ugh! Needed for unifyCompiledExpTypes in src/KZC/Check.hs
-    -fmax-pmcheck-iterations=10000000
+
+  -- XXX Ugh! Needed for unifyCompiledExpTypes in src/KZC/Check.hs
+  if impl(ghc < 8.10)
+    ghc-options:
+      -fmax-pmcheck-iterations=10000000
 
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wnoncanonical-monad-instances
