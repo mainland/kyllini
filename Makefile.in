@@ -246,16 +246,16 @@ $(BLINKDIFF) : tools/BlinkDiff.hs
 # Generated instances
 #
 $(SRCDIR)KZC/Check/Types-instances.hs : bin/gen-tc-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Check/Types.hs
-	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)$(RUNGHC) $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)KZC/Core/Syntax-instances.hs : bin/gen-core-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Core/Syntax.hs
-	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)$(RUNGHC) $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)KZC/Expr/Syntax-instances.hs : bin/gen-expr-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)KZC/Expr/Syntax.hs
-	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)$(RUNGHC) $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 $(SRCDIR)Language/Ziria/Syntax-instances.hs : bin/gen-ziria-instances.hs $(SRCDIR)KZC/Util/Derive.hs $(SRCDIR)Language/Ziria/Syntax.hs
-	$(_QUIET)runhaskell $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
+	$(_QUIET)$(RUNGHC) $(RUNGHCFLAGS) -DONLY_TYPEDEFS $< > $@ || rm -f $@
 
 #
 # Lexer and parser generation
