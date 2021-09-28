@@ -9,14 +9,17 @@ License     :  BSD-style
 Maintainer  :  mainland@drexel.edu
 
 This module recreates the standard C quasiquoters, but location information is
-only included when the @DEBUG@is defined. By not including location information
+only included when @DEBUG@ is defined. By not including location information
 when parsing a quasiquote, all location information in an expression comes from
-whatever the quasioquote consumer attaches to the expressions in
-constructs. This makes it easier to take generated code with, e.g., locations
-from a source code file.
+whatever location information the quasiquote user attaches to the expressions it
+constructs. This allows quasiquotation to be used with a code generator that
+attaches location information derived from source code read from a file while
+still providing useful error messages that point to locations in the source code
+file rather than locations in the code generator itself.
 
 When debugging, sometimes often /do/ want location information to come from the
-source code file where the quasioquote was written. Defining @DEBUG@ enables this.
+source code file where the quasiquote was written. Defining @DEBUG@ enables
+this.
 -}
 
 module KZC.Quote.C (
