@@ -1,10 +1,10 @@
 # Building `kzc`
 
-`kzc` is developed on Linux using GHC 8.10.4 and is compatible with GHC versions 8.0.2 through 9.0.1. There are three ways to build the project.
+`kzc` is developed on Linux using GHC 8.10.7 and is compatible with GHC versions 8.0.2 through 9.0.1. There are three ways to build the project.
 
 #### Building with `stack`
 
-The default `stack` build currently uses [LTS 17.10](https://www.stackage.org/lts-17.10).
+The default `stack` build currently uses [LTS 18.15](https://www.stackage.org/lts-18.15).
 
 ```
 stack install
