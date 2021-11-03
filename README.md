@@ -74,4 +74,4 @@ Instructions for running performance tests are in the [README in the `perf` dire
 
 # Acknowledgments
 
-This material is based upon work supported by the National Science Foundation under Grant No. CCF-1717088. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
+This material is based upon work supported by the National Science Foundation under [Grant No. 1717088](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1717088). Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
